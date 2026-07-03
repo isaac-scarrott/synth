@@ -1,0 +1,16 @@
+.DS_Store
+*.swp
+
+# Swift / SwiftPM (app/)
+app/.build/
+app/.swiftpm/
+app/Package.resolved
+
+# Local scratch
+*.log
+
+# Globally-ignored on this machine, but tracked in this repo
+!CONTEXT.md
+!docs/
+!docs/adr/
+!docs/adr/**

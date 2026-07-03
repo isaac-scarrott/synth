@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Synth — Big Picture</title>
+<style>
+  :root {
+    --canvas: #ebebed;
+    --panel: #ffffff;
+    --sidebar: #f4f4f5;
+    --border: rgba(0, 0, 0, 0.07);
+    --border-strong: rgba(0, 0, 0, 0.1);
+    --text: #1a1a1c;
+    --text-muted: #86868b;
+    --text-faint: #a8a8ad;
+    --accent: #1a1a1c;
+    --radius-app: 14px;
+    --radius-panel: 20px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+    /* state colors */
+    --run: #34c759;
+    --work: #f5a623;
+    --idle: #cbcbd0;
+    --input: #0a84ff;
+    --error: #ff3b30;
+
+    /* Emil's stronger custom curves */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--canvas);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 22px;
+  }
+
+  /* ---- App shell ---- */
+  .app {
+    position: relative;
+    width: 100%;
+    max-width: 1360px;
+    height: calc(100vh - 44px);
+    max-height: 880px;
+    background: var(--panel);
+    border-radius: var(--radius-app);
+    box-shadow: var(--shadow);
+    border: 0.5px solid var(--border-strong);
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    transition: grid-template-columns 240ms var(--ease-out);
+  }
+  .app.collapsed { grid-template-columns: 0 1fr; }
+
+  /* ---- Sidebar (full height, rounded right) ---- */
+  .sidebar {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--sidebar);
+    border-right: 0.5px solid var(--border);
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+    box-shadow:
+      1px 0 1px rgba(0, 0, 0, 0.02),
+      4px 0 14px rgba(0, 0, 0, 0.03);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar__top {
+    height: 42px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px 0 16px;
+    -webkit-app-region: drag;
+  }
+
+  .traffic {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .traffic i {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block;
+  }
+  .traffic .r { background: #ff5f57; }
+  .traffic .y { background: #febc2e; }
+  .traffic .g { background: #28c840; }
+
+  /* ---- Icon buttons (collapse / expand) ---- */
+  .icon-btn {
+    -webkit-app-region: no-drag;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    cursor: pointer;
+    color: #9a9aa0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .icon-btn svg { width: 16px; height: 16px; display: block; }
+  .icon-btn:active { transform: scale(0.94); }
+  @media (hover: hover) and (pointer: fine) {
+    .icon-btn:hover { background: rgba(0, 0, 0, 0.05); color: #56565c; }
+  }
+
+  /* Expand button — appears at top-left once the sidebar is collapsed */
+  .expand-btn {
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    z-index: 20;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+  }
+  .app.collapsed .expand-btn { opacity: 1; pointer-events: auto; }
+
+  /* ---- Content ---- */
+  .content {
+    grid-column: 2;
+    grid-row: 1;
+    background: var(--panel);
+  }
+
+  /* ---- Sidebar nav: workspace → branches → sessions ---- */
+  .nav {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 8px 16px;
+  }
+
+  .nav__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 6px;
+  }
+  .nav__label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #a1a1a6;
+    padding: 10px 8px 6px;
+    white-space: nowrap;
+  }
+  .add-workspace {
+    width: 22px;
+    height: 22px;
+    margin-top: 2px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #b0b0b5;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .add-workspace svg { width: 14px; height: 14px; display: block; }
+  .add-workspace:active { transform: scale(0.9); }
+  @media (hover: hover) and (pointer: fine) {
+    .add-workspace:hover { background: rgba(0,0,0,0.05); color: #56565c; }
+  }
+
+  /* rows share press + selection behaviour */
+  .row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    width: 100%;
+    transition: background-color 120ms ease, transform 110ms var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .row:active { transform: scale(0.985); }
+
+  @media (hover: hover) and (pointer: fine) {
+    .row:hover { background: rgba(0, 0, 0, 0.035); }
+  }
+
+  /* keyboard selection ring — only visible while navigating by keyboard */
+  body.kbd .row.sel {
+    background: rgba(0, 0, 0, 0.05);
+    box-shadow: 0 0 0 1.5px rgba(10, 132, 255, 0.5);
+  }
+
+  .repo { margin-bottom: 1px; }
+
+  .repo__head { padding: 6px 8px; }
+
+  .chev {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #b8b8bd;
+    transition: transform 0.16s var(--ease-out);
+  }
+  .chev svg { width: 13px; height: 13px; display: block; }
+  .repo--open > .repo__head .chev,
+  .repo--open > .branch--group .chev { transform: rotate(90deg); }
+
+  .repo__chip {
+    width: 19px;
+    height: 19px;
+    border-radius: 6px;
+    background: var(--c);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 1px 1.5px rgba(0, 0, 0, 0.12);
+  }
+
+  .repo__name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 590;
+    letter-spacing: -0.006em;
+    color: #1d1d1f;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .repo__count {
+    font-size: 11px;
+    font-weight: 500;
+    color: #b8b8bd;
+    font-variant-numeric: tabular-nums;
+  }
+  /* count hides once open (chevron already communicates state) */
+  .repo--open > .repo__head .repo__count { display: none; }
+
+  /* ---- Accordion (grid 0fr→1fr, GPU-friendly opacity fade) ---- */
+  .collapse {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 185ms var(--ease-out);
+  }
+  .repo--open > .collapse { grid-template-rows: 1fr; }
+  .collapse__inner {
+    overflow: hidden;
+    min-height: 0;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  .repo--open > .collapse > .collapse__inner { opacity: 1; }
+
+  .branches {
+    margin: 1px 0 5px 18px;
+    padding-left: 11px;
+    border-left: 1px solid rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .branch { padding: 5px 10px; text-decoration: none; }
+
+  .branch__name {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 450;
+    letter-spacing: -0.01em;
+    color: #737378;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .branch__meta {
+    font-size: 10.5px;
+    font-weight: 450;
+    color: #bcbcc1;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+
+  /* branch group (a checked-out branch holding live sessions) */
+  .branch--group .chev { color: #a9a9ae; }
+  .branch__roll { display: flex; align-items: center; flex-shrink: 0; }
+
+  .branch__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--run);
+    box-shadow: 0 0 0 2.5px rgba(52, 199, 89, 0.16);
+  }
+
+  .branch--active {
+    background: #ffffff;
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .branch--active:hover { background: #ffffff; }
+  }
+  .branch--active .branch__name { color: #1d1d1f; font-weight: 550; }
+
+  /* ---- Sessions inside a branch ---- */
+  .sessions {
+    margin: 2px 0 4px 15px;
+    padding-left: 11px;
+    border-left: 1px solid rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .session { padding: 4px 8px; text-decoration: none; }
+
+  /* unread gutter bullet */
+  .session__bullet {
+    position: absolute;
+    left: -0.5px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--input);
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+  .session--unread .session__bullet { opacity: 1; }
+
+  .session__icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #a1a1a6;
+  }
+  .session__icon svg { width: 14px; height: 14px; display: block; }
+  .session__icon--ai { color: #c2724c; }
+
+  .session__name {
+    flex: 1;
+    font-size: 11.5px;
+    font-weight: 460;
+    letter-spacing: -0.005em;
+    color: #8a8a8f;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 140ms ease;
+  }
+  /* unread rows read darker + heavier so they surface at a glance */
+  .session--unread .session__name { color: #35353a; font-weight: 550; }
+
+  /* ---- Status system ---- */
+  /* Every right-side indicator lives in one fixed-width slot: right-aligned as a
+     column, contents centered on a shared vertical axis regardless of glyph size. */
+  .ind {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ind svg { width: 15px; height: 15px; display: block; }
+
+  /* liveness dots: running / working / idle */
+  .sdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--idle);
+  }
+  .sdot--run {
+    background: var(--run);
+    box-shadow: 0 0 0 2.5px rgba(52, 199, 89, 0.15);
+  }
+  .sdot--work {
+    background: var(--work);
+    box-shadow: 0 0 0 2.5px rgba(245, 166, 35, 0.16);
+    animation: sdot-pulse 1.5s var(--ease-in-out) infinite;
+  }
+
+  /* attention glyphs: needs-input (?) and error (!) — bare marks, no border */
+  .ind--input {
+    color: var(--input);
+    animation: attn-breathe 2s var(--ease-in-out) infinite;
+    transform-origin: center;
+  }
+  .ind--error { color: var(--error); }
+
+  /* repo-level roll-up: surfaces nested input/error while collapsed */
+  .repo--open > .repo__head .ind { display: none; }
+
+  @keyframes sdot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  @keyframes attn-breathe {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.55; transform: scale(0.9); }
+  }
+
+  /* ---- Row action kebab (hover-revealed at the row end) ---- */
+  .kebab {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    color: #8a8a90;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease, background-color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .kebab svg { width: 15px; height: 15px; display: block; }
+  .kebab:active { transform: translateY(-50%) scale(0.88); }
+  @media (hover: hover) and (pointer: fine) {
+    .row:hover .kebab { opacity: 1; pointer-events: auto; }
+    .kebab:hover { background: rgba(0,0,0,0.08); color: #46464c; }
+  }
+  .row.menu-open .kebab { opacity: 1; pointer-events: auto; background: rgba(0,0,0,0.08); color: #46464c; }
+
+  /* status metadata fades out under the kebab (no layout shift — slot stays put) */
+  .ind, .branch__meta, .repo__count, .branch__roll { transition: opacity 120ms ease; }
+  @media (hover: hover) and (pointer: fine) {
+    .row:hover > .ind,
+    .row:hover > .branch__meta,
+    .row:hover > .repo__count,
+    .row:hover > .branch__roll { opacity: 0; }
+  }
+  .row.menu-open > .ind,
+  .row.menu-open > .branch__meta,
+  .row.menu-open > .repo__count,
+  .row.menu-open > .branch__roll { opacity: 0; }
+
+  /* ---- Popover menu (origin-aware: scales out of the kebab) ---- */
+  .menu {
+    position: fixed;
+    z-index: 100;
+    min-width: 172px;
+    padding: 5px;
+    background: rgba(255,255,255,0.82);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border: 0.5px solid rgba(0,0,0,0.12);
+    border-radius: 11px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.18);
+    transform-origin: var(--mo, top right);
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity 140ms var(--ease-out), transform 150ms var(--ease-out);
+  }
+  .menu.open { opacity: 1; transform: scale(1); }
+
+  .menu__item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 450;
+    color: #1d1d1f;
+    transition: background-color 100ms ease;
+  }
+  .menu__item svg { width: 15px; height: 15px; flex-shrink: 0; color: #7a7a80; }
+  @media (hover: hover) and (pointer: fine) {
+    .menu__item:hover { background: rgba(0,0,0,0.06); }
+  }
+  .menu__item--danger { color: var(--error); }
+  .menu__item--danger svg { color: var(--error); }
+  .menu__sep { height: 0.5px; background: rgba(0,0,0,0.08); margin: 4px 6px; }
+
+  .menu__confirm { padding: 7px 8px 8px; }
+  .menu__confirm-label { font-size: 11.5px; line-height: 1.35; color: #6a6a70; padding: 2px 2px 9px; }
+  .menu__confirm-row { display: flex; gap: 6px; }
+  .menu__btn {
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 7px;
+    border: 0.5px solid rgba(0,0,0,0.1);
+    background: #fff;
+    color: #1d1d1f;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 100ms ease, transform 110ms var(--ease-out);
+  }
+  .menu__btn:active { transform: scale(0.97); }
+  .menu__btn--danger { background: var(--error); color: #fff; border-color: transparent; }
+
+  /* ---- Dialog (modal — stays centered) ---- */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0,0,0,0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+  .backdrop.open { opacity: 1; }
+  .dialog {
+    width: 340px;
+    max-width: calc(100vw - 40px);
+    background: #fff;
+    border-radius: 14px;
+    border: 0.5px solid rgba(0,0,0,0.1);
+    box-shadow: 0 12px 44px rgba(0,0,0,0.24);
+    padding: 18px;
+    opacity: 0;
+    transform: scale(0.96);
+    transition: transform 200ms var(--ease-out), opacity 180ms ease;
+  }
+  .backdrop.open .dialog { opacity: 1; transform: scale(1); }
+  .dialog__title { font-size: 14px; font-weight: 600; color: #1d1d1f; margin-bottom: 15px; }
+  .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+  .field label { font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #9a9aa0; }
+  .field select, .field input {
+    font-family: inherit;
+    font-size: 13px;
+    color: #1d1d1f;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 0.5px solid rgba(0,0,0,0.16);
+    background: #fff;
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .field input { font-family: var(--mono); }
+  .field select:focus, .field input:focus {
+    border-color: var(--input);
+    box-shadow: 0 0 0 3px rgba(10,132,255,0.15);
+  }
+  .dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  .dialog__btn {
+    padding: 8px 15px;
+    border-radius: 8px;
+    border: 0.5px solid rgba(0,0,0,0.12);
+    background: #fff;
+    color: #1d1d1f;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 550;
+    cursor: pointer;
+    transition: background-color 110ms ease, transform 110ms var(--ease-out), opacity 120ms ease;
+  }
+  .dialog__btn:active { transform: scale(0.97); }
+  .dialog__btn--primary { background: var(--input); color: #fff; border-color: transparent; }
+  .dialog__btn.is-disabled { opacity: 0.4; pointer-events: none; }
+
+  /* ---- Row enter / exit ---- */
+  @keyframes row-enter {
+    from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes row-exit {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateX(-8px); }
+  }
+  .row-enter { animation: row-enter 200ms var(--ease-out); }
+  .row-exit { animation: row-exit 150ms var(--ease-out) forwards; pointer-events: none; }
+
+  /* Respect reduced motion: keep opacity/color, drop movement + looping pulses */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; }
+    .row:active, .icon-btn:active, .kebab:active { transform: translateY(0); }
+    .kebab:active { transform: translateY(-50%); }
+    .sdot--work, .ind--input { animation: none; }
+    .collapse, .app, .menu, .backdrop, .dialog { transition: none; }
+    .row-enter, .row-exit { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="app" id="app">
+    <button class="icon-btn expand-btn" id="expandBtn" aria-label="Expand sidebar">
+      <svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>
+    </button>
+
+    <aside class="sidebar">
+      <div class="sidebar__top">
+        <div class="traffic">
+          <i class="r"></i><i class="y"></i><i class="g"></i>
+        </div>
+        <button class="icon-btn" id="collapseBtn" aria-label="Collapse sidebar">
+          <svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>
+        </button>
+      </div>
+
+      <nav class="nav" id="nav">
+        <div class="nav__head">
+          <span class="nav__label">Workspace</span>
+          <span class="add-workspace" id="addWorkspace" role="button" aria-label="Add workspace"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg></span>
+        </div>
+
+        <!-- synth (open) -->
+        <div class="repo repo--open" data-repo>
+          <button class="row repo__head" data-row data-toggle>
+            <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+            <span class="repo__chip" style="--c:#6366f1">S</span>
+            <span class="repo__name">synth</span>
+            <span class="repo__count">4</span>
+          </button>
+          <div class="collapse"><div class="collapse__inner">
+          <div class="branches">
+            <a class="row branch" data-row>
+              <span class="branch__name">main</span>
+              <span class="branch__meta">2h</span>
+            </a>
+
+            <div class="repo repo--open" data-repo>
+              <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="2m">
+                <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+                <span class="branch__name">feat/command-palette</span>
+                <span class="branch__roll"></span>
+              </a>
+              <div class="collapse"><div class="collapse__inner">
+              <div class="sessions">
+                <!-- Claude Code — needs input -->
+                <a class="row session session--unread" data-row data-session>
+                  <span class="session__bullet"></span>
+                  <span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg></span>
+                  <span class="session__name">Claude Code</span>
+                  <span class="ind ind--input"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg></span>
+                </a>
+                <!-- dev server — running -->
+                <a class="row session" data-row data-session>
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
+                  <span class="session__name">dev server</span>
+                  <span class="ind"><span class="sdot sdot--run"></span></span>
+                </a>
+                <!-- api-tests — error -->
+                <a class="row session session--unread" data-row data-session>
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
+                  <span class="session__name">api-tests</span>
+                  <span class="ind ind--error"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg></span>
+                </a>
+                <!-- shell — idle, read -->
+                <a class="row session" data-row data-session>
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
+                  <span class="session__name">shell</span>
+                  <span class="ind"><span class="sdot"></span></span>
+                </a>
+                <!-- browser — running -->
+                <a class="row session" data-row data-session>
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg></span>
+                  <span class="session__name">localhost:8733</span>
+                  <span class="ind"><span class="sdot sdot--run"></span></span>
+                </a>
+                <!-- simulator — running -->
+                <a class="row session" data-row data-session>
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M176,16H80A24,24,0,0,0,56,40V216a24,24,0,0,0,24,24h96a24,24,0,0,0,24-24V40A24,24,0,0,0,176,16ZM72,64H184V192H72Zm8-32h96a8,8,0,0,1,8,8v8H72V40A8,8,0,0,1,80,32Zm96,192H80a8,8,0,0,1-8-8v-8H184v8A8,8,0,0,1,176,224Z"/></svg></span>
+                  <span class="session__name">iPhone 15 Pro</span>
+                  <span class="ind"><span class="sdot sdot--run"></span></span>
+                </a>
+              </div>
+              </div></div>
+            </div>
+
+            <a class="row branch" data-row>
+              <span class="branch__name">fix/sidebar-shadow</span>
+              <span class="branch__meta">5h</span>
+            </a>
+            <a class="row branch" data-row>
+              <span class="branch__name">release/0.4</span>
+              <span class="branch__meta">3d</span>
+            </a>
+          </div>
+          </div></div>
+        </div>
+
+        <!-- aviator-api (collapsed, something inside needs input) -->
+        <div class="repo" data-repo>
+          <button class="row repo__head" data-row data-toggle>
+            <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+            <span class="repo__chip" style="--c:#0ea5e9">A</span>
+            <span class="repo__name">aviator-api</span>
+            <span class="ind ind--input"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg></span>
+            <span class="repo__count">6</span>
+          </button>
+          <div class="collapse"><div class="collapse__inner">
+          <div class="branches">
+            <a class="row branch branch--active" data-row>
+              <span class="branch__name">main</span>
+              <span class="ind"><span class="branch__dot"></span></span>
+            </a>
+            <a class="row branch" data-row>
+              <span class="branch__name">feat/rate-limiter</span>
+              <span class="branch__meta">1d</span>
+            </a>
+          </div>
+          </div></div>
+        </div>
+
+        <!-- web-dashboard (collapsed, error inside) -->
+        <div class="repo" data-repo>
+          <button class="row repo__head" data-row data-toggle>
+            <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+            <span class="repo__chip" style="--c:#f59e0b">W</span>
+            <span class="repo__name">web-dashboard</span>
+            <span class="ind ind--error"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg></span>
+            <span class="repo__count">3</span>
+          </button>
+          <div class="collapse"><div class="collapse__inner">
+          <div class="branches">
+            <a class="row branch branch--active" data-row>
+              <span class="branch__name">main</span>
+              <span class="ind"><span class="branch__dot"></span></span>
+            </a>
+          </div>
+          </div></div>
+        </div>
+      </nav>
+    </aside>
+
+    <section class="content"></section>
+  </main>
+
+<script>
+(() => {
+  const app = document.getElementById('app');
+  const nav = document.getElementById('nav');
+
+  // --- Sidebar collapse / expand ---
+  document.getElementById('collapseBtn').addEventListener('click', () => app.classList.add('collapsed'));
+  document.getElementById('expandBtn').addEventListener('click', () => app.classList.remove('collapsed'));
+
+  // --- Branch-group roll-up: highest-priority session state, else last activity ---
+  const MARK_INPUT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg>';
+  const MARK_ERROR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg>';
+
+  // priority: needs-input > error > working > running > idle
+  const PRIORITY = ['input', 'error', 'work', 'run', 'idle'];
+  function sessionState(s) {
+    if (s.querySelector('.ind--input')) return 'input';
+    if (s.querySelector('.ind--error')) return 'error';
+    if (s.querySelector('.sdot--work')) return 'work';
+    if (s.querySelector('.sdot--run')) return 'run';
+    return 'idle';
+  }
+  const ROLL = {
+    input: () => `<span class="ind ind--input">${MARK_INPUT}</span>`,
+    error: () => `<span class="ind ind--error">${MARK_ERROR}</span>`,
+    work:  () => `<span class="ind"><span class="sdot sdot--work"></span></span>`,
+    run:   () => `<span class="ind"><span class="sdot sdot--run"></span></span>`,
+  };
+  function rollUpGroups() {
+    nav.querySelectorAll('[data-group]').forEach((group) => {
+      const repo = group.closest('[data-repo]');
+      const sessions = [...repo.querySelectorAll('.sessions .session')];
+      const worst = PRIORITY.find((p) => sessions.some((s) => sessionState(s) === p)) || 'idle';
+      const slot = group.querySelector('.branch__roll');
+      slot.innerHTML = worst === 'idle'
+        ? `<span class="branch__meta">${group.dataset.activity}</span>`  // all idle → last activity
+        : ROLL[worst]();
+    });
+  }
+  rollUpGroups();
+
+  // --- Toggle expand/collapse (repos + the active branch's session group) ---
+  function toggle(repoEl) {
+    repoEl.classList.toggle('repo--open');
+  }
+
+  nav.addEventListener('click', (e) => {
+    const toggleEl = e.target.closest('[data-toggle]');
+    if (toggleEl) {
+      e.preventDefault();
+      toggle(toggleEl.closest('[data-repo]'));
+      select(toggleEl); // keep selection on the row you acted on
+      return;
+    }
+    const session = e.target.closest('[data-session]');
+    if (session) {
+      e.preventDefault();
+      session.classList.remove('session--unread'); // opening a session marks it read
+      select(session);
+    }
+  });
+
+  // --- Keyboard-first navigation ---
+  let selEl = null;
+
+  function visibleRows() {
+    // A row is navigable only if none of its ancestors are collapsed.
+    return [...nav.querySelectorAll('[data-row]')].filter((row) => {
+      let p = row.parentElement;
+      while (p && p !== nav) {
+        if (p.classList.contains('collapse') &&
+            !p.closest('[data-repo]').classList.contains('repo--open')) {
+          return false;
+        }
+        p = p.parentElement;
+      }
+      return true;
+    });
+  }
+
+  function select(el, scroll) {
+    if (selEl) selEl.classList.remove('sel');
+    selEl = el;
+    if (el) {
+      el.classList.add('sel');
+      if (scroll) el.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function move(dir) {
+    const rows = visibleRows();
+    if (!rows.length) return;
+    let i = selEl ? rows.indexOf(selEl) : -1;
+    i = Math.max(0, Math.min(rows.length - 1, i + dir));
+    select(rows[i], true);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const k = e.key;
+    // Cmd/Ctrl+B toggles the sidebar
+    if ((e.metaKey || e.ctrlKey) && (k === 'b' || k === 'B')) {
+      e.preventDefault();
+      app.classList.toggle('collapsed');
+      return;
+    }
+    if (['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Enter', ' ', 'j', 'k'].includes(k)) {
+      document.body.classList.add('kbd');
+    }
+    if (k === 'ArrowDown' || k === 'j') { e.preventDefault(); move(1); }
+    else if (k === 'ArrowUp' || k === 'k') { e.preventDefault(); move(-1); }
+    else if (k === 'ArrowRight') {
+      e.preventDefault();
+      const repo = selEl && selEl.matches('[data-toggle]') ? selEl.closest('[data-repo]') : null;
+      if (repo && !repo.classList.contains('repo--open')) toggle(repo);
+      else move(1);
+    }
+    else if (k === 'ArrowLeft') {
+      e.preventDefault();
+      const repo = selEl && selEl.matches('[data-toggle]') ? selEl.closest('[data-repo]') : null;
+      if (repo && repo.classList.contains('repo--open')) toggle(repo);
+      else move(-1);
+    }
+    else if (k === 'Enter' || k === ' ') {
+      if (!selEl) return;
+      e.preventDefault();
+      if (selEl.matches('[data-toggle]')) toggle(selEl.closest('[data-repo]'));
+      else if (selEl.matches('[data-session]')) selEl.classList.remove('session--unread');
+    }
+  });
+
+  // Mouse use dismisses the keyboard ring (keeps the resting state clean).
+  document.addEventListener('mousemove', () => document.body.classList.remove('kbd'), { passive: true });
+
+  // ===== Row actions: hover kebab → popover menu (create / delete) =====
+  const ICON_DOTS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm56-12a12,12,0,1,0,12,12A12,12,0,0,0,196,116ZM60,116a12,12,0,1,0,12,12A12,12,0,0,0,60,116Z"/></svg>';
+  const ICON_TRASH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"/></svg>';
+  const ICON_BRANCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H96a23.84,23.84,0,0,0-8,1.38V95a32,32,0,1,0-16,0v66a32,32,0,1,0,16,0V144a8,8,0,0,1,8-8h88a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,232,64ZM64,64A16,16,0,1,1,80,80,16,16,0,0,1,64,64ZM96,192a16,16,0,1,1-16-16A16,16,0,0,1,96,192ZM200,80a16,16,0,1,1,16-16A16,16,0,0,1,200,80Z"/></svg>';
+  const ICON_TERMINAL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
+  const ICON_CARET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
+
+  function rowLevel(row) {
+    if (row.matches('.repo__head')) return 'repo';     // a repo = a "workspace"
+    if (row.matches('.branch')) return 'branch';
+    if (row.matches('.session')) return 'session';      // leaf
+    return 'other';
+  }
+  // the DOM node a delete removes for a given row
+  function rowUnit(row) {
+    if (row.matches('.repo__head') || row.matches('.branch--group')) return row.closest('[data-repo]');
+    return row; // plain branch or session
+  }
+
+  function addKebab(row) {
+    const k = document.createElement('span');
+    k.className = 'kebab';
+    k.setAttribute('role', 'button');
+    k.setAttribute('aria-label', 'Actions');
+    k.innerHTML = ICON_DOTS;
+    k.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openMenu(row, k); });
+    row.appendChild(k);
+  }
+
+  let openMenuEl = null, openMenuRow = null;
+  function closeMenu() {
+    if (openMenuEl) { const m = openMenuEl; m.classList.remove('open'); setTimeout(() => m.remove(), 160); openMenuEl = null; }
+    if (openMenuRow) { openMenuRow.classList.remove('menu-open'); openMenuRow = null; }
+  }
+
+  function openMenu(row, anchor) {
+    if (openMenuRow === row) { closeMenu(); return; }
+    closeMenu();
+    const level = rowLevel(row);
+    const menu = document.createElement('div');
+    menu.className = 'menu';
+    const parts = [];
+    if (level === 'repo') parts.push(`<span class="menu__item" data-act="create-branch">${ICON_BRANCH}Create branch…</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-terminal">${ICON_TERMINAL}New terminal</span>`);
+    if (level !== 'session') parts.push('<div class="menu__sep"></div>');
+    parts.push(`<span class="menu__item menu__item--danger" data-act="delete">${ICON_TRASH}Delete</span>`);
+    menu.innerHTML = parts.join('');
+
+    menu.addEventListener('click', (e) => {
+      e.stopPropagation(); // in-menu clicks must not reach the outside-click handler
+      const item = e.target.closest('.menu__item');
+      const btn = e.target.closest('.menu__btn');
+      if (item) {
+        const act = item.dataset.act;
+        if (act === 'delete') return showConfirm(menu, row);
+        if (act === 'create-branch') { closeMenu(); return openBranchDialog(row); }
+        if (act === 'new-terminal') { closeMenu(); return addTerminal(row); }
+      } else if (btn) {
+        if (btn.dataset.c === 'cancel') return closeMenu();
+        if (btn.dataset.c === 'ok') { const unit = rowUnit(row); closeMenu(); removeUnit(unit); }
+      }
+    });
+
+    document.body.appendChild(menu);
+    positionMenu(menu, anchor);
+    requestAnimationFrame(() => menu.classList.add('open'));
+    openMenuEl = menu; openMenuRow = row; row.classList.add('menu-open');
+  }
+
+  function positionMenu(menu, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    let left = Math.max(8, r.right - mw);
+    let top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) { top = r.top - mh - 6; menu.style.setProperty('--mo', 'bottom right'); }
+    else menu.style.setProperty('--mo', 'top right');
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  }
+
+  function showConfirm(menu, row) {
+    const level = rowLevel(row);
+    const label = level === 'repo' ? 'Delete this workspace and all its branches?'
+      : level === 'branch' ? 'Delete this branch and its sessions?'
+      : 'Delete this session?';
+    menu.innerHTML = `<div class="menu__confirm">
+      <div class="menu__confirm-label">${label}</div>
+      <div class="menu__confirm-row">
+        <span class="menu__btn" data-c="cancel">Cancel</span>
+        <span class="menu__btn menu__btn--danger" data-c="ok">Delete</span>
+      </div></div>`;
+  }
+
+  function removeUnit(unit) {
+    if (!unit) return;
+    unit.classList.add('row-exit');
+    const done = () => { unit.remove(); rollUpGroups(); };
+    unit.addEventListener('animationend', done, { once: true });
+    setTimeout(done, 260);
+  }
+
+  function openBranchDialog(row) {
+    const repo = row.closest('[data-repo]');
+    const branchesEl = repo.querySelector('.branches');
+    const names = branchesEl ? [...branchesEl.querySelectorAll('.branch__name')].map((n) => n.textContent) : ['main'];
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="New branch">
+      <div class="dialog__title">New branch</div>
+      <div class="field"><label>Base branch</label>
+        <select id="dlgBase">${names.map((n) => `<option>${n}</option>`).join('')}</select></div>
+      <div class="field"><label>Branch name</label>
+        <input id="dlgName" placeholder="feat/…" autocomplete="off" spellcheck="false"></div>
+      <div class="dialog__actions">
+        <span class="dialog__btn" data-d="cancel">Cancel</span>
+        <span class="dialog__btn dialog__btn--primary is-disabled" data-d="create">Create</span>
+      </div></div>`;
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+
+    const input = backdrop.querySelector('#dlgName');
+    const createBtn = backdrop.querySelector('[data-d="create"]');
+    setTimeout(() => input.focus(), 60);
+    const validate = () => createBtn.classList.toggle('is-disabled', !input.value.trim());
+    input.addEventListener('input', validate);
+
+    const close = () => { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey); };
+    const submit = () => { const name = input.value.trim(); if (!name) return; addBranch(repo, name); close(); };
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) return close();
+      const b = e.target.closest('.dialog__btn'); if (!b) return;
+      if (b.dataset.d === 'cancel') close(); else submit();
+    });
+    function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter') { e.preventDefault(); submit(); } }
+    document.addEventListener('keydown', onKey);
+  }
+
+  function addBranch(repo, name) {
+    repo.classList.add('repo--open');
+    const branches = repo.querySelector('.branches');
+    const a = document.createElement('a');
+    a.className = 'row branch row-enter';
+    a.setAttribute('data-row', '');
+    a.innerHTML = `<span class="branch__name">${name}</span><span class="branch__meta">now</span>`;
+    addKebab(a);
+    branches.appendChild(a);
+    a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
+  }
+
+  // Promote a plain branch into a session-holding group if needed, return its .sessions
+  function ensureGroup(branchRow) {
+    if (branchRow.classList.contains('branch--group')) {
+      const repo = branchRow.closest('[data-repo]');
+      repo.classList.add('repo--open');
+      return repo.querySelector('.sessions');
+    }
+    const branches = branchRow.parentNode;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'repo repo--open';
+    wrapper.setAttribute('data-repo', '');
+    branches.insertBefore(wrapper, branchRow);
+
+    branchRow.classList.add('branch--group');
+    branchRow.setAttribute('data-toggle', '');
+    branchRow.setAttribute('data-group', '');
+    const metaEl = branchRow.querySelector('.branch__meta');
+    branchRow.dataset.activity = metaEl ? metaEl.textContent : 'now';
+    if (metaEl) metaEl.remove();
+
+    const chev = document.createElement('span'); chev.className = 'chev'; chev.innerHTML = ICON_CARET;
+    branchRow.insertBefore(chev, branchRow.firstChild);
+    const roll = document.createElement('span'); roll.className = 'branch__roll';
+    branchRow.insertBefore(roll, branchRow.querySelector('.kebab') || null);
+
+    const collapse = document.createElement('div'); collapse.className = 'collapse';
+    const inner = document.createElement('div'); inner.className = 'collapse__inner';
+    const sessions = document.createElement('div'); sessions.className = 'sessions';
+    inner.appendChild(sessions); collapse.appendChild(inner);
+    wrapper.appendChild(branchRow); wrapper.appendChild(collapse);
+    return sessions;
+  }
+
+  function addTerminal(branchRow) {
+    const sessions = ensureGroup(branchRow);
+    const a = document.createElement('a');
+    a.className = 'row session row-enter';
+    a.setAttribute('data-row', '');
+    a.setAttribute('data-session', '');
+    a.innerHTML = `<span class="session__bullet"></span>
+      <span class="session__icon">${ICON_TERMINAL}</span>
+      <span class="session__name">shell</span>
+      <span class="ind"><span class="sdot sdot--run"></span></span>`;
+    addKebab(a);
+    sessions.appendChild(a);
+    a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
+    rollUpGroups();
+  }
+
+  // ===== Add workspace (the + on the section header) =====
+  const CHIP_COLORS = ['#6366f1', '#0ea5e9', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
+  let workspaceSeq = nav.querySelectorAll(':scope > [data-repo]').length;
+
+  function addWorkspace(pathOrName) {
+    const name = (pathOrName.split('/').filter(Boolean).pop() || pathOrName).trim();
+    const color = CHIP_COLORS[workspaceSeq++ % CHIP_COLORS.length];
+    const repo = document.createElement('div');
+    repo.className = 'repo row-enter';
+    repo.setAttribute('data-repo', '');
+    repo.innerHTML = `<button class="row repo__head" data-row data-toggle>
+        <span class="chev">${ICON_CARET}</span>
+        <span class="repo__chip" style="--c:${color}">${name[0] ? name[0].toUpperCase() : '?'}</span>
+        <span class="repo__name">${name}</span>
+        <span class="repo__count">1</span>
+      </button>
+      <div class="collapse"><div class="collapse__inner">
+        <div class="branches">
+          <a class="row branch branch--active" data-row>
+            <span class="branch__name">main</span>
+            <span class="ind"><span class="branch__dot"></span></span>
+          </a>
+        </div>
+      </div></div>`;
+    nav.appendChild(repo);
+    repo.querySelectorAll('[data-row]').forEach(addKebab);
+    repo.addEventListener('animationend', () => repo.classList.remove('row-enter'), { once: true });
+  }
+
+  function openWorkspaceDialog() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="Add workspace">
+      <div class="dialog__title">Add workspace</div>
+      <div class="field"><label>Repository</label>
+        <input id="wsPath" placeholder="~/code/my-repo" autocomplete="off" spellcheck="false"></div>
+      <div class="dialog__actions">
+        <span class="dialog__btn" data-d="cancel">Cancel</span>
+        <span class="dialog__btn dialog__btn--primary is-disabled" data-d="create">Add</span>
+      </div></div>`;
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+    const input = backdrop.querySelector('#wsPath');
+    const addBtn = backdrop.querySelector('[data-d="create"]');
+    setTimeout(() => input.focus(), 60);
+    input.addEventListener('input', () => addBtn.classList.toggle('is-disabled', !input.value.trim()));
+    const close = () => { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey); };
+    const submit = () => { const v = input.value.trim(); if (!v) return; addWorkspace(v); close(); };
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) return close();
+      const b = e.target.closest('.dialog__btn'); if (!b) return;
+      if (b.dataset.d === 'cancel') close(); else submit();
+    });
+    function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter') { e.preventDefault(); submit(); } }
+    document.addEventListener('keydown', onKey);
+  }
+  document.getElementById('addWorkspace').addEventListener('click', openWorkspaceDialog);
+
+  // wire kebabs onto every existing row; dismiss menu on outside click / Escape
+  nav.querySelectorAll('[data-row]').forEach(addKebab);
+  document.addEventListener('click', (e) => {
+    if (openMenuEl && !openMenuEl.contains(e.target) && !e.target.closest('.kebab')) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+})();
+</script>
+</body>
+</html>

@@ -43,7 +43,7 @@ struct ContentPane: View {
     }
 }
 
-/// working.html `.pane`: head (title · crumb · spacer · chip) over the session body,
+/// working.html `.pane`: head (title · crumb · spacer) over the session body,
 /// entering with the 220ms fade + 4px rise.
 private struct SessionPane: View {
     @Environment(AppStore.self) private var store
@@ -106,67 +106,12 @@ private struct PaneHead: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 0)
-            StateChip(status: session.status)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 0.5)
         }
-    }
-}
-
-/// working.html `.chip`: state pill mirroring the sidebar liveness vocabulary.
-private struct StateChip: View {
-    let status: SessionStatus
-
-    private var label: String { status.paletteLabel }
-
-    private var ink: SwiftUI.Color {
-        switch status {
-        case .running:       return Color(hex: 0x1F8F43)
-        case .working:       return Color(hex: 0xA56A12)
-        case .needsInput:    return Color(hex: 0x0A63C4)
-        case .error:         return Color(hex: 0xCF2B22)
-        case .idle, .exited: return Theme.inkMuted
-        }
-    }
-    private var bg: SwiftUI.Color {
-        switch status {
-        case .running:       return Theme.run.opacity(0.12)
-        case .working:       return Theme.working.opacity(0.15)
-        case .needsInput:    return Theme.attention.opacity(0.12)
-        case .error:         return Theme.danger.opacity(0.12)
-        case .idle, .exited: return Color.black.opacity(0.045)
-        }
-    }
-    private var dot: SwiftUI.Color {
-        switch status {
-        case .running:       return Theme.run
-        case .working:       return Theme.working
-        case .needsInput:    return Theme.attention
-        case .error:         return Theme.danger
-        case .idle, .exited: return Theme.idle
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Group {
-                if case .working = status {
-                    Circle().fill(dot).sdotPulse()
-                } else {
-                    Circle().fill(dot)
-                }
-            }
-            .frame(width: 6, height: 6)
-            Text(label)
-                .font(.system(size: 10.5, weight: .medium))
-                .kerning(0.105)
-        }
-        .foregroundStyle(ink)
-        .padding(.leading, 7).padding(.trailing, 9).padding(.vertical, 3)
-        .background(Capsule().fill(bg))
     }
 }
 

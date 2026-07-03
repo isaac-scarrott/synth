@@ -47,10 +47,10 @@ extension Color {
 }
 
 extension SessionKind {
-    var symbol: String {
+    var iconPath: String {
         switch self {
-        case .terminal:   return "chevron.left.forwardslash.chevron.right"
-        case .claudeCode: return "sparkle"
+        case .terminal:   return Phosphor.terminal
+        case .claudeCode: return Phosphor.sparkle
         }
     }
     var tint: Color {

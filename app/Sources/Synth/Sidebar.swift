@@ -15,7 +15,6 @@ struct Sidebar: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 10)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.185), value: store.expanded)
             }
         }
         .frame(width: Theme.sidebarWidth, alignment: .leading)
@@ -28,16 +27,12 @@ struct Sidebar: View {
     private var topStrip: some View {
         HStack {
             Spacer()
-            Button { store.sidebarCollapsed = true } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.inkFaint)
+            IconButton(path: Phosphor.sidebar, help: "Collapse sidebar") {
+                store.sidebarCollapsed = true
             }
-            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, Theme.titlebarInset)
-        .frame(height: Theme.titlebarInset + 14)
+        .padding(.horizontal, 10)
+        .frame(height: 44, alignment: .center)
     }
 
     private var header: some View {
@@ -46,14 +41,11 @@ struct Sidebar: View {
                 .font(.system(size: 10.5, weight: .semibold)).kerning(0.6)
                 .foregroundStyle(Theme.inkFaint)
             Spacer()
-            Button { store.addingWorkspace = true } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.inkFaint)
+            IconButton(path: Phosphor.plus, size: 14, help: "Add workspace") {
+                store.addingWorkspace = true
             }
-            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16).padding(.bottom, 8)
+        .padding(.horizontal, 14).padding(.bottom, 8)
     }
 }
 
@@ -99,13 +91,13 @@ private struct WorkspaceRow: View {
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
+            .help("\(workspace.name) · \(workspace.branches.count) branches")
 
-            if isOpen {
+            Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(workspace.branches) { BranchRow(branch: $0, workspace: workspace) }
                 }
                 .padding(.leading, 18)
-                .transition(.opacity)
             }
         }
     }
@@ -134,8 +126,10 @@ private struct BranchRow: View {
     private var isOpen: Bool { store.expanded.contains(branch.id) }
     private var selected: Bool { store.keyboardActive && store.navCursor == branch.id }
     private var isActivePill: Bool {
-        guard let open = store.openSession else { return false }
-        return store.branch(of: open)?.id == branch.id
+        // The branch containing the open session, else the expanded live group —
+        // matches working.html showing the pill on the active group at rest.
+        if let open = store.openSession { return store.branch(of: open)?.id == branch.id }
+        return branch.isLive && isOpen
     }
 
     var body: some View {
@@ -150,6 +144,7 @@ private struct BranchRow: View {
                         if branch.isLive { Chevron(open: isOpen) } else { Spacer().frame(width: 12) }
                         Text(branch.name)
                             .font(.system(size: 12, design: .monospaced))
+                            .fontWeight(isActivePill ? .medium : .regular)
                             .foregroundStyle(isActivePill ? Theme.ink : Theme.inkMuted)
                             .lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 4)
@@ -169,8 +164,9 @@ private struct BranchRow: View {
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
+            .help(branch.isLive ? "\(branch.name) · \(branch.sessions.count) sessions" : branch.name)
 
-            if branch.isLive && isOpen {
+            Reveal(open: branch.isLive && isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(branch.sessions) { SessionRow(session: $0) }
                 }
@@ -178,7 +174,6 @@ private struct BranchRow: View {
                 .overlay(alignment: .leading) {
                     Rectangle().fill(Color.black.opacity(0.06)).frame(width: 1)
                 }
-                .transition(.opacity)
             }
         }
         .padding(.leading, 11)
@@ -211,8 +206,8 @@ private struct SessionRow: View {
             Button { store.open(session) } label: {
                 HStack(spacing: 8) {
                     Circle().fill(session.unread ? Theme.ink : .clear).frame(width: 4, height: 4)
-                    Image(systemName: session.kind.symbol)
-                        .font(.system(size: 12)).foregroundStyle(session.kind.tint).frame(width: 16)
+                    Phos(path: session.kind.iconPath, size: 15)
+                        .foregroundStyle(session.kind.tint).frame(width: 16)
                     Text(session.title)
                         .font(.system(size: 12.5))
                         .fontWeight(session.unread ? .medium : .regular)
@@ -235,6 +230,7 @@ private struct SessionRow: View {
         }
         .rowChrome(hovering: hovering, selected: selected)
         .onHover { hovering = $0 }
+        .help("\(session.title) · \(session.status.label)")
     }
 }
 
@@ -248,13 +244,13 @@ private struct KebabButton: View {
 
     var body: some View {
         Button { showMenu = true } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .semibold))
+            Phos(path: Phosphor.dots, size: 16)
                 .foregroundStyle(Theme.inkFaint)
-                .frame(width: 16, height: 16)
+                .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help("Actions")
         .popover(isPresented: $showMenu, arrowEdge: .trailing) {
             RowMenu(level: level, onCreate: onCreate, onDelete: onDelete, isPresented: $showMenu)
         }
@@ -265,8 +261,7 @@ private struct Chevron: View {
     let open: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        Image(systemName: "chevron.right")
-            .font(.system(size: 9, weight: .semibold))
+        Phos(path: Phosphor.caret, size: 12)
             .foregroundStyle(Theme.inkFaint)
             .rotationEffect(.degrees(open ? 90 : 0))
             .frame(width: 12)
@@ -288,10 +283,10 @@ private struct StatusIndicator: View {
     var body: some View {
         Group {
             switch status {
-            case .running: Dot(color: Theme.run)
+            case .running: Dot(color: Theme.run, halo: true)
             case .idle:    Dot(color: Theme.idle)
             case .exited:  Dot(color: Theme.idle).opacity(0.5)
-            case .working: Dot(color: Theme.working).pulse()
+            case .working: Dot(color: Theme.working, halo: true).pulse()
             case .needsInput: AttentionGlyph(state: .input).pulse()
             case .error:      AttentionGlyph(state: .error)
             }
@@ -308,7 +303,7 @@ private struct BranchRollup: View {
             case .input: AttentionGlyph(state: .input).pulse()
             case .error: AttentionGlyph(state: .error)
             case .work:  Dot(color: Theme.working).pulse()
-            case .run:   Dot(color: Theme.run)
+            case .run:   Dot(color: Theme.run, halo: true)
             case .idle, .none:
                 if !branch.lastActivity.isEmpty {
                     Text(branch.lastActivity)
@@ -323,17 +318,19 @@ private struct BranchRollup: View {
 private struct AttentionGlyph: View {
     let state: RollupState
     var body: some View {
-        Image(systemName: state == .input ? "questionmark" : "exclamationmark")
-            .font(.system(size: 11, weight: .bold))
+        Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
             .foregroundStyle(state == .input ? Theme.attention : Theme.danger)
     }
 }
 
 private struct Dot: View {
     let color: Color
+    var halo: Bool = false
     var body: some View {
         Circle().fill(color).frame(width: 6, height: 6)
-            .shadow(color: color.opacity(0.25), radius: 0, x: 0, y: 0)
+            .background(
+                halo ? Circle().fill(color.opacity(0.16)).frame(width: 11, height: 11) : nil
+            )
     }
 }
 
@@ -372,12 +369,68 @@ extension View {
     NSApp.keyWindow?.makeFirstResponder(nil)
 }
 
+/// The mock's `.icon-btn`: 26×26, radius 7, hover 5% bg, press scale 0.94.
+struct IconButton: View {
+    let path: String
+    var size: CGFloat = 15
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Phos(path: path, size: size)
+                .foregroundStyle(hovering ? Theme.inkMuted : Theme.inkFaint)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.black.opacity(0.05) : .clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(IconPressStyle())
+        .help(help)
+        .onHover { hovering = $0 }
+    }
+}
+
+struct IconPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.11), value: configuration.isPressed)
+    }
+}
+
 struct RowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(configuration.isPressed ? Theme.rowHover : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Height-accordion reveal — matches working.html's 0fr→1fr grid-rows transition
+/// (185ms) plus the inner opacity fade. Content is always present and measured;
+/// only its clipped height + opacity animate.
+struct Reveal<Content: View>: View {
+    let open: Bool
+    @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var natural: CGFloat = 0
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { natural = geo.size.height }
+                        .onChange(of: geo.size.height) { _, h in natural = h }
+                }
+            )
+            .frame(height: open ? natural : 0, alignment: .top)
+            .opacity(open ? 1 : 0)
+            .clipped()
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.185), value: open)
     }
 }

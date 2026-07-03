@@ -44,7 +44,7 @@ struct ContentPane: View {
                                 subtitle: "Claude Code sessions aren't wired up yet.")
                 }
             } else {
-                EmptyState()
+                Color.clear   // working.html's content pane is blank at rest
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -62,23 +62,6 @@ private struct Placeholder: View {
                 .foregroundStyle(Theme.claude)
             Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
             Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct EmptyState: View {
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "apple.terminal")
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.inkFaint)
-            Text("No session open")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.inkMuted)
-            Text("Press ⌘T to create a terminal")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

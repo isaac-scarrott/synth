@@ -20,7 +20,7 @@ struct RowMenu: View {
         }
     }
     private var createIcon: String {
-        level == .workspace ? "arrow.triangle.branch" : "chevron.left.forwardslash.chevron.right"
+        level == .workspace ? Phosphor.branch : Phosphor.terminal
     }
     private var confirmLabel: String {
         switch level {
@@ -54,11 +54,12 @@ struct RowMenu: View {
                     }
                     Divider().padding(.vertical, 2)
                 }
-                MenuItem(icon: "trash", title: "Delete", danger: true) { confirming = true }
+                MenuItem(icon: Phosphor.trash, title: "Delete", danger: true) { confirming = true }
             }
         }
         .padding(6)
         .frame(width: 232)
+        .background(Theme.panel)
     }
 }
 
@@ -72,7 +73,7 @@ private struct MenuItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 12)).frame(width: 16)
+                Phos(path: icon, size: 15).frame(width: 16)
                 Text(title).font(.system(size: 12.5))
                 Spacer()
             }

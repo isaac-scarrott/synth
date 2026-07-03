@@ -182,6 +182,10 @@ enum SessionEvent: Sendable {
                     Session(kind: .claudeCode, title: "Claude Code", status: .needsInput, unread: true),
                 ], lastActivity: "3m"),
                 Branch(name: "feat/rate-limiter", lastActivity: "1d"),
+                Branch(name: "fix/auth-refresh", lastActivity: "2d"),
+                Branch(name: "chore/bump-deps", lastActivity: "4d"),
+                Branch(name: "feat/webhooks", lastActivity: "1w"),
+                Branch(name: "release/1.2", lastActivity: "2w"),
             ],
             colorIndex: 1
         )
@@ -192,6 +196,8 @@ enum SessionEvent: Sendable {
                 Branch(name: "main", sessions: [
                     Session(kind: .claudeCode, title: "Claude Code", status: .error, unread: true),
                 ], lastActivity: "20m"),
+                Branch(name: "feat/charts", lastActivity: "6h"),
+                Branch(name: "fix/login", lastActivity: "1d"),
             ],
             colorIndex: 2
         )

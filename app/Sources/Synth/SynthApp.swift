@@ -71,20 +71,16 @@ struct RootView: View {
             .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: store.sidebarCollapsed)
 
             if store.sidebarCollapsed {
-                Button { store.sidebarCollapsed = false } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.inkMuted)
-                        .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.panel))
+                IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
+                    store.sidebarCollapsed = false
                 }
-                .buttonStyle(.plain)
-                .padding(.top, Theme.titlebarInset - 6)
-                .padding(.leading, 88)
+                .padding(.top, Theme.titlebarInset - 8)
+                .padding(.leading, 84)
                 .transition(.opacity)
             }
         }
         .ignoresSafeArea()
+        .preferredColorScheme(.light)   // working.html is a light design; keep native chrome light
         .sheet(item: $store.creatingBranchIn) { ws in
             CreateBranchSheet(workspace: ws).environment(store)
         }

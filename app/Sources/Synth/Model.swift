@@ -1,13 +1,11 @@
 import Foundation
 import Observation
 
-/// The kind of live thing running inside a branch. For the initial cut everything
-/// is a terminal; the other cases exist so the tree and glyphs already model them.
+/// The kind of live thing running inside a branch. working.html's focused subset
+/// has exactly these two (browser/simulator are big-picture only).
 enum SessionKind: String, Sendable {
     case terminal
     case claudeCode
-    case browser
-    case simulator
 }
 
 /// A session's derived status fact — the only session-level thing that reaches the

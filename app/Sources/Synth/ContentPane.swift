@@ -16,12 +16,14 @@ struct TerminalHost: NSViewRepresentable {
             terminal.topAnchor.constraint(equalTo: container.topAnchor),
             terminal.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+        // Focus the shell when a session is opened (this view is rebuilt per
+        // session via .id). Not on every update — that would steal focus from
+        // the sidebar and dialogs.
+        DispatchQueue.main.async { container.window?.makeFirstResponder(terminal) }
         return container
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { nsView.window?.makeFirstResponder(terminal) }
-    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 struct ContentPane: View {
@@ -29,18 +31,39 @@ struct ContentPane: View {
 
     var body: some View {
         Group {
-            if let session = store.openSession,
-               session.kind == .terminal,
-               let cwd = store.cwd(for: session) {
-                TerminalHost(terminal: TerminalManager.shared.view(for: session, cwd: cwd))
-                    .id(session.id)
-                    .padding(10)
+            if let session = store.openSession {
+                switch session.kind {
+                case .terminal:
+                    if let cwd = store.cwd(for: session) {
+                        TerminalHost(terminal: TerminalManager.shared.view(for: session, cwd: cwd))
+                            .id(session.id)
+                            .padding(10)
+                    }
+                case .claudeCode:
+                    Placeholder(title: session.title,
+                                subtitle: "Claude Code sessions aren't wired up yet.")
+                }
             } else {
                 EmptyState()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.panel)
+    }
+}
+
+private struct Placeholder: View {
+    let title: String
+    let subtitle: String
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "sparkle")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Theme.claude)
+            Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
+            Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

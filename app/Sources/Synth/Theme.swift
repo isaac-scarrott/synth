@@ -1,19 +1,23 @@
 import SwiftUI
 
-/// Colours and metrics lifted from the HTML design (big-picture-design.html).
+/// Colours and metrics lifted verbatim from working.html's CSS variables.
 enum Theme {
     static let canvas      = Color(hex: 0xEBEBED)   // grey backdrop
-    static let panel       = Color(hex: 0xFDFDFD)   // off-white sidebar/content
+    static let panel       = Color(hex: 0xFFFFFF)   // white content
+    static let sidebar     = Color(hex: 0xF4F4F5)   // grey sidebar
+    static let border      = Color.black.opacity(0.07)
+    static let borderStrong = Color.black.opacity(0.10)
     static let rowHover    = Color.black.opacity(0.035)
     static let rowSelected = Color.black.opacity(0.05)
     static let selRing     = Color(hex: 0x0A84FF).opacity(0.5)
 
-    static let ink         = Color(hex: 0x1D1D1F)   // tier-1 text
-    static let inkMuted    = Color(hex: 0x737378)   // tier-2 (branch) text
-    static let inkFaint    = Color(hex: 0xB8B8BD)   // tier-3 / meta
+    static let ink         = Color(hex: 0x1A1A1C)   // tier-1 text
+    static let inkMuted    = Color(hex: 0x86868B)   // tier-2 (branch) text
+    static let inkFaint    = Color(hex: 0xA8A8AD)   // tier-3 / meta
 
     static let run         = Color(hex: 0x34C759)   // green liveness
     static let idle        = Color(hex: 0xC7C7CC)
+    static let working     = Color(hex: 0xF5A623)   // amber (working)
     static let attention   = Color(hex: 0x0A84FF)   // needs-input (?)
     static let danger      = Color(hex: 0xFF3B30)   // error (!)
     static let claude      = Color(hex: 0xC96442)   // terracotta accent
@@ -25,6 +29,9 @@ enum Theme {
 
     static let sidebarWidth: CGFloat = 260
     static let titlebarInset: CGFloat = 28   // room for the traffic lights
+    static let radiusApp: CGFloat = 14
+    static let radiusPanel: CGFloat = 20
+    static let cardInset: CGFloat = 12
 }
 
 extension Color {
@@ -42,16 +49,14 @@ extension Color {
 extension SessionKind {
     var symbol: String {
         switch self {
-        case .terminal:   return "apple.terminal"
+        case .terminal:   return "chevron.left.forwardslash.chevron.right"
         case .claudeCode: return "sparkle"
-        case .browser:    return "globe"
-        case .simulator:  return "iphone"
         }
     }
     var tint: Color {
         switch self {
         case .claudeCode: return Theme.claude
-        default:          return Theme.inkMuted
+        case .terminal:   return Theme.inkMuted
         }
     }
 }

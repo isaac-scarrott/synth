@@ -32,6 +32,14 @@ enum SessionEvent: Sendable {
     var openSessionID: UUID?
     var sidebarCollapsed = false
 
+    /// True only while the keyboard is driving nav — gates the selection ring
+    /// (mousemove clears it), mirroring working.html's `.kbd` class.
+    var keyboardActive = false
+
+    /// Sheet drivers.
+    var creatingBranchIn: Workspace?
+    var addingWorkspace = false
+
     let bus = EventBus()
 
     init() {
@@ -106,9 +114,7 @@ enum SessionEvent: Sendable {
     @discardableResult
     func newTerminal(in branch: Branch? = nil) -> Session? {
         guard let br = branch ?? defaultBranch() else { return nil }
-        let count = br.sessions.filter { $0.kind == .terminal }.count
-        let title = count == 0 ? "shell" : "shell \(count + 1)"
-        let session = Session(kind: .terminal, title: title, status: .running)
+        let session = Session(kind: .terminal, title: "shell", status: .running)
         br.sessions.append(session)
         br.lastActivity = "now"
         if let ws = workspace(of: br) { expanded.insert(ws.id) }
@@ -125,9 +131,14 @@ enum SessionEvent: Sendable {
         if openSessionID == session.id { openSessionID = nil }
     }
 
-    func addWorkspace(url: URL) {
+    func addWorkspace(pathOrName: String) {
+        let trimmed = pathOrName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let expandedPath = (trimmed as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expandedPath)
+        let name = url.lastPathComponent.isEmpty ? trimmed : url.lastPathComponent
         let ws = Workspace(
-            name: url.lastPathComponent,
+            name: name,
             url: url,
             branches: [Branch(name: "main", lastActivity: "now")],
             colorIndex: workspaces.count % Theme.chipColors.count
@@ -136,21 +147,58 @@ enum SessionEvent: Sendable {
         expanded.insert(ws.id)
     }
 
-    // MARK: Seed
+    // MARK: Seed — the exact working.html tree
 
     private func seed() {
         let synth = URL(fileURLWithPath: "/Users/isaac/git/synth")
-        let ws = Workspace(
+        let palette = Branch(
+            name: "feat/command-palette",
+            sessions: [
+                Session(kind: .claudeCode, title: "Claude Code", status: .needsInput, unread: true),
+                Session(kind: .terminal, title: "dev server", status: .running),
+                Session(kind: .terminal, title: "api-tests", status: .error, unread: true),
+                Session(kind: .terminal, title: "shell", status: .idle),
+            ],
+            lastActivity: "2m"
+        )
+        let synthWS = Workspace(
             name: "synth",
             url: synth,
             branches: [
                 Branch(name: "main", lastActivity: "2h"),
-                Branch(name: "feat/command-palette", lastActivity: "12m"),
+                palette,
                 Branch(name: "fix/sidebar-shadow", lastActivity: "5h"),
+                Branch(name: "release/0.4", lastActivity: "3d"),
             ],
             colorIndex: 0
         )
-        workspaces = [ws]
-        expanded = [ws.id]
+
+        // Two collapsed workspaces whose nested state drives an attention bubble.
+        let aviator = Workspace(
+            name: "aviator-api",
+            url: URL(fileURLWithPath: "\(home)/code/aviator-api"),
+            branches: [
+                Branch(name: "main", sessions: [
+                    Session(kind: .claudeCode, title: "Claude Code", status: .needsInput, unread: true),
+                ], lastActivity: "3m"),
+                Branch(name: "feat/rate-limiter", lastActivity: "1d"),
+            ],
+            colorIndex: 1
+        )
+        let dashboard = Workspace(
+            name: "web-dashboard",
+            url: URL(fileURLWithPath: "\(home)/code/web-dashboard"),
+            branches: [
+                Branch(name: "main", sessions: [
+                    Session(kind: .claudeCode, title: "Claude Code", status: .error, unread: true),
+                ], lastActivity: "20m"),
+            ],
+            colorIndex: 2
+        )
+
+        workspaces = [synthWS, aviator, dashboard]
+        expanded = [synthWS.id, palette.id]
     }
+
+    private var home: String { NSHomeDirectory() }
 }

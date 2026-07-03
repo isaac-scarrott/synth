@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The hover-kebab popover. Level-scoped Create + Delete, where Delete swaps the
-/// menu to an inline two-step confirm (working.html's non-invasive pattern).
+/// The hover-kebab popover content. Level-scoped Create + Delete, where Delete
+/// swaps to an inline two-step confirm (working.html's non-invasive pattern).
+/// Styling matches the mock's `.menu` / `.menu__item` / `.menu__confirm` exactly.
 struct RowMenu: View {
     enum Level { case workspace, branch, session }
 
@@ -31,34 +32,35 @@ struct RowMenu: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             if confirming {
-                Text(confirmLabel)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
-                HStack(spacing: 6) {
-                    Spacer()
-                    Button("Cancel") { confirming = false }
-                        .buttonStyle(MenuButtonStyle(danger: false))
-                    Button("Delete") { onDelete(); isPresented = false }
-                        .buttonStyle(MenuButtonStyle(danger: true))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(confirmLabel)
+                        .font(.system(size: 11.5))
+                        .lineSpacing(2)
+                        .foregroundStyle(Color(hex: 0x6A6A70))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 2).padding(.top, 2).padding(.bottom, 9)
+                    HStack(spacing: 6) {
+                        ConfirmButton(title: "Cancel", danger: false) { confirming = false }
+                        ConfirmButton(title: "Delete", danger: true) { onDelete(); isPresented = false }
+                    }
                 }
-                .padding(.horizontal, 6).padding(.bottom, 4)
+                .padding(.horizontal, 8).padding(.top, 7).padding(.bottom, 8)
             } else {
                 if let title = createTitle, let onCreate {
                     MenuItem(icon: createIcon, title: title, danger: false) {
                         isPresented = false
                         onCreate()
                     }
-                    Divider().padding(.vertical, 2)
+                    Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
+                        .padding(.horizontal, 6).padding(.vertical, 4)
                 }
                 MenuItem(icon: Phosphor.trash, title: "Delete", danger: true) { confirming = true }
             }
         }
-        .padding(6)
-        .frame(width: 232)
+        .padding(5)
+        .frame(width: 178)
         .background(Theme.panel)
     }
 }
@@ -72,17 +74,17 @@ private struct MenuItem: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Phos(path: icon, size: 15).frame(width: 16)
-                Text(title).font(.system(size: 12.5))
-                Spacer()
+            HStack(spacing: 9) {
+                Phos(path: icon, size: 15)
+                    .foregroundStyle(danger ? Theme.danger : Color(hex: 0x7A7A80))
+                    .frame(width: 15)
+                Text(title)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(danger ? Theme.danger : Theme.repoName)
+                Spacer(minLength: 0)
             }
-            .foregroundStyle(danger ? Theme.danger : Theme.ink)
-            .padding(.horizontal, 8).padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(hovering ? (danger ? Theme.danger.opacity(0.1) : Theme.rowSelected) : .clear)
-            )
+            .padding(.horizontal, 9).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.black.opacity(0.06) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -90,17 +92,27 @@ private struct MenuItem: View {
     }
 }
 
-private struct MenuButtonStyle: ButtonStyle {
+private struct ConfirmButton: View {
+    let title: String
     let danger: Bool
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(danger ? .white : Theme.ink)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(danger ? Theme.danger : Theme.rowSelected)
-            )
-            .opacity(configuration.isPressed ? 0.8 : 1)
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(danger ? .white : Theme.repoName)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(danger ? Theme.danger : Color.white)
+                        .overlay(
+                            danger ? nil :
+                                RoundedRectangle(cornerRadius: 7).strokeBorder(Color.black.opacity(0.1), lineWidth: 0.5)
+                        )
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

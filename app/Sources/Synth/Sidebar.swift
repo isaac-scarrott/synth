@@ -61,10 +61,11 @@ private struct WorkspaceRow: View {
     @Environment(AppStore.self) private var store
     let workspace: Workspace
     @State private var hovering = false
-    @State private var showMenu = false
 
     private var isOpen: Bool { store.expanded.contains(workspace.id) }
     private var selected: Bool { store.keyboardActive && store.navCursor == workspace.id }
+    private var menuOpen: Bool { store.activeMenu?.rowID == workspace.id }
+    private var revealed: Bool { hovering || menuOpen }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -82,17 +83,17 @@ private struct WorkspaceRow: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.repoName)
                         Spacer(minLength: 4)
-                        trailing.opacity(hovering || showMenu ? 0 : 1)
+                        trailing.opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 6)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(RowButtonStyle())
 
-                KebabButton(showMenu: $showMenu, level: .workspace,
+                KebabButton(rowID: workspace.id, level: .workspace,
                             onCreate: { store.creatingBranchIn = workspace },
                             onDelete: { store.deleteWorkspace(workspace) })
-                    .opacity(hovering || showMenu ? 1 : 0)
+                    .opacity(revealed ? 1 : 0)
                     .padding(.trailing, 10)
             }
             .rowChrome(hovering: hovering, selected: selected)
@@ -128,10 +129,10 @@ private struct BranchRow: View {
     let branch: Branch
     let workspace: Workspace
     @State private var hovering = false
-    @State private var showMenu = false
 
     private var isOpen: Bool { store.expanded.contains(branch.id) }
     private var selected: Bool { store.keyboardActive && store.navCursor == branch.id }
+    private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
     private var isActivePill: Bool {
         // The branch containing the open session, else the expanded live group —
         // matches working.html showing the pill on the active group at rest.
@@ -155,7 +156,7 @@ private struct BranchRow: View {
                             .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
                             .lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 4)
-                        BranchRollup(branch: branch).opacity(hovering || showMenu ? 0 : 1)
+                        BranchRollup(branch: branch).opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(activePillBackground)
@@ -163,10 +164,10 @@ private struct BranchRow: View {
                 }
                 .buttonStyle(RowButtonStyle())
 
-                KebabButton(showMenu: $showMenu, level: .branch,
+                KebabButton(rowID: branch.id, level: .branch,
                             onCreate: { store.newTerminal(in: branch) },
                             onDelete: { store.deleteBranch(branch) })
-                    .opacity(hovering || showMenu ? 1 : 0)
+                    .opacity(revealed ? 1 : 0)
                     .padding(.trailing, 10)
             }
             .rowChrome(hovering: hovering, selected: selected)
@@ -205,10 +206,9 @@ private struct SessionRow: View {
     @Environment(AppStore.self) private var store
     let session: Session
     @State private var hovering = false
-    @State private var showMenu = false
 
-    private var isOpen: Bool { store.openSessionID == session.id }
     private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
+    private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -222,7 +222,7 @@ private struct SessionRow: View {
                         .foregroundStyle(session.unread ? Theme.sessionNameUnread : Theme.sessionName)
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    StatusIndicator(status: session.status).opacity(hovering || showMenu ? 0 : 1)
+                    StatusIndicator(status: session.status).opacity(revealed ? 0 : 1)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .contentShape(Rectangle())
@@ -235,10 +235,10 @@ private struct SessionRow: View {
                     .offset(x: -3)
             }
 
-            KebabButton(showMenu: $showMenu, level: .session,
+            KebabButton(rowID: session.id, level: .session,
                         onCreate: nil,
                         onDelete: { store.closeSession(session) })
-                .opacity(hovering || showMenu ? 1 : 0)
+                .opacity(revealed ? 1 : 0)
                 .padding(.trailing, 8)
         }
         .rowChrome(hovering: hovering, selected: selected)
@@ -251,23 +251,24 @@ private struct SessionRow: View {
 // MARK: - Shared bits
 
 private struct KebabButton: View {
-    @Binding var showMenu: Bool
+    @Environment(AppStore.self) private var store
+    let rowID: UUID
     let level: RowMenu.Level
     var onCreate: (() -> Void)?
     let onDelete: () -> Void
 
     var body: some View {
-        Button { showMenu = true } label: {
-            Phos(path: Phosphor.dots, size: 16)
+        Button {
+            store.activeMenu = ActiveMenu(rowID: rowID, level: level, onCreate: onCreate, onDelete: onDelete)
+        } label: {
+            Phos(path: Phosphor.dots, size: 15)
                 .foregroundStyle(Theme.inkFaint)
-                .frame(width: 18, height: 18)
+                .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Actions")
-        .popover(isPresented: $showMenu, arrowEdge: .trailing) {
-            RowMenu(level: level, onCreate: onCreate, onDelete: onDelete, isPresented: $showMenu)
-        }
+        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [rowID] anchor in [rowID: anchor] }
     }
 }
 
@@ -302,7 +303,7 @@ private struct StatusIndicator: View {
             case .running: Dot(color: Theme.run, halo: true)
             case .idle:    Dot(color: Theme.idle)
             case .exited:  Dot(color: Theme.idle).opacity(0.5)
-            case .working: Dot(color: Theme.working, halo: true).sdotPulse()
+            case .working: Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
             case .needsInput: AttentionGlyph(state: .input).attnBreathe()
             case .error:      AttentionGlyph(state: .error)
             }
@@ -318,7 +319,7 @@ private struct BranchRollup: View {
             switch branch.rollup {
             case .input: AttentionGlyph(state: .input).attnBreathe()
             case .error: AttentionGlyph(state: .error)
-            case .work:  Dot(color: Theme.working, halo: true).sdotPulse()
+            case .work:  Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
             case .run:   Dot(color: Theme.run, halo: true)
             case .idle, .none:
                 if !branch.lastActivity.isEmpty {
@@ -342,10 +343,11 @@ private struct AttentionGlyph: View {
 private struct Dot: View {
     let color: Color
     var halo: Bool = false
+    var haloOpacity: Double = 0.15
     var body: some View {
         Circle().fill(color).frame(width: 6, height: 6)
             .background(
-                halo ? Circle().fill(color.opacity(0.15)).frame(width: 11, height: 11) : nil
+                halo ? Circle().fill(color.opacity(haloOpacity)).frame(width: 11, height: 11) : nil
             )
     }
 }

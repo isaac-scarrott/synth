@@ -94,6 +94,16 @@ struct RootView: View {
                 }
             }
         }
+        .overlayPreferenceValue(MenuAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                if let m = store.activeMenu, let anchor = anchors[m.rowID] {
+                    MenuOverlay(menu: m, kebabRect: proxy[anchor], container: proxy.size) {
+                        store.activeMenu = nil
+                    }
+                    .environment(store)
+                }
+            }
+        }
         .onAppear(perform: installKeyMonitor)
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
@@ -116,6 +126,10 @@ struct RootView: View {
                     store.addingWorkspace = false
                     return nil
                 }
+                return event
+            }
+            if store.activeMenu != nil {
+                if event.keyCode == 53 { store.activeMenu = nil; return nil }   // Esc closes menu
                 return event
             }
             if let fr = event.window?.firstResponder {

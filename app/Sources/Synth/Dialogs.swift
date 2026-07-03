@@ -32,6 +32,7 @@ struct CreateBranchSheet: View {
 
     @State private var base: String = ""
     @State private var name: String = ""
+    @State private var submitted = false
     @FocusState private var nameFocused: Bool
 
     private var canCreate: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -62,8 +63,10 @@ struct CreateBranchSheet: View {
     }
 
     private func submit() {
+        guard !submitted else { return }
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        submitted = true
         store.newBranch(in: workspace, name: trimmed)
         onClose()
     }
@@ -75,6 +78,7 @@ struct AddWorkspaceSheet: View {
     let onClose: () -> Void
 
     @State private var path: String = ""
+    @State private var submitted = false
     @FocusState private var focused: Bool
 
     private var canAdd: Bool { !path.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -95,7 +99,8 @@ struct AddWorkspaceSheet: View {
     }
 
     private func submit() {
-        guard canAdd else { return }
+        guard !submitted, canAdd else { return }
+        submitted = true
         store.addWorkspace(pathOrName: path)
         onClose()
     }

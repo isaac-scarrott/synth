@@ -40,6 +40,9 @@ enum SessionEvent: Sendable {
     var creatingBranchIn: Workspace?
     var addingWorkspace = false
 
+    /// The row-action menu currently open (nil = none).
+    var activeMenu: ActiveMenu?
+
     let bus = EventBus()
 
     init() {

@@ -113,6 +113,13 @@ struct RootView: View {
                     .environment(store)
             }
         }
+        .overlay {
+            if store.shortcutsOpen {
+                ModalBackdrop(onDismiss: { store.shortcutsOpen = false }) {
+                    ShortcutsSheet()
+                }
+            }
+        }
         .onAppear(perform: installKeyMonitor)
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
@@ -138,6 +145,21 @@ struct RootView: View {
                 return event
             }
             let key = event.charactersIgnoringModifiers?.lowercased()
+
+            // ⌘/ (⌘?) toggles the shortcuts sheet from anywhere; while open it owns
+            // the keyboard — Esc closes, everything else is swallowed (working.html).
+            if (key == "/" || key == "?"), event.modifierFlags.contains(.command) {
+                if store.shortcutsOpen { store.shortcutsOpen = false }
+                else {
+                    if store.palette != nil { store.closePalette() }
+                    store.shortcutsOpen = true
+                }
+                return nil
+            }
+            if store.shortcutsOpen {
+                if event.keyCode == 53 { store.shortcutsOpen = false }
+                return nil
+            }
 
             // ⌘K toggles the palette from anywhere — even over the terminal.
             if key == "k", event.modifierFlags.contains(.command) {
@@ -166,6 +188,20 @@ struct RootView: View {
                     }
                     return event
                 }
+            }
+
+            // ⌘0 focuses the sidebar, ⌘1 the open session's content — even over the
+            // terminal, so focus can bounce between panes without the mouse.
+            if event.modifierFlags.contains(.command), key == "0" {
+                store.sidebarCollapsed = false
+                focusSidebar()
+                store.keyboardActive = true
+                store.navCursor = store.navCursor ?? store.openSessionID ?? store.visibleRows.first?.id
+                return nil
+            }
+            if event.modifierFlags.contains(.command), key == "1" {
+                focusContent(store)
+                return nil
             }
 
             if store.activeMenu != nil {

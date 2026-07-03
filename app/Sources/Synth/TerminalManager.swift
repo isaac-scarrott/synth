@@ -35,6 +35,10 @@ import SwiftTerm
         return view
     }
 
+    /// The live view for a session, if one has already been created — never spins up
+    /// a shell. Used to move first-responder focus onto an open terminal (⌘1).
+    func existingView(_ id: UUID) -> LocalProcessTerminalView? { views[id] }
+
     func terminate(_ id: UUID) {
         views[id] = nil
         supervisors[id] = nil

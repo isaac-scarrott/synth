@@ -110,20 +110,30 @@ struct PaletteFrame {
 
     // MARK: Store-derived helpers
 
-    /// Which workspace a context-sensitive action targets: the nav cursor's, else the first.
-    private var contextWorkspace: Workspace? {
-        if let id = store.navCursor {
-            for ws in store.workspaces {
-                if ws.id == id { return ws }
-                for br in ws.branches {
-                    if br.id == id || br.sessions.contains(where: { $0.id == id }) { return ws }
-                }
-            }
+    /// ⌘K acts on where you are: the open session, its branch, its workspace — the
+    /// open session leads, else the nav cursor's session (working.html contextActions).
+    private func contextActions() -> (path: String, items: [PaletteItem]) {
+        let session = store.openSession ?? store.navCursor.flatMap { store.session($0) }
+        let branch = session.flatMap { store.branch(of: $0) }
+        let workspace = branch.flatMap { store.workspace(of: $0) }
+        let path = [workspace?.name, branch?.name].compactMap { $0 }.joined(separator: " / ")
+        var items: [PaletteItem] = []
+        if let branch {
+            items.append(PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal",
+                                     ctx: branch.name,
+                                     enter: { self.runAndClose { self.store.newTerminal(in: branch) } }))
         }
-        if let open = store.openSession, let br = store.branch(of: open) {
-            return store.workspace(of: br)
+        if let workspace {
+            items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
+                                     ctx: workspace.name,
+                                     enter: { self.push(self.createWorktreeFrame(in: workspace)) }))
         }
-        return store.workspaces.first
+        if let open = store.openSession {
+            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(open.title)",
+                                     ctx: ctxOf(open), danger: true,
+                                     enter: { self.push(self.confirmDeleteSession(open)) }))
+        }
+        return (path, items)
     }
 
     private func wsOf(_ branch: Branch) -> String { store.workspace(of: branch)?.name ?? "" }
@@ -147,8 +157,12 @@ struct PaletteFrame {
 
     func rootFrame() -> PaletteFrame {
         PaletteFrame(placeholder: "Search or jump to anything…") { [self] q in
+            let here = contextActions()
             if q.isEmpty {
-                return [
+                var items = here.items.map { item -> PaletteItem in
+                    var it = item; it.group = here.path.isEmpty ? "Actions" : here.path; return it
+                }
+                items += [
                     PaletteItem(icon: .phosphor(Phosphor.folder), label: "Workspaces", sec: "nav",
                                 enter: { self.push(self.workspacesFrame()) }),
                     PaletteItem(icon: .phosphor(Phosphor.branch), label: "Branches", sec: "nav",
@@ -158,16 +172,24 @@ struct PaletteFrame {
                     PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", sec: "act",
                                 kbd: ["⌘", "B"],
                                 enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
+                    PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts", sec: "act",
+                                kbd: ["⌘", "?"],
+                                enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
                 ]
+                return items
             }
-            var items = [
+            var items = here.items.map { item -> PaletteItem in
+                var it = item; it.group = "Actions"; return it
+            }
+            items += [
                 PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace…", group: "Actions",
                             enter: { self.push(self.createWorkspaceFrame()) }),
-                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", group: "Actions",
-                            enter: { self.push(self.createWorktreeFrame(in: self.contextWorkspace)) }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
                             kbd: ["⌘", "B"],
                             enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
+                PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts", group: "Actions",
+                            kbd: ["⌘", "?"],
+                            enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
             ]
             for ws in store.workspaces {
                 items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, group: "Workspaces",
@@ -589,20 +611,7 @@ private struct PaletteItemRow: View {
                     .foregroundStyle(item.metaColor ?? Theme.inkMuted)
             }
             if let kbd = item.kbd {
-                HStack(spacing: 3) {
-                    ForEach(kbd, id: \.self) { key in
-                        Text(key)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Theme.inkMuted)
-                            .frame(minWidth: 17)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.black.opacity(0.05))
-                                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5))
-                            )
-                    }
-                }
+                KeyCaps(keys: kbd)
             }
         }
         .padding(8)

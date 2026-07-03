@@ -61,6 +61,9 @@ struct BranchCandidate: Identifiable {
     /// The ⌘K palette (nil = closed).
     var palette: PaletteModel?
 
+    /// The ⌘? keyboard-shortcuts sheet (working.html's shortcutsEl).
+    var shortcutsOpen = false
+
     let bus = EventBus()
 
     init() {

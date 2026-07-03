@@ -87,11 +87,6 @@ struct RootView: View {
                     CreateBranchSheet(workspace: ws, onClose: { store.creatingBranchIn = nil })
                         .environment(store)
                 }
-            } else if store.addingWorkspace {
-                ModalBackdrop(onDismiss: { store.addingWorkspace = false }) {
-                    AddWorkspaceSheet(onClose: { store.addingWorkspace = false })
-                        .environment(store)
-                }
             }
         }
         .overlayPreferenceValue(MenuAnchorKey.self) { anchors in
@@ -120,10 +115,9 @@ struct RootView: View {
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Modal Esc must win even while its text field is first responder.
-            if store.creatingBranchIn != nil || store.addingWorkspace {
+            if store.creatingBranchIn != nil {
                 if event.keyCode == 53 {   // Esc closes the modal
                     store.creatingBranchIn = nil
-                    store.addingWorkspace = false
                     return nil
                 }
                 return event

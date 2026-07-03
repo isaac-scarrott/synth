@@ -72,40 +72,6 @@ struct CreateBranchSheet: View {
     }
 }
 
-/// Add-workspace modal: a single Repository field.
-struct AddWorkspaceSheet: View {
-    @Environment(AppStore.self) private var store
-    let onClose: () -> Void
-
-    @State private var path: String = ""
-    @State private var submitted = false
-    @FocusState private var focused: Bool
-
-    private var canAdd: Bool { !path.trimmingCharacters(in: .whitespaces).isEmpty }
-
-    var body: some View {
-        DialogFrame(title: "Add workspace") {
-            Field(label: "Repository") {
-                TextField("~/code/my-repo", text: $path)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focused)
-                    .onSubmit(submit)
-            }
-        } actions: {
-            Button("Cancel", action: onClose).keyboardShortcut(.cancelAction)
-            Button("Add", action: submit).keyboardShortcut(.defaultAction).disabled(!canAdd)
-        }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { focused = true } }
-    }
-
-    private func submit() {
-        guard !submitted, canAdd else { return }
-        submitted = true
-        store.addWorkspace(pathOrName: path)
-        onClose()
-    }
-}
-
 // MARK: - Shared chrome
 
 private struct DialogFrame<Content: View, Actions: View>: View {

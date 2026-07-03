@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -36,9 +37,8 @@ enum SessionEvent: Sendable {
     /// (mousemove clears it), mirroring working.html's `.kbd` class.
     var keyboardActive = false
 
-    /// Sheet drivers.
+    /// Sheet driver.
     var creatingBranchIn: Workspace?
-    var addingWorkspace = false
 
     /// The row-action menu currently open (nil = none).
     var activeMenu: ActiveMenu?
@@ -134,12 +134,20 @@ enum SessionEvent: Sendable {
         if openSessionID == session.id { openSessionID = nil }
     }
 
-    func addWorkspace(pathOrName: String) {
-        let trimmed = pathOrName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        let expandedPath = (trimmed as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: expandedPath)
-        let name = url.lastPathComponent.isEmpty ? trimmed : url.lastPathComponent
+    /// Folder picker → workspace. Panel runs modally, so state mutation happens after dismiss.
+    func promptAddWorkspace() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add"
+        panel.message = "Choose a repository folder"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        addWorkspace(url: url)
+    }
+
+    func addWorkspace(url: URL) {
+        let name = url.lastPathComponent
         // Real branches, discovered from git. Empty if not a repo.
         let branches = GitService.branches(at: url).map {
             Branch(name: $0.name, lastActivity: GitService.compactAge($0.lastCommitUnix))

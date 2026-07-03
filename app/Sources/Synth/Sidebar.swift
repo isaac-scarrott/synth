@@ -52,7 +52,7 @@ struct Sidebar: View {
                 .foregroundStyle(Theme.navLabel)
             Spacer()
             IconButton(path: Phosphor.plus, size: 14, help: "Add workspace") {
-                store.addingWorkspace = true
+                store.promptAddWorkspace()
             }
         }
         .padding(.horizontal, 14).padding(.bottom, 8)

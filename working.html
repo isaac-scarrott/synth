@@ -215,30 +215,6 @@
   .pane__crumb b { color: var(--text-muted); font-weight: 500; }
   .pane__spacer { flex: 1; }
 
-  /* state chip — mirrors the sidebar liveness vocabulary */
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    flex-shrink: 0;
-    font-size: 10.5px;
-    font-weight: 550;
-    letter-spacing: 0.01em;
-    padding: 3px 9px 3px 7px;
-    border-radius: 20px;
-    color: var(--text-muted);
-    background: rgba(0,0,0,0.045);
-  }
-  .chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--idle); }
-  .chip--run { color: #1f8f43; background: rgba(52,199,89,0.12); }
-  .chip--run .chip__dot { background: var(--run); }
-  .chip--work { color: #a56a12; background: rgba(245,166,35,0.15); }
-  .chip--work .chip__dot { background: var(--work); animation: sdot-pulse 1.5s var(--ease-in-out) infinite; }
-  .chip--input { color: #0a63c4; background: rgba(10,132,255,0.12); }
-  .chip--input .chip__dot { background: var(--input); }
-  .chip--error { color: #cf2b22; background: rgba(255,59,48,0.12); }
-  .chip--error .chip__dot { background: var(--error); }
-
   .pane__body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 
   /* ----- Terminal surface ----- */
@@ -255,6 +231,10 @@
     line-height: 1.55;
     color: #d4d4d8;
     -webkit-font-smoothing: auto;
+  }
+  .term:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18), 0 0 0 2.5px rgba(10,132,255,0.22);
   }
   .term__ln { white-space: pre-wrap; word-break: break-word; min-height: 1.55em; }
   .term__ln.dim { color: #80808a; }
@@ -504,7 +484,6 @@
     height: 6px;
     border-radius: 50%;
     background: var(--run);
-    box-shadow: 0 0 0 2.5px rgba(52, 199, 89, 0.16);
   }
 
   .branch--active {
@@ -1013,12 +992,35 @@
     color: #a1a1a6;
   }
 
+  /* ---- Keyboard shortcuts sheet (⌘?) ---- */
+  .dialog--shortcuts { width: 420px; }
+  .sc-group { margin-bottom: 14px; }
+  .sc-group:last-child { margin-bottom: 2px; }
+  .sc-group__label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #a1a1a6;
+    padding: 0 2px 5px;
+  }
+  .sc-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 2px;
+  }
+  .sc-row__label { font-size: 12.5px; color: #46464c; }
+  .sc-row__keys { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+  .sc-row__or { font-size: 10.5px; color: #b6b6bb; padding: 0 3px; }
+
   /* Respect reduced motion: keep opacity/color, drop movement + looping pulses */
   @media (prefers-reduced-motion: reduce) {
     * { transition-duration: 0.01ms !important; }
     .row:active, .icon-btn:active, .kebab:active { transform: translateY(0); }
     .kebab:active { transform: translateY(-50%); }
-    .sdot--work, .ind--input, .chip--work .chip__dot, .work-dot, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .sdot--work, .ind--input, .work-dot, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
     .cmdk__panel { transform: none !important; }
     .row-enter, .row-exit { animation: none; }
@@ -1057,10 +1059,16 @@
           </button>
           <div class="collapse"><div class="collapse__inner">
           <div class="branches">
-            <a class="row branch" data-row>
-              <span class="branch__name">main</span>
-              <span class="branch__meta">2h</span>
-            </a>
+            <div class="repo" data-repo>
+              <a class="row branch branch--group" data-row data-toggle data-group data-activity="2h">
+                <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+                <span class="branch__name">main</span>
+                <span class="branch__roll"></span>
+              </a>
+              <div class="collapse"><div class="collapse__inner">
+              <div class="sessions"></div>
+              </div></div>
+            </div>
 
             <div class="repo repo--open" data-repo>
               <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="2m">
@@ -1102,14 +1110,26 @@
               </div></div>
             </div>
 
-            <a class="row branch" data-row>
-              <span class="branch__name">fix/sidebar-shadow</span>
-              <span class="branch__meta">5h</span>
-            </a>
-            <a class="row branch" data-row>
-              <span class="branch__name">release/0.4</span>
-              <span class="branch__meta">3d</span>
-            </a>
+            <div class="repo" data-repo>
+              <a class="row branch branch--group" data-row data-toggle data-group data-activity="5h">
+                <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+                <span class="branch__name">fix/sidebar-shadow</span>
+                <span class="branch__roll"></span>
+              </a>
+              <div class="collapse"><div class="collapse__inner">
+              <div class="sessions"></div>
+              </div></div>
+            </div>
+            <div class="repo" data-repo>
+              <a class="row branch branch--group" data-row data-toggle data-group data-activity="3d">
+                <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+                <span class="branch__name">release/0.4</span>
+                <span class="branch__roll"></span>
+              </a>
+              <div class="collapse"><div class="collapse__inner">
+              <div class="sessions"></div>
+              </div></div>
+            </div>
           </div>
           </div></div>
         </div>
@@ -1125,14 +1145,26 @@
           </button>
           <div class="collapse"><div class="collapse__inner">
           <div class="branches">
-            <a class="row branch branch--active" data-row>
-              <span class="branch__name">main</span>
-              <span class="ind"><span class="branch__dot"></span></span>
-            </a>
-            <a class="row branch" data-row>
-              <span class="branch__name">feat/rate-limiter</span>
-              <span class="branch__meta">1d</span>
-            </a>
+            <div class="repo" data-repo>
+              <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="now">
+                <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+                <span class="branch__name">main</span>
+                <span class="branch__roll"></span>
+              </a>
+              <div class="collapse"><div class="collapse__inner">
+              <div class="sessions"></div>
+              </div></div>
+            </div>
+            <div class="repo" data-repo>
+              <a class="row branch branch--group" data-row data-toggle data-group data-activity="1d">
+                <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+                <span class="branch__name">feat/rate-limiter</span>
+                <span class="branch__roll"></span>
+              </a>
+              <div class="collapse"><div class="collapse__inner">
+              <div class="sessions"></div>
+              </div></div>
+            </div>
           </div>
           </div></div>
         </div>
@@ -1148,10 +1180,16 @@
           </button>
           <div class="collapse"><div class="collapse__inner">
           <div class="branches">
-            <a class="row branch branch--active" data-row>
-              <span class="branch__name">main</span>
-              <span class="ind"><span class="branch__dot"></span></span>
-            </a>
+            <div class="repo" data-repo>
+              <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="now">
+                <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+                <span class="branch__name">main</span>
+                <span class="branch__roll"></span>
+              </a>
+              <div class="collapse"><div class="collapse__inner">
+              <div class="sessions"></div>
+              </div></div>
+            </div>
           </div>
           </div></div>
         </div>
@@ -1196,9 +1234,9 @@
       const sessions = [...repo.querySelectorAll('.sessions .session')];
       const worst = PRIORITY.find((p) => sessions.some((s) => sessionState(s) === p)) || 'idle';
       const slot = group.querySelector('.branch__roll');
-      slot.innerHTML = worst === 'idle'
-        ? `<span class="branch__meta">${group.dataset.activity}</span>`  // all idle → last activity
-        : ROLL[worst]();
+      slot.innerHTML = worst !== 'idle' ? ROLL[worst]()
+        : group.classList.contains('branch--active') ? `<span class="ind"><span class="branch__dot"></span></span>`  // checked-out branch
+        : `<span class="branch__meta">${group.dataset.activity}</span>`;  // all idle → last activity
     });
   }
   rollUpGroups();
@@ -1259,15 +1297,11 @@
     renderOpen();
   }
 
-  // A session moves to a new derived status: swap its sidebar indicator, re-roll, refresh chip.
+  // A session moves to a new derived status: swap its sidebar indicator, re-roll.
   function setSessionState(el, state) {
     const ind = el.querySelector(':scope > .ind');
     if (ind) ind.outerHTML = IND_HTML[state];
     rollUpGroups();
-    if (openEl === el) {
-      const chip = content.querySelector('.chip');
-      if (chip) { chip.className = `chip chip--${state}`; chip.innerHTML = `<span class="chip__dot"></span>${STATE_LABEL[state]}`; }
-    }
   }
 
   // ---- mock content, generated purely from (type, name, state) ----
@@ -1311,7 +1345,7 @@
   function renderTerminal(name, state, ws, br) {
     const body = termLines(name, state, ws, br)
       .map(([c, t, cur]) => `<div class="term__ln ${c}">${esc(t)}${cur ? '<span class="term__cursor"></span>' : ''}</div>`).join('');
-    return `<div class="term" data-term>${body}</div>`;
+    return `<div class="term" data-term tabindex="-1">${body}</div>`;
   }
   function renderBrowser(name) {
     const url = name.includes('://') ? name : 'http://' + name;
@@ -1387,7 +1421,6 @@
         <div class="pane__title">${iconHTML}<span>${esc(name)}</span></div>
         <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(br)}</div>
         <div class="pane__spacer"></div>
-        <div class="chip chip--${state}"><span class="chip__dot"></span>${STATE_LABEL[state]}</div>
       </div>
       <div class="pane__body">${body}</div>
     </div>`;
@@ -1464,6 +1497,7 @@
       e.preventDefault();
       select(session);
       openSession(session); // becomes the open session: renders content, marks read, derives the pill
+      focusContent();       // focus follows the open session into the content pane
     }
   });
 
@@ -1497,13 +1531,39 @@
   function move(dir) {
     const rows = visibleRows();
     if (!rows.length) return;
-    let i = selEl ? rows.indexOf(selEl) : -1;
+    // no explicit selection yet → step relative to the open session, not the top of the tree
+    const from = selEl || (openEl && rows.includes(openEl) ? openEl : null);
+    let i = from ? rows.indexOf(from) : -1;
     i = Math.max(0, Math.min(rows.length - 1, i + dir));
     select(rows[i], true);
   }
 
+  // ⌘0 / ⌘1 hand the keyboard explicitly to one side of the split
+  function focusSidebar() {
+    app.classList.remove('collapsed');
+    if (document.activeElement && document.activeElement.closest('.content')) document.activeElement.blur();
+    const rows = visibleRows();
+    const target = selEl && rows.includes(selEl) ? selEl
+      : openEl && rows.includes(openEl) ? openEl : rows[0];
+    document.body.classList.add('kbd');
+    select(target, true);
+  }
+  function focusContent() {
+    document.body.classList.remove('kbd');
+    const el = content.querySelector('.chat__input') || content.querySelector('[data-term]');
+    if (el) el.focus();
+  }
+
   document.addEventListener('keydown', (e) => {
     const k = e.key;
+    // ⌘/ (⌘?) toggles the shortcuts sheet from anywhere; while open it owns the keyboard
+    if ((e.metaKey || e.ctrlKey) && (k === '/' || k === '?')) {
+      e.preventDefault();
+      if (shortcutsEl) closeShortcuts();
+      else { if (paletteOpen) closePalette(); openShortcuts(); }
+      return;
+    }
+    if (shortcutsEl) { if (k === 'Escape') closeShortcuts(); return; }
     // Cmd/Ctrl+K opens the palette; Cmd+K also closes it. Ctrl+K while open = nav-up (handled in-palette).
     if ((e.metaKey || e.ctrlKey) && (k === 'k' || k === 'K')) {
       if (!paletteOpen) { e.preventDefault(); openPalette(); return; }
@@ -1517,6 +1577,11 @@
       app.classList.toggle('collapsed');
       return;
     }
+    // Cmd/Ctrl+0 focuses the sidebar; Cmd/Ctrl+1 focuses the open session's surface
+    if ((e.metaKey || e.ctrlKey) && k === '0') { e.preventDefault(); focusSidebar(); return; }
+    if ((e.metaKey || e.ctrlKey) && k === '1') { e.preventDefault(); focusContent(); return; }
+    // while focus lives in the content pane (composer, terminal), nav keys stay there
+    if (e.target instanceof Element && e.target.closest('.content')) return;
     if (['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Enter', ' ', 'j', 'k'].includes(k)) {
       document.body.classList.add('kbd');
     }
@@ -1538,7 +1603,7 @@
       if (!selEl) return;
       e.preventDefault();
       if (selEl.matches('[data-toggle]')) toggle(selEl.closest('[data-repo]'));
-      else if (selEl.matches('[data-session]')) openSession(selEl);
+      else if (selEl.matches('[data-session]')) { openSession(selEl); focusContent(); }
     }
   });
 
@@ -1737,16 +1802,29 @@
     document.addEventListener('keydown', onKey);
   }
 
+  // Every branch is a group shell (chevron + empty sessions) so indentation is uniform.
+  function branchGroupShell(name, activity) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'repo';
+    wrapper.setAttribute('data-repo', '');
+    wrapper.innerHTML = `<a class="row branch branch--group" data-row data-toggle data-group data-activity="${esc(activity)}">
+        <span class="chev">${ICON_CARET}</span>
+        <span class="branch__name">${esc(name)}</span>
+        <span class="branch__roll"></span>
+      </a>
+      <div class="collapse"><div class="collapse__inner"><div class="sessions"></div></div></div>`;
+    return wrapper;
+  }
+
   function addBranch(repo, name) {
     repo.classList.add('repo--open');
     const branches = repo.querySelector('.branches');
-    const a = document.createElement('a');
-    a.className = 'row branch row-enter';
-    a.setAttribute('data-row', '');
-    a.innerHTML = `<span class="branch__name">${name}</span><span class="branch__meta">now</span>`;
-    addKebab(a);
-    branches.appendChild(a);
-    a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
+    const wrapper = branchGroupShell(name, 'now');
+    wrapper.classList.add('row-enter');
+    branches.appendChild(wrapper);
+    wrapper.querySelectorAll('[data-row]').forEach(addKebab);
+    rollUpGroups();
+    wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
   }
 
   // Promote a plain branch into a session-holding group if needed, return its .sessions
@@ -1821,14 +1899,19 @@
       </button>
       <div class="collapse"><div class="collapse__inner">
         <div class="branches">${rows.map((c) => `
-          <a class="row branch" data-row>
-            <span class="branch__name">${esc(c.name)}</span>
-            <span class="branch__meta">${esc(c.age)}</span>
-          </a>`).join('')}
+          <div class="repo" data-repo>
+            <a class="row branch branch--group" data-row data-toggle data-group data-activity="${esc(c.age)}">
+              <span class="chev">${ICON_CARET}</span>
+              <span class="branch__name">${esc(c.name)}</span>
+              <span class="branch__roll"></span>
+            </a>
+            <div class="collapse"><div class="collapse__inner"><div class="sessions"></div></div></div>
+          </div>`).join('')}
         </div>
       </div></div>`;
     nav.appendChild(repo);
     repo.querySelectorAll('[data-row]').forEach(addKebab);
+    rollUpGroups();
     repo.addEventListener('animationend', () => repo.classList.remove('row-enter'), { once: true });
   }
 
@@ -1936,6 +2019,55 @@
   });
   document.addEventListener('keydown', (e) => { if (paletteOpen) return; if (e.key === 'Escape') closeMenu(); });
 
+  // ===== Keyboard shortcuts sheet (⌘?) — every binding above, one glanceable modal =====
+  const ICON_KEYS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200Z"/><path d="M192,112H64a8,8,0,0,1,0-16H192a8,8,0,0,1,0,16Z"/><path d="M160,160H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z"/></svg>';
+  // [keys, label, altKeys?]
+  const SHORTCUTS = [
+    ['General', [
+      [['⌘', 'K'], 'Command palette'],
+      [['⌘', 'B'], 'Toggle sidebar'],
+      [['⌘', '0'], 'Focus sidebar'],
+      [['⌘', '1'], 'Focus open session'],
+      [['⌘', '?'], 'Keyboard shortcuts'],
+    ]],
+    ['Sidebar', [
+      [['↑', '↓'], 'Move selection', ['J', 'K']],
+      [['→', '←'], 'Expand · collapse'],
+      [['↵'], 'Open session / toggle', ['Space']],
+    ]],
+    ['Command palette', [
+      [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
+      [['↵'], 'Open · drill in'],
+      [['⌫'], 'Back (empty search)'],
+      [['esc'], 'Close'],
+    ]],
+  ];
+  let shortcutsEl = null;
+  function openShortcuts() {
+    if (shortcutsEl) return;
+    closeMenu();
+    const keys = (ks) => ks.map((x) => '<kbd class="cmdk__key">' + x + '</kbd>').join('');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    backdrop.innerHTML = '<div class="dialog dialog--shortcuts" role="dialog" aria-label="Keyboard shortcuts">'
+      + '<div class="dialog__title">Keyboard shortcuts</div>'
+      + SHORTCUTS.map(([group, rows]) => '<div class="sc-group"><div class="sc-group__label">' + group + '</div>'
+        + rows.map(([ks, label, alt]) => '<div class="sc-row"><span class="sc-row__label">' + label + '</span>'
+          + '<span class="sc-row__keys">' + keys(ks) + (alt ? '<span class="sc-row__or">or</span>' + keys(alt) : '') + '</span></div>').join('')
+        + '</div>').join('')
+      + '</div>';
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeShortcuts(); });
+    shortcutsEl = backdrop;
+  }
+  function closeShortcuts() {
+    if (!shortcutsEl) return;
+    const b = shortcutsEl; shortcutsEl = null;
+    b.classList.remove('open');
+    setTimeout(() => b.remove(), 200);
+  }
+
   // ===== Command palette (⌘K) — Linear-style fuzzy command + jump menu =====
   const ICON_SEARCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/></svg>';
   const ICON_SIDEBAR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>';
@@ -1963,15 +2095,33 @@
     }
     return score - first * 0.5;
   }
+  // items match on their label first; the context path is a weaker fallback,
+  // so "synth dev" finds the dev server without outranking exact label hits
+  function itemScore(q, it) {
+    const s = fuzzy(q, it.label);
+    if (!it.ctx) return s;
+    return Math.max(s, fuzzy(q, it.ctx + ' ' + it.label) - 2);
+  }
 
-  // Which workspace/branch a context-sensitive action targets: the nav cursor's, else the first.
+  // Which workspace/branch a context-sensitive action targets: the open session's,
+  // else the nav cursor's, else the first workspace.
+  function contextRow() {
+    if (openEl && document.contains(openEl)) return openEl;
+    if (selEl && document.contains(selEl)) return selEl;
+    return null;
+  }
   function contextWorkspaceHead() {
-    let repo = selEl ? selEl.closest('[data-repo]') : null;
-    while (repo) { const outer = repo.parentElement && repo.parentElement.closest('[data-repo]'); if (!outer) break; repo = outer; }
-    repo = repo || nav.querySelector(':scope > [data-repo]');
+    const row = contextRow();
+    const repo = (row && outerRepoOf(row)) || nav.querySelector(':scope > [data-repo]');
     return repo ? repo.querySelector(':scope > .repo__head') : null;
   }
   function contextBranch() {
+    const row = contextRow();
+    if (row) {
+      if (row.matches('.branch')) return row;
+      const g = branchGroupOf(row);
+      if (g) return g;
+    }
     const head = contextWorkspaceHead();
     const scope = head ? head.closest('[data-repo]') : nav;
     return scope.querySelector('.branch--active') || scope.querySelector('.branch')
@@ -2018,20 +2168,37 @@
 
   // ---- Frames: each returns { crumb?, placeholder, mode?, build(query) -> items[] } ----
   // An item: { icon, label, kbd?, danger?, disabled?, g?(group), enter() }. enter() drills or runs.
+  // ⌘K opens context-aware: the actions that act on where you are — the open session,
+  // its branch, its workspace — lead the root frame, labelled with their target.
+  function contextActions() {
+    const open = openEl && document.contains(openEl) ? openEl : null;
+    const br = contextBranch(), head = contextWorkspaceHead();
+    const path = [head && wsName(head), br && brName(br)].filter(Boolean).join(' / ');
+    const items = [];
+    if (br) items.push({ icon: ICON_TERMINAL, label: 'New terminal', ctx: brName(br), enter: () => runAndClose(() => addTerminal(br)) });
+    if (head) items.push({ icon: ICON_BRANCH, label: 'New worktree…', ctx: wsName(head), enter: () => pushFrame(createFrame('worktree', head)) });
+    if (open) items.push({ icon: ICON_TRASH, label: 'Delete ' + seName(open), ctx: seCtx(open), danger: true, enter: () => pushFrame(confirmFrame(open)) });
+    return { path, items };
+  }
+
   function rootFrame() {
     return {
       placeholder: 'Search or jump to anything…',
       build(q) {
+        const here = contextActions();
         if (!q) return [
+          ...here.items.map((it) => ({ ...it, g: here.path || 'Actions' })),
           { sec: 'nav', icon: ICON_FOLDER,  label: 'Workspaces', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
           { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },
           { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
+          { sec: 'act', icon: ICON_KEYS,    label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
         ];
         const items = [
+          ...here.items.map((it) => ({ ...it, g: 'Actions' })),
           { g: 'Actions', icon: ICON_PLUS,     label: 'New workspace…', enter: () => pushFrame(createFrame('workspace')) },
-          { g: 'Actions', icon: ICON_BRANCH,   label: 'New worktree…',  enter: () => pushFrame(createFrame('worktree', contextWorkspaceHead())) },
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
+          { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
         ];
         allRows('.repo__head').forEach((h) => items.push({ g: 'Workspaces', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         allRows('.branch').forEach((b) => items.push({ g: 'Branches', icon: ICON_BRANCH, label: brName(b), ctx: wsOf(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -2165,10 +2332,10 @@
       const sectioned = items.some((it) => it.g || it.sec);
       if (sectioned) {
         const order = [], byK = new Map();
-        items.forEach((it) => { const s = fuzzy(q, it.label); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) { byK.set(k, []); order.push(k); } byK.get(k).push({ it, s }); });
+        items.forEach((it) => { const s = itemScore(q, it); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) { byK.set(k, []); order.push(k); } byK.get(k).push({ it, s }); });
         items = order.flatMap((k) => byK.get(k).sort((a, b) => b.s - a.s).map((x) => x.it));
       } else {
-        items = items.map((it) => ({ it, s: fuzzy(q, it.label) })).filter((x) => x.s > -Infinity).sort((a, b) => b.s - a.s).map((x) => x.it);
+        items = items.map((it) => ({ it, s: itemScore(q, it) })).filter((x) => x.s > -Infinity).sort((a, b) => b.s - a.s).map((x) => x.it);
       }
     }
     paintList(items);
@@ -2178,7 +2345,7 @@
     palItems = items;
     let html = '', lastG = null, lastSec = null;
     items.forEach((it, i) => {
-      if (it.g && it.g !== lastG) { html += '<div class="cmdk__group">' + it.g + '</div>'; lastG = it.g; lastSec = it.sec || null; }
+      if (it.g && it.g !== lastG) { html += '<div class="cmdk__group">' + esc(it.g) + '</div>'; lastG = it.g; lastSec = it.sec || null; }
       else if (it.sec && it.sec !== lastSec) { if (i > 0) html += '<div class="cmdk__div"></div>'; lastSec = it.sec; }
       const hint = it.kbd ? '<span class="cmdk__hint">' + it.kbd.map((x) => '<kbd class="cmdk__key">' + x + '</kbd>').join('') + '</span>' : '';
       const ctx = it.ctx ? '<span class="cmdk__ctx">' + esc(it.ctx) + '</span>' : '';

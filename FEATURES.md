@@ -342,3 +342,58 @@ and is UI-only — sessions end, but branches and folders stay on disk (real del
 sessions keep "Delete" because their process genuinely ends. Verified end-to-end in the real app:
 picker pre-check + "will create"/"has worktree" tags, `git worktree list` shows the created folders,
 `pwd` in a new terminal prints the worktree path, Remove leaves the folder and git state intact.
+
+## 2026-07-03 — ⌘? keyboard-shortcuts sheet
+
+Every binding is now discoverable in one place: **⌘/ (⌘?)** — or the "Keyboard shortcuts" action in
+⌘K — opens a modal sheet grouped General / Sidebar / Command palette, rendered from one SHORTCUTS
+table using the palette's key-cap styling (alternate bindings shown as "or", e.g. ↑/↓ or J/K). It
+toggles from anywhere (closing the palette if open), and while open it owns the keyboard: Esc, ⌘?,
+or a backdrop click dismisses it.
+
+## 2026-07-03 — ⌘K opens context-aware to where you are
+
+The ⌘K root now leads with the actions that act on your current location — the open session, its
+branch, its workspace — before the generic nav. Grouped under the context path (e.g. `synth /
+feat/command-palette`): **New terminal** in that branch, **New worktree…** in that workspace, and
+**Delete <session>** for the open session, each labelled with its target. Context is resolved from
+the open session first, falling back to the keyboard cursor, then the first workspace; branch/
+workspace come from DOM ancestry so they can't drift. The same three actions fold into the Actions
+group when you type, so "delete cla" ↵ ↵ removes the open session in three keystrokes. Decision: the
+palette should answer "act on what I'm looking at" before "jump anywhere". Landed in both files
+(invariant preserved); verified in-browser: context group with correct target labels, filtered
+delete → inline confirm → session removed + roll-up recomputed + pane emptied, zero console errors.
+
+## 2026-07-03 — Explicit focus split: ⌘0 sidebar / ⌘1 session, and click follows focus
+
+The window is two focusable halves and the keyboard now moves between them deliberately. **⌘0**
+focuses the sidebar (expanding it if collapsed, showing the keyboard ring on the current selection,
+falling back to the open session then the first row); **⌘1** focuses the open session's surface (the
+chat composer, or the terminal — now `tabindex="-1"` with a soft focus ring so arrows scroll the
+scrollback natively). While focus lives in the content pane, sidebar nav keys (↑/↓/J/K/Enter/Space)
+stay there instead of being hijacked — which also fixes typing j/k/space into the composer.
+**Activating a session from the sidebar** (click or Enter/Space) now hands focus straight to the
+content pane, so you can start typing immediately; palette jumps and initial load keep their own
+focus. Sidebar arrow-nav also steps relative to the open session when there's no explicit selection.
+Landed in both files; verified in-browser (⌘0 ring, ⌘1 composer/terminal focus, click→type, guard).
+
+## 2026-07-03 — Every branch is a group shell (uniform chevron alignment)
+
+Branch rows no longer split into two shapes (plain rows vs. session-holding groups) that indented
+differently. Every branch now renders as a group shell — chevron plus a (possibly empty) `.sessions`
+collapse — so all branch names align regardless of whether they currently hold sessions; an empty
+one just expands to nothing. `rollUpGroups` shows the checked-out dot for an idle active branch
+(preserving the active-branch cue), and `addBranch`/`addWorkspace` create group shells directly so
+dynamically-added branches match. Decision: uniform structure over conditional indentation — the
+chevron is the affordance, presence of sessions is orthogonal. Landed in both files; verified
+in-browser: all branches aligned with chevrons, empty group expands cleanly, New terminal on an
+empty branch nests a session and lights its roll-up.
+
+## 2026-07-03 — Sidebar dot/chip cleanup
+
+Two small resting-state simplifications. The checked-out **branch dot is now a solid mark** (dropped
+its lighter outer ring) — the halo read as noise at that size; session liveness dots keep their ring,
+which still earns it. And the content pane's **state chip is removed** from the pane head: liveness is
+already carried by the sidebar indicator and the session's own surface, so the header chip
+double-encoded. `STATE_LABEL`/`sessionState` stay (the palette still surfaces status). Landed in both
+files; verified in-browser.

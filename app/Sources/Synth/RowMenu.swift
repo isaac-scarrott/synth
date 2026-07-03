@@ -7,23 +7,13 @@ struct RowMenu: View {
     enum Level { case workspace, branch, session }
 
     let level: Level
-    var onCreate: (() -> Void)?
+    var creates: [MenuCreate]
     var onDelete: () -> Void
     @Binding var isPresented: Bool
 
     @State private var confirming = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var createTitle: String? {
-        switch level {
-        case .workspace: return "Create worktree…"
-        case .branch:    return "New terminal"
-        case .session:   return nil
-        }
-    }
-    private var createIcon: String {
-        level == .workspace ? Phosphor.branch : Phosphor.terminal
-    }
     /// Workspaces and branches are *removed* — sidebar-only; worktrees and branches
     /// stay on disk. Sessions are deleted for real (the process ends).
     private var deleteTitle: String {
@@ -71,11 +61,13 @@ struct RowMenu: View {
     }
 
     @ViewBuilder private var actionsPane: some View {
-        if let title = createTitle, let onCreate {
-            MenuItem(icon: createIcon, title: title, danger: false) {
+        ForEach(creates) { create in
+            MenuItem(icon: create.icon, title: create.title, danger: false) {
                 isPresented = false
-                onCreate()
+                create.run()
             }
+        }
+        if !creates.isEmpty {
             Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
                 .padding(.horizontal, 6).padding(.vertical, 4)
         }

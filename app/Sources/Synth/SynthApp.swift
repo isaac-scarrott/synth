@@ -191,6 +191,15 @@ struct RootView: View {
                 }
             }
 
+            // ⌘, toggles Settings (the Mac Preferences convention); Esc leaves it.
+            // Handled before the text/terminal passthrough so it wins over a focused editor.
+            if key == ",", event.modifierFlags.contains(.command) {
+                store.toggleSettings(); return nil
+            }
+            if event.keyCode == 53, store.settingsOpen {   // Esc leaves settings
+                store.exitSettings(); return nil
+            }
+
             // ⌘0 focuses the sidebar, ⌘1 the open session's content — even over the
             // terminal, so focus can bounce between panes without the mouse.
             if event.modifierFlags.contains(.command), key == "0" {

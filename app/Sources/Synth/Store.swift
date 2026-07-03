@@ -37,6 +37,14 @@ struct BranchCandidate: Identifiable {
     let existingWorktree: URL?   // nil → a worktree will be created on Add
 }
 
+/// Which settings scope the full-screen settings page is showing. A workspace is
+/// referenced by id so a removed workspace leaves a dangling scope that falls back
+/// to Global rather than crashing (working.html's dangling-scope guard).
+enum SettingsScope: Equatable {
+    case global
+    case workspace(UUID)
+}
+
 /// The durable, observed source of truth. Holds only the low-frequency facts the
 /// UI reads: the tree, per-session status, expansion, and the two selection fields
 /// (nav cursor + open session) from docs/adr/0005.
@@ -63,6 +71,28 @@ struct BranchCandidate: Identifiable {
 
     /// The ⌘? keyboard-shortcuts sheet (working.html's shortcutsEl).
     var shortcutsOpen = false
+
+    /// Full-screen Settings page: a mode layered over the same shell (working.html's
+    /// `.app.settings`). `settingsScope` picks which scope the right pane renders.
+    var settingsOpen = false
+    var settingsScope: SettingsScope = .global
+
+    /// The worktree setup scripts the effective config is assembled from — a design
+    /// surface only. These live in memory (like working.html's mock store) so edits
+    /// survive scope hops; no setup-script runner is wired up yet (see FEATURES).
+    var globalScript = """
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Runs in every new worktree, across all workspaces.
+    [ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env
+    """
+    var wsScripts: [UUID: String] = [:]
+    let wsScriptPlaceholder = """
+    #!/usr/bin/env bash
+
+    # No extra setup for this workspace yet.
+    """
 
     let bus = EventBus()
 
@@ -123,10 +153,36 @@ struct BranchCandidate: Identifiable {
     }
 
     func open(_ session: Session) {
+        settingsOpen = false   // jumping to a session leaves settings mode
         openSessionID = session.id
         navCursor = session.id
         session.unread = false
     }
+
+    // MARK: Settings
+
+    /// True when the settings page should render Global — either the scope is Global
+    /// or it points at a workspace that no longer exists (dangling → Global).
+    var settingsIsGlobal: Bool { settingsWorkspace == nil }
+
+    /// The workspace the settings scope points at, or nil for Global / a dangling scope.
+    var settingsWorkspace: Workspace? {
+        guard case let .workspace(id) = settingsScope else { return nil }
+        return workspaces.first { $0.id == id }
+    }
+
+    func enterSettings(_ scope: SettingsScope = .global) {
+        activeMenu = nil
+        closePalette()
+        shortcutsOpen = false
+        sidebarCollapsed = false
+        settingsScope = scope
+        settingsOpen = true
+    }
+
+    func exitSettings() { settingsOpen = false }
+
+    func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
 
     /// Palette jump: reveal the session (expand collapsed ancestors), open it, mark
     /// read — working.html's jumpTo, selection ring shown as if keyboard-driven.
@@ -154,8 +210,21 @@ struct BranchCandidate: Identifiable {
 
     @discardableResult
     func newTerminal(in branch: Branch? = nil) -> Session? {
+        addSession(kind: .terminal, title: "shell", status: .running, in: branch)
+    }
+
+    /// Claude Code is just a terminal that opened and ran `claude`, so it spawns
+    /// identically — only the kind, title and starting state differ (working.html
+    /// SESSION_KINDS/addSession). It opens straight into the content pane.
+    @discardableResult
+    func newClaude(in branch: Branch? = nil) -> Session? {
+        addSession(kind: .claudeCode, title: "Claude Code", status: .working, in: branch)
+    }
+
+    @discardableResult
+    private func addSession(kind: SessionKind, title: String, status: SessionStatus, in branch: Branch?) -> Session? {
         guard let br = branch ?? defaultBranch() else { return nil }
-        let session = Session(kind: .terminal, title: "shell", status: .running)
+        let session = Session(kind: kind, title: title, status: status)
         br.sessions.append(session)
         br.lastActivity = "now"
         if let ws = workspace(of: br) { expanded.insert(ws.id) }

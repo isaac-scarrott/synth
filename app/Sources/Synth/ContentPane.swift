@@ -31,7 +31,9 @@ struct ContentPane: View {
 
     var body: some View {
         Group {
-            if let session = store.openSession {
+            if store.settingsOpen {
+                SettingsPane()
+            } else if let session = store.openSession {
                 SessionPane(session: session)
                     .id(session.id)
             } else {

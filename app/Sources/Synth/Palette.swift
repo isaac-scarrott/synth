@@ -143,6 +143,9 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal",
                                      ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newTerminal(in: branch) } }))
+            items.append(PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code",
+                                     ctx: branch.name,
+                                     enter: { self.runAndClose { self.store.newClaude(in: branch) } }))
         }
         if let workspace {
             items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
@@ -193,6 +196,9 @@ struct PaletteFrame {
                     PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", sec: "act",
                                 kbd: ["⌘", "B"],
                                 enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
+                    PaletteItem(icon: .phosphor(Phosphor.gear), label: "Settings", sec: "act",
+                                kbd: ["⌘", ","],
+                                enter: { self.runAndClose { self.store.enterSettings() } }),
                     PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts", sec: "act",
                                 kbd: ["⌘", "?"],
                                 enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
@@ -208,6 +214,9 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
                             kbd: ["⌘", "B"],
                             enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
+                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Settings", group: "Actions",
+                            kbd: ["⌘", ","],
+                            enter: { self.runAndClose { self.store.enterSettings() } }),
                 PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts", group: "Actions",
                             kbd: ["⌘", "?"],
                             enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
@@ -285,6 +294,8 @@ struct PaletteFrame {
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", sec: "act",
                             enter: { self.push(self.createWorktreeFrame(in: ws)) }),
+                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Workspace settings…", sec: "act",
+                            enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(ws.name)", sec: "act",
                             danger: true, enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
             ]
@@ -301,6 +312,8 @@ struct PaletteFrame {
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
                             enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
+                PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code", sec: "act",
+                            enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(branch.name)", sec: "act",
                             danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
             ]

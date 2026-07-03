@@ -1,10 +1,18 @@
 import SwiftUI
 
+/// One creation action offered by a row's menu (a branch offers two: terminal + Claude Code).
+struct MenuCreate: Identifiable {
+    let id = UUID()
+    let icon: String
+    let title: String
+    let run: () -> Void
+}
+
 /// A request to show the row-action menu, carrying the target's actions.
 struct ActiveMenu {
     let rowID: UUID
     let level: RowMenu.Level
-    let onCreate: (() -> Void)?
+    let creates: [MenuCreate]
     let onDelete: () -> Void
 }
 
@@ -40,7 +48,7 @@ struct MenuOverlay: View {
                 .ignoresSafeArea()
                 .onTapGesture(perform: onClose)
 
-            RowMenu(level: menu.level, onCreate: menu.onCreate, onDelete: menu.onDelete,
+            RowMenu(level: menu.level, creates: menu.creates, onDelete: menu.onDelete,
                     isPresented: Binding(get: { true }, set: { if !$0 { onClose() } }))
                 .clipShape(RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))

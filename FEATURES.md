@@ -426,3 +426,27 @@ and verified by driving the built app:
 Not ported: working.html's checked-out-branch dot (its rollup shows a dot for an idle
 *checked-out* branch) — the app has no HEAD/checked-out concept yet, so that stays
 deferred rather than inventing one here.
+
+## 2026-07-03 — Native app: settings page + Claude Code session type + indicator/kebab polish ported
+
+The working.html batch (`d69cfda`) is now in the native SwiftUI app, verified by driving the built
+app (settings global + workspace scopes, ⌘K New Claude Code + Settings, branch kebab menu, the
+read/unread × liveness matrix):
+
+- **Settings page** (`SettingsPane.swift`, `Store.swift`, `Sidebar.swift`) — a gear at the sidebar
+  foot (⌘, / Esc, plus ⌘K) opens a full-screen mode sharing the shell: the sidebar swaps its tree
+  for a scope list (Back / Global / per-workspace), the content pane renders the scope. The one
+  setting so far is the worktree setup script; a workspace scope models the effective config as
+  **run BOTH, global first** — the read-only global script ("runs first") + "Edit in Global" jump
+  above the editable workspace script ("runs next"), with a "Global → <ws> · Both run · global
+  first" strip. Dangling scope (removed workspace) falls back to Global; edits persist across scope
+  hops. Scripts are an in-memory design surface — **no setup-script runner is wired up yet.**
+- **Claude Code session type** (`Store.swift`, `Menu.swift`/`RowMenu.swift`, `Palette.swift`) —
+  offered on every creation surface (branch kebab, ⌘K root context, ⌘K branch frame) via a shared
+  `addSession`; reuses the sparkle/terracotta `ai` visual. (Superseded below: the kind is now
+  detected, not chosen — see the hooks entry.)
+- **Only the focused session is bold** — unread surfaces via colour + the gutter bullet, not weight.
+- **Idle indicator cleanup** — the grey idle/exited dot is dropped on read rows, kept on unread as
+  a "go look" cue; running/working dots unchanged.
+- **Right-edge indicator alignment** across nesting (branch right-pad 10→8) and **kebab polish**
+  (rounded 7px menu-open box, 13px glyph, even 2px inset).

@@ -8,29 +8,40 @@ struct Sidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topStrip
-            header
-            if store.workspaces.isEmpty {
-                EmptySidebarHint()
+            // Settings mode swaps the tree + foot for a scope list; the shell is otherwise
+            // untouched (working.html `.app.settings`).
+            if store.settingsOpen {
+                SettingsNav()
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 1) {
-                            ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 16)
-                    }
-                    .onChange(of: store.navCursor) { _, id in
-                        guard let id else { return }
-                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
-                    }
-                }
+                header
+                tree.frame(maxHeight: .infinity, alignment: .top)
+                SidebarFoot()
             }
         }
         .frame(width: Theme.sidebarWidth, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .onContinuousHover { phase in
             if case .active = phase { store.keyboardActive = false }
+        }
+    }
+
+    @ViewBuilder private var tree: some View {
+        if store.workspaces.isEmpty {
+            EmptySidebarHint()
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 16)
+                }
+                .onChange(of: store.navCursor) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+                }
+            }
         }
     }
 
@@ -76,6 +87,126 @@ private struct EmptySidebarHint: View {
     }
 }
 
+// MARK: - Sidebar foot (Settings entry) + settings-mode scope list
+
+/// working.html `.sidebar__foot` — pinned to the bottom of the left panel.
+private struct SidebarFoot: View {
+    @Environment(AppStore.self) private var store
+    var body: some View {
+        FootButton(icon: Phosphor.gear, title: "Settings") { store.enterSettings() }
+            .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 10)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
+    }
+}
+
+private struct FootButton: View {
+    let icon: String
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Phos(path: icon, size: 16)
+                    .foregroundStyle(hovering ? Color(hex: 0x56565C) : Theme.navLabel).frame(width: 16)
+                Text(title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(hovering ? Theme.repoName : Theme.branchName)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(hovering ? 0.045 : 0)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowButtonStyle())
+        .onHover { hovering = $0 }
+    }
+}
+
+/// working.html `.settings-nav` — the left panel in settings mode: a Back button back
+/// to the tree, then Global + one scope row per workspace.
+private struct SettingsNav: View {
+    @Environment(AppStore.self) private var store
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 1) {
+                BackButton { store.exitSettings() }
+                    .padding(.bottom, 6)
+                ScopeRow(label: "Global", on: store.settingsIsGlobal) { store.settingsScope = .global }
+                Text("Workspaces")
+                    .font(.system(size: 10.5, weight: .semibold)).kerning(0.5).textCase(.uppercase)
+                    .foregroundStyle(Theme.navLabel)
+                    .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(store.workspaces) { ws in
+                    ScopeRow(label: ws.name, workspace: ws, on: store.settingsWorkspace?.id == ws.id) {
+                        store.settingsScope = .workspace(ws.id)
+                    }
+                }
+            }
+            .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 16)
+        }
+        .frame(maxHeight: .infinity)
+    }
+}
+
+private struct BackButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Phos(path: Phosphor.back, size: 17).foregroundStyle(Theme.inkMuted).frame(width: 17)
+                Text("Workspaces").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.repoName)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(hovering ? 0.05 : 0)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowButtonStyle())
+        .onHover { hovering = $0 }
+    }
+}
+
+/// One row in the scope list — Global (globe) or a workspace (chip). The selected scope
+/// gets the blue "you are here" tint (working.html `.scope--on`).
+private struct ScopeRow: View {
+    let label: String
+    var workspace: Workspace? = nil
+    let on: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var background: Color {
+        if on { return Color(hex: 0x0A84FF).opacity(hovering ? 0.09 : 0.06) }
+        return hovering ? Color.black.opacity(0.035) : .clear
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Group {
+                    if let workspace { WsChip(workspace: workspace, size: 19) }
+                    else { Phos(path: Phosphor.globe, size: 16).foregroundStyle(Theme.inkMuted) }
+                }
+                .frame(width: 20, height: 20)
+                Text(label)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(on ? Theme.repoName : Color(hex: 0x58585D))
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(background))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowButtonStyle())
+        .onHover { hovering = $0 }
+    }
+}
+
 // MARK: - Workspace (tier 1)
 
 private struct WorkspaceRow: View {
@@ -112,10 +243,11 @@ private struct WorkspaceRow: View {
                 .buttonStyle(RowButtonStyle())
 
                 KebabButton(rowID: workspace.id, level: .workspace,
-                            onCreate: { store.creatingWorktreeIn = workspace },
+                            creates: [MenuCreate(icon: Phosphor.branch, title: "Create worktree…",
+                                                 run: { store.creatingWorktreeIn = workspace })],
                             onDelete: { store.removeWorkspace(workspace) })
                     .opacity(revealed ? 1 : 0)
-                    .padding(.trailing, 10)
+                    .padding(.trailing, 2)
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
@@ -181,17 +313,24 @@ private struct BranchRow: View {
                         Spacer(minLength: 4)
                         BranchRollup(branch: branch).opacity(revealed ? 0 : 1)
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    // Right pad 10→8 so the branch indicator shares one vertical axis
+                    // with the workspace count and session dots (working.html .branch).
+                    .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
                     .background(activePillBackground)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(RowButtonStyle())
 
                 KebabButton(rowID: branch.id, level: .branch,
-                            onCreate: { store.newTerminal(in: branch) },
+                            creates: [
+                                MenuCreate(icon: Phosphor.terminal, title: "New terminal",
+                                           run: { store.newTerminal(in: branch) }),
+                                MenuCreate(icon: Phosphor.sparkle, title: "New Claude Code",
+                                           run: { store.newClaude(in: branch) }),
+                            ],
                             onDelete: { store.removeBranch(branch) })
                     .opacity(revealed ? 1 : 0)
-                    .padding(.trailing, 10)
+                    .padding(.trailing, 2)
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
@@ -247,11 +386,13 @@ private struct SessionRow: View {
                         .foregroundStyle(session.kind.tint).frame(width: 14)
                     Text(session.title)
                         .font(.system(size: 11.5))
-                        .fontWeight(session.unread ? .medium : .regular)
+                        // Only the focused session goes bold; unread surfaces via colour
+                        // + the gutter bullet, not weight (working.html .session--open).
+                        .fontWeight(isOpen ? .semibold : .regular)
                         .foregroundStyle(nameColor)
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    StatusIndicator(status: session.status).opacity(revealed ? 0 : 1)
+                    StatusIndicator(status: session.status, unread: session.unread).opacity(revealed ? 0 : 1)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 // The open session's sticky tint (working.html .session--open).
@@ -270,10 +411,9 @@ private struct SessionRow: View {
             }
 
             KebabButton(rowID: session.id, level: .session,
-                        onCreate: nil,
                         onDelete: { store.closeSession(session) })
                 .opacity(revealed ? 1 : 0)
-                .padding(.trailing, 8)
+                .padding(.trailing, 2)
         }
         .rowChrome(hovering: hovering, selected: selected)
         .onHover { hovering = $0 }
@@ -288,21 +428,35 @@ private struct KebabButton: View {
     @Environment(AppStore.self) private var store
     let rowID: UUID
     let level: RowMenu.Level
-    var onCreate: (() -> Void)?
+    var creates: [MenuCreate] = []
     let onDelete: () -> Void
+
+    private var menuOpen: Bool { store.activeMenu?.rowID == rowID }
 
     var body: some View {
         Button {
-            store.activeMenu = ActiveMenu(rowID: rowID, level: level, onCreate: onCreate, onDelete: onDelete)
+            store.activeMenu = ActiveMenu(rowID: rowID, level: level, creates: creates, onDelete: onDelete)
         } label: {
-            Phos(path: Phosphor.dots, size: 15)
-                .foregroundStyle(Theme.inkFaint)
+            // 13px glyph in a 20px box; the open menu fills a rounded 7px hover box
+            // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
+            Phos(path: Phosphor.dots, size: 13)
+                .foregroundStyle(menuOpen ? Color(hex: 0x46464C) : Theme.inkFaint)
                 .frame(width: 20, height: 20)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(menuOpen ? 0.08 : 0)))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KebabPressStyle())
         .help("Actions")
         .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [rowID] anchor in [rowID: anchor] }
+    }
+}
+
+/// working.html `.kebab:active` — a firm 0.88 press dip.
+private struct KebabPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.88 : 1)
+            .animation(.easeOut(duration: 0.11), value: configuration.isPressed)
     }
 }
 
@@ -331,12 +485,15 @@ private struct Monogram: View {
 
 private struct StatusIndicator: View {
     let status: SessionStatus
+    let unread: Bool
     var body: some View {
         Group {
             switch status {
             case .running: Dot(color: Theme.run, halo: true)
-            case .idle:    Dot(color: Theme.idle)
-            case .exited:  Dot(color: Theme.idle).opacity(0.5)
+            // Idle carries no liveness — once read, its grey dot is just noise, so
+            // drop it; it stays on idle+unread as a "go look" cue (working.html).
+            case .idle:    if unread { Dot(color: Theme.idle) }
+            case .exited:  if unread { Dot(color: Theme.idle).opacity(0.5) }
             case .working: Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
             case .needsInput: AttentionGlyph(state: .input).attnBreathe()
             case .error:      AttentionGlyph(state: .error)

@@ -9,17 +9,21 @@ struct Sidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             topStrip
             header
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
+            if store.workspaces.isEmpty {
+                EmptySidebarHint()
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 1) {
+                            ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 16)
-                }
-                .onChange(of: store.navCursor) { _, id in
-                    guard let id else { return }
-                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+                    .onChange(of: store.navCursor) { _, id in
+                        guard let id else { return }
+                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+                    }
                 }
             }
         }
@@ -52,6 +56,23 @@ struct Sidebar: View {
             }
         }
         .padding(.horizontal, 14).padding(.bottom, 8)
+    }
+}
+
+private struct EmptySidebarHint: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("No workspaces yet")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.inkMuted)
+            Text("Click + to add a git repository")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.inkFaint)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20).padding(.top, 40)
+        Spacer()
     }
 }
 

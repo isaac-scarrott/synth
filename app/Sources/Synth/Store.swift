@@ -46,7 +46,6 @@ enum SessionEvent: Sendable {
     let bus = EventBus()
 
     init() {
-        seed()
         TerminalManager.shared.bus = bus
         Task { [weak self] in
             guard let self else { return }
@@ -60,7 +59,8 @@ enum SessionEvent: Sendable {
         switch event {
         case let .statusChanged(id, status): session(id)?.status = status
         case let .titleChanged(id, title):   session(id)?.title = title
-        case let .exited(id, code):          session(id)?.status = .exited(code)
+        case let .exited(id, code):
+            session(id)?.status = (code ?? 0) == 0 ? .exited(code) : .error
         }
     }
 
@@ -140,73 +140,16 @@ enum SessionEvent: Sendable {
         let expandedPath = (trimmed as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: expandedPath)
         let name = url.lastPathComponent.isEmpty ? trimmed : url.lastPathComponent
+        // Real branches, discovered from git. Empty if not a repo.
+        let branches = GitService.branches(at: url).map {
+            Branch(name: $0.name, lastActivity: GitService.compactAge($0.lastCommitUnix))
+        }
         let ws = Workspace(
             name: name,
             url: url,
-            branches: [Branch(name: "main", lastActivity: "now")],
+            branches: branches,
             colorIndex: workspaces.count % Theme.chipColors.count
         )
-        workspaces.append(ws)   // collapsed by default, like working.html
+        workspaces.append(ws)   // collapsed by default
     }
-
-    // MARK: Seed — the exact working.html tree
-
-    private func seed() {
-        let synth = URL(fileURLWithPath: "/Users/isaac/git/synth")
-        let palette = Branch(
-            name: "feat/command-palette",
-            sessions: [
-                Session(kind: .claudeCode, title: "Claude Code", status: .needsInput, unread: true),
-                Session(kind: .terminal, title: "dev server", status: .running),
-                Session(kind: .terminal, title: "api-tests", status: .error, unread: true),
-                Session(kind: .terminal, title: "shell", status: .idle),
-            ],
-            lastActivity: "2m"
-        )
-        let synthWS = Workspace(
-            name: "synth",
-            url: synth,
-            branches: [
-                Branch(name: "main", lastActivity: "2h"),
-                palette,
-                Branch(name: "fix/sidebar-shadow", lastActivity: "5h"),
-                Branch(name: "release/0.4", lastActivity: "3d"),
-            ],
-            colorIndex: 0
-        )
-
-        // Two collapsed workspaces whose nested state drives an attention bubble.
-        let aviator = Workspace(
-            name: "aviator-api",
-            url: URL(fileURLWithPath: "\(home)/code/aviator-api"),
-            branches: [
-                Branch(name: "main", sessions: [
-                    Session(kind: .claudeCode, title: "Claude Code", status: .needsInput, unread: true),
-                ], lastActivity: "3m"),
-                Branch(name: "feat/rate-limiter", lastActivity: "1d"),
-                Branch(name: "fix/auth-refresh", lastActivity: "2d"),
-                Branch(name: "chore/bump-deps", lastActivity: "4d"),
-                Branch(name: "feat/webhooks", lastActivity: "1w"),
-                Branch(name: "release/1.2", lastActivity: "2w"),
-            ],
-            colorIndex: 1
-        )
-        let dashboard = Workspace(
-            name: "web-dashboard",
-            url: URL(fileURLWithPath: "\(home)/code/web-dashboard"),
-            branches: [
-                Branch(name: "main", sessions: [
-                    Session(kind: .claudeCode, title: "Claude Code", status: .error, unread: true),
-                ], lastActivity: "20m"),
-                Branch(name: "feat/charts", lastActivity: "6h"),
-                Branch(name: "fix/login", lastActivity: "1d"),
-            ],
-            colorIndex: 2
-        )
-
-        workspaces = [synthWS, aviator, dashboard]
-        expanded = [synthWS.id, palette.id]
-    }
-
-    private var home: String { NSHomeDirectory() }
 }

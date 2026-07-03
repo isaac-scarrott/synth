@@ -113,9 +113,30 @@ struct PaletteFrame {
     /// ⌘K acts on where you are: the open session, its branch, its workspace — the
     /// open session leads, else the nav cursor's session (working.html contextActions).
     private func contextActions() -> (path: String, items: [PaletteItem]) {
-        let session = store.openSession ?? store.navCursor.flatMap { store.session($0) }
-        let branch = session.flatMap { store.branch(of: $0) }
-        let workspace = branch.flatMap { store.workspace(of: $0) }
+        // Context row: the open session leads, else the nav cursor's row (any type).
+        // Branch and workspace resolve independently, each falling back to the first
+        // one available — so ⌘K still offers "New terminal"/"New worktree…" when the
+        // cursor sits on a branch/workspace row or nothing is open (working.html
+        // contextBranch/contextWorkspaceHead).
+        let cursor = store.cursorRef
+        let workspace: Workspace? = {
+            if let s = store.openSession, let b = store.branch(of: s) { return store.workspace(of: b) }
+            switch cursor {
+            case let .workspace(w): return w
+            case let .branch(b):    return store.workspace(of: b)
+            case let .session(s):   return store.branch(of: s).flatMap { store.workspace(of: $0) }
+            case .none:             return nil
+            }
+        }() ?? store.workspaces.first
+        let branch: Branch? = {
+            if let s = store.openSession, let b = store.branch(of: s) { return b }
+            switch cursor {
+            case let .branch(b):    return b
+            case let .session(s):   return store.branch(of: s)
+            case let .workspace(w): return w.branches.first
+            case .none:             return nil
+            }
+        }() ?? workspace?.branches.first
         let path = [workspace?.name, branch?.name].compactMap { $0 }.joined(separator: " / ")
         var items: [PaletteItem] = []
         if let branch {

@@ -152,6 +152,7 @@ struct RootView: View {
                 if store.shortcutsOpen { store.shortcutsOpen = false }
                 else {
                     if store.palette != nil { store.closePalette() }
+                    store.activeMenu = nil
                     store.shortcutsOpen = true
                 }
                 return nil
@@ -196,7 +197,11 @@ struct RootView: View {
                 store.sidebarCollapsed = false
                 focusSidebar()
                 store.keyboardActive = true
-                store.navCursor = store.navCursor ?? store.openSessionID ?? store.visibleRows.first?.id
+                // Ring lands on a *visible* row: current selection, else the open
+                // session, else the first row (working.html focusSidebar).
+                let visible = store.visibleRows.map(\.id)
+                store.navCursor = [store.navCursor, store.openSessionID]
+                    .compactMap { $0 }.first { visible.contains($0) } ?? store.visibleRows.first?.id
                 return nil
             }
             if event.modifierFlags.contains(.command), key == "1" {

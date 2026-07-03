@@ -99,6 +99,12 @@ struct RootView: View {
                 }
             }
         }
+        .overlay {
+            if let pal = store.palette {
+                PaletteOverlay(model: pal)
+                    .environment(store)
+            }
+        }
         .onAppear(perform: installKeyMonitor)
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
@@ -122,12 +128,48 @@ struct RootView: View {
                 }
                 return event
             }
+            let key = event.charactersIgnoringModifiers?.lowercased()
+
+            // ⌘K toggles the palette from anywhere — even over the terminal.
+            if key == "k", event.modifierFlags.contains(.command) {
+                if store.palette == nil { store.openPalette() } else { store.closePalette() }
+                return nil
+            }
+            // The palette owns the keyboard while open (working.html): ↑/↓ + Ctrl+J/K
+            // (+ Ctrl+N/P) move, Enter runs, Backspace on an empty query pops, Esc
+            // closes. Ctrl+K means "up" here — only ⌘K closes.
+            if let pal = store.palette {
+                switch event.keyCode {
+                case 53:  store.closePalette(); return nil   // Esc
+                case 36, 76: pal.runActive(); return nil     // Return / keypad Enter
+                case 125: pal.move(1); return nil            // ↓
+                case 126: pal.move(-1); return nil           // ↑
+                case 51:                                     // Backspace on empty → pop
+                    if pal.query.isEmpty { pal.pop(); return nil }
+                    return event
+                default:
+                    if event.modifierFlags.contains(.control) {
+                        switch key {
+                        case "j", "n": pal.move(1); return nil
+                        case "k", "p": pal.move(-1); return nil
+                        default: break
+                        }
+                    }
+                    return event
+                }
+            }
+
             if store.activeMenu != nil {
                 if event.keyCode == 53 { store.activeMenu = nil; return nil }   // Esc closes menu
                 return event
             }
             if let fr = event.window?.firstResponder {
                 if fr is TerminalView || fr is NSText || fr is NSTextView { return event }
+            }
+            // Ctrl+K also opens the palette when closed (only outside text/terminal focus,
+            // so the shell keeps its own Ctrl+K).
+            if key == "k", event.modifierFlags.contains(.control) {
+                store.openPalette(); return nil
             }
 
             switch event.keyCode {
@@ -139,7 +181,7 @@ struct RootView: View {
                 guard store.navCursor != nil else { return event }
                 store.activateCursor(); return nil
             default:
-                switch event.charactersIgnoringModifiers {
+                switch key {
                 case "j": store.moveCursor(1); return nil
                 case "k": store.moveCursor(-1); return nil
                 default:  return event

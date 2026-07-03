@@ -12,6 +12,7 @@ struct RowMenu: View {
     @Binding var isPresented: Bool
 
     @State private var confirming = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var createTitle: String? {
         switch level {
@@ -32,36 +33,48 @@ struct RowMenu: View {
     }
 
     var body: some View {
+        // The confirm step morphs in place: the container animates its height while
+        // the panes crossfade — one continuous object, not a jump-cut swap
+        // (FEATURES "Delete-confirm morphs in place").
         VStack(alignment: .leading, spacing: 0) {
             if confirming {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(confirmLabel)
-                        .font(.system(size: 11.5))
-                        .lineSpacing(2)
-                        .foregroundStyle(Color(hex: 0x6A6A70))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 2).padding(.top, 2).padding(.bottom, 9)
-                    HStack(spacing: 6) {
-                        ConfirmButton(title: "Cancel", danger: false) { confirming = false }
-                        ConfirmButton(title: "Delete", danger: true) { onDelete(); isPresented = false }
-                    }
-                }
-                .padding(.horizontal, 8).padding(.top, 7).padding(.bottom, 8)
+                confirmPane.transition(.opacity)
             } else {
-                if let title = createTitle, let onCreate {
-                    MenuItem(icon: createIcon, title: title, danger: false) {
-                        isPresented = false
-                        onCreate()
-                    }
-                    Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
-                        .padding(.horizontal, 6).padding(.vertical, 4)
-                }
-                MenuItem(icon: Phosphor.trash, title: "Delete", danger: true) { confirming = true }
+                actionsPane.transition(.opacity)
             }
         }
         .padding(5)
         .frame(width: 178)
         .background(Theme.panel)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.19), value: confirming)
+    }
+
+    private var confirmPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(confirmLabel)
+                .font(.system(size: 11.5))
+                .lineSpacing(2)
+                .foregroundStyle(Color(hex: 0x6A6A70))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 2).padding(.top, 2).padding(.bottom, 9)
+            HStack(spacing: 6) {
+                ConfirmButton(title: "Cancel", danger: false) { confirming = false }
+                ConfirmButton(title: "Delete", danger: true) { onDelete(); isPresented = false }
+            }
+        }
+        .padding(.horizontal, 8).padding(.top, 7).padding(.bottom, 8)
+    }
+
+    @ViewBuilder private var actionsPane: some View {
+        if let title = createTitle, let onCreate {
+            MenuItem(icon: createIcon, title: title, danger: false) {
+                isPresented = false
+                onCreate()
+            }
+            Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
+                .padding(.horizontal, 6).padding(.vertical, 4)
+        }
+        MenuItem(icon: Phosphor.trash, title: "Delete", danger: true) { confirming = true }
     }
 }
 

@@ -155,10 +155,12 @@ private struct BranchRow: View {
     private var selected: Bool { store.keyboardActive && store.navCursor == branch.id }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
     private var isActivePill: Bool {
-        // The branch containing the open session, else the expanded live group —
-        // matches working.html showing the pill on the active group at rest.
-        if let open = store.openSession { return store.branch(of: open)?.id == branch.id }
-        return branch.isLive && isOpen
+        // The branch containing the open session — but an *expanded* group already
+        // highlights the open session inside; the white header pill would
+        // double-encode, so it shows only while collapsed (working.html
+        // `.repo--open > .branch--active.branch--group`).
+        guard let open = store.openSession, store.branch(of: open)?.id == branch.id else { return false }
+        return !(branch.isLive && isOpen)
     }
 
     var body: some View {
@@ -230,6 +232,12 @@ private struct SessionRow: View {
 
     private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
+    private var isOpen: Bool { store.openSessionID == session.id }
+
+    private var nameColor: Color {
+        if isOpen { return Color(hex: 0x2C2C30) }
+        return session.unread ? Theme.sessionNameUnread : Theme.sessionName
+    }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -240,12 +248,17 @@ private struct SessionRow: View {
                     Text(session.title)
                         .font(.system(size: 11.5))
                         .fontWeight(session.unread ? .medium : .regular)
-                        .foregroundStyle(session.unread ? Theme.sessionNameUnread : Theme.sessionName)
+                        .foregroundStyle(nameColor)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     StatusIndicator(status: session.status).opacity(revealed ? 0 : 1)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
+                // The open session's sticky tint (working.html .session--open).
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(hex: 0x0A84FF).opacity(isOpen ? 0.06 : 0))
+                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(RowButtonStyle())

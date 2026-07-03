@@ -43,6 +43,9 @@ enum SessionEvent: Sendable {
     /// The row-action menu currently open (nil = none).
     var activeMenu: ActiveMenu?
 
+    /// The ⌘K palette (nil = closed).
+    var palette: PaletteModel?
+
     let bus = EventBus()
 
     init() {
@@ -108,6 +111,25 @@ enum SessionEvent: Sendable {
         navCursor = session.id
         session.unread = false
     }
+
+    /// Palette jump: reveal the session (expand collapsed ancestors), open it, mark
+    /// read — working.html's jumpTo, selection ring shown as if keyboard-driven.
+    func jump(to session: Session) {
+        if let br = branch(of: session) {
+            expanded.insert(br.id)
+            if let ws = workspace(of: br) { expanded.insert(ws.id) }
+        }
+        open(session)
+        keyboardActive = true
+    }
+
+    func openPalette() {
+        guard palette == nil else { return }
+        activeMenu = nil
+        palette = PaletteModel(store: self)
+    }
+
+    func closePalette() { palette = nil }
 
     private func defaultBranch() -> Branch? {
         if let open = openSession, let br = branch(of: open) { return br }

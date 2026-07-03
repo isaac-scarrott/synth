@@ -27,7 +27,7 @@ extension AppStore {
             guard expanded.contains(ws.id) else { continue }
             for br in ws.branches {
                 rows.append(.branch(br))
-                guard br.isLive, expanded.contains(br.id) else { continue }
+                guard expanded.contains(br.id) else { continue }
                 for s in br.sessions { rows.append(.session(s)) }
             }
         }
@@ -47,11 +47,11 @@ extension AppStore {
         navCursor = rows[next].id
     }
 
-    /// A row that can expand/collapse: a workspace, or a live branch group.
+    /// A row that can expand/collapse: a workspace, or any branch group.
     private func isToggle(_ ref: RowRef) -> Bool {
         switch ref {
         case .workspace:      return true
-        case let .branch(b):  return b.isLive
+        case .branch:         return true
         case .session:        return false
         }
     }
@@ -80,7 +80,7 @@ extension AppStore {
         keyboardActive = true
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
-        case let .branch(b): if b.isLive { toggleExpanded(b.id) }
+        case let .branch(b): toggleExpanded(b.id)
         case let .session(s): open(s); focusContent(self)
         case .none: break
         }

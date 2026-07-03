@@ -168,11 +168,11 @@ private struct BranchRow: View {
             ZStack(alignment: .trailing) {
                 Button {
                     focusSidebar()
-                    if branch.isLive { store.toggleExpanded(branch.id) }
+                    store.toggleExpanded(branch.id)
                     store.navCursor = branch.id
                 } label: {
                     HStack(spacing: 6) {
-                        if branch.isLive { Chevron(open: isOpen) } else { Spacer().frame(width: 12) }
+                        Chevron(open: isOpen)
                         Text(branch.name)
                             .font(.system(size: 12, design: .monospaced))
                             .fontWeight(isActivePill ? .medium : .regular)
@@ -195,10 +195,10 @@ private struct BranchRow: View {
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
-            .help(branch.isLive ? "\(branch.name) · \(branch.sessions.count) sessions" : branch.name)
+            .help("\(branch.name) · \(branch.sessions.count) sessions")
             .id(branch.id)
 
-            Reveal(open: branch.isLive && isOpen) {
+            Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(branch.sessions) { SessionRow(session: $0) }
                 }

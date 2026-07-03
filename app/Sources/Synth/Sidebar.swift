@@ -9,12 +9,18 @@ struct Sidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             topStrip
             header
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 10)
+                .onChange(of: store.navCursor) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+                }
             }
         }
         .frame(width: Theme.sidebarWidth, alignment: .leading)
@@ -39,7 +45,7 @@ struct Sidebar: View {
         HStack {
             Text("WORKSPACE")
                 .font(.system(size: 10.5, weight: .semibold)).kerning(0.6)
-                .foregroundStyle(Theme.inkFaint)
+                .foregroundStyle(Theme.navLabel)
             Spacer()
             IconButton(path: Phosphor.plus, size: 14, help: "Add workspace") {
                 store.addingWorkspace = true
@@ -74,7 +80,7 @@ private struct WorkspaceRow: View {
                                  color: Theme.chipColors[workspace.colorIndex % Theme.chipColors.count])
                         Text(workspace.name)
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.ink)
+                            .foregroundStyle(Theme.repoName)
                         Spacer(minLength: 4)
                         trailing.opacity(hovering || showMenu ? 0 : 1)
                     }
@@ -92,6 +98,7 @@ private struct WorkspaceRow: View {
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
             .help("\(workspace.name) · \(workspace.branches.count) branches")
+            .id(workspace.id)
 
             Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -108,7 +115,7 @@ private struct WorkspaceRow: View {
                 if let a = workspace.attention { AttentionGlyph(state: a) }
                 Text("\(workspace.branches.count)")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.inkFaint).monospacedDigit()
+                    .foregroundStyle(Theme.repoCount).monospacedDigit()
             }
         }
     }
@@ -145,7 +152,7 @@ private struct BranchRow: View {
                         Text(branch.name)
                             .font(.system(size: 12, design: .monospaced))
                             .fontWeight(isActivePill ? .medium : .regular)
-                            .foregroundStyle(isActivePill ? Theme.ink : Theme.inkMuted)
+                            .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
                             .lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 4)
                         BranchRollup(branch: branch).opacity(hovering || showMenu ? 0 : 1)
@@ -165,6 +172,7 @@ private struct BranchRow: View {
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
             .help(branch.isLive ? "\(branch.name) · \(branch.sessions.count) sessions" : branch.name)
+            .id(branch.id)
 
             Reveal(open: branch.isLive && isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -184,8 +192,9 @@ private struct BranchRow: View {
 
     @ViewBuilder private var activePillBackground: some View {
         if isActivePill {
-            RoundedRectangle(cornerRadius: 7).fill(Color.white)
-                .shadow(color: .black.opacity(0.06), radius: 1, y: 1)
+            RoundedRectangle(cornerRadius: 8).fill(Color.white)
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
         }
     }
 }
@@ -205,22 +214,26 @@ private struct SessionRow: View {
         ZStack(alignment: .trailing) {
             Button { store.open(session) } label: {
                 HStack(spacing: 8) {
-                    Circle().fill(session.unread ? Theme.ink : .clear).frame(width: 4, height: 4)
-                    Phos(path: session.kind.iconPath, size: 15)
-                        .foregroundStyle(session.kind.tint).frame(width: 16)
+                    Phos(path: session.kind.iconPath, size: 14)
+                        .foregroundStyle(session.kind.tint).frame(width: 14)
                     Text(session.title)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: 11.5))
                         .fontWeight(session.unread ? .medium : .regular)
-                        .foregroundStyle(session.unread ? Theme.ink : Theme.inkMuted)
+                        .foregroundStyle(session.unread ? Theme.sessionNameUnread : Theme.sessionName)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     StatusIndicator(status: session.status).opacity(hovering || showMenu ? 0 : 1)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(isOpen ? RoundedRectangle(cornerRadius: 7).fill(Theme.rowSelected) : nil)
                 .contentShape(Rectangle())
             }
             .buttonStyle(RowButtonStyle())
+            // Unread bullet lives in the gutter (blue), not inline — no layout shift.
+            .overlay(alignment: .leading) {
+                Circle().fill(Theme.attention).frame(width: 4, height: 4)
+                    .opacity(session.unread ? 1 : 0)
+                    .offset(x: -3)
+            }
 
             KebabButton(showMenu: $showMenu, level: .session,
                         onCreate: nil,
@@ -231,6 +244,7 @@ private struct SessionRow: View {
         .rowChrome(hovering: hovering, selected: selected)
         .onHover { hovering = $0 }
         .help("\(session.title) · \(session.status.label)")
+        .id(session.id)
     }
 }
 
@@ -262,7 +276,7 @@ private struct Chevron: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Phos(path: Phosphor.caret, size: 12)
-            .foregroundStyle(Theme.inkFaint)
+            .foregroundStyle(Theme.chevron)
             .rotationEffect(.degrees(open ? 90 : 0))
             .frame(width: 12)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: open)
@@ -275,6 +289,8 @@ private struct Monogram: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 6).fill(color).frame(width: 19, height: 19)
             .overlay(Text(text).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.12), radius: 0.75, y: 1)
     }
 }
 
@@ -286,8 +302,8 @@ private struct StatusIndicator: View {
             case .running: Dot(color: Theme.run, halo: true)
             case .idle:    Dot(color: Theme.idle)
             case .exited:  Dot(color: Theme.idle).opacity(0.5)
-            case .working: Dot(color: Theme.working, halo: true).pulse()
-            case .needsInput: AttentionGlyph(state: .input).pulse()
+            case .working: Dot(color: Theme.working, halo: true).sdotPulse()
+            case .needsInput: AttentionGlyph(state: .input).attnBreathe()
             case .error:      AttentionGlyph(state: .error)
             }
         }
@@ -300,14 +316,14 @@ private struct BranchRollup: View {
     var body: some View {
         Group {
             switch branch.rollup {
-            case .input: AttentionGlyph(state: .input).pulse()
+            case .input: AttentionGlyph(state: .input).attnBreathe()
             case .error: AttentionGlyph(state: .error)
-            case .work:  Dot(color: Theme.working).pulse()
+            case .work:  Dot(color: Theme.working, halo: true).sdotPulse()
             case .run:   Dot(color: Theme.run, halo: true)
             case .idle, .none:
                 if !branch.lastActivity.isEmpty {
                     Text(branch.lastActivity)
-                        .font(.system(size: 10.5)).foregroundStyle(Theme.inkFaint).monospacedDigit()
+                        .font(.system(size: 10.5)).foregroundStyle(Theme.branchMeta).monospacedDigit()
                 }
             }
         }
@@ -329,25 +345,32 @@ private struct Dot: View {
     var body: some View {
         Circle().fill(color).frame(width: 6, height: 6)
             .background(
-                halo ? Circle().fill(color.opacity(0.16)).frame(width: 11, height: 11) : nil
+                halo ? Circle().fill(color.opacity(0.15)).frame(width: 11, height: 11) : nil
             )
     }
 }
 
 // Ambient pulse, reserved for genuine attention (needs-input / working).
 private struct PulseModifier: ViewModifier {
+    let halfDuration: Double
+    let minOpacity: Double
+    let minScale: Double
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var on = false
     func body(content: Content) -> some View {
         content
-            .opacity(reduceMotion ? 1 : (on ? 1 : 0.45))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
+            .opacity(reduceMotion ? 1 : (on ? 1 : minOpacity))
+            .scaleEffect(reduceMotion ? 1 : (on ? 1 : minScale))
+            .animation(reduceMotion ? nil : .easeInOut(duration: halfDuration).repeatForever(autoreverses: true), value: on)
             .onAppear { on = true }
     }
 }
 
 extension View {
-    func pulse() -> some View { modifier(PulseModifier()) }
+    // sdot--work: 1.5s cycle, opacity 1↔0.4, no scale.
+    func sdotPulse() -> some View { modifier(PulseModifier(halfDuration: 0.75, minOpacity: 0.4, minScale: 1)) }
+    // attn-breathe: 2s cycle, opacity 1↔0.55 + scale 1↔0.9.
+    func attnBreathe() -> some View { modifier(PulseModifier(halfDuration: 1.0, minOpacity: 0.55, minScale: 0.9)) }
 
     /// Row hover + keyboard-selection chrome (working.html: hover 3.5%, sel 5% + ring).
     func rowChrome(hovering: Bool, selected: Bool) -> some View {

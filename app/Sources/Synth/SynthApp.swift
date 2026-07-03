@@ -81,11 +81,18 @@ struct RootView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.light)   // working.html is a light design; keep native chrome light
-        .sheet(item: $store.creatingBranchIn) { ws in
-            CreateBranchSheet(workspace: ws).environment(store)
-        }
-        .sheet(isPresented: $store.addingWorkspace) {
-            AddWorkspaceSheet().environment(store)
+        .overlay {
+            if let ws = store.creatingBranchIn {
+                ModalBackdrop(onDismiss: { store.creatingBranchIn = nil }) {
+                    CreateBranchSheet(workspace: ws, onClose: { store.creatingBranchIn = nil })
+                        .environment(store)
+                }
+            } else if store.addingWorkspace {
+                ModalBackdrop(onDismiss: { store.addingWorkspace = false }) {
+                    AddWorkspaceSheet(onClose: { store.addingWorkspace = false })
+                        .environment(store)
+                }
+            }
         }
         .onAppear(perform: installKeyMonitor)
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
@@ -95,11 +102,25 @@ struct RootView: View {
     /// the terminal, text fields, and open sheets so they keep their own keys.
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
+        // Any mouse movement dismisses the keyboard selection ring (working.html).
+        NSApp.windows.forEach { $0.acceptsMouseMovedEvents = true }
+        NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+            if store.keyboardActive { store.keyboardActive = false }
+            return event
+        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Modal Esc must win even while its text field is first responder.
+            if store.creatingBranchIn != nil || store.addingWorkspace {
+                if event.keyCode == 53 {   // Esc closes the modal
+                    store.creatingBranchIn = nil
+                    store.addingWorkspace = false
+                    return nil
+                }
+                return event
+            }
             if let fr = event.window?.firstResponder {
                 if fr is TerminalView || fr is NSText || fr is NSTextView { return event }
             }
-            if store.creatingBranchIn != nil || store.addingWorkspace { return event }
 
             switch event.keyCode {
             case 125: store.moveCursor(1); return nil        // ↓
@@ -107,7 +128,7 @@ struct RootView: View {
             case 124: store.expandOrIn(); return nil         // →
             case 123: store.collapseOrOut(); return nil      // ←
             case 36, 49:                                     // return / space
-                guard store.keyboardActive else { return event }
+                guard store.navCursor != nil else { return event }
                 store.activateCursor(); return nil
             default:
                 switch event.charactersIgnoringModifiers {

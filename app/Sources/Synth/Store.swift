@@ -143,8 +143,7 @@ enum SessionEvent: Sendable {
             branches: [Branch(name: "main", lastActivity: "now")],
             colorIndex: workspaces.count % Theme.chipColors.count
         )
-        workspaces.append(ws)
-        expanded.insert(ws.id)
+        workspaces.append(ws)   // collapsed by default, like working.html
     }
 
     // MARK: Seed — the exact working.html tree

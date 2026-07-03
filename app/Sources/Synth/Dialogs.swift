@@ -1,14 +1,38 @@
 import SwiftUI
 
+/// Centered modal over a dimmed backdrop, scale-in — matches working.html's dialogs
+/// (not a native top-attached sheet).
+struct ModalBackdrop<Content: View>: View {
+    let onDismiss: () -> Void
+    @ViewBuilder var content: Content
+    @State private var shown = false
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color.black.opacity(0.16))
+                .ignoresSafeArea()
+                .opacity(shown ? 1 : 0)
+                .onTapGesture(perform: onDismiss)
+            content
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.18), radius: 30, y: 14)
+                .scaleEffect(shown ? 1 : 0.97)
+                .opacity(shown ? 1 : 0)
+        }
+        .onAppear { withAnimation(.easeOut(duration: 0.18)) { shown = true } }
+    }
+}
+
 /// New-branch modal: base-branch picker + name field, Create disabled until named,
-/// Enter submits, Esc cancels (working.html's dialog).
+/// Enter submits, Esc/backdrop cancels.
 struct CreateBranchSheet: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
     let workspace: Workspace
+    let onClose: () -> Void
 
     @State private var base: String = ""
     @State private var name: String = ""
+    @FocusState private var nameFocused: Bool
 
     private var canCreate: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -18,36 +42,40 @@ struct CreateBranchSheet: View {
                 Picker("", selection: $base) {
                     ForEach(workspace.branches.map(\.name), id: \.self) { Text($0).tag($0) }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
+                .labelsHidden().pickerStyle(.menu)
             }
             Field(label: "Branch name") {
                 TextField("feat/…", text: $name)
                     .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+                    .focused($nameFocused)
                     .onSubmit(submit)
             }
         } actions: {
-            Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-            Button("Create", action: submit)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canCreate)
+            Button("Cancel", action: onClose).keyboardShortcut(.cancelAction)
+            Button("Create", action: submit).keyboardShortcut(.defaultAction).disabled(!canCreate)
         }
-        .onAppear { base = workspace.branches.first?.name ?? "main" }
+        .onAppear {
+            base = workspace.branches.first?.name ?? "main"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { nameFocused = true }
+        }
     }
 
     private func submit() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         store.newBranch(in: workspace, name: trimmed)
-        dismiss()
+        onClose()
     }
 }
 
 /// Add-workspace modal: a single Repository field.
 struct AddWorkspaceSheet: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
+
     @State private var path: String = ""
+    @FocusState private var focused: Bool
 
     private var canAdd: Bool { !path.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -56,20 +84,20 @@ struct AddWorkspaceSheet: View {
             Field(label: "Repository") {
                 TextField("~/code/my-repo", text: $path)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focused)
                     .onSubmit(submit)
             }
         } actions: {
-            Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-            Button("Add", action: submit)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canAdd)
+            Button("Cancel", action: onClose).keyboardShortcut(.cancelAction)
+            Button("Add", action: submit).keyboardShortcut(.defaultAction).disabled(!canAdd)
         }
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { focused = true } }
     }
 
     private func submit() {
         guard canAdd else { return }
         store.addWorkspace(pathOrName: path)
-        dismiss()
+        onClose()
     }
 }
 

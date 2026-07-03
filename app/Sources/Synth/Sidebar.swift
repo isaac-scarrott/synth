@@ -112,8 +112,8 @@ private struct WorkspaceRow: View {
                 .buttonStyle(RowButtonStyle())
 
                 KebabButton(rowID: workspace.id, level: .workspace,
-                            onCreate: { store.creatingBranchIn = workspace },
-                            onDelete: { store.deleteWorkspace(workspace) })
+                            onCreate: { store.creatingWorktreeIn = workspace },
+                            onDelete: { store.removeWorkspace(workspace) })
                     .opacity(revealed ? 1 : 0)
                     .padding(.trailing, 10)
             }
@@ -189,7 +189,7 @@ private struct BranchRow: View {
 
                 KebabButton(rowID: branch.id, level: .branch,
                             onCreate: { store.newTerminal(in: branch) },
-                            onDelete: { store.deleteBranch(branch) })
+                            onDelete: { store.removeBranch(branch) })
                     .opacity(revealed ? 1 : 0)
                     .padding(.trailing, 10)
             }

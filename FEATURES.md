@@ -326,3 +326,19 @@ workspace → drill → New terminal (real PTY) → Sessions category ctx/status
 via picker → inline confirm. Also ported from this pass: the kebab delete-confirm morph (crossfade +
 animated resize), pill suppression on an expanded active branch group, and the open session's sticky
 tint.
+
+## 2026-07-03 — Branch rows are real worktree folders; curated add; Remove is UI-only
+
+Each branch row in the native app now maps to a real checkout folder on disk (ADR-0007, refining
+ADR-0004): the repo root for the branch checked out there, a Synth-created `git worktree` for the
+rest, stored under `~/Library/Application Support/Synth/worktrees/<repo>-<hash>/<branch>` (sensible
+default now, configurable later). Adding a workspace opens a **multi-select branch picker** —
+branches with existing worktrees are pre-checked and reused; checking others creates their worktrees
+on Add. The picker is keyboard-first like the tree: ↑/↓ move, Space toggles, Enter adds, Esc cancels.
+More worktrees later via the workspace kebab's **"Create worktree…"** (existing branch, or new branch
+off a chosen base) and ⌘K's "New worktree…" (new branch off HEAD). Terminals now start in their
+branch's worktree folder, not the workspace root. Deleting a workspace/branch is renamed **Remove**
+and is UI-only — sessions end, but branches and folders stay on disk (real deletion deferred);
+sessions keep "Delete" because their process genuinely ends. Verified end-to-end in the real app:
+picker pre-check + "will create"/"has worktree" tags, `git worktree list` shows the created folders,
+`pwd` in a new terminal prints the worktree path, Remove leaves the folder and git state intact.

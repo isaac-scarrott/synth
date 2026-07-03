@@ -86,18 +86,10 @@ extension AppStore {
         }
     }
 
-    // MARK: Structural edits
+    // MARK: Structural edits — remove from the sidebar only; worktrees and
+    // branches stay on disk untouched.
 
-    @discardableResult
-    func newBranch(in workspace: Workspace, name: String) -> Branch {
-        let branch = Branch(name: name, lastActivity: "now")
-        workspace.branches.append(branch)
-        expanded.insert(workspace.id)
-        navCursor = branch.id
-        return branch
-    }
-
-    func deleteWorkspace(_ workspace: Workspace) {
+    func removeWorkspace(_ workspace: Workspace) {
         for session in workspace.branches.flatMap(\.sessions) {
             TerminalManager.shared.terminate(session.id)
             if openSessionID == session.id { openSessionID = nil }
@@ -106,7 +98,7 @@ extension AppStore {
         expanded.remove(workspace.id)
     }
 
-    func deleteBranch(_ branch: Branch) {
+    func removeBranch(_ branch: Branch) {
         for session in branch.sessions {
             TerminalManager.shared.terminate(session.id)
             if openSessionID == session.id { openSessionID = nil }

@@ -163,8 +163,8 @@ struct PaletteFrame {
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace…", group: "Actions",
                             enter: { self.push(self.createWorkspaceFrame()) }),
-                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New branch…", group: "Actions",
-                            enter: { self.push(self.createBranchFrame(in: self.contextWorkspace)) }),
+                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", group: "Actions",
+                            enter: { self.push(self.createWorktreeFrame(in: self.contextWorkspace)) }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
                             kbd: ["⌘", "B"],
                             enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
@@ -194,8 +194,8 @@ struct PaletteFrame {
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace…", sec: "act",
                             enter: { self.push(self.createWorkspaceFrame()) }),
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete workspace…", sec: "act",
-                            danger: true, enter: { self.push(self.deleteWorkspacePicker()) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove workspace…", sec: "act",
+                            danger: true, enter: { self.push(self.removeWorkspacePicker()) }),
             ]
             for ws in store.workspaces {
                 items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, sec: "list",
@@ -208,8 +208,8 @@ struct PaletteFrame {
     func branchesFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Branches", placeholder: "Search branches…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete branch…", sec: "act",
-                            danger: true, enter: { self.push(self.deleteBranchPicker()) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove branch…", sec: "act",
+                            danger: true, enter: { self.push(self.removeBranchPicker()) }),
             ]
             for ws in store.workspaces {
                 for br in ws.branches {
@@ -240,10 +240,10 @@ struct PaletteFrame {
     func workspaceFrame(_ ws: Workspace) -> PaletteFrame {
         PaletteFrame(crumb: ws.name, placeholder: "Search \(ws.name)…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New branch…", sec: "act",
-                            enter: { self.push(self.createBranchFrame(in: ws)) }),
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(ws.name)", sec: "act",
-                            danger: true, enter: { self.push(self.confirmDeleteWorkspace(ws)) }),
+                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", sec: "act",
+                            enter: { self.push(self.createWorktreeFrame(in: ws)) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(ws.name)", sec: "act",
+                            danger: true, enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
             ]
             for br in ws.branches {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, sec: "list",
@@ -258,31 +258,31 @@ struct PaletteFrame {
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
                             enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(branch.name)", sec: "act",
-                            danger: true, enter: { self.push(self.confirmDeleteBranch(branch)) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(branch.name)", sec: "act",
+                            danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
             ]
             for s in branch.sessions { items.append(sessionItem(s, ctx: false, sec: "list")) }
             return items
         }
     }
 
-    // MARK: Delete pickers → inline confirm
+    // MARK: Remove/delete pickers → inline confirm
 
-    func deleteWorkspacePicker() -> PaletteFrame {
-        PaletteFrame(crumb: "Delete workspace", placeholder: "Select a workspace to delete…") { [self] _ in
+    func removeWorkspacePicker() -> PaletteFrame {
+        PaletteFrame(crumb: "Remove workspace", placeholder: "Select a workspace to remove…") { [self] _ in
             store.workspaces.map { ws in
                 PaletteItem(icon: chipIcon(ws), label: ws.name, danger: true,
-                            enter: { self.push(self.confirmDeleteWorkspace(ws)) })
+                            enter: { self.push(self.confirmRemoveWorkspace(ws)) })
             }
         }
     }
 
-    func deleteBranchPicker() -> PaletteFrame {
-        PaletteFrame(crumb: "Delete branch", placeholder: "Select a branch to delete…") { [self] _ in
+    func removeBranchPicker() -> PaletteFrame {
+        PaletteFrame(crumb: "Remove branch", placeholder: "Select a branch to remove…") { [self] _ in
             store.workspaces.flatMap { ws in
                 ws.branches.map { br in
                     PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, ctx: ws.name,
-                                danger: true, enter: { self.push(self.confirmDeleteBranch(br)) })
+                                danger: true, enter: { self.push(self.confirmRemoveBranch(br)) })
                 }
             }
         }
@@ -298,50 +298,62 @@ struct PaletteFrame {
         }
     }
 
-    private func confirmFrame(name: String, noun: String, perform: @escaping () -> Void) -> PaletteFrame {
-        PaletteFrame(crumb: "Delete \(name)?", placeholder: "Delete this \(noun)?  ↵ confirm · esc cancel",
+    private func confirmFrame(verb: String, name: String, hint: String,
+                              perform: @escaping () -> Void) -> PaletteFrame {
+        PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "\(hint)  ↵ confirm · esc cancel",
                      mode: .confirm) { [self] _ in
             [
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(name)", danger: true,
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "\(verb) \(name)", danger: true,
                             enter: { self.runAndClose(perform) }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
         }
     }
 
-    func confirmDeleteWorkspace(_ ws: Workspace) -> PaletteFrame {
-        confirmFrame(name: ws.name, noun: "workspace") { [store] in store.deleteWorkspace(ws) }
+    func confirmRemoveWorkspace(_ ws: Workspace) -> PaletteFrame {
+        confirmFrame(verb: "Remove", name: ws.name,
+                     hint: "Remove this workspace? Nothing on disk is deleted.") { [store] in
+            store.removeWorkspace(ws)
+        }
     }
-    func confirmDeleteBranch(_ br: Branch) -> PaletteFrame {
-        confirmFrame(name: br.name, noun: "branch") { [store] in store.deleteBranch(br) }
+    func confirmRemoveBranch(_ br: Branch) -> PaletteFrame {
+        confirmFrame(verb: "Remove", name: br.name,
+                     hint: "Remove this branch? Its worktree stays on disk.") { [store] in
+            store.removeBranch(br)
+        }
     }
     func confirmDeleteSession(_ s: Session) -> PaletteFrame {
-        confirmFrame(name: s.title, noun: "session") { [store] in store.closeSession(s) }
+        confirmFrame(verb: "Delete", name: s.title,
+                     hint: "Delete this session?") { [store] in store.closeSession(s) }
     }
 
     // MARK: Create frames — the search input becomes the name field
 
     func createWorkspaceFrame() -> PaletteFrame {
-        PaletteFrame(crumb: "New workspace", placeholder: "Repository path or name…", mode: .input) { [self] q in
+        PaletteFrame(crumb: "New workspace", placeholder: "Repository path…", mode: .input) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             return [PaletteItem(icon: .phosphor(Phosphor.plus),
-                                label: v.isEmpty ? "Type a workspace name…" : "Create workspace “\(v)”",
+                                label: v.isEmpty ? "Type a repository path…" : "Add workspace “\(v)”",
                                 disabled: v.isEmpty,
                                 enter: { self.runAndClose {
                                     let path = (v as NSString).expandingTildeInPath
-                                    self.store.addWorkspace(url: URL(fileURLWithPath: path))
+                                    // Opens the worktree picker sheet after the palette closes.
+                                    self.store.beginAddWorkspace(url: URL(fileURLWithPath: path))
                                 } })]
         }
     }
 
-    func createBranchFrame(in workspace: Workspace?) -> PaletteFrame {
-        PaletteFrame(crumb: "New branch", placeholder: "Branch name…", mode: .input) { [self] q in
+    func createWorktreeFrame(in workspace: Workspace?) -> PaletteFrame {
+        PaletteFrame(crumb: "New worktree", placeholder: "New branch name…", mode: .input) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             return [PaletteItem(icon: .phosphor(Phosphor.plus),
-                                label: v.isEmpty ? "Type a branch name…" : "Create branch “\(v)”",
-                                disabled: v.isEmpty,
-                                enter: { self.runAndClose {
-                                    if let ws = workspace { self.store.newBranch(in: ws, name: v) }
+                                label: v.isEmpty ? "Type a branch name…" : "Create worktree “\(v)”",
+                                disabled: v.isEmpty || workspace == nil,
+                                enter: { self.runAndClose { [store = self.store] in
+                                    guard let ws = workspace else { return }
+                                    if let err = store.createWorktree(in: ws, newBranch: v, base: nil) {
+                                        store.presentGitError("Couldn't create worktree", details: err)
+                                    }
                                 } })]
         }
     }

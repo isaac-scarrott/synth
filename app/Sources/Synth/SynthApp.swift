@@ -82,9 +82,17 @@ struct RootView: View {
         .ignoresSafeArea()
         .preferredColorScheme(.light)   // working.html is a light design; keep native chrome light
         .overlay {
-            if let ws = store.creatingBranchIn {
-                ModalBackdrop(onDismiss: { store.creatingBranchIn = nil }) {
-                    CreateBranchSheet(workspace: ws, onClose: { store.creatingBranchIn = nil })
+            if let ws = store.creatingWorktreeIn {
+                ModalBackdrop(onDismiss: { store.creatingWorktreeIn = nil }) {
+                    CreateWorktreeSheet(workspace: ws, onClose: { store.creatingWorktreeIn = nil })
+                        .environment(store)
+                }
+            }
+        }
+        .overlay {
+            if let pending = store.pendingWorkspace {
+                ModalBackdrop(onDismiss: { store.pendingWorkspace = nil }) {
+                    AddWorktreesSheet(pending: pending, onClose: { store.pendingWorkspace = nil })
                         .environment(store)
                 }
             }
@@ -121,9 +129,10 @@ struct RootView: View {
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Modal Esc must win even while its text field is first responder.
-            if store.creatingBranchIn != nil {
+            if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil {
                 if event.keyCode == 53 {   // Esc closes the modal
-                    store.creatingBranchIn = nil
+                    store.creatingWorktreeIn = nil
+                    store.pendingWorkspace = nil
                     return nil
                 }
                 return event

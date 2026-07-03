@@ -16,7 +16,7 @@ struct RowMenu: View {
 
     private var createTitle: String? {
         switch level {
-        case .workspace: return "Create branch…"
+        case .workspace: return "Create worktree…"
         case .branch:    return "New terminal"
         case .session:   return nil
         }
@@ -24,10 +24,15 @@ struct RowMenu: View {
     private var createIcon: String {
         level == .workspace ? Phosphor.branch : Phosphor.terminal
     }
+    /// Workspaces and branches are *removed* — sidebar-only; worktrees and branches
+    /// stay on disk. Sessions are deleted for real (the process ends).
+    private var deleteTitle: String {
+        level == .session ? "Delete" : "Remove"
+    }
     private var confirmLabel: String {
         switch level {
-        case .workspace: return "Delete this workspace and all its branches?"
-        case .branch:    return "Delete this branch and its sessions?"
+        case .workspace: return "Remove this workspace from the sidebar? Nothing on disk is deleted."
+        case .branch:    return "Remove this branch from the sidebar? Its worktree stays on disk."
         case .session:   return "Delete this session?"
         }
     }
@@ -59,7 +64,7 @@ struct RowMenu: View {
                 .padding(.horizontal, 2).padding(.top, 2).padding(.bottom, 9)
             HStack(spacing: 6) {
                 ConfirmButton(title: "Cancel", danger: false) { confirming = false }
-                ConfirmButton(title: "Delete", danger: true) { onDelete(); isPresented = false }
+                ConfirmButton(title: deleteTitle, danger: true) { onDelete(); isPresented = false }
             }
         }
         .padding(.horizontal, 8).padding(.top, 7).padding(.bottom, 8)
@@ -74,7 +79,7 @@ struct RowMenu: View {
             Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
                 .padding(.horizontal, 6).padding(.vertical, 4)
         }
-        MenuItem(icon: Phosphor.trash, title: "Delete", danger: true) { confirming = true }
+        MenuItem(icon: Phosphor.trash, title: deleteTitle, danger: true) { confirming = true }
     }
 }
 

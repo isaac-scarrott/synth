@@ -23,6 +23,20 @@ enum SessionEvent: Sendable {
     func post(_ event: SessionEvent) { continuation.yield(event) }
 }
 
+/// A repo chosen for adding, awaiting the branch picker: the user selects which
+/// branches to show; each becomes a row backed by a real worktree folder.
+struct PendingWorkspace {
+    let url: URL
+    let candidates: [BranchCandidate]
+}
+
+struct BranchCandidate: Identifiable {
+    let id = UUID()
+    let name: String
+    let age: String
+    let existingWorktree: URL?   // nil → a worktree will be created on Add
+}
+
 /// The durable, observed source of truth. Holds only the low-frequency facts the
 /// UI reads: the tree, per-session status, expansion, and the two selection fields
 /// (nav cursor + open session) from docs/adr/0005.
@@ -37,8 +51,9 @@ enum SessionEvent: Sendable {
     /// (mousemove clears it), mirroring working.html's `.kbd` class.
     var keyboardActive = false
 
-    /// Sheet driver.
-    var creatingBranchIn: Workspace?
+    /// Sheet drivers.
+    var creatingWorktreeIn: Workspace?
+    var pendingWorkspace: PendingWorkspace?
 
     /// The row-action menu currently open (nil = none).
     var activeMenu: ActiveMenu?
@@ -93,11 +108,9 @@ enum SessionEvent: Sendable {
         workspaces.first { $0.branches.contains { $0.id == branch.id } }
     }
 
-    /// Working directory for a session. Worktrees are deferred (ADR-0004); for now a
-    /// session runs at its workspace root.
+    /// Working directory for a session: its branch's worktree folder (ADR-0007).
     func cwd(for session: Session) -> URL? {
-        guard let br = branch(of: session) else { return nil }
-        return workspace(of: br)?.url
+        branch(of: session)?.worktreeURL
     }
 
     // MARK: Commands
@@ -156,7 +169,7 @@ enum SessionEvent: Sendable {
         if openSessionID == session.id { openSessionID = nil }
     }
 
-    /// Folder picker → workspace. Panel runs modally, so state mutation happens after dismiss.
+    /// Folder picker → branch picker. Panel runs modally, so state mutation happens after dismiss.
     func promptAddWorkspace() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -165,21 +178,102 @@ enum SessionEvent: Sendable {
         panel.prompt = "Add"
         panel.message = "Choose a repository folder"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        addWorkspace(url: url)
+        beginAddWorkspace(url: url)
     }
 
-    func addWorkspace(url: URL) {
-        let name = url.lastPathComponent
-        // Real branches, discovered from git. Empty if not a repo.
-        let branches = GitService.branches(at: url).map {
-            Branch(name: $0.name, lastActivity: GitService.compactAge($0.lastCommitUnix))
+    /// Discover branches + existing worktrees, then open the multi-select picker.
+    /// A non-repo folder skips the picker (nothing to pick).
+    func beginAddWorkspace(url: URL) {
+        let branches = GitService.branches(at: url)
+        guard !branches.isEmpty else {
+            finishAddWorkspace(url: url, branches: [])
+            return
         }
+        let worktreeByBranch = Dictionary(
+            GitService.worktrees(at: url).compactMap { wt in wt.branch.map { ($0, wt.path) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        pendingWorkspace = PendingWorkspace(url: url, candidates: branches.map {
+            BranchCandidate(name: $0.name,
+                            age: GitService.compactAge($0.lastCommitUnix),
+                            existingWorktree: worktreeByBranch[$0.name])
+        })
+    }
+
+    /// Materialise the chosen branches — reusing existing worktrees, creating the
+    /// missing ones — and add the workspace.
+    func confirmAddWorkspace(_ pending: PendingWorkspace, selected: Set<UUID>) {
+        pendingWorkspace = nil
+        var rows: [Branch] = []
+        var failures: [String] = []
+        for c in pending.candidates where selected.contains(c.id) {
+            let path: URL
+            if let existing = c.existingWorktree {
+                path = existing
+            } else {
+                path = GitService.plannedWorktreePath(repo: pending.url, branch: c.name)
+                if let err = GitService.addWorktree(repo: pending.url, path: path, branch: c.name) {
+                    failures.append("\(c.name): \(err)")
+                    continue
+                }
+            }
+            rows.append(Branch(name: c.name, worktreeURL: path, lastActivity: c.age))
+        }
+        finishAddWorkspace(url: pending.url, branches: rows)
+        if !failures.isEmpty {
+            presentGitError("Some worktrees couldn't be created", details: failures.joined(separator: "\n"))
+        }
+    }
+
+    private func finishAddWorkspace(url: URL, branches: [Branch]) {
         let ws = Workspace(
-            name: name,
+            name: url.lastPathComponent,
             url: url,
             branches: branches,
             colorIndex: workspaces.count % Theme.chipColors.count
         )
         workspaces.append(ws)   // collapsed by default
+    }
+
+    // MARK: Worktrees (ADR-0007: every branch row is a real folder)
+
+    /// Check an existing branch out into a worktree (reusing one if the branch
+    /// already has it) and add the row. Returns git's error message, or nil.
+    @discardableResult
+    func createWorktree(in ws: Workspace, existingBranch: String) -> String? {
+        if let wt = GitService.worktrees(at: ws.url).first(where: { $0.branch == existingBranch }) {
+            addBranchRow(in: ws, name: existingBranch, worktreeURL: wt.path)
+            return nil
+        }
+        let path = GitService.plannedWorktreePath(repo: ws.url, branch: existingBranch)
+        if let err = GitService.addWorktree(repo: ws.url, path: path, branch: existingBranch) { return err }
+        addBranchRow(in: ws, name: existingBranch, worktreeURL: path)
+        return nil
+    }
+
+    /// Cut a new branch off `base` (repo HEAD when nil) into a fresh worktree.
+    @discardableResult
+    func createWorktree(in ws: Workspace, newBranch: String, base: String?) -> String? {
+        let path = GitService.plannedWorktreePath(repo: ws.url, branch: newBranch)
+        if let err = GitService.addWorktree(repo: ws.url, path: path, newBranch: newBranch, base: base) {
+            return err
+        }
+        addBranchRow(in: ws, name: newBranch, worktreeURL: path)
+        return nil
+    }
+
+    private func addBranchRow(in ws: Workspace, name: String, worktreeURL: URL) {
+        let branch = Branch(name: name, worktreeURL: worktreeURL, lastActivity: "now")
+        ws.branches.append(branch)
+        expanded.insert(ws.id)
+        navCursor = branch.id
+    }
+
+    func presentGitError(_ message: String, details: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = details
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }

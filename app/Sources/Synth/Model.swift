@@ -44,11 +44,15 @@ enum SessionStatus: Equatable, Sendable {
 @Observable final class Branch: Identifiable {
     let id = UUID()
     var name: String
+    /// The real checkout folder this row maps to — every branch row is backed by a
+    /// worktree on disk (the repo root for the main checkout). Sessions run here.
+    var worktreeURL: URL
     var sessions: [Session]
     var lastActivity: String   // cosmetic for now ("2h", "now")
 
-    init(name: String, sessions: [Session] = [], lastActivity: String = "") {
+    init(name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "") {
         self.name = name
+        self.worktreeURL = worktreeURL
         self.sessions = sessions
         self.lastActivity = lastActivity
     }

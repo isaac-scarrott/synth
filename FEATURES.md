@@ -180,3 +180,132 @@ creation deferred), `0005` (no "current branch"; nav-cursor + open-session; pill
 
 Verified end-to-end: launched the app, ⌘T created a `shell` session, ran a command, saw correct
 output and cwd, and the branch roll-up + session liveness dots lit green from actual process state.
+
+## 2026-07-03 — Delete-confirm morphs in place (both designs)
+
+Refines the delete flow from the row-actions entry above: the two-step delete confirmation no longer
+swaps the popover's `innerHTML` — the container **morphs** between states instead of replacing them.
+The popover holds two stacked panes: an **actions** pane (in flow) and an absolutely-positioned
+**confirm** pane. Pressing Delete adds `.confirming`, which crossfades actions out / confirm in
+(`opacity 120ms`) while the `.menu__viewport` animates its height from the measured actions height to
+the measured confirm height (`height 190ms var(--ease-out)`, driven by measure → set-start → reflush
+→ set-end). `.menu` gets `overflow: hidden` so the growing content clips cleanly mid-resize.
+
+Decision: a resize-and-crossfade morph reads as one continuous object, not a jump-cut — the earlier
+synchronous innerHTML swap is superseded. Motion follows the Emil rules (sub-300ms, transform/opacity
++ height, `--ease-out`); reduced-motion zeroes the transitions so it degrades to an instant swap.
+Structurally a two-state container morph — maps directly to a SwiftUI `.animation` on a resizing
+container when this is ported to Swift. Landed in both `working.html` and `big-picture-design.html`
+(subset invariant preserved).
+
+## 2026-07-03 — Command palette (⌘K), Linear-style
+
+A `⌘K` / `Ctrl+K` command palette — a centered, fading-in dialog modeled on Linear's command menu.
+It is a unified **command + jump** surface: a search input over grouped results, fuzzy-matched and
+re-sorted by score as you type.
+
+- **Groups (fixed order):** **Actions** (Add workspace…, New terminal, Create branch…, Toggle
+  sidebar — the sidebar row carries a `⌘B` hint), then **Workspaces**, **Branches**, **Sessions** —
+  the latter three built live from the current tree, each item carrying the row's own icon/monogram.
+- **Jump** items reveal the target row (expand its collapsed ancestors), select it, and mark a
+  session read — reusing the existing nav/read machinery, so navigating via the palette is truthful.
+- **Keyboard-owned while open** (matches the speed-first ethos): ⌘K opens, ↑/↓ move, Enter runs, Esc
+  closes; the nav and row-menu keydown handlers early-return on `paletteOpen` so keys don't leak.
+  Mouse hover highlights, click runs, backdrop click closes.
+- Result list height resizes fluidly as results filter (capped ~340px); open/close motion stays
+  sub-200ms, transform/opacity only.
+
+Decision locked: the palette is the keyboard-first entry point to *both* running commands and jumping
+the tree, reusing derived nav/read state rather than duplicating it — so it ports to Swift as a view
+over the same store, not a parallel command registry. Landed in both `working.html` and
+`big-picture-design.html` (subset invariant preserved).
+
+## 2026-07-03 — Content pane: the open session renders (`working.html` + big-picture)
+
+The content column was an empty `<section>`; it now renders the **open session** (CONTEXT.md's "you
+are here"). Clicking a session — or activating it via keyboard / ⌘K jump — makes it the single open
+session: content renders, the row is marked read and gains a sticky tint, and the white active pill is
+**derived** from it. Exactly one branch group across the whole tree carries the pill (per CONTEXT.md —
+there is no singular "current" branch); the old hardcoded pills on collapsed workspaces are gone.
+Content is generated purely from (session type + name + derived state), so the script stays
+byte-identical across both design files and the subset invariant holds.
+
+- **Session surfaces (by type):** Claude Code → agent transcript + composer (when needs-input the
+  composer breathes and surfaces the pending question); terminal → dark terminal surface with a
+  boot/log transcript keyed to state (running dev server, failing test run, idle shell prompt);
+  browser → URL bar + skeleton page; simulator → device frame. (browser/simulator rows exist only in
+  big-picture, so only it renders those — but the generic renderer lives in both.)
+- **It feels live:** a running terminal trickles a fresh vite/hmr line every ~2.6s; replying to the
+  Claude Code composer appends the message, flips the session to **working** (sidebar dot + chip +
+  branch roll-up all update from the real derived state), then settles it back to **running** — the
+  full status loop, driven off the same DOM state the sidebar already reads.
+- On load a session opens by default (the Claude Code hero) so the workspace looks alive; deleting the
+  open session falls back to a "No session open" empty state. Motion stays sub-300ms / transform+opacity;
+  the log stream and all looping pulses drop under `prefers-reduced-motion`.
+
+Decision: content is a pure function of session type + derived state (no per-session data map) — chosen
+so the two HTML files stay diff-clean and so the model ports cleanly to the native SwiftUI content pane.
+
+## 2026-07-03 — Command palette becomes a navigation stack (supersedes the flat ⌘K)
+
+The ⌘K palette is rebuilt from a flat fuzzy list into a **navigation stack of frames** — a Raycast/
+Linear-style drill-down that ports cleanly to a SwiftUI `NavigationStack`. Supersedes the flat
+command+jump palette from the earlier "Command palette (⌘K)" entry.
+
+- **Simple at rest, progressive on search.** The root frame shows just five entries (Workspaces,
+  Branches, Sessions, New terminal, Toggle sidebar). Typing switches it to a grouped, fuzzy-ranked
+  search across every command + workspace + branch + session.
+- **Drill the hierarchy with breadcrumbs.** Selecting a workspace pushes its frame (its branches),
+  a branch pushes its sessions — each frame shows Reveal + a context-scoped create + Delete + the
+  child list. Breadcrumb chips render in the search bar between the glyph and the input; click a chip
+  (or Backspace on an empty query) to pop back a level. Sessions are leaves — Enter reveals/opens them.
+- **Everything inline as text — the palette never opens a modal.** Create is a text-input frame
+  ("Create workspace 'x'", disabled until named); Delete drills to a searchable pick-list → an inline
+  confirm frame (Delete / Cancel). The old centered modal dialogs are bypassed entirely from ⌘K.
+- **Keyboard-first, per the speed ethos.** ⌘K opens/closes; inside, ↑/↓ **and Ctrl+J/K (plus
+  Ctrl+N/P)** move the active row, Enter drills or runs, Backspace on an empty query steps back, Esc
+  closes. Ctrl+K is reserved for nav-up while open (only ⌘K closes), so the vim/emacs muscle memory
+  works. The result list keeps the fluid height-resize as frames change.
+
+Decisions locked: the palette is the single keyboard-first surface for both **navigating** the tree
+and **acting** on it (create/delete), reusing the existing DOM-derived nav/read/mutation machinery
+rather than a parallel command registry — so it ports to Swift as a view over the same store. Delete's
+confirm frame highlights **Delete** by default (Enter confirms) for speed, since reaching it already
+took a deliberate drill. Built in both `working.html` and `big-picture-design.html` (subset invariant
+preserved). Verified end-to-end in-browser: drill + breadcrumbs, within-frame filter, progressive
+grouped search, Ctrl+J/K + arrow nav, create round-trip, delete→pick→confirm (Cancel and Delete
+paths), zero console errors.
+
+Also this pass: (1) an expanded **active branch group no longer bolds/darkens its name** — the open
+session inside is the "you are here", so the residual header highlight (which read as odd) is dropped
+while expanded; the pill still shows when the group is collapsed. (2) Fixed a latent null-deref where
+opening then closing the palette within 20ms left a deferred `pal.input.focus()` firing after `pal`
+was nulled — guarded with `if (pal)`.
+
+## 2026-07-03 — Command palette: frame grouping, context labels, status (refines the nav stack)
+
+Feedback-driven refinements to the ⌘K navigation stack (the stack model itself is unchanged):
+
+- **No "Reveal" item.** Drilling into a workspace or branch no longer lists a "Reveal …" action — you
+  drill to navigate; an explicit reveal read as noise. (Sessions still open on select; that's the leaf.)
+- **"New terminal" is branch-scoped.** Dropped from the root and from cross-category search — a
+  terminal needs a branch to live in, so it only appears inside a branch frame. Root simple is now
+  Workspaces / Branches / Sessions ─ Toggle sidebar.
+- **Divider, not header, splits actions from the list.** Within a frame the *actions* (New…, Delete…)
+  are separated from the *entity list* by a thin rule, no text header — via an item `sec` tag.
+  Cross-category **search keeps text headers** (Actions / Workspaces / Branches / Sessions), where
+  naming the entity type actually helps.
+- **Sessions carry a live-status label**, colour-coded by derived state (running green / working amber
+  / needs-input blue / error red / idle grey) — the status system the sidebar owns, surfaced in the
+  palette. Reuses `sessionState` + `STATE_LABEL`, so it stays truthful.
+- **Location context, shown only when not already established.** A session shows its `workspace /
+  branch` and a branch shows its `workspace` — but *only* in views where that context is absent
+  (Sessions/Branches categories, cross-category search, delete-pickers). Once you've drilled into the
+  workspace or branch, the now-redundant location is omitted. Computed from DOM ancestry
+  (`wsOf`/`brOf`), so it can't drift.
+
+Decision: the palette mirrors the app's two orthogonal axes — *where a thing lives* (location) and
+*its liveness* (status) — surfacing each only where it adds information. Ports to Swift as an item view
+model with optional `context` + `status` accessories gated on stack depth. Landed in both
+`working.html` and `big-picture-design.html` (subset invariant preserved; verified in-browser:
+drill/back, Ctrl+J/K, context appears only out-of-context, status colours correct, zero console errors).

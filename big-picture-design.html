@@ -142,12 +142,190 @@
   }
   .app.collapsed .expand-btn { opacity: 1; pointer-events: auto; }
 
-  /* ---- Content ---- */
+  /* ---- Content pane (renders the open session) ---- */
   .content {
     grid-column: 2;
     grid-row: 1;
+    min-width: 0;
     background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
+
+  /* the open session gets a sticky "you are here" tint in the sidebar */
+  .session--open { background: rgba(10,132,255,0.06); }
+  .session--open .session__name { color: #2c2c30; }
+  @media (hover: hover) and (pointer: fine) {
+    .session--open:hover { background: rgba(10,132,255,0.09); }
+  }
+
+  /* empty state — nothing open */
+  .pane-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-faint);
+    user-select: none;
+  }
+  .pane-empty__mark { width: 26px; height: 26px; opacity: 0.5; }
+  .pane-empty__mark svg { width: 100%; height: 100%; display: block; }
+  .pane-empty span { font-size: 12.5px; letter-spacing: -0.005em; }
+
+  .pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    animation: pane-in 220ms var(--ease-out);
+  }
+  @keyframes pane-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .pane__head {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 18px;
+    border-bottom: 0.5px solid var(--border);
+  }
+  .pane__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .pane__title .session__icon { width: 15px; height: 15px; }
+  .pane__title .session__icon svg { width: 15px; height: 15px; }
+  .pane__crumb {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: -0.01em;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pane__crumb b { color: var(--text-muted); font-weight: 500; }
+  .pane__spacer { flex: 1; }
+
+  /* state chip — mirrors the sidebar liveness vocabulary */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-weight: 550;
+    letter-spacing: 0.01em;
+    padding: 3px 9px 3px 7px;
+    border-radius: 20px;
+    color: var(--text-muted);
+    background: rgba(0,0,0,0.045);
+  }
+  .chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--idle); }
+  .chip--run { color: #1f8f43; background: rgba(52,199,89,0.12); }
+  .chip--run .chip__dot { background: var(--run); }
+  .chip--work { color: #a56a12; background: rgba(245,166,35,0.15); }
+  .chip--work .chip__dot { background: var(--work); animation: sdot-pulse 1.5s var(--ease-in-out) infinite; }
+  .chip--input { color: #0a63c4; background: rgba(10,132,255,0.12); }
+  .chip--input .chip__dot { background: var(--input); }
+  .chip--error { color: #cf2b22; background: rgba(255,59,48,0.12); }
+  .chip--error .chip__dot { background: var(--error); }
+
+  .pane__body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+
+  /* ----- Terminal surface ----- */
+  .term {
+    flex: 1;
+    margin: 14px;
+    padding: 13px 15px;
+    border-radius: 10px;
+    background: #1b1b1e;
+    box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18);
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+    color: #d4d4d8;
+    -webkit-font-smoothing: auto;
+  }
+  .term__ln { white-space: pre-wrap; word-break: break-word; min-height: 1.55em; }
+  .term__ln.dim { color: #80808a; }
+  .term__ln.ok { color: #7ee0a1; }
+  .term__ln.warn { color: #f0c674; }
+  .term__ln.err { color: #ff8a80; }
+  .term__ln.cmd { color: #8ab4f8; }
+  .term__cursor { display: inline-block; width: 7px; height: 14px; margin-left: 1px; vertical-align: text-bottom; background: #d4d4d8; animation: term-blink 1.1s steps(1) infinite; }
+  @keyframes term-blink { 50% { opacity: 0; } }
+
+  /* ----- Agent (Claude Code) surface ----- */
+  .chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .chat__scroll { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 18px; }
+  .msg { max-width: 660px; width: 100%; }
+  .msg__role { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 6px; }
+  .msg__body { font-size: 13px; line-height: 1.58; letter-spacing: -0.006em; color: #2c2c30; }
+  .msg--user .msg__body { background: rgba(0,0,0,0.035); border-radius: 10px; padding: 10px 12px; }
+  .msg__body p + p { margin-top: 9px; }
+  .msg__body ul { margin: 9px 0 0; padding-left: 18px; }
+  .msg__body li { margin: 3px 0; }
+  .msg__body code { font-family: var(--mono); font-size: 12px; background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 5px; }
+  .msg--work .msg__body { color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+  .work-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--work); box-shadow: 0 0 0 2.5px rgba(245,166,35,0.16); animation: sdot-pulse 1.5s var(--ease-in-out) infinite; flex-shrink: 0; }
+
+  .chat__composer {
+    flex-shrink: 0;
+    margin: 0 16px 16px;
+    padding: 11px 13px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: 12px;
+    background: #fff;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .chat__composer.awaiting {
+    border-color: rgba(10,132,255,0.55);
+    animation: composer-breathe 2.6s var(--ease-in-out) infinite;
+  }
+  @keyframes composer-breathe {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(10,132,255,0.13); }
+    50% { box-shadow: 0 0 0 3px rgba(10,132,255,0.04); }
+  }
+  .chat__ask { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; color: var(--input); margin-bottom: 9px; }
+  .chat__ask svg { width: 13px; height: 13px; flex-shrink: 0; }
+  .chat__inputrow { display: flex; align-items: center; gap: 8px; }
+  .chat__input { flex: 1; font-family: inherit; font-size: 13px; color: var(--text); outline: none; min-width: 0; }
+  .chat__input:empty::before { content: attr(data-ph); color: var(--text-faint); }
+  .chat__send { width: 27px; height: 27px; flex-shrink: 0; border-radius: 7px; background: var(--input); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 110ms var(--ease-out), opacity 120ms ease; }
+  .chat__send svg { width: 15px; height: 15px; }
+  .chat__send:active { transform: scale(0.9); }
+
+  /* ----- Browser preview ----- */
+  .browser { flex: 1; display: flex; flex-direction: column; margin: 14px; border-radius: 10px; overflow: hidden; border: 0.5px solid var(--border-strong); background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .browser__bar { display: flex; align-items: center; gap: 9px; padding: 8px 11px; background: #f6f6f7; border-bottom: 0.5px solid var(--border); }
+  .browser__dots { display: flex; gap: 5px; }
+  .browser__dots i { width: 9px; height: 9px; border-radius: 50%; background: #d3d3d7; display: inline-block; }
+  .browser__url { flex: 1; font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); background: #fff; border: 0.5px solid var(--border); border-radius: 7px; padding: 5px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .browser__view { flex: 1; overflow-y: auto; padding: 30px 34px; }
+  .skel { border-radius: 7px; background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05)); background-size: 200% 100%; animation: skel-shimmer 1.6s linear infinite; }
+  @keyframes skel-shimmer { to { background-position: -200% 0; } }
+  .skel--title { height: 26px; width: 46%; margin-bottom: 18px; }
+  .skel--line { height: 11px; margin-bottom: 10px; }
+  .skel--cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 26px; }
+  .skel--card { height: 96px; }
+
+  /* ----- Simulator ----- */
+  .sim { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; background: #f3f3f5; }
+  .sim__device { width: 232px; height: 476px; border-radius: 36px; background: #0c0c0d; padding: 9px; box-shadow: 0 10px 30px rgba(0,0,0,0.24), inset 0 0 0 0.5px rgba(255,255,255,0.1); }
+  .sim__screen { width: 100%; height: 100%; border-radius: 28px; background: linear-gradient(160deg, #eef2ff, #fce7f3); overflow: hidden; }
+  .sim__status { display: flex; justify-content: space-between; padding: 12px 20px 0; font-size: 11px; font-weight: 600; color: #1d1d1f; }
+  .sim__hero { padding: 46px 22px 0; }
+  .sim__hero .skel--title { width: 62%; }
 
   /* ---- Sidebar nav: workspace → branches → sessions ---- */
   .nav {
@@ -337,6 +515,11 @@
     .branch--active:hover { background: #ffffff; }
   }
   .branch--active .branch__name { color: #1d1d1f; font-weight: 550; }
+  /* An expanded branch group already highlights its open session inside — the white header pill
+     would double-encode and read oddly, so drop it while expanded (kept when collapsed, where it's
+     the only "you are here" cue). */
+  .repo--open > .branch--active.branch--group { background: none; box-shadow: none; }
+  .repo--open > .branch--active.branch--group .branch__name { color: #737378; font-weight: 450; }
 
   /* ---- Sessions inside a branch ---- */
   .sessions {
@@ -493,9 +676,17 @@
     transform-origin: var(--mo, top right);
     opacity: 0;
     transform: scale(0.95);
+    overflow: hidden;
     transition: opacity 140ms var(--ease-out), transform 150ms var(--ease-out);
   }
   .menu.open { opacity: 1; transform: scale(1); }
+
+  /* Delete confirm morphs in place: container resizes + panes crossfade (no innerHTML swap) */
+  .menu__viewport { position: relative; transition: height 190ms var(--ease-out); }
+  .menu__pane { transition: opacity 120ms var(--ease-out); }
+  .menu__pane--confirm { position: absolute; top: 0; left: 0; right: 0; opacity: 0; pointer-events: none; }
+  .menu.confirming .menu__pane--actions { opacity: 0; pointer-events: none; }
+  .menu.confirming .menu__pane--confirm { opacity: 1; pointer-events: auto; }
 
   .menu__item {
     width: 100%;
@@ -612,13 +803,172 @@
   .row-enter { animation: row-enter 200ms var(--ease-out); }
   .row-exit { animation: row-exit 150ms var(--ease-out) forwards; pointer-events: none; }
 
+  /* ---- Command palette (⌘K) — Linear-style command + jump menu ---- */
+  .cmdk {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 14vh 20px 20px;
+    background: rgba(0,0,0,0.16);
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+  .cmdk.open { opacity: 1; }
+  .cmdk:not(.open) { pointer-events: none; }
+  .cmdk__panel {
+    width: 560px;
+    max-width: 100%;
+    background: rgba(255,255,255,0.86);
+    -webkit-backdrop-filter: saturate(180%) blur(30px);
+    backdrop-filter: saturate(180%) blur(30px);
+    border: 0.5px solid rgba(0,0,0,0.1);
+    border-radius: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 24px 60px rgba(0,0,0,0.28);
+    overflow: hidden;
+    transform: translateY(-8px) scale(0.98);
+    opacity: 0;
+    transition: transform 200ms var(--ease-out), opacity 160ms ease;
+  }
+  .cmdk.open .cmdk__panel { transform: none; opacity: 1; }
+
+  .cmdk__search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 16px;
+    border-bottom: 0.5px solid rgba(0,0,0,0.08);
+  }
+  .cmdk__search-ico { display: flex; color: #a1a1a6; }
+  .cmdk__search-ico svg { width: 17px; height: 17px; display: block; }
+  .cmdk__input {
+    flex: 1;
+    border: 0;
+    background: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 15px;
+    color: #1d1d1f;
+    padding: 0;
+  }
+  .cmdk__input::placeholder { color: #a8a8ad; }
+  /* breadcrumbs sit between the search glyph and the input; click a crumb to jump back a level */
+  .cmdk__crumbs { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .cmdk__crumb {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #46464c;
+    background: rgba(0,0,0,0.05);
+    border: 0.5px solid rgba(0,0,0,0.06);
+    border-radius: 6px;
+    padding: 3px 8px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 100ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .cmdk__crumb:hover { background: rgba(0,0,0,0.09); }
+  }
+
+  /* results container animates its height as the list filters (fluid resize, not replace) */
+  .cmdk__list {
+    overflow-y: auto;
+    padding: 6px;
+    transition: height 180ms var(--ease-out);
+  }
+  .cmdk__group {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #a1a1a6;
+    padding: 10px 8px 4px;
+  }
+  .cmdk__div { height: 0.5px; background: rgba(0,0,0,0.08); margin: 5px 8px; }
+  .cmdk__ctx {
+    flex-shrink: 0;
+    max-width: 210px;
+    font-size: 11.5px;
+    color: #b6b6bb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cmdk__meta {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: #8e8e94;
+    letter-spacing: 0.01em;
+  }
+  .cmdk__meta--run   { color: #2ea043; }
+  .cmdk__meta--work  { color: #c8811a; }
+  .cmdk__meta--input { color: #0a6fd6; }
+  .cmdk__meta--error { color: #d13c2f; }
+  .cmdk__meta--idle  { color: #a1a1a6; }
+  .cmdk__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    scroll-margin: 6px;
+  }
+  .cmdk__ico {
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #6a6a70;
+  }
+  .cmdk__ico svg { width: 16px; height: 16px; display: block; }
+  .cmdk__ico .session__icon { width: 16px; height: 16px; }
+  .cmdk__label {
+    flex: 1;
+    font-size: 13.5px;
+    font-weight: 450;
+    color: #1d1d1f;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cmdk__item.is-active { background: rgba(10,132,255,0.1); }
+  .cmdk__item.is-active .cmdk__label { color: #0a5fd6; }
+  .cmdk__item--danger .cmdk__ico, .cmdk__item--danger .cmdk__label { color: var(--error); }
+  .cmdk__item--danger.is-active { background: rgba(255,59,48,0.1); }
+  .cmdk__item--danger.is-active .cmdk__label { color: var(--error); }
+  .cmdk__item.is-disabled { opacity: 0.45; cursor: default; }
+  .cmdk__hint { display: flex; gap: 3px; flex-shrink: 0; }
+  .cmdk__key {
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    color: #86868b;
+    background: rgba(0,0,0,0.05);
+    border: 0.5px solid rgba(0,0,0,0.06);
+    border-radius: 4px;
+    padding: 1px 5px;
+    min-width: 17px;
+    text-align: center;
+  }
+  .cmdk__empty {
+    padding: 24px 8px;
+    text-align: center;
+    font-size: 13px;
+    color: #a1a1a6;
+  }
+
   /* Respect reduced motion: keep opacity/color, drop movement + looping pulses */
   @media (prefers-reduced-motion: reduce) {
     * { transition-duration: 0.01ms !important; }
     .row:active, .icon-btn:active, .kebab:active { transform: translateY(0); }
     .kebab:active { transform: translateY(-50%); }
-    .sdot--work, .ind--input { animation: none; }
-    .collapse, .app, .menu, .backdrop, .dialog { transition: none; }
+    .sdot--work, .ind--input, .chip--work .chip__dot, .work-dot, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
+    .cmdk__panel { transform: none !important; }
     .row-enter, .row-exit { animation: none; }
   }
 </style>
@@ -669,42 +1019,42 @@
               <div class="collapse"><div class="collapse__inner">
               <div class="sessions">
                 <!-- Claude Code — needs input -->
-                <a class="row session session--unread" data-row data-session>
+                <a class="row session session--unread" data-row data-session data-type="ai">
                   <span class="session__bullet"></span>
                   <span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg></span>
                   <span class="session__name">Claude Code</span>
                   <span class="ind ind--input"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg></span>
                 </a>
                 <!-- dev server — running -->
-                <a class="row session" data-row data-session>
+                <a class="row session" data-row data-session data-type="terminal">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">dev server</span>
                   <span class="ind"><span class="sdot sdot--run"></span></span>
                 </a>
                 <!-- api-tests — error -->
-                <a class="row session session--unread" data-row data-session>
+                <a class="row session session--unread" data-row data-session data-type="terminal">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">api-tests</span>
                   <span class="ind ind--error"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg></span>
                 </a>
                 <!-- shell — idle, read -->
-                <a class="row session" data-row data-session>
+                <a class="row session" data-row data-session data-type="terminal">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">shell</span>
                   <span class="ind"><span class="sdot"></span></span>
                 </a>
                 <!-- browser — running -->
-                <a class="row session" data-row data-session>
+                <a class="row session" data-row data-session data-type="browser">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg></span>
                   <span class="session__name">localhost:8733</span>
                   <span class="ind"><span class="sdot sdot--run"></span></span>
                 </a>
                 <!-- simulator — running -->
-                <a class="row session" data-row data-session>
+                <a class="row session" data-row data-session data-type="simulator">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M176,16H80A24,24,0,0,0,56,40V216a24,24,0,0,0,24,24h96a24,24,0,0,0,24-24V40A24,24,0,0,0,176,16ZM72,64H184V192H72Zm8-32h96a8,8,0,0,1,8,8v8H72V40A8,8,0,0,1,80,32Zm96,192H80a8,8,0,0,1-8-8v-8H184v8A8,8,0,0,1,176,224Z"/></svg></span>
                   <span class="session__name">iPhone 15 Pro</span>
@@ -777,6 +1127,7 @@
 (() => {
   const app = document.getElementById('app');
   const nav = document.getElementById('nav');
+  let paletteOpen = false;
 
   // --- Sidebar collapse / expand ---
   document.getElementById('collapseBtn').addEventListener('click', () => app.classList.add('collapsed'));
@@ -814,6 +1165,249 @@
   }
   rollUpGroups();
 
+  // ===== Content pane: render the open session (the one "you are here") =====
+  // Sticky selection — survives mousing around, changes only on activate. The white
+  // active pill is DERIVED from it: the branch group that holds the open session.
+  const content = document.querySelector('.content');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ICON_SEND = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z"/></svg>';
+  const ICON_EMPTY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
+  const STATE_LABEL = { run: 'running', work: 'working', input: 'needs input', error: 'error', idle: 'idle' };
+  const IND_HTML = {
+    input: `<span class="ind ind--input">${MARK_INPUT}</span>`,
+    error: `<span class="ind ind--error">${MARK_ERROR}</span>`,
+    work:  `<span class="ind"><span class="sdot sdot--work"></span></span>`,
+    run:   `<span class="ind"><span class="sdot sdot--run"></span></span>`,
+    idle:  `<span class="ind"><span class="sdot"></span></span>`,
+  };
+  let openEl = null, streamTimer = null;
+
+  function outerRepoOf(el) {
+    let repo = el.closest('[data-repo]');
+    while (repo) { const outer = repo.parentElement && repo.parentElement.closest('[data-repo]'); if (!outer) break; repo = outer; }
+    return repo;
+  }
+  function workspaceNameOf(el) {
+    const repo = outerRepoOf(el);
+    const n = repo && repo.querySelector(':scope > .repo__head .repo__name');
+    return n ? n.textContent.trim() : 'workspace';
+  }
+  function branchGroupOf(el) {
+    const group = el.closest('[data-repo]');
+    return group ? group.querySelector(':scope > .branch--group') : null;
+  }
+  function branchNameOf(el) {
+    const g = branchGroupOf(el);
+    const n = g && g.querySelector('.branch__name');
+    return n ? n.textContent.trim() : 'main';
+  }
+
+  // exactly one active pill across the whole tree — the open session's branch group
+  function derivePill(el) {
+    nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
+    const g = branchGroupOf(el);
+    if (g) g.classList.add('branch--active');
+  }
+
+  function stopStream() { if (streamTimer) { clearInterval(streamTimer); streamTimer = null; } }
+
+  function openSession(el) {
+    if (!el) return;
+    if (openEl) openEl.classList.remove('session--open');
+    openEl = el;
+    el.classList.add('session--open');
+    el.classList.remove('session--unread');   // opening marks it read
+    derivePill(el);
+    renderOpen();
+  }
+
+  // A session moves to a new derived status: swap its sidebar indicator, re-roll, refresh chip.
+  function setSessionState(el, state) {
+    const ind = el.querySelector(':scope > .ind');
+    if (ind) ind.outerHTML = IND_HTML[state];
+    rollUpGroups();
+    if (openEl === el) {
+      const chip = content.querySelector('.chip');
+      if (chip) { chip.className = `chip chip--${state}`; chip.innerHTML = `<span class="chip__dot"></span>${STATE_LABEL[state]}`; }
+    }
+  }
+
+  // ---- mock content, generated purely from (type, name, state) ----
+  function termLines(name, state, ws, br) {
+    const p = `~/${ws} (${br}) $ `;
+    if (state === 'error' || /test/i.test(name)) {
+      return [
+        ['cmd', p + 'npm test -- command-palette'], ['dim', ''],
+        ['', ' RUN  v5.2.0'],
+        ['ok',  ' ✓ src/palette/fuzzy.test.ts (8)'],
+        ['err', ' ❯ src/palette/CommandPalette.test.tsx (5)'],
+        ['err', '   × opens on ⌘K → expected "open", received "closed"'],
+        ['dim', '     at CommandPalette.test.tsx:42:19'], ['', ''],
+        ['err', ' Test Files  1 failed | 1 passed (2)'],
+        ['dim', '      Tests  1 failed | 12 passed (13)'],
+        ['cmd', p, true],
+      ];
+    }
+    if (state === 'run' || /dev|serve|watch/i.test(name)) {
+      return [
+        ['cmd', p + 'npm run dev'], ['dim', ''],
+        ['dim', '> synth@0.4.0 dev'], ['dim', '> vite'], ['', ''],
+        ['ok', '  VITE v5.2.0  ready in 412 ms'], ['', ''],
+        ['', '  ➜  Local:   http://localhost:5173/'],
+        ['dim', '  ➜  Network: use --host to expose'],
+        ['dim', '  12:04:51 [vite] hmr update /src/CommandPalette.tsx'],
+      ];
+    }
+    return [
+      ['cmd', p + 'git status'],
+      ['', 'On branch ' + br],
+      ['ok', 'nothing to commit, working tree clean'],
+      ['cmd', p, true],
+    ];
+  }
+  const STREAM_MSGS = [
+    'hmr update /src/sidebar/Tree.tsx', 'hmr update /src/palette/CommandPalette.tsx',
+    'page reload src/main.tsx', 'hmr update /src/content/Pane.tsx', 'hmr update /src/state/store.ts',
+  ];
+
+  function renderTerminal(name, state, ws, br) {
+    const body = termLines(name, state, ws, br)
+      .map(([c, t, cur]) => `<div class="term__ln ${c}">${esc(t)}${cur ? '<span class="term__cursor"></span>' : ''}</div>`).join('');
+    return `<div class="term" data-term>${body}</div>`;
+  }
+  function renderBrowser(name) {
+    const url = name.includes('://') ? name : 'http://' + name;
+    return `<div class="browser">
+      <div class="browser__bar"><span class="browser__dots"><i></i><i></i><i></i></span><span class="browser__url">${esc(url)}</span></div>
+      <div class="browser__view">
+        <div class="skel skel--title"></div>
+        <div class="skel skel--line" style="width:92%"></div>
+        <div class="skel skel--line" style="width:86%"></div>
+        <div class="skel skel--line" style="width:70%"></div>
+        <div class="skel--cards"><div class="skel skel--card"></div><div class="skel skel--card"></div><div class="skel skel--card"></div></div>
+      </div></div>`;
+  }
+  function renderSim(name) {
+    return `<div class="sim"><div class="sim__device"><div class="sim__screen">
+      <div class="sim__status"><span>9:41</span><span>${esc(name)}</span></div>
+      <div class="sim__hero">
+        <div class="skel skel--title"></div>
+        <div class="skel skel--line" style="width:80%"></div>
+        <div class="skel skel--line" style="width:64%"></div>
+        <div class="skel--cards" style="grid-template-columns:1fr 1fr"><div class="skel skel--card"></div><div class="skel skel--card"></div></div>
+      </div></div></div></div>`;
+  }
+  function composerHTML(awaiting) {
+    const ask = awaiting ? `<div class="chat__ask">${MARK_INPUT}Should the palette also surface recent files, or just commands and sessions for now?</div>` : '';
+    return `<div class="chat__composer ${awaiting ? 'awaiting' : ''}">${ask}
+      <div class="chat__inputrow">
+        <div class="chat__input" contenteditable="true" role="textbox" data-ph="Reply to Claude Code…"></div>
+        <span class="chat__send" role="button" aria-label="Send">${ICON_SEND}</span>
+      </div></div>`;
+  }
+  function renderChat(state) {
+    const transcript = `
+      <div class="msg msg--user"><div class="msg__role">You</div>
+        <div class="msg__body">Add a ⌘K command palette to the sidebar, styled like Linear's.</div></div>
+      <div class="msg msg--assistant"><div class="msg__role">Claude Code</div>
+        <div class="msg__body">
+          <p>Done — <code>CommandPalette</code> opens on <code>⌘K</code> with fuzzy search over commands, workspaces, branches, and sessions.</p>
+          <p>Wired up:</p>
+          <ul><li>Focus-trapped input, <code>↑/↓</code> to move, <code>↵</code> to run, <code>Esc</code> to close</li>
+          <li>Subsequence matcher with word-boundary + contiguity bonuses</li>
+          <li>Results list resizes fluidly as you type</li></ul>
+        </div></div>`;
+    if (state === 'work') {
+      return `<div class="chat"><div class="chat__scroll">${transcript}
+        <div class="msg msg--assistant msg--work"><div class="msg__role">Claude Code</div>
+          <div class="msg__body"><span class="work-dot"></span>Editing <code>src/palette/CommandPalette.tsx</code>…</div></div>
+      </div>${composerHTML(false)}</div>`;
+    }
+    return `<div class="chat"><div class="chat__scroll">${transcript}</div>${composerHTML(state === 'input')}</div>`;
+  }
+
+  function renderEmpty() {
+    stopStream();
+    content.innerHTML = `<div class="pane-empty"><span class="pane-empty__mark">${ICON_EMPTY}</span><span>No session open</span></div>`;
+  }
+
+  function renderOpen() {
+    stopStream();
+    if (!openEl || !document.contains(openEl)) { renderEmpty(); return; }
+    const type = openEl.dataset.type || 'terminal';
+    const name = openEl.querySelector('.session__name').textContent.trim();
+    const state = sessionState(openEl);
+    const ws = workspaceNameOf(openEl), br = branchNameOf(openEl);
+    const iconHTML = openEl.querySelector('.session__icon').outerHTML;
+    let body;
+    if (type === 'ai') body = renderChat(state);
+    else if (type === 'browser') body = renderBrowser(name);
+    else if (type === 'simulator') body = renderSim(name);
+    else body = renderTerminal(name, state, ws, br);
+    content.innerHTML = `<div class="pane">
+      <div class="pane__head">
+        <div class="pane__title">${iconHTML}<span>${esc(name)}</span></div>
+        <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(br)}</div>
+        <div class="pane__spacer"></div>
+        <div class="chip chip--${state}"><span class="chip__dot"></span>${STATE_LABEL[state]}</div>
+      </div>
+      <div class="pane__body">${body}</div>
+    </div>`;
+    if (type === 'ai') wireComposer(openEl);
+    else if (type === 'terminal' && state === 'run' && !reduceMotion) startStream();
+  }
+
+  // running terminals feel alive: a fresh log line trickles in every couple seconds
+  function startStream() {
+    const term = content.querySelector('[data-term]');
+    if (!term) return;
+    let i = 0;
+    streamTimer = setInterval(() => {
+      if (!document.contains(term)) return stopStream();
+      const div = document.createElement('div');
+      div.className = 'term__ln dim';
+      div.textContent = `  12:0${5 + (i % 4)}:${(12 + i * 7) % 60} [vite] ${STREAM_MSGS[i % STREAM_MSGS.length]}`;
+      term.appendChild(div);
+      while (term.children.length > 200) term.removeChild(term.firstChild);
+      term.scrollTop = term.scrollHeight;
+      i++;
+    }, 2600);
+  }
+
+  // Replying to the agent: append the message, flip it to working, then settle back to running.
+  function wireComposer(sessionEl) {
+    const composerEl = content.querySelector('.chat__composer');
+    if (!composerEl) return;
+    const input = composerEl.querySelector('.chat__input');
+    const send = composerEl.querySelector('.chat__send');
+    const scroll = content.querySelector('.chat__scroll');
+    const submit = () => {
+      const text = (input.textContent || '').trim() || 'Just commands and sessions for now.';
+      const u = document.createElement('div');
+      u.className = 'msg msg--user';
+      u.innerHTML = `<div class="msg__role">You</div><div class="msg__body">${esc(text)}</div>`;
+      scroll.appendChild(u);
+      input.textContent = '';
+      composerEl.classList.remove('awaiting');
+      const ask = composerEl.querySelector('.chat__ask'); if (ask) ask.remove();
+      setSessionState(sessionEl, 'work');
+      const w = document.createElement('div');
+      w.className = 'msg msg--assistant msg--work';
+      w.innerHTML = `<div class="msg__role">Claude Code</div><div class="msg__body"><span class="work-dot"></span>On it — wiring that up now…</div>`;
+      scroll.appendChild(w);
+      scroll.scrollTop = scroll.scrollHeight;
+      setTimeout(() => {
+        if (!document.contains(w)) return;
+        w.classList.remove('msg--work');
+        w.querySelector('.msg__body').innerHTML = 'Added recent files to the palette source and re-ran the tests — all green.';
+        setSessionState(sessionEl, 'run');
+        scroll.scrollTop = scroll.scrollHeight;
+      }, 3200);
+    };
+    send.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
+  }
+
   // --- Toggle expand/collapse (repos + the active branch's session group) ---
   function toggle(repoEl) {
     repoEl.classList.toggle('repo--open');
@@ -830,8 +1424,8 @@
     const session = e.target.closest('[data-session]');
     if (session) {
       e.preventDefault();
-      session.classList.remove('session--unread'); // opening a session marks it read
       select(session);
+      openSession(session); // becomes the open session: renders content, marks read, derives the pill
     }
   });
 
@@ -872,6 +1466,13 @@
 
   document.addEventListener('keydown', (e) => {
     const k = e.key;
+    // Cmd/Ctrl+K opens the palette; Cmd+K also closes it. Ctrl+K while open = nav-up (handled in-palette).
+    if ((e.metaKey || e.ctrlKey) && (k === 'k' || k === 'K')) {
+      if (!paletteOpen) { e.preventDefault(); openPalette(); return; }
+      if (e.metaKey) { e.preventDefault(); closePalette(); }
+      return;
+    }
+    if (paletteOpen) return; // the palette owns the keyboard while it's open
     // Cmd/Ctrl+B toggles the sidebar
     if ((e.metaKey || e.ctrlKey) && (k === 'b' || k === 'B')) {
       e.preventDefault();
@@ -899,7 +1500,7 @@
       if (!selEl) return;
       e.preventDefault();
       if (selEl.matches('[data-toggle]')) toggle(selEl.closest('[data-repo]'));
-      else if (selEl.matches('[data-session]')) selEl.classList.remove('session--unread');
+      else if (selEl.matches('[data-session]')) openSession(selEl);
     }
   });
 
@@ -952,7 +1553,10 @@
     if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-terminal">${ICON_TERMINAL}New terminal</span>`);
     if (level !== 'session') parts.push('<div class="menu__sep"></div>');
     parts.push(`<span class="menu__item menu__item--danger" data-act="delete">${ICON_TRASH}Delete</span>`);
-    menu.innerHTML = parts.join('');
+    menu.innerHTML = `<div class="menu__viewport">`
+      + `<div class="menu__pane menu__pane--actions">${parts.join('')}</div>`
+      + `<div class="menu__pane menu__pane--confirm">${confirmMarkup(level)}</div>`
+      + `</div>`;
 
     menu.addEventListener('click', (e) => {
       e.stopPropagation(); // in-menu clicks must not reach the outside-click handler
@@ -960,7 +1564,7 @@
       const btn = e.target.closest('.menu__btn');
       if (item) {
         const act = item.dataset.act;
-        if (act === 'delete') return showConfirm(menu, row);
+        if (act === 'delete') return showConfirm(menu);
         if (act === 'create-branch') { closeMenu(); return openBranchDialog(row); }
         if (act === 'new-terminal') { closeMenu(); return addTerminal(row); }
       } else if (btn) {
@@ -986,12 +1590,11 @@
     menu.style.top = top + 'px';
   }
 
-  function showConfirm(menu, row) {
-    const level = rowLevel(row);
+  function confirmMarkup(level) {
     const label = level === 'repo' ? 'Delete this workspace and all its branches?'
       : level === 'branch' ? 'Delete this branch and its sessions?'
       : 'Delete this session?';
-    menu.innerHTML = `<div class="menu__confirm">
+    return `<div class="menu__confirm">
       <div class="menu__confirm-label">${label}</div>
       <div class="menu__confirm-row">
         <span class="menu__btn" data-c="cancel">Cancel</span>
@@ -999,10 +1602,21 @@
       </div></div>`;
   }
 
+  function showConfirm(menu) {
+    if (menu.classList.contains('confirming')) return;
+    const vp = menu.querySelector('.menu__viewport');
+    const startH = vp.offsetHeight;
+    const endH = menu.querySelector('.menu__pane--confirm').offsetHeight;
+    vp.style.height = startH + 'px';
+    void vp.offsetHeight;            // flush the start height before animating
+    menu.classList.add('confirming');
+    vp.style.height = endH + 'px';   // container resizes to the confirm state; panes crossfade
+  }
+
   function removeUnit(unit) {
     if (!unit) return;
     unit.classList.add('row-exit');
-    const done = () => { unit.remove(); rollUpGroups(); };
+    const done = () => { unit.remove(); rollUpGroups(); if (openEl && !document.contains(openEl)) { openEl = null; renderEmpty(); } };
     unit.addEventListener('animationend', done, { once: true });
     setTimeout(done, 260);
   }
@@ -1094,6 +1708,7 @@
     a.className = 'row session row-enter';
     a.setAttribute('data-row', '');
     a.setAttribute('data-session', '');
+    a.setAttribute('data-type', 'terminal');
     a.innerHTML = `<span class="session__bullet"></span>
       <span class="session__icon">${ICON_TERMINAL}</span>
       <span class="session__name">shell</span>
@@ -1102,6 +1717,7 @@
     sessions.appendChild(a);
     a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
     rollUpGroups();
+    openSession(a); // a freshly spawned terminal opens straight into the content pane
   }
 
   // ===== Add workspace (the + on the section header) =====
@@ -1167,7 +1783,333 @@
   document.addEventListener('click', (e) => {
     if (openMenuEl && !openMenuEl.contains(e.target) && !e.target.closest('.kebab')) closeMenu();
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+  document.addEventListener('keydown', (e) => { if (paletteOpen) return; if (e.key === 'Escape') closeMenu(); });
+
+  // ===== Command palette (⌘K) — Linear-style fuzzy command + jump menu =====
+  const ICON_SEARCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/></svg>';
+  const ICON_SIDEBAR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>';
+  const ICON_PLUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg>';
+  const CMDK_GROUPS = ['Actions', 'Workspaces', 'Branches', 'Sessions'];
+
+  let pal = null, palItems = [], palActive = 0;
+
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // subsequence fuzzy match; higher score = better, -Infinity = no match
+  function fuzzy(q, text) {
+    if (!q) return 0;
+    q = q.toLowerCase();
+    const t = text.toLowerCase();
+    let ti = 0, score = 0, run = 0, first = -1;
+    for (const c of q) {
+      const idx = t.indexOf(c, ti);
+      if (idx === -1) return -Infinity;
+      if (first === -1) first = idx;
+      run = idx === ti ? run + 2 : 0;                           // contiguous streak bonus
+      if (idx === 0 || /[\W_\/]/.test(t[idx - 1])) score += 3;  // word-boundary hit
+      score += 1 + run;
+      ti = idx + 1;
+    }
+    return score - first * 0.5;
+  }
+
+  // Which workspace/branch a context-sensitive action targets: the nav cursor's, else the first.
+  function contextWorkspaceHead() {
+    let repo = selEl ? selEl.closest('[data-repo]') : null;
+    while (repo) { const outer = repo.parentElement && repo.parentElement.closest('[data-repo]'); if (!outer) break; repo = outer; }
+    repo = repo || nav.querySelector(':scope > [data-repo]');
+    return repo ? repo.querySelector(':scope > .repo__head') : null;
+  }
+  function contextBranch() {
+    const head = contextWorkspaceHead();
+    const scope = head ? head.closest('[data-repo]') : nav;
+    return scope.querySelector('.branch--active') || scope.querySelector('.branch')
+      || nav.querySelector('.branch--active') || nav.querySelector('.branch');
+  }
+
+  // Reveal a row (expand its collapsed ancestors), select it, and mark a session read.
+  function jumpTo(row) {
+    let node = row.parentElement;
+    while (node && node !== nav) {
+      if (node.matches && node.matches('[data-repo]')) node.classList.add('repo--open');
+      node = node.parentElement;
+    }
+    if (row.matches('[data-session]')) openSession(row);
+    document.body.classList.add('kbd');
+    select(row, true);
+  }
+
+  // The palette is a navigation STACK of frames. Root is simple; typing filters and progressively
+  // reveals more. Enter drills into a frame or runs a leaf; Backspace on an empty query steps back.
+  // Create / delete / confirm all happen inline as text frames — the palette never spawns a modal.
+  const ICON_FOLDER = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM40,56H92.69l16,16H40Zm176,144H40V88H216Z"/></svg>';
+  const ICON_STACK  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M108,40H48A16,16,0,0,0,32,56v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V56A16,16,0,0,0,108,40Zm0,76H48V56h60ZM208,40H148a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V56A16,16,0,0,0,208,40Zm0,76H148V56h60ZM108,148H48a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V164A16,16,0,0,0,108,148Zm0,76H48V164h60Zm100-76H148a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V164A16,16,0,0,0,208,148Zm0,76H148V164h60Z"/></svg>';
+  const ICON_ENTER  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,80v88a8,8,0,0,1-16,0V88H56.68l34.35,34.34a8,8,0,0,1-11.32,11.32l-48-48a8,8,0,0,1,0-11.32l48-48a8,8,0,0,1,11.32,11.32L56.68,72H224A8,8,0,0,1,232,80Z"/></svg>';
+  const ICON_CLOSE  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
+
+  // entity readers — the DOM tree is the source of truth
+  const wsName = (h) => h.querySelector('.repo__name').textContent;
+  const wsChip = (h) => h.querySelector('.repo__chip').outerHTML;
+  const brName = (b) => b.querySelector('.branch__name').textContent;
+  const seName = (s) => s.querySelector('.session__name').textContent;
+  const seIcon = (s) => s.querySelector('.session__icon').outerHTML;
+  const seStatus = (s) => STATE_LABEL[sessionState(s)];
+  const wsOf = (el) => { let r = el.closest('[data-repo]'); while (r) { const o = r.parentElement && r.parentElement.closest('[data-repo]'); if (!o) break; r = o; } return r ? r.querySelector('.repo__name').textContent : ''; };
+  const brOf = (s) => { const n = s.closest('[data-repo]') && s.closest('[data-repo]').querySelector('.branch__name'); return n ? n.textContent : ''; };
+  const seCtx = (s) => [wsOf(s), brOf(s)].filter(Boolean).join(' / ');
+  const allRows = (sel) => [...nav.querySelectorAll(sel)];
+
+  const curFrame = () => pal.stack[pal.stack.length - 1];
+  function pushFrame(fr) { pal.stack.push(fr); pal.input.value = ''; renderFrame(); }
+  function popFrame() { if (pal.stack.length > 1) { pal.stack.pop(); pal.input.value = ''; renderFrame(); } }
+  function popTo(depth) { pal.stack.length = Math.max(1, depth + 1); pal.input.value = ''; renderFrame(); }
+  const runAndClose = (fn) => { closePalette(); fn(); };
+
+  // ---- Frames: each returns { crumb?, placeholder, mode?, build(query) -> items[] } ----
+  // An item: { icon, label, kbd?, danger?, disabled?, g?(group), enter() }. enter() drills or runs.
+  function rootFrame() {
+    return {
+      placeholder: 'Search or jump to anything…',
+      build(q) {
+        if (!q) return [
+          { sec: 'nav', icon: ICON_FOLDER,  label: 'Workspaces', enter: () => pushFrame(workspacesFrame()) },
+          { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
+          { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },
+          { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
+        ];
+        const items = [
+          { g: 'Actions', icon: ICON_PLUS,     label: 'New workspace…', enter: () => pushFrame(createFrame('workspace')) },
+          { g: 'Actions', icon: ICON_BRANCH,   label: 'New branch…',    enter: () => pushFrame(createFrame('branch', contextWorkspaceHead())) },
+          { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
+        ];
+        allRows('.repo__head').forEach((h) => items.push({ g: 'Workspaces', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
+        allRows('.branch').forEach((b) => items.push({ g: 'Branches', icon: ICON_BRANCH, label: brName(b), ctx: wsOf(b), enter: () => pushFrame(branchFrame(b)) }));
+        allRows('.session').forEach((s) => items.push({ g: 'Sessions', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }));
+        return items;
+      },
+    };
+  }
+
+  function workspacesFrame() {
+    return {
+      crumb: 'Workspaces', placeholder: 'Search workspaces…',
+      build() {
+        const items = [
+          { sec: 'act', icon: ICON_PLUS,  label: 'New workspace…',    enter: () => pushFrame(createFrame('workspace')) },
+          { sec: 'act', icon: ICON_TRASH, label: 'Delete workspace…', danger: true, enter: () => pushFrame(deletePicker('workspace')) },
+        ];
+        allRows('.repo__head').forEach((h) => items.push({ sec: 'list', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
+        return items;
+      },
+    };
+  }
+
+  function categoryFrame(kind) {
+    const cfg = {
+      branch:  { crumb: 'Branches', ph: 'Search branches…', sel: '.branch',  mk: (b) => ({ sec: 'list', icon: ICON_BRANCH, label: brName(b), ctx: wsOf(b), enter: () => pushFrame(branchFrame(b)) }) },
+      session: { crumb: 'Sessions', ph: 'Search sessions…', sel: '.session', mk: (s) => ({ sec: 'list', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }) },
+    }[kind];
+    return {
+      crumb: cfg.crumb, placeholder: cfg.ph,
+      build() {
+        const items = [{ sec: 'act', icon: ICON_TRASH, label: 'Delete ' + kind + '…', danger: true, enter: () => pushFrame(deletePicker(kind)) }];
+        allRows(cfg.sel).forEach((r) => items.push(cfg.mk(r)));
+        return items;
+      },
+    };
+  }
+
+  function workspaceFrame(head) {
+    const name = wsName(head);
+    return {
+      crumb: name, placeholder: 'Search ' + name + '…',
+      build() {
+        const items = [
+          { sec: 'act', icon: ICON_BRANCH, label: 'New branch…',    enter: () => pushFrame(createFrame('branch', head)) },
+          { sec: 'act', icon: ICON_TRASH,  label: 'Delete ' + name, danger: true, enter: () => pushFrame(confirmFrame(head)) },
+        ];
+        head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
+          items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
+        return items;
+      },
+    };
+  }
+
+  function branchFrame(row) {
+    const name = brName(row);
+    return {
+      crumb: name, placeholder: 'Search ' + name + '…',
+      build() {
+        const items = [
+          { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',   enter: () => runAndClose(() => addTerminal(row)) },
+          { sec: 'act', icon: ICON_TRASH,    label: 'Delete ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) },
+        ];
+        if (row.classList.contains('branch--group'))
+          row.closest('[data-repo]').querySelectorAll('.sessions .session').forEach((s) =>
+            items.push({ sec: 'list', icon: seIcon(s), label: seName(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }));
+        return items;
+      },
+    };
+  }
+
+  function deletePicker(kind) {
+    const cfg = {
+      workspace: { crumb: 'Delete workspace', ph: 'Select a workspace to delete…', sel: '.repo__head', icon: wsChip, label: wsName },
+      branch:    { crumb: 'Delete branch',    ph: 'Select a branch to delete…',    sel: '.branch',     icon: () => ICON_BRANCH, label: brName, ctx: wsOf },
+      session:   { crumb: 'Delete session',   ph: 'Select a session to delete…',   sel: '.session',    icon: seIcon, label: seName, meta: seStatus, ctx: seCtx, state: sessionState },
+    }[kind];
+    return {
+      crumb: cfg.crumb, placeholder: cfg.ph,
+      build() { return allRows(cfg.sel).map((r) => ({ icon: cfg.icon(r), label: cfg.label(r), ctx: cfg.ctx && cfg.ctx(r), meta: cfg.meta && cfg.meta(r), metaState: cfg.state && cfg.state(r), danger: true, enter: () => pushFrame(confirmFrame(r)) })); },
+    };
+  }
+
+  function confirmFrame(row) {
+    const level = rowLevel(row);
+    const noun = level === 'repo' ? 'workspace' : level;
+    const name = level === 'repo' ? wsName(row) : level === 'branch' ? brName(row) : seName(row);
+    return {
+      crumb: 'Delete ' + name + '?', mode: 'confirm', placeholder: 'Delete this ' + noun + '?  ↵ confirm · esc cancel',
+      build() {
+        return [
+          { icon: ICON_TRASH, label: 'Delete ' + name, danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
+        ];
+      },
+    };
+  }
+
+  function createFrame(kind, ctx) {
+    const cfg = {
+      workspace: { crumb: 'New workspace', ph: 'Repository path or name…', go: (v) => addWorkspace(v) },
+      branch:    { crumb: 'New branch',    ph: 'Branch name…',             go: (v) => { const repo = ctx && ctx.closest('[data-repo]'); if (repo) addBranch(repo, v); } },
+    }[kind];
+    return {
+      crumb: cfg.crumb, mode: 'input', placeholder: cfg.ph,
+      build(q) {
+        const v = q.trim();
+        return [{ icon: ICON_PLUS, label: v ? 'Create ' + kind + ' “' + v + '”' : 'Type a ' + kind + ' name…', disabled: !v, enter: () => { if (v) runAndClose(() => cfg.go(v)); } }];
+      },
+    };
+  }
+
+  // ---- Render ----
+  function renderCrumbs() {
+    const crumbs = pal.stack.map((f, i) => ({ f, i })).filter((x) => x.f.crumb);
+    pal.crumbs.innerHTML = crumbs.map(({ f, i }) => '<span class="cmdk__crumb" data-depth="' + i + '">' + esc(f.crumb) + '</span>').join('');
+    pal.crumbs.style.display = crumbs.length ? 'flex' : 'none';
+  }
+
+  function renderFrame() {
+    const fr = curFrame();
+    const q = pal.input.value.trim();
+    pal.input.placeholder = fr.placeholder;
+    renderCrumbs();
+    let items = fr.build(q);
+    if (!fr.mode && q) {   // 'list' frames fuzzy-filter by query; 'input'/'confirm' frames don't
+      const sectioned = items.some((it) => it.g || it.sec);
+      if (sectioned) {
+        const order = [], byK = new Map();
+        items.forEach((it) => { const s = fuzzy(q, it.label); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) { byK.set(k, []); order.push(k); } byK.get(k).push({ it, s }); });
+        items = order.flatMap((k) => byK.get(k).sort((a, b) => b.s - a.s).map((x) => x.it));
+      } else {
+        items = items.map((it) => ({ it, s: fuzzy(q, it.label) })).filter((x) => x.s > -Infinity).sort((a, b) => b.s - a.s).map((x) => x.it);
+      }
+    }
+    paintList(items);
+  }
+
+  function paintList(items) {
+    palItems = items;
+    let html = '', lastG = null, lastSec = null;
+    items.forEach((it, i) => {
+      if (it.g && it.g !== lastG) { html += '<div class="cmdk__group">' + it.g + '</div>'; lastG = it.g; lastSec = it.sec || null; }
+      else if (it.sec && it.sec !== lastSec) { if (i > 0) html += '<div class="cmdk__div"></div>'; lastSec = it.sec; }
+      const hint = it.kbd ? '<span class="cmdk__hint">' + it.kbd.map((x) => '<kbd class="cmdk__key">' + x + '</kbd>').join('') + '</span>' : '';
+      const ctx = it.ctx ? '<span class="cmdk__ctx">' + esc(it.ctx) + '</span>' : '';
+      const meta = it.meta ? '<span class="cmdk__meta' + (it.metaState ? ' cmdk__meta--' + it.metaState : '') + '">' + esc(it.meta) + '</span>' : '';
+      html += '<div class="cmdk__item' + (it.danger ? ' cmdk__item--danger' : '') + (it.disabled ? ' is-disabled' : '') + '" data-i="' + i + '">'
+        + '<span class="cmdk__ico">' + it.icon + '</span><span class="cmdk__label">' + esc(it.label) + '</span>' + ctx + meta + hint + '</div>';
+    });
+    pal.list.innerHTML = items.length ? html : '<div class="cmdk__empty">No results</div>';
+    palActive = 0;
+    paintActive();
+    sizeList();
+  }
+
+  // Animate the list to its content height (measured at height:auto so it can shrink, not just grow).
+  function sizeList() {
+    const list = pal.list;
+    const start = list.style.height ? list.offsetHeight : null;
+    list.style.height = 'auto';
+    const target = Math.min(list.scrollHeight, 340) + 'px';
+    if (start === null) { list.style.height = target; return; }  // first render: snap, no animation
+    list.style.height = start + 'px';
+    void list.offsetHeight;                                       // flush the start height
+    list.style.height = target;                                  // then animate to the new height
+  }
+
+  function paintActive() {
+    pal.list.querySelectorAll('.cmdk__item').forEach((el) => {
+      const on = +el.dataset.i === palActive;
+      el.classList.toggle('is-active', on);
+      if (on) el.scrollIntoView({ block: 'nearest' });
+    });
+  }
+  function palMove(d) { if (!palItems.length) return; palActive = (palActive + d + palItems.length) % palItems.length; paintActive(); }
+  function runActive() { const it = palItems[palActive]; if (!it || it.disabled) return; it.enter(); }
+
+  function openPalette() {
+    if (paletteOpen) return;
+    closeMenu();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'cmdk';
+    backdrop.innerHTML = '<div class="cmdk__panel" role="dialog" aria-label="Command palette">'
+      + '<div class="cmdk__search"><span class="cmdk__search-ico">' + ICON_SEARCH + '</span>'
+      + '<span class="cmdk__crumbs"></span>'
+      + '<input class="cmdk__input" autocomplete="off" spellcheck="false" /></div>'
+      + '<div class="cmdk__list"></div></div>';
+    document.body.appendChild(backdrop);
+    pal = { backdrop, input: backdrop.querySelector('.cmdk__input'), list: backdrop.querySelector('.cmdk__list'), crumbs: backdrop.querySelector('.cmdk__crumbs'), stack: [rootFrame()] };
+    paletteOpen = true;
+    renderFrame();
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+    setTimeout(() => { if (pal) pal.input.focus(); }, 20);   // palette may have closed within 20ms
+    pal.input.addEventListener('input', renderFrame);
+    backdrop.addEventListener('click', (e) => {
+      const crumb = e.target.closest('.cmdk__crumb');
+      if (crumb) { popTo(+crumb.dataset.depth); return; }
+      const item = e.target.closest('.cmdk__item');
+      if (item) { palActive = +item.dataset.i; runActive(); return; }
+      if (e.target === backdrop) closePalette();
+    });
+    backdrop.addEventListener('mousemove', (e) => {
+      const item = e.target.closest('.cmdk__item');
+      if (item && +item.dataset.i !== palActive) { palActive = +item.dataset.i; paintActive(); }
+    });
+  }
+  function closePalette() {
+    if (!pal) return;
+    const b = pal.backdrop;
+    b.classList.remove('open');
+    setTimeout(() => b.remove(), 180);
+    pal = null; paletteOpen = false;
+  }
+
+  // The palette owns the keyboard while open. ↑/↓ + Ctrl+J/K (+ Ctrl+N/P) move the active row;
+  // Enter drills/runs; Backspace on an empty query steps back a frame; Esc closes the palette.
+  document.addEventListener('keydown', (e) => {
+    if (!paletteOpen) return;
+    const k = e.key;
+    if (k === 'Escape') { e.preventDefault(); closePalette(); return; }
+    if (k === 'Enter') { e.preventDefault(); runActive(); return; }
+    if (k === 'ArrowDown' || (e.ctrlKey && !e.metaKey && (k === 'j' || k === 'J' || k === 'n' || k === 'N'))) { e.preventDefault(); palMove(1); return; }
+    if (k === 'ArrowUp'   || (e.ctrlKey && !e.metaKey && (k === 'k' || k === 'K' || k === 'p' || k === 'P'))) { e.preventDefault(); palMove(-1); return; }
+    if (k === 'Backspace' && !pal.input.value) { if (pal.stack.length > 1) { e.preventDefault(); popFrame(); } }
+  });
+
+  // Open a session by default so the workspace feels live on load (the Claude Code hero).
+  openSession(nav.querySelector('.session[data-type="ai"]') || nav.querySelector('.session'));
 })();
 </script>
 </body>

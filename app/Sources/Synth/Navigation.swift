@@ -81,7 +81,7 @@ extension AppStore {
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
         case let .branch(b): if b.isLive { toggleExpanded(b.id) }
-        case let .session(s): open(s)
+        case let .session(s): open(s); focusContent(self)
         case .none: break
         }
     }

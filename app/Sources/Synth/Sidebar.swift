@@ -241,7 +241,7 @@ private struct SessionRow: View {
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            Button { store.open(session) } label: {
+            Button { store.open(session); focusContent(store) } label: {
                 HStack(spacing: 8) {
                     Phos(path: session.kind.iconPath, size: 14)
                         .foregroundStyle(session.kind.tint).frame(width: 14)
@@ -426,6 +426,16 @@ extension View {
 /// sidebar navigation instead of the shell.
 @MainActor func focusSidebar() {
     NSApp.keyWindow?.makeFirstResponder(nil)
+}
+
+/// Move focus into the content pane: make the open session's terminal first responder
+/// so the shell takes keys (working.html's focusContent). An AI session has no terminal
+/// yet, so this is a no-op there for now — the composer is a forward-looking fallback.
+@MainActor func focusContent(_ store: AppStore) {
+    store.keyboardActive = false
+    guard let id = store.openSessionID,
+          let view = TerminalManager.shared.existingView(id) else { return }
+    NSApp.keyWindow?.makeFirstResponder(view)
 }
 
 /// The mock's `.icon-btn`: 26×26, radius 7, hover 5% bg, press scale 0.94.

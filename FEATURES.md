@@ -397,3 +397,32 @@ which still earns it. And the content pane's **state chip is removed** from the 
 already carried by the sidebar indicator and the session's own surface, so the header chip
 double-encoded. `STATE_LABEL`/`sessionState` stay (the palette still surfaces status). Landed in both
 files; verified in-browser.
+
+## 2026-07-03 — Native app: session ⌘K/focus/sidebar batch ported
+
+This session's working.html changes are now in the native SwiftUI app
+(`app/Sources/Synth/`), ported via worktree-isolated slices, integrated on main,
+and verified by driving the built app:
+
+- **Context-aware ⌘K** (`Palette.swift`) — the palette root leads with the actions
+  that act on where you are, headed by the context path (`workspace / branch`): New
+  terminal in that branch, New worktree… in that workspace, Delete <session> for the
+  open session; they fold into Actions when you type. Context resolves open-session
+  first, else the nav cursor's row, with branch/workspace each falling back to the
+  first available.
+- **⌘? keyboard-shortcuts sheet** (`Shortcuts.swift`) — a modal grouped General /
+  Sidebar / Command palette from one static table, reusing an extracted `KeyCaps`
+  view; a "Keyboard shortcuts" ⌘K item and the ⌘? key both open it (closing the
+  palette / row menu first), and it owns the keyboard while open.
+- **⌘0 / ⌘1 focus split** (`SynthApp.swift` key monitor) — ⌘0 focuses the sidebar
+  (ring on a visible row), ⌘1 focuses the open session's terminal; the existing
+  first-responder deferral keeps nav keys in the content pane. Activating a session
+  from the sidebar now follows focus into the content pane.
+- **Uniform branch group shells** (`Sidebar.swift`, `Navigation.swift`) — every
+  branch renders with a chevron and a (possibly empty) sessions container and is
+  toggleable; emptying a branch leaves a valid empty group.
+- **Content-pane state chip removed** (`ContentPane.swift`).
+
+Not ported: working.html's checked-out-branch dot (its rollup shows a dot for an idle
+*checked-out* branch) — the app has no HEAD/checked-out concept yet, so that stays
+deferred rather than inventing one here.

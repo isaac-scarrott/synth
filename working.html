@@ -155,7 +155,7 @@
 
   /* the open session gets a sticky "you are here" tint in the sidebar */
   .session--open { background: rgba(10,132,255,0.06); }
-  .session--open .session__name { color: #2c2c30; }
+  .session--open .session__name { color: #2c2c30; font-weight: 600; }
   @media (hover: hover) and (pointer: fine) {
     .session--open:hover { background: rgba(10,132,255,0.09); }
   }
@@ -453,7 +453,7 @@
     gap: 1px;
   }
 
-  .branch { padding: 5px 10px; text-decoration: none; }
+  .branch { padding: 5px 8px 5px 10px; text-decoration: none; }
 
   .branch__name {
     flex: 1;
@@ -548,8 +548,8 @@
     text-overflow: ellipsis;
     transition: color 140ms ease;
   }
-  /* unread rows read darker + heavier so they surface at a glance */
-  .session--unread .session__name { color: #35353a; font-weight: 550; }
+  /* unread rows read darker so they surface at a glance; only the focused session goes bold */
+  .session--unread .session__name { color: #35353a; }
 
   /* ---- Status system ---- */
   /* Every right-side indicator lives in one fixed-width slot: right-aligned as a
@@ -580,6 +580,8 @@
     box-shadow: 0 0 0 2.5px rgba(245, 166, 35, 0.16);
     animation: sdot-pulse 1.5s var(--ease-in-out) infinite;
   }
+  /* idle carries no liveness — once read, its grey dot is just noise, so drop it */
+  .session:not(.session--unread) .sdot:not(.sdot--run):not(.sdot--work) { display: none; }
 
   /* attention glyphs: needs-input (?) and error (!) — bare marks, no border */
   .ind--input {
@@ -604,12 +606,12 @@
   /* ---- Row action kebab (hover-revealed at the row end) ---- */
   .kebab {
     position: absolute;
-    right: 6px;
+    right: 2px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
     height: 20px;
-    border-radius: 5px;
+    border-radius: 7px;
     color: #8a8a90;
     display: flex;
     align-items: center;
@@ -619,7 +621,7 @@
     pointer-events: none;
     transition: opacity 120ms ease, background-color 120ms ease, transform 110ms var(--ease-out);
   }
-  .kebab svg { width: 15px; height: 15px; display: block; }
+  .kebab svg { width: 13px; height: 13px; display: block; }
   .kebab:active { transform: translateY(-50%) scale(0.88); }
   @media (hover: hover) and (pointer: fine) {
     .row:hover .kebab { opacity: 1; pointer-events: auto; }
@@ -1015,6 +1017,196 @@
   .sc-row__keys { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
   .sc-row__or { font-size: 10.5px; color: #b6b6bb; padding: 0 3px; }
 
+  /* ---- Sidebar footer: Settings entry (pinned to the bottom of the left panel) ---- */
+  .sidebar__foot {
+    flex-shrink: 0;
+    padding: 6px 8px 10px;
+    border-top: 0.5px solid var(--border);
+  }
+  .foot-btn {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    color: #737378;
+    transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .foot-btn svg { width: 16px; height: 16px; flex-shrink: 0; color: #a1a1a6; transition: color 120ms ease; }
+  .foot-btn span { font-size: 12.5px; font-weight: 500; letter-spacing: -0.006em; }
+  .foot-btn:active { transform: scale(0.985); }
+  @media (hover: hover) and (pointer: fine) {
+    .foot-btn:hover { background: rgba(0,0,0,0.045); color: #1d1d1f; }
+    .foot-btn:hover svg { color: #56565c; }
+  }
+
+  /* ---- Settings mode: swaps the sidebar tree for a scope list; same shell otherwise ---- */
+  .settings-nav {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 8px 16px;
+  }
+  .app.settings .nav { display: none; }
+  .app.settings .sidebar__foot { display: none; }
+  .app.settings .settings-nav { display: flex; }
+
+  .settings-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 8px;
+    margin-bottom: 6px;
+    border: 0;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 560;
+    letter-spacing: -0.006em;
+    color: #1d1d1f;
+    transition: background-color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .settings-back svg { width: 17px; height: 17px; flex-shrink: 0; color: #86868b; }
+  .settings-back:active { transform: scale(0.985); }
+  @media (hover: hover) and (pointer: fine) {
+    .settings-back:hover { background: rgba(0,0,0,0.05); }
+  }
+
+  .scope {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 0;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: background-color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .scope:active { transform: scale(0.985); }
+  @media (hover: hover) and (pointer: fine) {
+    .scope:hover { background: rgba(0,0,0,0.035); }
+  }
+  .scope--on { background: rgba(10,132,255,0.06); }
+  @media (hover: hover) and (pointer: fine) {
+    .scope--on:hover { background: rgba(10,132,255,0.09); }
+  }
+  .scope__icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #86868b;
+  }
+  .scope__icon svg { width: 16px; height: 16px; display: block; }
+  .scope__name {
+    flex: 1;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: -0.006em;
+    color: #58585d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .scope--on .scope__name { color: #1d1d1f; }
+
+  /* ---- Settings content (rendered in the shared content pane) ---- */
+  .set-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px 44px; }
+  .set-body__inner { max-width: 620px; }
+  .set-section { margin-bottom: 30px; }
+  .set-section:last-child { margin-bottom: 0; }
+  .set-section__title { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: #1d1d1f; }
+  .set-section__sub { font-size: 12px; line-height: 1.5; color: var(--text-muted); margin-top: 4px; }
+  .set-section__sub b { font-weight: 600; color: #48484d; }
+
+  /* run-order strip — makes the "both run, global first" merge legible at a glance */
+  .set-flow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 12px;
+    margin: 14px 0 4px;
+    background: rgba(0,0,0,0.025);
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+  }
+  .set-flow__step { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 550; color: #1d1d1f; }
+  .set-flow__ico { display: flex; color: #86868b; }
+  .set-flow__ico svg { width: 15px; height: 15px; display: block; }
+  .set-flow .repo__chip { width: 16px; height: 16px; font-size: 9.5px; border-radius: 5px; }
+  .set-flow__arrow { display: flex; color: #c2c2c7; }
+  .set-flow__arrow svg { width: 15px; height: 15px; display: block; }
+  .set-flow__note { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-muted); }
+
+  .set-code-wrap { margin-top: 14px; }
+  .set-code-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .set-code-head__label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #9a9aa0;
+  }
+  .set-link {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--input);
+    cursor: pointer;
+  }
+  .set-link:hover { text-decoration: underline; }
+  .set-code {
+    width: 100%;
+    min-height: 130px;
+    resize: vertical;
+    display: block;
+    padding: 13px 15px;
+    border: 0;
+    border-radius: 10px;
+    background: #1b1b1e;
+    color: #d4d4d8;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+    tab-size: 2;
+    white-space: pre;
+    outline: none;
+    box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18);
+    -webkit-font-smoothing: auto;
+  }
+  .set-code:focus { box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18), 0 0 0 2.5px rgba(10,132,255,0.22); }
+  .set-code--ro { min-height: 0; opacity: 0.62; resize: none; }
+  .set-note {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+  .set-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: #b0b0b5; }
+  .set-note code { font-family: var(--mono); font-size: 11px; background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 4px; }
+
   /* Respect reduced motion: keep opacity/color, drop movement + looping pulses */
   @media (prefers-reduced-motion: reduce) {
     * { transition-duration: 0.01ms !important; }
@@ -1106,6 +1298,20 @@
                   <span class="session__name">shell</span>
                   <span class="ind"><span class="sdot"></span></span>
                 </a>
+                <!-- build — working -->
+                <a class="row session" data-row data-session data-type="terminal">
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
+                  <span class="session__name">build</span>
+                  <span class="ind"><span class="sdot sdot--work"></span></span>
+                </a>
+                <!-- migrate — idle, unread (finished, not yet seen) -->
+                <a class="row session session--unread" data-row data-session data-type="terminal">
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
+                  <span class="session__name">migrate</span>
+                  <span class="ind"><span class="sdot"></span></span>
+                </a>
               </div>
               </div></div>
             </div>
@@ -1194,6 +1400,15 @@
           </div></div>
         </div>
       </nav>
+
+      <div class="settings-nav" id="settingsNav"></div>
+
+      <div class="sidebar__foot">
+        <button class="foot-btn" id="openSettings" aria-label="Settings">
+          <svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.16,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.93l23.72,2.64q1.49,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L94.89,215.8a91.57,91.57,0,0,1-15-6.23L77.39,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L40.93,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L34.7,100.45a91.57,91.57,0,0,1,6.23-15L63.51,83a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,77.39,69l2.51-22.58a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.11,40.2a91.57,91.57,0,0,1,15,6.23L172.61,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.8,123.66Z"/></svg>
+          <span>Settings</span>
+        </button>
+      </div>
     </aside>
 
     <section class="content"></section>
@@ -1289,6 +1504,7 @@
 
   function openSession(el) {
     if (!el) return;
+    app.classList.remove('settings');   // jumping to a session leaves settings mode
     if (openEl) openEl.classList.remove('session--open');
     openEl = el;
     el.classList.add('session--open');
@@ -1571,6 +1787,13 @@
       return;
     }
     if (paletteOpen) return; // the palette owns the keyboard while it's open
+    // Cmd/Ctrl+, toggles Settings (the Mac Preferences convention); Esc leaves it
+    if ((e.metaKey || e.ctrlKey) && k === ',') {
+      e.preventDefault();
+      if (app.classList.contains('settings')) exitSettings(); else enterSettings();
+      return;
+    }
+    if (k === 'Escape' && app.classList.contains('settings')) { e.preventDefault(); exitSettings(); return; }
     // Cmd/Ctrl+B toggles the sidebar
     if ((e.metaKey || e.ctrlKey) && (k === 'b' || k === 'B')) {
       e.preventDefault();
@@ -1615,6 +1838,7 @@
   const ICON_TRASH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"/></svg>';
   const ICON_BRANCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H96a23.84,23.84,0,0,0-8,1.38V95a32,32,0,1,0-16,0v66a32,32,0,1,0,16,0V144a8,8,0,0,1,8-8h88a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,232,64ZM64,64A16,16,0,1,1,80,80,16,16,0,0,1,64,64ZM96,192a16,16,0,1,1-16-16A16,16,0,0,1,96,192ZM200,80a16,16,0,1,1,16-16A16,16,0,0,1,200,80Z"/></svg>';
   const ICON_TERMINAL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
+  const ICON_AI = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg>';
   const ICON_CARET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
 
   function rowLevel(row) {
@@ -1654,6 +1878,7 @@
     const parts = [];
     if (level === 'repo') parts.push(`<span class="menu__item" data-act="create-worktree">${ICON_BRANCH}Create worktree…</span>`);
     if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-terminal">${ICON_TERMINAL}New terminal</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-claude">${ICON_AI}New Claude Code</span>`);
     if (level !== 'session') parts.push('<div class="menu__sep"></div>');
     parts.push(`<span class="menu__item menu__item--danger" data-act="delete">${ICON_TRASH}${level === 'session' ? 'Delete' : 'Remove'}</span>`);
     menu.innerHTML = `<div class="menu__viewport">`
@@ -1670,6 +1895,7 @@
         if (act === 'delete') return showConfirm(menu);
         if (act === 'create-worktree') { closeMenu(); return openWorktreeDialog(row); }
         if (act === 'new-terminal') { closeMenu(); return addTerminal(row); }
+        if (act === 'new-claude') { closeMenu(); return addClaude(row); }
       } else if (btn) {
         if (btn.dataset.c === 'cancel') return closeMenu();
         if (btn.dataset.c === 'ok') { const unit = rowUnit(row); closeMenu(); removeUnit(unit); }
@@ -1860,23 +2086,33 @@
     return sessions;
   }
 
-  function addTerminal(branchRow) {
+  // A new session is one of two kinds. Claude Code is just a terminal that opened
+  // and ran `claude`, so both spawn identically — only the type, icon, name and
+  // starting state differ.
+  const SESSION_KINDS = {
+    terminal: { type: 'terminal', name: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>`,                  ind: 'run' },
+    claude:   { type: 'ai',       name: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_AI}</span>`,      ind: 'work' },
+  };
+  function addSession(branchRow, kind) {
+    const spec = SESSION_KINDS[kind];
     const sessions = ensureGroup(branchRow);
     const a = document.createElement('a');
     a.className = 'row session row-enter';
     a.setAttribute('data-row', '');
     a.setAttribute('data-session', '');
-    a.setAttribute('data-type', 'terminal');
+    a.setAttribute('data-type', spec.type);
     a.innerHTML = `<span class="session__bullet"></span>
-      <span class="session__icon">${ICON_TERMINAL}</span>
-      <span class="session__name">shell</span>
-      <span class="ind"><span class="sdot sdot--run"></span></span>`;
+      ${spec.icon}
+      <span class="session__name">${spec.name}</span>
+      ${IND_HTML[spec.ind]}`;
     addKebab(a);
     sessions.appendChild(a);
     a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
     rollUpGroups();
-    openSession(a); // a freshly spawned terminal opens straight into the content pane
+    openSession(a); // a freshly spawned session opens straight into the content pane
   }
+  const addTerminal = (branchRow) => addSession(branchRow, 'terminal');
+  const addClaude   = (branchRow) => addSession(branchRow, 'claude');
 
   // ===== Add workspace (the + on the section header) =====
   const CHIP_COLORS = ['#6366f1', '#0ea5e9', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
@@ -2028,6 +2264,7 @@
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '0'], 'Focus sidebar'],
       [['⌘', '1'], 'Focus open session'],
+      [['⌘', ','], 'Settings'],
       [['⌘', '?'], 'Keyboard shortcuts'],
     ]],
     ['Sidebar', [
@@ -2176,6 +2413,7 @@
     const path = [head && wsName(head), br && brName(br)].filter(Boolean).join(' / ');
     const items = [];
     if (br) items.push({ icon: ICON_TERMINAL, label: 'New terminal', ctx: brName(br), enter: () => runAndClose(() => addTerminal(br)) });
+    if (br) items.push({ icon: ICON_AI, label: 'New Claude Code', ctx: brName(br), enter: () => runAndClose(() => addClaude(br)) });
     if (head) items.push({ icon: ICON_BRANCH, label: 'New worktree…', ctx: wsName(head), enter: () => pushFrame(createFrame('worktree', head)) });
     if (open) items.push({ icon: ICON_TRASH, label: 'Delete ' + seName(open), ctx: seCtx(open), danger: true, enter: () => pushFrame(confirmFrame(open)) });
     return { path, items };
@@ -2192,12 +2430,14 @@
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
           { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },
           { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
+          { sec: 'act', icon: ICON_GEAR,    label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { sec: 'act', icon: ICON_KEYS,    label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
         ];
         const items = [
           ...here.items.map((it) => ({ ...it, g: 'Actions' })),
           { g: 'Actions', icon: ICON_PLUS,     label: 'New workspace…', enter: () => pushFrame(createFrame('workspace')) },
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
+          { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
         ];
         allRows('.repo__head').forEach((h) => items.push({ g: 'Workspaces', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
@@ -2245,6 +2485,7 @@
       build() {
         const items = [
           { sec: 'act', icon: ICON_BRANCH, label: 'New worktree…',  enter: () => pushFrame(createFrame('worktree', head)) },
+          { sec: 'act', icon: ICON_GEAR,   label: 'Workspace settings…', enter: () => runAndClose(() => enterSettings(head)) },
           { sec: 'act', icon: ICON_TRASH,  label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(head)) },
         ];
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
@@ -2260,7 +2501,8 @@
       crumb: name, placeholder: 'Search ' + name + '…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',   enter: () => runAndClose(() => addTerminal(row)) },
+          { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    enter: () => runAndClose(() => addTerminal(row)) },
+          { sec: 'act', icon: ICON_AI,       label: 'New Claude Code', enter: () => runAndClose(() => addClaude(row)) },
           { sec: 'act', icon: ICON_TRASH,    label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
@@ -2428,6 +2670,150 @@
     if (k === 'ArrowDown' || (e.ctrlKey && !e.metaKey && (k === 'j' || k === 'J' || k === 'n' || k === 'N'))) { e.preventDefault(); palMove(1); return; }
     if (k === 'ArrowUp'   || (e.ctrlKey && !e.metaKey && (k === 'k' || k === 'K' || k === 'p' || k === 'P'))) { e.preventDefault(); palMove(-1); return; }
     if (k === 'Backspace' && !pal.input.value) { if (pal.stack.length > 1) { e.preventDefault(); popFrame(); } }
+  });
+
+  // ===== Settings — a full-screen mode layered over the same shell (sidebar + content). =====
+  // Two scopes: Global settings apply to every workspace; each workspace can add its own on top.
+  // For the worktree setup script the scopes do NOT override — the effective config runs BOTH:
+  // the global script first, then the workspace's. The right pane renders the scope you pick;
+  // a Back button at the top of the left panel returns to the workspace tree.
+  const ICON_GEAR  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.16,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.93l23.72,2.64q1.49,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L94.89,215.8a91.57,91.57,0,0,1-15-6.23L77.39,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L40.93,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L34.7,100.45a91.57,91.57,0,0,1,6.23-15L63.51,83a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,77.39,69l2.51-22.58a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.11,40.2a91.57,91.57,0,0,1,15,6.23L172.61,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.8,123.66Z"/></svg>';
+  const ICON_GLOBE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg>';
+  const ICON_BACK  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"/></svg>';
+  const ICON_INFO  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"/></svg>';
+
+  const settingsNav = document.getElementById('settingsNav');
+  let settingsScope = 'global';   // 'global', or a .repo__head element (a workspace)
+
+  // Mock persistence — the setup scripts the effective config is assembled from. The native
+  // app would read these from disk; here they just live in memory so edits survive scope hops.
+  let globalScript = '#!/usr/bin/env bash\nset -euo pipefail\n\n# Runs in every new worktree, across all workspaces.\n[ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env';
+  const wsScripts = {
+    synth: '#!/usr/bin/env bash\nset -euo pipefail\n\npnpm install\npnpm run db:generate',
+    'aviator-api': '#!/usr/bin/env bash\nset -euo pipefail\n\ngo mod download',
+  };
+  const scriptFor = (name) => wsScripts[name] != null ? wsScripts[name] : '#!/usr/bin/env bash\n\n# No extra setup for this workspace yet.';
+
+  const workspaceHeads = () => [...nav.querySelectorAll(':scope > [data-repo] > .repo__head')];
+
+  function buildScopeNav() {
+    const heads = workspaceHeads();
+    settingsNav.innerHTML = `<button class="settings-back" id="settingsBack">${ICON_BACK}<span>Workspaces</span></button>
+      <button class="scope" data-scope="global">
+        <span class="scope__icon">${ICON_GLOBE}</span>
+        <span class="scope__name">Global</span>
+      </button>
+      <div class="nav__label">Workspaces</div>
+      ${heads.map(() => '').join('')}`;
+    // append workspace scope rows, keeping a live handle back to each head element
+    heads.forEach((h) => {
+      const b = document.createElement('button');
+      b.className = 'scope';
+      b.dataset.scope = 'ws';
+      b.innerHTML = `<span class="scope__icon">${wsChip(h)}</span><span class="scope__name">${esc(wsName(h))}</span>`;
+      b._head = h;
+      settingsNav.appendChild(b);
+    });
+  }
+
+  function markScope() {
+    settingsNav.querySelectorAll('.scope').forEach((b) => {
+      const on = b.dataset.scope === 'global' ? settingsScope === 'global' : b._head === settingsScope;
+      b.classList.toggle('scope--on', on);
+    });
+  }
+
+  // The one setting so far: the worktree setup script. Global shows just its own; a workspace
+  // shows the run order + the read-only global script (what also runs) above its editable one.
+  function scriptSection(isGlobal, name) {
+    if (isGlobal) {
+      return `<div class="set-section">
+        <div class="set-section__title">Worktree setup script</div>
+        <div class="set-section__sub">Runs once inside every new worktree, right after it's created — across all workspaces.</div>
+        <div class="set-code-wrap">
+          <div class="set-code-head"><span class="set-code-head__label">setup.sh</span></div>
+          <textarea class="set-code" data-edit="global" spellcheck="false">${esc(globalScript)}</textarea>
+        </div>
+        <div class="set-note">${ICON_INFO}<span>Runs in the new worktree's root with <code>$SYNTH_MAIN</code> pointing at the primary checkout. Times out after 5&nbsp;minutes; a non-zero exit is reported on the worktree but never blocks it.</span></div>
+      </div>`;
+    }
+    return `<div class="set-section">
+      <div class="set-section__title">Worktree setup script</div>
+      <div class="set-section__sub">Extra setup for <b>${esc(name)}</b> worktrees, on top of the global script.</div>
+      <div class="set-flow">
+        <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
+        <span class="set-flow__arrow">${ICON_CARET}</span>
+        <span class="set-flow__step">${wsChip(contextHeadByName(name))}${esc(name)}</span>
+        <span class="set-flow__note">Both run · global first</span>
+      </div>
+      <div class="set-code-wrap">
+        <div class="set-code-head"><span class="set-code-head__label">Global — runs first</span><button class="set-link" data-goto="global">Edit in Global</button></div>
+        <textarea class="set-code set-code--ro" rows="3" readonly spellcheck="false">${esc(globalScript)}</textarea>
+      </div>
+      <div class="set-code-wrap">
+        <div class="set-code-head"><span class="set-code-head__label">${esc(name)} — runs next</span></div>
+        <textarea class="set-code" data-edit="ws" spellcheck="false">${esc(scriptFor(name))}</textarea>
+      </div>
+      <div class="set-note">${ICON_INFO}<span>Each runs in the new worktree's root. Times out after 5&nbsp;minutes; a non-zero exit is reported but never blocks it.</span></div>
+    </div>`;
+  }
+  // find a workspace head by its name (for the chip in the run-order strip)
+  const contextHeadByName = (name) => workspaceHeads().find((h) => wsName(h) === name) || null;
+
+  function renderSettings() {
+    stopStream();
+    const isGlobal = settingsScope === 'global';
+    // a removed workspace can leave settingsScope dangling — fall back to Global
+    if (!isGlobal && !document.contains(settingsScope)) { settingsScope = 'global'; return renderSettings(); }
+    const head = isGlobal ? null : settingsScope;
+    const name = isGlobal ? 'Global' : wsName(head);
+    const titleIcon = isGlobal ? `<span class="scope__icon">${ICON_GLOBE}</span>` : wsChip(head);
+    content.innerHTML = `<div class="pane">
+      <div class="pane__head">
+        <div class="pane__title">${titleIcon}<span>${esc(name)}</span></div>
+        <div class="pane__crumb"><b>Settings</b> / ${esc(isGlobal ? 'All workspaces' : name)}</div>
+        <div class="pane__spacer"></div>
+      </div>
+      <div class="set-body"><div class="set-body__inner">${scriptSection(isGlobal, name)}</div></div>
+    </div>`;
+    markScope();
+    // edits persist to the mock store so they survive switching scopes
+    content.querySelectorAll('.set-code[data-edit]').forEach((ta) => {
+      ta.addEventListener('input', () => {
+        if (ta.dataset.edit === 'global') globalScript = ta.value;
+        else wsScripts[name] = ta.value;
+      });
+    });
+  }
+
+  function enterSettings(scope) {
+    closeMenu();
+    if (paletteOpen) closePalette();
+    if (shortcutsEl) closeShortcuts();
+    app.classList.remove('collapsed');
+    settingsScope = scope || 'global';
+    buildScopeNav();
+    app.classList.add('settings');
+    renderSettings();
+  }
+  function exitSettings() {
+    if (!app.classList.contains('settings')) return;
+    app.classList.remove('settings');
+    renderOpen();   // restore the session that was open before
+  }
+
+  document.getElementById('openSettings').addEventListener('click', () => enterSettings());
+  settingsNav.addEventListener('click', (e) => {
+    if (e.target.closest('#settingsBack')) return exitSettings();
+    const sc = e.target.closest('.scope');
+    if (!sc) return;
+    settingsScope = sc.dataset.scope === 'global' ? 'global' : sc._head;
+    renderSettings();
+  });
+  // "Edit in Global" jumps scope without leaving settings
+  content.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-goto]');
+    if (g && app.classList.contains('settings')) { settingsScope = 'global'; renderSettings(); }
   });
 
   // Open a session by default so the workspace feels live on load (the Claude Code hero).

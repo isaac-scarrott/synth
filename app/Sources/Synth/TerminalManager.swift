@@ -9,6 +9,8 @@ import SwiftTerm
     static let shared = TerminalManager()
 
     weak var bus: EventBus?
+    /// The app's hook socket path, injected into every PTY so Claude Code hooks can call back.
+    var hookSocketPath = ""
     private var views: [UUID: LocalProcessTerminalView] = [:]
     private var supervisors: [UUID: TerminalSupervisor] = [:]
 
@@ -27,8 +29,18 @@ import SwiftTerm
         for sub in view.subviews where sub is NSScroller { sub.isHidden = true }
 
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        let command = "cd \(shellQuote(cwd.path)) && exec \(shellQuote(shell)) -il"
-        view.startProcess(executable: "/bin/sh", args: ["-c", command], environment: nil)
+        // A Claude session is a terminal that runs `claude` on entry (through the shimmed
+        // PATH, so hooks auto-attach); when Claude exits it drops back to an interactive
+        // shell. A plain terminal is detected the same way if the user runs `claude` by hand.
+        let launch = shellQuote(shell) + " -il"
+        let inner = session.kind == .claudeCode ? "claude; exec \(launch)" : "exec \(launch)"
+        let command = "cd \(shellQuote(cwd.path)) && \(inner)"
+
+        var base = ProcessInfo.processInfo.environment
+        base["TERM"] = "xterm-256color"
+        let env = HookEnvironment.decorate(base, sessionID: session.id, socketPath: hookSocketPath)
+        view.startProcess(executable: "/bin/sh", args: ["-c", command],
+                          environment: env.map { "\($0.key)=\($0.value)" })
 
         views[session.id] = view
         supervisors[session.id] = supervisor

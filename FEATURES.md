@@ -450,3 +450,26 @@ read/unread × liveness matrix):
   a "go look" cue; running/working dots unchanged.
 - **Right-edge indicator alignment** across nesting (branch right-pad 10→8) and **kebab polish**
   (rounded 7px menu-open box, 13px glyph, even 2px inset).
+
+## 2026-07-03 — Claude Code detected live via hooks (supersedes the creation-time kind)
+
+A session is a terminal; **Claude Code is a detected state**, not a kind you pick. When `claude` runs
+in a terminal it's detected and the row upgrades to the sparkle/terracotta Claude visual with a live
+status dot; when it exits the row reverts to a plain terminal. "New Claude Code" stays as a
+convenience launcher (spawns a terminal that runs `claude`), but the kind is now mutable and driven
+by detection, not fixed at creation. See ADR-0008.
+
+- **Detection = a PATH shim, not process polling.** Synth prepends a shim dir with a `claude` symlink
+  to the `synth-hook` CLI; running `claude` execs the real binary with an injected `--session-id` +
+  inline `--settings` (our hooks), deep-merging any user `--settings`/settings.json so both fire.
+  Works in any cwd, zero on-disk footprint; `claude -p`/subcommands pass through. Verified end-to-end
+  against real Claude Code 2.1.200 (auto-launch and manual `claude`-in-a-terminal both intercept).
+- **Indicators = Claude's hooks → SessionStatus.** `UserPromptSubmit`→working (amber),
+  `Stop`→idle (+ marks unread when off-screen), `PermissionRequest` / `PreToolUse` on
+  `AskUserQuestion`|`ExitPlanMode`→needs-input (blue ?), `StopFailure`→error, `SessionStart`/
+  `SessionEnd`→attach/detach. `SubagentStop` is ignored (must not notify like the parent).
+- **Transport = a unix socket** (`/tmp/synth-hook-<pid>.sock`), not HTTP. Hooks (`synth-hook event`)
+  write one signal line; the app's socket server turns it into a `SessionEvent` on the bus (ADR-0001).
+- **Correlation = injected env** (`SYNTH_SESSION_ID` = row id), so a signal maps to one row even when
+  terminals share a worktree. Degrades to a no-op if `synth-hook` or `claude` is missing.
+- Design borrowed from cmux (a native-macOS terminal app running the same approach in production).

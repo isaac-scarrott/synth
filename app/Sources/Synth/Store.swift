@@ -8,6 +8,10 @@ enum SessionEvent: Sendable {
     case statusChanged(UUID, SessionStatus)
     case titleChanged(UUID, String)
     case exited(UUID, Int32?)
+    /// A terminal was detected running Claude Code (or stopped) — flips the row's visual.
+    case kindChanged(UUID, SessionKind)
+    /// A background session finished a turn — surface it unless it's the one on screen.
+    case markUnread(UUID)
 }
 
 /// The transient transport carrying derived facts to the single consumer (the store).
@@ -95,9 +99,14 @@ enum SettingsScope: Equatable {
     """
 
     let bus = EventBus()
+    let hookServer: HookServer
 
     init() {
+        hookServer = HookServer(bus: bus)
         TerminalManager.shared.bus = bus
+        TerminalManager.shared.hookSocketPath = hookServer.socketPath
+        HookEnvironment.setup()
+        hookServer.start()
         Task { [weak self] in
             guard let self else { return }
             for await event in self.bus.stream { self.apply(event) }
@@ -112,6 +121,8 @@ enum SettingsScope: Equatable {
         case let .titleChanged(id, title):   session(id)?.title = title
         case let .exited(id, code):
             session(id)?.status = (code ?? 0) == 0 ? .exited(code) : .error
+        case let .kindChanged(id, kind): session(id)?.kind = kind
+        case let .markUnread(id): if openSessionID != id { session(id)?.unread = true }
         }
     }
 

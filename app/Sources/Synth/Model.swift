@@ -28,7 +28,9 @@ enum SessionStatus: Equatable, Sendable {
 
 @Observable final class Session: Identifiable {
     let id = UUID()
-    let kind: SessionKind
+    /// Mutable: a terminal that runs `claude` is detected and upgraded to `.claudeCode`
+    /// (and reverts when it exits) — the kind reflects what's running, not a creation label.
+    var kind: SessionKind
     var title: String
     var status: SessionStatus
     var unread: Bool

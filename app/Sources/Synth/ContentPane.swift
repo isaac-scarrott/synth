@@ -68,15 +68,14 @@ private struct SessionPane: View {
         }
     }
 
+    // A session — terminal or Claude Code — is backed by a PTY running in its worktree;
+    // Claude Code just runs `claude` inside it. The kind drives the sidebar/head visual,
+    // not what the pane shows.
     @ViewBuilder private var paneBody: some View {
-        switch session.kind {
-        case .terminal:
-            if let cwd = store.cwd(for: session) {
-                TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd))
-            }
-        case .claudeCode:
-            Placeholder(title: session.title,
-                        subtitle: "Claude Code sessions aren't wired up yet.")
+        if let cwd = store.cwd(for: session) {
+            TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd))
+        } else {
+            Placeholder(title: session.title, subtitle: "No working directory for this session.")
         }
     }
 }

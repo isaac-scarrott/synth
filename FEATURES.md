@@ -309,3 +309,20 @@ Decision: the palette mirrors the app's two orthogonal axes — *where a thing l
 model with optional `context` + `status` accessories gated on stack depth. Landed in both
 `working.html` and `big-picture-design.html` (subset invariant preserved; verified in-browser:
 drill/back, Ctrl+J/K, context appears only out-of-context, status colours correct, zero console errors).
+
+## 2026-07-03 — Native app: ⌘K palette ported (navigation stack over the real store)
+
+The command-palette navigation stack (the three entries above) now exists in the native SwiftUI app
+(`app/Sources/Synth/Palette.swift`), as designed: frames are built from the `@Observable` AppStore —
+not a view tree — so context (`workspace / branch`) and colour-coded status come from the same derived
+facts the sidebar reads, and every palette action calls the store's existing mutation paths (create
+workspace/branch, new terminal, delete, jump-to-session = reveal ancestors + open + mark read). ⌘K
+toggles from anywhere including over a focused terminal; inside, ↑/↓ + Ctrl+J/K (+ Ctrl+N/P) move,
+Enter drills/runs, Backspace on an empty query pops, breadcrumb chips pop to depth, Esc closes;
+Ctrl+K also opens when closed (outside text/terminal focus, so the shell keeps its own Ctrl+K).
+Create-workspace stays the inline text frame (typed path → real git branch discovery), coexisting
+with the sidebar's native folder picker. Verified by driving the real app end-to-end: create
+workspace → drill → New terminal (real PTY) → Sessions category ctx/status → create + delete branch
+via picker → inline confirm. Also ported from this pass: the kebab delete-confirm morph (crossfade +
+animated resize), pill suppression on an expanded active branch group, and the open session's sticky
+tint.

@@ -608,3 +608,20 @@ drifted with the resizable width) but top-**left** when collapsed. Now it sits a
 spot beside the traffic lights in every state (open · collapsed · settings), matching the native
 window's real traffic-light cluster. When collapsed, the content pane header indents to clear that
 control zone (traffic lights + toggle) so nothing underlaps it.
+
+## 2026-07-04 — Adaptive terminal theme (both designs): light "paper" / dark card
+
+The terminal surface now themes with the app instead of being a fixed dark card. In light
+mode it's a warm "paper" card (`#f4f2ec`) with dark text (`#33333a`) and a muted-but-legible
+accent set (deeper red/green/yellow/blue that read on light); in dark mode it's a deep
+near-black card (`#131315`) with brighter, more vivid accents that pop on the darker bg.
+
+- **A dedicated `--tui-*` token family** drives it — `--tui-bg/fg/dim/red/green/yellow/blue/
+  magenta/cyan/cursor/sel/hair` — with light values in `:root` and a dark override block, so
+  the whole palette (not just the background) moves with the theme.
+- **The card chrome adapts too:** the inset hairline is a dark edge on light paper and a
+  white hairline on the dark card, over a soft floating shadow, so the terminal reads as a
+  distinct raised surface in both themes rather than blending into the pane.
+- **Kept separate from `--term-bg`,** which still backs the Settings code editor (a dark code
+  surface in both modes) — the terminal owns `--tui-*` alone, so theming one never touches
+  the other.

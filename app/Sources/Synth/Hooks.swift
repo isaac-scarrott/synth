@@ -66,6 +66,9 @@ final class HookServer: @unchecked Sendable {
             if let title = obj["title"] as? String {
                 Task { @MainActor in bus?.post(.titleChanged(id, title)) }
             }
+            if let claude = obj["claudeSession"] as? String, !claude.isEmpty {
+                Task { @MainActor in bus?.post(.claudeSessionCaptured(id, claude)) }
+            }
         }
     }
 

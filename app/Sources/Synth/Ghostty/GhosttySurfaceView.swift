@@ -10,6 +10,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     private let sessionID: UUID
     private let cwd: URL
     private let kind: SessionKind
+    /// Set when restoring a Claude row (ADR-0010): its terminal resumes the conversation
+    /// with `claude --resume <id>` instead of a fresh `claude`. nil for a new session.
+    private let resumeClaudeID: String?
     private let env: [String: String]
     private let command: String
     private weak var bus: EventBus?
@@ -27,6 +30,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         self.sessionID = session.id
         self.cwd = cwd
         self.kind = session.kind
+        self.resumeClaudeID = session.claudeSessionID
         self.env = env
         self.command = command
         self.bus = bus
@@ -35,6 +39,12 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// Single-quote a value for safe use as a shell command argument (mirrors synth-hook's
+    /// shellQuote) — the resume id is typed into the login shell as `claude --resume <id>`.
+    private static func shellQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
 
     private var metalLayer: CAMetalLayer? { layer as? CAMetalLayer }
 
@@ -70,8 +80,17 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
 
         // A Claude session is a native login shell that immediately runs `claude` (typed
         // via initial_input, so the shim PATH attaches hooks); when Claude exits you drop
-        // back to that same shell. A plain terminal is just the login shell.
-        let initialInput = kind == .claudeCode ? "claude\n" : nil
+        // back to that same shell. A plain terminal is just the login shell. A restored
+        // Claude row (resumeClaudeID set) resumes its saved conversation instead. The id
+        // comes from Claude's hook payload (a UUID in practice) and is typed into the shell,
+        // so shell-quote it rather than trust the format.
+        let initialInput: String?
+        switch kind {
+        case .claudeCode:
+            initialInput = resumeClaudeID.map { "claude --resume \(Self.shellQuote($0))\n" } ?? "claude\n"
+        case .terminal:
+            initialInput = nil
+        }
 
         // env_vars must outlive ghostty_surface_new; strdup then free after the call.
         var envVars: [ghostty_env_var_s] = []

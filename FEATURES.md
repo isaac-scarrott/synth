@@ -635,3 +635,30 @@ traffic lights → expand toggle → session icon → title/crumb, tightly group
 terminal/content below (no empty band). In the HTML the 3 mac buttons are now a persistent top-left
 cluster so they stay visible when the sidebar is closed (matching the native window). Two design
 critics flagged the prior collapsed state as "awful"; the reworked toolbar was re-reviewed as great.
+
+## 2026-07-04 — State persists across restarts (native app; ADR-0010)
+
+The tree you build now survives a quit. Workspaces, their worktree/branch rows (with labels, colour,
+and expansion state), and your sessions are snapshotted to `~/Library/Application Support/Synth/
+state.json` and rebuilt on the next launch. This is a native-app feature with no working.html
+counterpart — persistence is invisible in the static design mock.
+
+- **What's durable vs. not.** The tree + low-frequency facts (custom labels, chip colour, which rows
+  are expanded) persist; process-bound facts (live status, unread, keyboard selection, the terminal
+  process) do not. Restored sessions come back **dormant** (idle, no process); opening one respawns a
+  fresh shell in its worktree. Restore is reconstruction, not process hand-off.
+- **Storage.** A versioned, atomic JSON snapshot with a `state-previous.json` backup and a schema
+  version gate — a corrupt primary falls back to the backup, a bad backup to a clean start, so a bad
+  file can't wedge launch. Plain `Codable` DTOs kept separate from the `@Observable` models. Saved by
+  a 4s autosave timer (skips writing when nothing changed) plus a flush on quit.
+- **Reconciliation.** On load, a workspace whose repo folder is gone — or a branch whose worktree
+  folder is gone — is dropped (you deleted it outside Synth); the pruned tree is what gets re-saved.
+- **Claude sessions resume their conversation.** Synth's launch shim already mints Claude's session
+  id; it's now captured (via the existing hook socket) and persisted, so a restored Claude row opens
+  with `claude --resume <id>` and lands back in the conversation. Plain terminals just get a fresh
+  shell. Verified end to end by driving the built app across a restart (workspace/branch/labels/
+  expansion restored, both a terminal and a Claude session restored, and the Claude row reopening
+  straight into Claude Code's resume UI with the captured id).
+- **Not done (deliberately):** surviving live local processes (would need tmux/daemon backing — its
+  own ADR), and multi-instance coordination (one `state.json` is shared; today's usage is a single
+  instance, last-writer-wins).

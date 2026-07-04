@@ -60,7 +60,12 @@ func runLaunch(userArgs: [String]) -> Never {
     var args = userArgs
     let userSettings = takeSettingsValue(&args)
     let settings = buildSettingsJSON(userSettings: userSettings)
-    execReal(real, ["--session-id", UUID().uuidString, "--settings", settings] + args)
+    // A resume/continue carries its own session id, so don't mint a fresh `--session-id`
+    // (Claude rejects both together). Synth uses this path to restore a Claude row —
+    // `claude --resume <id>` — and hooks still fire because we keep injecting `--settings`.
+    let resuming = args.contains { ["--resume", "-r", "--continue", "-c"].contains($0) }
+    let idArgs = resuming ? [] : ["--session-id", UUID().uuidString]
+    execReal(real, idArgs + ["--settings", settings] + args)
 }
 
 /// Remove a `--settings <value>` pair from the args and return the value, if present.
@@ -178,9 +183,14 @@ func runEvent(name: String) -> Never {
     // generates) — read the latest and forward it so Synth can auto-name the row.
     let title = (payload["transcript_path"] as? String).flatMap(readAITitle)
 
+    // Claude's own session id (present on every hook payload) — forwarded so Synth can
+    // resume this conversation with `claude --resume <id>` after a restart.
+    let claudeSession = (payload["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+
     var lines = ""
     if let signal { lines += jsonLine(["session": sessionID, "signal": signal]) }
     if let title  { lines += jsonLine(["session": sessionID, "title": title]) }
+    if let claudeSession { lines += jsonLine(["session": sessionID, "claudeSession": claudeSession]) }
     if !lines.isEmpty { sendLines(socketPath: socketPath, lines) }
     exit(0)   // never block Claude — we only observe
 }

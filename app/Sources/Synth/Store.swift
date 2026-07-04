@@ -13,6 +13,9 @@ enum SessionEvent: Sendable {
     case kindChanged(UUID, SessionKind)
     /// A background session finished a turn — surface it unless it's the one on screen.
     case markUnread(UUID)
+    /// Claude Code reported its own session id (via the SessionStart hook) — stored so a
+    /// restored row can resume the conversation with `claude --resume` (ADR-0010).
+    case claudeSessionCaptured(UUID, String)
 }
 
 /// The transient transport carrying derived facts to the single consumer (the store).
@@ -139,6 +142,10 @@ enum ThemePref: String, CaseIterable, Identifiable {
     let bus = EventBus()
     let hookServer: HookServer
 
+    /// Bytes of the last snapshot written — lets the autosave skip an unchanged rewrite
+    /// (ADR-0010). @ObservationIgnored: a bookkeeping field, not UI state.
+    @ObservationIgnored private var lastSavedBytes: Data?
+
     init() {
         hookServer = HookServer(bus: bus)
         TerminalManager.shared.bus = bus
@@ -149,6 +156,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
             guard let self else { return }
             for await event in self.bus.stream { self.apply(event) }
         }
+        if let state = PersistenceStore.load() { restore(from: state) }
+        startAutosave()
     }
 
     // MARK: Bus → store
@@ -163,6 +172,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
             session(id)?.status = (code ?? 0) == 0 ? .exited(code) : .error
         case let .kindChanged(id, kind): session(id)?.kind = kind
         case let .markUnread(id): if openSessionID != id { session(id)?.unread = true }
+        case let .claudeSessionCaptured(id, claudeID):
+            if let s = session(id), s.claudeSessionID != claudeID { s.claudeSessionID = claudeID }
         }
     }
 
@@ -400,6 +411,97 @@ enum ThemePref: String, CaseIterable, Identifiable {
         ws.branches.append(branch)
         expanded.insert(ws.id)
         navCursor = branch.id
+    }
+
+    // MARK: Persistence (ADR-0010)
+
+    /// Snapshot the durable tree for disk — everything that isn't a live-process fact.
+    private func snapshot() -> PersistedState {
+        PersistedState(
+            version: PersistenceStore.schemaVersion,
+            workspaces: workspaces.map { ws in
+                PersistedWorkspace(
+                    id: ws.id, name: ws.name, url: ws.url, colorIndex: ws.colorIndex,
+                    branches: ws.branches.map { br in
+                        PersistedBranch(
+                            id: br.id, name: br.name, worktreeURL: br.worktreeURL,
+                            lastActivity: br.lastActivity,
+                            sessions: br.sessions.map { s in
+                                PersistedSession(id: s.id, kind: s.kind.rawValue, title: s.title,
+                                                 titleIsCustom: s.titleIsCustom,
+                                                 claudeSessionID: s.claudeSessionID)
+                            })
+                    })
+            },
+            // Sorted so an unchanged set always encodes to identical bytes (Set iteration
+            // order is per-process nondeterministic) — the skip-if-unchanged check relies on it.
+            expanded: expanded.sorted { $0.uuidString < $1.uuidString }
+        )
+    }
+
+    /// Rebuild the tree from a snapshot, reconciling against disk: a workspace or branch
+    /// folder that was *confirmed deleted* (see `confirmedMissing`) is dropped — the user
+    /// removed it outside Synth. A folder that's merely unreachable (unmounted volume,
+    /// offline network path) is kept, so a transient absence never silently and permanently
+    /// erases rows. Sessions come back dormant — kind/title/name only, status `.idle`, no
+    /// live process; opening one respawns a shell (a Claude row resumes). Stale expansion
+    /// ids for pruned rows are discarded.
+    private func restore(from state: PersistedState) {
+        var restored: [Workspace] = []
+        for pw in state.workspaces {
+            guard !confirmedMissing(pw.url) else { continue }
+            let branches: [Branch] = pw.branches.compactMap { pb in
+                guard !confirmedMissing(pb.worktreeURL) else { return nil }
+                let sessions = pb.sessions.map { ps in
+                    Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
+                            title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
+                            claudeSessionID: ps.claudeSessionID)
+                }
+                return Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
+                              sessions: sessions, lastActivity: pb.lastActivity)
+            }
+            restored.append(Workspace(id: pw.id, name: pw.name, url: pw.url,
+                                      branches: branches, colorIndex: pw.colorIndex))
+        }
+        workspaces = restored
+        let liveIDs = Set(restored.flatMap { ws in
+            [ws.id] + ws.branches.flatMap { [$0.id] + $0.sessions.map(\.id) }
+        })
+        expanded = Set(state.expanded).intersection(liveIDs)
+    }
+
+    /// True only when a folder is *confirmed deleted*: its parent directory exists but the
+    /// folder itself doesn't. If the parent is also absent (unmounted volume, missing
+    /// ancestor) the answer is false — the path is unreachable, not deleted, so we keep it.
+    private func confirmedMissing(_ url: URL) -> Bool {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.path) { return false }
+        return fm.fileExists(atPath: url.deletingLastPathComponent().path)
+    }
+
+    /// Persist on a low cadence (backstop for any mutation) plus a flush on quit — cmux's
+    /// timer-over-instrumentation model, so no mutation site can forget to save. The
+    /// skip-if-unchanged check in the store keeps the idle case free.
+    private func startAutosave() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                guard let self else { return }
+                self.saveNow()
+            }
+        }
+        // queue: nil so the block runs synchronously on the posting (main) thread — NSApp
+        // posts willTerminate then exit()s in the same stack, so an async .main hop would
+        // never fire. assumeIsolated is then the correct guard.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveNow() }
+        }
+    }
+
+    func saveNow() {
+        lastSavedBytes = PersistenceStore.save(snapshot(), lastBytes: lastSavedBytes)
     }
 
     func presentGitError(_ message: String, details: String) {

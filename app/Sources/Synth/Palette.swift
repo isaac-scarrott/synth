@@ -482,10 +482,16 @@ struct PaletteFrame {
                             mode: .input, seed: cur) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             let changed = !v.isEmpty && v != cur
-            return [PaletteItem(icon: .phosphor(Phosphor.pencil),
-                                label: v.isEmpty ? "Type a new name…" : "Rename to “\(v)”",
-                                disabled: !changed,
-                                enter: { if changed { self.runAndClose { self.store.rename(ref, to: v) } } })]
+            var items = [PaletteItem(icon: .phosphor(Phosphor.pencil),
+                                     label: v.isEmpty ? "Type a new name…" : "Rename to “\(v)”",
+                                     disabled: !changed,
+                                     enter: { if changed { self.runAndClose { self.store.rename(ref, to: v) } } })]
+            if case let .session(s) = ref, s.kind == .claudeCode, s.title != "Claude Code" {
+                items.append(PaletteItem(icon: .phosphor(Phosphor.reset), label: "Reset to default name",
+                                         ctx: "Claude Code",
+                                         enter: { self.runAndClose { self.store.resetSessionName(s) } }))
+            }
+            return items
         }
     }
 

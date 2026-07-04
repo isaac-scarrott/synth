@@ -547,3 +547,10 @@ The working.html batch, landed in the SwiftUI app.
   200–460, persisted to `UserDefaults`, double-click resets); the sidebar frame reads that width.
 - **Esc in the sidebar** → `focusContent` (key-monitor keyCode 53), gated so the terminal and modals
   keep their own Esc.
+
+## 2026-07-04 — Tab opens a sidebar group (both designs)
+
+Pressing **Tab** on a highlighted group row (workspace or branch group) opens it and steps
+selection inside to its first child — a fast "go into this group" motion, distinct from → (which
+expands but keeps the cursor on the group). On an already-open group Tab drills to the first child;
+on a leaf session it's a no-op, and a dialog owns Tab when one is open. Shown in the ⌘? sheet.

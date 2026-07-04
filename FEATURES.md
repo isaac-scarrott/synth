@@ -554,3 +554,9 @@ Pressing **Tab** on a highlighted group row (workspace or branch group) opens it
 selection inside to its first child — a fast "go into this group" motion, distinct from → (which
 expands but keeps the cursor on the group). On an already-open group Tab drills to the first child;
 on a leaf session it's a no-op, and a dialog owns Tab when one is open. Shown in the ⌘? sheet.
+
+## 2026-07-04 — Sidebar nav: h/l expand·collapse (both designs)
+
+Vim-style `l` / `h` join `j` / `k` in the sidebar: `l` aliases → (expand the highlighted group,
+else move down), `h` aliases ← (collapse it, else move up). Shown as alternates on the ⌘? sheet's
+"Expand · collapse" row.

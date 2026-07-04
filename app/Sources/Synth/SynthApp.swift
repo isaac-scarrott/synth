@@ -206,11 +206,9 @@ struct RootView: View {
                 store.sidebarCollapsed = false
                 focusSidebar()
                 store.keyboardActive = true
-                // Ring lands on a *visible* row: current selection, else the open
-                // session, else the first row (working.html focusSidebar).
-                let visible = store.visibleRows.map(\.id)
-                store.navCursor = [store.navCursor, store.openSessionID]
-                    .compactMap { $0 }.first { visible.contains($0) } ?? store.visibleRows.first?.id
+                // Ring lands on a navigable row: keep the current cursor, else the open
+                // session / active scope, else the first row (working.html focusSidebar).
+                store.focusSidebarCursor()
                 return nil
             }
             if event.modifierFlags.contains(.command), key == "1" {

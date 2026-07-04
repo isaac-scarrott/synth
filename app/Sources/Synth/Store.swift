@@ -240,9 +240,32 @@ enum ThemePref: String, CaseIterable, Identifiable {
         sidebarCollapsed = false
         settingsScope = scope
         settingsOpen = true
+        // Keyboard cursor lands on the active scope (working.html enterSettings → select .scope--on).
+        navCursor = scopeCursorID(scope)
     }
 
-    func exitSettings() { settingsOpen = false }
+    func exitSettings() {
+        settingsOpen = false
+        // Cursor returns to the tree — the open session if it's still visible, else the
+        // Settings foot button we came from (working.html exitSettings).
+        let visible = visibleRows.map(\.id)
+        navCursor = openSessionID.flatMap { visible.contains($0) ? $0 : nil } ?? NavID.settingsFoot
+    }
+
+    /// Switch scope — the settings-nav twin of opening a session (working.html selectScope):
+    /// used by both a scope-row click and ↵ on the cursor. Moves the cursor onto the scope.
+    func selectScope(_ scope: SettingsScope) {
+        settingsScope = scope
+        navCursor = scopeCursorID(scope)
+    }
+
+    /// The cursor id for a scope: the Global sentinel, or the workspace's own id.
+    func scopeCursorID(_ scope: SettingsScope) -> UUID {
+        switch scope {
+        case .global:            return NavID.scopeGlobal
+        case let .workspace(id): return id
+        }
+    }
 
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
 

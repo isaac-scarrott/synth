@@ -95,8 +95,11 @@ private struct EmptySidebarHint: View {
 /// working.html `.sidebar__foot` — pinned to the bottom of the left panel.
 private struct SidebarFoot: View {
     @Environment(AppStore.self) private var store
+    // The foot button is the last row of the main-view navigable list, so it shows the
+    // same keyboard selection ring as a tree row when the cursor rests on it (F5).
+    private var selected: Bool { store.keyboardActive && store.navCursor == NavID.settingsFoot }
     var body: some View {
-        FootButton(icon: Phosphor.gear, title: "Settings") { store.enterSettings() }
+        FootButton(icon: Phosphor.gear, title: "Settings", selected: selected) { store.enterSettings() }
             .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 10)
             .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
@@ -105,6 +108,7 @@ private struct SidebarFoot: View {
 private struct FootButton: View {
     let icon: String
     let title: String
+    let selected: Bool
     let action: () -> Void
     @State private var hovering = false
 
@@ -119,10 +123,10 @@ private struct FootButton: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
+        .rowChrome(hovering: hovering, selected: selected)
         .onHover { hovering = $0 }
     }
 }
@@ -131,20 +135,27 @@ private struct FootButton: View {
 /// to the tree, then Global + one scope row per workspace.
 private struct SettingsNav: View {
     @Environment(AppStore.self) private var store
+    // Whether the keyboard cursor sits on a given settings-nav target — the same ring the
+    // tree rows use, now shared across the scope list (F5).
+    private func selected(_ id: UUID) -> Bool { store.keyboardActive && store.navCursor == id }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 1) {
-                BackButton { store.exitSettings() }
+                BackButton(selected: selected(NavID.back)) { store.exitSettings() }
                     .padding(.bottom, 6)
-                ScopeRow(label: "Global", on: store.settingsIsGlobal) { store.settingsScope = .global }
+                ScopeRow(label: "Global", on: store.settingsIsGlobal, selected: selected(NavID.scopeGlobal)) {
+                    store.selectScope(.global)
+                }
                 Text("Workspaces")
                     .font(.system(size: 10.5, weight: .semibold)).kerning(0.5).textCase(.uppercase)
                     .foregroundStyle(Theme.navLabel)
                     .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ForEach(store.workspaces) { ws in
-                    ScopeRow(label: ws.name, workspace: ws, on: store.settingsWorkspace?.id == ws.id) {
-                        store.settingsScope = .workspace(ws.id)
+                    ScopeRow(label: ws.name, workspace: ws,
+                             on: store.settingsWorkspace?.id == ws.id, selected: selected(ws.id)) {
+                        store.selectScope(.workspace(ws.id))
                     }
                 }
             }
@@ -155,6 +166,7 @@ private struct SettingsNav: View {
 }
 
 private struct BackButton: View {
+    let selected: Bool
     let action: () -> Void
     @State private var hovering = false
     var body: some View {
@@ -165,10 +177,10 @@ private struct BackButton: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
+        .rowChrome(hovering: hovering, selected: selected)
         .onHover { hovering = $0 }
     }
 }
@@ -179,10 +191,14 @@ private struct ScopeRow: View {
     let label: String
     var workspace: Workspace? = nil
     let on: Bool
+    let selected: Bool
     let action: () -> Void
     @State private var hovering = false
 
+    // The keyboard ring wins over the blue "you are here" tint (working.html: `.scope.sel`
+    // outweighs `.scope--on`), so a selected scope reads as the cursor first.
     private var background: Color {
+        if selected { return Theme.rowSelected }
         if on { return Color(hex: 0x0A84FF).opacity(hovering ? 0.09 : 0.06) }
         return hovering ? Theme.rowHover : .clear
     }
@@ -203,6 +219,11 @@ private struct ScopeRow: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
             .background(RoundedRectangle(cornerRadius: 8).fill(background))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Theme.selRing, lineWidth: 1.5)
+                    .opacity(selected ? 1 : 0)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
@@ -268,7 +289,11 @@ private struct WorkspaceRow: View {
 
             Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
-                    ForEach(workspace.branches) { BranchRow(branch: $0, workspace: workspace) }
+                    if workspace.branches.isEmpty {
+                        EmptyGroupHint(text: "No worktrees yet · ⌘K to add one")
+                    } else {
+                        ForEach(workspace.branches) { BranchRow(branch: $0, workspace: workspace) }
+                    }
                 }
                 .padding(.leading, 18)
             }
@@ -354,7 +379,11 @@ private struct BranchRow: View {
 
             Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
-                    ForEach(branch.sessions) { SessionRow(session: $0) }
+                    if branch.sessions.isEmpty {
+                        EmptyGroupHint(text: "No sessions yet · ⌘K to start one")
+                    } else {
+                        ForEach(branch.sessions) { SessionRow(session: $0) }
+                    }
                 }
                 .padding(.leading, 15)
                 .overlay(alignment: .leading) {
@@ -448,6 +477,20 @@ private struct SessionRow: View {
 }
 
 // MARK: - Shared bits
+
+/// An expanded group with no children reads as a quiet hint instead of a bare indent
+/// (working.html `.sessions:empty::after` / `.branches:empty::after`). Sits at the same
+/// left indent as a child row would, since it's rendered inside the group's Reveal.
+private struct EmptyGroupHint: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(Theme.inkFaint)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
 private struct KebabButton: View {
     @Environment(AppStore.self) private var store

@@ -17,6 +17,17 @@ enum RowRef: Identifiable, Equatable {
     static func == (lhs: RowRef, rhs: RowRef) -> Bool { lhs.id == rhs.id }
 }
 
+/// Stable ids for the non-tree cursor targets, so the one `navCursor: UUID?` primitive
+/// can address the Settings foot button and the settings scope list alongside tree rows
+/// (working.html addresses these by DOM element; here by constant id). Workspace scope
+/// rows reuse their workspace id — the tree and settings lists never render at once, so
+/// there's no collision.
+enum NavID {
+    static let settingsFoot = UUID(uuidString: "00000000-0000-0000-0000-0000000F0071")!
+    static let back         = UUID(uuidString: "00000000-0000-0000-0000-0000000BACC0")!
+    static let scopeGlobal  = UUID(uuidString: "00000000-0000-0000-0000-00000060BA10")!
+}
+
 extension AppStore {
     /// The flattened, ordered list of rows the user can see, respecting expansion.
     /// Keyboard movement only ever visits these (FEATURES: "visible rows only").
@@ -34,17 +45,50 @@ extension AppStore {
         return rows
     }
 
-    var cursorRef: RowRef? { visibleRows.first { $0.id == navCursor } }
+    /// The tree row under the cursor — nil in Settings, where the cursor lives on the
+    /// scope list, not a tree row. Everything gated on "cursor is a real tree row"
+    /// (create/rename/delete, Tab-toggle) reads through this (working.html `isTreeRow`).
+    var cursorRef: RowRef? { settingsOpen ? nil : visibleRows.first { $0.id == navCursor } }
 
     // MARK: Movement
 
+    /// The single list the keyboard cursor walks — screen-aware. In the main view it's
+    /// the tree followed by the Settings foot button, so ↓/j off the last leaf flows
+    /// straight into Settings. In Settings it's the scope list (Back, Global, workspaces).
+    /// One list means every nav key works identically on both screens (working.html `activeRows`).
+    var activeRows: [UUID] {
+        if settingsOpen {
+            return [NavID.back, NavID.scopeGlobal] + workspaces.map(\.id)
+        }
+        return visibleRows.map(\.id) + [NavID.settingsFoot]
+    }
+
+    /// Where the cursor rests when nothing is explicitly selected: the open session in the
+    /// tree, or the active scope in Settings (working.html `currentRow`).
+    func currentRow(_ rows: [UUID]) -> UUID? {
+        if settingsOpen { return settingsWorkspace?.id ?? NavID.scopeGlobal }
+        if let open = openSessionID, rows.contains(open) { return open }
+        return nil
+    }
+
     func moveCursor(_ delta: Int) {
         keyboardActive = true
-        let rows = visibleRows
+        let rows = activeRows
         guard !rows.isEmpty else { return }
-        let current = rows.firstIndex { $0.id == navCursor } ?? -1
-        let next = min(max(current + delta, 0), rows.count - 1)
-        navCursor = rows[next].id
+        // No explicit selection yet → step relative to the current row (open session / active scope).
+        let from = (navCursor.map(rows.contains) == true) ? navCursor : currentRow(rows)
+        let i = from.flatMap { rows.firstIndex(of: $0) } ?? -1
+        let next = min(max(i + delta, 0), rows.count - 1)
+        navCursor = rows[next]
+    }
+
+    /// ⌘0 / focus-sidebar landing: keep the cursor if it's already on a navigable row,
+    /// else drop it on the current row, else the first (working.html `focusSidebar`).
+    func focusSidebarCursor() {
+        let rows = activeRows
+        guard !rows.isEmpty else { return }
+        if let c = navCursor, rows.contains(c) { return }
+        navCursor = currentRow(rows) ?? rows.first
     }
 
     /// A row that can expand/collapse: a workspace, or any branch group.
@@ -76,8 +120,21 @@ extension AppStore {
         }
     }
 
+    /// Activate the row under the cursor — the shared ↵/Space action, dispatched by kind
+    /// (working.html `activateRow`).
     func activateCursor() {
         keyboardActive = true
+        if settingsOpen {
+            switch navCursor {
+            case NavID.back:        exitSettings()
+            case NavID.scopeGlobal: selectScope(.global)
+            case let id? where workspaces.contains(where: { $0.id == id }):
+                selectScope(.workspace(id))
+            default: break
+            }
+            return
+        }
+        if navCursor == NavID.settingsFoot { enterSettings(); return }
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
         case let .branch(b): toggleExpanded(b.id)

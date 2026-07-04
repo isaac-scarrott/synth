@@ -49,7 +49,9 @@ struct SettingsPane: View {
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18).padding(.vertical, 13)
+        .padding(.horizontal, 18)
+        .padding(.leading, store.sidebarCollapsed ? 88 : 0)   // clear the collapsed control zone
+        .padding(.vertical, 13)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 

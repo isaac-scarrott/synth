@@ -67,10 +67,11 @@ struct RootView: View {
             .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: store.sidebarCollapsed)
 
             if store.sidebarCollapsed {
+                // Same top-left spot as the collapse toggle, so it doesn't move on toggle.
                 IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
                     store.sidebarCollapsed = false
                 }
-                .padding(.top, Theme.titlebarInset - 8)
+                .padding(.top, 9)
                 .padding(.leading, 84)
                 .transition(.opacity)
             }

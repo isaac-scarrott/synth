@@ -82,6 +82,7 @@ private struct SessionPane: View {
 
 /// working.html `.pane__head`: 13/18 padding, hairline bottom border, 12 gap.
 private struct PaneHead: View {
+    @Environment(AppStore.self) private var store
     let session: Session
     let workspace: Workspace?
     let branch: Branch?
@@ -109,6 +110,8 @@ private struct PaneHead: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 18)
+        // Collapsed: clear the top-left control zone (traffic lights + toggle).
+        .padding(.leading, store.sidebarCollapsed ? 88 : 0)
         .padding(.vertical, 13)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 0.5)

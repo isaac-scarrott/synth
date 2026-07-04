@@ -47,12 +47,15 @@ struct Sidebar: View {
 
     private var topStrip: some View {
         HStack {
-            Spacer()
             IconButton(path: Phosphor.sidebar, help: "Collapse sidebar") {
                 store.sidebarCollapsed = true
             }
+            Spacer()
         }
-        .padding(.horizontal, 10)
+        // Sit beside the window's traffic lights (top-left control zone), not the
+        // resizable right edge — one stable toggle spot across every state.
+        .padding(.leading, 84)
+        .padding(.trailing, 10)
         .frame(height: 44, alignment: .center)
     }
 

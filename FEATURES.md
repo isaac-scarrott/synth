@@ -600,3 +600,11 @@ and best-in-class VT compatibility — for free, at the cost of a large C-ABI in
   `--settings` hooks), round-trips a `claude-start` hook signal back to the socket, and renders
   Claude's full truecolor TUI. Prebuilt libghostty comes from the cmux fork's release (see the
   earlier hooks entry — Synth's approach is modelled on cmux).
+
+## 2026-07-04 — Sidebar toggle: one stable top-left position (both designs)
+
+The collapse/expand toggle no longer jumps: it was at the sidebar's top-**right** when open (and
+drifted with the resizable width) but top-**left** when collapsed. Now it sits at a fixed top-left
+spot beside the traffic lights in every state (open · collapsed · settings), matching the native
+window's real traffic-light cluster. When collapsed, the content pane header indents to clear that
+control zone (traffic lights + toggle) so nothing underlaps it.

@@ -141,7 +141,8 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 6px;
     padding: 0 12px 0 16px;
     -webkit-app-region: drag;
   }
@@ -183,14 +184,16 @@
   /* Expand button — appears at top-left once the sidebar is collapsed */
   .expand-btn {
     position: absolute;
-    top: 12px;
-    left: 14px;
+    top: 9px;
+    left: 75px;
     z-index: 20;
     opacity: 0;
     pointer-events: none;
     transition: opacity 160ms ease;
   }
   .app.collapsed .expand-btn { opacity: 1; pointer-events: auto; }
+  /* collapsed: the pane header clears the top-left control zone (traffic lights + toggle) */
+  .app.collapsed .pane__head { padding-left: 106px; }
 
   /* ---- Content pane (renders the open session) ---- */
   .content {

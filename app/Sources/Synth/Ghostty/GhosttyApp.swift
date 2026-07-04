@@ -134,5 +134,6 @@ import GhosttyKit
     clipboard-read = allow
     clipboard-write = allow
     confirm-close-surface = false
+    shell-integration = none
     """
 }

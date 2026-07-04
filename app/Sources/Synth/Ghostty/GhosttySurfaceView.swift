@@ -11,6 +11,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     private let cwd: URL
     private let kind: SessionKind
     private let env: [String: String]
+    private let command: String
     private weak var bus: EventBus?
 
     /// Retained C-side via `surface_config.userdata`; released in `close()`.
@@ -22,11 +23,12 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     private var keyText: [String] = []
     private var markedText = NSMutableAttributedString()
 
-    init(session: Session, cwd: URL, env: [String: String], bus: EventBus?) {
+    init(session: Session, cwd: URL, env: [String: String], command: String, bus: EventBus?) {
         self.sessionID = session.id
         self.cwd = cwd
         self.kind = session.kind
         self.env = env
+        self.command = command
         self.bus = bus
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         wantsLayer = true
@@ -80,19 +82,22 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         }
         defer { for e in envVars { free(UnsafeMutablePointer(mutating: e.key)); free(UnsafeMutablePointer(mutating: e.value)) } }
 
-        cwd.path.withCString { cCwd in
-            cfg.working_directory = cCwd
-            let make: () -> Void = {
-                envVars.withUnsafeMutableBufferPointer { buf in
-                    cfg.env_vars = buf.baseAddress
-                    cfg.env_var_count = buf.count
-                    self.surface = ghostty_surface_new(app, &cfg)
+        command.withCString { cCmd in
+            cfg.command = cCmd
+            cwd.path.withCString { cCwd in
+                cfg.working_directory = cCwd
+                let make: () -> Void = {
+                    envVars.withUnsafeMutableBufferPointer { buf in
+                        cfg.env_vars = buf.baseAddress
+                        cfg.env_var_count = buf.count
+                        self.surface = ghostty_surface_new(app, &cfg)
+                    }
                 }
-            }
-            if let initialInput {
-                initialInput.withCString { cInput in cfg.initial_input = cInput; make() }
-            } else {
-                make()
+                if let initialInput {
+                    initialInput.withCString { cInput in cfg.initial_input = cInput; make() }
+                } else {
+                    make()
+                }
             }
         }
 

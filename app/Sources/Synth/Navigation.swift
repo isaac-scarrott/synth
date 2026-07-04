@@ -86,6 +86,20 @@ extension AppStore {
         }
     }
 
+    /// The cursor sits on a group (workspace or branch group) that Tab can toggle.
+    var cursorIsGroup: Bool {
+        guard let ref = cursorRef else { return false }
+        return isToggle(ref)
+    }
+
+    /// Tab: toggle the highlighted group open↔closed (groups only; the cursor stays put).
+    /// `l`/`h` remain the directional expand/collapse — Tab is the toggle (working.html).
+    func toggleGroup() {
+        guard let ref = cursorRef, isToggle(ref) else { return }
+        keyboardActive = true
+        toggleExpanded(ref.id)
+    }
+
     // MARK: Structural edits — remove from the sidebar only; worktrees and
     // branches stay on disk untouched.
 

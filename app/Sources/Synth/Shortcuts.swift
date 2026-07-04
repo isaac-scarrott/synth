@@ -58,7 +58,8 @@ struct ShortcutsSheet: View {
         ]),
         ShortcutGroup(name: "Sidebar", rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move selection", alt: ["J", "K"]),
-            Shortcut(keys: ["→", "←"], label: "Expand · collapse"),
+            Shortcut(keys: ["→", "←"], label: "Expand · collapse", alt: ["L", "H"]),
+            Shortcut(keys: ["⇥"], label: "Toggle group"),
             Shortcut(keys: ["↵"], label: "Open session / toggle", alt: ["Space"]),
             Shortcut(keys: ["R"], label: "Rename selected"),
             Shortcut(keys: ["D"], label: "Delete selected"),

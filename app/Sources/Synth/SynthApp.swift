@@ -251,6 +251,10 @@ struct RootView: View {
             switch event.keyCode {
             case 53:                                         // Esc: hand focus to the main window
                 focusContent(store); return nil
+            case 48:                                         // Tab: toggle the group open/closed
+                let bare = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+                guard bare, store.cursorIsGroup else { return event }
+                store.toggleGroup(); return nil
             case 125: store.moveCursor(1); return nil        // ↓
             case 126: store.moveCursor(-1); return nil       // ↑
             case 124: store.expandOrIn(); return nil         // →
@@ -266,6 +270,8 @@ struct RootView: View {
                 switch key {
                 case "j": store.moveCursor(1); return nil
                 case "k": store.moveCursor(-1); return nil
+                case "l" where bare: store.expandOrIn(); return nil     // vim expand-or-in
+                case "h" where bare: store.collapseOrOut(); return nil  // vim collapse-or-out
                 case "r" where bare:
                     guard let ref = store.cursorRef else { return event }
                     store.beginRename(ref); return nil

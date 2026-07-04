@@ -566,3 +566,10 @@ else move down), `h` aliases ← (collapse it, else move up). Shown as alternate
 Refinement: **Tab toggles** the highlighted group open↔closed (cursor stays on the group), rather
 than opening it and stepping inside. `l`/`h` remain the directional expand/collapse; Tab is the
 toggle. ⌘? sheet now reads "Toggle group".
+
+## 2026-07-04 — Native port: Tab toggles group + h/l expand·collapse
+
+Landed the sidebar-nav additions in the SwiftUI app. `AppStore.toggleGroup()` (Tab, keyCode 48 →
+guarded by `cursorIsGroup`) toggles the highlighted workspace/branch group open↔closed; `l`/`h` in
+the key monitor alias `expandOrIn`/`collapseOrOut`. ⌘? sheet shows "Toggle group" + L/H alternates.
+Verified by driving the built app (Tab open→close, l expand, h collapse) with screenshots.

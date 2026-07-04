@@ -31,13 +31,7 @@ import GhosttyKit
             return
         }
 
-        let config = ghostty_config_new()
-        Self.inlineConfig.withCString { cstr in
-            "/synth-inline.conf".withCString { path in
-                ghostty_config_load_string(config, cstr, UInt(Self.inlineConfig.utf8.count), path)
-            }
-        }
-        ghostty_config_finalize(config)
+        let config = TerminalTheme.makeConfig(dark: TerminalTheme.isDark(NSApp.effectiveAppearance))
 
         var runtime = ghostty_runtime_config_s()
         runtime.userdata = Unmanaged.passUnretained(self).toOpaque()
@@ -117,23 +111,4 @@ import GhosttyKit
         }
     }
 
-    /// See CLAUDE.md fidelity notes. `term = xterm-256color` avoids depending on the
-    /// ghostty terminfo being installed on the host. Colours + font match working.html's
-    /// `.term` card.
-    private static let inlineConfig = """
-    font-family = SF Mono
-    font-size = 12
-    background = 1b1b1e
-    foreground = d4d4d8
-    term = xterm-256color
-    cursor-style = block
-    mouse-hide-while-typing = true
-    window-padding-x = 8
-    window-padding-y = 6
-    window-padding-color = background
-    clipboard-read = allow
-    clipboard-write = allow
-    confirm-close-surface = false
-    shell-integration = none
-    """
 }

@@ -30,7 +30,9 @@ enum Theme {
     static let ink4         = dyn(0x6A6A70, 0xA1A1A8)   // menu confirm label, palette icon
     static let inkOpen      = dyn(0x2C2C30, 0xEAEAEE)   // open session name
     static let menuIcon     = dyn(0x7A7A80, 0xA1A1A8)   // popover item icons
-    static let termBg       = dyn(0x1B1B1E, 0x131315)   // terminal / code editor surface
+    static let termBg       = dyn(0x1B1B1E, 0x131315)   // code editor surface (Settings)
+    static let tuiBg        = dyn(0xF4F2EC, 0x131315)   // terminal card: light "paper" / dark card
+    static let tuiHair      = mono(0.13, 0.06)          // terminal card inset hairline
     static let paletteActive = dyn(0x0A5FD6, 0x6BA9FF)  // ⌘K active-row label
     /// Frosted popover fill layered over `.ultraThinMaterial` (⌘K / menus).
     static let glass = Color(nsColor: NSColor(name: nil) {

@@ -127,13 +127,14 @@ private struct TermSurface: View {
     var body: some View {
         TerminalHost(terminal: terminal)
             .padding(.vertical, 13).padding(.horizontal, 15)
-            .background(Theme.termBg)
+            .background(Theme.tuiBg)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .strokeBorder(Theme.tuiHair, lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+            .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
+            .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
             .padding(14)
     }
 }

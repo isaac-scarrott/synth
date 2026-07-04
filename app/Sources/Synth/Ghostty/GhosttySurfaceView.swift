@@ -104,7 +104,18 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         guard surface != nil else { NSLog("Synth: ghostty_surface_new failed"); return }
         updateDisplayID()
         updateSurfaceSize()
+        applyTheme()
         if let surface { ghostty_surface_set_focus(surface, window.firstResponder === self) }
+    }
+
+    /// Re-theme the surface to the view's current appearance (working.html's `--tui-*`,
+    /// light "paper" vs dark card). Called on creation and whenever the appearance flips.
+    private func applyTheme() {
+        guard let surface else { return }
+        let config = TerminalTheme.makeConfig(dark: TerminalTheme.isDark(effectiveAppearance))
+        ghostty_surface_update_config(surface, config)
+        ghostty_config_free(config)
+        ghostty_surface_refresh(surface)
     }
 
     /// Free the surface + release its retained context. Called by TerminalManager.terminate.
@@ -118,7 +129,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     override func layout() { super.layout(); updateSurfaceSize() }
     override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); updateSurfaceSize() }
     override func viewDidEndLiveResize() { super.viewDidEndLiveResize(); updateSurfaceSize() }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance() }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyTheme() }
 
     private func updateSurfaceSize() {
         guard let surface, let window else { return }

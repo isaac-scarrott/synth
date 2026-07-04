@@ -551,6 +551,25 @@
   /* unread rows read darker so they surface at a glance; only the focused session goes bold */
   .session--unread .session__name { color: #35353a; }
 
+  /* inline rename (press r on the selected row): the name label becomes an editable field
+     in place — full text shown, blue ring, text caret. ↵ commits, Esc reverts. */
+  .session__name.renaming,
+  .branch__name.renaming,
+  .repo__name.renaming {
+    outline: none;
+    overflow: visible;
+    text-overflow: clip;
+    color: #1d1d1f;
+    cursor: text;
+    background: #fff;
+    border-radius: 4px;
+    padding: 0 3px;
+    margin: 0 -3px;
+    box-shadow: 0 0 0 1.5px rgba(10, 132, 255, 0.55);
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
   /* ---- Status system ---- */
   /* Every right-side indicator lives in one fixed-width slot: right-aligned as a
      column, contents centered on a shared vertical axis regardless of glyph size. */
@@ -1819,6 +1838,8 @@
     if ((e.metaKey || e.ctrlKey) && k === '1') { e.preventDefault(); focusContent(); return; }
     // while focus lives in the content pane (composer, terminal), nav keys stay there
     if (e.target instanceof Element && e.target.closest('.content')) return;
+    // an open row menu owns the keyboard (its ↵/Esc are handled by the menu key handler)
+    if (openMenuEl) return;
     if (['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Enter', ' ', 'j', 'k'].includes(k)) {
       document.body.classList.add('kbd');
     }
@@ -1841,6 +1862,17 @@
       e.preventDefault();
       if (selEl.matches('[data-toggle]')) toggle(selEl.closest('[data-repo]'));
       else if (selEl.matches('[data-session]')) { openSession(selEl); focusContent(); }
+    }
+    // r renames the selected row in place; d deletes it (through a confirm popover)
+    else if ((k === 'r' || k === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (!selEl) return;
+      e.preventDefault();
+      startRename(selEl);
+    }
+    else if ((k === 'd' || k === 'D') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (!selEl) return;
+      e.preventDefault();
+      requestDelete(selEl);
     }
   });
 
@@ -1865,6 +1897,66 @@
   function rowUnit(row) {
     if (row.matches('.repo__head') || row.matches('.branch--group')) return row.closest('[data-repo]');
     return row; // plain branch or session
+  }
+  // the editable label for a row, and an in-place rename that keeps the open pane in sync
+  function nameElOf(row) {
+    const lvl = rowLevel(row);
+    return row.querySelector(lvl === 'repo' ? '.repo__name' : lvl === 'branch' ? '.branch__name' : '.session__name');
+  }
+  function renameUnit(row, name) {
+    const el = nameElOf(row);
+    if (!el) return;
+    el.textContent = name;
+    if (row.matches('.session') && openEl === row) {
+      const t = document.querySelector('.pane__title span');
+      if (t) t.textContent = name;
+    }
+  }
+
+  // Inline rename from the keyboard: r on the selected row edits its name in place.
+  // ↵ commits (through renameUnit, so the open pane stays in sync), Esc reverts, blur commits.
+  function startRename(row) {
+    if (!row) return;
+    const el = nameElOf(row);
+    if (!el || el.isContentEditable) return;
+    closeMenu();
+    const prev = (el.textContent || '').trim();
+    el.setAttribute('contenteditable', 'plaintext-only');
+    el.classList.add('renaming');
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    let done = false;
+    const finish = (commit) => {
+      if (done) return; done = true;
+      el.removeEventListener('keydown', onKey);
+      el.removeEventListener('blur', onBlur);
+      el.removeAttribute('contenteditable');
+      el.classList.remove('renaming');
+      const val = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      renameUnit(row, commit && val ? val : prev);
+    };
+    const onKey = (ev) => {
+      ev.stopPropagation();                       // typing must not reach the sidebar nav handler
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+    };
+    const onBlur = () => finish(true);
+    el.addEventListener('keydown', onKey);
+    el.addEventListener('blur', onBlur);
+  }
+
+  // Delete the selected row from the keyboard: opens the row's confirm popover so a single
+  // keystroke can't destroy a session — ↵ confirms, Esc cancels (see the menu key handler).
+  function requestDelete(row) {
+    if (!row) return;
+    const kebab = row.querySelector('.kebab');
+    if (!kebab) return;
+    openMenu(row, kebab);
+    if (openMenuEl) showConfirm(openMenuEl);
   }
 
   function addKebab(row) {
@@ -2267,7 +2359,17 @@
   document.addEventListener('click', (e) => {
     if (openMenuEl && !openMenuEl.contains(e.target) && !e.target.closest('.kebab')) closeMenu();
   });
-  document.addEventListener('keydown', (e) => { if (paletteOpen) return; if (e.key === 'Escape') closeMenu(); });
+  document.addEventListener('keydown', (e) => {
+    if (paletteOpen || !openMenuEl) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+    // when the menu is showing its delete confirm, ↵ commits the removal
+    else if (e.key === 'Enter' && openMenuEl.classList.contains('confirming')) {
+      e.preventDefault();
+      const unit = rowUnit(openMenuRow);
+      closeMenu();
+      removeUnit(unit);
+    }
+  });
 
   // ===== Keyboard shortcuts sheet (⌘?) — every binding above, one glanceable modal =====
   const ICON_KEYS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200Z"/><path d="M192,112H64a8,8,0,0,1,0-16H192a8,8,0,0,1,0,16Z"/><path d="M160,160H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z"/></svg>';
@@ -2285,6 +2387,8 @@
       [['↑', '↓'], 'Move selection', ['J', 'K']],
       [['→', '←'], 'Expand · collapse'],
       [['↵'], 'Open session / toggle', ['Space']],
+      [['R'], 'Rename selected'],
+      [['D'], 'Delete selected'],
     ]],
     ['Command palette', [
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
@@ -2398,6 +2502,7 @@
   const ICON_STACK  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M108,40H48A16,16,0,0,0,32,56v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V56A16,16,0,0,0,108,40Zm0,76H48V56h60ZM208,40H148a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V56A16,16,0,0,0,208,40Zm0,76H148V56h60ZM108,148H48a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V164A16,16,0,0,0,108,148Zm0,76H48V164h60Zm100-76H148a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V164A16,16,0,0,0,208,148Zm0,76H148V164h60Z"/></svg>';
   const ICON_ENTER  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,80v88a8,8,0,0,1-16,0V88H56.68l34.35,34.34a8,8,0,0,1-11.32,11.32l-48-48a8,8,0,0,1,0-11.32l48-48a8,8,0,0,1,11.32,11.32L56.68,72H224A8,8,0,0,1,232,80Z"/></svg>';
   const ICON_CLOSE  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
+  const ICON_RENAME = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"/></svg>';
 
   // entity readers — the DOM tree is the source of truth
   const wsName = (h) => h.querySelector('.repo__name').textContent;
@@ -2412,7 +2517,7 @@
   const allRows = (sel) => [...nav.querySelectorAll(sel)];
 
   const curFrame = () => pal.stack[pal.stack.length - 1];
-  function pushFrame(fr) { pal.stack.push(fr); pal.input.value = ''; renderFrame(); }
+  function pushFrame(fr) { pal.stack.push(fr); pal.input.value = fr.seed || ''; renderFrame(); if (fr.seed) pal.input.select(); }
   function popFrame() { if (pal.stack.length > 1) { pal.stack.pop(); pal.input.value = ''; renderFrame(); } }
   function popTo(depth) { pal.stack.length = Math.max(1, depth + 1); pal.input.value = ''; renderFrame(); }
   const runAndClose = (fn) => { closePalette(); fn(); };
@@ -2429,6 +2534,7 @@
     if (br) items.push({ icon: ICON_TERMINAL, label: 'New terminal', ctx: brName(br), enter: () => runAndClose(() => addTerminal(br)) });
     if (br) items.push({ icon: ICON_AI, label: 'New Claude Code', ctx: brName(br), enter: () => runAndClose(() => addClaude(br)) });
     if (head) items.push({ icon: ICON_BRANCH, label: 'New worktree…', ctx: wsName(head), enter: () => pushFrame(createFrame('worktree', head)) });
+    if (open) items.push({ icon: ICON_RENAME, label: 'Rename ' + seName(open), ctx: seCtx(open), enter: () => pushFrame(renameFrame(open)) });
     if (open) items.push({ icon: ICON_TRASH, label: 'Delete ' + seName(open), ctx: seCtx(open), danger: true, enter: () => pushFrame(confirmFrame(open)) });
     return { path, items };
   }
@@ -2500,6 +2606,7 @@
         const items = [
           { sec: 'act', icon: ICON_BRANCH, label: 'New worktree…',  enter: () => pushFrame(createFrame('worktree', head)) },
           { sec: 'act', icon: ICON_GEAR,   label: 'Workspace settings…', enter: () => runAndClose(() => enterSettings(head)) },
+          { sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(head)) },
           { sec: 'act', icon: ICON_TRASH,  label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(head)) },
         ];
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
@@ -2517,6 +2624,7 @@
         const items = [
           { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    enter: () => runAndClose(() => addTerminal(row)) },
           { sec: 'act', icon: ICON_AI,       label: 'New Claude Code', enter: () => runAndClose(() => addClaude(row)) },
+          { sec: 'act', icon: ICON_RENAME,   label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) },
           { sec: 'act', icon: ICON_TRASH,    label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
@@ -2567,6 +2675,21 @@
       build(q) {
         const v = q.trim();
         return [{ icon: ICON_PLUS, label: v ? cfg.mk(v) : cfg.empty, disabled: !v, enter: () => { if (v) runAndClose(() => cfg.go(v)); } }];
+      },
+    };
+  }
+
+  // Rename any unit inline — the field seeds with the current name and commits once it actually changes.
+  function renameFrame(row) {
+    const noun = { repo: 'workspace', branch: 'branch', session: 'session' }[rowLevel(row)] || 'item';
+    const cur = (nameElOf(row).textContent || '').trim();
+    return {
+      crumb: 'Rename ' + cur, mode: 'input', placeholder: 'New ' + noun + ' name…', seed: cur,
+      build(q) {
+        const v = q.trim();
+        const changed = v && v !== cur;
+        return [{ icon: ICON_RENAME, label: v ? 'Rename to “' + v + '”' : 'Type a new name…', disabled: !changed,
+          enter: () => { if (changed) runAndClose(() => renameUnit(row, v)); } }];
       },
     };
   }

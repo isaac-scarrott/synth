@@ -67,6 +67,28 @@ struct PaletteFrame {
     var query = "" { didSet { activeIndex = 0 } }
     var activeIndex = 0
 
+    /// Branch lists for the New-worktree search, read OFF the main thread so pressing
+    /// `a` on a workspace never blocks the UI on git (a large/cold repo's `for-each-ref`
+    /// can take a beat). Read once per palette lifetime — the branch set can't change
+    /// while the palette is open — and the frame re-renders when results land.
+    private var branchCache: [UUID: [GitService.BranchRef]] = [:]
+    private var loadingBranches: Set<UUID> = []
+
+    private func loadBranches(for workspace: Workspace) {
+        let id = workspace.id
+        guard branchCache[id] == nil, !loadingBranches.contains(id) else { return }
+        loadingBranches.insert(id)
+        let url = workspace.url
+        Task { [weak self] in
+            let branches = await Task.detached(priority: .userInitiated) {
+                GitService.allBranches(at: url)
+            }.value
+            guard let self else { return }
+            branchCache[id] = branches
+            loadingBranches.remove(id)
+        }
+    }
+
     init(store: AppStore) {
         self.store = store
         stack = [rootFrame()]
@@ -473,14 +495,16 @@ struct PaletteFrame {
     /// off the typed name. Each pick checks the branch out into its own worktree (ADR-0007).
     /// working.html fakes the remotes; here they come from real git (GitService.allBranches).
     func worktreeFrame(in workspace: Workspace?) -> PaletteFrame {
-        // Read git once, when the frame is pushed — the branch set can't change while the
-        // palette is open, so per-keystroke `build` stays allocation-only.
-        let all = workspace.map { GitService.allBranches(at: $0.url) } ?? []
+        // Kick off the off-main git read; `build` reads from the cache as it fills, so the
+        // frame opens instantly and populates when branches arrive. Per-keystroke `build`
+        // stays allocation-only.
+        if let ws = workspace { loadBranches(for: ws) }
         let shown = Set(workspace?.branches.map(\.name) ?? [])
         return PaletteFrame(crumb: "New worktree", placeholder: "Search branches to check out…",
                             mode: .input) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace else { return [] }
+            let all = branchCache[ws.id] ?? []
             var items = all
                 .filter { !shown.contains($0.name) }
                 .compactMap { b -> (GitService.BranchRef, Double)? in

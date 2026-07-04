@@ -94,6 +94,14 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// (mousemove clears it), mirroring working.html's `.kbd` class.
     var keyboardActive = false
 
+    /// Drag-to-reorder (F2): the row being dragged (nil = none) and its live vertical
+    /// offset within its slot, so the lifted row tracks the pointer while its siblings
+    /// shift. `reorderScrollNonce` is bumped on every reorder step (drag + ⇧J/⇧K) so the
+    /// sidebar can keep the moving row in view.
+    var draggingRowID: UUID?
+    var dragOffset: CGFloat = 0
+    var reorderScrollNonce = 0
+
     /// Sheet drivers.
     var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?

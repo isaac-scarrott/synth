@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// A row currently visible in the tree — the unit keyboard navigation moves over.
 enum RowRef: Identifiable, Equatable {
@@ -89,6 +90,56 @@ extension AppStore {
         guard !rows.isEmpty else { return }
         if let c = navCursor, rows.contains(c) { return }
         navCursor = currentRow(rows) ?? rows.first
+    }
+
+    // MARK: Reorder within a sibling list (F2 drag + F7 ⇧J/⇧K)
+
+    /// Change a row's priority by moving it `delta` positions within its own sibling list —
+    /// sessions inside their branch, branches inside their workspace, workspaces at the top.
+    /// A row can never leave its list (cross-list moves are impossible by construction).
+    /// Stops at the list edges (no wrap), keeps the cursor on the moved row, and persists
+    /// the new order. This is the ⇧J/⇧K keyboard path; drag steps `moveWithinSiblings`.
+    @discardableResult
+    func reorder(_ ref: RowRef, by delta: Int, animated: Bool) -> Bool {
+        keyboardActive = true
+        let moved = moveWithinSiblings(ref, by: delta, animated: animated)
+        if moved { saveNow() }   // persist the reordered array (ADR-0010)
+        return moved
+    }
+
+    /// In-place sibling move without persisting — the drag path steps this many times per
+    /// gesture and saves once on drop. Keeps `navCursor` and the scroll on the moved row.
+    @discardableResult
+    func moveWithinSiblings(_ ref: RowRef, by delta: Int, animated: Bool) -> Bool {
+        guard delta != 0 else { return false }
+        func apply() -> Bool {
+            switch ref {
+            case let .session(s):
+                guard let br = branch(of: s) else { return false }
+                return AppStore.shift(&br.sessions, id: s.id, by: delta)
+            case let .branch(b):
+                guard let ws = workspace(of: b) else { return false }
+                return AppStore.shift(&ws.branches, id: b.id, by: delta)
+            case let .workspace(w):
+                return AppStore.shift(&workspaces, id: w.id, by: delta)
+            }
+        }
+        let moved = animated ? withAnimation(.easeOut(duration: 0.18)) { apply() } : apply()
+        if moved {
+            navCursor = ref.id
+            reorderScrollNonce &+= 1
+        }
+        return moved
+    }
+
+    /// Move the element with `id` by `delta` positions within `array`, clamped to the ends
+    /// (no wrap). Returns whether it actually moved.
+    private static func shift<T: Identifiable>(_ array: inout [T], id: T.ID, by delta: Int) -> Bool {
+        guard let i = array.firstIndex(where: { $0.id == id }) else { return false }
+        let j = i + delta
+        guard j >= 0, j < array.count, j != i else { return false }
+        array.insert(array.remove(at: i), at: j)
+        return true
     }
 
     /// A row that can expand/collapse: a workspace, or any branch group.

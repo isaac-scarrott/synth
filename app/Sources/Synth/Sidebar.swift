@@ -41,6 +41,12 @@ struct Sidebar: View {
                     guard let id else { return }
                     withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
                 }
+                // A reorder (drag step or ⇧J/⇧K) keeps the cursor on the same row, so navCursor
+                // doesn't change — bump a nonce to keep the moving row in view instead.
+                .onChange(of: store.reorderScrollNonce) { _, _ in
+                    guard let id = store.draggingRowID ?? store.navCursor else { return }
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+                }
             }
         }
     }
@@ -286,6 +292,7 @@ private struct WorkspaceRow: View {
             .onHover { hovering = $0 }
             .help("\(workspace.name) · \(workspace.branches.count) branches")
             .id(workspace.id)
+            .reorderGesture(.workspace(workspace))
 
             Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -298,6 +305,7 @@ private struct WorkspaceRow: View {
                 .padding(.leading, 18)
             }
         }
+        .reorderLift(.workspace(workspace))
     }
 
     @ViewBuilder private var trailing: some View {
@@ -376,6 +384,7 @@ private struct BranchRow: View {
             .onHover { hovering = $0 }
             .help("\(branch.name) · \(branch.sessions.count) sessions")
             .id(branch.id)
+            .reorderGesture(.branch(branch))
 
             Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -395,6 +404,7 @@ private struct BranchRow: View {
         .overlay(alignment: .leading) {
             Rectangle().fill(Theme.border).frame(width: 1)
         }
+        .reorderLift(.branch(branch))
     }
 
     @ViewBuilder private var activePillBackground: some View {
@@ -473,6 +483,8 @@ private struct SessionRow: View {
         .onHover { hovering = $0 }
         .help("\(session.title) · \(session.status.label)")
         .id(session.id)
+        .reorderGesture(.session(session))
+        .reorderLift(.session(session))
     }
 }
 
@@ -673,6 +685,88 @@ extension View {
                 .strokeBorder(Theme.selRing, lineWidth: 1.5)
                 .opacity(selected ? 1 : 0)
         )
+    }
+}
+
+// MARK: - Drag-to-reorder (F2)
+
+extension View {
+    /// Hosts the reorder drag on a row's *header* (never its child rows), and measures the
+    /// header height that sizes each reorder step. A ~5px threshold keeps a plain click
+    /// opening/toggling the row (working.html's press-vs-drag threshold).
+    func reorderGesture(_ ref: RowRef) -> some View { modifier(ReorderGesture(ref: ref)) }
+    /// Lifts the whole row while it's the drag source: it tracks the pointer, elevates with
+    /// a shadow, and rises above its siblings, which shift underneath it.
+    func reorderLift(_ ref: RowRef) -> some View { modifier(ReorderLift(ref: ref)) }
+}
+
+private struct ReorderGesture: ViewModifier {
+    @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let ref: RowRef
+    @State private var dragging = false
+    @State private var consumed: CGFloat = 0   // translation already turned into steps
+    @State private var pitch: CGFloat = 30      // header height + inter-row gap
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                GeometryReader { g in
+                    Color.clear
+                        .onAppear { pitch = g.size.height + 1 }
+                        .onChange(of: g.size.height) { _, h in if !dragging { pitch = h + 1 } }
+                }
+            )
+            .highPriorityGesture(drag)
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 5)
+            .onChanged { v in
+                if !dragging {
+                    dragging = true
+                    consumed = 0
+                    store.keyboardActive = false
+                    store.navCursor = ref.id
+                    store.draggingRowID = ref.id
+                }
+                let p = max(pitch, 1)
+                var net = v.translation.height - consumed
+                // Cross a sibling's midpoint → hop one slot; loop so a fast flick catches up,
+                // and stops on its own when moveWithinSiblings hits a list edge.
+                while net > p / 2, store.moveWithinSiblings(ref, by: 1, animated: !reduceMotion) {
+                    consumed += p; net -= p
+                }
+                while net < -p / 2, store.moveWithinSiblings(ref, by: -1, animated: !reduceMotion) {
+                    consumed -= p; net += p
+                }
+                store.dragOffset = v.translation.height - consumed
+            }
+            .onEnded { _ in
+                dragging = false
+                consumed = 0
+                store.dragOffset = 0
+                store.draggingRowID = nil
+                store.saveNow()   // persist the dropped order
+            }
+    }
+}
+
+private struct ReorderLift: ViewModifier {
+    @Environment(AppStore.self) private var store
+    let ref: RowRef
+    private var dragged: Bool { store.draggingRowID == ref.id }
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: dragged ? store.dragOffset : 0)
+            .scaleEffect(dragged ? 1.015 : 1)
+            .shadow(color: .black.opacity(dragged ? 0.22 : 0),
+                    radius: dragged ? 12 : 0, y: dragged ? 8 : 0)
+            .zIndex(dragged ? 1 : 0)
+            // The lifted row tracks the pointer 1:1 — its own reorder-driven position change
+            // must not animate, while its siblings still shift under the withAnimation reorder.
+            .transaction { t in if dragged { t.animation = nil } }
     }
 }
 

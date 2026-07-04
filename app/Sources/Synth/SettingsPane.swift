@@ -30,18 +30,21 @@ struct SettingsPane: View {
 
     // working.html .pane__head — same head/breadcrumb chrome as a session pane.
     private var head: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                if isGlobal {
-                    Phos(path: Phosphor.globe, size: 16)
-                        .foregroundStyle(Theme.inkMuted).frame(width: 20)
-                } else if let ws {
-                    WsChip(workspace: ws, size: 19)
+        HStack(spacing: 10) {
+            if store.sidebarCollapsed {
+                IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
+                    store.sidebarCollapsed = false
                 }
-                Text(name)
-                    .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
-                    .foregroundStyle(Theme.ink)
             }
+            if isGlobal {
+                Phos(path: Phosphor.globe, size: 16)
+                    .foregroundStyle(Theme.inkMuted).frame(width: 20)
+            } else if let ws {
+                WsChip(workspace: ws, size: 19)
+            }
+            Text(name)
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.ink)
             (Text("Settings").fontWeight(.semibold)
                 + Text(" / \(isGlobal ? "All workspaces" : name)"))
                 .font(.system(size: 11, design: .monospaced)).kerning(-0.11)
@@ -49,9 +52,9 @@ struct SettingsPane: View {
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        .padding(.leading, store.sidebarCollapsed ? 88 : 0)   // clear the collapsed control zone
-        .padding(.vertical, 13)
+        .padding(.leading, store.sidebarCollapsed ? 76 : 18)
+        .padding(.trailing, 18)
+        .frame(height: store.sidebarCollapsed ? 30 : 44)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 

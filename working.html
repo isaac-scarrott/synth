@@ -55,7 +55,6 @@
     /* state colors */
     --run: #34c759;
     --work: #f5a623;
-    --idle: #cbcbd0;
     --input: #0a84ff;
     --error: #ff3b30;
 
@@ -153,15 +152,22 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     padding: 0 12px 0 16px;
     -webkit-app-region: drag;
   }
 
+  /* Persistent window controls: always at the top-left, visible whether the sidebar
+     is open or collapsed (the real app's traffic lights never disappear). */
   .traffic {
+    position: absolute;
+    top: 15px;
+    left: 16px;
+    z-index: 30;
     display: flex;
     gap: 8px;
     align-items: center;
+    -webkit-app-region: no-drag;
   }
   .traffic i {
     width: 12px; height: 12px; border-radius: 50%;
@@ -195,8 +201,8 @@
   /* Expand button — appears at top-left once the sidebar is collapsed */
   .expand-btn {
     position: absolute;
-    top: 9px;
-    left: 75px;
+    top: 8px;
+    left: 74px;
     z-index: 20;
     opacity: 0;
     pointer-events: none;
@@ -204,7 +210,7 @@
   }
   .app.collapsed .expand-btn { opacity: 1; pointer-events: auto; }
   /* collapsed: the pane header clears the top-left control zone (traffic lights + toggle) */
-  .app.collapsed .pane__head { padding-left: 106px; }
+  .app.collapsed .pane__head { padding-left: 104px; }
 
   /* ---- Content pane (renders the open session) ---- */
   .content {
@@ -438,7 +444,7 @@
   /* keyboard selection ring — only visible while navigating by keyboard */
   body.kbd .row.sel {
     background: var(--hover);
-    box-shadow: 0 0 0 1.5px rgba(10, 132, 255, 0.5);
+    box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.5);
   }
 
   .repo { margin-bottom: 1px; }
@@ -648,12 +654,11 @@
   }
   .ind svg { width: 15px; height: 15px; display: block; }
 
-  /* liveness dots: running / working / idle */
+  /* liveness dots: running / working (idle shows nothing) */
   .sdot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--idle);
   }
   .sdot--run {
     background: var(--run);
@@ -664,8 +669,6 @@
     box-shadow: 0 0 0 2.5px rgba(245, 166, 35, 0.16);
     animation: sdot-pulse 1.5s var(--ease-in-out) infinite;
   }
-  /* idle carries no liveness — once read, its grey dot is just noise, so drop it */
-  .session:not(.session--unread) .sdot:not(.sdot--run):not(.sdot--work) { display: none; }
 
   /* attention glyphs: needs-input (?) and error (!) — bare marks, no border */
   .ind--input {
@@ -1316,7 +1319,6 @@
     --text-muted: #9a9aa1;
     --text-faint: #6d6d74;
     --accent: #f3f3f5;
-    --idle: #55555c;
     --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.55);
 
     --ink: #f2f2f4;
@@ -1392,11 +1394,12 @@
       <svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>
     </button>
 
+    <div class="traffic">
+      <i class="r"></i><i class="y"></i><i class="g"></i>
+    </div>
+
     <aside class="sidebar">
       <div class="sidebar__top">
-        <div class="traffic">
-          <i class="r"></i><i class="y"></i><i class="g"></i>
-        </div>
         <button class="icon-btn" id="collapseBtn" aria-label="Collapse sidebar">
           <svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>
         </button>
@@ -1463,7 +1466,7 @@
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">shell</span>
-                  <span class="ind"><span class="sdot"></span></span>
+                  <span class="ind"></span>
                 </a>
                 <!-- build — working -->
                 <a class="row session" data-row data-session data-type="terminal">
@@ -1477,7 +1480,7 @@
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">migrate</span>
-                  <span class="ind"><span class="sdot"></span></span>
+                  <span class="ind"></span>
                 </a>
               </div>
               </div></div>
@@ -1636,7 +1639,7 @@
     error: `<span class="ind ind--error">${MARK_ERROR}</span>`,
     work:  `<span class="ind"><span class="sdot sdot--work"></span></span>`,
     run:   `<span class="ind"><span class="sdot sdot--run"></span></span>`,
-    idle:  `<span class="ind"><span class="sdot"></span></span>`,
+    idle:  `<span class="ind"></span>`,
   };
   let openEl = null, streamTimer = null;
 
@@ -2353,7 +2356,7 @@
   // and ran `claude`, so both spawn identically — only the type, icon, name and
   // starting state differ.
   const SESSION_KINDS = {
-    terminal: { type: 'terminal', name: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>`,                  ind: 'run' },
+    terminal: { type: 'terminal', name: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>`,                  ind: 'idle' },
     claude:   { type: 'ai',       name: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_AI}</span>`,      ind: 'work' },
   };
   function addSession(branchRow, kind) {

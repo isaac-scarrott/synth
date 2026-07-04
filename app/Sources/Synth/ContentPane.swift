@@ -87,17 +87,24 @@ private struct PaneHead: View {
     let workspace: Workspace?
     let branch: Branch?
 
+    private var collapsed: Bool { store.sidebarCollapsed }
+
     var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Phos(path: session.kind.iconPath, size: 15)
-                    .foregroundStyle(session.kind.tint)
-                    .frame(width: 15, height: 15)
-                Text(session.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .kerning(-0.13)
-                    .foregroundStyle(Theme.ink)
+        HStack(spacing: 10) {
+            // Collapsed: the expand toggle binds into the header cluster right after the
+            // traffic lights, so it's part of the toolbar rather than a floating orphan.
+            if collapsed {
+                IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
+                    store.sidebarCollapsed = false
+                }
             }
+            Phos(path: session.kind.iconPath, size: 15)
+                .foregroundStyle(session.kind.tint)
+                .frame(width: 15, height: 15)
+            Text(session.title)
+                .font(.system(size: 13, weight: .semibold))
+                .kerning(-0.13)
+                .foregroundStyle(Theme.ink)
             // Crumb: `<b>workspace</b> / branch` — mono 11, faint, workspace muted.
             if let ws = workspace, let br = branch {
                 (Text(ws.name).foregroundColor(Theme.inkMuted).fontWeight(.medium)
@@ -109,10 +116,11 @@ private struct PaneHead: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        // Collapsed: clear the top-left control zone (traffic lights + toggle).
-        .padding(.leading, store.sidebarCollapsed ? 88 : 0)
-        .padding(.vertical, 13)
+        // Collapsed: clear the window's traffic lights, then the cluster; a shorter fixed
+        // height centres the row on the traffic-light axis (no empty band, no low toggle).
+        .padding(.leading, collapsed ? 76 : 18)
+        .padding(.trailing, 18)
+        .frame(height: collapsed ? 30 : 44)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 0.5)
         }

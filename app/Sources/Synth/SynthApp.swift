@@ -66,13 +66,15 @@ struct RootView: View {
             // as a grey margin) are dropped here.
             .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: store.sidebarCollapsed)
 
-            if store.sidebarCollapsed {
-                // Same top-left spot as the collapse toggle, so it doesn't move on toggle.
+            // When collapsed with no header to host the toggle (the empty "No session" state),
+            // float it at the top-left on the traffic-light axis. The session/settings
+            // headers carry their own inline toggle.
+            if store.sidebarCollapsed, store.openSession == nil, !store.settingsOpen {
                 IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
                     store.sidebarCollapsed = false
                 }
-                .padding(.top, 9)
-                .padding(.leading, 84)
+                .padding(.top, 2)
+                .padding(.leading, 76)
                 .transition(.opacity)
             }
         }

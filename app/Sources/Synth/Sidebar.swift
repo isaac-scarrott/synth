@@ -47,16 +47,16 @@ struct Sidebar: View {
 
     private var topStrip: some View {
         HStack {
+            Spacer()
             IconButton(path: Phosphor.sidebar, help: "Collapse sidebar") {
                 store.sidebarCollapsed = true
             }
-            Spacer()
         }
-        // Sit beside the window's traffic lights (top-left control zone), not the
-        // resizable right edge — one stable toggle spot across every state.
-        .padding(.leading, 84)
-        .padding(.trailing, 10)
-        .frame(height: 44, alignment: .center)
+        .padding(.horizontal, 10)
+        // Toggle sits high in the strip so its center lines up with the window's
+        // traffic lights (top-left control zone).
+        .frame(height: 44, alignment: .top)
+        .padding(.top, 1)
     }
 
     private var header: some View {
@@ -417,7 +417,7 @@ private struct SessionRow: View {
                             .foregroundStyle(nameColor)
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        StatusIndicator(status: session.status, unread: session.unread).opacity(revealed ? 0 : 1)
+                        StatusIndicator(status: session.status).opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     // The open session's sticky tint (working.html .session--open).
@@ -539,15 +539,13 @@ private struct Monogram: View {
 
 private struct StatusIndicator: View {
     let status: SessionStatus
-    let unread: Bool
     var body: some View {
         Group {
             switch status {
             case .running: Dot(color: Theme.run, halo: true)
-            // Idle carries no liveness — once read, its grey dot is just noise, so
-            // drop it; it stays on idle+unread as a "go look" cue (working.html).
-            case .idle:    if unread { Dot(color: Theme.idle) }
-            case .exited:  if unread { Dot(color: Theme.idle).opacity(0.5) }
+            // Idle and clean exit carry no liveness — a grey dot there is just noise, so
+            // they show nothing. Unread still surfaces via the blue gutter bullet.
+            case .idle, .exited: EmptyView()
             case .working: Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
             case .needsInput: AttentionGlyph(state: .input).attnBreathe()
             case .error:      AttentionGlyph(state: .error)

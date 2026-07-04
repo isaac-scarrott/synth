@@ -625,3 +625,13 @@ near-black card (`#131315`) with brighter, more vivid accents that pop on the da
 - **Kept separate from `--term-bg`,** which still backs the Settings code editor (a dark code
   surface in both modes) — the terminal owns `--tui-*` alone, so theming one never touches
   the other.
+
+## 2026-07-04 — Sidebar toggle placement, refined (supersedes the earlier "stable top-left" attempt)
+
+Corrected per feedback + independent design review. OPEN: the collapse toggle sits at the sidebar's
+top-RIGHT, vertically centered with the window's traffic lights. COLLAPSED: instead of a floating
+toggle over a jagged header, the top becomes one clean toolbar row on the traffic-light axis —
+traffic lights → expand toggle → session icon → title/crumb, tightly grouped, hairline divider, the
+terminal/content below (no empty band). In the HTML the 3 mac buttons are now a persistent top-left
+cluster so they stay visible when the sidebar is closed (matching the native window). Two design
+critics flagged the prior collapsed state as "awful"; the reworked toolbar was re-reviewed as great.

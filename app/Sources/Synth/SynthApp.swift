@@ -264,14 +264,15 @@ struct RootView: View {
                 let bare = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
                 switch key {
                 // ⇧J / ⇧K reorder the selected row within its sibling list (keyboard twin of
-                // drag). ⇧J promotes (up), ⇧K demotes (down); only on a real tree row —
-                // cursorRef is nil in Settings and on the Settings foot, guarding it there.
+                // drag). Directions track the nav keys: ⇧J moves down (like j), ⇧K moves up
+                // (like k). Only on a real tree row — cursorRef is nil in Settings and on the
+                // Settings foot, guarding it there.
                 case "j" where bare && event.modifierFlags.contains(.shift):
                     guard let ref = store.cursorRef else { return event }
-                    store.reorder(ref, by: -1, animated: !reduceMotion); return nil
+                    store.reorder(ref, by: 1, animated: !reduceMotion); return nil
                 case "k" where bare && event.modifierFlags.contains(.shift):
                     guard let ref = store.cursorRef else { return event }
-                    store.reorder(ref, by: 1, animated: !reduceMotion); return nil
+                    store.reorder(ref, by: -1, animated: !reduceMotion); return nil
                 case "j": store.moveCursor(1); return nil
                 case "k": store.moveCursor(-1); return nil
                 case "l" where bare: store.expandOrIn(); return nil     // vim expand-or-in

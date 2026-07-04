@@ -63,7 +63,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["↵"], label: "Open session / toggle", alt: ["Space"]),
             Shortcut(keys: ["R"], label: "Rename selected"),
             Shortcut(keys: ["D"], label: "Delete selected"),
-            Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder up · down"),
+            Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder down · up"),
         ]),
         ShortcutGroup(name: "Command palette", rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),

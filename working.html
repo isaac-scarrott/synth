@@ -2071,7 +2071,7 @@
       if (!selEl || !isTreeRow(selEl)) return;
       e.preventDefault();
       document.body.classList.add('kbd');
-      reorderRow(selEl, k === 'J' ? -1 : 1);   // J promotes (up), K demotes (down)
+      reorderRow(selEl, k === 'J' ? 1 : -1);   // J moves down, K moves up (matching j/k nav)
       return;
     }
     if (['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Enter', ' ', 'j', 'k', 'h', 'l'].includes(k)) {
@@ -2794,7 +2794,7 @@
       [['↵'], 'Open session / toggle', ['Space']],
       [['R'], 'Rename selected'],
       [['D'], 'Delete selected'],
-      [['⇧J', '⇧K'], 'Reorder up · down'],
+      [['⇧J', '⇧K'], 'Reorder down · up'],
     ]],
     ['Command palette', [
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],

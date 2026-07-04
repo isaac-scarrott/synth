@@ -531,7 +531,9 @@ private struct KebabButton: View {
 }
 
 /// The name field shown in place of a row's label while it is being renamed —
-/// working.html's contentEditable `.renaming`: white fill, blue ring, text selected.
+/// working.html's contentEditable `.renaming`: the label becomes an editable field in
+/// place with its text preselected and no ring of its own (the row's selection ring is
+/// the only ring).
 /// ↵/Esc are handled by the global key monitor; losing focus (blur) commits.
 private struct RenameField: View {
     @Environment(AppStore.self) private var store
@@ -545,11 +547,6 @@ private struct RenameField: View {
             .font(font)
             .foregroundStyle(Theme.repoName)
             .focused($focused)
-            .padding(.horizontal, 3)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Theme.raised))
-            .overlay(RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(Color(hex: 0x0A84FF).opacity(0.55), lineWidth: 1.5))
-            .padding(.horizontal, -3)
             .onAppear {
                 focused = true
                 DispatchQueue.main.async {

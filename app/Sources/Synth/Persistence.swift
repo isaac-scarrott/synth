@@ -11,6 +11,10 @@ struct PersistedState: Codable {
     var workspaces: [PersistedWorkspace]
     /// Ids of expanded rows (workspaces/branches), so the tree reopens as the user left it.
     var expanded: [UUID]
+    /// Settings (ADR-0010): the global setup script + Claude flags. Optional so a snapshot
+    /// written before settings were persisted still decodes — a nil just keeps the default.
+    var globalScript: String?
+    var globalClaudeFlags: String?
 }
 
 struct PersistedWorkspace: Codable {
@@ -19,6 +23,10 @@ struct PersistedWorkspace: Codable {
     var url: URL
     var colorIndex: Int
     var branches: [PersistedBranch]
+    /// Per-workspace settings, carried with the workspace so they drop when it's removed.
+    /// Optional/omitted when the workspace has no custom value (see PersistedState).
+    var setupScript: String?
+    var claudeFlags: String?
 }
 
 struct PersistedBranch: Codable {

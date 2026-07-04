@@ -147,6 +147,49 @@ enum ThemePref: String, CaseIterable, Identifiable {
     # No extra setup for this workspace yet.
     """
 
+    /// Default flags passed to `claude` when a Claude Code session starts (no claude
+    /// auto-launch is wired up yet — see FEATURES). The raw string is the source of truth,
+    /// so ANY claude flag works; the Settings switches are shortcuts for common ones.
+    /// A workspace's flags OVERRIDE the global outright — unlike the setup scripts, flags
+    /// don't compose; the last word wins. An empty workspace value inherits global.
+    var globalClaudeFlags = "--dangerously-skip-permissions"
+    var wsClaudeFlags: [UUID: String] = [:]
+
+    /// Common, high-impact flags surfaced as one-tap switches in Settings. Everything
+    /// else is typed into the flags field — the field is the escape hatch.
+    static let commonClaudeFlags: [(flag: String, label: String, desc: String)] = [
+        ("--dangerously-skip-permissions", "Skip permission prompts",
+         "Claude runs tools without asking first — fast, but it can edit files and run commands unprompted."),
+        ("--chrome", "Chrome browser integration",
+         "Let Claude drive Chrome for web automation and testing."),
+        ("--ide", "Connect to an IDE on startup",
+         "Auto-connect when exactly one IDE is running."),
+        ("--verbose", "Verbose logging",
+         "Full turn-by-turn output in the terminal."),
+    ]
+
+    private static func flagTokens(_ s: String) -> [String] {
+        s.split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    /// Whether a global flag token is currently set (drives the switch state).
+    func hasClaudeFlag(_ flag: String) -> Bool { Self.flagTokens(globalClaudeFlags).contains(flag) }
+
+    /// Add or remove a global flag token — the switch's action.
+    func toggleClaudeFlag(_ flag: String) {
+        var toks = Self.flagTokens(globalClaudeFlags)
+        if let i = toks.firstIndex(of: flag) { toks.remove(at: i) } else { toks.append(flag) }
+        globalClaudeFlags = toks.joined(separator: " ")
+    }
+
+    /// The effective flags for a scope. A workspace with its own flags replaces the global
+    /// outright; an empty (or absent) workspace value inherits global.
+    func claudeFlags(for workspace: Workspace?) -> String {
+        let w = (workspace.flatMap { wsClaudeFlags[$0.id] } ?? "").trimmingCharacters(in: .whitespaces)
+        if !w.isEmpty { return w }
+        return globalClaudeFlags.trimmingCharacters(in: .whitespaces)
+    }
+
     let bus = EventBus()
     let hookServer: HookServer
 
@@ -481,11 +524,15 @@ enum ThemePref: String, CaseIterable, Identifiable {
                                                  titleIsCustom: s.titleIsCustom,
                                                  claudeSessionID: s.claudeSessionID)
                             })
-                    })
+                    },
+                    setupScript: wsScripts[ws.id],
+                    claudeFlags: wsClaudeFlags[ws.id])
             },
             // Sorted so an unchanged set always encodes to identical bytes (Set iteration
             // order is per-process nondeterministic) — the skip-if-unchanged check relies on it.
-            expanded: expanded.sorted { $0.uuidString < $1.uuidString }
+            expanded: expanded.sorted { $0.uuidString < $1.uuidString },
+            globalScript: globalScript,
+            globalClaudeFlags: globalClaudeFlags
         )
     }
 
@@ -498,6 +545,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// ids for pruned rows are discarded.
     private func restore(from state: PersistedState) {
         var restored: [Workspace] = []
+        var scripts: [UUID: String] = [:]
+        var flags: [UUID: String] = [:]
         for pw in state.workspaces {
             guard !confirmedMissing(pw.url) else { continue }
             let branches: [Branch] = pw.branches.compactMap { pb in
@@ -512,8 +561,15 @@ enum ThemePref: String, CaseIterable, Identifiable {
             }
             restored.append(Workspace(id: pw.id, name: pw.name, url: pw.url,
                                       branches: branches, colorIndex: pw.colorIndex))
+            if let s = pw.setupScript { scripts[pw.id] = s }
+            if let f = pw.claudeFlags { flags[pw.id] = f }
         }
         workspaces = restored
+        wsScripts = scripts
+        wsClaudeFlags = flags
+        // Global settings: a nil (pre-settings snapshot) keeps the built-in default.
+        if let gs = state.globalScript { globalScript = gs }
+        if let gf = state.globalClaudeFlags { globalClaudeFlags = gf }
         let liveIDs = Set(restored.flatMap { ws in
             [ws.id] + ws.branches.flatMap { [$0.id] + $0.sessions.map(\.id) }
         })

@@ -494,3 +494,35 @@ Renaming a workspace / branch / session is now first-class, reachable the same t
   centralised `rowMenu(for:)` the kebab and `d` both use; the delete-confirm `confirming` flag is
   lifted into the store so the keyboard can drive it. Verified against the running app: ⌘K rename
   frame, `r` inline edit, `d` confirm, and ↵-commits-removal all captured in screenshots.
+
+## 2026-07-04 — Dark mode (both designs): system-default, global-only, terminal included
+
+Synth has a first-class dark mode. It is **token-driven**: the hardcoded colors in the design were
+lifted into semantic CSS variables (`--ink*` text tiers, `--raised`/`--glass`/`--chrome` surfaces,
+`--hover`/`--press`/`--line*` overlays, `--term-bg`), with light values in `:root` and a single
+`:root[data-theme="dark"]` block overriding them — so the whole shell, sidebar, ⌘K palette, menus,
+dialogs, settings and the **terminal** all move together. Property-aware conversion: backgrounds,
+borders and text flip; box-shadows and modal scrims stay dark in both themes.
+
+- **System by default.** A pre-paint `<head>` script stamps `data-theme` from
+  `matchMedia('(prefers-color-scheme: dark)')` (no light flash); a live `change` listener follows the
+  OS while the pref is "System".
+- **Configurable globally only.** Settings gains an **Appearance** segmented control (System / Light /
+  Dark) that appears solely on the Global scope — never per-workspace — persisted to `localStorage`.
+- Light mode is byte-for-byte unchanged (dark is purely additive). Reviewed by independent visual +
+  code agents; their contrast findings (unread session names, settings copy, ⌘K active-row label,
+  palette status meta) were fixed so every dark surface clears legibility.
+
+## 2026-07-04 — Sidebar batch: ⌘K row actions, resizable sidebar, Esc-to-content (both designs)
+
+Three interaction refinements landed together:
+
+- **Row ⋯ opens ⌘K, not a popover.** A row's kebab now opens the command palette drilled to that
+  row's frame (`openRowActions` → workspace / branch / new `sessionFrame`) instead of the hover
+  popover — one action surface. (The popover code stays, still used by the `d` quick-delete.)
+- **Resizable sidebar.** A drag handle on the sidebar/content seam sizes the grid from `--sidebar-w`,
+  clamped 200–460px, persisted to `localStorage` and restored on load; double-click resets. The grid
+  transition is suppressed mid-drag for instant tracking; the handle hides while collapsed (⌘B wins).
+- **Esc focuses the main window.** Pressing Esc while the sidebar has keyboard focus hands focus to
+  the open session's surface (composer / terminal) and clears the nav ring — unless a dialog is open
+  (it owns Esc first).

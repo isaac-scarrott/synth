@@ -264,6 +264,13 @@ extension AppStore {
         }
     }
 
+    /// Drop a Claude Code session's manual name so its auto/AI-generated title takes over
+    /// again — the palette's "Reset to default name" (working.html renameFrame).
+    func resetSessionName(_ session: Session) {
+        session.title = "Claude Code"
+        session.titleIsCustom = false
+    }
+
     // MARK: Inline rename (r on the selected row)
 
     func beginRename(_ ref: RowRef) {

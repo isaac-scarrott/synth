@@ -15,6 +15,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     private let resumeClaudeID: String?
     private let env: [String: String]
     private let command: String
+    /// Default flags typed after `claude` on launch (Settings → Claude Code flags). The
+    /// effective string for this session's workspace; empty runs a bare `claude`.
+    private let claudeFlags: String
     private weak var bus: EventBus?
 
     /// Retained C-side via `surface_config.userdata`; released in `close()`.
@@ -26,13 +29,14 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     private var keyText: [String] = []
     private var markedText = NSMutableAttributedString()
 
-    init(session: Session, cwd: URL, env: [String: String], command: String, bus: EventBus?) {
+    init(session: Session, cwd: URL, env: [String: String], command: String, claudeFlags: String = "", bus: EventBus?) {
         self.sessionID = session.id
         self.cwd = cwd
         self.kind = session.kind
         self.resumeClaudeID = session.claudeSessionID
         self.env = env
         self.command = command
+        self.claudeFlags = claudeFlags
         self.bus = bus
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         wantsLayer = true
@@ -83,11 +87,13 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         // back to that same shell. A plain terminal is just the login shell. A restored
         // Claude row (resumeClaudeID set) resumes its saved conversation instead. The id
         // comes from Claude's hook payload (a UUID in practice) and is typed into the shell,
-        // so shell-quote it rather than trust the format.
+        // so shell-quote it rather than trust the format. The workspace's default flags are
+        // appended raw — they're the user's own shell tokens (Settings → Claude Code flags).
         let initialInput: String?
         switch kind {
         case .claudeCode:
-            initialInput = resumeClaudeID.map { "claude --resume \(Self.shellQuote($0))\n" } ?? "claude\n"
+            let extra = claudeFlags.isEmpty ? "" : " " + claudeFlags
+            initialInput = resumeClaudeID.map { "claude --resume \(Self.shellQuote($0))\(extra)\n" } ?? "claude\(extra)\n"
         case .terminal:
             initialInput = nil
         }

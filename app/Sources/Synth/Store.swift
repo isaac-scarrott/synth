@@ -155,33 +155,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var globalClaudeFlags = "--dangerously-skip-permissions"
     var wsClaudeFlags: [UUID: String] = [:]
 
-    /// Common, high-impact flags surfaced as one-tap switches in Settings. Everything
-    /// else is typed into the flags field — the field is the escape hatch.
-    static let commonClaudeFlags: [(flag: String, label: String, desc: String)] = [
-        ("--dangerously-skip-permissions", "Skip permission prompts",
-         "Claude runs tools without asking first — fast, but it can edit files and run commands unprompted."),
-        ("--chrome", "Chrome browser integration",
-         "Let Claude drive Chrome for web automation and testing."),
-        ("--ide", "Connect to an IDE on startup",
-         "Auto-connect when exactly one IDE is running."),
-        ("--verbose", "Verbose logging",
-         "Full turn-by-turn output in the terminal."),
-    ]
-
-    private static func flagTokens(_ s: String) -> [String] {
-        s.split(whereSeparator: \.isWhitespace).map(String.init)
-    }
-
-    /// Whether a global flag token is currently set (drives the switch state).
-    func hasClaudeFlag(_ flag: String) -> Bool { Self.flagTokens(globalClaudeFlags).contains(flag) }
-
-    /// Add or remove a global flag token — the switch's action.
-    func toggleClaudeFlag(_ flag: String) {
-        var toks = Self.flagTokens(globalClaudeFlags)
-        if let i = toks.firstIndex(of: flag) { toks.remove(at: i) } else { toks.append(flag) }
-        globalClaudeFlags = toks.joined(separator: " ")
-    }
-
     /// The effective flags for a scope. A workspace with its own flags replaces the global
     /// outright; an empty (or absent) workspace value inherits global.
     func claudeFlags(for workspace: Workspace?) -> String {

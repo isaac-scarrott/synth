@@ -73,7 +73,8 @@ private struct SessionPane: View {
     // not what the pane shows.
     @ViewBuilder private var paneBody: some View {
         if let cwd = store.cwd(for: session) {
-            TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd))
+            let flags = store.claudeFlags(for: store.branch(of: session).flatMap { store.workspace(of: $0) })
+            TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd, claudeFlags: flags))
         } else {
             Placeholder(title: session.title, subtitle: "No working directory for this session.")
         }

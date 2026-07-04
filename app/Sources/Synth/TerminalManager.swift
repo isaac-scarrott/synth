@@ -36,7 +36,7 @@ enum TerminalLauncher {
     var hookSocketPath = ""
     private var views: [UUID: GhosttySurfaceView] = [:]
 
-    func view(for session: Session, cwd: URL) -> GhosttySurfaceView {
+    func view(for session: Session, cwd: URL, claudeFlags: String = "") -> GhosttySurfaceView {
         if let existing = views[session.id] { return existing }
 
         GhosttyApp.shared.bus = bus
@@ -47,7 +47,8 @@ enum TerminalLauncher {
         base.removeValue(forKey: "TERM")
         let env = HookEnvironment.decorate(base, sessionID: session.id, socketPath: hookSocketPath)
 
-        let view = GhosttySurfaceView(session: session, cwd: cwd, env: env, command: TerminalLauncher.command, bus: bus)
+        let view = GhosttySurfaceView(session: session, cwd: cwd, env: env,
+                                      command: TerminalLauncher.command, claudeFlags: claudeFlags, bus: bus)
         views[session.id] = view
         return view
     }

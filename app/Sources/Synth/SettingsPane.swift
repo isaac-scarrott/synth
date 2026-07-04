@@ -113,12 +113,6 @@ struct SettingsPane: View {
                     + Text(" every time a Claude Code session starts — across all workspaces."))
                     .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
                     .lineSpacing(3).padding(.top, 4)
-                VStack(spacing: 0) {
-                    ForEach(Array(AppStore.commonClaudeFlags.enumerated()), id: \.offset) { i, f in
-                        FlagToggleRow(flag: f.flag, label: f.label, desc: f.desc, first: i == 0)
-                    }
-                }
-                .padding(.top, 10)
                 CodeCard(label: "flags", text: globalFlagsBinding, minHeight: 44).padding(.top, 14)
                 CmdPreview(flags: store.globalClaudeFlags).padding(.top, 14)
                 claudeNote
@@ -140,8 +134,8 @@ struct SettingsPane: View {
         HStack(alignment: .top, spacing: 8) {
             Phos(path: Phosphor.info, size: 14).foregroundStyle(Color(hex: 0xB0B0B5)).padding(.top, 1)
             (Text("Any ") + Text("claude").font(.system(size: 11.5, design: .monospaced))
-                + Text(" flag works here — the switches are shortcuts for common ones. Add anything else in the field, like ")
-                + Text("--model opus").font(.system(size: 11.5, design: .monospaced)) + Text("."))
+                + Text(" flag works here — type them as you would on the command line, like ")
+                + Text("--dangerously-skip-permissions --model opus").font(.system(size: 11.5, design: .monospaced)) + Text("."))
                 .font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted).lineSpacing(2)
         }
         .padding(.top, 12)
@@ -206,38 +200,6 @@ struct SettingsPane: View {
             get: { id.flatMap { store.wsClaudeFlags[$0] } ?? "" },
             set: { v in if let id { store.wsClaudeFlags[id] = v } }
         )
-    }
-}
-
-/// One switch row in the Claude-flags list: a human label + the raw flag (mono, blue) +
-/// a one-line description, with a native toggle bound to the global flag set.
-private struct FlagToggleRow: View {
-    @Environment(AppStore.self) private var store
-    let flag: String
-    let label: String
-    let desc: String
-    var first: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(label).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.repoName)
-                    Text(flag).font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Theme.dyn(0x2B6FD6, 0x8AB4F8))
-                }
-                Text(desc).font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted).lineSpacing(1.5)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            Toggle("", isOn: Binding(get: { store.hasClaudeFlag(flag) },
-                                     set: { _ in store.toggleClaudeFlag(flag) }))
-                .labelsHidden().toggleStyle(.switch).tint(Theme.attention).controlSize(.small)
-        }
-        .padding(.vertical, 11)
-        .overlay(alignment: .top) {
-            if !first { Rectangle().fill(Theme.border).frame(height: 0.5) }
-        }
     }
 }
 

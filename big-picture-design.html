@@ -1328,21 +1328,8 @@
     color: var(--text-muted);
   }
   .set-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: #b0b0b5; }
-  .set-note code, .set-section__sub code, .set-toggle__desc code { font-family: var(--mono); font-size: 11px; background: var(--hover); padding: 0 4px; border-radius: 4px; }
+  .set-note code, .set-section__sub code { font-family: var(--mono); font-size: 11px; background: var(--hover); padding: 0 4px; border-radius: 4px; }
 
-  /* Claude-flags toggles — a labelled on/off row per common flag; the raw flags field
-     below stays the source of truth, so any flag (not just these) works. */
-  .set-toggles { margin-top: 12px; }
-  .set-toggle { display: flex; align-items: flex-start; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line-soft); }
-  .set-toggle:first-child { border-top: none; padding-top: 4px; }
-  .set-toggle__main { flex: 1; min-width: 0; }
-  .set-toggle__label { font-size: 12.5px; font-weight: 550; color: var(--ink); }
-  .set-toggle__flag { font-family: var(--mono); font-size: 11px; color: var(--tui-blue); margin-left: 8px; }
-  .set-toggle__desc { font-size: 11.5px; line-height: 1.45; color: var(--text-muted); margin-top: 2px; }
-  .switch { flex-shrink: 0; position: relative; width: 38px; height: 22px; margin-top: 1px; padding: 0; border: none; border-radius: 11px; background: var(--line-2); cursor: pointer; transition: background 180ms var(--ease-out); }
-  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: transform 180ms var(--ease-out); }
-  .switch.is-on { background: var(--input); }
-  .switch.is-on::after { transform: translateX(16px); }
   .set-code--flags { min-height: 0; height: 52px; resize: vertical; }
   /* effective launch-command preview, styled like the terminal surface */
   .set-cmd { margin-top: 14px; padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--tui-fg); background: var(--tui-bg); border: 1px solid var(--tui-hair); border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
@@ -3380,21 +3367,7 @@
   let globalFlags = '--dangerously-skip-permissions';
   const wsFlags = { synth: '--chrome' };
   const flagsFor = (name) => wsFlags[name] != null ? wsFlags[name] : '';
-  // Common, high-impact flags surfaced as one-tap switches. Everything else is typed
-  // into the flags field. (Kept short on purpose — the field is the escape hatch.)
-  const CLAUDE_FLAGS = [
-    { flag: '--dangerously-skip-permissions', label: 'Skip permission prompts', desc: 'Claude runs tools without asking first — fast, but it can edit files and run commands unprompted.' },
-    { flag: '--chrome', label: 'Chrome browser integration', desc: 'Let Claude drive Chrome for web automation and testing.' },
-    { flag: '--ide', label: 'Connect to an IDE on startup', desc: 'Auto-connect when exactly one IDE is running.' },
-    { flag: '--verbose', label: 'Verbose logging', desc: 'Full turn-by-turn output in the terminal.' },
-  ];
   const flagToks = (s) => s.trim().split(/\s+/).filter(Boolean);
-  const hasFlag = (s, f) => flagToks(s).includes(f);
-  function toggleFlag(f) {
-    const t = flagToks(globalFlags), i = t.indexOf(f);
-    if (i >= 0) t.splice(i, 1); else t.push(f);
-    globalFlags = t.join(' ');
-  }
   const effectiveFlags = (isGlobal, name) => {
     if (isGlobal) return globalFlags.trim();
     const w = flagsFor(name).trim();
@@ -3483,31 +3456,20 @@
       <div class="set-note">${ICON_INFO}<span>Each runs in the new worktree's root. Times out after 5&nbsp;minutes; a non-zero exit is reported but never blocks it.</span></div>
     </div>`;
   }
-  // Claude Code flags. Global shows the common-flag switches + the raw flags field (the
-  // source of truth) + a live `claude …` preview. A workspace shows the read-only global
-  // flags (what also applies) above its own extra field, same shape as the setup script.
+  // Claude Code flags. Global is the raw flags field (the source of truth) + a live
+  // `claude …` preview. A workspace shows the read-only global flags (inherited when
+  // empty) above its own field, which overrides global outright when set.
   function flagsSection(isGlobal, name) {
     if (isGlobal) {
-      const toggles = CLAUDE_FLAGS.map((f) => {
-        const on = hasFlag(globalFlags, f.flag);
-        return `<div class="set-toggle">
-          <div class="set-toggle__main">
-            <div class="set-toggle__label">${f.label}<span class="set-toggle__flag">${f.flag}</span></div>
-            <div class="set-toggle__desc">${f.desc}</div>
-          </div>
-          <button class="switch${on ? ' is-on' : ''}" data-flag="${f.flag}" role="switch" aria-checked="${on}" aria-label="${f.label}"></button>
-        </div>`;
-      }).join('');
       return `<div class="set-section">
         <div class="set-section__title">Claude Code flags</div>
         <div class="set-section__sub">Passed to <code>claude</code> every time a Claude Code session starts — across all workspaces.</div>
-        <div class="set-toggles">${toggles}</div>
         <div class="set-code-wrap">
           <div class="set-code-head"><span class="set-code-head__label">flags</span></div>
           <textarea class="set-code set-code--flags" data-flags="global" spellcheck="false">${esc(globalFlags)}</textarea>
         </div>
         ${cmdPreview(globalFlags)}
-        <div class="set-note">${ICON_INFO}<span>Any <code>claude</code> flag works here — the switches are shortcuts for common ones. Add anything else in the field, like <code>--model opus</code>.</span></div>
+        <div class="set-note">${ICON_INFO}<span>Any <code>claude</code> flag works here — type them as you would on the command line, like <code>--dangerously-skip-permissions --model opus</code>.</span></div>
       </div>`;
     }
     return `<div class="set-section">
@@ -3563,22 +3525,14 @@
         else wsScripts[name] = ta.value;
       });
     });
-    // Claude flags: a switch toggles its token (full re-render keeps switch/field/preview
-    // in lockstep); the field edits the raw string live, updating preview + switches in
-    // place so the caret is never yanked mid-type.
-    content.querySelectorAll('.switch[data-flag]').forEach((sw) => {
-      sw.addEventListener('click', () => { toggleFlag(sw.dataset.flag); renderSettings(); });
-    });
+    // Claude flags: the field edits the raw string live, updating the preview in place so
+    // the caret is never yanked mid-type.
     content.querySelectorAll('.set-code--flags[data-flags]').forEach((ta) => {
       ta.addEventListener('input', () => {
         if (ta.dataset.flags === 'global') globalFlags = ta.value; else wsFlags[name] = ta.value;
         const sec = ta.closest('.set-section');
         const pv = sec.querySelector('.set-cmd');
         if (pv) pv.outerHTML = cmdPreview(ta.dataset.flags === 'global' ? globalFlags : effectiveFlags(false, name));
-        if (ta.dataset.flags === 'global') sec.querySelectorAll('.switch[data-flag]').forEach((sw) => {
-          const on = hasFlag(globalFlags, sw.dataset.flag);
-          sw.classList.toggle('is-on', on); sw.setAttribute('aria-checked', on);
-        });
       });
     });
   }

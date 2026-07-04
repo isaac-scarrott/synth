@@ -18,7 +18,7 @@ struct Sidebar: View {
                 SidebarFoot()
             }
         }
-        .frame(width: Theme.sidebarWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .onContinuousHover { phase in
             if case .active = phase { store.keyboardActive = false }
@@ -109,14 +109,14 @@ private struct FootButton: View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Phos(path: icon, size: 16)
-                    .foregroundStyle(hovering ? Color(hex: 0x56565C) : Theme.navLabel).frame(width: 16)
+                    .foregroundStyle(hovering ? Theme.inkMuted : Theme.navLabel).frame(width: 16)
                 Text(title)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(hovering ? Theme.repoName : Theme.branchName)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(hovering ? 0.045 : 0)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
@@ -162,7 +162,7 @@ private struct BackButton: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(hovering ? 0.05 : 0)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
@@ -181,7 +181,7 @@ private struct ScopeRow: View {
 
     private var background: Color {
         if on { return Color(hex: 0x0A84FF).opacity(hovering ? 0.09 : 0.06) }
-        return hovering ? Color.black.opacity(0.035) : .clear
+        return hovering ? Theme.rowHover : .clear
     }
 
     var body: some View {
@@ -194,7 +194,7 @@ private struct ScopeRow: View {
                 .frame(width: 20, height: 20)
                 Text(label)
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(on ? Theme.repoName : Color(hex: 0x58585D))
+                    .foregroundStyle(on ? Theme.repoName : Theme.ink3)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
             }
@@ -355,20 +355,20 @@ private struct BranchRow: View {
                 }
                 .padding(.leading, 15)
                 .overlay(alignment: .leading) {
-                    Rectangle().fill(Color.black.opacity(0.06)).frame(width: 1)
+                    Rectangle().fill(Theme.border).frame(width: 1)
                 }
             }
         }
         .padding(.leading, 11)
         .overlay(alignment: .leading) {
-            Rectangle().fill(Color.black.opacity(0.08)).frame(width: 1)
+            Rectangle().fill(Theme.border).frame(width: 1)
         }
     }
 
     @ViewBuilder private var activePillBackground: some View {
         if isActivePill {
-            RoundedRectangle(cornerRadius: 8).fill(Color.white)
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5))
+            RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
         }
     }
@@ -387,7 +387,7 @@ private struct SessionRow: View {
     private var renaming: Bool { store.renamingRowID == session.id }
 
     private var nameColor: Color {
-        if isOpen { return Color(hex: 0x2C2C30) }
+        if isOpen { return Theme.inkOpen }
         return session.unread ? Theme.sessionNameUnread : Theme.sessionName
     }
 
@@ -454,15 +454,16 @@ private struct KebabButton: View {
 
     var body: some View {
         Button {
-            store.menuConfirming = false
-            store.activeMenu = store.rowMenu(for: ref)
+            // The ⋯ kebab opens the ⌘K palette drilled to this row (working.html openRowActions),
+            // not the hover popover. The popover stays for the `d` quick-delete keybinding.
+            store.openRowActions(ref)
         } label: {
             // 13px glyph in a 20px box; the open menu fills a rounded 7px hover box
             // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
             Phos(path: Phosphor.dots, size: 13)
-                .foregroundStyle(menuOpen ? Color(hex: 0x46464C) : Theme.inkFaint)
+                .foregroundStyle(menuOpen ? Theme.ink2 : Theme.inkFaint)
                 .frame(width: 20, height: 20)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(menuOpen ? 0.08 : 0)))
+                .background(RoundedRectangle(cornerRadius: 7).fill(menuOpen ? Theme.rowSelected : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(KebabPressStyle())
@@ -487,7 +488,7 @@ private struct RenameField: View {
             .foregroundStyle(Theme.repoName)
             .focused($focused)
             .padding(.horizontal, 3)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 4).fill(Theme.raised))
             .overlay(RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(Color(hex: 0x0A84FF).opacity(0.55), lineWidth: 1.5))
             .padding(.horizontal, -3)
@@ -629,6 +630,47 @@ extension View {
     }
 }
 
+/// Draggable seam on the sidebar's trailing edge (working.html's `.resize-handle`):
+/// drag resizes within [min,max]; double-click resets to the default width. The width
+/// tracks instantly (no animation) so the drag feels direct.
+struct SidebarResizeHandle: View {
+    @Environment(AppStore.self) private var store
+    @State private var startWidth: CGFloat?
+    @State private var hovering = false
+
+    private var active: Bool { startWidth != nil }
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 10)
+            .contentShape(Rectangle())
+            .overlay {
+                Rectangle()
+                    .fill(Theme.attention)
+                    .frame(width: 1.5)
+                    .opacity(active ? 0.7 : (hovering ? 0.5 : 0))
+                    .animation(.easeOut(duration: 0.12), value: hovering)
+            }
+            .offset(x: 5)   // straddle the sidebar/content seam
+            .onHover { h in
+                hovering = h
+                if h { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
+            }
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { v in
+                        let base = startWidth ?? store.sidebarWidth
+                        if startWidth == nil { startWidth = base }
+                        store.sidebarWidth = min(Theme.sidebarMaxWidth,
+                                                 max(Theme.sidebarMinWidth, base + v.translation.width))
+                    }
+                    .onEnded { _ in startWidth = nil }
+            )
+            .onTapGesture(count: 2) { store.sidebarWidth = Theme.sidebarWidth }
+    }
+}
+
 /// Release the terminal's first-responder status so the global key monitor drives
 /// sidebar navigation instead of the shell.
 @MainActor func focusSidebar() {
@@ -658,7 +700,7 @@ struct IconButton: View {
             Phos(path: path, size: size)
                 .foregroundStyle(hovering ? Theme.inkMuted : Theme.inkFaint)
                 .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.black.opacity(0.05) : .clear))
+                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(IconPressStyle())

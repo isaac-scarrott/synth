@@ -137,10 +137,10 @@ private struct Checkbox: View {
     let on: Bool
     var body: some View {
         RoundedRectangle(cornerRadius: 4.5)
-            .fill(on ? Theme.selRing : Color.white)
+            .fill(on ? Theme.selRing : Theme.raised)
             .overlay(
                 RoundedRectangle(cornerRadius: 4.5)
-                    .strokeBorder(on ? Color.clear : Color.black.opacity(0.22), lineWidth: 1)
+                    .strokeBorder(on ? Color.clear : Theme.line, lineWidth: 1)
             )
             .overlay(
                 Image(systemName: "checkmark")

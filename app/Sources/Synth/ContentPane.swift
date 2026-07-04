@@ -124,7 +124,7 @@ private struct TermSurface: View {
     var body: some View {
         TerminalHost(terminal: terminal)
             .padding(.vertical, 13).padding(.horizontal, 15)
-            .background(Color(hex: 0x1B1B1E))
+            .background(Theme.termBg)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)

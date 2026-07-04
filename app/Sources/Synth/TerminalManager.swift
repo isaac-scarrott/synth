@@ -23,7 +23,7 @@ import SwiftTerm
 
         // working.html's .term surface: #1b1b1e card, #d4d4d8 text, 12px mono.
         view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        view.nativeBackgroundColor = NSColor(srgbRed: 27/255, green: 27/255, blue: 30/255, alpha: 1)
+        view.nativeBackgroundColor = NSColor(name: nil) { $0.isDarkAqua ? NSColor(hex: 0x131315) : NSColor(hex: 0x1B1B1E) }
         view.nativeForegroundColor = NSColor(srgbRed: 212/255, green: 212/255, blue: 216/255, alpha: 1)
         // The mock's term shows no scrollbar gutter; scrollback still works via wheel.
         for sub in view.subviews where sub is NSScroller { sub.isHidden = true }

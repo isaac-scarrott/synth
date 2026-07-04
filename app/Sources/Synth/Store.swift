@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftUI
 
 /// A low-frequency derived fact posted by a session's supervisor onto the bus.
 /// The firehose (PTY bytes, cursor moves) never appears here — see docs/adr/0001.
@@ -49,6 +50,13 @@ enum SettingsScope: Equatable {
     case workspace(UUID)
 }
 
+/// The appearance choice (working.html's System / Light / Dark segmented control).
+enum ThemePref: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+}
+
 /// The durable, observed source of truth. Holds only the low-frequency facts the
 /// UI reads: the tree, per-session status, expansion, and the two selection fields
 /// (nav cursor + open session) from docs/adr/0005.
@@ -58,6 +66,26 @@ enum SettingsScope: Equatable {
     var navCursor: UUID?
     var openSessionID: UUID?
     var sidebarCollapsed = false
+
+    /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
+    /// theme setting). Persisted to UserDefaults (the native `localStorage`).
+    var themePref: ThemePref = (ThemePref(rawValue: UserDefaults.standard.string(forKey: AppStore.themeKey) ?? "") ?? .system) {
+        didSet { UserDefaults.standard.set(themePref.rawValue, forKey: AppStore.themeKey) }
+    }
+    static let themeKey = "synth-theme"
+    /// nil = follow the system; otherwise pin light/dark (drives `.preferredColorScheme`).
+    var colorSchemeOverride: ColorScheme? {
+        switch themePref { case .system: return nil; case .light: return .light; case .dark: return .dark }
+    }
+
+    /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
+    var sidebarWidth: CGFloat = {
+        let w = UserDefaults.standard.double(forKey: AppStore.sidebarWidthKey)
+        return (w >= Theme.sidebarMinWidth && w <= Theme.sidebarMaxWidth) ? CGFloat(w) : Theme.sidebarWidth
+    }() {
+        didSet { UserDefaults.standard.set(Double(sidebarWidth), forKey: AppStore.sidebarWidthKey) }
+    }
+    static let sidebarWidthKey = "synth-sidebar-w"
 
     /// True only while the keyboard is driving nav — gates the selection ring
     /// (mousemove clears it), mirroring working.html's `.kbd` class.
@@ -223,6 +251,14 @@ enum SettingsScope: Equatable {
     }
 
     func closePalette() { palette = nil }
+
+    /// A row's ⋯ kebab opens the palette drilled to that row (working.html openRowActions),
+    /// rather than the hover popover. Re-drills if the palette is already open.
+    func openRowActions(_ ref: RowRef) {
+        activeMenu = nil
+        if palette == nil { palette = PaletteModel(store: self) }
+        palette?.drill(to: ref)
+    }
 
     private func defaultBranch() -> Branch? {
         if let open = openSession, let br = branch(of: open) { return br }

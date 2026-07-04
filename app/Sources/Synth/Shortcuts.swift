@@ -14,8 +14,8 @@ struct KeyCap: View {
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.black.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5))
+                    .fill(Theme.rowSelected)
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.border, lineWidth: 0.5))
             )
     }
 }
@@ -86,7 +86,7 @@ struct ShortcutsSheet: View {
                         HStack(spacing: 12) {
                             Text(row.label)
                                 .font(.system(size: 12.5))
-                                .foregroundStyle(Color(hex: 0x46464C))
+                                .foregroundStyle(Theme.ink2)
                             Spacer(minLength: 0)
                             HStack(spacing: 3) {
                                 KeyCaps(keys: row.keys)

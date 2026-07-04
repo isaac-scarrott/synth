@@ -17,6 +17,7 @@ struct SettingsPane: View {
             head
             ScrollView {
                 VStack(alignment: .leading, spacing: 30) {
+                    if isGlobal { appearanceSection }
                     scriptSection
                 }
                 .frame(maxWidth: 620, alignment: .leading)
@@ -50,6 +51,21 @@ struct SettingsPane: View {
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 0.5) }
+    }
+
+    // MARK: Appearance — global only (working.html's global Appearance segmented control).
+
+    @ViewBuilder private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Appearance")
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.repoName)
+            (Text("System").fontWeight(.semibold)
+                + Text(" follows your macOS appearance; Light and Dark pin it."))
+                .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
+                .lineSpacing(3).padding(.top, 4)
+            ThemeSeg().padding(.top, 14)
+        }
     }
 
     // MARK: The one setting so far — the worktree setup script.
@@ -97,7 +113,7 @@ struct SettingsPane: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.025))
+            RoundedRectangle(cornerRadius: 10).fill(Theme.rowHover)
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.border, lineWidth: 0.5))
         )
         .padding(.top, 14)
@@ -130,6 +146,39 @@ struct SettingsPane: View {
     }
 }
 
+/// working.html's `.seg` — a pill segmented control. Global-only theme picker; the
+/// active segment lifts on a raised fill, both tuned to the current appearance.
+private struct ThemeSeg: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ThemePref.allCases) { pref in
+                let on = store.themePref == pref
+                Button { store.themePref = pref } label: {
+                    Text(pref.label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(on ? Theme.repoName : Theme.inkMuted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(on ? Theme.raised : Color.clear)
+                                .shadow(color: on ? Color.black.opacity(0.12) : .clear, radius: 1, y: 1)
+                                .overlay(on ? RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(Theme.border, lineWidth: 0.5) : nil)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowSelected))
+        .frame(maxWidth: 300, alignment: .leading)
+    }
+}
+
 /// "Edit in Global" — jumps scope without leaving settings (working.html data-goto).
 private struct EditInGlobalLink: View {
     @Environment(AppStore.self) private var store
@@ -157,7 +206,7 @@ private struct CodeCard<Trailing: View>: View {
             HStack(spacing: 8) {
                 Text(label.uppercased())
                     .font(.system(size: 10, weight: .semibold)).kerning(0.5)
-                    .foregroundStyle(Color(hex: 0x9A9AA0))
+                    .foregroundStyle(Theme.navLabel)
                 Spacer(minLength: 0)
                 trailing()
             }
@@ -186,7 +235,7 @@ private struct CodeCard<Trailing: View>: View {
             }
         }
         .padding(.horizontal, 15).padding(.vertical, 13)
-        .background(shape.fill(Color(hex: 0x1B1B1E)))
+        .background(shape.fill(Theme.termBg))
         .overlay(shape.strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.18), radius: 1.5, y: 1)
     }

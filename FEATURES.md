@@ -526,3 +526,24 @@ Three interaction refinements landed together:
 - **Esc focuses the main window.** Pressing Esc while the sidebar has keyboard focus hands focus to
   the open session's surface (composer / terminal) and clears the nav ring — unless a dialog is open
   (it owns Esc first).
+
+## 2026-07-04 — Native port: dark mode + ⌘K row actions + resizable sidebar + Esc-to-content
+
+The working.html batch, landed in the SwiftUI app.
+
+- **Dark mode** is centralised in `Theme.swift`: every colour became appearance-adaptive via a
+  dynamic `NSColor` provider (`Theme.dyn(light,dark)` / `Theme.mono(lightα,darkα)` wrapped in
+  `Color(nsColor:)`), so call sites are unchanged and the whole app themes from one file — the native
+  analogue of working.html's `:root` / `[data-theme="dark"]`. `.preferredColorScheme` is driven by
+  `store.colorSchemeOverride` (nil → System follows the OS live; else pins). A global-only Appearance
+  segmented control (`ThemeSeg`) lives in Settings, persisted to `UserDefaults`. Terminal + code
+  surfaces theme via `Theme.termBg` (incl. the SwiftTerm `nativeBackgroundColor`). Light values are
+  byte-identical to the pre-port originals — no light-mode regression. Independent code review
+  confirmed the port and caught ~8 inline `Color.black.opacity(…)` fills (tree indent guides, button
+  hovers) that didn't adapt; all lifted to `Theme.border` / `Theme.rowHover`.
+- **Row ⋯ kebab opens the ⌘K palette** drilled to the row (`store.openRowActions` →
+  `PaletteModel.drill(to:)`, with a new `sessionFrame`), not the popover. The popover stays for `d`.
+- **Resizable sidebar** — a `SidebarResizeHandle` on the seam drives `store.sidebarWidth` (clamped
+  200–460, persisted to `UserDefaults`, double-click resets); the sidebar frame reads that width.
+- **Esc in the sidebar** → `focusContent` (key-monitor keyCode 53), gated so the terminal and modals
+  keep their own Esc.

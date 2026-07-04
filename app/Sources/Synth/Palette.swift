@@ -315,6 +315,30 @@ struct PaletteFrame {
         }
     }
 
+    /// A leaf session's own frame (working.html sessionFrame) — reached by its ⋯ kebab.
+    func sessionFrame(_ s: Session) -> PaletteFrame {
+        PaletteFrame(crumb: s.title, placeholder: "Search \(s.title)…") { [self] _ in
+            [
+                PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(s.title)…", sec: "act",
+                            enter: { self.push(self.renameFrame(.session(s))) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(s.title)", sec: "act",
+                            danger: true, enter: { self.push(self.confirmDeleteSession(s)) }),
+            ]
+        }
+    }
+
+    /// Drill the palette straight to a row's frame — the row ⋯ kebab opens this instead of
+    /// the hover popover (working.html openRowActions). Root stays underneath for Back.
+    func drill(to ref: RowRef) {
+        switch ref {
+        case let .workspace(w): stack = [rootFrame(), workspaceFrame(w)]
+        case let .branch(b):    stack = [rootFrame(), branchFrame(b)]
+        case let .session(s):   stack = [rootFrame(), sessionFrame(s)]
+        }
+        query = ""
+        activeIndex = 0
+    }
+
     func branchFrame(_ branch: Branch) -> PaletteFrame {
         PaletteFrame(crumb: branch.name, placeholder: "Search \(branch.name)…") { [self] _ in
             var items = [
@@ -460,11 +484,11 @@ extension SessionStatus {
     }
     var paletteColor: Color {
         switch self {
-        case .running:       return Color(hex: 0x2EA043)
-        case .working:       return Color(hex: 0xC8811A)
-        case .needsInput:    return Color(hex: 0x0A6FD6)
-        case .error:         return Color(hex: 0xD13C2F)
-        case .idle, .exited: return Color(hex: 0xA1A1A6)
+        case .running:       return Theme.dyn(0x2EA043, 0x34C759)
+        case .working:       return Theme.dyn(0xC8811A, 0xF5A623)
+        case .needsInput:    return Theme.dyn(0x0A6FD6, 0x0A84FF)
+        case .error:         return Theme.dyn(0xD13C2F, 0xFF453A)
+        case .idle, .exited: return Theme.navLabel
         }
     }
 }
@@ -567,7 +591,7 @@ struct PaletteOverlay: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 13)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
+                Rectangle().fill(Theme.border).frame(height: 0.5)
             }
 
             list
@@ -575,11 +599,11 @@ struct PaletteOverlay: View {
         .background(
             ZStack {
                 Rectangle().fill(.ultraThinMaterial)
-                Color.white.opacity(0.86)
+                Theme.glass
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.black.opacity(0.1), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
         .shadow(color: .black.opacity(0.28), radius: 60, y: 24)
     }
@@ -603,7 +627,7 @@ struct PaletteOverlay: View {
                                     .foregroundStyle(Theme.navLabel)
                                     .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 4)
                             case .divider:
-                                Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
+                                Rectangle().fill(Theme.border).frame(height: 0.5)
                                     .padding(.horizontal, 8).padding(.vertical, 5)
                             case let .item(i, it):
                                 PaletteItemRow(item: it, active: i == model.activeIndex) {
@@ -638,13 +662,13 @@ private struct CrumbChip: View {
         Button(action: action) {
             Text(text)
                 .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(Color(hex: 0x46464C))
+                .foregroundStyle(Theme.ink2)
                 .lineLimit(1)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.black.opacity(hovering ? 0.09 : 0.05))
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5))
+                        .fill(hovering ? Theme.rowSelected : Theme.rowHover)
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border, lineWidth: 0.5))
                 )
                 .contentShape(Rectangle())
         }
@@ -661,7 +685,7 @@ private struct PaletteItemRow: View {
 
     private var labelColor: Color {
         if item.danger { return Theme.danger }
-        return active ? Color(hex: 0x0A5FD6) : Theme.repoName
+        return active ? Theme.paletteActive : Theme.repoName
     }
 
     var body: some View {
@@ -706,7 +730,7 @@ private struct PaletteItemRow: View {
         switch item.icon {
         case let .phosphor(path):
             Phos(path: path, size: 16)
-                .foregroundStyle(item.danger ? Theme.danger : Color(hex: 0x6A6A70))
+                .foregroundStyle(item.danger ? Theme.danger : Theme.ink4)
         case let .session(kind):
             Phos(path: kind.iconPath, size: 16)
                 .foregroundStyle(item.danger ? Theme.danger : kind.tint)

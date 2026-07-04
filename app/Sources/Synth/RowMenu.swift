@@ -50,7 +50,7 @@ struct RowMenu: View {
             Text(confirmLabel)
                 .font(.system(size: 11.5))
                 .lineSpacing(2)
-                .foregroundStyle(Color(hex: 0x6A6A70))
+                .foregroundStyle(Theme.ink4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 2).padding(.top, 2).padding(.bottom, 9)
             HStack(spacing: 6) {
@@ -69,7 +69,7 @@ struct RowMenu: View {
             }
         }
         if !creates.isEmpty {
-            Rectangle().fill(Color.black.opacity(0.08)).frame(height: 0.5)
+            Rectangle().fill(Theme.border).frame(height: 0.5)
                 .padding(.horizontal, 6).padding(.vertical, 4)
         }
         MenuItem(icon: Phosphor.trash, title: deleteTitle, danger: true) { confirming = true }
@@ -87,7 +87,7 @@ private struct MenuItem: View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Phos(path: icon, size: 15)
-                    .foregroundStyle(danger ? Theme.danger : Color(hex: 0x7A7A80))
+                    .foregroundStyle(danger ? Theme.danger : Theme.menuIcon)
                     .frame(width: 15)
                 Text(title)
                     .font(.system(size: 12.5))
@@ -95,7 +95,7 @@ private struct MenuItem: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 9).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.black.opacity(0.06) : .clear))
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -116,10 +116,10 @@ private struct ConfirmButton: View {
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 7)
-                        .fill(danger ? Theme.danger : Color.white)
+                        .fill(danger ? Theme.danger : Theme.raised)
                         .overlay(
                             danger ? nil :
-                                RoundedRectangle(cornerRadius: 7).strokeBorder(Color.black.opacity(0.1), lineWidth: 0.5)
+                                RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line, lineWidth: 0.5)
                         )
                 )
                 .contentShape(Rectangle())

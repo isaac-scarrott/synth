@@ -54,7 +54,7 @@ struct MenuOverlay: View {
                     isPresented: Binding(get: { true }, set: { if !$0 { onClose() } }),
                     confirming: $store.menuConfirming)
                 .clipShape(RoundedRectangle(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
+                .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Theme.line, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
                 .shadow(color: .black.opacity(0.18), radius: 32, y: 12)
                 .scaleEffect(shown ? 1 : 0.95, anchor: .topTrailing)

@@ -48,6 +48,7 @@ struct RootView: View {
             HStack(spacing: 0) {
                 if !store.sidebarCollapsed {
                     Sidebar()
+                        .frame(width: store.sidebarWidth)
                         .background(Theme.sidebar)
                         .clipShape(.rect(topLeadingRadius: 0, bottomLeadingRadius: 0,
                                          bottomTrailingRadius: Theme.radiusPanel,
@@ -55,6 +56,7 @@ struct RootView: View {
                         .shadow(color: .black.opacity(0.03), radius: 14, x: 4)
                         .shadow(color: .black.opacity(0.02), radius: 1, x: 1)
                         .zIndex(1)
+                        .overlay(alignment: .trailing) { SidebarResizeHandle() }
                         .transition(.move(edge: .leading))
                 }
                 ContentPane()
@@ -80,7 +82,8 @@ struct RootView: View {
             }
         }
         .ignoresSafeArea()
-        .preferredColorScheme(.light)   // working.html is a light design; keep native chrome light
+        // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
+        .preferredColorScheme(store.colorSchemeOverride)
         .overlay {
             if let ws = store.creatingWorktreeIn {
                 ModalBackdrop(onDismiss: { store.creatingWorktreeIn = nil }) {
@@ -246,6 +249,8 @@ struct RootView: View {
             }
 
             switch event.keyCode {
+            case 53:                                         // Esc: hand focus to the main window
+                focusContent(store); return nil
             case 125: store.moveCursor(1); return nil        // ↓
             case 126: store.moveCursor(-1); return nil       // ↑
             case 124: store.expandOrIn(); return nil         // →

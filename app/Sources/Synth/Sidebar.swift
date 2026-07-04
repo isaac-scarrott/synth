@@ -297,7 +297,7 @@ private struct WorkspaceRow: View {
             Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
                     if workspace.branches.isEmpty {
-                        EmptyGroupHint(text: "No worktrees yet · ⌘K to add one")
+                        EmptyGroupHint(text: "No worktrees yet")
                     } else {
                         ForEach(workspace.branches) { BranchRow(branch: $0, workspace: workspace) }
                     }
@@ -389,7 +389,7 @@ private struct BranchRow: View {
             Reveal(open: isOpen) {
                 VStack(alignment: .leading, spacing: 1) {
                     if branch.sessions.isEmpty {
-                        EmptyGroupHint(text: "No sessions yet · ⌘K to start one")
+                        EmptyGroupHint(text: "No sessions yet")
                     } else {
                         ForEach(branch.sessions) { SessionRow(session: $0) }
                     }

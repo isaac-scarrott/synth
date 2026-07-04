@@ -67,8 +67,18 @@ enum SettingsScope: Equatable {
     var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?
 
-    /// The row-action menu currently open (nil = none).
-    var activeMenu: ActiveMenu?
+    /// The row-action menu currently open (nil = none). Clearing it always drops any
+    /// in-progress delete confirmation.
+    var activeMenu: ActiveMenu? { didSet { if activeMenu == nil { menuConfirming = false } } }
+
+    /// The open menu is showing its two-step delete confirm (working.html `.menu.confirming`).
+    /// Lifted out of RowMenu so the keyboard can drive it: `d` opens straight here, ↵ commits.
+    var menuConfirming = false
+
+    /// The sidebar row being renamed inline, and its live text — working.html's
+    /// contentEditable name label. nil = nothing renaming.
+    var renamingRowID: UUID?
+    var renameText = ""
 
     /// The ⌘K palette (nil = closed).
     var palette: PaletteModel?

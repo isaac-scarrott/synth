@@ -10,8 +10,9 @@ struct RowMenu: View {
     var creates: [MenuCreate]
     var onDelete: () -> Void
     @Binding var isPresented: Bool
+    /// Lifted to the store so the `d` shortcut can open straight into confirm and ↵ can commit.
+    @Binding var confirming: Bool
 
-    @State private var confirming = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Workspaces and branches are *removed* — sidebar-only; worktrees and branches

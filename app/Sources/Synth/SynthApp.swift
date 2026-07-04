@@ -218,8 +218,22 @@ struct RootView: View {
                 return nil
             }
 
-            if store.activeMenu != nil {
+            // Inline rename owns the keyboard: ↵ commits, Esc reverts, everything else
+            // edits the focused field (working.html startRename).
+            if store.renamingRowID != nil {
+                switch event.keyCode {
+                case 53:     store.cancelRename(); return nil     // Esc
+                case 36, 76: store.commitRename(); return nil     // Return / keypad Enter
+                default:     return event
+                }
+            }
+
+            if let menu = store.activeMenu {
                 if event.keyCode == 53 { store.activeMenu = nil; return nil }   // Esc closes menu
+                // ↵ commits the removal while the menu is showing its delete confirm.
+                if (event.keyCode == 36 || event.keyCode == 76), store.menuConfirming {
+                    menu.onDelete(); store.activeMenu = nil; return nil
+                }
                 return event
             }
             if let fr = event.window?.firstResponder {
@@ -240,9 +254,19 @@ struct RootView: View {
                 guard store.navCursor != nil else { return event }
                 store.activateCursor(); return nil
             default:
+                // r renames the selected row in place; d deletes it (through a confirm).
+                // Both are bare letters — modified variants stay with the shell / earlier
+                // handlers (working.html: !metaKey && !ctrlKey && !altKey).
+                let bare = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
                 switch key {
                 case "j": store.moveCursor(1); return nil
                 case "k": store.moveCursor(-1); return nil
+                case "r" where bare:
+                    guard let ref = store.cursorRef else { return event }
+                    store.beginRename(ref); return nil
+                case "d" where bare:
+                    guard let ref = store.cursorRef else { return event }
+                    store.requestDelete(ref); return nil
                 default:  return event
                 }
             }

@@ -60,6 +60,8 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["↑", "↓"], label: "Move selection", alt: ["J", "K"]),
             Shortcut(keys: ["→", "←"], label: "Expand · collapse"),
             Shortcut(keys: ["↵"], label: "Open session / toggle", alt: ["Space"]),
+            Shortcut(keys: ["R"], label: "Rename selected"),
+            Shortcut(keys: ["D"], label: "Delete selected"),
         ]),
         ShortcutGroup(name: "Command palette", rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),

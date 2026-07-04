@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // The ⌘K command palette — a navigation stack of frames (working.html's cmdk).
@@ -55,6 +56,8 @@ struct PaletteFrame {
     var crumb: String? = nil
     var placeholder: String
     var mode: Mode = .list
+    /// A pre-filled query for input frames (rename seeds the current name, selected).
+    var seed: String? = nil
     var build: (String) -> [PaletteItem]
 }
 
@@ -88,7 +91,7 @@ struct PaletteFrame {
         return order.flatMap { byKey[$0]!.sorted { $0.1 > $1.1 }.map(\.0) }
     }
 
-    func push(_ frame: PaletteFrame) { stack.append(frame); query = "" }
+    func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? "" }
     func pop() { if stack.count > 1 { stack.removeLast(); query = "" } }
     func pop(to depth: Int) { stack.removeLast(stack.count - max(1, depth + 1)); query = "" }
 
@@ -153,6 +156,9 @@ struct PaletteFrame {
                                      enter: { self.push(self.createWorktreeFrame(in: workspace)) }))
         }
         if let open = store.openSession {
+            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(open.title)",
+                                     ctx: ctxOf(open),
+                                     enter: { self.push(self.renameFrame(.session(open))) }))
             items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(open.title)",
                                      ctx: ctxOf(open), danger: true,
                                      enter: { self.push(self.confirmDeleteSession(open)) }))
@@ -296,6 +302,8 @@ struct PaletteFrame {
                             enter: { self.push(self.createWorktreeFrame(in: ws)) }),
                 PaletteItem(icon: .phosphor(Phosphor.gear), label: "Workspace settings…", sec: "act",
                             enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }),
+                PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
+                            enter: { self.push(self.renameFrame(.workspace(ws))) }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(ws.name)", sec: "act",
                             danger: true, enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
             ]
@@ -314,6 +322,8 @@ struct PaletteFrame {
                             enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
                 PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code", sec: "act",
                             enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
+                PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(branch.name)…", sec: "act",
+                            enter: { self.push(self.renameFrame(.branch(branch))) }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(branch.name)", sec: "act",
                             danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
             ]
@@ -396,6 +406,28 @@ struct PaletteFrame {
                                     // Opens the worktree picker sheet after the palette closes.
                                     self.store.beginAddWorkspace(url: URL(fileURLWithPath: path))
                                 } })]
+        }
+    }
+
+    /// Rename any unit inline — the field seeds with the current name and commits once
+    /// it actually changes (working.html renameFrame).
+    func renameFrame(_ ref: RowRef) -> PaletteFrame {
+        let noun: String = {
+            switch ref {
+            case .workspace: return "workspace"
+            case .branch:    return "branch"
+            case .session:   return "session"
+            }
+        }()
+        let cur = store.currentName(of: ref)
+        return PaletteFrame(crumb: "Rename \(cur)", placeholder: "New \(noun) name…",
+                            mode: .input, seed: cur) { [self] q in
+            let v = q.trimmingCharacters(in: .whitespaces)
+            let changed = !v.isEmpty && v != cur
+            return [PaletteItem(icon: .phosphor(Phosphor.pencil),
+                                label: v.isEmpty ? "Type a new name…" : "Rename to “\(v)”",
+                                disabled: !changed,
+                                enter: { if changed { self.runAndClose { self.store.rename(ref, to: v) } } })]
         }
     }
 
@@ -522,7 +554,16 @@ struct PaletteOverlay: View {
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.repoName)
                     .focused($focused)
-                    .onChange(of: model.stack.count) { focused = true }
+                    .onChange(of: model.stack.count) {
+                        focused = true
+                        // A seeded rename frame pre-fills the name — select it so a keystroke
+                        // replaces (working.html pushFrame → input.select()).
+                        if model.frame.seed != nil {
+                            DispatchQueue.main.async {
+                                (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+                            }
+                        }
+                    }
             }
             .padding(.horizontal, 16).padding(.vertical, 13)
             .overlay(alignment: .bottom) {

@@ -27,6 +27,7 @@ struct MenuAnchorKey: PreferenceKey {
 /// The floating menu card — rendered at the root so it escapes the sidebar clip
 /// (like the mock's `position: fixed`), scaling out of the kebab's top-right corner.
 struct MenuOverlay: View {
+    @Environment(AppStore.self) private var store
     let menu: ActiveMenu
     let kebabRect: CGRect
     let container: CGSize
@@ -42,14 +43,16 @@ struct MenuOverlay: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        @Bindable var store = store
+        return ZStack(alignment: .topLeading) {
             Color.clear
                 .contentShape(Rectangle())
                 .ignoresSafeArea()
                 .onTapGesture(perform: onClose)
 
             RowMenu(level: menu.level, creates: menu.creates, onDelete: menu.onDelete,
-                    isPresented: Binding(get: { true }, set: { if !$0 { onClose() } }))
+                    isPresented: Binding(get: { true }, set: { if !$0 { onClose() } }),
+                    confirming: $store.menuConfirming)
                 .clipShape(RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.08), radius: 2, y: 1)

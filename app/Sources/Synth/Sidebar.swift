@@ -218,36 +218,45 @@ private struct WorkspaceRow: View {
     private var selected: Bool { store.keyboardActive && store.navCursor == workspace.id }
     private var menuOpen: Bool { store.activeMenu?.rowID == workspace.id }
     private var revealed: Bool { hovering || menuOpen }
+    private var renaming: Bool { store.renamingRowID == workspace.id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             ZStack(alignment: .trailing) {
-                Button {
-                    focusSidebar()
-                    store.toggleExpanded(workspace.id)
-                    store.navCursor = workspace.id
-                } label: {
+                if renaming {
                     HStack(spacing: 8) {
                         Chevron(open: isOpen)
                         Monogram(text: workspace.monogram,
                                  color: Theme.chipColors[workspace.colorIndex % Theme.chipColors.count])
-                        Text(workspace.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.repoName)
+                        RenameField(font: .system(size: 13, weight: .semibold))
                         Spacer(minLength: 4)
-                        trailing.opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(RowButtonStyle())
+                } else {
+                    Button {
+                        focusSidebar()
+                        store.toggleExpanded(workspace.id)
+                        store.navCursor = workspace.id
+                    } label: {
+                        HStack(spacing: 8) {
+                            Chevron(open: isOpen)
+                            Monogram(text: workspace.monogram,
+                                     color: Theme.chipColors[workspace.colorIndex % Theme.chipColors.count])
+                            Text(workspace.name)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.repoName)
+                            Spacer(minLength: 4)
+                            trailing.opacity(revealed ? 0 : 1)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(RowButtonStyle())
 
-                KebabButton(rowID: workspace.id, level: .workspace,
-                            creates: [MenuCreate(icon: Phosphor.branch, title: "Create worktree…",
-                                                 run: { store.creatingWorktreeIn = workspace })],
-                            onDelete: { store.removeWorkspace(workspace) })
-                    .opacity(revealed ? 1 : 0)
-                    .padding(.trailing, 2)
+                    KebabButton(ref: .workspace(workspace))
+                        .opacity(revealed ? 1 : 0)
+                        .padding(.trailing, 2)
+                }
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
@@ -286,6 +295,7 @@ private struct BranchRow: View {
     private var isOpen: Bool { store.expanded.contains(branch.id) }
     private var selected: Bool { store.keyboardActive && store.navCursor == branch.id }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
+    private var renaming: Bool { store.renamingRowID == branch.id }
     private var isActivePill: Bool {
         // The branch containing the open session — but an *expanded* group already
         // highlights the open session inside; the white header pill would
@@ -298,39 +308,41 @@ private struct BranchRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             ZStack(alignment: .trailing) {
-                Button {
-                    focusSidebar()
-                    store.toggleExpanded(branch.id)
-                    store.navCursor = branch.id
-                } label: {
+                if renaming {
                     HStack(spacing: 6) {
                         Chevron(open: isOpen)
-                        Text(branch.name)
-                            .font(.system(size: 12, design: .monospaced))
-                            .fontWeight(isActivePill ? .medium : .regular)
-                            .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
-                            .lineLimit(1).truncationMode(.middle)
+                        RenameField(font: .system(size: 12, design: .monospaced))
                         Spacer(minLength: 4)
-                        BranchRollup(branch: branch).opacity(revealed ? 0 : 1)
                     }
-                    // Right pad 10→8 so the branch indicator shares one vertical axis
-                    // with the workspace count and session dots (working.html .branch).
                     .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
-                    .background(activePillBackground)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(RowButtonStyle())
+                } else {
+                    Button {
+                        focusSidebar()
+                        store.toggleExpanded(branch.id)
+                        store.navCursor = branch.id
+                    } label: {
+                        HStack(spacing: 6) {
+                            Chevron(open: isOpen)
+                            Text(branch.name)
+                                .font(.system(size: 12, design: .monospaced))
+                                .fontWeight(isActivePill ? .medium : .regular)
+                                .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
+                                .lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            BranchRollup(branch: branch).opacity(revealed ? 0 : 1)
+                        }
+                        // Right pad 10→8 so the branch indicator shares one vertical axis
+                        // with the workspace count and session dots (working.html .branch).
+                        .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
+                        .background(activePillBackground)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(RowButtonStyle())
 
-                KebabButton(rowID: branch.id, level: .branch,
-                            creates: [
-                                MenuCreate(icon: Phosphor.terminal, title: "New terminal",
-                                           run: { store.newTerminal(in: branch) }),
-                                MenuCreate(icon: Phosphor.sparkle, title: "New Claude Code",
-                                           run: { store.newClaude(in: branch) }),
-                            ],
-                            onDelete: { store.removeBranch(branch) })
-                    .opacity(revealed ? 1 : 0)
-                    .padding(.trailing, 2)
+                    KebabButton(ref: .branch(branch))
+                        .opacity(revealed ? 1 : 0)
+                        .padding(.trailing, 2)
+                }
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
@@ -372,6 +384,7 @@ private struct SessionRow: View {
     private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
     private var isOpen: Bool { store.openSessionID == session.id }
+    private var renaming: Bool { store.renamingRowID == session.id }
 
     private var nameColor: Color {
         if isOpen { return Color(hex: 0x2C2C30) }
@@ -380,40 +393,49 @@ private struct SessionRow: View {
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            Button { store.open(session); focusContent(store) } label: {
+            if renaming {
                 HStack(spacing: 8) {
                     Phos(path: session.kind.iconPath, size: 14)
                         .foregroundStyle(session.kind.tint).frame(width: 14)
-                    Text(session.title)
-                        .font(.system(size: 11.5))
-                        // Only the focused session goes bold; unread surfaces via colour
-                        // + the gutter bullet, not weight (working.html .session--open).
-                        .fontWeight(isOpen ? .semibold : .regular)
-                        .foregroundStyle(nameColor)
-                        .lineLimit(1)
+                    RenameField(font: .system(size: 11.5))
                     Spacer(minLength: 4)
-                    StatusIndicator(status: session.status, unread: session.unread).opacity(revealed ? 0 : 1)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                // The open session's sticky tint (working.html .session--open).
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(hex: 0x0A84FF).opacity(isOpen ? 0.06 : 0))
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(RowButtonStyle())
-            // Unread bullet lives in the gutter (blue), not inline — no layout shift.
-            .overlay(alignment: .leading) {
-                Circle().fill(Theme.attention).frame(width: 4, height: 4)
-                    .opacity(session.unread ? 1 : 0)
-                    .offset(x: -3)
-            }
+            } else {
+                Button { store.open(session); focusContent(store) } label: {
+                    HStack(spacing: 8) {
+                        Phos(path: session.kind.iconPath, size: 14)
+                            .foregroundStyle(session.kind.tint).frame(width: 14)
+                        Text(session.title)
+                            .font(.system(size: 11.5))
+                            // Only the focused session goes bold; unread surfaces via colour
+                            // + the gutter bullet, not weight (working.html .session--open).
+                            .fontWeight(isOpen ? .semibold : .regular)
+                            .foregroundStyle(nameColor)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        StatusIndicator(status: session.status, unread: session.unread).opacity(revealed ? 0 : 1)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    // The open session's sticky tint (working.html .session--open).
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(hex: 0x0A84FF).opacity(isOpen ? 0.06 : 0))
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(RowButtonStyle())
+                // Unread bullet lives in the gutter (blue), not inline — no layout shift.
+                .overlay(alignment: .leading) {
+                    Circle().fill(Theme.attention).frame(width: 4, height: 4)
+                        .opacity(session.unread ? 1 : 0)
+                        .offset(x: -3)
+                }
 
-            KebabButton(rowID: session.id, level: .session,
-                        onDelete: { store.closeSession(session) })
-                .opacity(revealed ? 1 : 0)
-                .padding(.trailing, 2)
+                KebabButton(ref: .session(session))
+                    .opacity(revealed ? 1 : 0)
+                    .padding(.trailing, 2)
+            }
         }
         .rowChrome(hovering: hovering, selected: selected)
         .onHover { hovering = $0 }
@@ -426,16 +448,14 @@ private struct SessionRow: View {
 
 private struct KebabButton: View {
     @Environment(AppStore.self) private var store
-    let rowID: UUID
-    let level: RowMenu.Level
-    var creates: [MenuCreate] = []
-    let onDelete: () -> Void
+    let ref: RowRef
 
-    private var menuOpen: Bool { store.activeMenu?.rowID == rowID }
+    private var menuOpen: Bool { store.activeMenu?.rowID == ref.id }
 
     var body: some View {
         Button {
-            store.activeMenu = ActiveMenu(rowID: rowID, level: level, creates: creates, onDelete: onDelete)
+            store.menuConfirming = false
+            store.activeMenu = store.rowMenu(for: ref)
         } label: {
             // 13px glyph in a 20px box; the open menu fills a rounded 7px hover box
             // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
@@ -447,7 +467,37 @@ private struct KebabButton: View {
         }
         .buttonStyle(KebabPressStyle())
         .help("Actions")
-        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [rowID] anchor in [rowID: anchor] }
+        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [id = ref.id] anchor in [id: anchor] }
+    }
+}
+
+/// The name field shown in place of a row's label while it is being renamed —
+/// working.html's contentEditable `.renaming`: white fill, blue ring, text selected.
+/// ↵/Esc are handled by the global key monitor; losing focus (blur) commits.
+private struct RenameField: View {
+    @Environment(AppStore.self) private var store
+    let font: Font
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        @Bindable var store = store
+        TextField("", text: $store.renameText)
+            .textFieldStyle(.plain)
+            .font(font)
+            .foregroundStyle(Theme.repoName)
+            .focused($focused)
+            .padding(.horizontal, 3)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color(hex: 0x0A84FF).opacity(0.55), lineWidth: 1.5))
+            .padding(.horizontal, -3)
+            .onAppear {
+                focused = true
+                DispatchQueue.main.async {
+                    (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+                }
+            }
+            .onChange(of: focused) { _, isFocused in if !isFocused { store.commitRename() } }
     }
 }
 

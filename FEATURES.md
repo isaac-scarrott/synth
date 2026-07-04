@@ -473,3 +473,24 @@ by detection, not fixed at creation. See ADR-0008.
 - **Correlation = injected env** (`SYNTH_SESSION_ID` = row id), so a signal maps to one row even when
   terminals share a worktree. Degrades to a no-op if `synth-hook` or `claude` is missing.
 - Design borrowed from cmux (a native-macOS terminal app running the same approach in production).
+
+## 2026-07-04 — Rename everywhere: contextual ⌘K Rename + sidebar `r`/`d` (both designs + native app)
+
+Renaming a workspace / branch / session is now first-class, reachable the same two ways delete is.
+
+- **⌘K contextual Rename.** The palette gains a Rename action that acts on where you are: it leads
+  the open session's actions (root frame, above Delete), and appears in the workspace and branch
+  frames beside Remove. It pushes an inline `input` frame (never a modal) whose field **seeds with
+  the current name, pre-selected**, so a keystroke replaces; the commit item stays disabled until the
+  name actually changes. Renaming a live session updates the open pane title (free in the native app —
+  the pane reads `session.title`; working.html syncs it manually).
+- **Sidebar keyboard: `r` = rename, `d` = delete.** `r` on the highlighted row edits its name in
+  place (white fill, blue ring, text selected; ↵ commits, Esc reverts, blur commits — typing is
+  swallowed from the nav handler). `d` opens that row's existing delete-confirm popover (↵ confirms,
+  Esc cancels) rather than deleting outright, so one stray keystroke can't destroy a session — matches
+  the delete-safety design. An open menu owns the keyboard (no double-fire with nav ↵). Both are
+  documented in the ⌘? shortcuts sheet.
+- **Native port.** `AppStore` gains `rename`/`beginRename`/`commitRename` + inline-rename state, and a
+  centralised `rowMenu(for:)` the kebab and `d` both use; the delete-confirm `confirming` flag is
+  lifted into the store so the keyboard can drive it. Verified against the running app: ⌘K rename
+  frame, `r` inline edit, `d` confirm, and ↵-commits-removal all captured in screenshots.

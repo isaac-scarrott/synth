@@ -106,4 +106,93 @@ extension AppStore {
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)
     }
+
+    // MARK: Rename
+
+    /// Any row by id — resolves the inline-rename target on commit (it stays in the tree
+    /// even if it is no longer the cursor row).
+    func rowRef(_ id: UUID) -> RowRef? {
+        for ws in workspaces {
+            if ws.id == id { return .workspace(ws) }
+            for br in ws.branches {
+                if br.id == id { return .branch(br) }
+                if let s = br.sessions.first(where: { $0.id == id }) { return .session(s) }
+            }
+        }
+        return nil
+    }
+
+    func currentName(of ref: RowRef) -> String {
+        switch ref {
+        case let .workspace(w): return w.name
+        case let .branch(b):    return b.name
+        case let .session(s):   return s.title
+        }
+    }
+
+    /// Write a new name onto the unit. Renaming the open session updates the pane title
+    /// for free — ContentPane reads `session.title` (no manual sync, unlike working.html).
+    func rename(_ ref: RowRef, to name: String) {
+        let v = name.trimmingCharacters(in: .whitespaces)
+        guard !v.isEmpty else { return }
+        switch ref {
+        case let .workspace(w): w.name = v
+        case let .branch(b):    b.name = v
+        case let .session(s):   s.title = v
+        }
+    }
+
+    // MARK: Inline rename (r on the selected row)
+
+    func beginRename(_ ref: RowRef) {
+        activeMenu = nil
+        renameText = currentName(of: ref)
+        renamingRowID = ref.id
+        keyboardActive = true
+    }
+
+    /// ↵ / blur — commit the field (whitespace collapsed); an empty name reverts.
+    func commitRename() {
+        guard let id = renamingRowID else { return }
+        renamingRowID = nil
+        guard let ref = rowRef(id) else { return }
+        let v = renameText.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if !v.isEmpty { rename(ref, to: v) }
+    }
+
+    /// Esc — leave the name untouched.
+    func cancelRename() { renamingRowID = nil }
+
+    // MARK: Row menu (shared by the kebab and the `d` shortcut)
+
+    /// The action menu for a row — the same card the kebab opens, centralised so the
+    /// `d` shortcut can raise it straight into its confirm step.
+    func rowMenu(for ref: RowRef) -> ActiveMenu {
+        switch ref {
+        case let .workspace(w):
+            return ActiveMenu(rowID: w.id, level: .workspace,
+                              creates: [MenuCreate(icon: Phosphor.branch, title: "Create worktree…",
+                                                   run: { [weak self] in self?.creatingWorktreeIn = w })],
+                              onDelete: { [weak self] in self?.removeWorkspace(w) })
+        case let .branch(b):
+            return ActiveMenu(rowID: b.id, level: .branch,
+                              creates: [
+                                MenuCreate(icon: Phosphor.terminal, title: "New terminal",
+                                           run: { [weak self] in self?.newTerminal(in: b) }),
+                                MenuCreate(icon: Phosphor.sparkle, title: "New Claude Code",
+                                           run: { [weak self] in self?.newClaude(in: b) }),
+                              ],
+                              onDelete: { [weak self] in self?.removeBranch(b) })
+        case let .session(s):
+            return ActiveMenu(rowID: s.id, level: .session, creates: [],
+                              onDelete: { [weak self] in self?.closeSession(s) })
+        }
+    }
+
+    /// `d` on the selected row — open its menu straight in the confirm step so a single
+    /// keystroke can't delete (working.html requestDelete → showConfirm).
+    func requestDelete(_ ref: RowRef) {
+        activeMenu = rowMenu(for: ref)
+        menuConfirming = true
+    }
 }

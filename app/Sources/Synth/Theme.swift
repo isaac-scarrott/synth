@@ -51,9 +51,8 @@ enum Theme {
     static let sessionNameUnread = dyn(0x35353A, 0xE8E8EC)
     static let sessionIcon  = dyn(0xA1A1A6, 0x88888F)   // non-AI
 
-    // State + accent — vivid tokens read on both themes; only idle needs a dark tune.
+    // State + accent — vivid tokens read on both themes.
     static let run         = Color(hex: 0x34C759)   // green liveness
-    static let idle        = dyn(0xCBCBD0, 0x55555C)
     static let working     = Color(hex: 0xF5A623)   // amber (working)
     static let attention   = Color(hex: 0x0A84FF)   // needs-input (?) / unread bullet
     static let danger      = Color(hex: 0xFF3B30)   // error (!)

@@ -156,7 +156,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
     private func apply(_ event: SessionEvent) {
         switch event {
         case let .statusChanged(id, status): session(id)?.status = status
-        case let .titleChanged(id, title):   session(id)?.title = title
+        case let .titleChanged(id, title):
+            // Claude Code's ai-title, refined each turn — but never clobber a hand-picked name.
+            if let s = session(id), !s.titleIsCustom, s.title != title { s.title = title }
         case let .exited(id, code):
             session(id)?.status = (code ?? 0) == 0 ? .exited(code) : .error
         case let .kindChanged(id, kind): session(id)?.kind = kind
@@ -267,7 +269,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     @discardableResult
     func newTerminal(in branch: Branch? = nil) -> Session? {
-        addSession(kind: .terminal, title: "shell", status: .running, in: branch)
+        // A freshly opened shell sits at a prompt — nothing is running, so it starts idle.
+        // Green (.running) is reserved for a terminal actually running a process.
+        addSession(kind: .terminal, title: "shell", status: .idle, in: branch)
     }
 
     /// Claude Code is just a terminal that opened and ran `claude`, so it spawns

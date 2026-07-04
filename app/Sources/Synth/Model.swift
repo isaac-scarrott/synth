@@ -9,7 +9,8 @@ enum SessionKind: String, Sendable {
 }
 
 /// A session's derived status fact — the only session-level thing that reaches the
-/// global store (see docs/adr/0001). Terminals only ever produce running / exited.
+/// global store (see docs/adr/0001). A terminal is idle at a prompt and exited/error
+/// when its process ends; running is reserved for one actively running a process.
 enum SessionStatus: Equatable, Sendable {
     case running          // a live process — drives the green liveness dot
     case idle             // alive but nothing happening
@@ -34,12 +35,16 @@ enum SessionStatus: Equatable, Sendable {
     var title: String
     var status: SessionStatus
     var unread: Bool
+    /// Set once the user renames the session by hand. Freezes the title so Claude Code's
+    /// evolving ai-title (arriving as `.titleChanged`) stops overwriting a chosen name.
+    var titleIsCustom: Bool
 
-    init(kind: SessionKind, title: String, status: SessionStatus = .running, unread: Bool = false) {
+    init(kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false) {
         self.kind = kind
         self.title = title
         self.status = status
         self.unread = unread
+        self.titleIsCustom = titleIsCustom
     }
 }
 

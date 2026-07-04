@@ -174,11 +174,38 @@ func runEvent(name: String) -> Never {
     default:
         signal = nil
     }
-    if let signal { sendSignal(socketPath: socketPath, session: sessionID, signal: signal) }
+    // Claude Code writes an `ai-title` line into the transcript (a short, evolving title it
+    // generates) — read the latest and forward it so Synth can auto-name the row.
+    let title = (payload["transcript_path"] as? String).flatMap(readAITitle)
+
+    var lines = ""
+    if let signal { lines += jsonLine(["session": sessionID, "signal": signal]) }
+    if let title  { lines += jsonLine(["session": sessionID, "title": title]) }
+    if !lines.isEmpty { sendLines(socketPath: socketPath, lines) }
     exit(0)   // never block Claude — we only observe
 }
 
-func sendSignal(socketPath: String, session: String, signal: String) {
+/// The most recent `ai-title` in a Claude Code transcript (scanning from the end), or nil.
+func readAITitle(_ path: String) -> String? {
+    guard let data = FileManager.default.contents(atPath: path),
+          let text = String(data: data, encoding: .utf8) else { return nil }
+    for line in text.split(separator: "\n").reversed() where line.contains("\"ai-title\"") {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              obj["type"] as? String == "ai-title",
+              let title = (obj["aiTitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { continue }
+        return title
+    }
+    return nil
+}
+
+func jsonLine(_ dict: [String: String]) -> String {
+    guard let data = try? JSONSerialization.data(withJSONObject: dict),
+          let s = String(data: data, encoding: .utf8) else { return "" }
+    return s + "\n"
+}
+
+func sendLines(socketPath: String, _ payload: String) {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else { return }
     defer { close(fd) }
@@ -197,8 +224,7 @@ func sendSignal(socketPath: String, session: String, signal: String) {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, len) }
     }
     guard connected == 0 else { return }
-    let line = "{\"session\":\"\(session)\",\"signal\":\"\(signal)\"}\n"
-    _ = line.withCString { write(fd, $0, strlen($0)) }
+    _ = payload.withCString { write(fd, $0, strlen($0)) }
 }
 
 func shellQuote(_ s: String) -> String {

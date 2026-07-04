@@ -58,10 +58,14 @@ final class HookServer: @unchecked Sendable {
         }
         for line in acc.split(separator: 0x0A) where !line.isEmpty {
             guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
-                  let sid = obj["session"] as? String, let id = UUID(uuidString: sid),
-                  let signal = obj["signal"] as? String else { continue }
+                  let sid = obj["session"] as? String, let id = UUID(uuidString: sid) else { continue }
             let bus = self.bus
-            Task { @MainActor in HookServer.apply(signal: signal, session: id, bus: bus) }
+            if let signal = obj["signal"] as? String {
+                Task { @MainActor in HookServer.apply(signal: signal, session: id, bus: bus) }
+            }
+            if let title = obj["title"] as? String {
+                Task { @MainActor in bus?.post(.titleChanged(id, title)) }
+            }
         }
     }
 

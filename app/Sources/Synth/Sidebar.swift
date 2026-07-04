@@ -623,9 +623,11 @@ extension View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(selected ? Theme.rowSelected : (hovering ? Theme.rowHover : .clear))
         )
+        // Inset (strokeBorder) so the ring paints inside the row's bounds — a nested row
+        // sits inside Reveal's .clipped() accordion, which would shave an outset ring.
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.selRing, lineWidth: 1.5)
+                .strokeBorder(Theme.selRing, lineWidth: 1.5)
                 .opacity(selected ? 1 : 0)
         )
     }

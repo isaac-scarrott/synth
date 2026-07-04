@@ -152,7 +152,7 @@ extension AppStore {
         switch ref {
         case let .workspace(w): w.name = v
         case let .branch(b):    b.name = v
-        case let .session(s):   s.title = v
+        case let .session(s):   s.title = v; s.titleIsCustom = true
         }
     }
 

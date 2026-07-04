@@ -7,6 +7,7 @@ cd "$(dirname "$0")"
 PIDFILE=".build/dev.pid"
 [ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null || true
 
+./vendor/fetch-ghostty.sh
 swift build
 BIN="$(swift build --show-bin-path)/Synth"
 "$BIN" & echo $! > "$PIDFILE"

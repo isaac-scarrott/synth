@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import SwiftTerm
 
 @main
 struct SynthApp: App {
@@ -235,7 +234,7 @@ struct RootView: View {
                 return event
             }
             if let fr = event.window?.firstResponder {
-                if fr is TerminalView || fr is NSText || fr is NSTextView { return event }
+                if fr is GhosttySurfaceView || fr is NSText || fr is NSTextView { return event }
             }
             // Ctrl+K also opens the palette when closed (only outside text/terminal focus,
             // so the shell keeps its own Ctrl+K).

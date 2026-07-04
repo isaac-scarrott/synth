@@ -573,3 +573,30 @@ Landed the sidebar-nav additions in the SwiftUI app. `AppStore.toggleGroup()` (T
 guarded by `cursorIsGroup`) toggles the highlighted workspace/branch group open↔closed; `l`/`h` in
 the key monitor alias `expandOrIn`/`collapseOrOut`. ⌘? sheet shows "Toggle group" + L/H alternates.
 Verified by driving the built app (Tab open→close, l expand, h collapse) with screenshots.
+## 2026-07-04 — Terminal renderer = embedded Ghostty (libghostty), replacing SwiftTerm
+
+The native app's terminal is now rendered by **Ghostty's embedding library** (libghostty /
+`GhosttyKit`), not SwiftTerm. Terminal fidelity is a first-class concern, and libghostty brings a
+GPU (Metal) renderer, real CoreText font shaping (ligatures, powerline glyphs, truecolor, emoji),
+and best-in-class VT compatibility — for free, at the cost of a large C-ABI integration.
+
+- **Ownership inverts.** libghostty owns the PTY/shell, VT parsing, and the Metal renderer (it draws
+  into the view's `CAMetalLayer` on its own thread, driven by a CVDisplayLink keyed to the display
+  id). The Swift layer is a thin host: `GhosttySurfaceView` (an `NSView` that vends the Metal backing
+  layer, forwards keyboard/mouse/IME/scroll, and keeps the surface sized in pixels) + `GhosttyApp`
+  (the process-wide `ghostty_app_t`, runtime callbacks, and a coalesced wakeup→`ghostty_app_tick`).
+- **Config is inline-only** (never the user's `~/.config/ghostty`), so behaviour is deterministic and
+  parallel Synth instances can't perturb each other. `term = xterm-256color` avoids depending on the
+  ghostty terminfo being installed on the host; colours/font match working.html's `.term` card.
+- **Hooks are unchanged.** The Claude-detection env (`SYNTH_SESSION_ID`, socket path, shim-first
+  `PATH`) now reaches the shell via libghostty's `surface_config.env_vars` instead of SwiftTerm's
+  process env; a Claude session is a native login shell that runs `claude` via `initial_input`.
+- **Distribution.** `GhosttyKit.xcframework` (MIT, ~538 MB) is gitignored and fetched by
+  `app/vendor/fetch-ghostty.sh` (pinned by ghostty SHA + sha256); `dev.sh`/`build-app.sh` fetch it
+  first. `swift build` can't link a static-library xcframework, so `Package.swift` vends the C module
+  from a header target and links the fat `.a` via an explicit `-Xlinker` path.
+- **Verified against the running app:** a plain shell renders + types + runs in the right cwd, and a
+  Claude Code session launches through the shim (real `claude` exec'd with injected `--session-id` +
+  `--settings` hooks), round-trips a `claude-start` hook signal back to the socket, and renders
+  Claude's full truecolor TUI. Prebuilt libghostty comes from the cmux fork's release (see the
+  earlier hooks entry — Synth's approach is modelled on cmux).

@@ -2,3 +2,5 @@
 .swiftpm/
 Package.resolved
 build/
+vendor/GhosttyKit.xcframework/
+vendor/*.tar.gz

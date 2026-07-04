@@ -1,10 +1,10 @@
 import SwiftUI
-import SwiftTerm
+import AppKit
 
 /// Hosts a managed terminal NSView. The view is owned by TerminalManager (not created
 /// here), so SwiftUI re-parenting it never restarts the shell.
 struct TerminalHost: NSViewRepresentable {
-    let terminal: LocalProcessTerminalView
+    let terminal: GhosttySurfaceView
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -119,7 +119,7 @@ private struct PaneHead: View {
 /// working.html `.term`: the dark rounded card the shell lives in — 14 margin,
 /// 13/15 inner padding, #1b1b1e, inset hairline + soft drop shadow.
 private struct TermSurface: View {
-    let terminal: LocalProcessTerminalView
+    let terminal: GhosttySurfaceView
 
     var body: some View {
         TerminalHost(terminal: terminal)

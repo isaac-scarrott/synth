@@ -5,6 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+./vendor/fetch-ghostty.sh
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)"
 APP="build/Synth.app"

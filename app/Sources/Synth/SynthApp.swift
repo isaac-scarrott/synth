@@ -62,14 +62,9 @@ struct RootView: View {
                 ContentPane()
             }
             .background(Theme.panel)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusApp))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radiusApp)
-                    .strokeBorder(Theme.borderStrong, lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.06), radius: 24, y: 8)
-            .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
-            .padding(Theme.cardInset)
+            // Fill the native window edge-to-edge — the real window supplies the frame +
+            // rounded corners, so the mock's floating-card inset/border/shadow (which read
+            // as a grey margin) are dropped here.
             .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: store.sidebarCollapsed)
 
             if store.sidebarCollapsed {

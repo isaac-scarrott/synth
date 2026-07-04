@@ -153,7 +153,7 @@ struct PaletteFrame {
         if let workspace {
             items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
                                      ctx: workspace.name,
-                                     enter: { self.push(self.createWorktreeFrame(in: workspace)) }))
+                                     enter: { self.push(self.worktreeFrame(in: workspace)) }))
         }
         if let open = store.openSession {
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(open.title)",
@@ -299,7 +299,7 @@ struct PaletteFrame {
         PaletteFrame(crumb: ws.name, placeholder: "Search \(ws.name)…") { [self] _ in
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", sec: "act",
-                            enter: { self.push(self.createWorktreeFrame(in: ws)) }),
+                            enter: { self.push(self.worktreeFrame(in: ws)) }),
                 PaletteItem(icon: .phosphor(Phosphor.gear), label: "Workspace settings…", sec: "act",
                             enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }),
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
@@ -455,18 +455,58 @@ struct PaletteFrame {
         }
     }
 
-    func createWorktreeFrame(in workspace: Workspace?) -> PaletteFrame {
-        PaletteFrame(crumb: "New worktree", placeholder: "New branch name…", mode: .input) { [self] q in
+    /// `a` on a branch/worktree (or a session leaf) jumps straight to the "add a session"
+    /// choice — a terminal or a Claude Code, created in `branch` (working.html newSessionFrame).
+    func newSessionFrame(branch: Branch) -> PaletteFrame {
+        PaletteFrame(crumb: "New session", placeholder: "New session in \(branch.name)…") { [self] _ in
+            [
+                PaletteItem(icon: .session(.terminal), label: "New terminal", ctx: branch.name,
+                            enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
+                PaletteItem(icon: .session(.claudeCode), label: "New Claude Code", ctx: branch.name,
+                            enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
+            ]
+        }
+    }
+
+    /// New worktree via ⌘K: empty until you type, then fuzzy-match every local and remote
+    /// branch (top 5, already-checked-out hidden, local/remote dedup'd), or cut a new branch
+    /// off the typed name. Each pick checks the branch out into its own worktree (ADR-0007).
+    /// working.html fakes the remotes; here they come from real git (GitService.allBranches).
+    func worktreeFrame(in workspace: Workspace?) -> PaletteFrame {
+        // Read git once, when the frame is pushed — the branch set can't change while the
+        // palette is open, so per-keystroke `build` stays allocation-only.
+        let all = workspace.map { GitService.allBranches(at: $0.url) } ?? []
+        let shown = Set(workspace?.branches.map(\.name) ?? [])
+        return PaletteFrame(crumb: "New worktree", placeholder: "Search branches to check out…",
+                            mode: .input) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
-            return [PaletteItem(icon: .phosphor(Phosphor.plus),
-                                label: v.isEmpty ? "Type a branch name…" : "Create worktree “\(v)”",
-                                disabled: v.isEmpty || workspace == nil,
-                                enter: { self.runAndClose { [store = self.store] in
-                                    guard let ws = workspace else { return }
-                                    if let err = store.createWorktree(in: ws, newBranch: v, base: nil) {
-                                        store.presentGitError("Couldn't create worktree", details: err)
+            guard !v.isEmpty, let ws = workspace else { return [] }
+            var items = all
+                .filter { !shown.contains($0.name) }
+                .compactMap { b -> (GitService.BranchRef, Double)? in
+                    fuzzyScore(v, b.name).map { (b, $0) }
+                }
+                .sorted { $0.1 > $1.1 }
+                .prefix(5)
+                .map { b, _ in
+                    PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
+                                ctx: b.isRemote ? (b.remote ?? "origin") : "local",
+                                enter: { self.runAndClose {
+                                    if let err = self.store.createWorktree(in: ws, existingBranch: b.name) {
+                                        self.store.presentGitError("Couldn't create worktree", details: err)
                                     }
-                                } })]
+                                } })
+                }
+            // Fallback: the typed query isn't an existing branch → offer cutting a fresh one.
+            if !all.contains(where: { $0.name == v }) {
+                items.append(PaletteItem(icon: .phosphor(Phosphor.plus), label: "New branch “\(v)”",
+                            enter: { self.runAndClose {
+                                if let err = self.store.createWorktree(in: ws, newBranch: v, base: nil) {
+                                    self.store.presentGitError("Couldn't create worktree", details: err)
+                                }
+                            } }))
+            }
+            return items
         }
     }
 }

@@ -8,6 +8,15 @@ enum GitService {
         let lastCommitUnix: TimeInterval
     }
 
+    /// A branch the ⌘K worktree picker can check out — a local branch, or a
+    /// remote-tracking branch not present locally. `remote` is nil for locals, else the
+    /// remote's name (e.g. "origin") shown as the result's context tag.
+    struct BranchRef {
+        let name: String
+        var isRemote: Bool { remote != nil }
+        let remote: String?
+    }
+
     /// Local branches (refs/heads), most-recently-committed first. Empty if the path
     /// isn't a git repository.
     static func branches(at url: URL) -> [BranchInfo] {
@@ -21,6 +30,35 @@ enum GitService {
             guard parts.count == 2, let unix = TimeInterval(parts[1]) else { return nil }
             return BranchInfo(name: String(parts[0]), lastCommitUnix: unix)
         }
+    }
+
+    /// Every branch the worktree picker can reach — local (refs/heads) plus
+    /// remote-tracking (refs/remotes, minus each remote's HEAD symref). A name present
+    /// both locally and on a remote appears once, tagged local (locals are read first).
+    /// Most-recently-committed first within each source.
+    static func allBranches(at url: URL) -> [BranchRef] {
+        guard isRepository(url) else { return [] }
+        var seen = Set<String>()
+        var result: [BranchRef] = []
+
+        let local = run(["-C", url.path, "for-each-ref", "--sort=-committerdate",
+                         "--format=%(refname:short)", "refs/heads"])
+        for line in local.split(separator: "\n") {
+            let name = String(line)
+            guard !name.isEmpty, seen.insert(name).inserted else { continue }
+            result.append(BranchRef(name: name, remote: nil))
+        }
+
+        let remote = run(["-C", url.path, "for-each-ref", "--sort=-committerdate",
+                          "--format=%(refname:short)", "refs/remotes"])
+        for line in remote.split(separator: "\n") {
+            let short = String(line)   // e.g. "origin/feat/billing"; "origin" for origin/HEAD
+            guard let slash = short.firstIndex(of: "/") else { continue }   // drops HEAD symref
+            let name = String(short[short.index(after: slash)...])
+            guard !name.isEmpty, seen.insert(name).inserted else { continue }
+            result.append(BranchRef(name: name, remote: String(short[..<slash])))
+        }
+        return result
     }
 
     static func isRepository(_ url: URL) -> Bool {

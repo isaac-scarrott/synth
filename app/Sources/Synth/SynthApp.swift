@@ -276,6 +276,12 @@ struct RootView: View {
                 case "k": store.moveCursor(-1); return nil
                 case "l" where bare: store.expandOrIn(); return nil     // vim expand-or-in
                 case "h" where bare: store.collapseOrOut(); return nil  // vim collapse-or-out
+                // a adds the cursor row's natural child, dropping into its ⌘K frame — a worktree
+                // search under a workspace, a New-session choice under a worktree / session leaf.
+                // No-ops off a real tree row (cursorRef is nil in Settings / on the foot button).
+                case "a" where bare:
+                    guard let ref = store.cursorRef else { return event }
+                    store.addToRow(ref); return nil
                 case "r" where bare:
                     guard let ref = store.cursorRef else { return event }
                     store.beginRename(ref); return nil

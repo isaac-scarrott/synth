@@ -304,6 +304,25 @@ enum ThemePref: String, CaseIterable, Identifiable {
         palette?.drill(to: ref)
     }
 
+    /// `a` = add the row's natural child, dropping straight into its ⌘K frame: a worktree
+    /// under a workspace (fuzzy branch search), a session under a worktree, or — on a
+    /// session leaf — a sibling session in that leaf's parent worktree (working.html addToRow).
+    /// Opens the palette if closed; if already open, resets to root then pushes the frame.
+    func addToRow(_ ref: RowRef) {
+        activeMenu = nil
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        let frame: PaletteFrame?
+        switch ref {
+        case let .workspace(w): frame = pal.worktreeFrame(in: w)
+        case let .branch(b):    frame = pal.newSessionFrame(branch: b)
+        case let .session(s):   frame = branch(of: s).map { pal.newSessionFrame(branch: $0) }
+        }
+        guard let frame else { return }
+        pal.stack = [pal.rootFrame()]
+        pal.push(frame)
+    }
+
     private func defaultBranch() -> Branch? {
         if let open = openSession, let br = branch(of: open) { return br }
         return workspaces.first?.branches.first

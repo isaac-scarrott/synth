@@ -3238,14 +3238,16 @@
     list.style.height = target;                                  // then animate to the new height
   }
 
-  function paintActive() {
+  // Scroll the active item into view only when the cursor has actually moved (palMove),
+  // not on open, on each keystroke repaint, or on hover — the list stays put until you navigate.
+  function paintActive(scroll) {
     pal.list.querySelectorAll('.cmdk__item').forEach((el) => {
       const on = +el.dataset.i === palActive;
       el.classList.toggle('is-active', on);
-      if (on) el.scrollIntoView({ block: 'nearest' });
+      if (on && scroll) el.scrollIntoView({ block: 'nearest' });
     });
   }
-  function palMove(d) { if (!palItems.length) return; palActive = (palActive + d + palItems.length) % palItems.length; paintActive(); }
+  function palMove(d) { if (!palItems.length) return; palActive = (palActive + d + palItems.length) % palItems.length; paintActive(true); }
   function runActive() { const it = palItems[palActive]; if (!it || it.disabled) return; it.enter(); }
 
   function openPalette() {

@@ -117,10 +117,22 @@ struct PaletteFrame {
     func pop() { if stack.count > 1 { stack.removeLast(); query = "" } }
     func pop(to depth: Int) { stack.removeLast(stack.count - max(1, depth + 1)); query = "" }
 
+    /// Set only by `move` (a real cursor move) so the list scrolls to the active item
+    /// on navigation — never on open, a query-driven reset, or hover. The view consumes it.
+    @ObservationIgnored var scrollToActive = false
+
+    func consumeScrollToActive() -> Bool {
+        defer { scrollToActive = false }
+        return scrollToActive
+    }
+
     func move(_ delta: Int) {
         let n = items.count
         guard n > 0 else { return }
-        activeIndex = (activeIndex + delta + n) % n
+        let next = (activeIndex + delta + n) % n
+        guard next != activeIndex else { return }
+        scrollToActive = true
+        activeIndex = next
     }
 
     func runActive() {
@@ -711,6 +723,7 @@ struct PaletteOverlay: View {
             .fixedSize(horizontal: false, vertical: true)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.items.count)
             .onChange(of: model.activeIndex) { _, i in
+                guard model.consumeScrollToActive() else { return }
                 proxy.scrollTo(i, anchor: nil)
             }
         }

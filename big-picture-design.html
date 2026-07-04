@@ -441,11 +441,34 @@
     .row:hover { background: var(--hover-soft); }
   }
 
-  /* keyboard selection ring — only visible while navigating by keyboard */
-  body.kbd .row.sel {
+  /* keyboard selection ring — only visible while navigating by keyboard.
+     Same ring for every navigable row: tree rows, the Settings foot button,
+     and the settings scope list — one cursor primitive across both screens. */
+  body.kbd .row.sel,
+  body.kbd .foot-btn.sel,
+  body.kbd .settings-back.sel,
+  body.kbd .scope.sel {
     background: var(--hover);
     box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.5);
   }
+
+  /* Drag-to-reorder (change priority). Reorders within a list only; the moved
+     item leaves a faded slot while a lifted clone tracks the pointer. */
+  body.dragging, body.dragging * { cursor: grabbing !important; }
+  body.dragging { user-select: none; -webkit-user-select: none; }
+  .drag-src { opacity: 0.4; }
+  .drag-src .row:hover { background: none; }
+  .drag-clone {
+    position: fixed;
+    z-index: 300;
+    margin: 0;
+    pointer-events: none;
+    background: var(--raised);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.12), 0 14px 30px rgba(0,0,0,0.22);
+    transform: scale(1.015);
+    opacity: 0.98;
+  }
+  :root[data-theme="dark"] .drag-clone { box-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 16px 34px rgba(0,0,0,0.5); }
 
   .repo { margin-bottom: 1px; }
 
@@ -580,6 +603,19 @@
     flex-direction: column;
     gap: 1px;
   }
+
+  /* empty group — an expanded worktree/branch with no sessions, or a workspace with no
+     worktrees, reads as a quiet hint instead of a bare indented stub */
+  .sessions:empty::after,
+  .branches:empty::after {
+    display: block;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    letter-spacing: -0.005em;
+    color: var(--text-faint);
+  }
+  .sessions:empty::after { content: "No sessions yet · ⌘K to start one"; }
+  .branches:empty::after { content: "No worktrees yet · ⌘K to add one"; }
 
   .session { padding: 4px 8px; text-decoration: none; }
 
@@ -1904,8 +1940,8 @@
   // --- Keyboard-first navigation ---
   let selEl = null;
 
-  function visibleRows() {
-    // A row is navigable only if none of its ancestors are collapsed.
+  function treeRows() {
+    // A tree row is navigable only if none of its ancestors are collapsed.
     return [...nav.querySelectorAll('[data-row]')].filter((row) => {
       let p = row.parentElement;
       while (p && p !== nav) {
@@ -1919,6 +1955,26 @@
     });
   }
 
+  // The single list the keyboard cursor walks. In the main view it's the tree
+  // followed by the Settings foot button — so ↓/j off the last worktree leaf
+  // flows straight into Settings. In Settings it's the scope list (Back + scopes).
+  // One list means every nav keybinding works identically on both screens.
+  function activeRows() {
+    if (app.classList.contains('settings')) {
+      return [...settingsNav.querySelectorAll('.settings-back, .scope')];
+    }
+    return [...treeRows(), document.getElementById('openSettings')];
+  }
+  // Where the cursor rests when nothing is explicitly selected: the open session
+  // in the tree, or the active scope in Settings.
+  function currentRow(rows) {
+    if (app.classList.contains('settings')) return settingsNav.querySelector('.scope--on');
+    return openEl && rows.includes(openEl) ? openEl : null;
+  }
+  // rows that own the create/rename/delete verbs — the tree only (you can't
+  // rename Settings or a scope). Guards a/r/d against the shared cursor landing there.
+  const isTreeRow = (el) => !!(el && el.closest && el.closest('#nav'));
+
   function select(el, scroll) {
     if (selEl) selEl.classList.remove('sel');
     selEl = el;
@@ -1929,13 +1985,23 @@
   }
 
   function move(dir) {
-    const rows = visibleRows();
+    const rows = activeRows();
     if (!rows.length) return;
-    // no explicit selection yet → step relative to the open session, not the top of the tree
-    const from = selEl || (openEl && rows.includes(openEl) ? openEl : null);
+    // no explicit selection yet → step relative to the current row (open session / active scope)
+    const from = selEl && rows.includes(selEl) ? selEl : currentRow(rows);
     let i = from ? rows.indexOf(from) : -1;
     i = Math.max(0, Math.min(rows.length - 1, i + dir));
     select(rows[i], true);
+  }
+
+  // Activate the row under the cursor — the shared ↵/click action, dispatched by row kind.
+  function activateRow(row) {
+    if (!row) return;
+    if (row.id === 'openSettings') { enterSettings(); return; }
+    if (row.matches('.settings-back')) { exitSettings(); return; }
+    if (row.matches('.scope')) { selectScope(row); return; }
+    if (row.matches('[data-toggle]')) { toggle(row.closest('[data-repo]')); return; }
+    if (row.matches('[data-session]')) { openSession(row); focusContent(); }
   }
 
   // Tab toggles the highlighted group open/closed (groups only; the cursor stays put).
@@ -1948,9 +2014,9 @@
   function focusSidebar() {
     app.classList.remove('collapsed');
     if (document.activeElement && document.activeElement.closest('.content')) document.activeElement.blur();
-    const rows = visibleRows();
+    const rows = activeRows();
     const target = selEl && rows.includes(selEl) ? selEl
-      : openEl && rows.includes(openEl) ? openEl : rows[0];
+      : currentRow(rows) || rows[0];
     document.body.classList.add('kbd');
     select(target, true);
   }
@@ -2014,6 +2080,14 @@
       }
       return;
     }
+    // ⇧J / ⇧K reorder the selected row within its sibling list (keyboard twin of drag).
+    if ((k === 'J' || k === 'K') && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (!selEl || !isTreeRow(selEl)) return;
+      e.preventDefault();
+      document.body.classList.add('kbd');
+      reorderRow(selEl, k === 'J' ? -1 : 1);   // J promotes (up), K demotes (down)
+      return;
+    }
     if (['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Enter', ' ', 'j', 'k', 'h', 'l'].includes(k)) {
       document.body.classList.add('kbd');
     }
@@ -2034,17 +2108,22 @@
     else if (k === 'Enter' || k === ' ') {
       if (!selEl) return;
       e.preventDefault();
-      if (selEl.matches('[data-toggle]')) toggle(selEl.closest('[data-repo]'));
-      else if (selEl.matches('[data-session]')) { openSession(selEl); focusContent(); }
+      activateRow(selEl);
+    }
+    // a adds the selected row's natural child (worktree under a workspace, session under a worktree)
+    else if ((k === 'a' || k === 'A') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (!isTreeRow(selEl)) return;
+      e.preventDefault();
+      addToRow(selEl);
     }
     // r renames the selected row in place; d deletes it (through a confirm popover)
     else if ((k === 'r' || k === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      if (!selEl) return;
+      if (!isTreeRow(selEl)) return;
       e.preventDefault();
       startRename(selEl);
     }
     else if ((k === 'd' || k === 'D') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      if (!selEl) return;
+      if (!isTreeRow(selEl)) return;
       e.preventDefault();
       requestDelete(selEl);
     }
@@ -2071,6 +2150,39 @@
   function rowUnit(row) {
     if (row.matches('.repo__head') || row.matches('.branch--group')) return row.closest('[data-repo]');
     return row; // plain branch or session
+  }
+  // ⇧J / ⇧K reorder the selected row within its own sibling list — the keyboard twin
+  // of drag-to-reorder (sessions in a worktree, worktrees in a repo, workspaces at top).
+  // dir: -1 up, +1 down. The native app persists the resulting order.
+  function reorderRow(row, dir) {
+    if (!row) return;
+    const lvl = rowLevel(row);
+    let unit, sel;
+    if (lvl === 'session') { unit = row; sel = '.session'; }
+    else if (lvl === 'branch' || lvl === 'repo') { unit = row.closest('[data-repo]'); sel = '[data-repo]'; }
+    else return;
+    if (!unit) return;
+    const container = unit.parentNode;
+    const sibs = [...container.children].filter((el) => el.matches(sel));
+    const i = sibs.indexOf(unit), j = i + dir;
+    if (i < 0 || j < 0 || j >= sibs.length) return;   // already at an edge — no wrap
+    const firsts = sibs.map((el) => [el, el.getBoundingClientRect().top]);   // FLIP: capture
+    if (dir > 0) container.insertBefore(sibs[j], unit);   // hop the next sibling above us
+    else container.insertBefore(unit, sibs[j]);           // slot in above the previous sibling
+    if (!reduceMotion) {
+      for (const [el, top] of firsts) {
+        const dy = top - el.getBoundingClientRect().top;
+        if (!dy) continue;
+        el.style.transition = 'none';
+        el.style.transform = `translateY(${dy}px)`;
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform 180ms var(--ease-out)';
+          el.style.transform = '';
+          el.addEventListener('transitionend', () => { el.style.transition = ''; el.style.transform = ''; }, { once: true });
+        });
+      }
+    }
+    select(row, true);   // keep the cursor on the row you moved, and in view
   }
   // the editable label for a row, and an in-place rename that keeps the open pane in sync
   function nameElOf(row) {
@@ -2240,6 +2352,22 @@
     { name: 'feat/onboarding', age: '5h' },
     { name: 'fix/login-redirect', age: '3d' },
     { name: 'chore/deps', age: '1w' },
+  ];
+
+  // Remote-tracking branches on origin that aren't checked out locally — the extra
+  // reach the ⌘K worktree picker searches (git branch -a). Kept out of the
+  // local-only flows (add-workspace picker, kebab dialog) so those are unchanged.
+  const FAKE_REMOTE_BRANCHES = [
+    { name: 'feat/billing', age: '4h' },
+    { name: 'feat/search-v2', age: '1d' },
+    { name: 'fix/webhook-retry', age: '2d' },
+    { name: 'chore/ci-cache', age: '3d' },
+    { name: 'experiment/new-nav', age: '6d' },
+    { name: 'release/0.4', age: '1w' },
+  ];
+  const ALL_BRANCHES = [
+    ...FAKE_BRANCHES.map((b) => ({ name: b.name, age: b.age, remote: false })),
+    ...FAKE_REMOTE_BRANCHES.map((b) => ({ name: b.name, age: b.age, remote: true })),
   ];
 
   // Kebab "Create worktree…": check out an existing branch, or cut a new one off a
@@ -2528,6 +2656,122 @@
   }
   document.getElementById('addWorkspace').addEventListener('click', openWorkspaceDialog);
 
+  // --- Drag-to-reorder: change a session / worktree / workspace's priority ---
+  // Each row reorders only within its own sibling list (sessions in a worktree,
+  // worktrees in a repo, workspaces in the tree). The native app persists the order.
+  (function enableReorder() {
+    const THRESH = 5;               // px of travel before a press becomes a drag
+    let start = null, clone = null, active = false, suppress = false, scrollRAF = 0;
+
+    // The unit a row drags as, and the CSS selector its siblings share.
+    function dragUnit(row) {
+      const lvl = rowLevel(row);
+      if (lvl === 'session') return { unit: row, sel: '.session' };
+      if (lvl === 'branch' || lvl === 'repo') {
+        const u = row.closest('[data-repo]');
+        return u ? { unit: u, sel: '[data-repo]' } : null;
+      }
+      return null;
+    }
+    const sibs = (container, sel) => [...container.children].filter((el) => el.matches(sel));
+
+    nav.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const row = e.target.closest('[data-row]');
+      if (!row || e.target.closest('.kebab')) return;
+      const info = dragUnit(row);
+      if (!info) return;
+      const r = row.getBoundingClientRect();
+      start = { row, unit: info.unit, sel: info.sel, container: info.unit.parentNode,
+                x: e.clientX, y: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, w: r.width };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp, { once: true });
+    });
+
+    function begin() {
+      active = true;
+      document.body.classList.add('dragging');
+      clone = start.row.cloneNode(true);
+      clone.classList.add('drag-clone');
+      clone.classList.remove('sel');
+      const k = clone.querySelector('.kebab'); if (k) k.remove();
+      clone.style.width = start.w + 'px';
+      moveClone(start.x, start.y);
+      document.body.appendChild(clone);
+      start.unit.classList.add('drag-src');
+    }
+    const moveClone = (x, y) => { clone.style.left = (x - start.offX) + 'px'; clone.style.top = (y - start.offY) + 'px'; };
+
+    function onMove(e) {
+      if (!start) return;
+      if (!active) {
+        if (Math.abs(e.clientX - start.x) < THRESH && Math.abs(e.clientY - start.y) < THRESH) return;
+        begin();
+      }
+      moveClone(e.clientX, e.clientY);
+      // insert before the first sibling whose vertical midpoint is below the pointer
+      let ref = null;
+      for (const el of sibs(start.container, start.sel)) {
+        if (el === start.unit) continue;
+        const b = el.getBoundingClientRect();
+        if (e.clientY < b.top + b.height / 2) { ref = el; break; }
+      }
+      if (start.unit.nextElementSibling !== ref && start.unit !== ref) {
+        flip(() => start.container.insertBefore(start.unit, ref));
+      }
+      autoscroll(e.clientY);
+    }
+
+    function onUp() {
+      window.removeEventListener('pointermove', onMove);
+      cancelAnimationFrame(scrollRAF);
+      if (active) {
+        suppress = true;                       // swallow the click this drag would otherwise fire
+        if (clone) { clone.remove(); clone = null; }
+        start.unit.classList.remove('drag-src');
+        document.body.classList.remove('dragging');
+        select(start.row);                     // keep selection on the row you moved
+        active = false;
+      }
+      start = null;
+    }
+
+    // Eat the click that trails a drag so it doesn't toggle/open the row.
+    nav.addEventListener('click', (e) => {
+      if (suppress) { suppress = false; e.preventDefault(); e.stopPropagation(); }
+    }, true);
+
+    // FLIP: animate siblings from their old positions to their new ones after a reorder.
+    function flip(mutate) {
+      const items = sibs(start.container, start.sel);
+      const firsts = items.map((el) => [el, el.getBoundingClientRect().top]);
+      mutate();
+      if (reduceMotion) return;
+      for (const [el, top] of firsts) {
+        if (el === start.unit) continue;
+        const dy = top - el.getBoundingClientRect().top;
+        if (!dy) continue;
+        el.style.transition = 'none';
+        el.style.transform = `translateY(${dy}px)`;
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform 180ms var(--ease-out)';
+          el.style.transform = '';
+          el.addEventListener('transitionend', () => { el.style.transition = ''; el.style.transform = ''; }, { once: true });
+        });
+      }
+    }
+
+    // Nudge the tree when a drag hovers near its top/bottom edge.
+    function autoscroll(y) {
+      const nr = nav.getBoundingClientRect(), M = 44;
+      let dv = 0;
+      if (y < nr.top + M) dv = -Math.min(14, (nr.top + M - y) / 2);
+      else if (y > nr.bottom - M) dv = Math.min(14, (y - (nr.bottom - M)) / 2);
+      cancelAnimationFrame(scrollRAF);
+      if (dv) { nav.scrollTop += dv; scrollRAF = requestAnimationFrame(() => autoscroll(y)); }
+    }
+  })();
+
   // wire kebabs onto every existing row; dismiss menu on outside click / Escape
   nav.querySelectorAll('[data-row]').forEach(addKebab);
   document.addEventListener('click', (e) => {
@@ -2564,6 +2808,7 @@
       [['↵'], 'Open session / toggle', ['Space']],
       [['R'], 'Rename selected'],
       [['D'], 'Delete selected'],
+      [['⇧J', '⇧K'], 'Reorder up · down'],
     ]],
     ['Command palette', [
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
@@ -2810,6 +3055,20 @@
     };
   }
 
+  // `a` on a branch/worktree jumps straight to the "add a session" choice — terminal or Claude Code.
+  function newSessionFrame(row) {
+    const name = brName(row);
+    return {
+      crumb: 'New session', placeholder: 'New session in ' + name + '…',
+      build() {
+        return [
+          { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: name, enter: () => runAndClose(() => addTerminal(row)) },
+          { sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: name, enter: () => runAndClose(() => addClaude(row)) },
+        ];
+      },
+    };
+  }
+
   // A session leaf has no children — just its own actions (rename / delete).
   function sessionFrame(row) {
     const name = seName(row);
@@ -2830,11 +3089,22 @@
     const lvl = rowLevel(row);
     return lvl === 'repo' ? workspaceFrame(row) : lvl === 'branch' ? branchFrame(row) : sessionFrame(row);
   }
-  function openRowActions(row) {
+  function openPaletteAt(frame) {
     closeMenu();
-    if (paletteOpen) { pal.stack = [rootFrame()]; pushFrame(frameForRow(row)); return; }
+    if (paletteOpen) { pal.stack = [rootFrame()]; pushFrame(frame); return; }
     openPalette();
-    pushFrame(frameForRow(row));
+    pushFrame(frame);
+  }
+  function openRowActions(row) { openPaletteAt(frameForRow(row)); }
+
+  // `a` = add the natural child: a worktree under a workspace, a session under a worktree.
+  // On a session leaf it adds a sibling session to that leaf's worktree. Drops straight into
+  // the ⌘K frame for that action rather than the row's full action list.
+  function addToRow(row) {
+    const lvl = rowLevel(row);
+    if (lvl === 'repo') openPaletteAt(createFrame('worktree', row));
+    else if (lvl === 'branch') openPaletteAt(newSessionFrame(row));
+    else if (lvl === 'session') { const b = branchGroupOf(row); if (b) openPaletteAt(newSessionFrame(b)); }
   }
 
   function deletePicker(kind) {
@@ -2868,15 +3138,45 @@
   }
 
   function createFrame(kind, ctx) {
+    if (kind === 'worktree') return worktreeFrame(ctx);
     const cfg = {
       workspace: { crumb: 'New workspace', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add workspace “' + v + '”', go: (v) => openWorktreePicker(v) },
-      worktree:  { crumb: 'New worktree',  ph: 'New branch name…', empty: 'Type a branch name…',     mk: (v) => 'Create worktree “' + v + '”', go: (v) => { const repo = ctx && ctx.closest('[data-repo]'); if (repo) addBranch(repo, v); } },
     }[kind];
     return {
       crumb: cfg.crumb, mode: 'input', placeholder: cfg.ph,
       build(q) {
         const v = q.trim();
         return [{ icon: ICON_PLUS, label: v ? cfg.mk(v) : cfg.empty, disabled: !v, enter: () => { if (v) runAndClose(() => cfg.go(v)); } }];
+      },
+    };
+  }
+
+  // New worktree via ⌘K: empty until you type, then fuzzy-match every local and
+  // remote branch (top 5), or cut a new branch off the typed name. Each pick
+  // checks the branch out into its own worktree (ADR-0007).
+  function worktreeFrame(ctx) {
+    const repo = ctx && ctx.closest('[data-repo]');
+    const shown = () => new Set(repo ? [...repo.querySelectorAll('.branch__name')].map((n) => n.textContent) : []);
+    return {
+      crumb: 'New worktree', mode: 'input', placeholder: 'Search branches to check out…',
+      build(q) {
+        const v = q.trim();
+        if (!v) return [];   // empty by default — the branch list only appears once you search
+        const skip = shown(), seen = new Set(), scored = [];
+        ALL_BRANCHES.forEach((b) => {
+          if (seen.has(b.name) || skip.has(b.name)) return;   // dedup local/remote + hide already-checked-out
+          seen.add(b.name);
+          const s = fuzzy(v, b.name);
+          if (s > -Infinity) scored.push({ b, s });
+        });
+        const items = scored.sort((a, b) => b.s - a.s).slice(0, 5).map(({ b }) => ({
+          icon: ICON_BRANCH, label: b.name, ctx: b.remote ? 'origin' : 'local',
+          enter: () => { if (repo) runAndClose(() => addBranch(repo, b.name)); },
+        }));
+        if (!ALL_BRANCHES.some((b) => b.name === v))
+          items.push({ icon: ICON_PLUS, label: 'New branch “' + v + '”',
+            enter: () => { if (repo) runAndClose(() => addBranch(repo, v)); } });
+        return items;
       },
     };
   }
@@ -3171,20 +3471,27 @@
     buildScopeNav();
     app.classList.add('settings');
     renderSettings();
+    select(settingsNav.querySelector('.scope--on'));  // keyboard cursor lands on the active scope
   }
   function exitSettings() {
     if (!app.classList.contains('settings')) return;
     app.classList.remove('settings');
     renderOpen();   // restore the session that was open before
+    // cursor returns to the tree — the open session, else the Settings button we came from
+    select(openEl && treeRows().includes(openEl) ? openEl : document.getElementById('openSettings'));
+  }
+  // switch to a scope (from click or ↵) — the settings-nav equivalent of opening a session
+  function selectScope(sc) {
+    settingsScope = sc.dataset.scope === 'global' ? 'global' : sc._head;
+    renderSettings();
+    select(sc);
   }
 
   document.getElementById('openSettings').addEventListener('click', () => enterSettings());
   settingsNav.addEventListener('click', (e) => {
     if (e.target.closest('#settingsBack')) return exitSettings();
     const sc = e.target.closest('.scope');
-    if (!sc) return;
-    settingsScope = sc.dataset.scope === 'global' ? 'global' : sc._head;
-    renderSettings();
+    if (sc) selectScope(sc);
   });
   // "Edit in Global" jumps scope without leaving settings
   content.addEventListener('click', (e) => {

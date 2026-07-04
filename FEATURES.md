@@ -662,3 +662,57 @@ counterpart — persistence is invisible in the static design mock.
 - **Not done (deliberately):** surviving live local processes (would need tmux/daemon backing — its
   own ADR), and multi-instance coordination (one `state.json` is shared; today's usage is a single
   instance, last-writer-wins).
+
+## 2026-07-04 — Browser session, stage one: a navigable browser in the pane (both designs; ADR-0011)
+
+The `browser` session type stops being a static skeleton and becomes a real, navigable browser in the
+content pane — the same tier as a terminal or Claude Code session, living inside a branch's worktree.
+This is **stage one of three** (ADR-0011): a browser you can use. Stage two (Claude drives the same
+browser via a bundled MCP server over CDP) and stage three (click-to-comment two-way feedback to the
+owning Claude session) are designed but not built.
+
+- **One page per session.** A browser session is a single page with a URL bar; want another page, make
+  another browser session — they list in the sidebar under the branch like terminals. No tab strip.
+  Browser sessions are named by their current page, so navigating renames the sidebar row and the pane
+  title (a fresh one is "Browser" until it goes somewhere).
+- **Opens to a "go to" home.** Creating a browser (row kebab + ⌘K, alongside New terminal / New Claude
+  Code) opens a new-tab surface: a centred globe, a "Go to…" address field, and a **Recent** list
+  (seeded from demo data — a real build reads the branch's dev-server port + the session's history).
+- **Real browser chrome.** Back / forward / reload + a lock-and-URL omnibox pill. Clicking the pill on a
+  loaded page floats the same recents/address surface as a dropdown. History is live: back/forward walk
+  it and enable/disable correctly; reload spins.
+- **The page is a skeleton, on purpose.** A static HTML mock can't host a live web page, so a shimmer
+  skeleton stands in for the WKWebView/Chromium surface a real session renders. The chrome and every
+  interaction around it are real.
+- **Engine decision (ADR-0011).** The real build embeds Chromium via CEF, not `WKWebView` — because the
+  whole point of stages two/three is Claude driving the *same* surface the user sees, and that needs a
+  CDP endpoint, which WebKit doesn't expose. Built behind a `BrowserEngine` protocol so the engine stays
+  swappable. Claude control (stage two) is a custom bundled MCP server pointed at the embedded browser's
+  CDP endpoint — not `--chrome` native messaging, not hooks.
+- **Verified** by driving `big-picture-design.html` in a real browser: opening the browser session
+  (loaded chrome), the omnibox dropdown, navigating via a recent (URL + sidebar row + pane title update,
+  back/forward history correct), the fresh-session home surface, and typing an address + Enter to
+  navigate from home — all with no console errors. Both `working.html` and `big-picture-design.html`
+  carry the identical shell (subset invariant holds: diff is title + the browser/simulator demo rows).
+
+## 2026-07-04 — ⌘K grouping is scope-aware (both designs; refines "frame grouping, context labels")
+
+The root frame's groups now follow one rule everywhere: **specific → broad**, and context actions are
+grouped by the scope they target instead of lumped under one path header.
+
+- **Browse (no query), inside a session.** The context actions used to share a single group labelled
+  with the full path (e.g. "synth / feat/command-palette"), mixing session, branch, and workspace
+  actions. Now they split into three scope groups, most-local-first, each headed **"Level · unit"**:
+  `Session · <name>` (Rename / Delete the open session), `Branch · <name>` (New terminal / Claude Code /
+  browser), `Workspace · <name>` (New worktree…), then the nav/global block below. Because each header
+  names its target, the rows drop the now-redundant right-side context chip and the target from their
+  labels ("Rename", not "Rename api-tests").
+- **Search (query).** Group order reversed to **Actions → Sessions → Branches → Workspaces** (was
+  Actions → Workspaces → Branches → Sessions) — you most often jump to a session, least often a
+  workspace. Under the single `Actions` group the context actions regain a context chip naming their
+  unit, so "New terminal · feat/command-palette" stays unambiguous, and `itemScore` folding `ctx` into
+  the match means searching a unit's name still surfaces its (now short-labelled) actions.
+- **Verified** by driving `big-picture-design.html`: browse headers render `Session · Claude Code` /
+  `Branch · feat/command-palette` / `Workspace · synth` with clean rows; a broad query yields group order
+  `["Actions","Sessions","Branches","Workspaces"]`; searching "claude" still surfaces the Session
+  Rename/Delete actions via the ctx match. No console errors; subset invariant intact.

@@ -105,7 +105,11 @@ struct PaletteFrame {
         var order: [String] = []
         var byKey: [String: [(PaletteItem, Double)]] = [:]
         for it in built {
-            guard let s = fuzzyScore(q, it.label) else { continue }
+            // Fold the context chip into matching (working.html itemScore) so a bare-labelled
+            // action ("Rename") is still found by its target's name via `ctx`.
+            let base = fuzzyScore(q, it.label)
+            let withCtx = it.ctx.flatMap { c in fuzzyScore(q, "\(c) \(it.label)").map { $0 - 2 } }
+            guard let s = [base, withCtx].compactMap({ $0 }).max() else { continue }
             let k = it.group ?? it.sec ?? ""
             if byKey[k] == nil { byKey[k] = []; order.append(k) }
             byKey[k]!.append((it, s))
@@ -149,7 +153,7 @@ struct PaletteFrame {
 
     /// ⌘K acts on where you are: the open session, its branch, its workspace — the
     /// open session leads, else the nav cursor's session (working.html contextActions).
-    private func contextActions() -> (path: String, items: [PaletteItem]) {
+    private func contextActions() -> [PaletteItem] {
         // Context row: the open session leads, else the nav cursor's row (any type).
         // Branch and workspace resolve independently, each falling back to the first
         // one available — so ⌘K still offers "New terminal"/"New worktree…" when the
@@ -174,30 +178,34 @@ struct PaletteFrame {
             case .none:             return nil
             }
         }() ?? workspace?.branches.first
-        let path = [workspace?.name, branch?.name].compactMap { $0 }.joined(separator: " / ")
+        // Grouped by the scope each action targets, most-local-first (Session → Branch →
+        // Workspace). The header carries "Level · unit", so labels stay bare; browse drops
+        // the now-redundant context chip and search restores it (see rootFrame).
         var items: [PaletteItem] = []
+        if let open = store.openSession {
+            let g = "Session · \(open.title)"
+            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
+                                     group: g, ctx: open.title,
+                                     enter: { self.push(self.renameFrame(.session(open))) }))
+            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete",
+                                     group: g, ctx: open.title, danger: true,
+                                     enter: { self.push(self.confirmDeleteSession(open)) }))
+        }
         if let branch {
+            let g = "Branch · \(branch.name)"
             items.append(PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal",
-                                     ctx: branch.name,
+                                     group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newTerminal(in: branch) } }))
             items.append(PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code",
-                                     ctx: branch.name,
+                                     group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newClaude(in: branch) } }))
         }
         if let workspace {
             items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
-                                     ctx: workspace.name,
+                                     group: "Workspace · \(workspace.name)", ctx: workspace.name,
                                      enter: { self.push(self.worktreeFrame(in: workspace)) }))
         }
-        if let open = store.openSession {
-            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(open.title)",
-                                     ctx: ctxOf(open),
-                                     enter: { self.push(self.renameFrame(.session(open))) }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(open.title)",
-                                     ctx: ctxOf(open), danger: true,
-                                     enter: { self.push(self.confirmDeleteSession(open)) }))
-        }
-        return (path, items)
+        return items
     }
 
     private func wsOf(_ branch: Branch) -> String { store.workspace(of: branch)?.name ?? "" }
@@ -223,8 +231,8 @@ struct PaletteFrame {
         PaletteFrame(placeholder: "Search or jump to anything…") { [self] q in
             let here = contextActions()
             if q.isEmpty {
-                var items = here.items.map { item -> PaletteItem in
-                    var it = item; it.group = here.path.isEmpty ? "Actions" : here.path; return it
+                var items = here.map { item -> PaletteItem in
+                    var it = item; it.ctx = nil; return it
                 }
                 items += [
                     PaletteItem(icon: .phosphor(Phosphor.folder), label: "Workspaces", sec: "nav",
@@ -245,7 +253,7 @@ struct PaletteFrame {
                 ]
                 return items
             }
-            var items = here.items.map { item -> PaletteItem in
+            var items = here.map { item -> PaletteItem in
                 var it = item; it.group = "Actions"; return it
             }
             items += [
@@ -261,9 +269,11 @@ struct PaletteFrame {
                             kbd: ["⌘", "?"],
                             enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
             ]
+            // Search groups run most-local-first: Actions (above), then Sessions, Branches, Workspaces.
             for ws in store.workspaces {
-                items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, group: "Workspaces",
-                                         enter: { self.push(self.workspaceFrame(ws)) }))
+                for br in ws.branches {
+                    for s in br.sessions { items.append(sessionItem(s, ctx: true, group: "Sessions")) }
+                }
             }
             for ws in store.workspaces {
                 for br in ws.branches {
@@ -273,9 +283,8 @@ struct PaletteFrame {
                 }
             }
             for ws in store.workspaces {
-                for br in ws.branches {
-                    for s in br.sessions { items.append(sessionItem(s, ctx: true, group: "Sessions")) }
-                }
+                items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, group: "Workspaces",
+                                         enter: { self.push(self.workspaceFrame(ws)) }))
             }
             return items
         }

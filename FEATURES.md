@@ -560,3 +560,9 @@ on a leaf session it's a no-op, and a dialog owns Tab when one is open. Shown in
 Vim-style `l` / `h` join `j` / `k` in the sidebar: `l` aliases → (expand the highlighted group,
 else move down), `h` aliases ← (collapse it, else move up). Shown as alternates on the ⌘? sheet's
 "Expand · collapse" row.
+
+## 2026-07-04 — Tab toggles the group (supersedes "Tab opens a sidebar group")
+
+Refinement: **Tab toggles** the highlighted group open↔closed (cursor stays on the group), rather
+than opening it and stepping inside. `l`/`h` remain the directional expand/collapse; Tab is the
+toggle. ⌘? sheet now reads "Toggle group".

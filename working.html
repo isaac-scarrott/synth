@@ -1894,15 +1894,10 @@
     select(rows[i], true);
   }
 
-  // Tab opens the highlighted group and drops selection inside it (its first child) —
-  // a fast "go into this group" motion, distinct from → which expands but stays put.
-  function openGroup() {
-    if (!selEl || !selEl.matches('[data-toggle]')) return;   // groups only
-    const repo = selEl.closest('[data-repo]');
-    if (!repo.classList.contains('repo--open')) toggle(repo);
-    const rows = visibleRows();
-    const next = rows[rows.indexOf(selEl) + 1];
-    if (next && repo.contains(next)) select(next, true);      // step to the first child
+  // Tab toggles the highlighted group open/closed (groups only; the cursor stays put).
+  function toggleGroup() {
+    if (!selEl || !selEl.matches('[data-toggle]')) return;
+    toggle(selEl.closest('[data-repo]'));
   }
 
   // ⌘0 / ⌘1 hand the keyboard explicitly to one side of the split
@@ -1965,13 +1960,13 @@
       focusContent();
       return;
     }
-    // Tab opens the highlighted group and steps inside it (no-op / default Tab elsewhere).
+    // Tab toggles the highlighted group open/closed (no-op / default Tab elsewhere).
     if (k === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (document.querySelector('.backdrop')) return;   // a dialog owns Tab
       if (selEl && selEl.matches('[data-toggle]')) {
         e.preventDefault();
         document.body.classList.add('kbd');
-        openGroup();
+        toggleGroup();
       }
       return;
     }
@@ -2521,7 +2516,7 @@
     ['Sidebar', [
       [['↑', '↓'], 'Move selection', ['J', 'K']],
       [['→', '←'], 'Expand · collapse', ['L', 'H']],
-      [['⇥'], 'Open group'],
+      [['⇥'], 'Toggle group'],
       [['↵'], 'Open session / toggle', ['Space']],
       [['R'], 'Rename selected'],
       [['D'], 'Delete selected'],

@@ -59,9 +59,12 @@ import GhosttyKit
         runtime.write_clipboard_cb = { surfaceUserdata, location, content, count, confirm in
             GhosttyClipboard.write(surfaceUserdata, location, content, count, confirm)
         }
-        runtime.close_surface_cb = { surfaceUserdata, _ in
-            GhosttySurfaceContext.from(surfaceUserdata)?.postExited(nil)
-        }
+        // The child-exit signal comes from GHOSTTY_ACTION_SHOW_CHILD_EXITED (which carries
+        // the real exit code); close_surface is the follow-up teardown request. We leave the
+        // dead surface in place (the row shows "exited" until the user closes it, matching the
+        // old SwiftTerm behaviour), so this is a no-op — posting here would only double-fire
+        // .exited and clobber the code with nil.
+        runtime.close_surface_cb = { _, _ in }
 
         app = ghostty_app_new(&runtime, config)
         ghostty_config_free(config)

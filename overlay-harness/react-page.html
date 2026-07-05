@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Synth Comment Overlay — React Harness</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 24px; background: #fafafa; }
+  .controls { display: flex; gap: 10px; margin-bottom: 18px; }
+  .controls button { padding: 8px 14px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  pre#log { background: #101014; color: #b8f0c0; font: 11px/1.5 ui-monospace, Menlo, monospace; padding: 14px;
+    border-radius: 10px; min-height: 60px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <button id="btn-enter">Enter overlay</button>
+  <button id="btn-exit">Exit overlay</button>
+</div>
+<div id="root"></div>
+<h2>Received payloads</h2>
+<pre id="log"></pre>
+
+<script>
+  window.__synthReceived = [];
+  window.__synthComment = function (json) {
+    window.__synthReceived.push(json);
+    document.getElementById('log').textContent += json + '\n---\n';
+  };
+</script>
+<!-- Vendored React 18 dev UMD builds — no network needed at test time. -->
+<script src="vendor/react.development.js"></script>
+<script src="vendor/react-dom.development.js"></script>
+<script>
+  // Hand-rolled createElement calls carrying __source, mimicking what
+  // @babel/plugin-transform-react-jsx-source stamps on every JSX element in dev.
+  // React dev builds copy __source onto element._source → fiber._debugSource.
+  var e = React.createElement;
+  function src(line, col) { return { fileName: '/app/src/components/Panel.jsx', lineNumber: line, columnNumber: col }; }
+
+  function Panel() {
+    return e('section', { __source: src(12, 5), className: 'panel' },
+      e('h2', { __source: src(13, 7) }, 'React panel'),
+      e('button', { __source: src(14, 7), id: 'react-button', onClick: function () { window.__reactClicks = (window.__reactClicks || 0) + 1; } }, 'React button'),
+      e(Leaf, { __source: src(15, 7) })
+    );
+  }
+  function Leaf() {
+    // No __source on the host element: extraction must fall back to the owner chain.
+    return e('em', { id: 'react-leaf' }, 'leaf without own source');
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(e(Panel, { __source: src(3, 1) }));
+
+  document.getElementById('btn-enter').addEventListener('click', function () {
+    window.__synthOverlay.enter({ targetLabel: 'claude · feat/react-panel', debug: true });
+  });
+  document.getElementById('btn-exit').addEventListener('click', function () {
+    window.__synthOverlay.exit();
+  });
+</script>
+<script src="../app/Sources/Synth/Resources/CommentOverlay.js"></script>
+</body>
+</html>

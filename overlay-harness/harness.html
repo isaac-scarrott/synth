@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Synth Comment Overlay — Harness</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; color: #222; background: #fafafa; }
+  .fixed-header { position: fixed; top: 0; left: 0; right: 0; height: 52px; background: #1a1a2e; color: #fff;
+    display: flex; align-items: center; gap: 16px; padding: 0 20px; z-index: 100; }
+  .fixed-header a { color: #9db8ff; text-decoration: none; font-size: 13px; }
+  main { padding: 76px 24px 24px; max-width: 900px; margin: 0 auto; }
+  .controls { display: flex; gap: 10px; margin-bottom: 18px; }
+  .controls button { padding: 8px 14px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  .cardish { background: #fff; border: 1px solid #e2e2e2; border-radius: 12px; padding: 18px; margin: 14px 0; }
+  .nested-a { padding: 14px; background: #eef4ff; border-radius: 8px; }
+  .nested-b { padding: 12px; background: #dfeaff; border-radius: 6px; }
+  .nested-c { padding: 10px; background: #cfdffc; border-radius: 4px; }
+  #deep-button { padding: 9px 16px; border-radius: 8px; border: 0; background: #2b6fd6; color: #fff; cursor: pointer; }
+  #hover-me { display: inline-block; padding: 8px 12px; background: #f3e8ff; border-radius: 8px; transition: background .1s; }
+  #hover-me:hover { background: #d8b4fe; }
+  .zero-size { width: 0; height: 0; overflow: hidden; }
+  .long { height: 1400px; background: linear-gradient(#fff, #e8eef8); border-radius: 12px; padding: 18px; }
+  #way-down { margin-top: 1100px; padding: 10px 16px; border-radius: 8px; border: 1px solid #2f9e51; background: #e7f7ec; }
+  pre#log { background: #101014; color: #b8f0c0; font: 11px/1.5 ui-monospace, Menlo, monospace; padding: 14px;
+    border-radius: 10px; min-height: 80px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  iframe { width: 100%; height: 120px; border: 1px solid #ddd; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header class="fixed-header">
+  <strong>Harness</strong>
+  <a href="#a" id="nav-link-a">Section A</a>
+  <a href="#b" id="nav-link-b">Section B</a>
+</header>
+
+<main>
+  <div class="controls">
+    <button id="btn-enter">Enter overlay</button>
+    <button id="btn-exit">Exit overlay</button>
+    <span id="counts" style="font: 12px ui-monospace, Menlo, monospace; align-self: center;"></span>
+  </div>
+
+  <div class="cardish">
+    <h2 id="a">Nested targets</h2>
+    <div class="nested-a">
+      <div class="nested-b">
+        <div class="nested-c">
+          <button id="deep-button" type="button">Deep button</button>
+          <span class="deep-label note tiny">deep label span</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cardish">
+    <h2>Hover side effects + edge cases</h2>
+    <span id="hover-me">hover changes my background (JS counts mouseenter)</span>
+    <div class="zero-size"><span id="zero-el">invisible</span></div>
+    <p>Two same-class paragraphs to force nth-of-type selectors:</p>
+    <p class="twin">twin one</p>
+    <p class="twin">twin two</p>
+  </div>
+
+  <div class="cardish">
+    <h2>Iframe (not supported in v1 — must not break picking the frame element)</h2>
+    <iframe id="the-frame" srcdoc="<button>inside iframe</button>"></iframe>
+  </div>
+
+  <div class="long">
+    <h2 id="b">Long scrollable content</h2>
+    <button id="way-down" type="button">Way-down button</button>
+  </div>
+
+  <h2>Received payloads</h2>
+  <pre id="log"></pre>
+</main>
+
+<script>
+  // Stub the CDP binding: append every received payload to the visible log.
+  window.__synthReceived = [];
+  window.__synthComment = function (json) {
+    window.__synthReceived.push(json);
+    var log = document.getElementById('log');
+    log.textContent += json + '\n---\n';
+  };
+
+  // Count page-side events the overlay must suppress while active.
+  window.__clickCounts = { deep: 0, wayDown: 0, hoverEnter: 0, docClicks: 0 };
+  function paintCounts() {
+    document.getElementById('counts').textContent = JSON.stringify(window.__clickCounts);
+  }
+  document.getElementById('deep-button').addEventListener('click', function () {
+    window.__clickCounts.deep++; paintCounts();
+  });
+  document.getElementById('way-down').addEventListener('click', function () {
+    window.__clickCounts.wayDown++; paintCounts();
+  });
+  document.getElementById('hover-me').addEventListener('mouseenter', function () {
+    window.__clickCounts.hoverEnter++; paintCounts();
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.controls')) return;
+    window.__clickCounts.docClicks++; paintCounts();
+  });
+  paintCounts();
+
+  document.getElementById('btn-enter').addEventListener('click', function () {
+    window.__synthOverlay.enter({ targetLabel: 'claude · fix/browser-header', debug: true });
+  });
+  document.getElementById('btn-exit').addEventListener('click', function () {
+    window.__synthOverlay.exit();
+  });
+</script>
+<script src="../app/Sources/Synth/Resources/CommentOverlay.js"></script>
+</body>
+</html>

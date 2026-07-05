@@ -773,3 +773,36 @@ terminal or Claude Code session, backed by CEF 144 (Chromium) embedded in-pane b
 - **Known limits, accepted for stage one:** sandbox off (revisit before notarization, ADR-0011);
   DevTools is a native window, not the mock's docked panel; app must launch from a bundle (dev.sh
   assembles one); WKWebView remains a loud no-CDP fallback when CEF assets are absent.
+
+## 2026-07-05 — Browser session, stage two: Claude Code drives the embedded browser (ADR-0011)
+
+Stage two of ADR-0011 ships: a bundled MCP server (`mcp/` in the repo, Node + playwright-core over
+CDP) gives any Claude Code session in a managed worktree tools to list, spawn, and drive that
+worktree's browser sessions — the same visible surface the user sees, never a headless twin.
+
+- **Discovery.** Each running Synth writes `~/Library/Application Support/Synth/instances/<pid>.json`
+  ({ pid, cdpPort, createdAt, worktreePaths, controlSocket }) at launch, refreshes it as
+  workspaces/branches change and when the CEF runtime binds its per-instance CDP port, removes it on
+  clean quit, and sweeps dead-pid leftovers at launch. The server picks the instance whose
+  worktreePaths contain `$CLAUDE_PROJECT_DIR` (fallback: newest live instance; none → every tool
+  returns a clear "Synth isn't running" error).
+- **Session↔target mapping.** The CEF shim stamps `window.__synthSessionId = "<session uuid>"` on
+  every main-frame load end, so any CDP client can map page targets back to Synth sessions.
+- **Control socket.** The hook socket (ADR-0008) is one-way, so control verbs get their own tiny
+  request/response socket (`/tmp/synth-ctl-<pid>.sock`, one JSON line each way): `browser.list`
+  {worktreePath} → sessions, and `browser.create` {worktreePath, url?} → sessionId, creating the
+  session exactly like ⌘K New browser (matching branch, pre-navigated, selected).
+- **Tools.** browser_list / browser_create / browser_focus / browser_navigate / browser_back /
+  browser_forward / browser_reload / browser_click (selector or x,y) / browser_type /
+  browser_screenshot (PNG) / browser_snapshot (aria tree) / browser_console (live capture + a
+  Runtime.enable replay for messages predating attach) / browser_evaluate. History navs wait for
+  commit, not domcontentloaded (CEF fires none — the spike's lesson).
+- **Registration.** On launch Synth syncs `mcp/` to `~/Library/Application Support/Synth/browser-mcp/`
+  (npm install --omit=dev when node_modules is missing or package.json changed) and merges
+  `{"mcpServers":{"synth-browser":…}}` into each managed worktree's `.mcp.json`, preserving other
+  servers and skipping writes when already correct. **.mcp.json handling:** do not gitignore it —
+  project-scope sharing is the point — but Synth never commits it, and neither should agents.
+- **Hardening found by verification:** engine creation pumps the runloop, and a SwiftUI render pass
+  nested inside that pump could re-enter BrowserManager and build a duplicate engine (two CDP targets
+  claiming one session). Guarded with an in-flight set; the control verb relies on the pane's proven
+  mount path instead of forcing the engine itself.

@@ -136,6 +136,12 @@ struct RootView: View {
             return event
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Typing hides the pointer until the mouse next moves — AppKit auto-reveals it on the
+            // next movement, so the cursor stays out of the way while Synth is driven by keyboard
+            // (terminal keystrokes route through this local monitor too). Bare modifiers fire
+            // flagsChanged, not keyDown, so a lone ⌘/⇧ never hides it.
+            NSCursor.setHiddenUntilMouseMoves(true)
+
             // Modal Esc must win even while its text field is first responder.
             if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil {
                 if event.keyCode == 53 {   // Esc closes the modal

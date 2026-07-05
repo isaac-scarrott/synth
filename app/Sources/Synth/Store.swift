@@ -8,6 +8,10 @@ import SwiftUI
 enum SessionEvent: Sendable {
     case statusChanged(UUID, SessionStatus)
     case titleChanged(UUID, String)
+    /// A new Claude conversation started in an existing row (fresh startup or `/clear`) — drop
+    /// the previous conversation's ai-title so the stale name doesn't linger until a new one is
+    /// generated. Resume/compact keep their title, so they never emit this.
+    case titleReset(UUID)
     case exited(UUID, Int32?)
     /// A terminal was detected running Claude Code (or stopped) — flips the row's visual.
     case kindChanged(UUID, SessionKind)
@@ -243,12 +247,25 @@ enum ThemePref: String, CaseIterable, Identifiable {
         switch event {
         case let .statusChanged(id, status):
             guard let s = session(id) else { break }
+            // A `needsInput` (?) is only legitimate mid-turn: a question / permission / plan
+            // block always interrupts work in flight. Claude's ambient "waiting for your input"
+            // notification instead fires at end-of-turn and races the `Stop`→idle that ends it —
+            // each hook is a separate process applied on its own Task, so order isn't guaranteed.
+            // Requiring a still-live prior state drops the nudge once the turn has settled, so the
+            // finish is order-independent: whichever of idle/needsInput lands last, the row ends
+            // idle. Genuine blocks are preceded by UserPromptSubmit/PostToolUse→working, so the ?
+            // still lights.
+            if status == .needsInput, !s.status.isLive { break }
             let prev = s.status
             s.status = status
             routeTransition(id, prev: prev, next: status)
         case let .titleChanged(id, title):
             // Claude Code's ai-title, refined each turn — but never clobber a hand-picked name.
             if let s = session(id), !s.titleIsCustom, s.title != title { s.title = title }
+        case let .titleReset(id):
+            // Keep a hand-picked name; otherwise fall back to the neutral Claude default until
+            // the new conversation generates its own ai-title (arriving as .titleChanged).
+            if let s = session(id), !s.titleIsCustom { s.title = "Claude Code" }
         case let .exited(id, code):
             guard let s = session(id) else { break }
             let prev = s.status

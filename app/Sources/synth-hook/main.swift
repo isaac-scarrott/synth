@@ -214,6 +214,13 @@ func runEvent(name: String) -> Never {
     default:
         signal = nil
     }
+    // A brand-new conversation (a fresh `startup` or `/clear`) starts with an empty transcript,
+    // so `readAITitle` finds nothing and the row would keep the *previous* conversation's title
+    // until Claude regenerates one turns later. Tell the app to drop it now. `resume`/`compact`
+    // continue the same conversation (and title), so they never reset.
+    let resetTitle = name == "SessionStart"
+        && ["startup", "clear"].contains(payload["source"] as? String ?? "")
+
     // Claude Code writes an `ai-title` line into the transcript (a short, evolving title it
     // generates) — read the latest and forward it so Synth can auto-name the row.
     let title = (payload["transcript_path"] as? String).flatMap(readAITitle)
@@ -224,6 +231,7 @@ func runEvent(name: String) -> Never {
 
     var lines = ""
     if let signal { lines += jsonLine(["session": sessionID, "signal": signal]) }
+    if resetTitle { lines += jsonLine(["session": sessionID, "titleReset": "1"]) }
     if let title  { lines += jsonLine(["session": sessionID, "title": title]) }
     if let claudeSession { lines += jsonLine(["session": sessionID, "claudeSession": claudeSession]) }
     if !lines.isEmpty { sendLines(socketPath: socketPath, lines) }

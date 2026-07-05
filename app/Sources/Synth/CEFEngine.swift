@@ -139,6 +139,14 @@ final class BrowserProcessSupervisor {
 
     func removeProfileDirectory(_ dir: URL) {
         try? FileManager.default.removeItem(at: dir)
+        // CEF's profile flush lands AFTER cefBrowserDidClose for never-navigated
+        // profiles, resurrecting the dir as a husk of 3-4 files. Session dirs are
+        // UUID-unique and never reused, so delayed re-removal can't hit a live one.
+        for delay in [2.0, 6.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                try? FileManager.default.removeItem(at: dir)
+            }
+        }
     }
 
     /// Deletes instance roots whose owning pid is gone (crashed / killed instances).

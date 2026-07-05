@@ -581,9 +581,11 @@ enum ThemePref: String, CaseIterable, Identifiable {
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
                             claudeSessionID: ps.claudeSessionID, browserURL: ps.browserURL)
                 }
+                // Scrub hostless recents (about:blank) recorded before the filter existed.
+                let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }
                 return Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
                               sessions: sessions, lastActivity: pb.lastActivity,
-                              browserRecents: pb.browserRecents ?? [])
+                              browserRecents: recents)
             }
             restored.append(Workspace(id: pw.id, name: pw.name, url: pw.url,
                                       branches: branches, colorIndex: pw.colorIndex))

@@ -30,22 +30,69 @@ let ghosttyLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(["-Xlinker", ghosttyArchive]),
 ]
 
+// Vendored CEF (vendor/fetch-cef.sh): the shim + helper targets only exist when the
+// distro is staged, so `swift build` still completes on checkouts that never fetched
+// CEF — CEFEngine.swift gates on canImport(CEFShim) and the factory reports the missing
+// assets at runtime instead.
+let cefDist = packageDir + "/vendor/cef/dist"
+let cefWrapper = packageDir + "/vendor/cef/libcef_dll_wrapper.a"
+let hasCEF = FileManager.default.fileExists(atPath: cefWrapper)
+    && FileManager.default.fileExists(atPath: cefDist + "/include/cef_version.h")
+
+// CEF headers are C++17; the wrapper archive is built -fno-rtti, so the shim must
+// match or its vtables reference typeinfo the archive never emits.
+let cefCxxFlags = ["-I", cefDist, "-std=c++17", "-fno-rtti", "-fobjc-arc"]
+let cefLinkerSettings: [LinkerSetting] = [
+    .linkedFramework("AppKit"),
+    .linkedFramework("Cocoa"),
+    .linkedFramework("IOSurface"),
+    .linkedLibrary("pthread"),
+    .unsafeFlags(["-Xlinker", cefWrapper]),
+]
+
+var synthDependencies: [Target.Dependency] = ["GhosttyKit"]
+var synthLinkerSettings = ghosttyLinkerSettings
+var targets: [Target] = [
+    // Vends the `GhosttyKit` Clang module (ghostty.h) for `import GhosttyKit`. The
+    // libghostty archive itself is linked via ghosttyLinkerSettings, not this target.
+    .target(name: "GhosttyKit"),
+    // Standalone CLI the Claude Code hooks call back into (Foundation only, no
+    // SwiftUI/GhosttyKit). Two roles: `launch` (invoked as the `claude` shim, injects
+    // hooks + session id and execs the real binary) and `event` (a hook fired mid-run,
+    // classifies the event and writes a status signal to the app's unix socket).
+    .executableTarget(name: "synth-hook"),
+]
+
+if hasCEF {
+    synthDependencies.append("CEFShim")
+    synthLinkerSettings += cefLinkerSettings
+    targets += [
+        // ObjC++ bridge over the CEF C++ API: init/pump/shutdown once per process,
+        // one CEFShimBrowser per browser session. Swift talks only to its ObjC header.
+        .target(
+            name: "CEFShim",
+            cxxSettings: [.unsafeFlags(cefCxxFlags)]
+        ),
+        // CEF's four helper bundles all run this stub (bundle assembly copies it in
+        // under the four required names).
+        .executableTarget(
+            name: "SynthBrowserHelper",
+            cxxSettings: [.unsafeFlags(cefCxxFlags)],
+            linkerSettings: cefLinkerSettings
+        ),
+    ]
+}
+
+targets.append(
+    .executableTarget(
+        name: "Synth",
+        dependencies: synthDependencies,
+        linkerSettings: synthLinkerSettings
+    )
+)
+
 let package = Package(
     name: "Synth",
     platforms: [.macOS(.v14)],
-    targets: [
-        .executableTarget(
-            name: "Synth",
-            dependencies: ["GhosttyKit"],
-            linkerSettings: ghosttyLinkerSettings
-        ),
-        // Vends the `GhosttyKit` Clang module (ghostty.h) for `import GhosttyKit`. The
-        // libghostty archive itself is linked via ghosttyLinkerSettings, not this target.
-        .target(name: "GhosttyKit"),
-        // Standalone CLI the Claude Code hooks call back into (Foundation only, no
-        // SwiftUI/GhosttyKit). Two roles: `launch` (invoked as the `claude` shim, injects
-        // hooks + session id and execs the real binary) and `event` (a hook fired mid-run,
-        // classifies the event and writes a status signal to the app's unix socket).
-        .executableTarget(name: "synth-hook"),
-    ]
+    targets: targets
 )

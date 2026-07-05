@@ -238,7 +238,7 @@ struct RootView: View {
             // page passthrough so it works while the page owns keys; the overlay's own
             // exitMode binding call flips the same state, so the button follows either path.
             if event.keyCode == 53, let open = store.openSession, open.kind == .browser,
-               let cm = BrowserManager.shared.existing(open.id)?.commentMode, cm.active {
+               let cm = BrowserManager.shared.existing(open.id)?.commentMode, cm.engaged {
                 Task { await cm.exit() }
                 return nil
             }

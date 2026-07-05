@@ -28,6 +28,8 @@ import Observation
 
     @ObservationIgnored private var client: CDPClient?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var attachTask: Task<Void, Never>?
+    @ObservationIgnored private var attachNonce = 0
     @ObservationIgnored private var injectedScriptID: String?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var deliveryTask: Task<Void, Never>?
@@ -39,18 +41,38 @@ import Observation
 
     // MARK: Enter / exit
 
-    func enter(store: AppStore, urlHint: URL?) async {
-        guard !active else { return }
+    /// True from enter() until exit/teardown — including the in-flight CDP attach, so a
+    /// toggle during the attach cancels it instead of stacking a second client + event
+    /// task on top of the first (the bar reads `active` for its on-state, this to toggle).
+    var engaged: Bool { active || attachTask != nil }
+
+    func enter(store: AppStore, urlHint: URL?) {
+        guard !engaged else { return }
         guard cdpPort != 0 else {
             showNotice("Comment mode needs the Chromium engine (no CDP endpoint)")
             return
         }
         self.store = store
-        targetTitle = targetClaudeSession()?.title
+        targetTitle = prospectiveTarget()?.title
+        attachNonce += 1
+        let nonce = attachNonce
+        attachTask = Task { [weak self] in
+            await self?.attach(urlHint: urlHint)
+            // Clear only our own slot — a cancel + re-enter has already replaced it.
+            if let self, self.attachNonce == nonce { self.attachTask = nil }
+        }
+    }
+
+    /// One CDP attach, cancellable end-to-end: controller state is mutated only after the
+    /// final cancellation check, so an exit() mid-attach leaves nothing behind — the local
+    /// client is closed here, never leaked into `self.client`.
+    private func attach(urlHint: URL?) async {
+        var opened: CDPClient?
         do {
             let client = try await CDPClient.attach(port: cdpPort, synthSessionID: sessionID,
                                                     urlHint: urlHint)
-            self.client = client
+            opened = client
+            try Task.checkCancellation()
             try await client.send("Runtime.enable")
             try await client.send("Page.enable")
             try await client.send("Runtime.addBinding", ["name": "__synthComment"])
@@ -59,21 +81,29 @@ import Observation
             // is re-injected per document. Current document: evaluate the same source now.
             let added = try await client.send("Page.addScriptToEvaluateOnNewDocument",
                                               ["source": source])
-            injectedScriptID = added["identifier"] as? String
             _ = try? await client.send("Runtime.evaluate", ["expression": source])
+            try Task.checkCancellation()
+            self.client = client
+            injectedScriptID = added["identifier"] as? String
             active = true
             listen(to: client)
             NSLog("Synth: comment mode ON for %@ (cdp %d, target → %@)",
                   sessionID.uuidString, Int(cdpPort), targetTitle ?? "none")
         } catch {
-            client?.close()
-            client = nil
-            showNotice("Comment mode failed to attach: \(error)")
+            opened?.close()
+            if !(error is CancellationError), !Task.isCancelled {
+                showNotice("Comment mode failed to attach: \(error)")
+            }
         }
     }
 
     func exit() async {
-        guard active else { return }
+        attachTask?.cancel()
+        attachTask = nil
+        guard active else {
+            targetTitle = nil
+            return
+        }
         active = false
         targetTitle = nil
         if let client {
@@ -94,6 +124,8 @@ import Observation
 
     /// Synchronous cleanup — session close / app quit (no CDP goodbyes).
     func teardown() {
+        attachTask?.cancel()
+        attachTask = nil
         eventTask?.cancel()
         eventTask = nil
         client?.close()

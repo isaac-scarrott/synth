@@ -134,13 +134,15 @@ import AppKit
     private(set) var commentMode: CommentModeController?
 
     func toggleCommentMode(store: AppStore) {
-        if let cm = commentMode, cm.active {
+        // `engaged`, not `active`: a toggle during the in-flight attach must cancel it,
+        // not race a second attach on top (leaked CDP clients / event tasks).
+        if let cm = commentMode, cm.engaged {
             Task { await cm.exit() }
             return
         }
         let cm = commentMode ?? CommentModeController(sessionID: sessionID, cdpPort: engine.cdpPort)
         commentMode = cm
-        Task { await cm.enter(store: store, urlHint: address) }
+        cm.enter(store: store, urlHint: address)
     }
 
     func shutdown() {

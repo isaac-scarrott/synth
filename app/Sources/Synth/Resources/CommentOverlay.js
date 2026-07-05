@@ -424,6 +424,7 @@
 
   function submit() {
     if (state !== 'card' || !snapshot) return;
+    if (card.hasAttribute('data-sent')) return; // submit-once: re-arms when the card closes
     if (!cardInput.value.trim()) { cardInput.focus(); return; }
     send(buildCommentPayload());
     card.setAttribute('data-sent', '');

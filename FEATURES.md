@@ -716,3 +716,40 @@ grouped by the scope they target instead of lumped under one path header.
   `Branch · feat/command-palette` / `Workspace · synth` with clean rows; a broad query yields group order
   `["Actions","Sessions","Branches","Workspaces"]`; searching "claude" still surfaces the Session
   Rename/Delete actions via the ctx match. No console errors; subset invariant intact.
+
+## 2026-07-05 — Notifications: in-app deck + Notification Center (both designs + native app)
+
+Background session state changes surface without pulling you out of the session you're in. Two
+layers, tiered by urgency, and **only ever for background sessions** (never the open one — the
+existing `openSessionID != id` rule).
+
+- **Ambient (layer one, unchanged).** The sidebar dot + unread bullet already carry state. `done`
+  (a live session settling to idle off-screen) stays here: the unread bullet plus one soft one-shot
+  row pulse — **no toast**. Only needs-input and error escalate.
+- **In-app deck (focused window, layer two).** needs-input / error on a background session rise as a
+  quiet glass toast, bottom-left, hugging the sidebar — the sidebar indicator *escalated* (same blue
+  `?` / terracotta `!`, the workspace chip, the session icon + title, a one-line verb). 2+ collapse
+  into a **stacked deck**, most-urgent in front (errors before needs-input, then newest), that **fans
+  out on hover**; a "+N" pill past three. Click a card to jump; **⌘↩** jumps to the front (most-urgent)
+  card and only that card carries the muted "⌘↩ jump" hint. Driven by `setSessionState` /
+  `notifyOnTransition` (HTML) → `AppStore.routeTransition` (app) — the single seam terminals and Claude
+  both reach.
+- **Notification Center (unfocused window).** Focus (`NSApp.isActive`) picks the surface at fire time;
+  unfocused → `UNUserNotificationCenter`. needs-input / error → alert, `done` → a transient banner, all
+  at `.active` interruption so **Focus / DND is respected** (never `.timeSensitive`). Grouped by branch
+  (`threadIdentifier`), body carries the session identity, a tap activates Synth and jumps. macOS note:
+  alert-vs-banner *persistence* is a per-app System Settings choice, not a per-request API — only the
+  interruption level is set from code. NC activates in the packaged `.app` (bundle id `tech.holibob.synth`);
+  the bare dev binary has no bundle id, so the path cleanly no-ops there.
+- **Sound is a per-type Setting** (global scope): needs-input / error / done toggles, defaults on / on /
+  off; the default sound attaches to a Notification-Center post iff its type is enabled. In-app toasts
+  are silent.
+- **Terminal parity.** A companion change makes a plain terminal report its per-command lifecycle
+  (running / finished-unread / errored, signal-terminations neutral) over the same hook socket Claude
+  uses — injected zsh preexec/precmd → a new `synth-hook report` subcommand — so terminal and Claude
+  sessions feed one notification path.
+- **Verified** by driving the built app: single toast, a 4-card deck with the error promoted to front,
+  hover-fan, ⌘↩-jump (front card opens + its toast clears), the ambient done pulse (no toast), and the
+  Settings sound toggles; `swift build` clean. Notification Center is implemented but end-to-end
+  unverified in-harness (needs the packaged bundle + a one-time permission grant). Both designs carry
+  the identical shell (subset invariant holds: diff is title + the browser/simulator demo rows).

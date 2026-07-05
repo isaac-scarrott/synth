@@ -476,6 +476,14 @@
     if (ev.type === 'click') ev.preventDefault();
   }
 
+  // The veil's own press events must never bubble to the page's document-level handlers
+  // during pick (onSuppress treats them as "ours" and lets them through). pointerdown
+  // skips preventDefault so the browser still synthesizes the click the picker runs on.
+  function onVeilPress(ev) {
+    ev.stopPropagation();
+    if (ev.type !== 'pointerdown') ev.preventDefault();
+  }
+
   function onScroll() { needsHitTest = true; }
 
   /* ---------------------------------------------------------- enter / exit */
@@ -493,6 +501,8 @@
 
     on(veil, 'mousemove', onVeilMove);
     on(veil, 'click', onVeilClick);
+    var veilPress = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'auxclick'];
+    for (var v = 0; v < veilPress.length; v++) on(veil, veilPress[v], onVeilPress);
     on(window, 'keydown', onKeyDown, true);
     on(window, 'scroll', onScroll, { capture: true, passive: true });
     on(window, 'resize', onScroll, { passive: true });

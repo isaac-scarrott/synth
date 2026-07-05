@@ -103,10 +103,17 @@ final class HookServer: @unchecked Sendable {
     }()
 
     /// The real `claude`, resolved once on the original PATH (before our shim is prepended).
+    /// Skips any `claude` that resolves to a `synth-hook` shim — when Synth is launched from
+    /// inside another Synth session its PATH already carries a `synth-shims-*` dir, and
+    /// handing that shim to a spawned terminal as SYNTH_REAL_CLAUDE makes synth-hook exec
+    /// itself in a loop until the argv blows past ARG_MAX (E2BIG, "Argument list too long").
     static let realClaude: String? = {
         for dir in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init) {
             let candidate = dir + "/claude"
-            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+            guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
+            let resolved = (try? FileManager.default.destinationOfSymbolicLink(atPath: candidate)) ?? candidate
+            if (resolved as NSString).lastPathComponent == "synth-hook" { continue }
+            return candidate
         }
         return nil
     }()
@@ -117,11 +124,40 @@ final class HookServer: @unchecked Sendable {
     /// execs `claude`, the shim runs `synth-hook` in its launch role.
     static func setup() {
         guard let hookBin else { return }
+        reapStale()
         try? FileManager.default.createDirectory(atPath: shimDir, withIntermediateDirectories: true)
         let link = shimDir + "/claude"
         try? FileManager.default.removeItem(atPath: link)
         try? FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: hookBin)
     }
+
+    /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts — keyed on a pid
+    /// that is no longer alive. Each Synth process names these `synth-*-<pid>`; a crash or
+    /// `SIGKILL` skips cleanup, so without this they pile up and stale shim dirs pollute the
+    /// PATH of any Synth launched from inside another Synth session.
+    private static func reapStale() {
+        let fm = FileManager.default
+        // Shim dirs + hook sockets are hardcoded under /tmp; login scripts under the
+        // per-user temp dir — sweep both.
+        for dir in Set(["/tmp/", NSTemporaryDirectory()]) {
+            guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { continue }
+            for name in entries {
+                let pid: String?
+                if name.hasPrefix("synth-shims-")        { pid = String(name.dropFirst("synth-shims-".count)) }
+                else if name.hasPrefix("synth-hook-"), name.hasSuffix(".sock") {
+                    pid = String(name.dropFirst("synth-hook-".count).dropLast(".sock".count))
+                } else if name.hasPrefix("synth-login-"), name.hasSuffix(".sh") {
+                    pid = String(name.dropFirst("synth-login-".count).dropLast(".sh".count))
+                } else { pid = nil }
+                guard let pid, let n = Int32(pid), n != getpid(), !isAlive(n) else { continue }
+                try? fm.removeItem(atPath: dir + name)
+            }
+        }
+    }
+
+    /// True when a process with `pid` still exists (`kill(pid, 0)`): 0 → alive, or EPERM
+    /// (alive, not ours to signal). ESRCH means it's gone and its leftovers are reapable.
+    private static func isAlive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
 
     /// Overlay the hook correlation/callback env + shim PATH onto a base environment.
     static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String) -> [String: String] {

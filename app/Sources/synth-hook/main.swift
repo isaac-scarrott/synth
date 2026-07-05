@@ -40,7 +40,12 @@ if invokedName == "claude" {
 // MARK: - Launch role
 
 func runLaunch(userArgs: [String]) -> Never {
-    let real = env["SYNTH_REAL_CLAUDE"].flatMap { $0.isEmpty ? nil : $0 } ?? resolveRealClaude()
+    // `SYNTH_REAL_CLAUDE` can point back at a shim when Synth is launched from inside
+    // another Synth session (its PATH already carries a `synth-shims-*` dir). Exec'ing a
+    // shim would re-enter this launch role and self-exec forever, growing argv by a
+    // `--session-id` + re-merged `--settings` each pass until execv fails with E2BIG.
+    let hinted = env["SYNTH_REAL_CLAUDE"].flatMap { $0.isEmpty ? nil : $0 }
+    let real = hinted.flatMap { isShim($0) ? nil : $0 } ?? resolveRealClaude()
     guard let real else {
         FileHandle.standardError.write(Data("synth: claude not found\n".utf8))
         exit(127)
@@ -157,15 +162,25 @@ func execReal(_ path: String, _ args: [String]) -> Never {
     exit(126)
 }
 
-/// Fallback claude lookup when SYNTH_REAL_CLAUDE is unset — scan PATH, skipping our shim dir.
+/// Fallback claude lookup when SYNTH_REAL_CLAUDE is unset or points at a shim — scan PATH
+/// for the first `claude` that is the real binary, not one of our shims. Skipping only
+/// `$SYNTH_SHIM_DIR` isn't enough: stale `synth-shims-*` dirs accumulate on PATH, and any
+/// of their `claude` symlinks resolves back to this binary, so exec'ing one would loop.
 func resolveRealClaude() -> String? {
-    let shim = env["SYNTH_SHIM_DIR"]
     for dir in (env["PATH"] ?? "").split(separator: ":").map(String.init) {
-        if dir == shim { continue }
         let candidate = dir + "/claude"
-        if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+        if FileManager.default.isExecutableFile(atPath: candidate), !isShim(candidate) { return candidate }
     }
     return nil
+}
+
+/// True when `path` is (or symlinks to) a `synth-hook` shim — the identity we must never
+/// exec as "claude", or the launch role re-enters itself.
+func isShim(_ path: String) -> Bool {
+    let resolved = (try? FileManager.default.destinationOfSymbolicLink(atPath: path)).map {
+        ($0 as NSString).isAbsolutePath ? $0 : (path as NSString).deletingLastPathComponent + "/" + $0
+    } ?? path
+    return (resolved as NSString).lastPathComponent == "synth-hook"
 }
 
 // MARK: - Event role

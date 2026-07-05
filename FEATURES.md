@@ -753,3 +753,20 @@ existing `openSessionID != id` rule).
   Settings sound toggles; `swift build` clean. Notification Center is implemented but end-to-end
   unverified in-harness (needs the packaged bundle + a one-time permission grant). Both designs carry
   the identical shell (subset invariant holds: diff is title + the browser/simulator demo rows).
+
+## 2026-07-05 — Notifications follow-up: Notification Center needs a first-run permission grant
+
+Addendum to the entry above, from verifying the packaged app.
+
+- The Notification Center path is confirmed **live in the packaged `.app`** (`build-app.sh` sets bundle
+  id `tech.holibob.synth`): on launch the app wires the `UNUserNotificationCenter` delegate and requests
+  authorization — none of the dev "no bundle identifier — disabled" no-op. Running the bare SwiftPM
+  Mach-O directly is *not* a valid notification client ("Notifications are not allowed"); only a
+  LaunchServices launch (`open Synth.app`) is.
+- A banner therefore requires a **one-time macOS "Allow"** grant on first launch, plus a real unfocused
+  event — neither scriptable in-harness, so the banner itself is verified by hand, not by CI. The
+  posting / branch-grouping / tap-to-jump / sound-per-toggle code is reviewed but not exercised
+  end-to-end here.
+- Dev caveat: the `#if DEBUG` notification triggers exist only in debug builds, which have no bundle id
+  (NC no-ops), while the release bundle where NC is live has no triggers. To exercise NC, stage a real
+  background event (a session needing input / erroring) while Synth is unfocused.

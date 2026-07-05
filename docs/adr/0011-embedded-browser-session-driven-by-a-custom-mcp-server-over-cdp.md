@@ -150,6 +150,43 @@ macOS). The integration hardened into constraints that bind all future engine wo
 - **The sandbox is currently disabled** (`no_sandbox`; `cef_sandbox` needs cmake integration not wired
   through SwiftPM). Acceptable for stage one; must be revisited before notarization/distribution.
 
+## Stages two and three, and what building them taught us (2026-07-05)
+
+Both stages are now built and gate-verified. Stage two is the bundled MCP server; stage three is
+click-to-comment. Decisions that turned out to be load-bearing:
+
+- **Stage two is a Synth-owned Node stdio MCP server, not bundled Playwright-MCP.** It uses
+  `@modelcontextprotocol/sdk` + `playwright-core` `connectOverCDP` and adds Synth-specific tools
+  (`browser_list`/`create`/`focus` over the app's control socket) that off-the-shelf servers can't
+  express. Instance discovery: the app writes `~/Library/Application Support/Synth/instances/<pid>.json`
+  ({pid, cdpPort, controlSocket, worktreePaths}); the server scopes to the instance whose worktreePaths
+  contain `$CLAUDE_PROJECT_DIR`, resolving a nested `.worktree/<slice>` checkout to its deepest managed
+  ancestor. Registration is a per-worktree `.mcp.json` the app writes (merge-preserving, never
+  clobbering foreign servers), naming a stable install at `~/Library/Application Support/Synth/browser-mcp/`.
+- **Session↔target mapping is a shim-stamped `window.__synthSessionId`** (CEF `ExecuteJavaScript` on
+  every main-frame load end), evaluated by the server to map page targets back to Synth sessions.
+- **Tool output must be capped.** A 30k-element page snapshots to ~1.5M chars (~400K tokens) — enough
+  to blow a Claude session's context in one call. Cap at ~40k with a truncation marker.
+- **Stage-three delivery is the PTY, not an MCP push.** There is no way to inject a message into a
+  running Claude *conversation* from outside; the reliable channel is writing into the owning session's
+  terminal (libghostty bracketed-paste + a trailing CR) — so a comment lands as a user turn the running
+  `claude` acts on. Located context = clipped element screenshot + full-viewport screenshot + a composed
+  text block (host+path, selector, position, React `file:line` when the page is a dev build, comment).
+- **The overlay runs in the MAIN world, injected via `Page.addScriptToEvaluateOnNewDocument`**, with the
+  page→host channel a `Runtime.addBinding("__synthComment")`. Main world (not isolated) is required
+  because React's `_debugSource` lives on DOM-node expando props an isolated world can't see. The picker
+  UI is a closed shadow root behind a full-viewport event-suppressing veil, so a hostile page's own
+  handlers never fire during a pick and page CSS can't reach the card.
+- **A comment may only be delivered to a *confirmed-live* Claude session — this is a security boundary,
+  not a nicety.** The composed message embeds page-controlled strings (title, selector, element HTML).
+  If delivery targeted a session by persisted `.claudeCode` kind and pane-view existence, a restored row
+  whose `claude --resume` fails drops to a bare `zsh` and the comment gets pasted-and-entered *as shell
+  commands* — arbitrary code from a web page in the user's login shell. Liveness is therefore asserted
+  only by the hook seam (ADR-0008): a session is a valid target only once it has fired `claude-start` /
+  `claudeSessionCaptured` this run and not since ended. `submit()` is unreachable for a non-live row;
+  a dormant-but-live-capable row is booted and delivery waits for the liveness signal, never for the
+  terminal view; on timeout the comment is dropped and its screenshots deleted.
+
 ## Consequences
 
 - The browser is its own subsystem with a Chromium/CEF engine, a bundle-size and notarization cost, and
@@ -163,6 +200,11 @@ macOS). The integration hardened into constraints that bind all future engine wo
 - Distribution is Developer ID + notarization, not the Mac App Store.
 - Stage one ships with the Chromium sandbox disabled (`no_sandbox`). Wiring `cef_sandbox` through the
   SwiftPM build is an open item that blocks notarization/distribution.
+- Comment delivery is gated on hook-confirmed Claude liveness — the shell-injection boundary above — so
+  it depends on ADR-0008's hook seam being live; a session Synth can't confirm is never written to.
+- Open follow-ups surfaced by the gates, orthogonal to the feature: a second co-resident CEF instance
+  can die shortly after a Claude terminal pane takes focus (an IMKit/Ghostty focus-path issue, not the
+  browser); and multiple instances share one `state.json` last-writer-wins (ADR-0010's known limit).
 
 ## References
 

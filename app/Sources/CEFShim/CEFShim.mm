@@ -80,30 +80,82 @@ static void GraftCefAppProtocol(void) {
 }
 
 #pragma mark - External message pump
+//
+// cefclient's MainMessageLoopExternalPump shape: OnScheduleMessagePumpWork callbacks
+// for latency, plus a permanent ~30ms fallback timer for liveness. The timer is
+// load-bearing, not paranoia: Chromium arms OnScheduleMessagePumpWork edge-triggered
+// (work_deduplicator), and init/browser-creation must drive CefDoMessageLoopWork
+// manually outside any scheduled callback, which consumes the outstanding edge.
+// Observed on CEF 144: after CefInitialize's single delay=0 callback CEF never
+// scheduled again, so a schedule-only pump starved permanently the moment manual
+// pumping ended (black view, dead CDP, zero delegate callbacks).
+
+// Diagnostics: SYNTH_CEF_PUMP_TRACE=<path> traces every schedule/pump event.
+#include <pthread.h>
+static FILE *PumpTraceFile(void) {
+  static FILE *f = NULL;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    const char *path = getenv("SYNTH_CEF_PUMP_TRACE");
+    if (path) f = fopen(path, "w");
+  });
+  return f;
+}
+#define PUMP_TRACE(fmt, ...)                                                              \
+  do {                                                                                    \
+    FILE *tf = PumpTraceFile();                                                           \
+    if (tf) {                                                                             \
+      fprintf(tf, "%.3f [t%x m%d] " fmt "\n", CFAbsoluteTimeGetCurrent(),                 \
+              (unsigned)pthread_mach_thread_np(pthread_self()),                           \
+              (int)pthread_main_np(), ##__VA_ARGS__);                                     \
+      fflush(tf);                                                                         \
+    }                                                                                     \
+  } while (0)
 
 static void PumpWork(void);
 
-static void SchedulePumpWork(int64_t delayMs) {
-  // Callable from any CEF thread; the pump itself only ever runs on main.
-  if (delayMs <= 0) {
-    static std::atomic<bool> pending{false};
-    bool expected = false;
-    if (!pending.compare_exchange_strong(expected, true)) {
-      return;
-    }
-    dispatch_async(dispatch_get_main_queue(), ^{
-      pending.store(false);
-      PumpWork();
-    });
-  } else {
-    // Cap the timer so a long CEF estimate can't starve unforeseen work (the
-    // cefclient external-pump precedent).
-    int64_t capped = std::min(delayMs, (int64_t)33);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, capped * NSEC_PER_MSEC),
-                   dispatch_get_main_queue(), ^{
-                     PumpWork();
-                   });
+// The permanent fallback: fires every 30ms from init to shutdown and drives
+// CefDoMessageLoopWork, so delayed work and any lost schedule edge are picked up
+// within one tick. An idle CefDoMessageLoopWork costs microseconds.
+static dispatch_source_t g_pumpTimer;
+
+static void StartPumpTimer(void) {
+  if (g_pumpTimer) {
+    return;
   }
+  g_pumpTimer =
+      dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+  dispatch_source_set_timer(g_pumpTimer, DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC,
+                            10 * NSEC_PER_MSEC);
+  dispatch_source_set_event_handler(g_pumpTimer, ^{
+    PumpWork();
+  });
+  dispatch_resume(g_pumpTimer);
+}
+
+static void StopPumpTimer(void) {
+  if (g_pumpTimer) {
+    dispatch_source_cancel(g_pumpTimer);
+    g_pumpTimer = nil;
+  }
+}
+
+static void SchedulePumpWork(int64_t delayMs) {
+  PUMP_TRACE("schedule delay=%lld", (long long)delayMs);
+  // Callable from any CEF thread; the pump itself only ever runs on main. Delayed
+  // work (delay > 0) is covered by the fallback timer within 30ms.
+  if (delayMs > 0) {
+    return;
+  }
+  static std::atomic<bool> pending{false};
+  bool expected = false;
+  if (!pending.compare_exchange_strong(expected, true)) {
+    return;
+  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    pending.store(false);
+    PumpWork();
+  });
 }
 
 static void PumpWork(void) {
@@ -112,13 +164,16 @@ static void PumpWork(void) {
   }
   // A nested runloop (modal panel, menu tracking) can drain the main queue while a
   // previous CefDoMessageLoopWork is still on the stack; CEF forbids reentrancy.
+  // A skipped pump is never lost — the fallback timer retries within 30ms.
   static BOOL working = NO;
   if (working) {
-    SchedulePumpWork(5);
+    PUMP_TRACE("pump reentrant -> skip");
     return;
   }
   working = YES;
+  PUMP_TRACE("pump DoWork begin");
   CefDoMessageLoopWork();
+  PUMP_TRACE("pump DoWork end");
   working = NO;
 }
 
@@ -181,6 +236,7 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
 @interface CEFShimBrowser () {
  @public
   CefRefPtr<CefBrowser> _browser;
+  BOOL _closeRequested;
 }
 @property(nonatomic, strong) CEFShimContainerView *containerView;
 // Never-shown host for the container until the pane reparents it: CEF's child-view
@@ -261,11 +317,17 @@ class ShimClient : public CefClient,
   }
 
   bool DoClose(CefRefPtr<CefBrowser> browser) override {
-    return false;  // Child-view browser: let CEF tear the NSView down.
+    // true = the embedder completes the close via native view teardown (done in
+    // -[CEFShimBrowser close]). Returning false would make CEF performClose: the
+    // browser's top-level NSWindow — Synth's own app window, which never closes
+    // mid-session, leaving the browser half-closed until CefShutdown.
+    PUMP_TRACE("DoClose");
+    return true;
   }
 
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
     g_aliveBrowsers--;
+    PUMP_TRACE("OnBeforeClose alive=%d", g_aliveBrowsers.load());
     [owner_ handleBeforeClose];
   }
 
@@ -323,15 +385,18 @@ class ShimClient : public CefClient,
     return NO;
   }
   g_initialized = YES;
+  StartPumpTimer();
 
   // Under the external pump CefInitialize returns before the browser context is up;
   // creating a browser before OnContextInitialized silently yields nullptr. Pump it in.
+  PUMP_TRACE("manual init-pump begin");
   NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10.0];
   while (!g_contextInitialized && deadline.timeIntervalSinceNow > 0) {
     CefDoMessageLoopWork();
     [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
                           beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
   }
+  PUMP_TRACE("manual init-pump end (ctx=%d)", g_contextInitialized);
   if (!g_contextInitialized) {
     NSLog(@"CEFShim: browser context never initialized");
     return NO;
@@ -350,16 +415,25 @@ class ShimClient : public CefClient,
   }
   // Surviving CEF processes own the profile singleton and silently absorb the next
   // launch (spike LEARNINGS) — so force-close everything and wait it out.
+  PUMP_TRACE("shutdown begin alive=%d shimBrowsers=%d", g_aliveBrowsers.load(),
+             (int)g_liveShimBrowsers.count);
   for (CEFShimBrowser *browser in g_liveShimBrowsers.allObjects) {
     [browser close];
   }
   NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:8.0];
   while (g_aliveBrowsers.load() > 0 && deadline.timeIntervalSinceNow > 0) {
-    CefDoMessageLoopWork();
-    [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
-                          beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    // Fresh pool each pass: close completion rides on the CEF view's dealloc
+    // (WindowDestroyed), and a bare-signal shutdown never returns to the event
+    // loop to drain the outer pool.
+    @autoreleasepool {
+      CefDoMessageLoopWork();
+      [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
+                            beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
   }
+  PUMP_TRACE("shutdown close-wait done alive=%d", g_aliveBrowsers.load());
   g_shutdownDone = YES;  // Pump gate: no CefDoMessageLoopWork after CefShutdown.
+  StopPumpTimer();
   CefShutdown();
   g_initialized = NO;
 }
@@ -414,12 +488,14 @@ class ShimClient : public CefClient,
                                      nullptr, context)) {
     return nil;
   }
+  PUMP_TRACE("manual create-pump begin");
   NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10.0];
   while (!_browser && deadline.timeIntervalSinceNow > 0) {
     CefDoMessageLoopWork();
     [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
                           beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
   }
+  PUMP_TRACE("manual create-pump end (browser=%d)", _browser ? 1 : 0);
   if (!_browser) {
     return nil;
   }
@@ -451,6 +527,7 @@ class ShimClient : public CefClient,
 }
 
 - (void)navigate:(NSString *)url {
+  PUMP_TRACE("navigate %s (browser=%d)", url.UTF8String, _browser ? 1 : 0);
   if (_browser) {
     _browser->GetMainFrame()->LoadURL(url.UTF8String);
   }
@@ -486,8 +563,22 @@ class ShimClient : public CefClient,
 }
 
 - (void)close {
-  if (_browser) {
-    _browser->GetHost()->CloseBrowser(/*force_close=*/true);
+  if (!_browser || _closeRequested) {
+    return;
+  }
+  _closeRequested = YES;
+  CefRefPtr<CefBrowserHost> host = _browser->GetHost();
+  host->CloseBrowser(/*force_close=*/true);
+  // Close completion on macOS is the CEF wrapper NSView's -dealloc (it calls
+  // WindowDestroyed, which destroys the browser and fires OnBeforeClose). CEF's own
+  // completion path performClose:'s the hosting NSWindow — Synth's app window,
+  // which stays open — so tear the view down here instead. The local pool is
+  // load-bearing: a signal-initiated quit pumps from inside willTerminate, where
+  // the outer autorelease pool never drains, and a pool-held reference would keep
+  // the view (and browser) alive until CefShutdown (observed as an 8s stall).
+  @autoreleasepool {
+    NSView *cefView = (__bridge NSView *)host->GetWindowHandle();
+    [cefView removeFromSuperview];
   }
 }
 

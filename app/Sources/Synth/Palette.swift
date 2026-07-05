@@ -207,6 +207,12 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code",
                                      group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newClaude(in: branch) } }))
+            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
+                                     group: g, ctx: branch.name,
+                                     enter: { self.push(self.renameFrame(.branch(branch))) }))
+            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove",
+                                     group: g, ctx: branch.name, danger: true,
+                                     enter: { self.push(self.confirmRemoveBranch(branch)) }))
         }
         if let workspace {
             items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
@@ -457,10 +463,22 @@ struct PaletteFrame {
             store.removeWorkspace(ws)
         }
     }
+    // Removing a worktree forks: delete it for real (git worktree remove + rm the folder),
+    // or just drop it from the sidebar and leave the checkout on disk to re-add later.
+    // The destructive path is danger-styled; the list-only path isn't — the colour is the tell.
     func confirmRemoveBranch(_ br: Branch) -> PaletteFrame {
-        confirmFrame(verb: "Remove", name: br.name,
-                     hint: "Remove this branch? Its worktree stays on disk.") { [store] in
-            store.removeBranch(br)
+        PaletteFrame(crumb: "Remove \(br.name)?",
+                     placeholder: "Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel",
+                     mode: .confirm) { [self] _ in
+            [
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
+                            ctx: "git worktree remove + delete its folder on disk", danger: true,
+                            enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: true) } }),
+                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
+                            ctx: "stop tracking it here — the worktree stays on disk",
+                            enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: false) } }),
+                PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
+            ]
         }
     }
     func confirmDeleteSession(_ s: Session) -> PaletteFrame {

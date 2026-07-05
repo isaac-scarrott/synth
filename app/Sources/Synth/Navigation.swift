@@ -220,10 +220,18 @@ extension AppStore {
         expanded.remove(workspace.id)
     }
 
-    func removeBranch(_ branch: Branch) {
+    /// Remove a worktree row. `deleteWorktree` deletes the checkout on disk via
+    /// `git worktree remove`; otherwise the folder is left in place and only the
+    /// sidebar entry drops (re-addable later). The primary checkout (repo root) is
+    /// never deleted from disk — git won't remove its own working tree.
+    func removeBranch(_ branch: Branch, deleteWorktree: Bool) {
         for session in branch.sessions {
             TerminalManager.shared.terminate(session.id)
             if openSessionID == session.id { openSessionID = nil }
+        }
+        if deleteWorktree, let ws = workspaces.first(where: { $0.branches.contains { $0.id == branch.id } }),
+           branch.worktreeURL != ws.url {
+            _ = GitService.removeWorktree(repo: ws.url, path: branch.worktreeURL)
         }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)
@@ -311,7 +319,7 @@ extension AppStore {
                                 MenuCreate(icon: Phosphor.sparkle, title: "New Claude Code",
                                            run: { [weak self] in self?.newClaude(in: b) }),
                               ],
-                              onDelete: { [weak self] in self?.removeBranch(b) })
+                              onDelete: { [weak self] in self?.removeBranch(b, deleteWorktree: false) })
         case let .session(s):
             return ActiveMenu(rowID: s.id, level: .session, creates: [],
                               onDelete: { [weak self] in self?.closeSession(s) })

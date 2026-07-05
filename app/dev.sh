@@ -73,6 +73,13 @@ mkdir -p "$APP/Contents/Resources"
 rm -rf "$APP/Contents/Resources/mcp"
 cp -R ../mcp "$APP/Contents/Resources/mcp"
 
+# SwiftPM resource bundle (CommentOverlay.js, ADR-0011 stage three): the app looks it
+# up under Contents/Resources when running from a bundle.
+if [ -d "$BIN/Synth_Synth.bundle" ]; then
+  rm -rf "$APP/Contents/Resources/Synth_Synth.bundle"
+  cp -R "$BIN/Synth_Synth.bundle" "$APP/Contents/Resources/Synth_Synth.bundle"
+fi
+
 if $CHECK; then
   exec env SYNTH_AUTOMATION=1 "$APP/Contents/MacOS/Synth" --browser-check
 fi

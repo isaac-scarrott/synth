@@ -49,6 +49,11 @@ fi
 mkdir -p "$APP/Contents/Resources"
 cp -R ../mcp "$APP/Contents/Resources/mcp"
 
+# SwiftPM resource bundle (CommentOverlay.js, ADR-0011 stage three).
+if [ -d "$BIN/Synth_Synth.bundle" ]; then
+  cp -R "$BIN/Synth_Synth.bundle" "$APP/Contents/Resources/Synth_Synth.bundle"
+fi
+
 # Ad-hoc sign so the bundled app runs without Gatekeeper nagging on this machine.
 # --deep also covers the CEF framework and the four helper apps.
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true

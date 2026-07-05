@@ -234,6 +234,14 @@ struct RootView: View {
                 }
                 return event
             }
+            // Esc exits browser comment mode (ADR-0011 stage three) — checked before the
+            // page passthrough so it works while the page owns keys; the overlay's own
+            // exitMode binding call flips the same state, so the button follows either path.
+            if event.keyCode == 53, let open = store.openSession, open.kind == .browser,
+               let cm = BrowserManager.shared.existing(open.id)?.commentMode, cm.active {
+                Task { await cm.exit() }
+                return nil
+            }
             if let fr = event.window?.firstResponder {
                 if fr is GhosttySurfaceView || fr is NSText || fr is NSTextView { return event }
                 // A focused browser page keeps its keys too (Space/Enter act in the page).

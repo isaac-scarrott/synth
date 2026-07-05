@@ -192,6 +192,18 @@ struct PaletteFrame {
         var items: [PaletteItem] = []
         if let open {
             let g = "Session · \(open.title)"
+            // Browser only: toggle comment mode (ADR-0011 stage three) — the palette
+            // twin of the bar button, so the keyboard can drive it without a click.
+            if open.kind == .browser {
+                let on = BrowserManager.shared.existing(open.id)?.commentMode?.active ?? false
+                items.append(PaletteItem(icon: .phosphor(Phosphor.commentMode),
+                                         label: on ? "Exit comment mode" : "Enter comment mode",
+                                         group: g, ctx: open.title,
+                                         enter: { self.runAndClose { [store = self.store] in
+                                             BrowserManager.shared.controller(for: open)?
+                                                 .toggleCommentMode(store: store)
+                                         } }))
+            }
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
                                      group: g, ctx: open.title,
                                      enter: { self.push(self.renameFrame(.session(open))) }))

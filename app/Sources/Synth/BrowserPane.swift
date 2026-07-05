@@ -128,7 +128,25 @@ import AppKit
         devToolsOpen = !open
     }
 
-    func shutdown() { engine.shutdown() }
+    /// Comment mode (ADR-0011 stage three), lazily created on first toggle — it holds
+    /// a CDP attachment to this session's page target while on. The bar button reads
+    /// `commentMode?.active` (also flipped off by the page's own exitMode binding call).
+    private(set) var commentMode: CommentModeController?
+
+    func toggleCommentMode(store: AppStore) {
+        if let cm = commentMode, cm.active {
+            Task { await cm.exit() }
+            return
+        }
+        let cm = commentMode ?? CommentModeController(sessionID: sessionID, cdpPort: engine.cdpPort)
+        commentMode = cm
+        Task { await cm.enter(store: store, urlHint: address) }
+    }
+
+    func shutdown() {
+        commentMode?.teardown()
+        engine.shutdown()
+    }
 }
 
 extension BrowserSessionController: BrowserEngineDelegate {
@@ -191,6 +209,9 @@ struct BrowserPane: View {
                         .onTapGesture { dropOpen = false }
                     OmniDrop(ctrl: ctrl, recents: recents) { dropOpen = false }
                 }
+                if let notice = ctrl.commentMode?.notice {
+                    CommentNotice(text: notice)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -226,12 +247,20 @@ private struct EngineHost: NSViewRepresentable {
 
 // MARK: - Bar
 
-/// working.html `.browser__bar`: nav cluster · omnibox pill · DevTools toggle, on the
-/// chrome-grey strip with a hairline below.
+/// working.html `.browser__bar`: nav cluster · omnibox pill · comment-mode toggle ·
+/// DevTools toggle, on the chrome-grey strip with a hairline below.
 private struct BrowserBar: View {
+    @Environment(AppStore.self) private var store
     let ctrl: BrowserSessionController
     @Binding var dropOpen: Bool
     @Binding var homeFocusNonce: Int
+
+    private var commentOn: Bool { ctrl.commentMode?.active ?? false }
+    private var commentHelp: String {
+        guard commentOn else { return "Comment mode" }
+        if let t = ctrl.commentMode?.targetTitle { return "Comment mode → \(t)" }
+        return "Comment mode (no Claude Code session in this branch)"
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -245,6 +274,11 @@ private struct BrowserBar: View {
             OmniPill(ctrl: ctrl, editing: dropOpen) {
                 if ctrl.isHome { homeFocusNonce += 1 } else { dropOpen = true }
             }
+            if commentOn, let target = ctrl.commentMode?.targetTitle {
+                CommentTargetChip(title: target)
+            }
+            BarButton(icon: Phosphor.commentMode, help: commentHelp,
+                      disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
             BarButton(icon: Phosphor.devtools, help: "DevTools",
                       disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
         }
@@ -253,6 +287,43 @@ private struct BrowserBar: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 0.5)
         }
+    }
+}
+
+/// While comment mode is on: the receiving Claude session, named right where comments
+/// are sent from ("→ fix palette focus").
+private struct CommentTargetChip: View {
+    let title: String
+
+    var body: some View {
+        Text("→ \(title)")
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(Theme.inkMuted)
+            .lineLimit(1).truncationMode(.tail)
+            .padding(.vertical, 3).padding(.horizontal, 8)
+            .background(Capsule().fill(Theme.rowSelected))
+            .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 0.5))
+            .frame(maxWidth: 180, alignment: .trailing)
+            .help("Comments go to \(title)")
+    }
+}
+
+/// Transient comment-mode notice floated under the bar (delivery result, attach errors).
+/// The controller auto-clears it after a few seconds.
+private struct CommentNotice: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(Theme.ink)
+            .lineLimit(2)
+            .padding(.vertical, 6).padding(.horizontal, 12)
+            .background(Capsule().fill(Theme.panel))
+            .overlay(Capsule().strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+            .padding(.top, 10)
+            .transition(.opacity)
     }
 }
 

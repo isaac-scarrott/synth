@@ -208,6 +208,7 @@
   ].join('\n');
 
   var state = 'off';          // 'off' | 'pick' | 'card'
+  var deferredTimer = null, deferredConfig = null;   // document-start: mount deferred
   var cfg = { targetLabel: '' };
   var hostEl = null, veil = null, hiBox = null, chip = null, card = null;
   var cardTarget = null, cardInput = null, cardSend = null, cardCancel = null;
@@ -488,6 +489,13 @@
 
   /* ---------------------------------------------------------- enter / exit */
 
+  function stopDeferred() {
+    if (deferredTimer) { clearInterval(deferredTimer); deferredTimer = null; }
+    deferredConfig = null;
+  }
+
+  function domReady() { return !!(document.documentElement && document.body); }
+
   function doEnter(config) {
     config = config || {};
     if (state !== 'off') {
@@ -495,6 +503,26 @@
       if (cardTarget) cardTarget.textContent = cfg.targetLabel || 'Claude';
       return;
     }
+    // Injected via Page.addScriptToEvaluateOnNewDocument this runs at document-start,
+    // when documentElement/body may not exist yet — mounting now would throw and leave
+    // the overlay absent for the whole document. Defer until the DOM can host it;
+    // enter() stays idempotent while the wait is pending (the config just refreshes).
+    if (!domReady()) {
+      deferredConfig = config;
+      if (deferredTimer) return;
+      var tryMount = function () {
+        if (!deferredConfig) return;
+        if (state !== 'off') { stopDeferred(); return; }
+        if (!domReady()) return;
+        var pending = deferredConfig;
+        stopDeferred();
+        doEnter(pending);
+      };
+      deferredTimer = setInterval(tryMount, 50);
+      document.addEventListener('DOMContentLoaded', tryMount, { once: true });
+      return;
+    }
+    stopDeferred();
     cfg.targetLabel = config.targetLabel != null ? String(config.targetLabel) : '';
     buildUI();
     state = 'pick';
@@ -537,6 +565,7 @@
   }
 
   function doExit(notifyHost) {
+    stopDeferred();               // exit during a deferred (pre-DOM) mount cancels it
     if (state === 'off') return;
     teardown();
     if (notifyHost) {

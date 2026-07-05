@@ -148,8 +148,16 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
 
 #pragma mark - Browser container view
 
-// Keeps the CEF child NSView glued to the container's bounds through SwiftUI layout.
+@class CEFShimBrowser;
+
+// Keeps the CEF child NSView glued to the container's bounds through SwiftUI layout,
+// and tells the owner when the pane reparents it (so the staging window can go).
 @interface CEFShimContainerView : NSView
+@property(nonatomic, weak, nullable) CEFShimBrowser *owner;
+@end
+
+@interface CEFShimBrowser ()
+- (void)containerDidMoveToWindow:(nullable NSWindow *)window;
 @end
 
 @implementation CEFShimContainerView
@@ -161,6 +169,10 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
 }
 - (BOOL)isFlipped {
   return YES;
+}
+- (void)viewDidMoveToWindow {
+  [super viewDidMoveToWindow];
+  [self.owner containerDidMoveToWindow:self.window];
 }
 @end
 
@@ -374,6 +386,7 @@ class ShimClient : public CefClient,
   // 0x0 browser can wedge first paint before layout runs.
   NSRect initial = NSIsEmptyRect(frame) ? NSMakeRect(0, 0, 800, 600) : frame;
   _containerView = [[CEFShimContainerView alloc] initWithFrame:initial];
+  _containerView.owner = self;
 
   _stagingWindow = [[NSWindow alloc] initWithContentRect:initial
                                                styleMask:NSWindowStyleMaskBorderless
@@ -479,6 +492,12 @@ class ShimClient : public CefClient,
 }
 
 #pragma mark ShimClient callbacks (CEF UI thread == main thread under external pump)
+
+- (void)containerDidMoveToWindow:(nullable NSWindow *)window {
+  if (window && window != self.stagingWindow) {
+    self.stagingWindow = nil;
+  }
+}
 
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser {
   _browser = browser;

@@ -395,6 +395,14 @@
   .browser__drop { position: absolute; top: 41px; left: 10px; right: 10px; z-index: 5; padding: 8px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 14px 36px rgba(0,0,0,0.17); animation: browser-drop 140ms var(--ease-out); }
   .browser__drop .browser__reclabel { margin-top: 12px; }
   @keyframes browser-drop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .browser__btn.is-on { background: var(--hover); color: var(--ink); }
+  .browser__devtools { height: 38%; min-height: 150px; display: flex; flex-direction: column; border-top: 0.5px solid var(--border-strong); background: var(--chrome); }
+  .devtools__tabs { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 0.5px solid var(--border); }
+  .devtools__tab { padding: 4px 9px; border: 0; border-radius: 6px; background: transparent; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: background 110ms ease, color 110ms ease; }
+  .devtools__tab:hover { background: var(--hover); }
+  .devtools__tab.is-active { background: var(--hover); color: var(--ink); }
+  .devtools__body { flex: 1; overflow-y: auto; padding: 12px 14px; }
+  .devtools__body .skel { border-radius: 4px; }
   .skel { border-radius: 7px; background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05)); background-size: 200% 100%; animation: skel-shimmer 1.6s linear infinite; }
   @keyframes skel-shimmer { to { background-position: -200% 0; } }
   .skel--title { height: 26px; width: 46%; margin-bottom: 18px; }
@@ -1826,6 +1834,7 @@
   const ICON_NAV_FWD    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg>';
   const ICON_NAV_RELOAD = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.67,186.37a8,8,0,0,1,0,11.29C196.58,198.73,170.82,224,128,224c-37.39,0-64.53-22.4-80-39.85V208a8,8,0,0,1-16,0V160a8,8,0,0,1,8-8H88a8,8,0,0,1,0,16H55.44C67.76,183.35,93,208,128,208c36,0,58.14-21.46,58.36-21.68A8,8,0,0,1,197.67,186.37ZM216,40a8,8,0,0,0-8,8V71.85C192.53,54.4,165.39,32,128,32,85.18,32,59.42,57.27,58.34,58.34a8,8,0,0,0,11.3,11.34C69.86,69.46,92,48,128,48c35,0,60.24,24.65,72.56,40H168a8,8,0,0,0,0,16h48a8,8,0,0,0,8-8V48A8,8,0,0,0,216,40Z"/></svg>';
   const ICON_NAV_LOCK   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208Z"/></svg>';
+  const ICON_DEVTOOLS   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></svg>';
 
   // Recent destinations the "Go to…" surface offers. Static demo data; a real build seeds this from
   // the branch's dev-server port and the session's own visited history.
@@ -1854,6 +1863,21 @@
       <div class="skel skel--line" style="width:70%"></div>
       <div class="skel--cards"><div class="skel skel--card"></div><div class="skel skel--card"></div><div class="skel skel--card"></div></div>`;
   }
+  // DevTools body is a skeleton for the same reason the page is: the real panel is Chromium's own
+  // DevTools rendered into the pane; only the toggle and the docked frame are ours.
+  function devtoolsHTML(tab) {
+    const tabs = ['Elements', 'Console', 'Network', 'Sources'];
+    return `<div class="browser__devtools" data-devtools>
+      <div class="devtools__tabs">${tabs.map((t) => `<button class="devtools__tab ${t === (tab || 'Elements') ? 'is-active' : ''}" data-tab="${t}">${t}</button>`).join('')}</div>
+      <div class="devtools__body">
+        <div class="skel skel--line" style="width:58%"></div>
+        <div class="skel skel--line" style="width:74%;margin-left:16px"></div>
+        <div class="skel skel--line" style="width:46%;margin-left:32px"></div>
+        <div class="skel skel--line" style="width:66%;margin-left:32px"></div>
+        <div class="skel skel--line" style="width:38%;margin-left:16px"></div>
+      </div>
+    </div>`;
+  }
   function browserBarHTML(url) {
     return `<div class="browser__bar">
       <div class="browser__nav">
@@ -1862,6 +1886,7 @@
         <button class="browser__btn" data-nav="reload" aria-label="Reload">${ICON_NAV_RELOAD}</button>
       </div>
       <button class="browser__omni" data-omni><span class="browser__lock">${ICON_NAV_LOCK}</span><span class="browser__url">${esc(url)}</span></button>
+      <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
     </div>`;
   }
   function renderBrowser(name) {
@@ -1874,6 +1899,7 @@
             <button class="browser__btn" data-nav="reload" disabled aria-label="Reload">${ICON_NAV_RELOAD}</button>
           </div>
           <button class="browser__omni" data-omni><span class="browser__url browser__url--ph">Search or enter address</span></button>
+          <button class="browser__btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
         </div>
         <div class="browser__home"><div class="browser__homeinner">
           <span class="browser__glyph">${ICON_BROWSER}</span>
@@ -1891,6 +1917,7 @@
     const titleEl = content.querySelector('.pane__title span:last-child');
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
+    let devOpen = false, devTab = 'Elements';
 
     function spin() {
       const r = host.querySelector('[data-nav="reload"]'); if (!r || reduceMotion) return;
@@ -1901,10 +1928,10 @@
       if (push !== false) { hist.splice(idx + 1); hist.push(url); idx = hist.length - 1; }
       const label = browserHost(url);
       host.className = 'browser'; host.removeAttribute('data-home');
-      host.innerHTML = browserBarHTML(label) + `<div class="browser__view">${browserPageHTML()}</div>`;
+      host.innerHTML = browserBarHTML(label) + `<div class="browser__view">${browserPageHTML()}</div>` + (devOpen ? devtoolsHTML(devTab) : '');
       if (titleEl) titleEl.textContent = label;
       if (nameEl) nameEl.textContent = label;
-      bindBar(); spin();
+      bindBar(); if (devOpen) wireDevtools(); spin();
     }
     function bindBar() {
       const back = host.querySelector('[data-nav="back"]');
@@ -1914,13 +1941,31 @@
       if (back) { back.disabled = idx <= 0; back.onclick = () => { if (idx > 0) { idx--; paint(hist[idx], false); } }; }
       if (fwd) { fwd.disabled = idx >= hist.length - 1; fwd.onclick = () => { if (idx < hist.length - 1) { idx++; paint(hist[idx], false); } }; }
       if (rel) { rel.disabled = idx < 0; rel.onclick = spin; }
+      const dev = host.querySelector('[data-nav="devtools"]');
+      if (dev) { dev.disabled = idx < 0; dev.classList.toggle('is-on', devOpen); dev.onclick = toggleDev; }
       if (omni) omni.onclick = openOmni;
+    }
+    function toggleDev() {
+      devOpen = !devOpen;
+      const btn = host.querySelector('[data-nav="devtools"]');
+      if (btn) btn.classList.toggle('is-on', devOpen);
+      const panel = host.querySelector('[data-devtools]');
+      if (devOpen && !panel) { host.insertAdjacentHTML('beforeend', devtoolsHTML(devTab)); wireDevtools(); }
+      else if (!devOpen && panel) panel.remove();
+    }
+    function wireDevtools() {
+      host.querySelectorAll('.devtools__tab').forEach((t) => t.onclick = () => {
+        devTab = t.dataset.tab;
+        host.querySelectorAll('.devtools__tab').forEach((x) => x.classList.toggle('is-active', x === t));
+      });
     }
     function bindGoto(scope, done) {
       const input = scope.querySelector('[data-address]');
       if (input) input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && input.value.trim()) { if (done) done(); paint(browserNorm(input.value.trim())); }
-        else if (e.key === 'Escape') { if (done) done(); }
+        // stopPropagation: paint()/done() detach this input mid-dispatch, so the bubbled event's
+        // target no longer passes the document handler's .content guard — Enter would re-open the row.
+        if (e.key === 'Enter' && input.value.trim()) { e.stopPropagation(); if (done) done(); paint(browserNorm(input.value.trim())); }
+        else if (e.key === 'Escape') { e.stopPropagation(); if (done) done(); }
       });
       scope.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => { if (done) done(); paint(b.dataset.goto); }));
     }

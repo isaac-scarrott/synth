@@ -716,3 +716,33 @@ grouped by the scope they target instead of lumped under one path header.
   `Branch · feat/command-palette` / `Workspace · synth` with clean rows; a broad query yields group order
   `["Actions","Sessions","Branches","Workspaces"]`; searching "claude" still surfaces the Session
   Rename/Delete actions via the ctx match. No console errors; subset invariant intact.
+
+## 2026-07-05 — Browser session: DevTools toggle (both designs; ADR-0011 amended + research doc)
+
+The browser session grows a DevTools affordance — the user requirement "we need to be able to use
+Chrome DevTools on this" was part of the browser concept but missing from the stage-one mock and ADR.
+
+- **Toggle in the browser bar.** A code-brackets button at the right end of the bar (disabled on the
+  fresh-session home, like reload) toggles a DevTools panel docked under the page. The button shows an
+  on-state while open; the panel carries an Elements / Console / Network / Sources tab strip (tabs
+  switch live) over a skeleton body — skeleton for the same reason the page is: the real panel is
+  Chromium's own DevTools (CEF `ShowDevTools`), only the toggle and docked frame are ours. Panel and
+  selected tab survive navigation, back/forward, and reload; closing removes it cleanly.
+- **Root-cause fix that fell out of verification:** pressing Enter in the browser's address inputs
+  re-rendered the whole session — `paint()` detaches the input mid-keydown, so the bubbled event's
+  target no longer passes the document key handler's `.content` guard, and Enter activated the
+  selected sidebar row (silently resetting browser history even before DevTools existed). The address
+  inputs now stop propagation of the keys they fully handle (Enter/Escape).
+- **ADR-0011 amended:** stage-one scope now names the DevTools toggle (docked CEF DevTools in-app;
+  `remote_debugging_port` doubles as external `chrome://inspect` access), and stage two may start by
+  bundling Microsoft's Playwright MCP (`--cdp-endpoint` attaches to an already-running browser) before
+  graduating to our own server. New `docs/research/browser-agent-integration.md` holds the evidence:
+  `--chrome` native-messaging internals verified against current docs (closed extension, Chrome/Edge
+  only, hooks can't reroute tools), MCP registration scoping (per-worktree `.mcp.json`), stage-three
+  prior art (stagewise's gen-2 pivot to owning the browser, v0 Design Mode, Cursor, click-to-component),
+  and the CDP-native pattern that collapses click-to-comment to four CDP calls when you own the browser.
+- **Verified** headlessly (Chrome extension unavailable this session) by driving both files with a
+  Playwright harness: 23 checks on `big-picture-design.html` (demo-row path) and 24 on `working.html`
+  (⌘K "New browser" → home → address-Enter path) — toggle on/off, default tab, dock position, tab
+  switching, persistence across omnibox navigation and back, home-surface disabled state, dark-theme
+  panel color, zero console/page errors. Subset invariant intact (diff = title + demo rows).

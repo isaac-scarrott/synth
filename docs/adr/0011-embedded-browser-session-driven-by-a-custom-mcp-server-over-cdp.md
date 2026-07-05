@@ -87,9 +87,13 @@ so this is the durable path. The server (Node/TypeScript with Playwright, or the
 directly) exposes the same tools the real integration does — `navigate`, `click`, `type`, `screenshot`,
 `read_page`, read console, read network — and connects to the embedded browser's CDP endpoint via
 `connectOverCDP(webSocketDebuggerUrl)`. Synth registers it as a local (stdio) MCP server and
-auto-registers on first run so a worktree's Claude sessions see it without setup. Open-source
+auto-registers on first run so a worktree's Claude sessions see it without setup — a `.mcp.json`
+written into each worktree scopes the tools to that worktree's browsers. Open-source
 reverse-engineered implementations of the browser-tool surface exist as references, but we present our
-*own* tool server pointed at our *own* browser rather than depending on any of them.
+*own* tool server pointed at our *own* browser rather than depending on any of them. Stage two may
+*start* by bundling Microsoft's Playwright MCP (`--cdp-endpoint` attaches it to an already-running
+browser) and graduate to our own server when Synth-specific tools arrive (list/spawn per-branch
+browsers, stage-three comment events); see `docs/research/browser-agent-integration.md`.
 
 **Per-branch, per-worktree browsers fall out of this naturally.** Because Synth owns the server and the
 browser lifecycle, "list the browsers in this branch" and "connect Claude to browser N" become our
@@ -104,8 +108,10 @@ a new transport.
 Stage one ships **only** the navigable browser session: create a browser (via the row kebab and ⌘K,
 alongside New terminal / New Claude Code), open it to a "go to" home surface with recents, navigate
 with an address bar + back/forward/reload, one page per session (more pages = more sessions, listed in
-the sidebar like terminals). No agent control yet. The interaction and chrome are already mocked and
-driven in `working.html` / `big-picture-design.html`.
+the sidebar like terminals), and a DevTools toggle in the browser bar that docks Chromium's own
+DevTools under the page (CEF `ShowDevTools`; the same `remote_debugging_port` additionally lets an
+external Chrome inspect the session via `chrome://inspect`). No agent control yet. The interaction and
+chrome are already mocked and driven in `working.html` / `big-picture-design.html`.
 
 Two things in stage one exist for the sake of stage two and must not be skipped: the browser sits
 behind the `BrowserEngine` protocol, and — if we build directly on CEF — its CDP endpoint is turned on
@@ -126,6 +132,8 @@ get them wrong and stage two is a rewrite.
 
 ## References
 
+- Supporting research (claims verified 2026-07-05, stage-3 prior art, CEF practicalities) —
+  `docs/research/browser-agent-integration.md`
 - Claude Code Chrome integration — https://code.claude.com/docs/en/chrome.md
 - Claude Code MCP (transport, scopes, local/stdio servers) — https://code.claude.com/docs/en/mcp.md
 - Model Context Protocol — https://modelcontextprotocol.io/

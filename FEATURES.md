@@ -868,3 +868,25 @@ twin, no new transport.
   `SYNTH_AUTOMATION=1`, each calling the exact UI path — the harness's stand-in on machines whose TCC
   denies synthetic keystrokes. Note: window-buffer screenshots fail for an off-active-Space window on
   this host, so terminal-pane capture was substituted by the transcript/image-cache/git evidence.
+
+## 2026-07-05 — Stage three gate-verified: click-to-comment closes the human→Claude→code loop (ADR-0011)
+
+Independent gate PASS after a fix loop. Confirmed twice: the user picked a page element, commented, and
+Claude edited the served file (button → rebeccapurple, verified via reloaded computed style); the overlay
+survives navigation without re-toggling; double-submit sends one payload; a hostile page's own
+pointer/click handlers stay at zero during a pick; the no-target notice fires cleanly.
+
+- **Security boundary verified.** The composed comment embeds page-controlled strings (title, selector,
+  element HTML). Delivery now targets only a session a live `claude` has confirmed via the hook seam
+  (ADR-0008) this run — never persisted `.claudeCode` kind or terminal-view existence. The gate aimed a
+  shell-metacharacter canary at a Claude row that drops to a bare shell (unresumable): it was never
+  executed and the dropped comment's screenshots were deleted. A page can no longer get a string into the
+  user's login shell.
+- **Five gate findings fixed and re-verified before PASS:** the shell-injection/silent-drop path (F1),
+  overlay dying on navigation because it mounted before `documentElement` existed (F2), duplicate
+  submissions and toggle-storm client leaks (F3), veil pointer events bubbling to the page (F4), and
+  orphan screenshots for undelivered comments (F5).
+- **Known follow-ups (orthogonal to the feature):** a second co-resident CEF instance can die shortly
+  after a Claude terminal pane takes focus (an IMKit/Ghostty focus-path issue, not the browser); the
+  Chromium sandbox is still off (blocks notarization); shared `state.json` is last-writer-wins across
+  instances (ADR-0010). The comment overlay does not yet pick inside iframes (v1 scope).

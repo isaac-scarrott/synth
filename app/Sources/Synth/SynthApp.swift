@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-@main
+// Entry point lives in SynthMain.swift (adds the --browser-check mode around this App).
 struct SynthApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = AppStore()

@@ -83,6 +83,12 @@ final class HookServer: @unchecked Sendable {
         case "idle":       bus.post(.statusChanged(id, .idle)); bus.post(.markUnread(id))
         case "claude-start": bus.post(.kindChanged(id, .claudeCode)); bus.post(.statusChanged(id, .idle))
         case "claude-end":   bus.post(.kindChanged(id, .terminal));   bus.post(.statusChanged(id, .idle))
+        // A plain terminal's per-command lifecycle, from the injected zsh hooks (synth-hook
+        // report). `term-run` greens the row while a foreground process runs; on finish a
+        // long or failed command marks unread — a clean/interrupted quick one stays quiet.
+        case "term-run":   bus.post(.statusChanged(id, .running))
+        case "term-idle":  bus.post(.statusChanged(id, .idle));  bus.post(.markUnread(id))
+        case "term-error": bus.post(.statusChanged(id, .error)); bus.post(.markUnread(id))
         default: break
         }
     }
@@ -94,6 +100,13 @@ final class HookServer: @unchecked Sendable {
 /// either `synth-hook` or a real `claude` can't be found — the terminal just runs normally.
 @MainActor enum HookEnvironment {
     static let shimDir = "/tmp/synth-shims-\(getpid())"
+
+    /// A synth-managed `$ZDOTDIR` whose startup files re-source the user's own zsh config
+    /// (the VSCode/iTerm injection technique) then append a per-command status reporter — so
+    /// a plain terminal reports its foreground-process lifecycle over the same hook socket
+    /// Claude uses. Injected via `$ZDOTDIR` (survives TerminalLauncher's ghostty-only scrub);
+    /// non-zsh shells ignore it and just run normally.
+    static let zdotDir = "/tmp/synth-zdotdir-\(getpid())"
 
     /// `synth-hook` sits next to the app executable (SPM builds both into the same dir).
     static let hookBin: String? = {
@@ -129,6 +142,77 @@ final class HookServer: @unchecked Sendable {
         let link = shimDir + "/claude"
         try? FileManager.default.removeItem(atPath: link)
         try? FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: hookBin)
+        writeZDotDir()
+    }
+
+    /// Populate the injected `$ZDOTDIR`. zsh (macOS default) reads its startup files from here
+    /// instead of the user's dir, so each stage file re-sources the user's real one before
+    /// handing control back (`_synth_source_user`), and `.zshrc` additionally installs the
+    /// preexec/precmd reporter. The `claude` command is skipped — Claude Code drives its own
+    /// richer status through the hook pipeline and mustn't fight the coarse per-command dot.
+    private static func writeZDotDir() {
+        let fm = FileManager.default
+        try? fm.createDirectory(atPath: zdotDir, withIntermediateDirectories: true)
+        // Temporarily restore the real ZDOTDIR, source the user's file, then re-point ZDOTDIR
+        // here so the next startup stage is read from here too (re-capturing USER_ZDOTDIR in
+        // case the user's config changed it). Defined in .zshenv (always read first).
+        let zshenv = """
+        _synth_source_user() {
+            local f="${SYNTH_USER_ZDOTDIR:-$HOME}/$1"
+            [ -r "$f" ] || return 0
+            local save="$ZDOTDIR"
+            ZDOTDIR="${SYNTH_USER_ZDOTDIR:-$HOME}"
+            source "$f"
+            SYNTH_USER_ZDOTDIR="$ZDOTDIR"
+            ZDOTDIR="$save"
+        }
+        _synth_source_user .zshenv
+        """
+        let reporter = """
+
+        # --- Synth per-command status reporting ---------------------------------------------
+        # Green while a foreground process runs; unread/red when a long or failing command
+        # ends. No-ops unless Synth injected the correlation env, so a shell run outside Synth
+        # (or without synth-hook) behaves normally. Runs on every prompt — kept to a few ms.
+        if [[ -n "$SYNTH_SESSION_ID" && -n "$SYNTH_SOCKET_PATH" && -x "$SYNTH_HOOK_BIN" ]]; then
+            zmodload zsh/datetime 2>/dev/null
+            autoload -Uz add-zsh-hook 2>/dev/null
+            _synth_report() { "$SYNTH_HOOK_BIN" report --signal "$1" &! }
+            # A background timer paints the row green only once a command outlasts ~0.5s, so
+            # trivial commands (ls, cd, git status) finish first, are killed, and never strobe
+            # the sidebar. `claude` is left entirely to Claude's own pipeline.
+            _synth_preexec() {
+                [[ "${1%% *}" == claude ]] && return
+                [[ -n "$_synth_run_timer" ]] && kill "$_synth_run_timer" 2>/dev/null
+                _synth_cmd_start=$EPOCHREALTIME
+                ( sleep 0.5; _synth_report term-run ) &!
+                _synth_run_timer=$!
+            }
+            # Cancel a still-pending green, then classify the finished command. Exit 0 and the
+            # user-interrupt signals (130 SIGINT, 143 SIGTERM) are neutral — a dev server the
+            # user Ctrl-C's mustn't flash red; any other non-zero is an error. Only a command
+            # that actually ran past the timer gate (or failed) clears/marks the row.
+            _synth_precmd() {
+                local ec=$?
+                [[ -n "$_synth_run_timer" ]] && kill "$_synth_run_timer" 2>/dev/null
+                _synth_run_timer=""
+                [[ -z "$_synth_cmd_start" ]] && return
+                local elapsed=$(( EPOCHREALTIME - _synth_cmd_start ))
+                _synth_cmd_start=""
+                if (( ec == 0 || ec == 130 || ec == 143 )); then
+                    (( elapsed >= 0.5 )) && _synth_report term-idle
+                else
+                    _synth_report term-error
+                fi
+            }
+            add-zsh-hook preexec _synth_preexec
+            add-zsh-hook precmd _synth_precmd
+        fi
+        """
+        try? zshenv.write(toFile: zdotDir + "/.zshenv", atomically: true, encoding: .utf8)
+        try? "_synth_source_user .zprofile\n".write(toFile: zdotDir + "/.zprofile", atomically: true, encoding: .utf8)
+        try? "_synth_source_user .zlogin\n".write(toFile: zdotDir + "/.zlogin", atomically: true, encoding: .utf8)
+        try? ("_synth_source_user .zshrc\n" + reporter).write(toFile: zdotDir + "/.zshrc", atomically: true, encoding: .utf8)
     }
 
     /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts — keyed on a pid
@@ -144,6 +228,7 @@ final class HookServer: @unchecked Sendable {
             for name in entries {
                 let pid: String?
                 if name.hasPrefix("synth-shims-")        { pid = String(name.dropFirst("synth-shims-".count)) }
+                else if name.hasPrefix("synth-zdotdir-") { pid = String(name.dropFirst("synth-zdotdir-".count)) }
                 else if name.hasPrefix("synth-hook-"), name.hasSuffix(".sock") {
                     pid = String(name.dropFirst("synth-hook-".count).dropLast(".sock".count))
                 } else if name.hasPrefix("synth-login-"), name.hasSuffix(".sh") {
@@ -161,13 +246,22 @@ final class HookServer: @unchecked Sendable {
 
     /// Overlay the hook correlation/callback env + shim PATH onto a base environment.
     static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String) -> [String: String] {
-        guard available, let hookBin, let realClaude else { return base }
         var env = base
+        // Terminal per-command reporting needs only synth-hook + the socket + the injected
+        // ZDOTDIR — not a real `claude` — so wire it up whenever the helper exists, so a plain
+        // shell lights up even on a machine without Claude Code installed.
+        if let hookBin {
+            env["SYNTH_SESSION_ID"] = sessionID.uuidString
+            env["SYNTH_SOCKET_PATH"] = socketPath
+            env["SYNTH_HOOK_BIN"] = hookBin
+            env["SYNTH_USER_ZDOTDIR"] = base["ZDOTDIR"] ?? ""
+            env["ZDOTDIR"] = zdotDir
+        }
+        // Claude interception additionally needs a real `claude` to exec and the shim PATH
+        // that routes `claude` through synth-hook's launch role.
+        guard available, let realClaude else { return env }
         env["PATH"] = shimDir + ":" + (base["PATH"] ?? "/usr/bin:/bin")
         env["SYNTH_SHIM_DIR"] = shimDir
-        env["SYNTH_SESSION_ID"] = sessionID.uuidString
-        env["SYNTH_SOCKET_PATH"] = socketPath
-        env["SYNTH_HOOK_BIN"] = hookBin
         env["SYNTH_REAL_CLAUDE"] = realClaude
         return env
     }

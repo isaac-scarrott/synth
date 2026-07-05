@@ -13,6 +13,9 @@ import Glibc
 //   • as `synth-hook event <Event>`: the EVENT role. Claude fires this per hook; we read
 //     the event JSON on stdin, classify it to a status signal, and write one line to the
 //     app's unix socket (path in $SYNTH_SOCKET_PATH), tagged with $SYNTH_SESSION_ID.
+//   • as `synth-hook report --signal <name>`: the REPORT role. Synth's injected zsh hooks
+//     fire this on a plain terminal's command start/finish, writing the same signal line to
+//     the same socket — so a bare shell reports its process lifecycle through Claude's pipe.
 //
 // Correlation is entirely by env: Synth spawns the PTY with SYNTH_SESSION_ID (the row),
 // SYNTH_SOCKET_PATH, SYNTH_HOOK_BIN and SYNTH_REAL_CLAUDE; Claude and its hooks inherit them.
@@ -31,6 +34,8 @@ if invokedName == "claude" {
         runLaunch(userArgs: after)
     case "event":
         runEvent(name: CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "")
+    case "report":
+        runReport(args: Array(CommandLine.arguments.dropFirst(2)))
     default:
         FileHandle.standardError.write(Data("synth-hook: unknown invocation\n".utf8))
         exit(2)
@@ -223,6 +228,20 @@ func runEvent(name: String) -> Never {
     if let claudeSession { lines += jsonLine(["session": sessionID, "claudeSession": claudeSession]) }
     if !lines.isEmpty { sendLines(socketPath: socketPath, lines) }
     exit(0)   // never block Claude — we only observe
+}
+
+// MARK: - Report role
+
+/// `synth-hook report --signal <name>` — the terminal counterpart to the event role. Synth's
+/// injected zsh preexec/precmd hooks call this to report a foreground command's lifecycle
+/// (`term-run`, `term-idle`, `term-error`) over the same socket, tagged with $SYNTH_SESSION_ID.
+/// A missing correlation env — a shell started outside Synth — is a silent no-op, and it runs
+/// on every prompt, so it does the minimum: one line, one socket write, no stdin read.
+func runReport(args: [String]) -> Never {
+    guard let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"],
+          let i = args.firstIndex(of: "--signal"), i + 1 < args.count else { exit(0) }
+    sendLines(socketPath: socketPath, jsonLine(["session": sessionID, "signal": args[i + 1]]))
+    exit(0)
 }
 
 /// The most recent `ai-title` in a Claude Code transcript (scanning from the end), or nil.

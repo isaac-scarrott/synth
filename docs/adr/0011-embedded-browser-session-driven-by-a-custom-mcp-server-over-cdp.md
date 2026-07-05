@@ -86,7 +86,10 @@ drives our embedded Chromium over CDP.** MCP is Claude Code's official, first-pa
 so this is the durable path. The server (Node/TypeScript with Playwright, or the equivalent driving CDP
 directly) exposes the same tools the real integration does — `navigate`, `click`, `type`, `screenshot`,
 `read_page`, read console, read network — and connects to the embedded browser's CDP endpoint via
-`connectOverCDP(webSocketDebuggerUrl)`. Synth registers it as a local (stdio) MCP server and
+`connectOverCDP(webSocketDebuggerUrl)`. The endpoint is per app instance, not per session
+(`remote_debugging_port` is a global `CefSettings`; Synth bind-probes 9300–9399 once): the server
+attaches to the instance endpoint and addresses each browser session as a page *target*, so the
+list/spawn-per-branch tools map branch sessions to target IDs — per-session ports were never available. Synth registers it as a local (stdio) MCP server and
 auto-registers on first run so a worktree's Claude sessions see it without setup — a `.mcp.json`
 written into each worktree scopes the tools to that worktree's browsers. Open-source
 reverse-engineered implementations of the browser-tool surface exist as references, but we present our
@@ -118,6 +121,35 @@ behind the `BrowserEngine` protocol, and — if we build directly on CEF — its
 from day one even though nothing consumes it yet. Get those right and stage two is *just the MCP server*;
 get them wrong and stage two is a rewrite.
 
+## What building it taught us (2026-07-05)
+
+Stage one is integrated and working in-app (CEF 144, SwiftPM ObjC++ shim, `external_message_pump`,
+async `SetAsChild` Alloy-style browsers — Chrome style is impossible for native-parent embedding on
+macOS). The integration hardened into constraints that bind all future engine work:
+
+- **Never rely on CEF's schedule callbacks alone to pump.** Chromium arms `OnScheduleMessagePumpWork`
+  edge-triggered: any manual `CefDoMessageLoopWork` outside a scheduled callback consumes the only
+  pending edge and permanently starves the pump (black view, CDP accepting TCP but never answering,
+  no callbacks). The required shape is cefclient's: coalesced dispatch for `delay <= 0` *plus* a
+  permanent ~30ms fallback timer driving `CefDoMessageLoopWork`.
+- **Synth owns SIGTERM/SIGINT.** `CefInitialize` installs Chromium's own SIGTERM handler, which
+  deadlocks under an external pump it doesn't drive. Synth takes the signals itself
+  (`DispatchSourceSignal` → `NSApp.terminate`) so the normal quit path runs: state save → browser
+  close → `CefShutdown` → helper reap → profile-dir removal. SIGKILL is covered without us:
+  Chromium's parent-death cleanup collects helpers in ~2s, and the next launch sweeps the orphaned
+  profile dir.
+- **Browser close completes via the CEF wrapper view's dealloc** (`WindowDestroyed`), never CEF's own
+  path: `DoClose` returning false makes CEF `performClose:` the browser's top-level NSWindow — the
+  app's own window. Teardown must drop the view inside a local autorelease pool.
+- **CDP is one port per app instance (9300–9399 bind-probed), not per session.**
+  `remote_debugging_port` is a global `CefSettings`; each browser session is a page target on the
+  shared endpoint. See the stage-two section for what this means for the MCP server's tools.
+- **The app must run from a bundle for CEF** — the framework and four helper apps resolve relative to
+  `Contents/`. `dev.sh` assembles a symlinked dev bundle; a bare-binary run gets the loud WKWebView
+  fallback (no CDP). The release bundle is ~309 MB, `--deep` ad-hoc signed.
+- **The sandbox is currently disabled** (`no_sandbox`; `cef_sandbox` needs cmake integration not wired
+  through SwiftPM). Acceptable for stage one; must be revisited before notarization/distribution.
+
 ## Consequences
 
 - The browser is its own subsystem with a Chromium/CEF engine, a bundle-size and notarization cost, and
@@ -129,6 +161,8 @@ get them wrong and stage two is a rewrite.
   requirement; any future shortcut that splits them (a headless agent browser, a detached window) breaks
   stage three and is out of bounds.
 - Distribution is Developer ID + notarization, not the Mac App Store.
+- Stage one ships with the Chromium sandbox disabled (`no_sandbox`). Wiring `cef_sandbox` through the
+  SwiftPM build is an open item that blocks notarization/distribution.
 
 ## References
 

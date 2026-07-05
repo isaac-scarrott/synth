@@ -139,3 +139,42 @@ event/context — same transport as stage two, no new machinery.
   The spike measured it better than expected locally: ~60fps into a SwiftUI window with click-through
   via `Input.dispatchMouseEvent`, in ~150 lines of dependency-free Swift CDP client.
   https://docs.browserless.io/baas/interactive-browser-sessions/hybrid-automation
+
+### Phase-1 implementation round (2026-07-05, branch `browser-working`)
+
+Stage one is integrated and working in the real app, not a spike host: SwiftPM ObjC++ shim
+(`CEFShim`) over CEF 144's C++ wrapper, framework dlopen'd from the bundle, `CefAppProtocol`
+grafted onto SwiftUI's `NSApplication` at runtime (the JCEF approach), browsers created async
+`SetAsChild` (Alloy style — confirmed: Chrome style is impossible for native-parent embedding on
+macOS), `external_message_pump`. What the integration added on top of the spike record:
+
+- **The external pump is edge-triggered and easily starved.** Chromium arms
+  `OnScheduleMessagePumpWork` via its work deduplicator; any manual `CefDoMessageLoopWork` outside
+  a scheduled callback (init and browser creation need it) consumes the only pending edge. On
+  CEF 144, after `CefInitialize`'s single `delay=0` callback CEF never scheduled again — black
+  view, CDP accepting TCP but never answering, zero callbacks. The fix is cefclient's proven
+  shape: coalesced dispatch for `delay <= 0` plus a permanent ~30ms fallback timer driving
+  `CefDoMessageLoopWork`. A schedule-only pump is a latent hang.
+- **Signals:** `CefInitialize` installs Chromium's own SIGTERM handler, which deadlocks under an
+  external pump it doesn't drive. Synth takes SIGTERM/SIGINT itself (`DispatchSourceSignal` →
+  `NSApp.terminate`) so the normal quit path (state save → browser close → `CefShutdown` → helper
+  reap → profile-dir removal) runs. SIGKILL: Chromium's parent-death cleanup collects helpers in
+  ~2s; the next launch sweeps the orphaned profile dir.
+- **Close:** on macOS the close completes via the CEF wrapper view's dealloc (`WindowDestroyed`).
+  `DoClose` returning false makes CEF `performClose:` the browser's top-level NSWindow — the app's
+  own window — so the embedder returns true and tears the view down itself, inside a local
+  autorelease pool (a pool-held reference stalls the browser's death until `CefShutdown`).
+- **One CDP port per app instance, not per session:** `remote_debugging_port` is a global
+  `CefSettings`; Synth bind-probes 9300–9399 once and every browser session is a page target on
+  the shared endpoint. Stage two's `--cdp-endpoint` therefore points at the instance, and sessions
+  are addressed by target ID.
+- **Bundle requirement:** the framework and four helper apps resolve relative to `Contents/`, so
+  CEF only runs from a bundle — `dev.sh` assembles a symlinked dev bundle; bare-binary runs get a
+  loud WKWebView fallback (no CDP). Release bundle is ~309 MB, `--deep` ad-hoc signed.
+- **Sandbox:** disabled for now (`no_sandbox`; `cef_sandbox` needs cmake integration not wired
+  through SwiftPM). Fine for stage one, a blocker for notarization/distribution.
+- **Same-surface contract re-demonstrated in-app:** a Playwright `connectOverCDP` client navigated
+  a session and the pane + sidebar tracked it live — the engine delegate fires for navigations the
+  app didn't initiate, exactly what the stage-two MCP server will cause.
+- **One deviation from the mock:** schemeless loopback entries normalize to `http://` (dev
+  servers); everything else gets `https://`.

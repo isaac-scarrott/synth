@@ -214,6 +214,7 @@ extension AppStore {
     func removeWorkspace(_ workspace: Workspace) {
         for session in workspace.branches.flatMap(\.sessions) {
             TerminalManager.shared.terminate(session.id)
+            BrowserManager.shared.terminate(session.id)
             if openSessionID == session.id { openSessionID = nil }
         }
         workspaces.removeAll { $0.id == workspace.id }
@@ -223,6 +224,7 @@ extension AppStore {
     func removeBranch(_ branch: Branch) {
         for session in branch.sessions {
             TerminalManager.shared.terminate(session.id)
+            BrowserManager.shared.terminate(session.id)
             if openSessionID == session.id { openSessionID = nil }
         }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
@@ -310,6 +312,8 @@ extension AppStore {
                                            run: { [weak self] in self?.newTerminal(in: b) }),
                                 MenuCreate(icon: Phosphor.sparkle, title: "New Claude Code",
                                            run: { [weak self] in self?.newClaude(in: b) }),
+                                MenuCreate(icon: Phosphor.globe, title: "New browser",
+                                           run: { [weak self] in self?.newBrowser(in: b) }),
                               ],
                               onDelete: { [weak self] in self?.removeBranch(b) })
         case let .session(s):

@@ -1,11 +1,11 @@
 import Foundation
 import Observation
 
-/// The kind of live thing running inside a branch. working.html's focused subset
-/// has exactly these two (browser/simulator are big-picture only).
+/// The kind of live thing running inside a branch.
 enum SessionKind: String, Sendable {
     case terminal
     case claudeCode
+    case browser
 }
 
 /// A session's derived status fact — the only session-level thing that reaches the
@@ -44,8 +44,11 @@ enum SessionStatus: Equatable, Sendable {
     /// socket (Hooks/synth-hook). A restored Claude row uses it to resume the conversation
     /// with `claude --resume <id>`. nil for terminals and not-yet-started Claude sessions.
     var claudeSessionID: String?
+    /// A browser session's current page (ADR-0011). Persisted so a restored browser reopens
+    /// its URL in a fresh engine; nil for non-browsers and a fresh "go to" home surface.
+    var browserURL: URL?
 
-    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, claudeSessionID: String? = nil) {
+    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, claudeSessionID: String? = nil, browserURL: URL? = nil) {
         self.id = id
         self.kind = kind
         self.title = title
@@ -53,6 +56,25 @@ enum SessionStatus: Equatable, Sendable {
         self.unread = unread
         self.titleIsCustom = titleIsCustom
         self.claudeSessionID = claudeSessionID
+        self.browserURL = browserURL
+    }
+}
+
+/// One entry of a branch's browser "Recent" list (working.html BROWSER_RECENTS): the full
+/// URL plus the page's last-seen title for the right-hand name column. Plain Codable value —
+/// shared by the runtime model and the persisted snapshot.
+struct BrowserRecent: Codable, Equatable, Sendable {
+    var url: String
+    var title: String
+}
+
+extension URL {
+    /// working.html's `browserHost`, tightened to host+path: what browser sessions are named
+    /// by and what the omnibox pill / recents show ("localhost:8733/palette", no scheme).
+    var browserHostPath: String {
+        var s = (host ?? "") + (port.map { ":\($0)" } ?? "") + path
+        while s.hasSuffix("/") { s.removeLast() }
+        return s.isEmpty ? absoluteString : s
     }
 }
 
@@ -64,13 +86,18 @@ enum SessionStatus: Equatable, Sendable {
     var worktreeURL: URL
     var sessions: [Session]
     var lastActivity: String   // cosmetic for now ("2h", "now")
+    /// The 5 most recent distinct URLs visited across this branch's browser sessions —
+    /// feeds the home surface / omnibox-dropdown "Recent" list. Empty until a browser
+    /// session navigates (working.html's static BROWSER_RECENTS, made real + persisted).
+    var browserRecents: [BrowserRecent]
 
-    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "") {
+    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", browserRecents: [BrowserRecent] = []) {
         self.id = id
         self.name = name
         self.worktreeURL = worktreeURL
         self.sessions = sessions
         self.lastActivity = lastActivity
+        self.browserRecents = browserRecents
     }
 
     /// A branch with sessions is a live "branch group": expandable, with a roll-up.

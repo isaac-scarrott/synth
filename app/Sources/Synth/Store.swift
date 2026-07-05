@@ -16,6 +16,15 @@ enum SessionEvent: Sendable {
     /// Claude Code reported its own session id (via the SessionStart hook) — stored so a
     /// restored row can resume the conversation with `claude --resume` (ADR-0010).
     case claudeSessionCaptured(UUID, String)
+    /// A browser session's address changed — every navigation, including ones the engine's
+    /// future CDP clients initiate (ADR-0011). Renames the row and feeds the branch recents.
+    case browserNavigated(UUID, URL)
+    /// The page's document title — names the recents entry, never the session row
+    /// (browser rows are named by URL, working.html's browserHost).
+    case browserPageTitled(UUID, String)
+    /// window.open / target=_blank: one page per session, so a popup becomes a NEW
+    /// browser session in the same branch, pre-navigated and selected.
+    case browserPopupRequested(UUID, URL)
 }
 
 /// The transient transport carrying derived facts to the single consumer (the store).
@@ -173,6 +182,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     init() {
         hookServer = HookServer(bus: bus)
         TerminalManager.shared.bus = bus
+        BrowserManager.shared.bus = bus
         TerminalManager.shared.hookSocketPath = hookServer.socketPath
         HookEnvironment.setup()
         hookServer.start()
@@ -198,7 +208,33 @@ enum ThemePref: String, CaseIterable, Identifiable {
         case let .markUnread(id): if openSessionID != id { session(id)?.unread = true }
         case let .claudeSessionCaptured(id, claudeID):
             if let s = session(id), s.claudeSessionID != claudeID { s.claudeSessionID = claudeID }
+        case let .browserNavigated(id, url):
+            guard let s = session(id) else { return }
+            s.browserURL = url
+            if !s.titleIsCustom { s.title = url.browserHostPath }
+            noteBrowserRecent(url, for: s)
+        case let .browserPageTitled(id, title):
+            // Attach the page title to the current URL's recents entry (the "name" column).
+            guard let s = session(id), let url = s.browserURL, !title.isEmpty,
+                  let br = branch(of: s),
+                  let i = br.browserRecents.firstIndex(where: { $0.url == url.absoluteString })
+            else { return }
+            if br.browserRecents[i].title != title { br.browserRecents[i].title = title }
+        case let .browserPopupRequested(id, url):
+            guard let s = session(id) else { return }
+            newBrowser(in: branch(of: s), at: url)
         }
+    }
+
+    /// Front of the branch's Recent list, deduped by URL (keeping the known title), capped at 5.
+    private func noteBrowserRecent(_ url: URL, for session: Session) {
+        guard let br = branch(of: session) else { return }
+        let key = url.absoluteString
+        var recents = br.browserRecents
+        let title = recents.first(where: { $0.url == key })?.title ?? ""
+        recents.removeAll { $0.url == key }
+        recents.insert(BrowserRecent(url: key, title: title), at: 0)
+        br.browserRecents = Array(recents.prefix(5))
     }
 
     // MARK: Lookups
@@ -359,6 +395,18 @@ enum ThemePref: String, CaseIterable, Identifiable {
         addSession(kind: .claudeCode, title: "Claude Code", status: .working, in: branch)
     }
 
+    /// A browser session (ADR-0011 stage one): titled "Browser" until it navigates, then
+    /// named by its page (host+path). `url` non-nil pre-navigates — the popup path. Running
+    /// from birth: opening it mounts the engine immediately.
+    @discardableResult
+    func newBrowser(in branch: Branch? = nil, at url: URL? = nil) -> Session? {
+        let session = addSession(kind: .browser,
+                                 title: url?.browserHostPath ?? "Browser",
+                                 status: .running, in: branch)
+        session?.browserURL = url
+        return session
+    }
+
     @discardableResult
     private func addSession(kind: SessionKind, title: String, status: SessionStatus, in branch: Branch?) -> Session? {
         guard let br = branch ?? defaultBranch() else { return nil }
@@ -373,6 +421,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     func closeSession(_ session: Session) {
         TerminalManager.shared.terminate(session.id)
+        BrowserManager.shared.terminate(session.id)
         for br in workspaces.flatMap(\.branches) {
             br.sessions.removeAll { $0.id == session.id }
         }
@@ -495,8 +544,10 @@ enum ThemePref: String, CaseIterable, Identifiable {
                             sessions: br.sessions.map { s in
                                 PersistedSession(id: s.id, kind: s.kind.rawValue, title: s.title,
                                                  titleIsCustom: s.titleIsCustom,
-                                                 claudeSessionID: s.claudeSessionID)
-                            })
+                                                 claudeSessionID: s.claudeSessionID,
+                                                 browserURL: s.browserURL)
+                            },
+                            browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents)
                     },
                     setupScript: wsScripts[ws.id],
                     claudeFlags: wsClaudeFlags[ws.id])
@@ -527,10 +578,11 @@ enum ThemePref: String, CaseIterable, Identifiable {
                 let sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
-                            claudeSessionID: ps.claudeSessionID)
+                            claudeSessionID: ps.claudeSessionID, browserURL: ps.browserURL)
                 }
                 return Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
-                              sessions: sessions, lastActivity: pb.lastActivity)
+                              sessions: sessions, lastActivity: pb.lastActivity,
+                              browserRecents: pb.browserRecents ?? [])
             }
             restored.append(Workspace(id: pw.id, name: pw.name, url: pw.url,
                                       branches: branches, colorIndex: pw.colorIndex))
@@ -575,7 +627,12 @@ enum ThemePref: String, CaseIterable, Identifiable {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.saveNow() }
+            MainActor.assumeIsolated {
+                self?.saveNow()
+                // Engines must not outlive the app: a surviving instance owns the profile
+                // singleton and silently absorbs the next launch (BrowserEngine.shutdown docs).
+                BrowserManager.shared.shutdownAll()
+            }
         }
     }
 

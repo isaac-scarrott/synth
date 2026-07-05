@@ -35,6 +35,9 @@ struct PersistedBranch: Codable {
     var worktreeURL: URL
     var lastActivity: String
     var sessions: [PersistedSession]
+    /// The branch's browser "Recent" list (≤5). Optional/omitted when empty so pre-browser
+    /// snapshots decode and an untouched branch adds no keys.
+    var browserRecents: [BrowserRecent]?
 }
 
 struct PersistedSession: Codable {
@@ -43,6 +46,9 @@ struct PersistedSession: Codable {
     var title: String
     var titleIsCustom: Bool
     var claudeSessionID: String?
+    /// A browser session's current page — a restored row reopens it in a fresh engine
+    /// (ADR-0011; same reconstruction model as `claude --resume`).
+    var browserURL: URL?
 }
 
 /// Reads and writes the state snapshot under Application Support. Atomic writes with a

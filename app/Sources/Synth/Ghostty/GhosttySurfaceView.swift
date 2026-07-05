@@ -94,7 +94,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         case .claudeCode:
             let extra = claudeFlags.isEmpty ? "" : " " + claudeFlags
             initialInput = resumeClaudeID.map { "claude --resume \(Self.shellQuote($0))\(extra)\n" } ?? "claude\(extra)\n"
-        case .terminal:
+        case .terminal, .browser:   // a browser session never hosts a PTY (BrowserPane owns it)
             initialInput = nil
         }
 

@@ -207,6 +207,9 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code",
                                      group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newClaude(in: branch) } }))
+            items.append(PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser",
+                                     group: g, ctx: branch.name,
+                                     enter: { self.runAndClose { self.store.newBrowser(in: branch) } }))
         }
         if let workspace {
             items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
@@ -397,6 +400,8 @@ struct PaletteFrame {
                             enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
                 PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code", sec: "act",
                             enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
+                PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser", sec: "act",
+                            enter: { self.runAndClose { self.store.newBrowser(in: branch) } }),
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(branch.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.branch(branch))) }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(branch.name)", sec: "act",
@@ -521,6 +526,8 @@ struct PaletteFrame {
                             enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
                 PaletteItem(icon: .session(.claudeCode), label: "New Claude Code", ctx: branch.name,
                             enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
+                PaletteItem(icon: .session(.browser), label: "New browser", ctx: branch.name,
+                            enter: { self.runAndClose { self.store.newBrowser(in: branch) } }),
             ]
         }
     }

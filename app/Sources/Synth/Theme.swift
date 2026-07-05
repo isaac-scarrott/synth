@@ -31,6 +31,7 @@ enum Theme {
     static let inkOpen      = dyn(0x2C2C30, 0xEAEAEE)   // open session name
     static let menuIcon     = dyn(0x7A7A80, 0xA1A1A8)   // popover item icons
     static let termBg       = dyn(0x1B1B1E, 0x131315)   // code editor surface (Settings)
+    static let chrome       = dyn(0xF6F6F7, 0x242427)   // browser toolbar (--chrome)
     static let tuiBg        = dyn(0xF4F2EC, 0x131315)   // terminal card: light "paper" / dark card
     static let tuiHair      = mono(0.13, 0.06)          // terminal card inset hairline
     static let paletteActive = dyn(0x0A5FD6, 0x6BA9FF)  // ⌘K active-row label
@@ -115,12 +116,13 @@ extension SessionKind {
         switch self {
         case .terminal:   return Phosphor.terminal
         case .claudeCode: return Phosphor.sparkle
+        case .browser:    return Phosphor.globe
         }
     }
     var tint: Color {
         switch self {
         case .claudeCode: return Theme.claude
-        case .terminal:   return Theme.sessionIcon
+        case .terminal, .browser: return Theme.sessionIcon
         }
     }
 }

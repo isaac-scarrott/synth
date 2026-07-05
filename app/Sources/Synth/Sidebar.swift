@@ -365,7 +365,7 @@ private struct BranchRow: View {
                                 .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
                                 .lineLimit(1).truncationMode(.middle)
                             Spacer(minLength: 4)
-                            BranchRollup(branch: branch).opacity(revealed ? 0 : 1)
+                            BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
                         }
                         // Right pad 10→8 so the branch indicator shares one vertical axis
                         // with the workspace count and session dots (working.html .branch).
@@ -609,13 +609,21 @@ private struct StatusIndicator: View {
 
 private struct BranchRollup: View {
     let branch: Branch
+    // Expanded, every session shows its own indicator inside, so the state roll-up
+    // glyph beside the header is redundant and can read as out of sync — drop it
+    // while expanded (working.html `.repo--open > .branch--group .branch__roll .ind`).
+    // The activity meta isn't an indicator and stays.
+    var collapsed: Bool
     var body: some View {
         Group {
             switch branch.rollup {
-            case .input: AttentionGlyph(state: .input).attnBreathe()
-            case .error: AttentionGlyph(state: .error)
-            case .work:  Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
-            case .run:   Dot(color: Theme.run, halo: true)
+            case .input where collapsed: AttentionGlyph(state: .input).attnBreathe()
+            case .error where collapsed: AttentionGlyph(state: .error)
+            case .work  where collapsed: Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
+            case .run   where collapsed: Dot(color: Theme.run, halo: true)
+            // A live state while expanded: the sessions carry their own indicators,
+            // so nothing rolls up to the header.
+            case .input, .error, .work, .run: EmptyView()
             case .idle, .none:
                 if !branch.lastActivity.isEmpty {
                     Text(branch.lastActivity)

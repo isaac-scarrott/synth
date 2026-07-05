@@ -57,6 +57,20 @@ enum TerminalLauncher {
     /// shell. Used to move first-responder focus onto an open terminal (⌘1).
     func existingView(_ id: UUID) -> GhosttySurfaceView? { views[id] }
 
+    /// Feed `text` into a session's PTY as pasted input, then press Enter to submit —
+    /// how a browser comment reaches the branch's Claude Code session (ADR-0011 stage
+    /// three). The Enter trails by a beat so the TUI finishes ingesting the paste
+    /// before it sees the submit. False when the session has no live terminal.
+    @discardableResult
+    func submit(_ text: String, to id: UUID) -> Bool {
+        guard let view = views[id] else { return false }
+        view.sendPaste(text)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            view.sendTypedText("\r")
+        }
+        return true
+    }
+
     func terminate(_ id: UUID) {
         views[id]?.close()
         views[id] = nil

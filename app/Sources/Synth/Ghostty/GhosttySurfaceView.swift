@@ -195,6 +195,23 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         return super.resignFirstResponder()
     }
 
+    // MARK: Programmatic input (browser comment delivery, ADR-0011 stage three)
+
+    /// Write text to the PTY through the paste path — bracketed paste when the running
+    /// app enabled mode 2004 (Claude Code does), so embedded newlines stay literal
+    /// input instead of submitting line by line.
+    func sendPaste(_ text: String) {
+        guard let surface else { return }
+        text.withCString { ghostty_surface_text(surface, $0, UInt(text.utf8.count)) }
+    }
+
+    /// Write text as committed *typed* input (never bracketed) — a "\r" here is a real
+    /// Enter to the app, which the paste path would swallow into the bracket.
+    func sendTypedText(_ text: String) {
+        guard let surface else { return }
+        text.withCString { ghostty_surface_text_input(surface, $0, UInt(text.utf8.count)) }
+    }
+
     // MARK: Keyboard
 
     override func keyDown(with event: NSEvent) {

@@ -112,8 +112,48 @@ final class ControlServer: @unchecked Sendable {
             // the engine; callers poll CDP for the target, so the beat is invisible.
             return ["ok": true, "sessionId": session.id.uuidString]
 
+        // Automation verbs (SYNTH_AUTOMATION=1 only): the self-verify harness's
+        // stand-in for driving the real UI on machines whose TCC denies synthetic
+        // input. Each maps 1:1 onto the exact call the UI performs — no separate
+        // logic — so exercising a verb exercises the product path.
+        case "automation.newClaude" where automation:
+            guard let session = store.newClaude(in: branch) else {
+                return ["ok": false, "error": "session creation failed"]
+            }
+            return ["ok": true, "sessionId": session.id.uuidString]
+
+        case "automation.commentMode" where automation:
+            guard let session = requestedSession(request, in: branch), session.kind == .browser,
+                  let ctrl = BrowserManager.shared.controller(for: session) else {
+                return ["ok": false, "error": "no browser session/controller for sessionId"]
+            }
+            ctrl.toggleCommentMode(store: store)   // the bar button's exact call
+            return ["ok": true]
+
+        case "automation.state" where automation:
+            guard let session = requestedSession(request, in: branch),
+                  let ctrl = BrowserManager.shared.existing(session.id) else {
+                return ["ok": false, "error": "no browser controller for sessionId"]
+            }
+            return ["ok": true,
+                    "commentModeActive": ctrl.commentMode?.active ?? false,
+                    "targetTitle": ctrl.commentMode?.targetTitle ?? "",
+                    "notice": ctrl.commentMode?.notice ?? ""]
+
         default:
             return ["ok": false, "error": "unknown verb \(verb)"]
         }
+    }
+
+    private static var automation: Bool {
+        ProcessInfo.processInfo.environment["SYNTH_AUTOMATION"] == "1"
+    }
+
+    @MainActor private static func requestedSession(_ request: [String: Any],
+                                                    in branch: Branch) -> Session? {
+        guard let sid = (request["sessionId"] as? String).flatMap(UUID.init(uuidString:)) else {
+            return nil
+        }
+        return branch.sessions.first { $0.id == sid }
     }
 }

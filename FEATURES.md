@@ -819,3 +819,52 @@ re-gate-verified: tool text capped at 40k chars (a 30k-element page snapshot was
 ANSI stripped from errors, control socket unlinked on quit. Known minor: browser_create's 15s
 target-mapping poll can warn spuriously under load (session still works); watch-item: one
 unreproduced spontaneous instance exit during heavy concurrent probing.
+
+## 2026-07-05 — Browser session, stage three: user comments flow to Claude as located context (ADR-0011)
+
+The two-way mode. The user turns on comment mode in a browser session, selects an element on the
+live page and leaves a comment; it reaches the branch's Claude Code session as a composed message
+with screenshots and located context, and Claude acts on it — the same visible surface, no headless
+twin, no new transport.
+
+- **The contract (host ↔ page overlay).** Binding `window.__synthComment`; the page calls it with
+  `JSON.stringify(payload)` where payload = `{type:"comment"|"exitMode", url, title, selector, xpath,
+  rect:{x,y,width,height,scrollX,scrollY,dpr}, elementHTML(≤2000), elementText(≤500), comment,
+  reactSource:{fileName,lineNumber,columnNumber}|null}` (rect in viewport CSS coords). The overlay
+  ships at `app/Sources/Synth/Resources/CommentOverlay.js` and exposes
+  `window.__synthOverlay = { enter(cfg), exit() }` (cfg `{targetLabel}`). A parallel slice builds the
+  real selection UI; this slice ships a logging stub at that path that the real file replaces at
+  integration (identical path, no other coupling).
+- **Host wiring (CDP, four calls).** `CDPClient.swift` — minimal CDP over URLSessionWebSocketTask,
+  per-target socket (flat attach: `GET /json/list`, match `window.__synthSessionId`, connect to the
+  target's `webSocketDebuggerUrl` — no Target multiplexing). `CommentMode.swift` — per browser
+  session: `Runtime.addBinding` + `Runtime.bindingCalled` (page→host, zero networking),
+  `Page.addScriptToEvaluateOnNewDocument` (overlay on every future document) plus a `Runtime.evaluate`
+  for the current one, `Page.captureScreenshot` clipped to the padded element rect (±24px, clamped)
+  and a full-viewport shot. **World: main world, not isolated** — the payload's `reactSource` reads
+  React's fiber `__source` off DOM expandos, invisible to an isolated world, and main-world keeps the
+  binding target-wide with no executionContextId bookkeeping.
+- **Located context.** Screenshots saved to `~/Library/Application Support/Synth/comments/<sessionId>/
+  <ts>-{element,viewport}.png`; the message names host+path, selector, size/position, React source
+  (when present), whitespace-collapsed elementHTML (≤400), both screenshot paths, and the comment,
+  closing with "Please address this feedback in the code."
+- **Delivery.** The branch's most-active Claude Code session (working/needsInput/running first, else
+  any) receives the message through its PTY — `TerminalManager.submit` pastes via
+  `ghostty_surface_text` then a trailing `\r` (`ghostty_surface_text_input`) to submit. No Claude
+  session in the branch → a transient in-pane notice, comment dropped (v1, no queue).
+- **UI.** A comment-mode toggle in the browser bar (phosphor chat-circle-dots), left of DevTools,
+  disabled on home, active-highlight while on, with a "→ <Claude title>" target chip; ⌘K exposes
+  Enter/Exit comment mode on a focused browser session. Esc exits (and the overlay's own `exitMode`
+  binding call flips the button off through the same path). The page keeps its keys — no focus theft.
+- **Verified (synthesized page side, no overlay needed).** Twice consecutively: `typeof
+  window.__synthComment === "function"` on the page target; a synthetic comment payload produced two
+  decodable PNGs (element clip = the padded button, full viewport) and a delivery log line; `exitMode`
+  and the toggle both flipped the mode off; navigating while on kept the binding alive on the new
+  page. Load-bearing check passed end-to-end: a real `claude` session received "make this button
+  blue", and its own image-cache holds a screenshot of the now-blue button plus a git edit adding
+  `background:#1d4ed8` — Claude read the located context, acted, and self-verified. `swift build`
+  clean, `./dev.sh --check` PASS, clean SIGTERM teardown. Automation seam: `ControlServer` gains
+  `automation.newClaude` / `automation.commentMode` / `automation.state` verbs, gated on
+  `SYNTH_AUTOMATION=1`, each calling the exact UI path — the harness's stand-in on machines whose TCC
+  denies synthetic keystrokes. Note: window-buffer screenshots fail for an off-active-Space window on
+  this host, so terminal-pane capture was substituted by the transcript/image-cache/git evidence.

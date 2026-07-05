@@ -310,8 +310,10 @@ private struct WorkspaceRow: View {
 
     @ViewBuilder private var trailing: some View {
         if !isOpen {
-            HStack(spacing: 6) {
-                if let a = workspace.attention { AttentionGlyph(state: a) }
+            HStack(spacing: 8) {
+                // .id(a) — a single branch hosts both states here, so force a fresh
+                // slot identity on input↔error swaps to replay the entry pop.
+                if let a = workspace.attention { Ind { AttentionGlyph(state: a) }.id(a) }
                 Text("\(workspace.branches.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.repoCount).monospacedDigit()
@@ -600,21 +602,41 @@ private struct Monogram: View {
     }
 }
 
+/// working.html `.ind` — every right-side indicator lives in one fixed 16×16 slot,
+/// contents centered, so every indicator shares one vertical axis down the whole
+/// sidebar regardless of glyph size (6px dot, 15px `?`/`!`).
+/// The slot pops in with a soft overshoot (ind-in, 240ms back-out) whenever it
+/// appears or swaps state — a state swap lands as a new view identity (a different
+/// switch branch, or `.id`) so the pop retriggers, like the HTML replacing the node.
+private struct Ind<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .scaleEffect(reduceMotion || shown ? 1 : 0.4)
+            .opacity(reduceMotion || shown ? 1 : 0)
+            // cubic-bezier(0.34,1.56,0.64,1) ≈ a lightly under-damped 240ms spring.
+            .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.6), value: shown)
+            .onAppear { shown = true }
+            .frame(width: 16, height: 16)
+    }
+}
+
 private struct StatusIndicator: View {
     let status: SessionStatus
     var body: some View {
-        Group {
-            switch status {
-            case .running: Dot(color: Theme.run, halo: true)
-            // Idle and clean exit carry no liveness — a grey dot there is just noise, so
-            // they show nothing. Unread still surfaces via the blue gutter bullet.
-            case .idle, .exited: EmptyView()
-            case .working: Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
-            case .needsInput: AttentionGlyph(state: .input).attnBreathe()
-            case .error:      AttentionGlyph(state: .error)
-            }
+        switch status {
+        case .running: Ind { Dot(color: Theme.run) }
+        // Idle and clean exit carry no liveness — a grey dot there is just noise, so
+        // the slot stays empty (it still reserves its 16px so row height and the hover
+        // swap hold steady). Unread still surfaces via the blue gutter bullet.
+        case .idle, .exited: Ind { Color.clear }
+        case .working: Ind { Dot(color: Theme.working).sdotPulse() }
+        case .needsInput: Ind { AttentionGlyph(state: .input) }
+        case .error:      Ind { AttentionGlyph(state: .error) }
         }
-        .frame(width: 16, height: 16)
     }
 }
 
@@ -626,43 +648,42 @@ private struct BranchRollup: View {
     // The activity meta isn't an indicator and stays.
     var collapsed: Bool
     var body: some View {
-        Group {
-            switch branch.rollup {
-            case .input where collapsed: AttentionGlyph(state: .input).attnBreathe()
-            case .error where collapsed: AttentionGlyph(state: .error)
-            case .work  where collapsed: Dot(color: Theme.working, halo: true, haloOpacity: 0.16).sdotPulse()
-            case .run   where collapsed: Dot(color: Theme.run, halo: true)
-            // A live state while expanded: the sessions carry their own indicators,
-            // so nothing rolls up to the header.
-            case .input, .error, .work, .run: EmptyView()
-            case .idle, .none:
-                if !branch.lastActivity.isEmpty {
-                    Text(branch.lastActivity)
-                        .font(.system(size: 10.5)).foregroundStyle(Theme.branchMeta).monospacedDigit()
-                }
+        switch branch.rollup {
+        case .input where collapsed: Ind { AttentionGlyph(state: .input) }
+        case .error where collapsed: Ind { AttentionGlyph(state: .error) }
+        case .work  where collapsed: Ind { Dot(color: Theme.working).sdotPulse() }
+        case .run   where collapsed: Ind { Dot(color: Theme.run) }
+        // A live state while expanded: the sessions carry their own indicators,
+        // so nothing rolls up to the header.
+        case .input, .error, .work, .run: EmptyView()
+        case .idle, .none:
+            if !branch.lastActivity.isEmpty {
+                Text(branch.lastActivity)
+                    .font(.system(size: 10.5)).foregroundStyle(Theme.branchMeta).monospacedDigit()
             }
         }
-        .frame(minWidth: 16, alignment: .trailing)
     }
 }
 
 private struct AttentionGlyph: View {
     let state: RollupState
     var body: some View {
-        Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
+        // Breathe lives on the glyph, not the slot, so it composes under the slot's
+        // entry pop (working.html: attn-breathe on the svg inside .ind--input).
+        let glyph = Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
             .foregroundStyle(state == .input ? Theme.attention : Theme.danger)
+        if state == .input { glyph.attnBreathe() } else { glyph }
     }
 }
 
+/// working.html `.sdot` — 6px liveness dot with a colour-matched soft round glow;
+/// the two blurred box-shadow layers map to two stacked SwiftUI shadows.
 private struct Dot: View {
     let color: Color
-    var halo: Bool = false
-    var haloOpacity: Double = 0.15
     var body: some View {
         Circle().fill(color).frame(width: 6, height: 6)
-            .background(
-                halo ? Circle().fill(color.opacity(haloOpacity)).frame(width: 11, height: 11) : nil
-            )
+            .shadow(color: color.opacity(0.55), radius: 1.5)
+            .shadow(color: color.opacity(0.3), radius: 4)
     }
 }
 

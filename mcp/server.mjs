@@ -50,15 +50,43 @@ function liveInstances() {
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
-/** The Synth instance whose worktreePaths contain the project dir, else the
- *  newest live instance, else null. */
-function findInstance() {
-  const instances = liveInstances();
+/** The managed worktree this server is scoped to: an exact worktreePaths match,
+ *  else the DEEPEST managed ancestor (agents run in nested `.worktree/<slice>`
+ *  checkouts inside a managed root — their browsers belong to the enclosing row).
+ *  null when nothing manages the project dir. */
+function resolveScope() {
   const target = realpathOr(projectDir);
-  const managing = instances.find((i) =>
-    (i.worktreePaths || []).some((p) => realpathOr(p) === target));
-  if (managing) return managing;
-  return instances.sort((a, b) =>
+  let best = null; // { inst, path, exact }
+  for (const inst of liveInstances()) {
+    for (const p of inst.worktreePaths || []) {
+      const rp = realpathOr(p);
+      if (rp === target) return { inst, path: p, exact: true };
+      if ((target + "/").startsWith(rp + "/") &&
+          (!best || rp.length > realpathOr(best.path).length)) {
+        best = { inst, path: p, exact: false };
+      }
+    }
+  }
+  return best;
+}
+
+function requireScope() {
+  const scope = resolveScope();
+  if (!scope) {
+    requireInstance(); // no Synth at all → that error is the clearer one
+    throw new Error(
+      `no Synth branch manages this worktree (${projectDir}) or any parent of it — ` +
+      "adopt it in Synth via ⌘K → \"New worktree\" (it reuses an existing checkout), then retry.");
+  }
+  return scope;
+}
+
+/** The Synth instance scoped to the project dir, else the newest live instance,
+ *  else null. */
+function findInstance() {
+  const scope = resolveScope();
+  if (scope) return scope.inst;
+  return liveInstances().sort((a, b) =>
     String(b.createdAt).localeCompare(String(a.createdAt)))[0] ?? null;
 }
 
@@ -176,15 +204,25 @@ async function sessionPages(inst) {
 let focusedSessionId = null;
 
 /** The page subsequent tools act on: the focused session's target, defaulting to
- *  the most recently created mapped target. */
+ *  the most recently created mapped target only when nothing was ever focused.
+ *  A vanished focus is an ERROR, not a silent retarget — acting on whatever page
+ *  happens to be newest is how an agent wrecks the wrong session. */
 async function focusedPage(inst) {
   const pages = await sessionPages(inst);
   const mapped = pages.filter((p) => p.sessionId);
   if (mapped.length === 0) {
     throw new Error("no Synth browser sessions are open — create one with browser_create");
   }
-  const hit = focusedSessionId && mapped.find((p) => p.sessionId === focusedSessionId);
-  const chosen = hit || mapped[mapped.length - 1];
+  if (focusedSessionId) {
+    const hit = mapped.find((p) => p.sessionId === focusedSessionId);
+    if (hit) return hit.page;
+    const gone = focusedSessionId;
+    focusedSessionId = null;
+    throw new Error(
+      `the focused browser session (${gone}) is gone — deleted or closed. ` +
+      "Call browser_list, then browser_focus (or browser_create) to pick a target.");
+  }
+  const chosen = mapped[mapped.length - 1];
   focusedSessionId = chosen.sessionId;
   return chosen.page;
 }
@@ -207,14 +245,26 @@ async function settle(page, ms = 3000) {
   await page.waitForLoadState("load", { timeout: ms }).catch(() => {});
 }
 
-const text = (s) => ({ content: [{ type: "text", text: s }] });
+/** One heavy page must not blow a Claude session's context: a 30k-element page
+ *  snapshots to ~1.5M chars (~400K tokens) uncapped. */
+const MAX_TEXT = 40_000;
+const text = (s) => {
+  const str = String(s);
+  if (str.length <= MAX_TEXT) return { content: [{ type: "text", text: str }] };
+  return { content: [{ type: "text", text:
+    str.slice(0, MAX_TEXT) +
+    `\n…[truncated ${str.length - MAX_TEXT} of ${str.length} chars — narrow the query: ` +
+    "a tighter selector/expression, or evaluate over a page region]" }] };
+};
+
+const stripAnsi = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "");
 
 function tool(name, description, inputSchema, handler) {
   server.registerTool(name, { description, ...(inputSchema && { inputSchema }) },
     async (args) => {
       try { return await handler(args ?? {}); }
       catch (e) {
-        return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${stripAnsi(e.message)}` }], isError: true };
       }
     });
 }
@@ -228,9 +278,10 @@ tool("browser_list",
   "List this worktree's Synth browser sessions (sessionId, title, url, branch).",
   null,
   async () => {
-    const inst = requireInstance();
-    const res = await controlCall(inst, { verb: "browser.list", worktreePath: projectDir });
-    return text(JSON.stringify(res.sessions, null, 2));
+    const scope = requireScope();
+    const res = await controlCall(scope.inst, { verb: "browser.list", worktreePath: scope.path });
+    const note = scope.exact ? "" : `\n(scoped to enclosing managed worktree ${scope.path})`;
+    return text(JSON.stringify(res.sessions, null, 2) + note);
   });
 
 tool("browser_create",
@@ -238,9 +289,9 @@ tool("browser_create",
   "sidebar, selected), optionally pre-navigated to a URL. Focuses the new session.",
   { url: z.string().optional().describe("URL to open (scheme optional)") },
   async ({ url }) => {
-    const inst = requireInstance();
-    const res = await controlCall(inst, {
-      verb: "browser.create", worktreePath: projectDir,
+    const scope = requireScope();
+    const res = await controlCall(scope.inst, {
+      verb: "browser.create", worktreePath: scope.path,
       ...(url && { url: normalizeURL(url) }),
     });
     focusedSessionId = res.sessionId;

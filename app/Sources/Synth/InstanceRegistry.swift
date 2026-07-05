@@ -37,6 +37,10 @@ import Foundation
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { _ in
             MainActor.assumeIsolated { InstanceRegistry.shared.removeFile() }
+            // The control socket file outlives close(fd); a clean quit shouldn't
+            // litter /tmp (the next bind unlinks its own path, but stale socks confuse
+            // humans and sweeps).
+            unlink(Self.controlSocketPath)
         }
     }
 

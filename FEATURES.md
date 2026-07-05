@@ -806,3 +806,16 @@ worktree's browser sessions — the same visible surface the user sees, never a 
   nested inside that pump could re-enter BrowserManager and build a duplicate engine (two CDP targets
   claiming one session). Guarded with an in-flight set; the control verb relies on the pane's proven
   mount path instead of forcing the engine itself.
+
+## 2026-07-05 — Stage two gate-verified: a real Claude session drove the browser (ADR-0011)
+
+Independent gate, 7/7 PASS: scripted MCP client exercised all 13 tools end-to-end; a live
+`claude -p` session (project-scoped `.mcp.json`, `mcp__synth-browser__*` allowed) created a browser,
+navigated, screenshotted, and reported the page title correctly while the pane/sidebar tracked every
+step; scoping isolated worktrees' sessions; teardown left nothing. Gate findings fixed and
+re-gate-verified: tool text capped at 40k chars (a 30k-element page snapshot was ~1.5M), nested
+`.worktree/<slice>` checkouts auto-scope to their deepest managed ancestor (unmanaged paths get a
+⌘K "New worktree" adoption hint), a vanished focused session errors instead of silently retargeting,
+ANSI stripped from errors, control socket unlinked on quit. Known minor: browser_create's 15s
+target-mapping poll can warn spuriously under load (session still works); watch-item: one
+unreproduced spontaneous instance exit during heavy concurrent probing.

@@ -70,9 +70,11 @@ private struct SessionPane: View {
 
     // A session — terminal or Claude Code — is backed by a PTY running in its worktree;
     // Claude Code just runs `claude` inside it. The kind drives the sidebar/head visual,
-    // not what the pane shows.
+    // not what the pane shows. A browser session hosts an engine instead of a PTY.
     @ViewBuilder private var paneBody: some View {
-        if let cwd = store.cwd(for: session) {
+        if session.kind == .browser {
+            BrowserPane(session: session)
+        } else if let cwd = store.cwd(for: session) {
             let flags = store.claudeFlags(for: store.branch(of: session).flatMap { store.workspace(of: $0) })
             TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd, claudeFlags: flags))
         } else {

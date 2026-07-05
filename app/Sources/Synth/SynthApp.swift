@@ -236,6 +236,8 @@ struct RootView: View {
             }
             if let fr = event.window?.firstResponder {
                 if fr is GhosttySurfaceView || fr is NSText || fr is NSTextView { return event }
+                // A focused browser page keeps its keys too (Space/Enter act in the page).
+                if BrowserManager.shared.ownsFirstResponder(fr) { return event }
             }
             // Ctrl+K also opens the palette when closed (only outside text/terminal focus,
             // so the shell keeps its own Ctrl+K).

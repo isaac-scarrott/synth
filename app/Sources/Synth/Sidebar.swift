@@ -825,11 +825,15 @@ struct SidebarResizeHandle: View {
 /// Move focus into the content pane: make the open session's terminal first responder
 /// so the shell takes keys (working.html's focusContent). An AI session has no terminal
 /// yet, so this is a no-op there for now — the composer is a forward-looking fallback.
+/// A browser session focuses its engine view (the page takes keys).
 @MainActor func focusContent(_ store: AppStore) {
     store.keyboardActive = false
-    guard let id = store.openSessionID,
-          let view = TerminalManager.shared.existingView(id) else { return }
-    NSApp.keyWindow?.makeFirstResponder(view)
+    guard let id = store.openSessionID else { return }
+    if let view = TerminalManager.shared.existingView(id) {
+        NSApp.keyWindow?.makeFirstResponder(view)
+    } else if let ctrl = BrowserManager.shared.existing(id) {
+        NSApp.keyWindow?.makeFirstResponder(ctrl.engine.view)
+    }
 }
 
 /// The mock's `.icon-btn`: 26×26, radius 7, hover 5% bg, press scale 0.94.

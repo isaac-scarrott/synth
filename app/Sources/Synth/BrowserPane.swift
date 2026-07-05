@@ -126,6 +126,9 @@ import AppKit
 
 extension BrowserSessionController: BrowserEngineDelegate {
     func engine(_ engine: BrowserEngine, addressDidChange url: URL) {
+        // CEF idles on about:blank behind the home surface (an engine needs a URL at
+        // creation); that's not a navigation — home stays until a real one.
+        if address == nil && url.absoluteString == "about:blank" { return }
         address = url
         bus?.post(.browserNavigated(sessionID, url))
     }

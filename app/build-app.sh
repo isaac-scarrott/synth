@@ -6,6 +6,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 ./vendor/fetch-ghostty.sh
+if ./vendor/fetch-cef.sh; then
+  HAS_CEF=true
+else
+  echo "warning: CEF assets unavailable — bundling without the browser engine" >&2
+  HAS_CEF=false
+fi
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)"
 APP="build/Synth.app"
@@ -34,7 +40,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+if $HAS_CEF; then
+  ./vendor/bundle-cef.sh "$APP" "$BIN" copy
+fi
+
 # Ad-hoc sign so the bundled app runs without Gatekeeper nagging on this machine.
+# --deep also covers the CEF framework and the four helper apps.
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 echo "Built $APP  —  run it with:  open $(pwd)/$APP"

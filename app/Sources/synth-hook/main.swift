@@ -86,6 +86,10 @@ func buildSettingsJSON(userSettings: String?) -> String {
         if let timeout { h["timeout"] = timeout }
         return ["hooks": [h]]
     }
+    // A `*`-matched tool hook (any tool), for the post-execution "back to working" signals.
+    func toolHook(_ event: String) -> [String: Any] {
+        ["matcher": "*", "hooks": [["type": "command", "command": "\(q) event \(event)"]]]
+    }
     let hooks: [String: Any] = [
         "SessionStart":     [hook("SessionStart")],
         "UserPromptSubmit": [hook("UserPromptSubmit")],
@@ -100,6 +104,13 @@ func buildSettingsJSON(userSettings: String?) -> String {
         // tools that always block on the user directly.
         "PreToolUse": [["matcher": "AskUserQuestion|ExitPlanMode",
                         "hooks": [["type": "command", "command": "\(q) event PreToolUse"]]]],
+        // A tool finishing means Claude is unblocked and actively working again — this is
+        // what clears `needsInput` after the user answers a question, approves a plan, or
+        // grants a permission (none of which have a dedicated "resumed" hook). Matching every
+        // tool also self-heals a dropped/reordered signal: the next tool call re-asserts
+        // `working`. ~4ms per call, dwarfed by tool + model latency.
+        "PostToolUse":        [toolHook("PostToolUse")],
+        "PostToolUseFailure": [toolHook("PostToolUseFailure")],
     ]
     var settings: [String: Any] = [
         "hooks": hooks,
@@ -169,13 +180,17 @@ func runEvent(name: String) -> Never {
     case "SessionStart":     signal = "claude-start"
     case "SessionEnd":       signal = "claude-end"
     case "UserPromptSubmit": signal = "working"
+    // A tool completing (or failing) means the user has answered / approved and Claude is
+    // running again — clears whatever `needsInput` the preceding PreToolUse/PermissionRequest set.
+    case "PostToolUse", "PostToolUseFailure": signal = "working"
     case "Stop":             signal = "idle"
     case "StopFailure":      signal = "error"
     case "PermissionRequest", "PreToolUse":
         signal = "needsInput"
     case "Notification":
         let type = payload["notification_type"] as? String ?? ""
-        signal = ["permission_prompt", "idle_prompt", "agent_needs_input"].contains(type) ? "needsInput" : nil
+        // elicitation_dialog: an MCP server is prompting the user mid-tool — also a block.
+        signal = ["permission_prompt", "idle_prompt", "agent_needs_input", "elicitation_dialog"].contains(type) ? "needsInput" : nil
     default:
         signal = nil
     }

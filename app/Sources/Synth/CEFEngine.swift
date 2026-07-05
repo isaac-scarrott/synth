@@ -14,6 +14,7 @@ final class BrowserProcessSupervisor {
     private var initialized = false
     private var instanceRoot: URL?
     private var terminationObserver: NSObjectProtocol?
+    private var signalSources: [DispatchSourceSignal] = []
 
     /// Roots live per app instance (instance-<pid>) because Chromium's process
     /// singleton is per cache root: two Synth instances sharing one root would make
@@ -65,6 +66,24 @@ final class BrowserProcessSupervisor {
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { _ in
             MainActor.assumeIsolated { BrowserProcessSupervisor.shared.shutdownNow() }
+        }
+
+        // willTerminate never fires for bare signals, and CefInitialize installed
+        // Chromium's own SIGTERM handler, which posts shutdown to the browser UI
+        // thread and exits Chromium's way — bypassing state save, CefShutdown, and
+        // profile cleanup. Take the signals ourselves (SIG_IGN replaces Chromium's
+        // handler; DispatchSource delivers on main) and route them through the
+        // normal quit path, so the observer above and the store's save both run.
+        //
+        // SIGKILL needs no belt-and-braces here: Chromium's parent-death cleanup
+        // collects all helpers within ~2s of the browser process dying (verified),
+        // and the next launch's sweepDeadInstances() removes the orphaned profile dir.
+        for sig in [SIGTERM, SIGINT] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { NSApp.terminate(nil) }
+            source.resume()
+            signalSources.append(source)
         }
     }
 

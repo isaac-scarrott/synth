@@ -329,7 +329,7 @@
   .msg__body li { margin: 3px 0; }
   .msg__body code { font-family: var(--mono); font-size: 12px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
   .msg--work .msg__body { color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
-  .work-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--work); box-shadow: 0 0 0 2.5px rgba(245,166,35,0.16); animation: sdot-pulse 1.5s var(--ease-in-out) infinite; flex-shrink: 0; }
+  .work-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--work); box-shadow: 0 0 3px rgba(245,166,35,0.55), 0 0 8px 2px rgba(245,166,35,0.32); animation: sdot-pulse 1.5s var(--ease-in-out) infinite; flex-shrink: 0; }
 
   .chat__composer {
     flex-shrink: 0;
@@ -724,6 +724,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    /* every indicator pops in with a soft overshoot when its slot appears or swaps state
+       (state swaps replace the whole .ind node, so this retriggers) */
+    animation: ind-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
   }
   .ind svg { width: 15px; height: 15px; display: block; }
 
@@ -735,17 +738,18 @@
   }
   .sdot--run {
     background: var(--run);
-    box-shadow: 0 0 0 2.5px rgba(52, 199, 89, 0.15);
+    box-shadow: 0 0 3px rgba(52, 199, 89, 0.55), 0 0 8px 2px rgba(52, 199, 89, 0.3);
   }
   .sdot--work {
     background: var(--work);
-    box-shadow: 0 0 0 2.5px rgba(245, 166, 35, 0.16);
+    box-shadow: 0 0 3px rgba(245, 166, 35, 0.55), 0 0 8px 2px rgba(245, 166, 35, 0.32);
     animation: sdot-pulse 1.5s var(--ease-in-out) infinite;
   }
 
-  /* attention glyphs: needs-input (?) and error (!) — bare marks, no border */
-  .ind--input {
-    color: var(--input);
+  /* attention glyphs: needs-input (?) and error (!) — bare marks, no border.
+     Breathe lives on the svg so it doesn't displace the slot's ind-in entry. */
+  .ind--input { color: var(--input); }
+  .ind--input svg {
     animation: attn-breathe 2s var(--ease-in-out) infinite;
     transform-origin: center;
   }
@@ -762,6 +766,9 @@
   @keyframes sdot-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
+  }
+  @keyframes ind-in {
+    from { opacity: 0; transform: scale(0.4); }
   }
   @keyframes attn-breathe {
     0%, 100% { opacity: 1; transform: scale(1); }
@@ -1437,7 +1444,7 @@
     * { transition-duration: 0.01ms !important; }
     .row:active, .icon-btn:active, .kebab:active { transform: translateY(0); }
     .kebab:active { transform: translateY(-50%); }
-    .sdot--work, .ind--input, .work-dot, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .ind, .sdot--work, .ind--input svg, .work-dot, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
     .session--pulse, .notif--input .notif__glyph svg { animation: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
     .cmdk__panel { transform: none !important; }

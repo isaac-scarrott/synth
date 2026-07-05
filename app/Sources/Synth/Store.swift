@@ -172,6 +172,19 @@ enum ThemePref: String, CaseIterable, Identifiable {
         return globalClaudeFlags.trimmingCharacters(in: .whitespaces)
     }
 
+    /// Session ids with a LIVE Claude Code attached THIS run — asserted only by the hook
+    /// seam (claude-start / claudeSessionCaptured; cleared by claude-end / process exit).
+    /// A persisted `.claudeCode` kind is NOT liveness: a restored row whose `--resume`
+    /// fails drops to a bare shell, and pasting a browser comment there (page-controlled
+    /// text submitted with Enter) would hand the page shell execution. Comment delivery
+    /// gates on this set (CommentModeController.deliver).
+    private(set) var liveClaudeIDs: Set<UUID> = []
+    /// Last hook activity per claude session — deterministic most-recently-active targeting.
+    @ObservationIgnored private var claudeSeenAt: [UUID: Date] = [:]
+
+    func isLiveClaude(_ id: UUID) -> Bool { liveClaudeIDs.contains(id) }
+    func claudeActivity(_ id: UUID) -> Date { claudeSeenAt[id] ?? .distantPast }
+
     let bus = EventBus()
     let hookServer: HookServer
     /// Stage-two control socket (ADR-0011): browser.list / browser.create for the
@@ -217,16 +230,30 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     private func apply(_ event: SessionEvent) {
         switch event {
-        case let .statusChanged(id, status): session(id)?.status = status
+        case let .statusChanged(id, status):
+            session(id)?.status = status
+            if liveClaudeIDs.contains(id) { claudeSeenAt[id] = Date() }
         case let .titleChanged(id, title):
             // Claude Code's ai-title, refined each turn — but never clobber a hand-picked name.
             if let s = session(id), !s.titleIsCustom, s.title != title { s.title = title }
         case let .exited(id, code):
             session(id)?.status = (code ?? 0) == 0 ? .exited(code) : .error
-        case let .kindChanged(id, kind): session(id)?.kind = kind
+            liveClaudeIDs.remove(id)
+        case let .kindChanged(id, kind):
+            session(id)?.kind = kind
+            // The hook seam's claude lifecycle: claude-start posts .claudeCode, claude-end
+            // posts .terminal (HookServer.apply) — the only writers of comment-target liveness.
+            if kind == .claudeCode {
+                liveClaudeIDs.insert(id)
+                claudeSeenAt[id] = Date()
+            } else {
+                liveClaudeIDs.remove(id)
+            }
         case let .markUnread(id): if openSessionID != id { session(id)?.unread = true }
         case let .claudeSessionCaptured(id, claudeID):
             if let s = session(id), s.claudeSessionID != claudeID { s.claudeSessionID = claudeID }
+            liveClaudeIDs.insert(id)
+            claudeSeenAt[id] = Date()
         case let .browserNavigated(id, url):
             guard let s = session(id) else { return }
             s.browserURL = url

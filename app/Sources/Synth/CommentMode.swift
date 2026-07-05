@@ -151,74 +151,106 @@ import Observation
         let stamp = Self.timestamp()
         let dir = Self.commentsDir(sessionID: sessionID)
         var elementPath = "-", viewportPath = "-"
+        var screenshots: [String] = []
         if let shot = try? await client.send("Page.captureScreenshot", [
             "format": "png",
             "clip": ["x": cx, "y": cy, "width": cw, "height": ch, "scale": 1],
         ], timeout: 20), let png = Self.decodePNG(shot) {
             elementPath = dir.appendingPathComponent("\(stamp)-element.png").path
             try? png.write(to: URL(fileURLWithPath: elementPath))
+            screenshots.append(elementPath)
         }
         if let shot = try? await client.send("Page.captureScreenshot", ["format": "png"],
                                              timeout: 20), let png = Self.decodePNG(shot) {
             viewportPath = dir.appendingPathComponent("\(stamp)-viewport.png").path
             try? png.write(to: URL(fileURLWithPath: viewportPath))
+            screenshots.append(viewportPath)
         }
 
         let message = Self.composeMessage(payload: payload,
                                           size: (Int(w), Int(h)), origin: (Int(x), Int(y)),
                                           elementPath: elementPath, viewportPath: viewportPath)
-        deliver(message)
+        deliver(message, screenshots: screenshots)
     }
 
     // MARK: Delivery
 
-    /// The branch's receiving Claude Code session: an actively working one first
-    /// (working / needsInput / running), else any Claude row.
-    private func targetClaudeSession() -> Session? {
+    /// Valid comment targets: this branch's claude sessions the hook seam has confirmed
+    /// LIVE this run (AppStore.liveClaudeIDs), most recently active first so targeting is
+    /// deterministic. Persisted `.claudeCode` kind alone never qualifies.
+    private func liveClaudeTargets() -> [Session] {
         guard let store, let session = store.session(sessionID),
-              let branch = store.branch(of: session) else { return nil }
-        let claudes = branch.sessions.filter { $0.kind == .claudeCode }
-        let busy: [SessionStatus] = [.working, .needsInput, .running]
-        return claudes.first { busy.contains($0.status) } ?? claudes.first
+              let branch = store.branch(of: session) else { return [] }
+        return branch.sessions
+            .filter { $0.kind == .claudeCode && store.isLiveClaude($0.id) }
+            .sorted { store.claudeActivity($0.id) > store.claudeActivity($1.id) }
     }
 
-    private func deliver(_ message: String) {
-        guard let target = targetClaudeSession() else {
+    private func targetClaudeSession() -> Session? { liveClaudeTargets().first }
+
+    /// Any claude-kind row in the branch — possibly dormant (not booted this run).
+    private func claudeRow() -> Session? {
+        guard let store, let session = store.session(sessionID),
+              let branch = store.branch(of: session) else { return nil }
+        return branch.sessions.first { $0.kind == .claudeCode }
+    }
+
+    /// The bar chip's label: the live target, else the claude row deliver() would boot.
+    private func prospectiveTarget() -> Session? { targetClaudeSession() ?? claudeRow() }
+
+    /// SECURITY: a comment embeds page-controlled text (title / selector / element HTML)
+    /// and submit() follows the paste with Enter. Pasting that into anything except a live
+    /// Claude TUI — e.g. the bare shell left behind when a restored row's `claude --resume`
+    /// fails — would hand a hostile page arbitrary shell execution. So submit() is called
+    /// ONLY for a session the hook seam has confirmed live (claude-start /
+    /// claudeSessionCaptured, not since ended or exited): immediately when one exists,
+    /// else after booting the branch's claude row and WAITING for its liveness signal —
+    /// never merely for its terminal view existing.
+    private func deliver(_ message: String, screenshots: [String]) {
+        guard let store, let row = targetClaudeSession() ?? claudeRow() else {
             showNotice("No Claude Code session in this branch — create one to receive comments")
+            Self.discard(screenshots)
             return
         }
-        targetTitle = target.title
-        if TerminalManager.shared.submit(message, to: target.id) {
+        targetTitle = row.title
+        if store.isLiveClaude(row.id), TerminalManager.shared.submit(message, to: row.id) {
             NSLog("Synth: browser comment delivered to Claude session %@ (%@)",
-                  target.id.uuidString, target.title)
-            showNotice("Comment sent to \(target.title)")
+                  row.id.uuidString, row.title)
+            showNotice("Comment sent to \(row.title)")
             return
         }
-        // Sessions boot lazily: a Claude row whose pane was never shown has no live
-        // terminal, and a dropped comment is the worst failure this feature can have.
-        // Open the session (mounts the pane, launches claude), give the TUI a beat to
-        // come up, then deliver.
-        showNotice("Opening \(target.title) to deliver the comment…")
-        store?.open(target)
+        // A dormant claude row: open it (mounts the pane, launches claude / --resume),
+        // then wait for the hook seam to report the claude live before submitting.
+        showNotice("Opening \(row.title) to deliver the comment…")
+        store.open(row)
         deliveryTask?.cancel()
         deliveryTask = Task { [weak self] in
-            for _ in 0..<40 {
+            for _ in 0..<40 {   // ~20s: claude boots and fires SessionStart, or never will
                 try? await Task.sleep(for: .seconds(0.5))
                 guard let self, !Task.isCancelled else { return }
-                if TerminalManager.shared.existingView(target.id) != nil {
-                    // The view exists the instant the pane mounts; claude's TUI needs a
-                    // few more seconds before early input is safe from being eaten.
-                    try? await Task.sleep(for: .seconds(3))
-                    guard !Task.isCancelled else { return }
-                    if TerminalManager.shared.submit(message, to: target.id) {
-                        NSLog("Synth: browser comment delivered to Claude session %@ (%@) after opening its pane",
-                              target.id.uuidString, target.title)
-                        self.showNotice("Comment sent to \(target.title)")
-                        return
-                    }
+                guard let store = self.store, store.isLiveClaude(row.id) else { continue }
+                // Live confirmed — one more beat so the TUI is past its first paint and
+                // won't eat the early paste; re-check liveness after the beat.
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, store.isLiveClaude(row.id) else { continue }
+                if TerminalManager.shared.submit(message, to: row.id) {
+                    NSLog("Synth: browser comment delivered to Claude session %@ (%@) after booting it",
+                          row.id.uuidString, row.title)
+                    self.showNotice("Comment sent to \(row.title)")
+                    return
                 }
             }
-            self?.showNotice("Couldn't reach “\(target.title)” — comment not delivered")
+            // Claude never reported in (e.g. the resume failed and left a bare shell):
+            // drop the comment — and its now-orphaned screenshots — rather than paste.
+            self?.showNotice("Couldn't reach “\(row.title)” — comment not delivered")
+            Self.discard(screenshots)
+        }
+    }
+
+    /// Screenshots captured for a comment that was never delivered are orphans — remove.
+    private static func discard(_ screenshots: [String]) {
+        for path in screenshots {
+            try? FileManager.default.removeItem(atPath: path)
         }
     }
 

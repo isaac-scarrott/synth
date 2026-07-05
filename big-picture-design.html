@@ -744,6 +744,11 @@
 
   /* repo-level roll-up: surfaces nested input/error while collapsed */
   .repo--open > .repo__head .ind { display: none; }
+  /* branch-group roll-up: same idea one level down. Expanded, every session shows
+     its own indicator inside, so the roll-up (needs-input ?, error, work/run, the
+     checked-out dot) beside the header is redundant and can read as out of sync —
+     drop it while expanded; it's the only signal when collapsed. Activity meta stays. */
+  .repo--open > .branch--group .branch__roll .ind { display: none; }
 
   @keyframes sdot-pulse {
     0%, 100% { opacity: 1; }
@@ -3031,11 +3036,12 @@
     return Math.max(s, fuzzy(q, it.ctx + ' ' + it.label) - 2);
   }
 
-  // Which workspace/branch a context-sensitive action targets: the open session's,
-  // else the nav cursor's, else the first workspace.
+  // Which row a context-sensitive action targets. ⌘K follows the keyboard focus: when the
+  // sidebar owns it (its ring is showing on selEl), that focused row is the context; otherwise
+  // the open session in the content pane is. Falls back to the first workspace downstream.
   function contextRow() {
+    if (document.body.classList.contains('kbd') && selEl && document.contains(selEl) && isTreeRow(selEl)) return selEl;
     if (openEl && document.contains(openEl)) return openEl;
-    if (selEl && document.contains(selEl)) return selEl;
     return null;
   }
   function contextWorkspaceHead() {
@@ -3098,11 +3104,14 @@
 
   // ---- Frames: each returns { crumb?, placeholder, mode?, build(query) -> items[] } ----
   // An item: { icon, label, kbd?, danger?, disabled?, g?(group), enter() }. enter() drills or runs.
-  // ⌘K opens context-aware: the actions that act on where you are — the open session, its branch,
+  // ⌘K opens context-aware: the actions that act on where you are — the focused session, its branch,
   // its workspace — lead the root frame, each grouped and labelled by the scope it targets, most-local
-  // first. A session action never sits under the same heading as a branch or workspace action.
+  // first. "Where you are" is the focused sidebar row when its ring is showing, else the open session;
+  // Session actions only appear when that anchor is a session leaf. A session action never sits under
+  // the same heading as a branch or workspace action.
   function contextActions() {
-    const open = openEl && document.contains(openEl) ? openEl : null;
+    const row = contextRow();
+    const open = row && row.matches('.session') ? row : null;
     const br = contextBranch(), head = contextWorkspaceHead();
     const items = [];
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });

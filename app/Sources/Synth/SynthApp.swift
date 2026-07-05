@@ -121,6 +121,7 @@ struct RootView: View {
             }
         }
         .onAppear(perform: installKeyMonitor)
+        .onAppear { NotificationService.shared.bootstrap(store: store) }
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
 
@@ -135,6 +136,12 @@ struct RootView: View {
             return event
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Typing hides the pointer until the mouse next moves — AppKit auto-reveals it on the
+            // next movement, so the cursor stays out of the way while Synth is driven by keyboard
+            // (terminal keystrokes route through this local monitor too). Bare modifiers fire
+            // flagsChanged, not keyDown, so a lone ⌘/⇧ never hides it.
+            NSCursor.setHiddenUntilMouseMoves(true)
+
             // Modal Esc must win even while its text field is first responder.
             if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil {
                 if event.keyCode == 53 {   // Esc closes the modal
@@ -145,6 +152,30 @@ struct RootView: View {
                 return event
             }
             let key = event.charactersIgnoringModifiers?.lowercased()
+
+            // ⌘↩ jumps to the most-urgent in-app notification — bound only while the deck is
+            // non-empty, so the chord is never stolen otherwise (working.html notifTop).
+            if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
+               store.topNotif != nil {
+                store.jumpToTopNotif(); return nil
+            }
+
+            #if DEBUG
+            // Notification harness (working.html's ⌥N demo): ⌥N grows the deck, ⌥D fires an
+            // ambient "done", ⌥C clears. Add ⇧ to force the Notification Center path instead of
+            // the in-app deck, so both surfaces are drivable when the instance isn't frontmost.
+            if event.modifierFlags.contains(.option), let code = Optional(event.keyCode),
+               code == 45 || code == 2 || code == 8 || code == 3 {
+                let route: NotifRoute = event.modifierFlags.contains(.shift) ? .notificationCenter : .inApp
+                switch code {
+                case 45: store.debugRaiseNext(force: route)   // ⌥N
+                case 2:  store.debugFireDone(force: route)     // ⌥D
+                case 3:  store.debugDeckSpread.toggle()        // ⌥F  fan the deck
+                default: store.debugClearNotifs()              // ⌥C
+                }
+                return nil
+            }
+            #endif
 
             // ⌘/ (⌘?) toggles the shortcuts sheet from anywhere; while open it owns
             // the keyboard — Esc closes, everything else is swallowed (working.html).

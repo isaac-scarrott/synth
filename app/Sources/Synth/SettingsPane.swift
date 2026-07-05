@@ -18,6 +18,7 @@ struct SettingsPane: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 30) {
                     if isGlobal { appearanceSection }
+                    if isGlobal { soundsSection }
                     scriptSection
                     flagsSection
                 }
@@ -72,6 +73,46 @@ struct SettingsPane: View {
                 .lineSpacing(3).padding(.top, 4)
             ThemeSeg().padding(.top, 14)
         }
+    }
+
+    // MARK: Notification sounds — global, per-type. Gate the default sound on the unfocused
+    // Notification Center path (in-app toasts are always silent).
+
+    @ViewBuilder private var soundsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Notification sounds")
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.repoName)
+            sub("Play a sound with Notification Center alerts when Synth isn't focused. In-app toasts stay silent.")
+            VStack(spacing: 0) {
+                soundRow("Needs-input sound", soundInputBinding)
+                Rectangle().fill(Theme.border).frame(height: 0.5)
+                soundRow("Error sound", soundErrorBinding)
+                Rectangle().fill(Theme.border).frame(height: 0.5)
+                soundRow("Done sound", soundDoneBinding)
+            }
+            .padding(.top, 14)
+        }
+    }
+
+    private func soundRow(_ label: String, _ binding: Binding<Bool>) -> some View {
+        HStack {
+            Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.ink2)
+            Spacer(minLength: 8)
+            Toggle("", isOn: binding)
+                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.attention)
+        }
+        .padding(.vertical, 7)
+    }
+
+    private var soundInputBinding: Binding<Bool> {
+        Binding(get: { store.soundNeedsInput }, set: { store.soundNeedsInput = $0 })
+    }
+    private var soundErrorBinding: Binding<Bool> {
+        Binding(get: { store.soundError }, set: { store.soundError = $0 })
+    }
+    private var soundDoneBinding: Binding<Bool> {
+        Binding(get: { store.soundDone }, set: { store.soundDone = $0 })
     }
 
     // MARK: The one setting so far — the worktree setup script.

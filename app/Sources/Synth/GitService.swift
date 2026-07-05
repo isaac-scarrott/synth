@@ -124,6 +124,16 @@ enum GitService {
         return status == 0 ? nil : out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// `git worktree remove --force` — detaches the worktree from git and deletes its
+    /// folder on disk. `--force` so a dirty/locked checkout still goes. Nil on success,
+    /// else git's message. The primary worktree (repo root) can't be removed this way;
+    /// callers guard against that. `prune` cleans up the stale administrative entry.
+    static func removeWorktree(repo: URL, path: URL) -> String? {
+        let (status, out) = runChecked(["-C", repo.path, "worktree", "remove", "--force", path.path])
+        if status == 0 { _ = runChecked(["-C", repo.path, "worktree", "prune"]); return nil }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Repos sharing a folder name get distinct worktree roots. hashValue is seeded
     /// per launch, so roots must come from a stable hash to be reused across runs.
     private static func stableHash(_ s: String) -> String {

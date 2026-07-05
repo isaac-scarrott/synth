@@ -8,6 +8,10 @@ import SwiftUI
 enum SessionEvent: Sendable {
     case statusChanged(UUID, SessionStatus)
     case titleChanged(UUID, String)
+    /// A new Claude conversation started in an existing row (fresh startup or `/clear`) — drop
+    /// the previous conversation's ai-title so the stale name doesn't linger until a new one is
+    /// generated. Resume/compact keep their title, so they never emit this.
+    case titleReset(UUID)
     case exited(UUID, Int32?)
     /// A terminal was detected running Claude Code (or stopped) — flips the row's visual.
     case kindChanged(UUID, SessionKind)
@@ -54,6 +58,26 @@ struct BranchCandidate: Identifiable {
     let existingWorktree: URL?   // nil → a worktree will be created on Add
 }
 
+/// The escalated sidebar indicator a background session raises as a toast: needs-input is
+/// the blue `?` (`Theme.attention`), error the terracotta `!` (`Theme.danger`) — the two
+/// states working.html's `notify()` surfaces. `done` (a live session settling to idle) is
+/// never a toast, so it isn't a kind here.
+enum NotifKind: Sendable { case input, error }
+
+/// One live in-app notification — a background session escalated to a glass toast. `seq` is
+/// a monotonic raise counter so same-kind toasts order newest-first (working.html's
+/// `notifState` Map value `{ kind, order }`).
+struct InAppNotif: Identifiable {
+    let id: UUID        // the session id — one toast per session, like working.html
+    var kind: NotifKind
+    let seq: Int
+}
+
+/// Where a notification is surfaced. `nil` at a call site means "the real rule" — branch on
+/// `NSApp.isActive`; the DEBUG trigger passes an explicit value so both layers are drivable
+/// headless (a driven instance isn't reliably frontmost).
+enum NotifRoute { case inApp, notificationCenter }
+
 /// Which settings scope the full-screen settings page is showing. A workspace is
 /// referenced by id so a removed workspace leaves a dangling scope that falls back
 /// to Global rather than crashing (working.html's dangling-scope guard).
@@ -88,6 +112,39 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// nil = follow the system; otherwise pin light/dark (drives `.preferredColorScheme`).
     var colorSchemeOverride: ColorScheme? {
         switch themePref { case .system: return nil; case .light: return .light; case .dark: return .dark }
+    }
+
+    /// Active in-app notifications (working.html `notifState`). Rendered as a stacked deck by
+    /// NotificationDeck while Synth is frontmost; the unfocused path goes through Notification
+    /// Center instead (NotificationService). The open session is never in here — opening one
+    /// clears its toast, mirroring the `.markUnread` open-guard.
+    var notifs: [InAppNotif] = []
+    @ObservationIgnored private var notifSeq = 0
+
+    /// One-shot ambient row-pulse tokens (working.html `session--pulse`). A `done` on an
+    /// off-screen live session bumps its token; the sidebar row runs a single soft sweep on
+    /// change. Keyed by session id — the value only has to *differ* to re-fire.
+    var pulseTokens: [UUID: Int] = [:]
+
+    /// Per-type Notification-Center sound toggles (working.html's per-type sound setting).
+    /// Persisted to UserDefaults like `themePref`; defaults needs-input ON, error ON, done OFF.
+    /// In-app toasts are always silent — this only gates the unfocused NC path.
+    var soundNeedsInput = AppStore.loadSoundPref(AppStore.soundInputKey, default: true) {
+        didSet { UserDefaults.standard.set(soundNeedsInput, forKey: AppStore.soundInputKey) }
+    }
+    var soundError = AppStore.loadSoundPref(AppStore.soundErrorKey, default: true) {
+        didSet { UserDefaults.standard.set(soundError, forKey: AppStore.soundErrorKey) }
+    }
+    var soundDone = AppStore.loadSoundPref(AppStore.soundDoneKey, default: false) {
+        didSet { UserDefaults.standard.set(soundDone, forKey: AppStore.soundDoneKey) }
+    }
+    static let soundInputKey = "synth-sound-input"
+    static let soundErrorKey = "synth-sound-error"
+    static let soundDoneKey  = "synth-sound-done"
+    /// UserDefaults' `bool(forKey:)` can't tell "unset" from `false`, so read the object and
+    /// fall back to the type's default only when it's genuinely absent.
+    static func loadSoundPref(_ key: String, default def: Bool) -> Bool {
+        UserDefaults.standard.object(forKey: key) as? Bool ?? def
     }
 
     /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
@@ -231,14 +288,34 @@ enum ThemePref: String, CaseIterable, Identifiable {
     private func apply(_ event: SessionEvent) {
         switch event {
         case let .statusChanged(id, status):
-            session(id)?.status = status
+            guard let s = session(id) else { break }
             if liveClaudeIDs.contains(id) { claudeSeenAt[id] = Date() }
+            // A `needsInput` (?) is only legitimate mid-turn: a question / permission / plan
+            // block always interrupts work in flight. Claude's ambient "waiting for your input"
+            // notification instead fires at end-of-turn and races the `Stop`→idle that ends it —
+            // each hook is a separate process applied on its own Task, so order isn't guaranteed.
+            // Requiring a still-live prior state drops the nudge once the turn has settled, so the
+            // finish is order-independent: whichever of idle/needsInput lands last, the row ends
+            // idle. Genuine blocks are preceded by UserPromptSubmit/PostToolUse→working, so the ?
+            // still lights.
+            if status == .needsInput, !s.status.isLive { break }
+            let prev = s.status
+            s.status = status
+            routeTransition(id, prev: prev, next: status)
         case let .titleChanged(id, title):
             // Claude Code's ai-title, refined each turn — but never clobber a hand-picked name.
             if let s = session(id), !s.titleIsCustom, s.title != title { s.title = title }
+        case let .titleReset(id):
+            // Keep a hand-picked name; otherwise fall back to the neutral Claude default until
+            // the new conversation generates its own ai-title (arriving as .titleChanged).
+            if let s = session(id), !s.titleIsCustom { s.title = "Claude Code" }
         case let .exited(id, code):
-            session(id)?.status = (code ?? 0) == 0 ? .exited(code) : .error
+            guard let s = session(id) else { break }
+            let prev = s.status
+            let next: SessionStatus = (code ?? 0) == 0 ? .exited(code) : .error
+            s.status = next
             liveClaudeIDs.remove(id)
+            routeTransition(id, prev: prev, next: next)
         case let .kindChanged(id, kind):
             session(id)?.kind = kind
             // The hook seam's claude lifecycle: claude-start posts .claudeCode, claude-end
@@ -282,6 +359,60 @@ enum ThemePref: String, CaseIterable, Identifiable {
         recents.removeAll { $0.url == key }
         recents.insert(BrowserRecent(url: key, title: title), at: 0)
         br.browserRecents = Array(recents.prefix(5))
+    }
+
+    // MARK: Notifications (working.html notifyOnTransition → the in-app deck / Notification Center)
+
+    /// A background session's status transition, turned into a notification — the single seam
+    /// terminals and Claude both reach (`term-*` and Claude signals alike flow through `apply`).
+    /// The open session never notifies. Focus picks the surface: frontmost → the in-app deck,
+    /// unfocused → Notification Center. `force` overrides the focus rule for the DEBUG trigger.
+    func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil) {
+        if openSessionID == id { clearNotif(id); return }
+        let toNC = force.map { $0 == .notificationCenter } ?? !NSApp.isActive
+        switch next.rollup {
+        case .input, .error:
+            let kind: NotifKind = next.rollup == .error ? .error : .input
+            session(id)?.unread = true   // working.html notify() marks the row unread too
+            if toNC { NotificationService.shared.postAttention(store: self, id: id, kind: kind) }
+            else { raiseInApp(id, kind) }
+        case .idle where prev.rollup != .idle:
+            // A live session settling to idle off-screen → ambient "done": the unread bullet
+            // plus one soft row sweep, no toast (working.html). Unfocused → a transient banner.
+            clearNotif(id)
+            session(id)?.unread = true   // working.html done also marks the row unread
+            if toNC { NotificationService.shared.postDone(store: self, id: id) }
+            else { pulseTokens[id, default: 0] += 1 }
+        default:
+            clearNotif(id)   // work / run (and idle-from-idle) clear any standing toast
+        }
+    }
+
+    /// Raise (or re-raise, bumping it to newest) a background session's toast.
+    private func raiseInApp(_ id: UUID, _ kind: NotifKind) {
+        notifSeq += 1
+        notifs.removeAll { $0.id == id }
+        notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq))
+    }
+
+    /// Drop a session's toast (opening it, or a work/run/idle transition off it).
+    func clearNotif(_ id: UUID) { notifs.removeAll { $0.id == id } }
+
+    /// Active toasts, most-urgent first: errors before needs-input, then newest within a kind
+    /// (working.html `notifOrder`). Drops any whose session vanished or is now the open one.
+    var notifOrder: [InAppNotif] {
+        notifs.filter { $0.id != openSessionID && session($0.id) != nil }.sorted { a, b in
+            if (a.kind == .error) != (b.kind == .error) { return a.kind == .error }
+            return a.seq > b.seq
+        }
+    }
+
+    /// The ⌘↩ jump target — the most-urgent toast, or nil when the deck is empty (so the chord
+    /// stays free otherwise, working.html `notifTop`).
+    var topNotif: InAppNotif? { notifOrder.first }
+
+    func jumpToTopNotif() {
+        if let n = topNotif, let s = session(n.id) { jump(to: s) }
     }
 
     // MARK: Lookups
@@ -340,6 +471,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         openSessionID = session.id
         navCursor = session.id
         session.unread = false
+        clearNotif(session.id)   // opening a notified session dismisses its standing toast
     }
 
     // MARK: Settings
@@ -711,4 +843,56 @@ enum ThemePref: String, CaseIterable, Identifiable {
         alert.alertStyle = .warning
         alert.runModal()
     }
+
+    #if DEBUG
+    // Design-time notification harness (working.html's ⌥N demo). Fires fake transitions on
+    // real background sessions so the deck, hover-fan, ⌘↩-jump, "+N" and ambient pulse are
+    // observable without live session events. `force` lets a driven (non-frontmost) instance
+    // still exercise either surface. Left `#if DEBUG`-gated for the maintainer to keep or cut.
+    @ObservationIgnored private var debugCursor = 0
+
+    /// ⌥F — force the deck's hover-fan open (the pointer can't reach an inactive window when
+    /// driven headless), so the fanned state is screenshottable.
+    var debugDeckSpread = false
+
+    /// Sessions the deck may notify — everything except the open one (working.html demo `bg`).
+    private var debugBackground: [Session] {
+        workspaces.flatMap { $0.branches.flatMap(\.sessions) }.filter { $0.id != openSessionID }
+    }
+
+    private func debugReveal(_ s: Session) {
+        guard let br = branch(of: s) else { return }
+        expanded.insert(br.id)
+        if let ws = workspace(of: br) { expanded.insert(ws.id) }
+    }
+
+    /// ⌥N — escalate the next background session; kinds cycle (mostly needs-input, every third
+    /// an error) so successive presses grow a deck with real ordering and a "+N" past three.
+    func debugRaiseNext(force: NotifRoute) {
+        let bg = debugBackground
+        guard !bg.isEmpty else { return }
+        let s = bg[debugCursor % bg.count]
+        debugReveal(s)
+        let next: SessionStatus = (debugCursor % 3 == 1) ? .error : .needsInput
+        debugCursor += 1
+        let prev = s.status
+        s.status = next
+        routeTransition(s.id, prev: prev, next: next, force: force)
+    }
+
+    /// ⌥D — walk the next background session live→idle to fire the ambient "done" (row pulse,
+    /// or a Notification Center banner when forced there).
+    func debugFireDone(force: NotifRoute) {
+        let bg = debugBackground
+        guard !bg.isEmpty else { return }
+        let s = bg[debugCursor % bg.count]
+        debugReveal(s)
+        debugCursor += 1
+        s.status = .idle
+        routeTransition(s.id, prev: .running, next: .idle, force: force)
+    }
+
+    /// ⌥C — clear every standing toast (reset the deck).
+    func debugClearNotifs() { notifs.removeAll() }
+    #endif
 }

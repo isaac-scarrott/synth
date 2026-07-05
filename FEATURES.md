@@ -890,3 +890,99 @@ pointer/click handlers stay at zero during a pick; the no-target notice fires cl
   after a Claude terminal pane takes focus (an IMKit/Ghostty focus-path issue, not the browser); the
   Chromium sandbox is still off (blocks notarization); shared `state.json` is last-writer-wins across
   instances (ADR-0010). The comment overlay does not yet pick inside iframes (v1 scope).
+## 2026-07-05 — Notifications: in-app deck + Notification Center (both designs + native app)
+
+Background session state changes surface without pulling you out of the session you're in. Two
+layers, tiered by urgency, and **only ever for background sessions** (never the open one — the
+existing `openSessionID != id` rule).
+
+- **Ambient (layer one, unchanged).** The sidebar dot + unread bullet already carry state. `done`
+  (a live session settling to idle off-screen) stays here: the unread bullet plus one soft one-shot
+  row pulse — **no toast**. Only needs-input and error escalate.
+- **In-app deck (focused window, layer two).** needs-input / error on a background session rise as a
+  quiet glass toast, bottom-left, hugging the sidebar — the sidebar indicator *escalated* (same blue
+  `?` / terracotta `!`, the workspace chip, the session icon + title, a one-line verb). 2+ collapse
+  into a **stacked deck**, most-urgent in front (errors before needs-input, then newest), that **fans
+  out on hover**; a "+N" pill past three. Click a card to jump; **⌘↩** jumps to the front (most-urgent)
+  card and only that card carries the muted "⌘↩ jump" hint. Driven by `setSessionState` /
+  `notifyOnTransition` (HTML) → `AppStore.routeTransition` (app) — the single seam terminals and Claude
+  both reach.
+- **Notification Center (unfocused window).** Focus (`NSApp.isActive`) picks the surface at fire time;
+  unfocused → `UNUserNotificationCenter`. needs-input / error → alert, `done` → a transient banner, all
+  at `.active` interruption so **Focus / DND is respected** (never `.timeSensitive`). Grouped by branch
+  (`threadIdentifier`), body carries the session identity, a tap activates Synth and jumps. macOS note:
+  alert-vs-banner *persistence* is a per-app System Settings choice, not a per-request API — only the
+  interruption level is set from code. NC activates in the packaged `.app` (bundle id `tech.holibob.synth`);
+  the bare dev binary has no bundle id, so the path cleanly no-ops there.
+- **Sound is a per-type Setting** (global scope): needs-input / error / done toggles, defaults on / on /
+  off; the default sound attaches to a Notification-Center post iff its type is enabled. In-app toasts
+  are silent.
+- **Terminal parity.** A companion change makes a plain terminal report its per-command lifecycle
+  (running / finished-unread / errored, signal-terminations neutral) over the same hook socket Claude
+  uses — injected zsh preexec/precmd → a new `synth-hook report` subcommand — so terminal and Claude
+  sessions feed one notification path.
+- **Verified** by driving the built app: single toast, a 4-card deck with the error promoted to front,
+  hover-fan, ⌘↩-jump (front card opens + its toast clears), the ambient done pulse (no toast), and the
+  Settings sound toggles; `swift build` clean. Notification Center is implemented but end-to-end
+  unverified in-harness (needs the packaged bundle + a one-time permission grant). Both designs carry
+  the identical shell (subset invariant holds: diff is title + the browser/simulator demo rows).
+
+## 2026-07-05 — Notifications follow-up: Notification Center needs a first-run permission grant
+
+Addendum to the entry above, from verifying the packaged app.
+
+- The Notification Center path is confirmed **live in the packaged `.app`** (`build-app.sh` sets bundle
+  id `tech.holibob.synth`): on launch the app wires the `UNUserNotificationCenter` delegate and requests
+  authorization — none of the dev "no bundle identifier — disabled" no-op. Running the bare SwiftPM
+  Mach-O directly is *not* a valid notification client ("Notifications are not allowed"); only a
+  LaunchServices launch (`open Synth.app`) is.
+- A banner therefore requires a **one-time macOS "Allow"** grant on first launch, plus a real unfocused
+  event — neither scriptable in-harness, so the banner itself is verified by hand, not by CI. The
+  posting / branch-grouping / tap-to-jump / sound-per-toggle code is reviewed but not exercised
+  end-to-end here.
+- Dev caveat: the `#if DEBUG` notification triggers exist only in debug builds, which have no bundle id
+  (NC no-ops), while the release bundle where NC is live has no triggers. To exercise NC, stage a real
+  background event (a session needing input / erroring) while Synth is unfocused.
+
+## 2026-07-05 — Fix: a finished Claude session no longer strands a spurious `?`
+
+The needs-input `?` could linger after Claude Code finished a turn. Root cause is a signal-ordering
+race: at end-of-turn both `Stop`→idle and Claude's ambient "waiting for your input" notification
+(→needsInput) fire, each as a separate `synth-hook` process writing the socket, each applied on its
+own `Task { @MainActor }` — so their arrival order isn't guaranteed. When needs-input landed after
+idle, the row was stuck showing `?` on a session that had simply finished.
+
+- **Fix = gate `needsInput` on a live prior state** (`Store.apply`): a `?` is only accepted when the
+  session is already working/running/needsInput. A genuine question / permission / plan block always
+  interrupts a turn in flight (preceded by `UserPromptSubmit`/`PostToolUse`→working), so it still
+  lights; the ambient end-of-turn nudge arrives after the row has settled to idle and is dropped.
+- **Why this shape:** the reorder can't be prevented at the transport (separate OS processes race the
+  socket), so the reducer is made order-independent instead — whichever of idle/needsInput lands last,
+  a finished turn settles on idle. Dropping the nudge also stops it raising a false "needs input"
+  attention toast / Notification-Center alert for the finished background session.
+
+## 2026-07-05 — Fix: `/clear` drops the previous conversation's ai-title
+
+Mid-session ai-title refinement already worked (every hook forwards the *latest* `ai-title` from the
+transcript; `.titleChanged` updates the row unless hand-renamed). The gap was `/clear`: it starts a
+brand-new Claude conversation whose fresh transcript has no ai-title yet, so the row kept showing the
+old conversation's name until Claude regenerated one turns later.
+
+- **Fix = reset on a fresh SessionStart.** synth-hook now reads the `SessionStart` `source` and, for
+  `startup`/`clear` (a genuinely new conversation), emits a `titleReset` line. `resume`/`compact`
+  continue the same conversation and keep their title, so they never reset.
+- **App side:** a new `.titleReset` bus event falls the row back to the neutral `Claude Code` default —
+  unless the name is hand-picked (`titleIsCustom`), which is preserved across `/clear`. The next
+  ai-title from the new conversation takes over normally via `.titleChanged`.
+
+## 2026-07-05 — Keyboard use hides the mouse pointer until the mouse moves
+
+While Synth is driven by the keyboard, the pointer gets out of the way. Every keystroke calls
+`NSCursor.setHiddenUntilMouseMoves(true)` at the top of the global keyDown monitor (SynthApp), and
+AppKit reveals the cursor automatically on the next mouse movement — the same affordance Terminal.app
+and editors use.
+
+- **One hook covers everything.** Terminal keystrokes route through the same local `.keyDown` monitor,
+  so typing into a session hides the pointer too. Bare modifiers fire `flagsChanged` (not `keyDown`),
+  so a lone ⌘/⇧ never hides it. Native-only — the OS cursor has no meaningful equivalent in the
+  working.html/big-picture mock, so the design files are unchanged.

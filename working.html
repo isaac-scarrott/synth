@@ -49,6 +49,7 @@
     --radius-app: 14px;
     --radius-panel: 20px;
     --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+    --notif-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 12px 30px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.06);
     --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
@@ -767,6 +768,60 @@
     50% { opacity: 0.55; transform: scale(0.9); }
   }
 
+  /* ---- In-app notifications: a stacked deck, bottom-left, hugging the sidebar ----
+     Background sessions only (never the open one). A session that moves to needs-input or
+     error rises as a quiet glass toast — the sidebar indicator escalated: same glyphs, same
+     state colours, plus the row's identity. 'done' (a live session settling to idle off-screen)
+     stays ambient: the unread bullet + one row pulse, no toast. 2+ collapse into a deck
+     (most-urgent in front) that fans on hover; ⌘↩ jumps to the front card, a click to any.
+     Driven by setSessionState → notifyOnTransition. When Synth is unfocused the native app
+     raises these through Notification Center instead — this is the focused-window layer. */
+  .notifs { position: absolute; left: calc(var(--sidebar-w, 260px) + 22px); bottom: 22px; width: 292px; z-index: 60; pointer-events: none; }
+  .app.collapsed .notifs { left: 22px; }
+  .app.settings .notifs { display: none; }
+  .notif {
+    pointer-events: auto; display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center;
+    padding: 11px 12px 11px 13px; background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.7); backdrop-filter: blur(24px) saturate(1.7);
+    border: 0.5px solid var(--border-strong); border-radius: 13px; box-shadow: var(--notif-shadow);
+    cursor: pointer; transform-origin: center bottom; opacity: 0; transform: translateY(12px) scale(0.975);
+    transition: transform 320ms var(--ease-out), opacity 220ms ease, box-shadow 200ms ease, background 130ms ease;
+  }
+  .notif.is-front { grid-template-columns: auto 1fr auto; }   /* only the ⌘↩ target carries the hint column */
+  .notif.in { opacity: 1; transform: translateY(0) scale(1); }
+  .notif:hover { background: color-mix(in srgb, var(--glass) 100%, var(--text) 4%); }
+  /* deck: 2+ notifications overlap, anchored at the bottom, most-urgent (i=0) in front */
+  .notifs.deck .notif { position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z); }
+  .notifs.deck .notif.in { transform: translateY(calc(var(--i) * -10.5px)) scale(calc(1 - var(--i) * 0.045)); opacity: var(--op); }
+  .notifs.deck .notif.deep { pointer-events: none; }
+  .notifs.deck.spread .notif { pointer-events: auto; }
+  .notifs.deck.spread .notif.in { transform: translateY(calc(var(--i) * (var(--step, 58px) * -1))) scale(1); opacity: 1; }
+  .notif.leave { opacity: 0 !important; transform: translateY(8px) scale(0.985) !important; pointer-events: none; }
+  .notif__glyph { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; }
+  .notif__glyph svg { width: 17px; height: 17px; display: block; }
+  .notif--input .notif__glyph { color: var(--input); background: color-mix(in srgb, var(--input) 13%, transparent); }
+  .notif--input .notif__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
+  .notif--error .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
+  .notif__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .notif__who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notif__who .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+  .notif__who .k { width: 12px; height: 12px; flex-shrink: 0; color: var(--ink-5); }
+  .notif__who .k svg { width: 12px; height: 12px; display: block; }
+  .notif__what { font-size: 12.5px; font-weight: 570; color: var(--ink-open); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notif__kbd { display: none; align-items: center; gap: 5px; align-self: center; font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+  .notif.is-front .notif__kbd { display: flex; }
+  .notif__kbd .keys { display: inline-flex; gap: 2px; }
+  .notif__kbd kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; min-width: 16px; height: 16px; padding: 0 3px; display: inline-grid; place-items: center; color: var(--ink-4); background: var(--raised); border: 0.5px solid var(--line); border-radius: 5px; box-shadow: 0 0.5px 0 var(--line-soft); }
+  .notif:hover .notif__kbd { color: var(--text-muted); }
+  .notif:hover .notif__kbd kbd { color: var(--ink-2); }
+  /* "+N" for cards tucked behind a deck deeper than three */
+  .notifs__more { position: absolute; left: 13px; z-index: 200; pointer-events: none; font-size: 10.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 2px 7px; background: var(--glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 0.5px solid var(--border-strong); border-radius: 20px; box-shadow: var(--shadow); opacity: 0; transition: opacity 200ms ease; }
+  .notifs.deck .notifs__more.show { opacity: 1; }
+  .notifs.deck.spread .notifs__more { opacity: 0 !important; }
+  /* ambient 'done' on an off-screen session: one soft wash sweeps the row once */
+  @keyframes row-pulse { 0% { background: color-mix(in srgb, var(--input) 11%, transparent); } 100% { background: transparent; } }
+  .session--pulse { animation: row-pulse 900ms var(--ease-out); }
+
   /* ---- Row action kebab (hover-revealed at the row end) ---- */
   .kebab {
     position: absolute;
@@ -1383,6 +1438,7 @@
     .row:active, .icon-btn:active, .kebab:active { transform: translateY(0); }
     .kebab:active { transform: translateY(-50%); }
     .sdot--work, .ind--input, .work-dot, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .session--pulse, .notif--input .notif__glyph svg { animation: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
     .cmdk__panel { transform: none !important; }
     .row-enter, .row-exit { animation: none; }
@@ -1403,6 +1459,7 @@
     --text-faint: #6d6d74;
     --accent: #f3f3f5;
     --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.55);
+    --notif-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4);
 
     --ink: #f2f2f4;
     --ink-open: #eaeaee;
@@ -1665,6 +1722,7 @@
     </aside>
 
     <section class="content"></section>
+    <div class="notifs" id="notifs"></div>
   </main>
 
 <script>
@@ -1762,16 +1820,168 @@
     openEl = el;
     el.classList.add('session--open');
     el.classList.remove('session--unread');   // opening marks it read
+    clearNotif(el);                            // …and dismisses any toast for it
     derivePill(el);
     renderOpen();
   }
 
-  // A session moves to a new derived status: swap its sidebar indicator, re-roll.
+  // A session moves to a new derived status: swap its sidebar indicator, re-roll, and
+  // surface it if the change happened off-screen (the notification deck below).
   function setSessionState(el, state) {
+    const prev = sessionState(el);
     const ind = el.querySelector(':scope > .ind');
     if (ind) ind.outerHTML = IND_HTML[state];
     rollUpGroups();
+    notifyOnTransition(el, prev, state);
   }
+
+  // ===== In-app notifications ===============================================
+  // A background session (never the open one) that moves to needs-input or error rises as a
+  // quiet glass toast, bottom-left. Several collapse into a deck — most-urgent in front — that
+  // fans out on hover; ⌘↩ jumps to the front card, a click to any. 'done' (a live session
+  // settling to idle off-screen) is ambient only: the unread bullet + one row pulse, no toast.
+  // When Synth is unfocused the native app raises these through Notification Center instead;
+  // this is the focused-window counterpart.
+  const notifsEl = document.getElementById('notifs');
+  const notifState = new Map();   // sessionEl -> { kind, order }
+  const notifCards = new Map();   // sessionEl -> card element
+  const NOTIF_OP = [1, 0.7, 0.45];   // front, then two peeking; deeper cards hide behind "+N"
+  const NOTIF_KBD = '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>jump</span>';
+  let notifSeq = 0;
+
+  const notifLive = (s) => s === 'work' || s === 'run' || s === 'input' || s === 'error';
+
+  function notifyOnTransition(el, prev, next) {
+    if (el === openEl) { clearNotif(el); return; }
+    if (next === 'input' || next === 'error') { notify(el, next); return; }
+    if (next === 'idle' && notifLive(prev)) {   // finished off-screen → ambient "done"
+      el.classList.add('session--unread');
+      el.classList.remove('session--pulse'); void el.offsetWidth; el.classList.add('session--pulse');
+    }
+    clearNotif(el);   // work / run / idle all clear a standing toast
+  }
+
+  function notify(el, kind) {
+    el.classList.add('session--unread');
+    notifState.set(el, { kind, order: ++notifSeq });
+    renderNotifs();
+  }
+  function clearNotif(el) { if (notifState.delete(el)) renderNotifs(); }
+
+  // background notifications, most-urgent first: error before input, newest first
+  function notifOrder() {
+    return [...notifState.keys()].filter((el) => el !== openEl && document.contains(el)).sort((a, b) => {
+      const A = notifState.get(a), B = notifState.get(b);
+      if ((A.kind === 'error') !== (B.kind === 'error')) return A.kind === 'error' ? -1 : 1;
+      return B.order - A.order;
+    });
+  }
+  function notifTop() { return notifOrder()[0] || null; }
+
+  function notifWhat(el, kind) {
+    const ai = el.dataset.type === 'ai';
+    if (kind === 'error') return ai ? 'Claude hit an error' : 'exited with an error';
+    return ai ? 'Claude needs your input' : 'waiting for input';
+  }
+  function buildNotif(el) {
+    const kind = notifState.get(el).kind;
+    const name = el.querySelector('.session__name').textContent.trim();
+    const icon = el.querySelector('.session__icon').innerHTML;
+    const repo = outerRepoOf(el);
+    const chip = repo && repo.querySelector('.repo__chip');
+    const color = (chip && chip.style.getPropertyValue('--c').trim()) || 'var(--text-faint)';
+    const c = document.createElement('div');
+    c.className = 'notif notif--' + kind;
+    c.addEventListener('click', () => jumpTo(el));
+    c.innerHTML = '<div class="notif__glyph">' + (kind === 'error' ? MARK_ERROR : MARK_INPUT) + '</div>'
+      + '<div class="notif__text"><div class="notif__who">'
+      + '<span class="dot" style="background:' + color + '"></span>'
+      + '<span class="k">' + icon + '</span>' + esc(name)
+      + '</div><div class="notif__what">' + notifWhat(el, kind) + '</div></div>' + NOTIF_KBD;
+    notifCards.set(el, c);
+    return c;
+  }
+
+  function notifMore() {
+    let m = notifsEl.querySelector('.notifs__more');
+    if (!m) { m = document.createElement('div'); m.className = 'notifs__more'; notifsEl.appendChild(m); }
+    return m;
+  }
+
+  function renderNotifs() {
+    const order = notifOrder();
+    notifCards.forEach((card, el) => {
+      if (!order.includes(el) && !card.classList.contains('leave')) { leaveNotif(card); notifCards.delete(el); }
+    });
+    notifsEl.classList.toggle('deck', order.length > 1);
+    if (order.length <= 1) { notifsEl.classList.remove('spread'); notifsEl.style.height = ''; notifsEl.style.pointerEvents = ''; }
+    if (!order.length) { notifsEl.classList.remove('deck'); notifMore().classList.remove('show'); return; }
+    order.forEach((el, i) => {
+      let c = notifCards.get(el);
+      if (!c) { c = buildNotif(el); notifsEl.appendChild(c); requestAnimationFrame(() => requestAnimationFrame(() => c.classList.add('in'))); }
+      c.style.setProperty('--i', i);
+      c.style.setProperty('--op', i < NOTIF_OP.length ? NOTIF_OP[i] : 0);
+      c.style.setProperty('--z', 100 - i);
+      c.classList.toggle('deep', i >= NOTIF_OP.length);
+      c.classList.toggle('is-front', i === 0);
+    });
+    const first = notifsEl.querySelector('.notif.in') || notifsEl.querySelector('.notif');
+    if (first) {
+      const step = first.offsetHeight + 9;   // card height + a breathing gap when fanned
+      notifsEl.style.setProperty('--step', step + 'px');
+      notifsEl._fanH = (order.length - 1) * step + first.offsetHeight + 4;
+      if (notifsEl.classList.contains('spread')) notifsEl.style.height = notifsEl._fanH + 'px';
+    }
+    const hidden = order.length - NOTIF_OP.length;
+    const m = notifMore();
+    m.textContent = '+' + hidden;
+    if (first) m.style.bottom = (first.offsetHeight + 26) + 'px';
+    m.classList.toggle('show', hidden > 0);
+  }
+
+  function leaveNotif(card) {
+    if (card.classList.contains('leave')) return;
+    card.classList.add('leave');
+    card.addEventListener('transitionend', () => card.remove(), { once: true });
+  }
+
+  // Hover fans the deck; leaving re-collapses it. mouseover/out bubble from the cards
+  // (which stay hit-testable), so this works though the container itself ignores pointers.
+  // While spread the container takes the fan's full height + live pointers, so the gaps
+  // between fanned cards stay inside the hover region and never flicker it shut.
+  notifsEl.addEventListener('mouseover', () => {
+    if (!notifsEl.classList.contains('deck')) return;
+    notifsEl.classList.add('spread');
+    if (notifsEl._fanH) notifsEl.style.height = notifsEl._fanH + 'px';
+    notifsEl.style.pointerEvents = 'auto';
+  });
+  notifsEl.addEventListener('mouseout', (e) => {
+    if (notifsEl.contains(e.relatedTarget)) return;
+    notifsEl.classList.remove('spread'); notifsEl.style.height = ''; notifsEl.style.pointerEvents = '';
+  });
+
+  // ⌘↩ jumps to the most-urgent notification — inert when the deck is empty, so the chord
+  // is never stolen otherwise.
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      const el = notifTop();
+      if (el) { e.preventDefault(); jumpTo(el); }
+    }
+  });
+
+  // Design demo: ⌥N walks a background session through needs-input → error → done so the
+  // deck is exercisable in the mock. In the app these come from real session events.
+  let notifDemo = 0;
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.code !== 'KeyN') return;
+    const a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    const bg = [...nav.querySelectorAll('.session')].filter((s) => s !== openEl && s.dataset.type);
+    if (!bg.length) return;
+    e.preventDefault();
+    setSessionState(bg[notifDemo % bg.length], ['input', 'error', 'input', 'idle'][notifDemo % 4]);
+    notifDemo++;
+  });
 
   // ---- mock content, generated purely from (type, name, state) ----
   function termLines(name, state, ws, br) {
@@ -3114,6 +3324,7 @@
   const ICON_CLOSE  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
   const ICON_RENAME = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"/></svg>';
   const ICON_RESET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16h27.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,0,1,16,0Z"/></svg>';
+  const ICON_MINUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,128Z"/></svg>';
 
   // entity readers — the DOM tree is the source of truth
   const wsName = (h) => h.querySelector('.repo__name').textContent;
@@ -3150,6 +3361,8 @@
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_AI, label: 'New Claude Code', enter: () => runAndClose(() => addClaude(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TRASH, label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(br)) });
     if (head) items.push({ grp: 'Workspace', unit: wsName(head), icon: ICON_BRANCH, label: 'New worktree…', enter: () => pushFrame(createFrame('worktree', head)) });
     return { items };
   }
@@ -3319,16 +3532,34 @@
 
   function confirmFrame(row) {
     const level = rowLevel(row);
-    const name = level === 'repo' ? wsName(row) : level === 'branch' ? brName(row) : seName(row);
+    if (level === 'branch') return removeWorktreeFrame(row);
+    const name = level === 'repo' ? wsName(row) : seName(row);
     const verb = level === 'session' ? 'Delete' : 'Remove';
     const hint = level === 'repo' ? 'Remove this workspace? Nothing on disk is deleted.'
-      : level === 'branch' ? 'Remove this branch? Its worktree stays on disk.'
       : 'Delete this session?';
     return {
       crumb: verb + ' ' + name + '?', mode: 'confirm', placeholder: hint + '  ↵ confirm · esc cancel',
       build() {
         return [
           { icon: ICON_TRASH, label: verb + ' ' + name, danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
+        ];
+      },
+    };
+  }
+
+  // Removing a worktree forks: delete it for real (git worktree remove + rm the folder),
+  // or just drop it from the sidebar and leave the checkout on disk to re-add later.
+  // The destructive path is danger-styled; the list-only path isn't — the colour is the tell.
+  function removeWorktreeFrame(row) {
+    const name = brName(row);
+    return {
+      crumb: 'Remove ' + name + '?', mode: 'confirm',
+      placeholder: 'Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel',
+      build() {
+        return [
+          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'git worktree remove + delete its folder on disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'stop tracking it here — the worktree stays on disk', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },

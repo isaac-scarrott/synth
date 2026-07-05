@@ -746,3 +746,30 @@ Chrome DevTools on this" was part of the browser concept but missing from the st
   (⌘K "New browser" → home → address-Enter path) — toggle on/off, default tab, dock position, tab
   switching, persistence across omnibox navigation and back, home-surface disabled state, dark-theme
   panel color, zero console/page errors. Subset invariant intact (diff = title + demo rows).
+
+## 2026-07-05 — Browser session ships in the native app (ADR-0011 stage one, gate-verified)
+
+The embedded browser is real: a `browser` session type in the SwiftUI app, at the same tier as a
+terminal or Claude Code session, backed by CEF 144 (Chromium) embedded in-pane behind the
+`BrowserEngine` protocol, with the CDP endpoint live from day one (stage two's attach point).
+
+- **What shipped.** ⌘K "New browser" + row-kebab creation; "go to" home surface with per-branch
+  Recents; loaded chrome (back/forward/reload, lock+URL omnibox pill with floating recents dropdown,
+  DevTools toggle opening Chromium's native DevTools, closing it too, resyncing if the user closes the
+  window directly); one page per session; `window.open` becomes a new pre-navigated session (never a
+  popup, never a renderer hang); sessions rename to the page's host+path unless custom-named; URLs and
+  recents persist and restore across restarts; per-session profile dirs and hard teardown (SIGTERM
+  reaps every helper in <5s and removes the instance's profiles). Engine internals and constraints:
+  ADR-0011 "What building it taught us".
+- **Same surface proven.** A Playwright `connectOverCDP` client navigated a session and the pane,
+  omnibox, and sidebar tracked it live — the stage-two contract demonstrated in the shipped app.
+- **Three-round verification by independent agents.** Full 14-item gate: PASS with 3 findings
+  (home-state delete orphaned its engine via a mid-delete lazy re-create; DevTools toggle-off was a
+  no-op; about:blank polluted recents). All fixed (tombstoned termination + nil-rendering pane,
+  engine close/hasDevTools with toggle resync, hostless-URL filter). Re-gate: core fixes held, two
+  residual gaps (CEF's post-close flush resurrecting a profile husk; legacy recents surviving in
+  state.json) — fixed with +2s/+6s re-removal and a restore-time scrub. Micro-gate: PASS, catching
+  the husk appear and get scrubbed live, and confirming zero orphan targets/dirs/helpers.
+- **Known limits, accepted for stage one:** sandbox off (revisit before notarization, ADR-0011);
+  DevTools is a native window, not the mock's docked panel; app must launch from a bundle (dev.sh
+  assembles one); WKWebView remains a loud no-CDP fallback when CEF assets are absent.

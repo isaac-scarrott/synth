@@ -146,6 +146,8 @@ final class HookServer: @unchecked Sendable {
                 if name.hasPrefix("synth-shims-")        { pid = String(name.dropFirst("synth-shims-".count)) }
                 else if name.hasPrefix("synth-hook-"), name.hasSuffix(".sock") {
                     pid = String(name.dropFirst("synth-hook-".count).dropLast(".sock".count))
+                } else if name.hasPrefix("synth-ctl-"), name.hasSuffix(".sock") {
+                    pid = String(name.dropFirst("synth-ctl-".count).dropLast(".sock".count))
                 } else if name.hasPrefix("synth-login-"), name.hasSuffix(".sh") {
                     pid = String(name.dropFirst("synth-login-".count).dropLast(".sh".count))
                 } else { pid = nil }

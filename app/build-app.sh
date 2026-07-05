@@ -44,6 +44,11 @@ if $HAS_CEF; then
   ./vendor/bundle-cef.sh "$APP" "$BIN" copy
 fi
 
+# The browser MCP server sources: the app installs them from Contents/Resources/mcp
+# to ~/Library/Application Support/Synth/browser-mcp/ at launch (ADR-0011 stage two).
+mkdir -p "$APP/Contents/Resources"
+cp -R ../mcp "$APP/Contents/Resources/mcp"
+
 # Ad-hoc sign so the bundled app runs without Gatekeeper nagging on this machine.
 # --deep also covers the CEF framework and the four helper apps.
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true

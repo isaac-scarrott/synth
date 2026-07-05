@@ -174,6 +174,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     let bus = EventBus()
     let hookServer: HookServer
+    /// Stage-two control socket (ADR-0011): browser.list / browser.create for the
+    /// bundled MCP server. Request/response, so separate from the one-way hook socket.
+    @ObservationIgnored private var controlServer: ControlServer!
 
     /// Bytes of the last snapshot written — lets the autosave skip an unchanged rewrite
     /// (ADR-0010). @ObservationIgnored: a bookkeeping field, not UI state.
@@ -191,7 +194,23 @@ enum ThemePref: String, CaseIterable, Identifiable {
             for await event in self.bus.stream { self.apply(event) }
         }
         if let state = PersistenceStore.load() { restore(from: state) }
+        // Stage two (ADR-0011): advertise this instance, listen for control verbs,
+        // and install/register the bundled browser MCP server.
+        InstanceRegistry.shared.start()
+        controlServer = ControlServer(store: self)
+        controlServer.start()
+        MCPInstaller.refreshServerInstall()
+        syncAgentBridge()
         startAutosave()
+    }
+
+    /// Keep the instance file's worktreePaths and every worktree's .mcp.json current.
+    /// Runs at init and on the autosave cadence (both skip unchanged sets), so no
+    /// workspace/branch mutation site can forget it — the autosave model.
+    private func syncAgentBridge() {
+        let paths = workspaces.flatMap { $0.branches.map(\.worktreeURL.path) }
+        InstanceRegistry.shared.update(worktreePaths: paths)
+        MCPInstaller.syncWorktreeConfigs(paths)
     }
 
     // MARK: Bus → store
@@ -262,6 +281,20 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     func workspace(of branch: Branch) -> Workspace? {
         workspaces.first { $0.branches.contains { $0.id == branch.id } }
+    }
+
+    /// The branch whose worktree folder is `path` — the control socket's scope key
+    /// (the MCP server sends $CLAUDE_PROJECT_DIR). Symlink-resolved on both sides so
+    /// /tmp-style aliases still match.
+    func branch(forWorktreePath path: String) -> Branch? {
+        let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+        for ws in workspaces {
+            for br in ws.branches
+            where br.worktreeURL.resolvingSymlinksInPath().standardizedFileURL.path == target {
+                return br
+            }
+        }
+        return nil
     }
 
     /// Working directory for a session: its branch's worktree folder (ADR-0007).
@@ -641,6 +674,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     func saveNow() {
         lastSavedBytes = PersistenceStore.save(snapshot(), lastBytes: lastSavedBytes)
+        syncAgentBridge()
     }
 
     func presentGitError(_ message: String, details: String) {

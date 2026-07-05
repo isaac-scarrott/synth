@@ -40,7 +40,7 @@ enum BrowserCheck {
         let engine: BrowserEngine
         #if canImport(CEFShim)
         do {
-            engine = try CEFEngine(initialURL: dataURL(title: "synth-boot"))
+            engine = try CEFEngine(initialURL: dataURL(title: "synth-boot"), sessionID: UUID())
         } catch {
             report(false, "engine-created", error.localizedDescription)
             print("BROWSER-CHECK RESULT: FAIL")

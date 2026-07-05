@@ -67,6 +67,12 @@ if $HAS_CEF; then
   ./vendor/bundle-cef.sh "$APP" "$BIN" symlink
 fi
 
+# The browser MCP server sources: the app installs them from Contents/Resources/mcp
+# to ~/Library/Application Support/Synth/browser-mcp/ at launch (ADR-0011 stage two).
+mkdir -p "$APP/Contents/Resources"
+rm -rf "$APP/Contents/Resources/mcp"
+cp -R ../mcp "$APP/Contents/Resources/mcp"
+
 if $CHECK; then
   exec env SYNTH_AUTOMATION=1 "$APP/Contents/MacOS/Synth" --browser-check
 fi

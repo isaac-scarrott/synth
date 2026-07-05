@@ -22,13 +22,23 @@ import AppKit
     /// dir until app quit (session ids are never reused, so tombstones are safe).
     private var dead: Set<UUID> = []
 
+    /// Sessions whose engine is being created right now. Engine creation pumps the
+    /// main runloop (CEF's async browser bootstrap), which can run a SwiftUI render
+    /// pass that re-enters this method for the same session — without the guard that
+    /// second entry builds a duplicate engine (two CDP targets claiming one session,
+    /// one of them leaked).
+    private var creating: Set<UUID> = []
+
     func controller(for session: Session) -> BrowserSessionController? {
-        guard !dead.contains(session.id) else { return nil }
+        guard !dead.contains(session.id), !creating.contains(session.id) else { return nil }
         if let existing = controllers[session.id] { return existing }
+        creating.insert(session.id)
+        defer { creating.remove(session.id) }
         let ctrl = BrowserSessionController(session: session, bus: bus)
         controllers[session.id] = ctrl
         // The engine is the session's live process: running while it exists (a restored
-        // row sat idle until this first open).
+        // row sat idle until this first open). The event also re-renders the pane that
+        // saw nil during a reentrant render, now that the controller is cached.
         bus?.post(.statusChanged(session.id, .running))
         return ctrl
     }
@@ -88,7 +98,7 @@ import AppKit
     init(session: Session, bus: EventBus?) {
         self.sessionID = session.id
         self.bus = bus
-        self.engine = BrowserEngineFactory.make()
+        self.engine = BrowserEngineFactory.make(sessionID: session.id)
         engine.delegate = self
         // A restored (or popup-born) session reopens its page in the fresh engine.
         if let url = session.browserURL { navigate(to: url) }
@@ -100,22 +110,10 @@ import AppKit
         engine.navigate(to: url)
     }
 
-    /// working.html browserNorm: a schemeless entry gets https:// — except loopback hosts,
-    /// which get http:// (the primary job is a branch's dev server, and `localhost:8733`
-    /// over TLS would just fail). Returns whether the text made a navigable URL.
+    /// Returns whether the text made a navigable URL (normalization: URL.fromBrowserInput).
     @discardableResult
     func go(_ text: String) -> Bool {
-        let t = text.trimmingCharacters(in: .whitespaces)
-        guard !t.isEmpty else { return false }
-        let norm: String
-        if t.contains("://") {
-            norm = t
-        } else if t.hasPrefix("localhost") || t.hasPrefix("127.") || t.hasPrefix("[::1]") || t.hasPrefix("0.0.0.0") {
-            norm = "http://" + t
-        } else {
-            norm = "https://" + t
-        }
-        guard let url = URL(string: norm), url.host != nil else { return false }
+        guard let url = URL.fromBrowserInput(text) else { return false }
         navigate(to: url)
         return true
     }

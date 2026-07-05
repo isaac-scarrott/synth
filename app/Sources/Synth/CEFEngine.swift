@@ -59,6 +59,8 @@ final class BrowserProcessSupervisor {
         instanceRoot = root
         cdpPort = port
         initialized = true
+        // Advertise the endpoint to CDP clients (no-op in --browser-check mode).
+        InstanceRegistry.shared.setCDPPort(port)
 
         // CEF processes must be down before the app exits, or the survivors absorb
         // the next launch's singleton.
@@ -205,13 +207,14 @@ final class CEFEngine: NSObject, BrowserEngine {
 
     var view: NSView { shim.view }
 
-    init(initialURL: URL) throws {
+    init(initialURL: URL, sessionID: UUID) throws {
         let supervisor = BrowserProcessSupervisor.shared
         try supervisor.ensureInitialized()
         let profileDir = try supervisor.makeProfileDirectory()
         guard let shim = CEFShimBrowser(
             url: initialURL.absoluteString,
             cachePath: profileDir.path,
+            sessionId: sessionID.uuidString,
             frame: NSRect(x: 0, y: 0, width: 900, height: 600)
         ) else {
             supervisor.removeProfileDirectory(profileDir)

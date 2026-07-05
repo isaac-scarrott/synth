@@ -14,12 +14,12 @@ enum BrowserEngineFactory {
 
     private static let log = Logger(subsystem: "tech.holibob.synth", category: "browser")
 
-    static func make() -> BrowserEngine {
+    static func make(sessionID: UUID) -> BrowserEngine {
         #if canImport(CEFShim)
         do {
             // CEF needs a URL at browser creation; the home surface covers the view until
             // the session's first real navigation.
-            return try CEFEngine(initialURL: URL(string: "about:blank")!)
+            return try CEFEngine(initialURL: URL(string: "about:blank")!, sessionID: sessionID)
         } catch {
             log.error("CEF engine unavailable, falling back to WKWebView (no CDP): \(error.localizedDescription)")
             return WKWebViewEngine()

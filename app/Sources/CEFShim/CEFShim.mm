@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <atomic>
 #include <list>
+#include <string>
 
 #include "include/cef_app.h"
 #include "include/cef_application_mac.h"
@@ -277,7 +278,9 @@ class ShimClient : public CefClient,
                    public CefLifeSpanHandler,
                    public CefLoadHandler {
  public:
-  explicit ShimClient(CEFShimBrowser *owner) : owner_(owner) {}
+  ShimClient(CEFShimBrowser *owner, const std::string &sessionId)
+      : owner_(owner),
+        sessionTag_("window.__synthSessionId = \"" + sessionId + "\";") {}
 
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -298,6 +301,16 @@ class ShimClient : public CefClient,
   void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack,
                             bool canGoForward) override {
     [owner_ handleLoadingStateChangeCanGoBack:canGoBack canGoForward:canGoForward];
+  }
+
+  void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                 int httpStatusCode) override {
+    if (!frame->IsMain()) {
+      return;
+    }
+    // Session↔target mapping for CDP clients (ADR-0011 stage two): re-stamped after
+    // every main-frame load because each navigation gets a fresh JS world.
+    frame->ExecuteJavaScript(sessionTag_, frame->GetURL(), 0);
   }
 
   bool OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int popup_id,
@@ -333,6 +346,7 @@ class ShimClient : public CefClient,
 
  private:
   __weak CEFShimBrowser *owner_;
+  const std::string sessionTag_;
 
   IMPLEMENT_REFCOUNTING(ShimClient);
   DISALLOW_COPY_AND_ASSIGN(ShimClient);
@@ -446,6 +460,7 @@ class ShimClient : public CefClient,
 
 - (nullable instancetype)initWithURL:(NSString *)url
                            cachePath:(NSString *)cachePath
+                           sessionId:(NSString *)sessionId
                                frame:(NSRect)frame {
   NSAssert(NSThread.isMainThread, @"CEFShimBrowser is main-thread only");
   if (!g_initialized) {
@@ -479,7 +494,7 @@ class ShimClient : public CefClient,
                         CefRect(0, 0, (int)NSWidth(initial), (int)NSHeight(initial)));
   windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
 
-  CefRefPtr<ShimClient> client(new ShimClient(self));
+  CefRefPtr<ShimClient> client(new ShimClient(self, std::string(sessionId.UTF8String)));
   CefBrowserSettings browserSettings;
   // Async creation only: a fresh request context initializes its profile off-thread,
   // and CreateBrowserSync returns nullptr rather than waiting for it. Pump until

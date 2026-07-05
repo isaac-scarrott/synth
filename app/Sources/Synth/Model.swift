@@ -69,6 +69,25 @@ struct BrowserRecent: Codable, Equatable, Sendable {
 }
 
 extension URL {
+    /// working.html's browserNorm, shared by the omnibox and the control-socket
+    /// browser.create verb: a schemeless entry gets https:// — except loopback hosts,
+    /// which get http:// (the primary job is a branch's dev server, and
+    /// `localhost:8733` over TLS would just fail). nil when the text isn't navigable.
+    static func fromBrowserInput(_ text: String) -> URL? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return nil }
+        let norm: String
+        if t.contains("://") {
+            norm = t
+        } else if t.hasPrefix("localhost") || t.hasPrefix("127.") || t.hasPrefix("[::1]") || t.hasPrefix("0.0.0.0") {
+            norm = "http://" + t
+        } else {
+            norm = "https://" + t
+        }
+        guard let url = URL(string: norm), url.host != nil else { return nil }
+        return url
+    }
+
     /// working.html's `browserHost`, tightened to host+path: what browser sessions are named
     /// by and what the omnibox pill / recents show ("localhost:8733/palette", no scheme).
     var browserHostPath: String {

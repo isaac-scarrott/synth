@@ -240,16 +240,34 @@ func runEvent(name: String) -> Never {
 
 // MARK: - Report role
 
-/// `synth-hook report --signal <name>` — the terminal counterpart to the event role. Synth's
-/// injected zsh preexec/precmd hooks call this to report a foreground command's lifecycle
-/// (`term-run`, `term-idle`, `term-error`) over the same socket, tagged with $SYNTH_SESSION_ID.
-/// A missing correlation env — a shell started outside Synth — is a silent no-op, and it runs
-/// on every prompt, so it does the minimum: one line, one socket write, no stdin read.
+/// `synth-hook report --signal <name> [--title <cmd>]` — the terminal counterpart to the
+/// event role. Synth's injected zsh preexec/precmd hooks call this to report a foreground
+/// command's lifecycle (`term-run`, `term-idle`, `term-error`) over the same socket, tagged
+/// with $SYNTH_SESSION_ID. `--title` carries the command line on term-run so the row
+/// auto-names itself after what it's running. A missing correlation env — a shell started
+/// outside Synth — is a silent no-op, and it runs on every prompt, so it does the minimum:
+/// one line, one socket write, no stdin read.
 func runReport(args: [String]) -> Never {
     guard let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"],
           let i = args.firstIndex(of: "--signal"), i + 1 < args.count else { exit(0) }
-    sendLines(socketPath: socketPath, jsonLine(["session": sessionID, "signal": args[i + 1]]))
+    var lines = jsonLine(["session": sessionID, "signal": args[i + 1]])
+    if let t = args.firstIndex(of: "--title"), t + 1 < args.count,
+       let title = rowTitle(fromCommand: args[t + 1]) {
+        lines += jsonLine(["session": sessionID, "title": title])
+    }
+    sendLines(socketPath: socketPath, lines)
     exit(0)
+}
+
+/// A sidebar-sized name from a typed command line: first line only, whitespace collapsed,
+/// capped — or nil when nothing usable remains.
+func rowTitle(fromCommand cmd: String) -> String? {
+    let firstLine = cmd.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true).first ?? ""
+    let words = firstLine.split(whereSeparator: \.isWhitespace)
+    guard !words.isEmpty else { return nil }
+    var title = words.joined(separator: " ")
+    if title.count > 60 { title = String(title.prefix(59)) + "…" }
+    return title
 }
 
 /// The most recent `ai-title` in a Claude Code transcript (scanning from the end), or nil.

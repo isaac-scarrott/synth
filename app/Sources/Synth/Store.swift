@@ -23,8 +23,8 @@ enum SessionEvent: Sendable {
     /// A browser session's address changed — every navigation, including ones the engine's
     /// future CDP clients initiate (ADR-0011). Renames the row and feeds the branch recents.
     case browserNavigated(UUID, URL)
-    /// The page's document title — names the recents entry, never the session row
-    /// (browser rows are named by URL, working.html's browserHost).
+    /// The page's document title — auto-names the session row (URL host+path stands as the
+    /// fallback until it arrives) and labels the recents entry.
     case browserPageTitled(UUID, String)
     /// window.open / target=_blank: one page per session, so a popup becomes a NEW
     /// browser session in the same branch, pre-navigated and selected.
@@ -59,10 +59,17 @@ struct BranchCandidate: Identifiable {
 }
 
 /// The escalated sidebar indicator a background session raises as a toast: needs-input is
-/// the blue `?` (`Theme.attention`), error the terracotta `!` (`Theme.danger`) — the two
-/// states working.html's `notify()` surfaces. `done` (a live session settling to idle) is
-/// never a toast, so it isn't a kind here.
-enum NotifKind: Sendable { case input, error }
+/// the blue `?` (`Theme.attention`), error the terracotta `!` (`Theme.danger`), and — for
+/// any live session settling to idle — the green ✓ `done`, a transient toast that
+/// dismisses itself.
+enum NotifKind: Sendable {
+    case input, error, done
+
+    /// Deck precedence (front first): errors before needs-input before done.
+    var rank: Int {
+        switch self { case .error: return 0; case .input: return 1; case .done: return 2 }
+    }
+}
 
 /// One live in-app notification — a background session escalated to a glass toast. `seq` is
 /// a monotonic raise counter so same-kind toasts order newest-first (working.html's
@@ -337,9 +344,12 @@ enum ThemePref: String, CaseIterable, Identifiable {
             if !s.titleIsCustom { s.title = url.browserHostPath }
             noteBrowserRecent(url, for: s)
         case let .browserPageTitled(id, title):
-            // Attach the page title to the current URL's recents entry (the "name" column).
-            guard let s = session(id), let url = s.browserURL, !title.isEmpty,
-                  let br = branch(of: s),
+            guard let s = session(id), !title.isEmpty else { return }
+            // The page title is the row's auto-name — .browserNavigated already set the
+            // host+path fallback, which stands until this arrives (or for untitled pages).
+            if !s.titleIsCustom, s.title != title { s.title = title }
+            // Also attach it to the current URL's recents entry (the "name" column).
+            guard let url = s.browserURL, let br = branch(of: s),
                   let i = br.browserRecents.firstIndex(where: { $0.url == url.absoluteString })
             else { return }
             if br.browserRecents[i].title != title { br.browserRecents[i].title = title }
@@ -377,32 +387,47 @@ enum ThemePref: String, CaseIterable, Identifiable {
             if toNC { NotificationService.shared.postAttention(store: self, id: id, kind: kind) }
             else { raiseInApp(id, kind) }
         case .idle where prev.rollup != .idle:
-            // A live session settling to idle off-screen → ambient "done": the unread bullet
-            // plus one soft row sweep, no toast (working.html). Unfocused → a transient banner.
-            clearNotif(id)
+            // A live session settling to idle off-screen → "done": the unread bullet, one
+            // soft row sweep, and a transient toast that dismisses itself (a finished session
+            // should be seen, but asks for nothing). Unfocused → a transient banner.
             session(id)?.unread = true   // working.html done also marks the row unread
-            if toNC { NotificationService.shared.postDone(store: self, id: id) }
-            else { pulseTokens[id, default: 0] += 1 }
+            if toNC {
+                clearNotif(id)
+                NotificationService.shared.postDone(store: self, id: id)
+            } else {
+                pulseTokens[id, default: 0] += 1
+                raiseInApp(id, .done)
+            }
         default:
             clearNotif(id)   // work / run (and idle-from-idle) clear any standing toast
         }
     }
 
-    /// Raise (or re-raise, bumping it to newest) a background session's toast.
+    /// Raise (or re-raise, bumping it to newest) a background session's toast. A done toast
+    /// asks for nothing, so it dismisses itself; the seq check keeps the timer from killing
+    /// a newer toast the same session raised in the meantime.
     private func raiseInApp(_ id: UUID, _ kind: NotifKind) {
         notifSeq += 1
         notifs.removeAll { $0.id == id }
         notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq))
+        if kind == .done {
+            let seq = notifSeq
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(6))
+                self?.notifs.removeAll { $0.id == id && $0.seq == seq }
+            }
+        }
     }
 
     /// Drop a session's toast (opening it, or a work/run/idle transition off it).
     func clearNotif(_ id: UUID) { notifs.removeAll { $0.id == id } }
 
-    /// Active toasts, most-urgent first: errors before needs-input, then newest within a kind
-    /// (working.html `notifOrder`). Drops any whose session vanished or is now the open one.
+    /// Active toasts, most-urgent first: errors before needs-input before done, then newest
+    /// within a kind (working.html `notifOrder`). Drops any whose session vanished or is now
+    /// the open one.
     var notifOrder: [InAppNotif] {
         notifs.filter { $0.id != openSessionID && session($0.id) != nil }.sorted { a, b in
-            if (a.kind == .error) != (b.kind == .error) { return a.kind == .error }
+            if a.kind.rank != b.kind.rank { return a.kind.rank < b.kind.rank }
             return a.seq > b.seq
         }
     }
@@ -880,8 +905,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
         routeTransition(s.id, prev: prev, next: next, force: force)
     }
 
-    /// ⌥D — walk the next background session live→idle to fire the ambient "done" (row pulse,
-    /// or a Notification Center banner when forced there).
+    /// ⌥D — walk the next background session live→idle to fire "done" (row pulse + a transient
+    /// toast on a terminal/browser, or a Notification Center banner when forced there).
     func debugFireDone(force: NotifRoute) {
         let bg = debugBackground
         guard !bg.isEmpty else { return }

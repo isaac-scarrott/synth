@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// The request/response twin of HookServer (ADR-0008 socket infra, ADR-0011 stage two).
@@ -139,6 +140,18 @@ final class ControlServer: @unchecked Sendable {
                     "commentModeActive": ctrl.commentMode?.active ?? false,
                     "targetTitle": ctrl.commentMode?.targetTitle ?? "",
                     "notice": ctrl.commentMode?.notice ?? ""]
+
+        // The in-app deck exactly as NotificationDeck renders it (store.notifOrder), plus the
+        // focus fact that decides deck-vs-Notification-Center routing — so a headless harness
+        // can assert what toasts are standing without pixels.
+        case "automation.notifs" where automation:
+            return ["ok": true,
+                    "active": NSApp.isActive,
+                    "notifs": store.notifOrder.map { n -> [String: String] in
+                        ["sessionId": n.id.uuidString,
+                         "kind": String(describing: n.kind),
+                         "title": store.session(n.id)?.title ?? ""]
+                    }]
 
         default:
             return ["ok": false, "error": "unknown verb \(verb)"]

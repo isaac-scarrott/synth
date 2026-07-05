@@ -372,6 +372,13 @@ struct PaletteFrame {
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", sec: "act",
                             enter: { self.push(self.worktreeFrame(in: ws)) }),
+            ]
+            // Session creates land on the workspace's first branch (contextActions' fallback);
+            // the ctx chip names it since the crumb only establishes the workspace.
+            if let br = ws.branches.first {
+                items += sessionCreates(in: br, ctx: br.name)
+            }
+            items += [
                 PaletteItem(icon: .phosphor(Phosphor.gear), label: "Workspace settings…", sec: "act",
                             enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }),
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
@@ -388,15 +395,35 @@ struct PaletteFrame {
     }
 
     /// A leaf session's own frame (working.html sessionFrame) — reached by its ⋯ kebab.
+    /// Its own actions (rename / delete) plus sibling creates on its branch (the ctx
+    /// chip names the branch, as the crumb is the session).
     func sessionFrame(_ s: Session) -> PaletteFrame {
         PaletteFrame(crumb: s.title, placeholder: "Search \(s.title)…") { [self] _ in
-            [
+            var items: [PaletteItem] = []
+            if let br = store.branch(of: s) {
+                items += sessionCreates(in: br, ctx: br.name)
+            }
+            items += [
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(s.title)…", sec: "act",
                             enter: { self.push(self.renameFrame(.session(s))) }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(s.title)", sec: "act",
                             danger: true, enter: { self.push(self.confirmDeleteSession(s)) }),
             ]
+            return items
         }
+    }
+
+    /// The three session creates on a branch — shared by the branch frame and the
+    /// workspace/session frames, which borrow them with a ctx chip naming the branch.
+    private func sessionCreates(in branch: Branch, ctx: String? = nil) -> [PaletteItem] {
+        [
+            PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
+                        ctx: ctx, enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
+            PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code", sec: "act",
+                        ctx: ctx, enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
+            PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser", sec: "act",
+                        ctx: ctx, enter: { self.runAndClose { self.store.newBrowser(in: branch) } }),
+        ]
     }
 
     /// Drill the palette straight to a row's frame — the row ⋯ kebab opens this instead of
@@ -413,13 +440,8 @@ struct PaletteFrame {
 
     func branchFrame(_ branch: Branch) -> PaletteFrame {
         PaletteFrame(crumb: branch.name, placeholder: "Search \(branch.name)…") { [self] _ in
-            var items = [
-                PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
-                            enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
-                PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code", sec: "act",
-                            enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
-                PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser", sec: "act",
-                            enter: { self.runAndClose { self.store.newBrowser(in: branch) } }),
+            var items = sessionCreates(in: branch)
+            items += [
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(branch.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.branch(branch))) }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(branch.name)", sec: "act",

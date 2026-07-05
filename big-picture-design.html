@@ -778,12 +778,14 @@
   /* ---- In-app notifications: a stacked deck, bottom-left, hugging the sidebar ----
      Background sessions only (never the open one). A session that moves to needs-input or
      error rises as a quiet glass toast — the sidebar indicator escalated: same glyphs, same
-     state colours, plus the row's identity. 'done' (a live session settling to idle off-screen)
-     stays ambient: the unread bullet + one row pulse, no toast. 2+ collapse into a deck
-     (most-urgent in front) that fans on hover; ⌘↩ jumps to the front card, a click to any.
-     Driven by setSessionState → notifyOnTransition. When Synth is unfocused the native app
-     raises these through Notification Center instead — this is the focused-window layer. */
-  .notifs { position: absolute; left: calc(var(--sidebar-w, 260px) + 22px); bottom: 22px; width: 292px; z-index: 60; pointer-events: none; }
+     state colours, plus the row's identity. 'done' (a live session settling to idle
+     off-screen) raises a transient green-check toast that dismisses itself — Claude and
+     terminal/browser alike. 2+ collapse
+     into a deck (most-urgent in front) that fans on hover; ⌘↩ jumps to the front card, a
+     click to any. Driven by setSessionState → notifyOnTransition. When Synth is unfocused
+     the native app raises these through Notification Center instead — this is the
+     focused-window layer. */
+  .notifs { position: absolute; left: calc(var(--sidebar-w, 260px) + 22px); bottom: 22px; width: 320px; z-index: 60; pointer-events: none; }
   .app.collapsed .notifs { left: 22px; }
   .app.settings .notifs { display: none; }
   .notif {
@@ -809,6 +811,7 @@
   .notif--input .notif__glyph { color: var(--input); background: color-mix(in srgb, var(--input) 13%, transparent); }
   .notif--input .notif__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
   .notif--error .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
+  .notif--done .notif__glyph { color: var(--run); background: color-mix(in srgb, var(--run) 13%, transparent); }
   .notif__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .notif__who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .notif__who .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
@@ -1759,6 +1762,7 @@
   // --- Branch-group roll-up: highest-priority session state, else last activity ---
   const MARK_INPUT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg>';
   const MARK_ERROR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg>';
+  const MARK_DONE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
 
   // priority: needs-input > error > working > running > idle
   const PRIORITY = ['input', 'error', 'work', 'run', 'idle'];
@@ -1860,7 +1864,8 @@
   // A background session (never the open one) that moves to needs-input or error rises as a
   // quiet glass toast, bottom-left. Several collapse into a deck — most-urgent in front — that
   // fans out on hover; ⌘↩ jumps to the front card, a click to any. 'done' (a live session
-  // settling to idle off-screen) is ambient only: the unread bullet + one row pulse, no toast.
+  // settling to idle off-screen) raises a transient toast that dismisses itself — it asks
+  // for nothing, so it never persists; Claude and terminal/browser alike.
   // When Synth is unfocused the native app raises these through Notification Center instead;
   // this is the focused-window counterpart.
   const notifsEl = document.getElementById('notifs');
@@ -1871,29 +1876,43 @@
   let notifSeq = 0;
 
   const notifLive = (s) => s === 'work' || s === 'run' || s === 'input' || s === 'error';
+  const NOTIF_DONE_MS = 6000;   // a done toast asks for nothing — it dismisses itself
 
   function notifyOnTransition(el, prev, next) {
     if (el === openEl) { clearNotif(el); return; }
     if (next === 'input' || next === 'error') { notify(el, next); return; }
-    if (next === 'idle' && notifLive(prev)) {   // finished off-screen → ambient "done"
-      el.classList.add('session--unread');
+    if (next === 'idle' && notifLive(prev)) {   // finished off-screen → "done"
       el.classList.remove('session--pulse'); void el.offsetWidth; el.classList.add('session--pulse');
+      notify(el, 'done'); return;
     }
-    clearNotif(el);   // work / run / idle all clear a standing toast
+    clearNotif(el);   // work / run (and idle-from-idle) clear a standing toast
   }
 
   function notify(el, kind) {
     el.classList.add('session--unread');
-    notifState.set(el, { kind, order: ++notifSeq });
+    const prev = notifState.get(el);
+    if (prev && prev.timer) clearTimeout(prev.timer);
+    if (prev && prev.kind !== kind) {   // kind changed → rebuild the card, don't restyle a stale one
+      const c = notifCards.get(el);
+      if (c) { leaveNotif(c); notifCards.delete(el); }
+    }
+    const entry = { kind, order: ++notifSeq };
+    if (kind === 'done') entry.timer = setTimeout(() => clearNotif(el), NOTIF_DONE_MS);
+    notifState.set(el, entry);
     renderNotifs();
   }
-  function clearNotif(el) { if (notifState.delete(el)) renderNotifs(); }
+  function clearNotif(el) {
+    const st = notifState.get(el);
+    if (st && st.timer) clearTimeout(st.timer);
+    if (notifState.delete(el)) renderNotifs();
+  }
 
-  // background notifications, most-urgent first: error before input, newest first
+  // background notifications, most-urgent first: error before input before done, newest first
+  const NOTIF_RANK = { error: 0, input: 1, done: 2 };
   function notifOrder() {
     return [...notifState.keys()].filter((el) => el !== openEl && document.contains(el)).sort((a, b) => {
       const A = notifState.get(a), B = notifState.get(b);
-      if ((A.kind === 'error') !== (B.kind === 'error')) return A.kind === 'error' ? -1 : 1;
+      if (NOTIF_RANK[A.kind] !== NOTIF_RANK[B.kind]) return NOTIF_RANK[A.kind] - NOTIF_RANK[B.kind];
       return B.order - A.order;
     });
   }
@@ -1902,6 +1921,7 @@
   function notifWhat(el, kind) {
     const ai = el.dataset.type === 'ai';
     if (kind === 'error') return ai ? 'Claude hit an error' : 'exited with an error';
+    if (kind === 'done') return ai ? 'Claude finished' : 'finished';
     return ai ? 'Claude needs your input' : 'waiting for input';
   }
   function buildNotif(el) {
@@ -1914,7 +1934,7 @@
     const c = document.createElement('div');
     c.className = 'notif notif--' + kind;
     c.addEventListener('click', () => jumpTo(el));
-    c.innerHTML = '<div class="notif__glyph">' + (kind === 'error' ? MARK_ERROR : MARK_INPUT) + '</div>'
+    c.innerHTML = '<div class="notif__glyph">' + (kind === 'error' ? MARK_ERROR : kind === 'done' ? MARK_DONE : MARK_INPUT) + '</div>'
       + '<div class="notif__text"><div class="notif__who">'
       + '<span class="dot" style="background:' + color + '"></span>'
       + '<span class="k">' + icon + '</span>' + esc(name)
@@ -3455,10 +3475,22 @@
       build() {
         const items = [
           { sec: 'act', icon: ICON_BRANCH, label: 'New worktree…',  enter: () => pushFrame(createFrame('worktree', head)) },
+        ];
+        // Session creates land on the workspace's active branch (contextBranch's fallback);
+        // the ctx chip names it since the crumb only establishes the workspace.
+        const scope = head.closest('[data-repo]');
+        const br = scope.querySelector('.branch--active') || scope.querySelector('.branch');
+        if (br) {
+          const bn = brName(br);
+          items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addTerminal(br)) });
+          items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addClaude(br)) });
+          items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
+        }
+        items.push(
           { sec: 'act', icon: ICON_GEAR,   label: 'Workspace settings…', enter: () => runAndClose(() => enterSettings(head)) },
           { sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(head)) },
           { sec: 'act', icon: ICON_TRASH,  label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(head)) },
-        ];
+        );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
         return items;
@@ -3501,16 +3533,26 @@
     };
   }
 
-  // A session leaf has no children — just its own actions (rename / delete).
+  // A session leaf has no children — its own actions (rename / delete) plus sibling
+  // creates on its branch (the ctx chip names the branch, as the crumb is the session).
   function sessionFrame(row) {
     const name = seName(row);
     return {
       crumb: name, placeholder: 'Search ' + name + '…',
       build() {
-        return [
+        const items = [];
+        const br = branchGroupOf(row);
+        if (br) {
+          const bn = brName(br);
+          items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addTerminal(br)) });
+          items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addClaude(br)) });
+          items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
+        }
+        items.push(
           { sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) },
           { sec: 'act', icon: ICON_TRASH,  label: 'Delete ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) },
-        ];
+        );
+        return items;
       },
     };
   }

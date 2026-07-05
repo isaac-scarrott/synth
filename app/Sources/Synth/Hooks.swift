@@ -180,15 +180,22 @@ final class HookServer: @unchecked Sendable {
         if [[ -n "$SYNTH_SESSION_ID" && -n "$SYNTH_SOCKET_PATH" && -x "$SYNTH_HOOK_BIN" ]]; then
             zmodload zsh/datetime 2>/dev/null
             autoload -Uz add-zsh-hook 2>/dev/null
-            _synth_report() { "$SYNTH_HOOK_BIN" report --signal "$1" &! }
+            _synth_report() {
+                if [[ -n "$2" ]]; then
+                    "$SYNTH_HOOK_BIN" report --signal "$1" --title "$2" &!
+                else
+                    "$SYNTH_HOOK_BIN" report --signal "$1" &!
+                fi
+            }
             # A background timer paints the row green only once a command outlasts ~0.5s, so
             # trivial commands (ls, cd, git status) finish first, are killed, and never strobe
-            # the sidebar. `claude` is left entirely to Claude's own pipeline.
+            # the sidebar. The command line rides along so the row auto-names itself after the
+            # thing it's running. `claude` is left entirely to Claude's own pipeline.
             _synth_preexec() {
                 [[ "${1%% *}" == claude ]] && return
                 [[ -n "$_synth_run_timer" ]] && kill "$_synth_run_timer" 2>/dev/null
                 _synth_cmd_start=$EPOCHREALTIME
-                ( sleep 0.5; _synth_report term-run ) &!
+                ( sleep 0.5; _synth_report term-run "$1" ) &!
                 _synth_run_timer=$!
             }
             # Cancel a still-pending green, then classify the finished command. Exit 0 and the
@@ -252,6 +259,15 @@ final class HookServer: @unchecked Sendable {
     /// Overlay the hook correlation/callback env + shim PATH onto a base environment.
     static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String) -> [String: String] {
         var env = base
+        // Synth itself may have been launched from inside a Claude Code session (dev.sh in a
+        // claude turn), and these markers make Claude treat every claude spawned here as a
+        // nested "child session": no transcript on disk, no ai-title, so row auto-naming
+        // starves — and CLAUDECODE-aware tools misbehave in plain shells. Sessions inside
+        // Synth are top-level, so drop the inherited markers.
+        for key in ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
+                    "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT"] {
+            env.removeValue(forKey: key)
+        }
         // Terminal per-command reporting needs only synth-hook + the socket + the injected
         // ZDOTDIR — not a real `claude` — so wire it up whenever the helper exists, so a plain
         // shell lights up even on a machine without Claude Code installed.

@@ -15,7 +15,7 @@ struct NotificationDeck: View {
     // 10.5px, scaled 0.045 smaller, at opacity 1 / 0.7 / 0.45; a fourth+ card hides behind "+N".
     fileprivate static let peekRise: CGFloat = 10.5
     fileprivate static let peekOpacity: [Double] = [1, 0.7, 0.45]
-    private let cardWidth: CGFloat = 292
+    fileprivate static let cardWidth: CGFloat = 320
 
     // The hover-fan can't be driven headless (no pointer over an inactive window), so a
     // DEBUG-only flag forces the spread for screenshotting. Always false in release.
@@ -50,7 +50,7 @@ struct NotificationDeck: View {
                         .transition(.opacity)
                 }
             }
-            .frame(width: cardWidth, alignment: .bottomLeading)
+            .frame(width: Self.cardWidth, alignment: .bottomLeading)
             .frame(height: spread ? fannedH : collapsedH, alignment: .bottomLeading)
             .animation(.easeOut(duration: 0.24), value: spread)
             .animation(.easeOut(duration: 0.24), value: order.map(\.id))
@@ -119,7 +119,7 @@ private struct NotifCard: View {
                 }
             }
             .padding(EdgeInsets(top: 11, leading: 13, bottom: 11, trailing: 12))
-            .frame(width: 292, alignment: .leading)
+            .frame(width: NotificationDeck.cardWidth, alignment: .leading)
             .background(cardSurface)
             .contentShape(RoundedRectangle(cornerRadius: 13))
         }
@@ -142,12 +142,25 @@ private struct NotifCard: View {
         }
     }
 
-    private var glyphColor: Color { notif.kind == .error ? Theme.danger : Theme.attention }
+    private var glyphColor: Color {
+        switch notif.kind {
+        case .error: return Theme.danger
+        case .input: return Theme.attention
+        case .done:  return Theme.run
+        }
+    }
+    private var glyphPath: String {
+        switch notif.kind {
+        case .error: return Phosphor.exclamation
+        case .input: return Phosphor.question
+        case .done:  return Phosphor.check
+        }
+    }
 
     // The escalated sidebar AttentionGlyph: same Phosphor path + state colour, breathing on
     // needs-input, in a 26px chip tinted 13% of the state colour.
     private var glyph: some View {
-        Phos(path: notif.kind == .error ? Phosphor.exclamation : Phosphor.question, size: 17)
+        Phos(path: glyphPath, size: 17)
             .foregroundStyle(glyphColor)
             .modifier(BreatheIf(on: notif.kind == .input))
             .frame(width: 26, height: 26)

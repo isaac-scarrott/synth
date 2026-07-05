@@ -37,8 +37,9 @@ enum SessionStatus: Equatable, Sendable {
     var title: String
     var status: SessionStatus
     var unread: Bool
-    /// Set once the user renames the session by hand. Freezes the title so Claude Code's
-    /// evolving ai-title (arriving as `.titleChanged`) stops overwriting a chosen name.
+    /// Set once the user renames the session by hand. Freezes the title so auto-naming —
+    /// Claude Code's evolving ai-title, a terminal's running command, a browser's page
+    /// title — stops overwriting a chosen name.
     var titleIsCustom: Bool
     /// Claude Code's own session id — minted by our launch shim, reported back over the hook
     /// socket (Hooks/synth-hook). A restored Claude row uses it to resume the conversation

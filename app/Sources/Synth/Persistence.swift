@@ -58,6 +58,12 @@ enum PersistenceStore {
     static let schemaVersion = 1
 
     static var fileURL: URL {
+        // Harness isolation (like SYNTH_AUTOMATION): a driven test instance must never share
+        // state with the user's live one — Application Support resolves the real user home
+        // regardless of $HOME, and concurrent instances are last-writer-wins (ADR-0010).
+        if let dir = ProcessInfo.processInfo.environment["SYNTH_STATE_DIR"], !dir.isEmpty {
+            return URL(fileURLWithPath: dir, isDirectory: true).appendingPathComponent("state.json")
+        }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return support.appendingPathComponent("Synth", isDirectory: true)
                       .appendingPathComponent("state.json")

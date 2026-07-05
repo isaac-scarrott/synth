@@ -51,8 +51,9 @@ Trust only `swift build` — SourceKit shows false "cannot find type/module" err
    an **independent** fidelity-audit sub-agent (static code-vs-spec, no GUI launching). Do not claim it
    works without a screenshot or captured output.
 
-6. **Land.** Commit to `app/` (and `docs/`/`FEATURES.md` if the change warrants an ADR or ledger
-   entry — never touch the HTML). Fetch, then push to `main`. Remove the slice worktrees
+6. **Land.** Commit to `app/` (and `docs/` if the change warrants an ADR or ledger entry — a
+   ledger entry goes in `docs/features/<date>.md` plus its index line in `FEATURES.md`; never touch
+   the HTML). Fetch, then push to `main`. Remove the slice worktrees
    (`git worktree remove .worktree/<slice>`) and delete merged branches.
 
 ## Checklist before declaring done

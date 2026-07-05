@@ -47,7 +47,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
     /// done → a transient banner (same `.active` interruption; the sound is opt-in and off by default).
     @MainActor func postDone(store: AppStore, id: UUID) {
         guard available, let s = store.session(id) else { return }
-        submit(store, s, title: s.kind == .claudeCode ? "Claude finished" : "finished", sound: store.soundDone)
+        submit(store, s, title: notifVerb(s.kind, .done), sound: store.soundDone)
     }
 
     @MainActor private func submit(_ store: AppStore, _ s: Session, title: String, sound: Bool) {
@@ -101,9 +101,11 @@ func notifVerb(_ session: SessionKind, _ kind: NotifKind) -> String {
     switch (session, kind) {
     case (.claudeCode, .error): return "Claude hit an error"
     case (.claudeCode, .input): return "Claude needs your input"
+    case (.claudeCode, .done):  return "Claude finished"
     case (.terminal, .input), (.browser, .input): return "waiting for input"
     // A browser session has no error status of its own (its liveness is just "running");
     // it only reaches here defensively, phrased like any non-Claude process.
     case (.terminal, .error), (.browser, .error): return "exited with an error"
+    case (.terminal, .done), (.browser, .done):   return "finished"
     }
 }

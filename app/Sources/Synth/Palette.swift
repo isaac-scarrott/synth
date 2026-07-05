@@ -151,18 +151,27 @@ struct PaletteFrame {
 
     // MARK: Store-derived helpers
 
-    /// ⌘K acts on where you are: the open session, its branch, its workspace — the
-    /// open session leads, else the nav cursor's session (working.html contextActions).
+    /// The row ⌘K acts on. Mirrors working.html's contextRow: the focused sidebar row
+    /// leads when the keyboard owns the sidebar (`keyboardActive` is the `body.kbd` guard —
+    /// a live focus ring, not a stale cursor left behind after focus moved to the content
+    /// pane), else the open session in the content pane.
+    private func contextRow() -> RowRef? {
+        if store.keyboardActive, let ref = store.cursorRef { return ref }
+        if let s = store.openSession { return .session(s) }
+        return nil
+    }
+
+    /// ⌘K acts on where you are: the focused session, its branch, its workspace — the
+    /// context row leads (focused sidebar row, else the open session), and branch and
+    /// workspace resolve up/down from it, each falling back to the first one available so
+    /// ⌘K still offers "New terminal"/"New worktree…" when the anchor is a branch/workspace
+    /// or nothing is focused (working.html contextBranch/contextWorkspaceHead). Session
+    /// actions appear only when the anchor is a session leaf.
     private func contextActions() -> [PaletteItem] {
-        // Context row: the open session leads, else the nav cursor's row (any type).
-        // Branch and workspace resolve independently, each falling back to the first
-        // one available — so ⌘K still offers "New terminal"/"New worktree…" when the
-        // cursor sits on a branch/workspace row or nothing is open (working.html
-        // contextBranch/contextWorkspaceHead).
-        let cursor = store.cursorRef
+        let row = contextRow()
+        let open: Session? = { if case let .session(s) = row { return s }; return nil }()
         let workspace: Workspace? = {
-            if let s = store.openSession, let b = store.branch(of: s) { return store.workspace(of: b) }
-            switch cursor {
+            switch row {
             case let .workspace(w): return w
             case let .branch(b):    return store.workspace(of: b)
             case let .session(s):   return store.branch(of: s).flatMap { store.workspace(of: $0) }
@@ -170,8 +179,7 @@ struct PaletteFrame {
             }
         }() ?? store.workspaces.first
         let branch: Branch? = {
-            if let s = store.openSession, let b = store.branch(of: s) { return b }
-            switch cursor {
+            switch row {
             case let .branch(b):    return b
             case let .session(s):   return store.branch(of: s)
             case let .workspace(w): return w.branches.first
@@ -182,7 +190,7 @@ struct PaletteFrame {
         // Workspace). The header carries "Level · unit", so labels stay bare; browse drops
         // the now-redundant context chip and search restores it (see rootFrame).
         var items: [PaletteItem] = []
-        if let open = store.openSession {
+        if let open {
             let g = "Session · \(open.title)"
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
                                      group: g, ctx: open.title,

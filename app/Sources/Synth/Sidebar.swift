@@ -420,8 +420,12 @@ private struct BranchRow: View {
 
 private struct SessionRow: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: Session
     @State private var hovering = false
+    // Ambient "done" wash: a background session settling to idle sweeps a soft highlight once
+    // (working.html `session--pulse`). Bumping the store token starts a single 900ms fade.
+    @State private var pulse = false
 
     private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
@@ -480,9 +484,16 @@ private struct SessionRow: View {
             }
         }
         .rowChrome(hovering: hovering, selected: selected)
+        // The pulse wash sits behind the row chrome (a soft one-shot sweep, not a standing tint).
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.attention.opacity(pulse ? 0.11 : 0)))
         .onHover { hovering = $0 }
         .help("\(session.title) · \(session.status.label)")
         .id(session.id)
+        .onChange(of: store.pulseTokens[session.id]) { _, _ in
+            guard !reduceMotion else { return }
+            pulse = true
+            DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.9)) { pulse = false } }
+        }
         .reorderGesture(.session(session))
         .reorderLift(.session(session))
     }

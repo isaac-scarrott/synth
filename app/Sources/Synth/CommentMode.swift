@@ -30,6 +30,7 @@ import Observation
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var injectedScriptID: String?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
+    @ObservationIgnored private var deliveryTask: Task<Void, Never>?
 
     init(sessionID: UUID, cdpPort: UInt16) {
         self.sessionID = sessionID
@@ -187,13 +188,38 @@ import Observation
             return
         }
         targetTitle = target.title
-        guard TerminalManager.shared.submit(message, to: target.id) else {
-            showNotice("Claude session “\(target.title)” has no live terminal — open it first")
+        if TerminalManager.shared.submit(message, to: target.id) {
+            NSLog("Synth: browser comment delivered to Claude session %@ (%@)",
+                  target.id.uuidString, target.title)
+            showNotice("Comment sent to \(target.title)")
             return
         }
-        NSLog("Synth: browser comment delivered to Claude session %@ (%@)",
-              target.id.uuidString, target.title)
-        showNotice("Comment sent to \(target.title)")
+        // Sessions boot lazily: a Claude row whose pane was never shown has no live
+        // terminal, and a dropped comment is the worst failure this feature can have.
+        // Open the session (mounts the pane, launches claude), give the TUI a beat to
+        // come up, then deliver.
+        showNotice("Opening \(target.title) to deliver the comment…")
+        store?.open(target)
+        deliveryTask?.cancel()
+        deliveryTask = Task { [weak self] in
+            for _ in 0..<40 {
+                try? await Task.sleep(for: .seconds(0.5))
+                guard let self, !Task.isCancelled else { return }
+                if TerminalManager.shared.existingView(target.id) != nil {
+                    // The view exists the instant the pane mounts; claude's TUI needs a
+                    // few more seconds before early input is safe from being eaten.
+                    try? await Task.sleep(for: .seconds(3))
+                    guard !Task.isCancelled else { return }
+                    if TerminalManager.shared.submit(message, to: target.id) {
+                        NSLog("Synth: browser comment delivered to Claude session %@ (%@) after opening its pane",
+                              target.id.uuidString, target.title)
+                        self.showNotice("Comment sent to \(target.title)")
+                        return
+                    }
+                }
+            }
+            self?.showNotice("Couldn't reach “\(target.title)” — comment not delivered")
+        }
     }
 
     // MARK: Helpers

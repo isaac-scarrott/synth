@@ -227,8 +227,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     /// Front of the branch's Recent list, deduped by URL (keeping the known title), capped at 5.
+    /// Hostless URLs (about:blank, data:) are engine plumbing, not destinations.
     private func noteBrowserRecent(_ url: URL, for session: Session) {
-        guard let br = branch(of: session) else { return }
+        guard url.host != nil, let br = branch(of: session) else { return }
         let key = url.absoluteString
         var recents = br.browserRecents
         let title = recents.first(where: { $0.url == key })?.title ?? ""

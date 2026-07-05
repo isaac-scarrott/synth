@@ -17,7 +17,13 @@ import AppKit
     weak var bus: EventBus?
     private var controllers: [UUID: BrowserSessionController] = [:]
 
-    func controller(for session: Session) -> BrowserSessionController {
+    /// Sessions already terminated. A pane re-render mid-delete must not lazily
+    /// resurrect an engine for a dead row — that orphans a CDP target and a profile
+    /// dir until app quit (session ids are never reused, so tombstones are safe).
+    private var dead: Set<UUID> = []
+
+    func controller(for session: Session) -> BrowserSessionController? {
+        guard !dead.contains(session.id) else { return nil }
         if let existing = controllers[session.id] { return existing }
         let ctrl = BrowserSessionController(session: session, bus: bus)
         controllers[session.id] = ctrl
@@ -43,12 +49,14 @@ import AppKit
     }
 
     func terminate(_ id: UUID) {
+        dead.insert(id)
         controllers[id]?.shutdown()
         controllers[id] = nil
     }
 
     /// App quit: no engine may outlive the app (BrowserEngine.shutdown contract).
     func shutdownAll() {
+        dead.formUnion(controllers.keys)
         for ctrl in controllers.values { ctrl.shutdown() }
         controllers.removeAll()
     }
@@ -69,8 +77,8 @@ import AppKit
     private(set) var address: URL?
     private(set) var canGoBack = false
     private(set) var canGoForward = false
-    /// The bar toggle's on-state. The engine protocol only exposes showDevTools(), so the
-    /// off half of the toggle is chrome-side state until the CEF engine grows a close hook.
+    /// The bar toggle's on-state, resynced from the engine at each toggle — the user
+    /// can close the native DevTools window directly, behind the chrome's back.
     var devToolsOpen = false
     /// Bumped on every navigation — drives the reload button's one-shot spin.
     private(set) var spinNonce = 0
@@ -117,8 +125,9 @@ import AppKit
     func reload() { engine.reload(); spinNonce += 1 }
 
     func toggleDevTools() {
-        devToolsOpen.toggle()
-        if devToolsOpen { engine.showDevTools() }
+        let open = engine.devToolsOpen
+        if open { engine.closeDevTools() } else { engine.showDevTools() }
+        devToolsOpen = !open
     }
 
     func shutdown() { engine.shutdown() }
@@ -161,7 +170,14 @@ struct BrowserPane: View {
     }
 
     var body: some View {
-        let ctrl = BrowserManager.shared.controller(for: session)
+        // nil = the session was deleted while this pane was still on screen; render
+        // nothing for the frame it takes the selection to move on.
+        if let ctrl = BrowserManager.shared.controller(for: session) {
+            pane(ctrl)
+        }
+    }
+
+    private func pane(_ ctrl: BrowserSessionController) -> some View {
         VStack(spacing: 0) {
             BrowserBar(ctrl: ctrl, dropOpen: $dropOpen, homeFocusNonce: $homeFocusNonce)
             ZStack(alignment: .top) {

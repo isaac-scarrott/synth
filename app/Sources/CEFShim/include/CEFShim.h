@@ -62,6 +62,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reload;
 /// Opens Chromium DevTools for this page in its own native window.
 - (void)showDevTools;
+/// Closes this page's DevTools window if one is open.
+- (void)closeDevTools;
+/// Whether this page currently has a DevTools window open.
+- (BOOL)hasDevTools;
 /// Async close; cefBrowserDidClose fires when the browser is gone.
 - (void)close;
 

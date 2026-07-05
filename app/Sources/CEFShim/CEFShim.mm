@@ -562,6 +562,17 @@ class ShimClient : public CefClient,
   _browser->GetHost()->ShowDevTools(windowInfo, new AuxClient(), settings, CefPoint());
 }
 
+- (void)closeDevTools {
+  if (!_browser) {
+    return;
+  }
+  _browser->GetHost()->CloseDevTools();
+}
+
+- (BOOL)hasDevTools {
+  return _browser && _browser->GetHost()->HasDevTools();
+}
+
 - (void)close {
   if (!_browser || _closeRequested) {
     return;

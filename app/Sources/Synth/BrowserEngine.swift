@@ -24,6 +24,10 @@ protocol BrowserEngine: AnyObject {
     func goForward()
     func reload()
     func showDevTools()
+    func closeDevTools()
+    /// Read at toggle time, not cached — the user can close the native DevTools
+    /// window directly, behind the chrome's back.
+    var devToolsOpen: Bool { get }
 
     /// Hard teardown: the engine's processes must be gone when this returns or shortly
     /// after — a surviving instance owns the profile singleton and silently absorbs the

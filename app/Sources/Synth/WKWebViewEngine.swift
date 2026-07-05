@@ -62,6 +62,8 @@ import WebKit
     /// WebKit exposes no in-view DevTools surface — docked DevTools is the CEF engine's
     /// job (`ShowDevTools`). Deliberately empty rather than approximating with private API.
     func showDevTools() {}
+    func closeDevTools() {}
+    var devToolsOpen: Bool { false }
 
     func shutdown() {
         observers = []

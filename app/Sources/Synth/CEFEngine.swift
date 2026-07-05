@@ -222,6 +222,8 @@ final class CEFEngine: NSObject, BrowserEngine {
     func goForward() { shim.goForward() }
     func reload() { shim.reload() }
     func showDevTools() { shim.showDevTools() }
+    func closeDevTools() { shim.closeDevTools() }
+    var devToolsOpen: Bool { shim.hasDevTools() }
 
     func shutdown() {
         shim.close()   // async; profile dir is deleted in cefBrowserDidClose

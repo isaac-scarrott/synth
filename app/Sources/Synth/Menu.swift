@@ -14,6 +14,9 @@ struct ActiveMenu {
     let level: RowMenu.Level
     let creates: [MenuCreate]
     let onDelete: () -> Void
+    /// Overrides the level's stock confirm copy — the cascade-naming session delete
+    /// ("…also closes its N browsers", ADR-0011 stage four).
+    var confirmText: String? = nil
 }
 
 /// Each kebab publishes its bounds; the root reads the active row's to place the menu.
@@ -51,6 +54,7 @@ struct MenuOverlay: View {
                 .onTapGesture(perform: onClose)
 
             RowMenu(level: menu.level, creates: menu.creates, onDelete: menu.onDelete,
+                    confirmText: menu.confirmText,
                     isPresented: Binding(get: { true }, set: { if !$0 { onClose() } }),
                     confirming: $store.menuConfirming)
                 .clipShape(RoundedRectangle(cornerRadius: 11))

@@ -8,10 +8,12 @@ import Foundation
 ///
 /// Verbs (the MCP server's session tools; everything page-level goes over CDP):
 ///   {"verb":"browser.list","worktreePath":"…"}
-///     → {"ok":true,"sessions":[{"sessionId","title","url","branch"}]}
-///   {"verb":"browser.create","worktreePath":"…","url":"…"?}
+///     → {"ok":true,"sessions":[{"sessionId","title","url","branch","owner"?}]}
+///        (owner = the owning claude row's id, stage-four containment)
+///   {"verb":"browser.create","worktreePath":"…","url":"…"?,"ownerSessionId":"…"?}
 ///     → {"ok":true,"sessionId":"…"}   (created exactly like ⌘K New browser:
-///        in the matching branch, pre-navigated if url given, selected)
+///        in the matching branch, pre-navigated if url given, selected;
+///        ownerSessionId naming a claude row in the branch makes it owned)
 final class ControlServer: @unchecked Sendable {
     let socketPath = InstanceRegistry.controlSocketPath
     private weak var store: AppStore?
@@ -94,16 +96,26 @@ final class ControlServer: @unchecked Sendable {
         switch verb {
         case "browser.list":
             let sessions = branch.sessions.filter { $0.kind == .browser }.map { s in
-                ["sessionId": s.id.uuidString,
-                 "title": s.title,
-                 "url": s.browserURL?.absoluteString ?? "",
-                 "branch": branch.name]
+                var entry: [String: Any] = ["sessionId": s.id.uuidString,
+                                            "title": s.title,
+                                            "url": s.browserURL?.absoluteString ?? "",
+                                            "branch": branch.name]
+                // Stage four: owned rows are annotated, never hidden — the shared surface.
+                if let owner = s.ownerSessionID { entry["owner"] = owner.uuidString }
+                return entry
             }
             return ["ok": true, "sessions": sessions]
 
         case "browser.create":
             let url = (request["url"] as? String).flatMap(URL.fromBrowserInput)
-            guard let session = store.newBrowser(in: branch, at: url) else {
+            // Stage four creation stamping: the calling claude names its own Synth row and
+            // becomes the owner. Valid only for a claude-kind row in this branch; anything
+            // else (absent, malformed, external claude) just creates an unowned sibling —
+            // ownership is best-effort, never an error.
+            let owner = (request["ownerSessionId"] as? String)
+                .flatMap(UUID.init(uuidString:))
+                .flatMap { id in branch.sessions.first { $0.id == id && $0.kind == .claudeCode } }
+            guard let session = store.newBrowser(in: branch, at: url, ownedBy: owner) else {
                 return ["ok": false, "error": "session creation failed"]
             }
             // The engine mounts when the selected pane renders (the next runloop

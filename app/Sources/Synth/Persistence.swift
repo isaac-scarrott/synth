@@ -49,6 +49,9 @@ struct PersistedSession: Codable {
     /// A browser session's current page — a restored row reopens it in a fresh engine
     /// (ADR-0011; same reconstruction model as `claude --resume`).
     var browserURL: URL?
+    /// The owning Claude row's id for a contained browser (ADR-0011 stage four).
+    /// Optional/omitted when unowned so pre-containment snapshots decode unchanged.
+    var ownerSessionID: UUID?
 }
 
 /// Reads and writes the state snapshot under Application Support. Atomic writes with a

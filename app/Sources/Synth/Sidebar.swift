@@ -488,6 +488,12 @@ private struct SessionRow: View {
         .rowChrome(hovering: hovering, selected: selected)
         // The pulse wash sits behind the row chrome (a soft one-shot sweep, not a standing tint).
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.attention.opacity(pulse ? 0.11 : 0)))
+        // Containment (ADR-0011 stage four): a browser owned by a Claude session sits one
+        // indent step under its owner — same session dials, the indent alone carries the
+        // relation. Leading-only, so the row's right edge (and its 16px indicator slot)
+        // stays on the sidebar's shared right axis (working.html `.session--owned`).
+        .padding(.leading, session.ownerSessionID != nil ? 15 : 0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: session.ownerSessionID)
         .onHover { hovering = $0 }
         .help("\(session.title) · \(session.status.label)")
         .id(session.id)

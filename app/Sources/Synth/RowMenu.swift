@@ -9,6 +9,8 @@ struct RowMenu: View {
     let level: Level
     var creates: [MenuCreate]
     var onDelete: () -> Void
+    /// Overrides the level's stock confirm copy (ActiveMenu.confirmText).
+    var confirmText: String? = nil
     @Binding var isPresented: Bool
     /// Lifted to the store so the `d` shortcut can open straight into confirm and ↵ can commit.
     @Binding var confirming: Bool
@@ -21,6 +23,7 @@ struct RowMenu: View {
         level == .session ? "Delete" : "Remove"
     }
     private var confirmLabel: String {
+        if let confirmText { return confirmText }
         switch level {
         case .workspace: return "Remove this workspace from the sidebar? Nothing on disk is deleted."
         case .branch:    return "Remove this branch from the sidebar? Its worktree stays on disk."

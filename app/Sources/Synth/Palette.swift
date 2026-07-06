@@ -207,6 +207,7 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
                                      group: g, ctx: open.title,
                                      enter: { self.push(self.renameFrame(.session(open))) }))
+            items += containmentItems(open, group: g)
             items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete",
                                      group: g, ctx: open.title, danger: true,
                                      enter: { self.push(self.confirmDeleteSession(open)) }))
@@ -235,6 +236,25 @@ struct PaletteFrame {
                                      enter: { self.push(self.worktreeFrame(in: workspace)) }))
         }
         return items
+    }
+
+    /// Containment verbs for a browser row (ADR-0011 stage four) — the sole way ownership
+    /// changes by hand: owned → Detach; unowned → one Move-under per claude in its branch.
+    private func containmentItems(_ s: Session, group: String? = nil, sec: String? = nil) -> [PaletteItem] {
+        guard s.kind == .browser else { return [] }
+        if let owner = store.owner(of: s) {
+            return [PaletteItem(icon: .phosphor(Phosphor.minusCircle),
+                                label: "Detach from “\(owner.title)”",
+                                sec: sec, group: group, ctx: s.title,
+                                enter: { self.runAndClose { self.store.detach(s) } })]
+        }
+        guard let br = store.branch(of: s) else { return [] }
+        return br.sessions.filter { $0.kind == .claudeCode }.map { claude in
+            PaletteItem(icon: .phosphor(Phosphor.sparkle),
+                        label: "Move under “\(claude.title)”",
+                        sec: sec, group: group, ctx: s.title,
+                        enter: { self.runAndClose { self.store.adopt(s, by: claude) } })
+        }
     }
 
     private func wsOf(_ branch: Branch) -> String { store.workspace(of: branch)?.name ?? "" }
@@ -388,14 +408,17 @@ struct PaletteFrame {
     }
 
     /// A leaf session's own frame (working.html sessionFrame) — reached by its ⋯ kebab.
+    /// Browser rows carry the containment verbs between Rename and Delete (stage four).
     func sessionFrame(_ s: Session) -> PaletteFrame {
         PaletteFrame(crumb: s.title, placeholder: "Search \(s.title)…") { [self] _ in
-            [
+            var items = [
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(s.title)…", sec: "act",
                             enter: { self.push(self.renameFrame(.session(s))) }),
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(s.title)", sec: "act",
-                            danger: true, enter: { self.push(self.confirmDeleteSession(s)) }),
             ]
+            items += containmentItems(s, sec: "act")
+            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(s.title)", sec: "act",
+                                     danger: true, enter: { self.push(self.confirmDeleteSession(s)) }))
+            return items
         }
     }
 
@@ -500,7 +523,7 @@ struct PaletteFrame {
     }
     func confirmDeleteSession(_ s: Session) -> PaletteFrame {
         confirmFrame(verb: "Delete", name: s.title,
-                     hint: "Delete this session?") { [store] in store.closeSession(s) }
+                     hint: store.deleteSessionHint(s)) { [store] in store.closeSession(s) }
     }
 
     // MARK: Create frames — the search input becomes the name field

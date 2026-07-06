@@ -236,11 +236,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// text submitted with Enter) would hand the page shell execution. Comment delivery
     /// gates on this set (CommentModeController.deliver).
     private(set) var liveClaudeIDs: Set<UUID> = []
-    /// Last hook activity per claude session — deterministic most-recently-active targeting.
-    @ObservationIgnored private var claudeSeenAt: [UUID: Date] = [:]
 
     func isLiveClaude(_ id: UUID) -> Bool { liveClaudeIDs.contains(id) }
-    func claudeActivity(_ id: UUID) -> Date { claudeSeenAt[id] ?? .distantPast }
 
     let bus = EventBus()
     let hookServer: HookServer
@@ -289,7 +286,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
         switch event {
         case let .statusChanged(id, status):
             guard let s = session(id) else { break }
-            if liveClaudeIDs.contains(id) { claudeSeenAt[id] = Date() }
             // A `needsInput` (?) is only legitimate mid-turn: a question / permission / plan
             // block always interrupts work in flight. Claude's ambient "waiting for your input"
             // notification instead fires at end-of-turn and races the `Stop`→idle that ends it —
@@ -322,7 +318,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
             // posts .terminal (HookServer.apply) — the only writers of comment-target liveness.
             if kind == .claudeCode {
                 liveClaudeIDs.insert(id)
-                claudeSeenAt[id] = Date()
             } else {
                 liveClaudeIDs.remove(id)
             }
@@ -330,7 +325,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
         case let .claudeSessionCaptured(id, claudeID):
             if let s = session(id), s.claudeSessionID != claudeID { s.claudeSessionID = claudeID }
             liveClaudeIDs.insert(id)
-            claudeSeenAt[id] = Date()
         case let .browserNavigated(id, url):
             guard let s = session(id) else { return }
             s.browserURL = url
@@ -345,7 +339,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
             if br.browserRecents[i].title != title { br.browserRecents[i].title = title }
         case let .browserPopupRequested(id, url):
             guard let s = session(id) else { return }
-            newBrowser(in: branch(of: s), at: url)
+            // A popup opened from an owned browser inherits the owner (stage four) —
+            // it's the same claude's surface, just a second page.
+            newBrowser(in: branch(of: s), at: url, ownedBy: owner(of: s))
         }
     }
 
@@ -590,21 +586,25 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     /// A browser session (ADR-0011 stage one): titled "Browser" until it navigates, then
     /// named by its page (host+path). `url` non-nil pre-navigates — the popup path. Running
-    /// from birth: opening it mounts the engine immediately.
+    /// from birth: opening it mounts the engine immediately. `ownedBy` a claude row in the
+    /// same branch makes it a contained browser (stage four) — nested, cascading, the
+    /// deterministic comment target.
     @discardableResult
-    func newBrowser(in branch: Branch? = nil, at url: URL? = nil) -> Session? {
+    func newBrowser(in branch: Branch? = nil, at url: URL? = nil, ownedBy owner: Session? = nil) -> Session? {
         let session = addSession(kind: .browser,
                                  title: url?.browserHostPath ?? "Browser",
-                                 status: .running, in: branch)
+                                 status: .running, in: branch, ownedBy: owner)
         session?.browserURL = url
         return session
     }
 
     @discardableResult
-    private func addSession(kind: SessionKind, title: String, status: SessionStatus, in branch: Branch?) -> Session? {
+    private func addSession(kind: SessionKind, title: String, status: SessionStatus,
+                            in branch: Branch?, ownedBy owner: Session? = nil) -> Session? {
         guard let br = branch ?? defaultBranch() else { return nil }
         let session = Session(kind: kind, title: title, status: status)
         br.sessions.append(session)
+        if let owner { adopt(session, by: owner) }
         br.lastActivity = "now"
         if let ws = workspace(of: br) { expanded.insert(ws.id) }
         expanded.insert(br.id)
@@ -613,12 +613,89 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     func closeSession(_ session: Session) {
+        // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
+        // live and die with it — the delete confirm names them before this runs.
+        for browser in ownedBrowsers(of: session) { closeSession(browser) }
         TerminalManager.shared.terminate(session.id)
         BrowserManager.shared.terminate(session.id)
         for br in workspaces.flatMap(\.branches) {
             br.sessions.removeAll { $0.id == session.id }
         }
         if openSessionID == session.id { openSessionID = nil }
+    }
+
+    // MARK: Containment (ADR-0011 stage four: a browser can belong to a Claude session)
+
+    /// The claude row owning `session`, or nil — a dangling owner id (owner deleted out
+    /// from under a snapshot) resolves to nil, i.e. the browser is effectively unowned.
+    func owner(of session: Session) -> Session? {
+        guard let id = session.ownerSessionID else { return nil }
+        return branch(of: session)?.sessions.first { $0.id == id && $0.kind == .claudeCode }
+    }
+
+    /// The browsers a claude row owns, in sidebar order.
+    func ownedBrowsers(of session: Session) -> [Session] {
+        guard session.kind == .claudeCode, let br = branch(of: session) else { return [] }
+        return br.sessions.filter { $0.ownerSessionID == session.id }
+    }
+
+    /// Nest `browser` under `claude` (creation stamping, the kebab's "Move under…", or a
+    /// comment-spawned claude adopting its browser). Ownership keys off the Synth row id,
+    /// so it survives claude exits and `--resume`.
+    func adopt(_ browser: Session, by claude: Session) {
+        guard browser.kind == .browser, claude.kind == .claudeCode,
+              let br = branch(of: browser),
+              br.sessions.contains(where: { $0.id == claude.id })
+        else { return }
+        browser.ownerSessionID = claude.id
+        snapOwned(in: br)
+    }
+
+    /// Release `browser` back to an unowned branch-tier sibling — the cascade escape hatch.
+    /// It keeps its slot just below the block it left (snapOwned pulls the still-owned
+    /// rows up past it).
+    func detach(_ browser: Session) {
+        guard browser.ownerSessionID != nil, let br = branch(of: browser) else { return }
+        browser.ownerSessionID = nil
+        snapOwned(in: br)
+    }
+
+    /// Containment's array invariant: owned rows sit contiguously right after their owner,
+    /// preserving relative order — the flat `br.sessions` order IS the sidebar order, so
+    /// nesting is adjacency, not a second tree (working.html's snapOwned).
+    private func snapOwned(in br: Branch) {
+        var rows = br.sessions
+        var ownedByOwner: [UUID: [Session]] = [:]
+        let ownerIDs = Set(rows.filter { $0.kind == .claudeCode }.map(\.id))
+        rows.removeAll { row in
+            guard let o = row.ownerSessionID, ownerIDs.contains(o) else { return false }
+            ownedByOwner[o, default: []].append(row)
+            return true
+        }
+        br.sessions = rows.flatMap { [$0] + (ownedByOwner[$0.id] ?? []) }
+    }
+
+    /// Delete-confirm copy for a session: deleting an owning claude row cascades, so the
+    /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
+    func deleteSessionHint(_ session: Session) -> String {
+        let owned = ownedBrowsers(of: session)
+        guard !owned.isEmpty else { return "Delete this session?" }
+        let what = owned.count == 1 ? "browser" : "\(owned.count) browsers"
+        return "Delete this session? This also closes its \(what)."
+    }
+
+    /// The comment ladder's spawn rung (CommentMode rung 3): a claude row created exactly
+    /// like `newClaude` but WITHOUT `open()` — the spawn is silent, focus stays on the
+    /// browser pane. The caller mounts the row for a beat so its PTY boots
+    /// (GhosttySurfaceView spawns on window attach), then returns to the browser.
+    @discardableResult
+    func spawnClaude(in branch: Branch) -> Session? {
+        let session = Session(kind: .claudeCode, title: "Claude Code", status: .working)
+        branch.sessions.append(session)
+        branch.lastActivity = "now"
+        if let ws = workspace(of: branch) { expanded.insert(ws.id) }
+        expanded.insert(branch.id)
+        return session
     }
 
     /// Folder picker → branch picker. Panel runs modally, so state mutation happens after dismiss.
@@ -738,7 +815,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
                                 PersistedSession(id: s.id, kind: s.kind.rawValue, title: s.title,
                                                  titleIsCustom: s.titleIsCustom,
                                                  claudeSessionID: s.claudeSessionID,
-                                                 browserURL: s.browserURL)
+                                                 browserURL: s.browserURL,
+                                                 ownerSessionID: s.ownerSessionID)
                             },
                             browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents)
                     },
@@ -771,7 +849,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
                 let sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
-                            claudeSessionID: ps.claudeSessionID, browserURL: ps.browserURL)
+                            claudeSessionID: ps.claudeSessionID, browserURL: ps.browserURL,
+                            ownerSessionID: ps.ownerSessionID)
                 }
                 // Scrub hostless recents (about:blank) recorded before the filter existed.
                 let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }

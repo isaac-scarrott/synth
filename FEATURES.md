@@ -215,3 +215,8 @@ disclosure to dive deeper.
   session opens, the rest wait dormant until first opened; a non-stock template name spawns
   title-frozen so auto-naming never overwrites it. Adding a workspace (importing existing branches)
   deliberately doesn't spawn.
+- **Browser tools target sessions explicitly (MCP server)** — every action tool takes an optional
+  `sessionId` that overrides the focused session without moving it, because one server process
+  serves a Claude session *and* its sub-agents (no caller identity in MCP) and a process-wide
+  focus pointer had concurrent agents driving each other's browsers; superseded CDP connections
+  now retire on a delay so a reconnect can't kill another agent's in-flight call.

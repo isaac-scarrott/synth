@@ -8,6 +8,12 @@
 // connectOverCDP. The CDP endpoint is per app instance; each Synth browser session
 // is a page target, mapped back to its session by window.__synthSessionId (stamped
 // by the app's CEF shim on every main-frame load end).
+//
+// One server process serves a whole Claude session INCLUDING its sub-agents (they
+// share the parent's MCP connections, and calls carry no caller identity). So the
+// "focused session" is a single process-wide pointer — concurrent agents would
+// fight over it. Every action tool therefore takes an optional sessionId that
+// targets a session directly; focus is only a single-agent convenience.
 
 import fs from "node:fs";
 import net from "node:net";
@@ -133,7 +139,15 @@ function controlCall(inst, request) {
 // ---------------------------------------------------------------------------
 // CDP connection — lazy, reconnect on drop or port change.
 
-let cdp = null; // { browser, port }
+let cdp = null;        // { browser, port }
+let connecting = null; // { port, promise } — racing callers share one dial
+
+/** Close a superseded connection only after any in-flight op on it is done
+ *  (longest tool timeout is 20s) — closing immediately is how one agent's
+ *  reconnect kills another agent's screenshot mid-flight. */
+function retire(browser) {
+  setTimeout(() => browser.close().catch(() => {}), 30_000).unref?.();
+}
 
 async function connectedBrowser(inst) {
   if (!inst.cdpPort) {
@@ -142,18 +156,24 @@ async function connectedBrowser(inst) {
       "Create a browser session first (browser_create).");
   }
   if (cdp && cdp.port === inst.cdpPort && cdp.browser.isConnected()) return cdp.browser;
-  if (cdp) { try { await cdp.browser.close(); } catch { /* already gone */ } cdp = null; }
-  const browser = await chromium.connectOverCDP(
-    `http://127.0.0.1:${inst.cdpPort}`, { timeout: 10000 });
-  browser.on("disconnected", () => { if (cdp && cdp.browser === browser) cdp = null; });
-  cdp = { browser, port: inst.cdpPort };
-  // Instrument existing and future pages right away — console events buffered by the
-  // browser replay asynchronously on attach, and a listener must already be there.
-  for (const context of browser.contexts()) {
-    context.on("page", instrument);
-    for (const page of context.pages()) instrument(page);
-  }
-  return browser;
+  if (connecting?.port === inst.cdpPort) return connecting.promise;
+  if (cdp) { retire(cdp.browser); cdp = null; }
+  const promise = (async () => {
+    const browser = await chromium.connectOverCDP(
+      `http://127.0.0.1:${inst.cdpPort}`, { timeout: 10000 });
+    browser.on("disconnected", () => { if (cdp && cdp.browser === browser) cdp = null; });
+    cdp = { browser, port: inst.cdpPort };
+    // Instrument existing and future pages right away — console events buffered by the
+    // browser replay asynchronously on attach, and a listener must already be there.
+    for (const context of browser.contexts()) {
+      context.on("page", instrument);
+      for (const page of context.pages()) instrument(page);
+    }
+    return browser;
+  })();
+  connecting = { port: inst.cdpPort, promise };
+  try { return await promise; }
+  finally { if (connecting?.promise === promise) connecting = null; }
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +228,7 @@ async function sessionPages(inst) {
 async function sessionPagesSeeking(inst, want) {
   let pages = await sessionPages(inst);
   if (!pages.some(want)) {
-    if (cdp) { try { await cdp.browser.close(); } catch { /* already gone */ } cdp = null; }
+    if (cdp) { retire(cdp.browser); cdp = null; }
     pages = await sessionPages(inst);
   }
   return pages;
@@ -240,6 +260,23 @@ async function focusedPage(inst) {
   focusedSessionId = chosen.sessionId;
   return chosen.page;
 }
+
+/** The page a tool acts on: the explicitly named session, else the focused one.
+ *  Explicit targeting does NOT move the focus — that's what keeps concurrent
+ *  agents out of each other's sessions. */
+async function targetPage(inst, sessionId) {
+  if (!sessionId) return focusedPage(inst);
+  const pages = await sessionPagesSeeking(inst, (p) => p.sessionId === sessionId);
+  const hit = pages.find((p) => p.sessionId === sessionId);
+  if (!hit) throw new Error(`no live browser session ${sessionId} — see browser_list`);
+  return hit.page;
+}
+
+const sessionIdParam = z.string().optional().describe(
+  "session to act on (from browser_create/browser_list); overrides the focused " +
+  "session without moving the focus. ALWAYS pass this when running as one of " +
+  "several agents (sub-agents share this server, and the focus is a single " +
+  "process-wide pointer — last create/focus wins)");
 
 // ---------------------------------------------------------------------------
 // Helpers.
@@ -310,7 +347,8 @@ tool("browser_create",
   "Create a new Synth browser session in this worktree's branch (visible in the " +
   "sidebar, selected), optionally pre-navigated to a URL. Focuses the new session. " +
   "The browser belongs to this Claude session — user comments made in it are routed " +
-  "back to this session.",
+  "back to this session. Returns the sessionId: keep it, and pass it as sessionId " +
+  "on every subsequent tool call if other agents may be driving browsers too.",
   { url: z.string().optional().describe("URL to open (scheme optional)") },
   async ({ url }) => {
     const scope = requireScope();
@@ -341,7 +379,9 @@ tool("browser_create",
   });
 
 tool("browser_focus",
-  "Select which browser session subsequent tools act on.",
+  "Select which browser session subsequent tools act on by default. The focus is " +
+  "one pointer for the whole Claude session (sub-agents included) — with several " +
+  "agents active, skip this and pass sessionId per call instead.",
   { sessionId: z.string().describe("a sessionId from browser_list") },
   async ({ sessionId }) => {
     const pages = await sessionPagesSeeking(
@@ -354,10 +394,13 @@ tool("browser_focus",
   });
 
 tool("browser_navigate",
-  "Navigate the focused browser session to a URL.",
-  { url: z.string().describe("destination (scheme optional; localhost gets http)") },
-  async ({ url }) => {
-    const page = await focusedPage(requireInstance());
+  "Navigate a browser session to a URL (the focused session unless sessionId names one).",
+  {
+    url: z.string().describe("destination (scheme optional; localhost gets http)"),
+    sessionId: sessionIdParam,
+  },
+  async ({ url, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
     await page.goto(normalizeURL(url), { waitUntil: "load", timeout: 20000 });
     return text(`now at ${page.url()} — "${await page.title()}"`);
   });
@@ -365,39 +408,46 @@ tool("browser_navigate",
 // History navs in CEF fire no domcontentloaded (the spike's lesson) — wait for
 // commit, then settle. Success is judged by the URL, not the return value:
 // Playwright yields null for a history nav that produced no network response.
-async function historyNav(go) {
-  const page = await focusedPage(requireInstance());
+async function historyNav(sessionId, go) {
+  const page = await targetPage(requireInstance(), sessionId);
   const before = page.url();
   await go(page, { waitUntil: "commit", timeout: 10000 });
   await settle(page);
   return { page, moved: page.url() !== before };
 }
 
-tool("browser_back", "Go back in the focused session's history.", null, async () => {
-  const { page, moved } = await historyNav((p, o) => p.goBack(o));
-  return text(moved ? `now at ${page.url()}` : "nothing to go back to");
-});
+tool("browser_back", "Go back in the session's history.",
+  { sessionId: sessionIdParam },
+  async ({ sessionId }) => {
+    const { page, moved } = await historyNav(sessionId, (p, o) => p.goBack(o));
+    return text(moved ? `now at ${page.url()}` : "nothing to go back to");
+  });
 
-tool("browser_forward", "Go forward in the focused session's history.", null, async () => {
-  const { page, moved } = await historyNav((p, o) => p.goForward(o));
-  return text(moved ? `now at ${page.url()}` : "nothing to go forward to");
-});
+tool("browser_forward", "Go forward in the session's history.",
+  { sessionId: sessionIdParam },
+  async ({ sessionId }) => {
+    const { page, moved } = await historyNav(sessionId, (p, o) => p.goForward(o));
+    return text(moved ? `now at ${page.url()}` : "nothing to go forward to");
+  });
 
-tool("browser_reload", "Reload the focused session's page.", null, async () => {
-  const page = await focusedPage(requireInstance());
-  await page.reload({ waitUntil: "load", timeout: 20000 });
-  return text(`reloaded ${page.url()}`);
-});
+tool("browser_reload", "Reload the session's page.",
+  { sessionId: sessionIdParam },
+  async ({ sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
+    await page.reload({ waitUntil: "load", timeout: 20000 });
+    return text(`reloaded ${page.url()}`);
+  });
 
 tool("browser_click",
-  "Click in the focused session's page: a CSS selector, or viewport coordinates.",
+  "Click in the session's page: a CSS selector, or viewport coordinates.",
   {
     selector: z.string().optional().describe("CSS selector to click"),
     x: z.number().optional().describe("viewport x (used with y when no selector)"),
     y: z.number().optional().describe("viewport y"),
+    sessionId: sessionIdParam,
   },
-  async ({ selector, x, y }) => {
-    const page = await focusedPage(requireInstance());
+  async ({ selector, x, y, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
     if (selector) await page.click(selector, { timeout: 5000 });
     else if (x != null && y != null) await page.mouse.click(x, y);
     else throw new Error("pass selector, or both x and y");
@@ -406,15 +456,16 @@ tool("browser_click",
   });
 
 tool("browser_type",
-  "Type text into the focused session's page — into a selector (replacing its value) " +
+  "Type text into the session's page — into a selector (replacing its value) " +
   "or the currently focused element; optionally press Enter after.",
   {
     text: z.string().describe("text to type"),
     selector: z.string().optional().describe("CSS selector of the input (typed at the focused element when omitted)"),
     submit: z.boolean().optional().describe("press Enter afterwards"),
+    sessionId: sessionIdParam,
   },
-  async ({ text: value, selector, submit }) => {
-    const page = await focusedPage(requireInstance());
+  async ({ text: value, selector, submit, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
     if (selector) await page.fill(selector, value, { timeout: 5000 });
     else await page.keyboard.type(value);
     if (submit) await page.keyboard.press("Enter");
@@ -423,9 +474,10 @@ tool("browser_type",
   });
 
 tool("browser_screenshot",
-  "Screenshot the focused session's viewport (PNG).", null,
-  async () => {
-    const page = await focusedPage(requireInstance());
+  "Screenshot the session's viewport (PNG).",
+  { sessionId: sessionIdParam },
+  async ({ sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
     const buf = await page.screenshot({ type: "png", timeout: 10000 });
     return {
       content: [{ type: "image", data: buf.toString("base64"), mimeType: "image/png" }],
@@ -433,18 +485,20 @@ tool("browser_screenshot",
   });
 
 tool("browser_snapshot",
-  "Accessibility-tree snapshot (aria) of the focused session's page — the fast, " +
-  "text-sized way to read page structure.", null,
-  async () => {
-    const page = await focusedPage(requireInstance());
+  "Accessibility-tree snapshot (aria) of the session's page — the fast, " +
+  "text-sized way to read page structure.",
+  { sessionId: sessionIdParam },
+  async ({ sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
     const snap = await page.locator("body").ariaSnapshot({ timeout: 10000 });
     return text(`${page.url()} — "${await page.title()}"\n\n${snap}`);
   });
 
 tool("browser_console",
-  "Recent console messages (including errors) from the focused session's page.", null,
-  async () => {
-    const page = await focusedPage(requireInstance());
+  "Recent console messages (including errors) from the session's page.",
+  { sessionId: sessionIdParam },
+  async ({ sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
     const live = pageLogs.get(page) ?? [];
     if (live.length > 0) return text(live.map((l) => `[${l.level}] ${l.text}`).join("\n"));
     // Nothing seen live — the messages predate this server's attach. A fresh
@@ -477,11 +531,14 @@ async function replayConsole(page) {
 }
 
 tool("browser_evaluate",
-  "Evaluate a JavaScript expression in the focused session's page; returns the " +
+  "Evaluate a JavaScript expression in the session's page; returns the " +
   "JSON-serialized result.",
-  { expression: z.string().describe("JS expression, e.g. document.title") },
-  async ({ expression }) => {
-    const page = await focusedPage(requireInstance());
+  {
+    expression: z.string().describe("JS expression, e.g. document.title"),
+    sessionId: sessionIdParam,
+  },
+  async ({ expression, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
     const result = await page.evaluate(expression);
     let rendered;
     try { rendered = JSON.stringify(result, null, 2) ?? "undefined"; }

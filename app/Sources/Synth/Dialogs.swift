@@ -210,7 +210,9 @@ struct CreateWorktreeSheet: View {
                     .labelsHidden().pickerStyle(.menu)
                 }
                 Field(label: "Branch name") {
-                    TextField("feat/…", text: $name)
+                    TextField("feat/…", text: Binding(
+                        get: { name },
+                        set: { name = dashSpaces($0) }))
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
                         .focused($nameFocused)

@@ -194,3 +194,7 @@ disclosure to dive deeper.
   (⌘K browsers born unowned; Move under…/Detach re-parent by hand), owned rows nest one indent
   under their owner and cascade-delete with a named confirm, and the comment ladder becomes
   owner → boot owner → silently spawn-a-claude-that-adopts (replacing most-active-in-branch).
+- **Branch-name inputs turn spaces into dashes as you type (both designs + native app)** — ⌘K's
+  New-worktree frame and the Create-worktree dialog's Branch name field rewrite live (space→dash,
+  leading whitespace dropped, pasted runs collapsed, caret preserved); rename and all other
+  inputs keep their spaces.

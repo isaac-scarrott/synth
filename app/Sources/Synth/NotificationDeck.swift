@@ -108,12 +108,14 @@ private struct NotifCard: View {
     }
 
     var body: some View {
-        Button { if let s = session { store.jump(to: s) } } label: {
+        // A system toast (no session — a failed background worktree op) persists until
+        // this click; a session toast jumps as before.
+        Button { if let s = session { store.jump(to: s) } else { store.clearNotif(notif.id) } } label: {
             HStack(spacing: 11) {
                 glyph
                 VStack(alignment: .leading, spacing: 1) {
                     who
-                    Text(notifVerb(displayKind, notif.kind))
+                    Text(notif.message ?? notifVerb(displayKind, notif.kind))
                         .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Theme.inkOpen)
                         .lineLimit(1).truncationMode(.tail)
@@ -175,7 +177,7 @@ private struct NotifCard: View {
     private var who: some View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 3).fill(chipColor).frame(width: 7, height: 7)
-            Phos(path: displayKind.iconPath, size: 12)
+            Phos(path: notif.iconPath ?? displayKind.iconPath, size: 12)
                 .foregroundStyle(Theme.inkFaint).frame(width: 12, height: 12)
             Text(displayTitle)
                 .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
@@ -186,7 +188,9 @@ private struct NotifCard: View {
     private var hint: some View {
         HStack(spacing: 5) {
             KeyCaps(keys: ["⌘", "↩"])
-            Text("jump").font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
+            // ⌘↩ on a system toast acknowledges it (nowhere to jump) — say so.
+            Text(session == nil ? "dismiss" : "jump")
+                .font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
         }
     }
 

@@ -37,15 +37,18 @@ struct Sidebar: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, 16)
                 }
+                // nil anchor = working.html's scrollIntoView({block:'nearest'}): no scroll at
+                // all while the cursor moves within view — also what keeps arrow-key nav cheap
+                // in a tree of hundreds of rows (centering scrolls the LazyVStack every press).
                 .onChange(of: store.navCursor) { _, id in
                     guard let id else { return }
-                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
                 }
                 // A reorder (drag step or ⇧J/⇧K) keeps the cursor on the same row, so navCursor
                 // doesn't change — bump a nonce to keep the moving row in view instead.
                 .onChange(of: store.reorderScrollNonce) { _, _ in
                     guard let id = store.draggingRowID ?? store.navCursor else { return }
-                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
                 }
             }
         }
@@ -299,7 +302,13 @@ private struct WorkspaceRow: View {
                     if workspace.branches.isEmpty {
                         EmptyGroupHint(text: "No worktrees yet")
                     } else {
-                        ForEach(workspace.branches) { BranchRow(branch: $0, workspace: workspace) }
+                        // `selected` computed here, passed as a plain value: a cursor move
+                        // then re-evaluates only the two rows whose value flipped, not every
+                        // row body in the tree (hundreds, at scale).
+                        ForEach(workspace.branches) {
+                            BranchRow(branch: $0, workspace: workspace,
+                                      selected: store.keyboardActive && store.navCursor == $0.id)
+                        }
                     }
                 }
                 .padding(.leading, 18)
@@ -328,10 +337,11 @@ private struct BranchRow: View {
     @Environment(AppStore.self) private var store
     let branch: Branch
     let workspace: Workspace
+    /// Computed by the parent (see WorkspaceRow) so cursor moves don't touch this body.
+    let selected: Bool
     @State private var hovering = false
 
     private var isOpen: Bool { store.expanded.contains(branch.id) }
-    private var selected: Bool { store.keyboardActive && store.navCursor == branch.id }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
     private var renaming: Bool { store.renamingRowID == branch.id }
     private var isActivePill: Bool {
@@ -355,6 +365,7 @@ private struct BranchRow: View {
                     .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
                 } else {
                     Button {
+                        guard !branch.isPending else { return }   // nothing to expand or open yet
                         focusSidebar()
                         store.toggleExpanded(branch.id)
                         store.navCursor = branch.id
@@ -367,11 +378,18 @@ private struct BranchRow: View {
                                 .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
                                 .lineLimit(1).truncationMode(.middle)
                             Spacer(minLength: 4)
-                            BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
+                            if branch.isPending {
+                                Ind { PendingSpinner() }
+                            } else {
+                                BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
+                            }
                         }
                         // Right pad 10→8 so the branch indicator shares one vertical axis
                         // with the workspace count and session dots (working.html .branch).
                         .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
+                        // The worktree is still materialising — the row is present but not
+                        // yet actionable, and reads that way (grayed + spinner).
+                        .opacity(branch.isPending ? 0.5 : 1)
                         .background(activePillBackground)
                         .contentShape(Rectangle())
                     }
@@ -384,7 +402,8 @@ private struct BranchRow: View {
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
-            .help("\(branch.name) · \(branch.sessions.count) sessions")
+            .help(branch.isPending ? "\(branch.name) · creating worktree…"
+                                   : "\(branch.name) · \(branch.sessions.count) sessions")
             .id(branch.id)
             .reorderGesture(.branch(branch))
 
@@ -393,7 +412,10 @@ private struct BranchRow: View {
                     if branch.sessions.isEmpty {
                         EmptyGroupHint(text: "No sessions yet")
                     } else {
-                        ForEach(branch.sessions) { SessionRow(session: $0) }
+                        ForEach(branch.sessions) {
+                            SessionRow(session: $0,
+                                       selected: store.keyboardActive && store.navCursor == $0.id)
+                        }
                     }
                 }
                 .padding(.leading, 15)
@@ -424,12 +446,12 @@ private struct SessionRow: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: Session
+    /// Computed by the parent (see BranchRow) so cursor moves don't touch this body.
+    let selected: Bool
     @State private var hovering = false
     // Ambient "done" wash: a background session settling to idle sweeps a soft highlight once
     // (working.html `session--pulse`). Bumping the store token starts a single 900ms fade.
     @State private var pulse = false
-
-    private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
     private var isOpen: Bool { store.openSessionID == session.id }
     private var renaming: Bool { store.renamingRowID == session.id }
@@ -682,6 +704,23 @@ private struct AttentionGlyph: View {
     }
 }
 
+/// The pending row's indicator: a quiet 11px arc spinning in the shared 16px slot —
+/// a worktree create in flight (features 2026-07-06).
+private struct PendingSpinner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var spinning = false
+    var body: some View {
+        Circle()
+            .trim(from: 0.12, to: 1)
+            .stroke(Theme.inkFaint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            .frame(width: 11, height: 11)
+            .rotationEffect(.degrees(spinning ? 360 : 0))
+            .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false),
+                       value: spinning)
+            .onAppear { spinning = true }
+    }
+}
+
 /// working.html `.sdot` — 6px liveness dot with a colour-matched soft round glow;
 /// the two blurred box-shadow layers map to two stacked SwiftUI shadows.
 private struct Dot: View {
@@ -915,27 +954,64 @@ struct RowButtonStyle: ButtonStyle {
 }
 
 /// Height-accordion reveal — matches working.html's 0fr→1fr grid-rows transition
-/// (185ms) plus the inner opacity fade. Content is always present and measured;
-/// only its clipped height + opacity animate.
+/// (185ms) plus the inner opacity fade. Content only exists while the group is open
+/// (or still collapsing): a tree of collapsed workspaces costs nothing per row, which
+/// is what keeps a sidebar of hundreds of branches instant. Opening mounts the content
+/// at height 0 and animates to its measured height; closing animates shut, then
+/// unmounts once the accordion has finished.
 struct Reveal<Content: View>: View {
     let open: Bool
     @ViewBuilder var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var natural: CGFloat = 0
+    @State private var present: Bool
+    /// Generation stamp for the deferred unmount: any open-state flip after the close
+    /// invalidates the pending unmount (a quick reopen must not tear content down).
+    @State private var generation = 0
+
+    init(open: Bool, @ViewBuilder content: () -> Content) {
+        self.open = open
+        self.content = content()
+        _present = State(initialValue: open)
+    }
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { natural = geo.size.height }
-                        .onChange(of: geo.size.height) { _, h in natural = h }
+        ZStack {   // stable container so onChange fires even while content is unmounted
+            // `open` mounts in the same render pass as the expand (a palette jump expands
+            // and scrolls to a row in one tick); `present` keeps it through the collapse.
+            if open || present {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .onAppear { natural = geo.size.height }
+                                .onChange(of: geo.size.height) { _, h in natural = h }
+                        }
+                    )
+                    .frame(height: open ? natural : 0, alignment: .top)
+                    .opacity(open ? 1 : 0)
+                    .clipped()
+                    // `natural` lands one pass after mount, so the expand animates via its
+                    // own value; `open` drives the collapse as before.
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.185), value: open)
+                    .animation(reduceMotion || !open ? nil : .easeOut(duration: 0.185), value: natural)
+            }
+        }
+        .onChange(of: open) { _, isOpen in
+            generation += 1
+            if isOpen {
+                present = true
+            } else if reduceMotion {
+                present = false
+                natural = 0
+            } else {
+                let gen = generation
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(220))
+                    if generation == gen { present = false; natural = 0 }
                 }
-            )
-            .frame(height: open ? natural : 0, alignment: .top)
-            .opacity(open ? 1 : 0)
-            .clipped()
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.185), value: open)
+            }
+        }
     }
 }

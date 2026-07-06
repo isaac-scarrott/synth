@@ -44,19 +44,28 @@ struct AddWorktreesSheet: View {
 
     var body: some View {
         DialogFrame(title: "Add worktrees — \(pending.url.lastPathComponent)") {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(Array(pending.candidates.enumerated()), id: \.element.id) { index, candidate in
-                        CandidateRow(candidate: candidate,
-                                     checked: selected.contains(candidate.id),
-                                     cursor: cursor == index) {
-                            cursor = index
-                            toggle(candidate)
+            // Lazy + scroll-tracked: a repo can bring hundreds of branches, so only the
+            // visible rows are built and the keyboard cursor stays in view.
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(pending.candidates.enumerated()), id: \.element.id) { index, candidate in
+                            CandidateRow(candidate: candidate,
+                                         checked: selected.contains(candidate.id),
+                                         cursor: cursor == index) {
+                                cursor = index
+                                toggle(candidate)
+                            }
+                            .id(candidate.id)
                         }
                     }
                 }
+                .frame(maxHeight: 264)
+                .onChange(of: cursor) { _, i in
+                    guard pending.candidates.indices.contains(i) else { return }
+                    proxy.scrollTo(pending.candidates[i].id, anchor: .center)
+                }
             }
-            .frame(maxHeight: 264)
         } actions: {
             Button("Cancel", action: onClose).keyboardShortcut(.cancelAction)
             Button("Add \(selected.count)", action: submit)
@@ -171,7 +180,6 @@ struct CreateWorktreeSheet: View {
     @State private var existing = ""
     @State private var base = ""
     @State private var name = ""
-    @State private var error: String?
     @State private var submitted = false
     @FocusState private var nameFocused: Bool
 
@@ -218,49 +226,46 @@ struct CreateWorktreeSheet: View {
                 }
             }
 
-            if let error {
-                Text(error)
-                    .font(.system(size: 11)).foregroundStyle(Theme.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         } actions: {
             Button("Cancel", action: onClose).keyboardShortcut(.cancelAction)
             Button("Create", action: submit).keyboardShortcut(.defaultAction).disabled(!canCreate)
         }
         .onAppear {
-            allBranches = GitService.branches(at: workspace.url).map(\.name)
+            // for-each-ref off the main thread — a large/cold repo can take a beat.
+            let repo = workspace.url
             let shown = Set(workspace.branches.map(\.name))
-            available = allBranches.filter { !shown.contains($0) }
-            existing = available.first ?? ""
-            base = allBranches.first ?? ""
-            if available.isEmpty { mode = .new }
+            Task {
+                let names = await Task.detached(priority: .userInitiated) {
+                    GitService.branches(at: repo).map(\.name)
+                }.value
+                allBranches = names
+                available = names.filter { !shown.contains($0) }
+                existing = available.first ?? ""
+                base = names.first ?? ""
+                if available.isEmpty { mode = .new }
+            }
         }
         .onChange(of: mode) { _, m in
-            error = nil
             if m == .new {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { nameFocused = true }
             }
         }
     }
 
+    /// Creation errors surface later through the pending row's toast — the sheet's job
+    /// ends the moment the pending row is in the tree, so it just closes.
     private func submit() {
         guard !submitted, canCreate else { return }
         submitted = true
-        let err: String?
         switch mode {
         case .existing:
-            err = store.createWorktree(in: workspace, existingBranch: existing)
+            store.createWorktree(in: workspace, existingBranch: existing)
         case .new:
-            err = store.createWorktree(in: workspace,
-                                       newBranch: name.trimmingCharacters(in: .whitespaces),
-                                       base: base.isEmpty ? nil : base)
+            store.createWorktree(in: workspace,
+                                 newBranch: name.trimmingCharacters(in: .whitespaces),
+                                 base: base.isEmpty ? nil : base)
         }
-        if let err {
-            error = err
-            submitted = false
-        } else {
-            onClose()
-        }
+        onClose()
     }
 }
 

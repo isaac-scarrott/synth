@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd).
+        Task.detached(priority: .background) { GitService.sweepDetachedWorktrees() }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }

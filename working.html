@@ -3003,6 +3003,17 @@
     ...FAKE_REMOTE_BRANCHES.map((b) => ({ name: b.name, age: b.age, remote: true })),
   ];
 
+  // Branch names can't contain spaces — inputs that name a new branch turn each
+  // space into a dash as you type (leading whitespace dropped, runs collapsed).
+  const dashSpaces = (s) => s.replace(/^\s+/, '').replace(/\s+/g, '-');
+  function dashSpacesOnInput(input) {
+    const v = dashSpaces(input.value);
+    if (v === input.value) return;
+    const pos = Math.max(0, input.selectionStart - (input.value.length - v.length));
+    input.value = v;
+    input.setSelectionRange(pos, pos);
+  }
+
   // Kebab "Create worktree…": check out an existing branch, or cut a new one off a
   // base — either way the result is a real folder that becomes a row (ADR-0007).
   function openWorktreeDialog(row) {
@@ -3051,7 +3062,7 @@
     };
     paint();
     backdrop.querySelectorAll('.seg__btn').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.m; paint(); }));
-    input.addEventListener('input', paint);
+    input.addEventListener('input', () => { dashSpacesOnInput(input); paint(); });
 
     const close = () => { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey); };
     const submit = () => {
@@ -3894,6 +3905,7 @@
     const shown = () => new Set(repo ? [...repo.querySelectorAll('.branch__name')].map((n) => n.textContent) : []);
     return {
       crumb: 'New worktree', mode: 'input', placeholder: 'Search branches to check out…',
+      dashSpaces: true,
       build(q) {
         const v = q.trim();
         if (!v) return [];   // empty by default — the branch list only appears once you search
@@ -4022,7 +4034,7 @@
     renderFrame();
     requestAnimationFrame(() => backdrop.classList.add('open'));
     setTimeout(() => { if (pal) pal.input.focus(); }, 20);   // palette may have closed within 20ms
-    pal.input.addEventListener('input', renderFrame);
+    pal.input.addEventListener('input', () => { if (curFrame().dashSpaces) dashSpacesOnInput(pal.input); renderFrame(); });
     backdrop.addEventListener('click', (e) => {
       const crumb = e.target.closest('.cmdk__crumb');
       if (crumb) { popTo(+crumb.dataset.depth); return; }

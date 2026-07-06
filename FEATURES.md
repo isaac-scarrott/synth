@@ -199,3 +199,7 @@ disclosure to dive deeper.
   that activate in place; delete renames the folder aside and drops the row instantly (background
   rm + crash sweep); failures raise a persistent branch·workspace error toast; sidebar and
   branch-picker lists go lazy so hundreds of rows stay instant.
+- **Branch-name inputs turn spaces into dashes as you type (both designs + native app)** — ⌘K's
+  New-worktree frame and the Create-worktree dialog's Branch name field rewrite live (space→dash,
+  leading whitespace dropped, pasted runs collapsed, caret preserved); rename and all other
+  inputs keep their spaces.

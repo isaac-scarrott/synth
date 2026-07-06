@@ -34,6 +34,10 @@ enum SessionStatus: Equatable, Sendable {
     /// Mutable: a terminal that runs `claude` is detected and upgraded to `.claudeCode`
     /// (and reverts when it exits) — the kind reflects what's running, not a creation label.
     var kind: SessionKind
+    /// The creation label `kind` drifts from: a session spawned as Claude execs `claude`
+    /// (no shell to fall back to), so its claude-end never reverts the kind — the whole
+    /// session ends with the process instead (features 2026-07-06).
+    let spawnedKind: SessionKind
     var title: String
     var status: SessionStatus
     var unread: Bool
@@ -52,6 +56,7 @@ enum SessionStatus: Equatable, Sendable {
     init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, claudeSessionID: String? = nil, browserURL: URL? = nil) {
         self.id = id
         self.kind = kind
+        self.spawnedKind = kind
         self.title = title
         self.status = status
         self.unread = unread

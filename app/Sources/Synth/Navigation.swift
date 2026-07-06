@@ -211,7 +211,27 @@ extension AppStore {
     // MARK: Structural edits — remove from the sidebar only; worktrees and
     // branches stay on disk untouched.
 
+    /// The keyboard cursor sits on this row or any row inside it — the removal paths use
+    /// this to decide whether the cursor needs a new home (working.html `unit.contains(selEl)`).
+    func cursorInside(_ ref: RowRef) -> Bool {
+        guard let c = navCursor else { return false }
+        switch ref {
+        case let .workspace(w):
+            return c == w.id || w.branches.contains { $0.id == c || $0.sessions.contains { $0.id == c } }
+        case let .branch(b):
+            return c == b.id || b.sessions.contains { $0.id == c }
+        case let .session(s):
+            return c == s.id
+        }
+    }
+
     func removeWorkspace(_ workspace: Workspace) {
+        // A removed workspace has nothing above it — the cursor falls to a neighbouring
+        // workspace instead (working.html removeUnit fallback).
+        if cursorInside(.workspace(workspace)), let i = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            navCursor = i > 0 ? workspaces[i - 1].id
+                : workspaces.count > 1 ? workspaces[i + 1].id : nil
+        }
         for session in workspace.branches.flatMap(\.sessions) {
             TerminalManager.shared.terminate(session.id)
             BrowserManager.shared.terminate(session.id)
@@ -226,6 +246,8 @@ extension AppStore {
     /// sidebar entry drops (re-addable later). The primary checkout (repo root) is
     /// never deleted from disk — git won't remove its own working tree.
     func removeBranch(_ branch: Branch, deleteWorktree: Bool) {
+        // Cursor falls up the hierarchy to the workspace head (working.html removeUnit fallback).
+        if cursorInside(.branch(branch)) { navCursor = workspace(of: branch)?.id }
         for session in branch.sessions {
             TerminalManager.shared.terminate(session.id)
             BrowserManager.shared.terminate(session.id)

@@ -393,6 +393,7 @@
   .browser__recitem svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-faint); }
   .browser__recurl { font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .browser__recname { margin-left: auto; font-size: 11.5px; color: var(--text-faint); white-space: nowrap; flex-shrink: 0; }
+  .browser__cmdkhint { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 26px; font-size: 11.5px; color: var(--text-faint); }
   .browser__drop { position: absolute; top: 41px; left: 10px; right: 10px; z-index: 5; padding: 8px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 14px 36px rgba(0,0,0,0.17); animation: browser-drop 140ms var(--ease-out); }
   .browser__drop .browser__reclabel { margin-top: 12px; }
   @keyframes browser-drop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
@@ -431,7 +432,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-right: 6px;
+    /* 5px pad centers the 22px + button on the indicator axis (8px row pad + 16px slot) */
+    padding-right: 5px;
   }
   .nav__label {
     font-size: 10.5px;
@@ -835,7 +837,8 @@
   /* ---- Row action kebab (hover-revealed at the row end) ---- */
   .kebab {
     position: absolute;
-    right: 2px;
+    /* 20px box centered on the shared indicator axis (8px row pad + 16px .ind slot) */
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
@@ -2142,6 +2145,7 @@
           <span class="browser__glyph">${ICON_BROWSER}</span>
           <div class="browser__field">${ICON_SEARCH}<input type="text" data-address placeholder="Go to…" autocomplete="off" spellcheck="false"></div>
           ${browserRecentsHTML()}
+          <div class="browser__cmdkhint">Press <kbd class="cmdk__key">⌘</kbd><kbd class="cmdk__key">K</kbd> for quick actions</div>
         </div></div>
       </div>`;
     }
@@ -2494,6 +2498,18 @@
     // Cmd/Ctrl+0 focuses the sidebar; Cmd/Ctrl+1 focuses the open session's surface
     if ((e.metaKey || e.ctrlKey) && k === '0') { e.preventDefault(); focusSidebar(); return; }
     if ((e.metaKey || e.ctrlKey) && k === '1') { e.preventDefault(); focusContent(); return; }
+    // An open browser session claims the standard page verbs window-wide: ⌘L address,
+    // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each drives the visible toolbar control,
+    // so disabled states (home page, empty history) are respected for free.
+    const bhost = openEl && openEl.dataset.type === 'browser' ? content.querySelector('.browser') : null;
+    if (bhost && (e.metaKey || e.ctrlKey)) {
+      const bpress = (sel) => { const b = bhost.querySelector(sel); if (b && !b.disabled) b.click(); };
+      if (k === 'l' || k === 'L') { e.preventDefault(); bpress('[data-omni]'); return; }
+      if ((k === 'r' || k === 'R') && !e.shiftKey) { e.preventDefault(); bpress('[data-nav="reload"]'); return; }
+      if (k === '[') { e.preventDefault(); bpress('[data-nav="back"]'); return; }
+      if (k === ']') { e.preventDefault(); bpress('[data-nav="fwd"]'); return; }
+      if (e.altKey && e.code === 'KeyI') { e.preventDefault(); bpress('[data-nav="devtools"]'); return; }
+    }
     // while focus lives in the content pane (composer, terminal), nav keys stay there
     if (e.target instanceof Element && e.target.closest('.content')) return;
     // an open row menu owns the keyboard (its ↵/Esc are handled by the menu key handler)
@@ -2774,8 +2790,21 @@
 
   function removeUnit(unit) {
     if (!unit) return;
+    // If the keyboard cursor is on (or inside) the removed unit it falls back up the
+    // hierarchy — session → its branch row, branch → its workspace head — instead of
+    // resetting; a removed top-level workspace falls to a neighbouring workspace.
+    let fallback = null;
+    if (selEl && unit.contains(selEl)) {
+      const up = unit.parentElement && unit.parentElement.closest('[data-repo]');
+      const neighbour = up ? null : [unit.previousElementSibling, unit.nextElementSibling].find((el) => el && el.matches('[data-repo]'));
+      fallback = (up || neighbour) ? (up || neighbour).querySelector(':scope > [data-row]') : null;
+    }
     unit.classList.add('row-exit');
-    const done = () => { unit.remove(); rollUpGroups(); if (openEl && !document.contains(openEl)) { openEl = null; renderEmpty(); } };
+    const done = () => {
+      unit.remove(); rollUpGroups();
+      if (openEl && !document.contains(openEl)) { openEl = null; renderEmpty(); }
+      if (fallback && document.contains(fallback)) select(fallback, true);
+    };
     unit.addEventListener('animationend', done, { once: true });
     setTimeout(done, 260);
   }
@@ -3247,6 +3276,13 @@
       [['D'], 'Delete selected'],
       [['⇧J', '⇧K'], 'Reorder down · up'],
     ]],
+    ['Browser', [
+      [['⌘', 'L'], 'Go to address'],
+      [['⌘', 'R'], 'Reload page'],
+      [['⌘', '['], 'Back'],
+      [['⌘', ']'], 'Forward'],
+      [['⌥', '⌘', 'I'], 'Toggle DevTools'],
+    ]],
     ['Command palette', [
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
       [['↵'], 'Open · drill in'],
@@ -3388,12 +3424,41 @@
   // its workspace — lead the root frame, each grouped and labelled by the scope it targets, most-local
   // first. "Where you are" is the focused sidebar row when its ring is showing, else the open session;
   // Session actions only appear when that anchor is a session leaf. A session action never sits under
-  // the same heading as a branch or workspace action.
+  // the same heading as a branch or workspace action. A browser session adds a Page group above
+  // Session — the page's own verbs, one keystroke from anywhere.
+  const ICON_COPY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg>';
+  const ICON_EXTERNAL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>';
+  // Page verbs drive the same toolbar controls a click would — the palette adds no second
+  // navigation path. When the row isn't the open session there is no live page yet, so
+  // everything but "Go to address…" (which opens the session first) reads disabled.
+  function browserActions(row) {
+    const live = row === openEl ? content.querySelector('.browser') : null;
+    const home = !live || live.hasAttribute('data-home');
+    const url = home ? '' : live.querySelector('.browser__url').textContent;
+    const drive = (fn) => runAndClose(() => {
+      if (row !== openEl) jumpTo(row);
+      const host = content.querySelector('.browser');
+      if (host) fn(host);
+    });
+    const press = (sel) => drive((host) => { const b = host.querySelector(sel); if (b && !b.disabled) b.click(); });
+    const navOff = (dir) => !live || live.querySelector('[data-nav="' + dir + '"]').disabled;
+    return [
+      // on home the omnibox focuses the "Go to" field; on a page it opens the address drop
+      { icon: ICON_SEARCH,     label: 'Go to address…', kbd: ['⌘', 'L'], enter: () => press('[data-omni]') },
+      { icon: ICON_NAV_RELOAD, label: 'Reload page', kbd: ['⌘', 'R'], disabled: home, enter: () => press('[data-nav="reload"]') },
+      { icon: ICON_NAV_BACK,   label: 'Back',    kbd: ['⌘', '['], disabled: navOff('back'), enter: () => press('[data-nav="back"]') },
+      { icon: ICON_NAV_FWD,    label: 'Forward', kbd: ['⌘', ']'], disabled: navOff('fwd'), enter: () => press('[data-nav="fwd"]') },
+      { icon: ICON_COPY,       label: 'Copy URL', disabled: home, enter: () => runAndClose(() => { if (url && navigator.clipboard) navigator.clipboard.writeText(browserNorm(url)); }) },
+      { icon: ICON_EXTERNAL,   label: 'Open in default browser', disabled: home, enter: () => runAndClose(() => { if (url) window.open(browserNorm(url), '_blank'); }) },
+      { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-devtools]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
+    ];
+  }
   function contextActions() {
     const row = contextRow();
     const open = row && row.matches('.session') ? row : null;
     const br = contextBranch(), head = contextWorkspaceHead();
     const items = [];
+    if (open && open.dataset.type === 'browser') browserActions(open).forEach((a) => items.push({ grp: 'Page', unit: seName(open), ...a }));
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
@@ -3538,6 +3603,7 @@
       crumb: name, placeholder: 'Search ' + name + '…',
       build() {
         const items = [];
+        if (row.dataset.type === 'browser') browserActions(row).forEach((a) => items.push({ sec: 'page', ...a }));
         const br = branchGroupOf(row);
         if (br) {
           const bn = brName(br);

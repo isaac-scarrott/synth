@@ -72,6 +72,11 @@ final class HookServer: @unchecked Sendable {
             if let claude = obj["claudeSession"] as? String, !claude.isEmpty {
                 Task { @MainActor in bus?.post(.claudeSessionCaptured(id, claude)) }
             }
+            // The session's true exit status (zshexit / the claude shim), sent moments
+            // before the process dies — the PTY's own code arrives later as 0 (login).
+            if let codeStr = obj["exitCode"] as? String, let code = Int32(codeStr) {
+                Task { @MainActor in bus?.post(.exitCodeReported(id, code)) }
+            }
         }
     }
 
@@ -124,7 +129,15 @@ final class HookServer: @unchecked Sendable {
     /// handing that shim to a spawned terminal as SYNTH_REAL_CLAUDE makes synth-hook exec
     /// itself in a loop until the argv blows past ARG_MAX (E2BIG, "Argument list too long").
     static let realClaude: String? = {
-        for dir in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init) {
+        // A Dock/`open` launch gets the bare LaunchServices PATH (/usr/bin:/bin:…), which
+        // never contains claude — and a silent nil here turns the whole hook layer off:
+        // bare claude, no --settings, no signals, so a fresh row's optimistic .working
+        // never clears. Fall back to the standard install locations after the PATH scan.
+        let home = NSHomeDirectory()
+        let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        let fallbacks = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin",
+                         "\(home)/.npm-global/bin", "\(home)/.claude/local"]
+        for dir in pathDirs + fallbacks {
             let candidate = dir + "/claude"
             guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
             let resolved = (try? FileManager.default.destinationOfSymbolicLink(atPath: candidate)) ?? candidate
@@ -138,7 +151,19 @@ final class HookServer: @unchecked Sendable {
 
     /// Create the shim dir and (re)point its `claude` symlink at `synth-hook`. When Claude
     /// execs `claude`, the shim runs `synth-hook` in its launch role.
+    /// Claude Code session markers a parent claude leaves in our environment when Synth is
+    /// launched from inside one. Spawned claudes must not see them: CLAUDE_CODE_CHILD_SESSION
+    /// makes Claude treat the session as a subagent — no transcript on disk (unresumable),
+    /// no history — and CLAUDECODE-aware tools misbehave in plain shells.
+    static let inheritedClaudeMarkers = ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION",
+                                         "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT",
+                                         "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT"]
+
     static func setup() {
+        // Scrub at the process level, not just in decorate()'s overlay: libghostty merges
+        // surface env_vars ON TOP of the app's inherited environ, so a key merely absent
+        // from the overlay still reaches the PTY child. unsetenv is the only real removal.
+        for key in inheritedClaudeMarkers { unsetenv(key) }
         guard let hookBin else { return }
         reapStale()
         try? FileManager.default.createDirectory(atPath: shimDir, withIntermediateDirectories: true)
@@ -192,7 +217,8 @@ final class HookServer: @unchecked Sendable {
             # the sidebar. The command line rides along so the row auto-names itself after the
             # thing it's running. `claude` is left entirely to Claude's own pipeline.
             _synth_preexec() {
-                [[ "${1%% *}" == claude ]] && return
+                local cmd="${1#exec }"          # spawned claude rows type `exec claude …`
+                [[ "${cmd%% *}" == claude ]] && return
                 [[ -n "$_synth_run_timer" ]] && kill "$_synth_run_timer" 2>/dev/null
                 _synth_cmd_start=$EPOCHREALTIME
                 ( sleep 0.5; _synth_report term-run "$1" ) &!
@@ -217,12 +243,28 @@ final class HookServer: @unchecked Sendable {
             }
             add-zsh-hook preexec _synth_preexec
             add-zsh-hook precmd _synth_precmd
+            # The shell's exit status can't ride the PTY: libghostty wraps the child in
+            # macOS `login`, which exits 0 whatever the shell exited with — so hand the
+            # true code to the app over the socket. Foreground, not &!: the shell is
+            # about to die.
+            _synth_zshexit() { "$SYNTH_HOOK_BIN" report --exit $? }
+            add-zsh-hook zshexit _synth_zshexit
         fi
         """
         try? zshenv.write(toFile: zdotDir + "/.zshenv", atomically: true, encoding: .utf8)
         try? "_synth_source_user .zprofile\n".write(toFile: zdotDir + "/.zprofile", atomically: true, encoding: .utf8)
         try? "_synth_source_user .zlogin\n".write(toFile: zdotDir + "/.zlogin", atomically: true, encoding: .utf8)
-        try? ("_synth_source_user .zshrc\n" + reporter).write(toFile: zdotDir + "/.zshrc", atomically: true, encoding: .utf8)
+        // macOS's /etc/zshrc sets HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history, which under the
+        // injected ZDOTDIR siphons history into this temp dir: ctrl+r starts empty and the
+        // session's history is reaped with the dir. Re-point it at the user's real dir before
+        // their .zshrc runs, so an explicit HISTFILE of their own still wins.
+        let histfix = "[[ \"$HISTFILE\" == \"$ZDOTDIR\"/* ]] && HISTFILE=\"${SYNTH_USER_ZDOTDIR:-$HOME}/.zsh_history\"\n"
+        // decorate() puts the shim first on PATH, but /etc/zprofile's path_helper and the
+        // user's own .zshrc rebuild PATH and bury it — `claude` then resolves to the real
+        // binary and sessions run without hooks (no --settings, no status signals, no
+        // session id). Re-prepend after the user's config has had its say.
+        let shimfix = "[[ -n \"$SYNTH_SHIM_DIR\" && -d \"$SYNTH_SHIM_DIR\" ]] && PATH=\"$SYNTH_SHIM_DIR:$PATH\"\n"
+        try? (histfix + "_synth_source_user .zshrc\n" + shimfix + reporter).write(toFile: zdotDir + "/.zshrc", atomically: true, encoding: .utf8)
     }
 
     /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts — keyed on a pid
@@ -265,15 +307,10 @@ final class HookServer: @unchecked Sendable {
     /// Overlay the hook correlation/callback env + shim PATH onto a base environment.
     static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String) -> [String: String] {
         var env = base
-        // Synth itself may have been launched from inside a Claude Code session (dev.sh in a
-        // claude turn), and these markers make Claude treat every claude spawned here as a
-        // nested "child session": no transcript on disk, no ai-title, so row auto-naming
-        // starves — and CLAUDECODE-aware tools misbehave in plain shells. Sessions inside
-        // Synth are top-level, so drop the inherited markers.
-        for key in ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
-                    "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT"] {
-            env.removeValue(forKey: key)
-        }
+        // Sessions inside Synth are top-level, never child sessions — drop inherited claude
+        // markers from the overlay too (setup()'s unsetenv is the real removal; this guards
+        // callers that pass a base env other than our own environ).
+        for key in inheritedClaudeMarkers { env.removeValue(forKey: key) }
         // Terminal per-command reporting needs only synth-hook + the socket + the injected
         // ZDOTDIR — not a real `claude` — so wire it up whenever the helper exists, so a plain
         // shell lights up even on a machine without Claude Code installed.

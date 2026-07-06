@@ -82,18 +82,22 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         cfg.scale_factor = window.backingScaleFactor
         cfg.font_size = 0  // 0 → use the config default
 
-        // A Claude session is a native login shell that immediately runs `claude` (typed
-        // via initial_input, so the shim PATH attaches hooks); when Claude exits you drop
-        // back to that same shell. A plain terminal is just the login shell. A restored
-        // Claude row (resumeClaudeID set) resumes its saved conversation instead. The id
-        // comes from Claude's hook payload (a UUID in practice) and is typed into the shell,
-        // so shell-quote it rather than trust the format. The workspace's default flags are
-        // appended raw — they're the user's own shell tokens (Settings → Claude Code flags).
+        // A Claude session is a native login shell that immediately `exec`s `claude` (typed
+        // via initial_input, so the shim PATH attaches hooks). exec, not run: the session
+        // exists to run claude, so claude's end is the PTY child exiting — the same
+        // child-exited signal a terminal's `exit` raises (clean → the row closes itself,
+        // features 2026-07-06). The exit *code* can't ride that signal (macOS `login`
+        // zeroes it); the shim reports it over the hook socket instead. A plain terminal
+        // is just the login shell. A restored Claude row (resumeClaudeID set) resumes its
+        // saved conversation instead. The id comes from Claude's hook payload (a UUID in
+        // practice) and is typed into the shell, so shell-quote it rather than trust the
+        // format. The workspace's default flags are appended raw — they're the user's own
+        // shell tokens (Settings → Claude Code flags).
         let initialInput: String?
         switch kind {
         case .claudeCode:
             let extra = claudeFlags.isEmpty ? "" : " " + claudeFlags
-            initialInput = resumeClaudeID.map { "claude --resume \(Self.shellQuote($0))\(extra)\n" } ?? "claude\(extra)\n"
+            initialInput = resumeClaudeID.map { "exec claude --resume \(Self.shellQuote($0))\(extra)\n" } ?? "exec claude\(extra)\n"
         case .terminal, .browser:   // a browser session never hosts a PTY (BrowserPane owns it)
             initialInput = nil
         }

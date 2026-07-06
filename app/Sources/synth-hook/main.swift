@@ -75,7 +75,42 @@ func runLaunch(userArgs: [String]) -> Never {
     // `claude --resume <id>` — and hooks still fire because we keep injecting `--settings`.
     let resuming = args.contains { ["--resume", "-r", "--continue", "-c"].contains($0) }
     let idArgs = resuming ? [] : ["--session-id", UUID().uuidString]
-    execReal(real, idArgs + ["--settings", settings] + args)
+    spawnReportingExit(real, idArgs + ["--settings", settings] + args)
+}
+
+/// Run the real claude as a child, then mirror its exit — reporting the true code over the
+/// hook socket first. An exec would be simpler, but the code would die on the way up:
+/// libghostty wraps every PTY child in macOS `login`, which exits 0 whatever its child's
+/// status was, so the socket is the only channel the code survives (features 2026-07-06).
+func spawnReportingExit(_ path: String, _ args: [String]) -> Never {
+    // The shim must outlive the session's own signals to still be there to report:
+    // ignore INT/QUIT here, hand the child the defaults back.
+    var attr: posix_spawnattr_t?
+    posix_spawnattr_init(&attr)
+    var childDefaults = sigset_t()
+    sigemptyset(&childDefaults)
+    sigaddset(&childDefaults, SIGINT)
+    sigaddset(&childDefaults, SIGQUIT)
+    posix_spawnattr_setsigdefault(&attr, &childDefaults)
+    posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSIGDEF))
+    signal(SIGINT, SIG_IGN)
+    signal(SIGQUIT, SIG_IGN)
+
+    let argv = ([path] + args).map { strdup($0) } + [nil]
+    var pid: pid_t = 0
+    let rc = posix_spawn(&pid, path, nil, &attr, argv, environ)
+    posix_spawnattr_destroy(&attr)
+    guard rc == 0 else {
+        FileHandle.standardError.write(Data("synth: spawn failed: \(String(cString: strerror(rc)))\n".utf8))
+        exit(126)
+    }
+    var status: Int32 = 0
+    while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+    let code: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
+    if let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"] {
+        sendLines(socketPath: socketPath, jsonLine(["session": sessionID, "exitCode": String(code)]))
+    }
+    exit(code)
 }
 
 /// Remove a `--settings <value>` pair from the args and return the value, if present.
@@ -240,21 +275,29 @@ func runEvent(name: String) -> Never {
 
 // MARK: - Report role
 
-/// `synth-hook report --signal <name> [--title <cmd>]` — the terminal counterpart to the
-/// event role. Synth's injected zsh preexec/precmd hooks call this to report a foreground
-/// command's lifecycle (`term-run`, `term-idle`, `term-error`) over the same socket, tagged
-/// with $SYNTH_SESSION_ID. `--title` carries the command line on term-run so the row
-/// auto-names itself after what it's running. A missing correlation env — a shell started
-/// outside Synth — is a silent no-op, and it runs on every prompt, so it does the minimum:
-/// one line, one socket write, no stdin read.
+/// `synth-hook report --signal <name> [--title <cmd>] | --exit <code>` — the terminal
+/// counterpart to the event role. Synth's injected zsh preexec/precmd hooks call this to
+/// report a foreground command's lifecycle (`term-run`, `term-idle`, `term-error`) over the
+/// same socket, tagged with $SYNTH_SESSION_ID; the zshexit hook calls it with `--exit` to
+/// carry the shell's true exit status past macOS `login` (which reports 0 regardless).
+/// `--title` carries the command line on term-run so the row auto-names itself after what
+/// it's running. A missing correlation env — a shell started outside Synth — is a silent
+/// no-op, and it runs on every prompt, so it does the minimum: one line, one socket write,
+/// no stdin read.
 func runReport(args: [String]) -> Never {
-    guard let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"],
-          let i = args.firstIndex(of: "--signal"), i + 1 < args.count else { exit(0) }
-    var lines = jsonLine(["session": sessionID, "signal": args[i + 1]])
-    if let t = args.firstIndex(of: "--title"), t + 1 < args.count,
-       let title = rowTitle(fromCommand: args[t + 1]) {
-        lines += jsonLine(["session": sessionID, "title": title])
+    guard let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"] else { exit(0) }
+    var lines = ""
+    if let i = args.firstIndex(of: "--signal"), i + 1 < args.count {
+        lines += jsonLine(["session": sessionID, "signal": args[i + 1]])
+        if let t = args.firstIndex(of: "--title"), t + 1 < args.count,
+           let title = rowTitle(fromCommand: args[t + 1]) {
+            lines += jsonLine(["session": sessionID, "title": title])
+        }
     }
+    if let e = args.firstIndex(of: "--exit"), e + 1 < args.count {
+        lines += jsonLine(["session": sessionID, "exitCode": args[e + 1]])
+    }
+    guard !lines.isEmpty else { exit(0) }
     sendLines(socketPath: socketPath, lines)
     exit(0)
 }

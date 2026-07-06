@@ -209,7 +209,21 @@ final class ControlServer: @unchecked Sendable {
                     "notifs": store.notifOrder.map { n -> [String: String] in
                         ["sessionId": n.id.uuidString,
                          "kind": String(describing: n.kind),
-                         "title": store.session(n.id)?.title ?? ""]
+                         "title": store.session(n.id)?.title ?? n.title]
+                    }]
+
+        // The sidebar tree as navigation sees it — rows, keyboard cursor, open session —
+        // so the harness can assert row lifecycle and cursor fallback without pixels.
+        case "automation.nav" where automation:
+            return ["ok": true,
+                    "openSessionId": store.openSessionID?.uuidString ?? "",
+                    "navCursor": store.navCursor?.uuidString ?? "",
+                    "branchId": branch.id.uuidString,
+                    "rows": branch.sessions.map { s -> [String: String] in
+                        ["sessionId": s.id.uuidString,
+                         "kind": s.kind.rawValue,
+                         "title": s.title,
+                         "status": String(describing: s.status)]
                     }]
 
         // The `d` shortcut and the ⌘K palette keys, addressable where TCC blocks

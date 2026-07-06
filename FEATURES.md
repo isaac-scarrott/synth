@@ -170,3 +170,22 @@ disclosure to dive deeper.
 - **`d` deletes through the ⌘K confirm frame (both designs + native app)** — the `d` shortcut now
   opens the palette's delete-confirm frame (one confirm surface, shared with the kebab and palette
   flows); the inline row confirm popover is unreachable legacy.
+- **Browser ⌘K Page group, page shortcuts, and a home-page ⌘K hint (both designs)** — a browser
+  session's ⌘K leads with a Page group (Go to address ⌘L, Reload ⌘R, Back/Forward ⌘[/⌘], Copy
+  URL, Open in default browser, Show/Hide DevTools ⌥⌘I) that drives the visible toolbar controls;
+  the shortcuts are real window-wide bindings (+ ⌘? Browser group); the browser home surface
+  hints "Press ⌘K for quick actions".
+- **A clean exit closes its session; the done toast outlives the row (native app)** — a session
+  whose child exits cleanly closes itself after raising its self-dismissing done toast (which
+  snapshots its display state); a failure keeps the row showing the error; Claude sessions `exec
+  claude` so claude's end is the child exit, and a claude-spawned session never reverts to a
+  plain terminal. macOS `login` (libghostty's PTY wrapper) zeroes every exit code, so the true
+  status rides the hook socket instead (zshexit hook / the claude shim's spawn-wait-report);
+  130/143 (user interrupts) close clean.
+- **Removing the selected row drops the cursor up the hierarchy (both designs + native app)** —
+  deleting the row under the keyboard cursor re-homes it: session → branch row, branch →
+  workspace head, workspace → neighbouring workspace.
+- **Browser ⌘K Page group: native port (app)** — the Page group, window-wide page shortcuts,
+  ⌘? Browser group, and home ⌘K hint from the designs entry now run in the app, driving the
+  toolbar's `BrowserSessionController` (one new seam: `focusAddress()`); plus `SYNTH_AUTOMATION`
+  verbs (`key`, `screenshot`, `jump`, …) for verification on TCC-locked machines.

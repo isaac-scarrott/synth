@@ -53,11 +53,11 @@ import GhosttyKit
         runtime.write_clipboard_cb = { surfaceUserdata, location, content, count, confirm in
             GhosttyClipboard.write(surfaceUserdata, location, content, count, confirm)
         }
-        // The child-exit signal comes from GHOSTTY_ACTION_SHOW_CHILD_EXITED (which carries
-        // the real exit code); close_surface is the follow-up teardown request. We leave the
-        // dead surface in place (the row shows "exited" until the user closes it, matching the
-        // old SwiftTerm behaviour), so this is a no-op — posting here would only double-fire
-        // .exited and clobber the code with nil.
+        // The child-exit signal comes from GHOSTTY_ACTION_SHOW_CHILD_EXITED; close_surface
+        // is the follow-up teardown request. The store acts on .exited — a clean exit
+        // closes the whole session, a failure keeps the row showing the error, with the
+        // true code arriving via the hook socket (features 2026-07-06) — so this is a
+        // no-op: posting here would only double-fire .exited.
         runtime.close_surface_cb = { _, _ in }
 
         app = ghostty_app_new(&runtime, config)
@@ -102,6 +102,10 @@ import GhosttyKit
         switch action.tag {
         case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
             if target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface {
+                // NB: on macOS this code is always 0 — libghostty wraps the PTY child in
+                // `login`, which exits 0 whatever its child's status was. The true code
+                // arrives separately over the hook socket (`.exitCodeReported`); this
+                // action's job is the exit *fact*, not the code.
                 let code = Int32(action.action.child_exited.exit_code)
                 GhosttySurfaceContext.from(ghostty_surface_userdata(surface))?.postExited(code)
             }

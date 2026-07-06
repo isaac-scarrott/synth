@@ -96,10 +96,15 @@ private struct NotifCard: View {
     @State private var hovering = false
 
     private var session: Session? { store.session(notif.id) }
+    // The live session when it still exists; the notif's raise-time snapshot once an
+    // exit-close toast has outlived its row.
+    private var displayKind: SessionKind { session?.kind ?? notif.sessionKind }
+    private var displayTitle: String { session?.title ?? notif.title }
     private var chipColor: Color {
-        guard let s = session, let br = store.branch(of: s), let ws = store.workspace(of: br)
-        else { return Theme.inkFaint }
-        return Theme.chipColors[ws.colorIndex % Theme.chipColors.count]
+        let idx = session.flatMap { s in store.branch(of: s).flatMap { store.workspace(of: $0) }?.colorIndex }
+            ?? notif.colorIndex
+        guard let idx else { return Theme.inkFaint }
+        return Theme.chipColors[idx % Theme.chipColors.count]
     }
 
     var body: some View {
@@ -108,7 +113,7 @@ private struct NotifCard: View {
                 glyph
                 VStack(alignment: .leading, spacing: 1) {
                     who
-                    Text(session.map { notifVerb($0.kind, notif.kind) } ?? "")
+                    Text(notifVerb(displayKind, notif.kind))
                         .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Theme.inkOpen)
                         .lineLimit(1).truncationMode(.tail)
@@ -170,9 +175,9 @@ private struct NotifCard: View {
     private var who: some View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 3).fill(chipColor).frame(width: 7, height: 7)
-            Phos(path: session?.kind.iconPath ?? Phosphor.terminal, size: 12)
+            Phos(path: displayKind.iconPath, size: 12)
                 .foregroundStyle(Theme.inkFaint).frame(width: 12, height: 12)
-            Text(session?.title ?? "")
+            Text(displayTitle)
                 .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
                 .lineLimit(1).truncationMode(.tail)
         }

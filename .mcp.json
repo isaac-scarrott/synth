@@ -1,0 +1,10 @@
+{
+  "mcpServers" : {
+    "synth-browser" : {
+      "args" : [
+        "\/Users\/isaac\/Library\/Application Support\/Synth\/browser-mcp\/server.mjs"
+      ],
+      "command" : "node"
+    }
+  }
+}

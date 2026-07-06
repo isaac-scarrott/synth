@@ -13,6 +13,11 @@ enum SessionEvent: Sendable {
     /// generated. Resume/compact keep their title, so they never emit this.
     case titleReset(UUID)
     case exited(UUID, Int32?)
+    /// The session's true exit status, reported over the hook socket (zshexit / the claude
+    /// shim) just before the process dies. Needed because macOS `login` — libghostty's PTY
+    /// wrapper — exits 0 whatever its child's status was, so `.exited`'s own code is
+    /// always 0 and can't carry the clean-vs-failure fact (features 2026-07-06).
+    case exitCodeReported(UUID, Int32)
     /// A terminal was detected running Claude Code (or stopped) — flips the row's visual.
     case kindChanged(UUID, SessionKind)
     /// A background session finished a turn — surface it unless it's the one on screen.
@@ -78,6 +83,15 @@ struct InAppNotif: Identifiable {
     let id: UUID        // the session id — one toast per session, like working.html
     var kind: NotifKind
     let seq: Int
+    /// Display snapshot captured at raise time. A clean exit closes its session right after
+    /// the "done" toast goes up (features 2026-07-06), so the card can't count on a live
+    /// session to render from.
+    let sessionKind: SessionKind
+    let title: String
+    let colorIndex: Int?
+    /// Only the exit-close "done" toast may outlive its session in `notifOrder`; it always
+    /// self-dismisses. Every other toast still drops the moment its session vanishes.
+    let outlivesSession: Bool
 }
 
 /// Where a notification is surfaced. `nil` at a call site means "the real rule" — branch on
@@ -245,6 +259,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
     private(set) var liveClaudeIDs: Set<UUID> = []
     /// Last hook activity per claude session — deterministic most-recently-active targeting.
     @ObservationIgnored private var claudeSeenAt: [UUID: Date] = [:]
+    /// True exit statuses reported over the hook socket (`.exitCodeReported`), keyed by
+    /// session, consumed by the `.exited` that follows moments later.
+    @ObservationIgnored private var reportedExitCodes: [UUID: Int32] = [:]
 
     func isLiveClaude(_ id: UUID) -> Bool { liveClaudeIDs.contains(id) }
     func claudeActivity(_ id: UUID) -> Date { claudeSeenAt[id] ?? .distantPast }
@@ -316,15 +333,47 @@ enum ThemePref: String, CaseIterable, Identifiable {
             // Keep a hand-picked name; otherwise fall back to the neutral Claude default until
             // the new conversation generates its own ai-title (arriving as .titleChanged).
             if let s = session(id), !s.titleIsCustom { s.title = "Claude Code" }
+        case let .exitCodeReported(id, code):
+            reportedExitCodes[id] = code
         case let .exited(id, code):
             guard let s = session(id) else { break }
             let prev = s.status
-            let next: SessionStatus = (code ?? 0) == 0 ? .exited(code) : .error
-            s.status = next
             liveClaudeIDs.remove(id)
-            routeTransition(id, prev: prev, next: next)
+            // The PTY's own code is blind on macOS — libghostty wraps the child in `login`,
+            // which exits 0 whatever really happened — so prefer the code the session
+            // reported over the hook socket just before dying. The user-interrupt statuses
+            // (130 SIGINT, 143 SIGTERM) close clean, the same neutrality the per-command
+            // reporter applies: a Ctrl-C'd claude mustn't die as an error row.
+            let real = reportedExitCodes.removeValue(forKey: id) ?? code ?? 0
+            if real == 0 || real == 130 || real == 143 {
+                // A clean exit ends the session outright — `exit` in a shell, quitting a
+                // spawned claude (which execs, so this is its exit too). Notify first: both
+                // notification paths need the live row (features 2026-07-06).
+                s.status = .exited(real)
+                routeTransition(id, prev: prev, next: .exited(real), closing: true)
+                closeSession(s)
+            } else {
+                // A failure keeps its row — the error should be seen and inspectable,
+                // not vanish with the process.
+                s.status = .error
+                routeTransition(id, prev: prev, next: .error)
+            }
         case let .kindChanged(id, kind):
-            session(id)?.kind = kind
+            guard let s = session(id) else { break }
+            // A browser session never runs claude, so a claude lifecycle signal carrying its
+            // id is spurious — applying it would flip the pane to a terminal while
+            // BrowserManager still holds the browser controller, desyncing the two and
+            // wedging ⌘K on that row.
+            if s.spawnedKind == .browser { break }
+            // A session spawned as Claude never reverts to a plain terminal: it execed
+            // claude, so a claude-end is either the process about to exit (the child-exited
+            // signal closes the row moments later) or a /clear's end/start pair — neither
+            // should blip the kind.
+            if kind == .terminal, s.spawnedKind == .claudeCode {
+                liveClaudeIDs.remove(id)
+                break
+            }
+            s.kind = kind
             // The hook seam's claude lifecycle: claude-start posts .claudeCode, claude-end
             // posts .terminal (HookServer.apply) — the only writers of comment-target liveness.
             if kind == .claudeCode {
@@ -377,7 +426,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// terminals and Claude both reach (`term-*` and Claude signals alike flow through `apply`).
     /// The open session never notifies. Focus picks the surface: frontmost → the in-app deck,
     /// unfocused → Notification Center. `force` overrides the focus rule for the DEBUG trigger.
-    func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil) {
+    /// `closing` marks the exit-close transition: the caller removes the row right after,
+    /// so the raised done toast must outlive its session.
+    func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil, closing: Bool = false) {
         if openSessionID == id { clearNotif(id); return }
         let toNC = force.map { $0 == .notificationCenter } ?? !NSApp.isActive
         switch next.rollup {
@@ -396,7 +447,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
                 NotificationService.shared.postDone(store: self, id: id)
             } else {
                 pulseTokens[id, default: 0] += 1
-                raiseInApp(id, .done)
+                raiseInApp(id, .done, outlivesSession: closing)
             }
         default:
             clearNotif(id)   // work / run (and idle-from-idle) clear any standing toast
@@ -406,10 +457,14 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// Raise (or re-raise, bumping it to newest) a background session's toast. A done toast
     /// asks for nothing, so it dismisses itself; the seq check keeps the timer from killing
     /// a newer toast the same session raised in the meantime.
-    private func raiseInApp(_ id: UUID, _ kind: NotifKind) {
+    private func raiseInApp(_ id: UUID, _ kind: NotifKind, outlivesSession: Bool = false) {
+        guard let s = session(id) else { return }
         notifSeq += 1
         notifs.removeAll { $0.id == id }
-        notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq))
+        notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq,
+                                 sessionKind: s.kind, title: s.title,
+                                 colorIndex: branch(of: s).flatMap { workspace(of: $0) }?.colorIndex,
+                                 outlivesSession: outlivesSession))
         if kind == .done {
             let seq = notifSeq
             Task { @MainActor [weak self] in
@@ -423,10 +478,10 @@ enum ThemePref: String, CaseIterable, Identifiable {
     func clearNotif(_ id: UUID) { notifs.removeAll { $0.id == id } }
 
     /// Active toasts, most-urgent first: errors before needs-input before done, then newest
-    /// within a kind (working.html `notifOrder`). Drops any whose session vanished or is now
-    /// the open one.
+    /// within a kind (working.html `notifOrder`). Drops any whose session vanished (except
+    /// the self-dismissing exit-close done toast) or is now the open one.
     var notifOrder: [InAppNotif] {
-        notifs.filter { $0.id != openSessionID && session($0.id) != nil }.sorted { a, b in
+        notifs.filter { $0.id != openSessionID && (session($0.id) != nil || $0.outlivesSession) }.sorted { a, b in
             if a.kind.rank != b.kind.rank { return a.kind.rank < b.kind.rank }
             return a.seq > b.seq
         }
@@ -639,12 +694,18 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     func closeSession(_ session: Session) {
+        // Cursor falls up the hierarchy to the branch row (working.html removeUnit fallback).
+        if navCursor == session.id { navCursor = branch(of: session)?.id }
         TerminalManager.shared.terminate(session.id)
         BrowserManager.shared.terminate(session.id)
         for br in workspaces.flatMap(\.branches) {
             br.sessions.removeAll { $0.id == session.id }
         }
         if openSessionID == session.id { openSessionID = nil }
+        liveClaudeIDs.remove(session.id)
+        claudeSeenAt.removeValue(forKey: session.id)
+        pulseTokens.removeValue(forKey: session.id)
+        reportedExitCodes.removeValue(forKey: session.id)
     }
 
     /// Folder picker → branch picker. Panel runs modally, so state mutation happens after dismiss.

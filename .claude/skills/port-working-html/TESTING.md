@@ -37,6 +37,34 @@ palette, sheets) by keys. The hover-reveal kebab is `pointer-events:none` until 
 osascript/clicks can't do; to verify a hover/menu-only state, set the store state in code
 (e.g. `activeMenu = …`), screenshot, then revert.
 
+## Headless driving when TCC blocks keys AND capture
+
+On machines where CGEvent posting *and* `screencapture -l` are both TCC-denied, drive and
+observe entirely over the control socket (`/tmp/synth-ctl-<pid>.sock`, one JSON line in/out):
+
+```bash
+# isolated instance — never touches the user's real state
+mkdir -p "$STATE" && cat > "$STATE/state.json" <<< '{"version":1,"workspaces":[…seed…],"expanded":[…]}'
+SYNTH_STATE_DIR="$STATE" SYNTH_AUTOMATION=1 .build/debug/Synth &
+echo '{"verb":"automation.nav","worktreePath":"…"}' | nc -U /tmp/synth-ctl-<pid>.sock
+```
+
+- `automation.nav` → rows/status/cursor/open session; `automation.notifs` → the toast deck +
+  `active`; `automation.newClaude` / `browser.create` open-and-select a session (the only
+  headless way to background the previous one); `automation.requestDelete` + `paletteEnter`
+  drive the delete flow. Global `claudeFlags` in the seeded state control what a spawned
+  claude runs (`--help` exits 0 in ~2s; a bogus flag exits 1) — the headless stand-in for
+  typing into a PTY.
+- In-app toasts only raise while `NSApp.isActive`; activate your instance with
+  `osascript -e 'tell application "System Events" to set frontmost of (first process whose
+  unix id is <pid>) to true'` (NSRunningApplication.activate is refused on macOS 14+).
+  Focus is contested on this machine — check `active` in `automation.notifs` at the moment
+  that matters.
+- **Exit codes never ride the PTY**: libghostty wraps children in `/usr/bin/login`, which
+  exits 0 regardless. The true code arrives over the hook socket (zshexit hook / claude
+  shim) — test that seam directly with a `nc -lU` listener (socket path must be short:
+  /tmp, not the scratchpad).
+
 ## Gotchas
 - **Trust only `swift build`.** SourceKit reports phantom "Cannot find type/module 'X'" across files
   and a false `@main` error — ignore them. Grep the build for `error:` / `Build complete`.

@@ -296,7 +296,8 @@ function tool(name, description, inputSchema, handler) {
 const server = new McpServer({ name: "synth-browser", version: "0.1.0" });
 
 tool("browser_list",
-  "List this worktree's Synth browser sessions (sessionId, title, url, branch).",
+  "List this worktree's Synth browser sessions (sessionId, title, url, branch; " +
+  "owned sessions carry an owner field — the Synth session UUID of the owning claude).",
   null,
   async () => {
     const scope = requireScope();
@@ -307,13 +308,17 @@ tool("browser_list",
 
 tool("browser_create",
   "Create a new Synth browser session in this worktree's branch (visible in the " +
-  "sidebar, selected), optionally pre-navigated to a URL. Focuses the new session.",
+  "sidebar, selected), optionally pre-navigated to a URL. Focuses the new session. " +
+  "The browser belongs to this Claude session — user comments made in it are routed " +
+  "back to this session.",
   { url: z.string().optional().describe("URL to open (scheme optional)") },
   async ({ url }) => {
     const scope = requireScope();
     const res = await controlCall(scope.inst, {
       verb: "browser.create", worktreePath: scope.path,
       ...(url && { url: normalizeURL(url) }),
+      ...(process.env.SYNTH_SESSION_ID &&
+          { ownerSessionId: process.env.SYNTH_SESSION_ID }),
     });
     focusedSessionId = res.sessionId;
     // The engine (and, first time, the whole CDP endpoint) spins up async — wait

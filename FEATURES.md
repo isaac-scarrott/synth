@@ -189,3 +189,8 @@ disclosure to dive deeper.
   ⌘? Browser group, and home ⌘K hint from the designs entry now run in the app, driving the
   toolbar's `BrowserSessionController` (one new seam: `focusAddress()`); plus `SYNTH_AUTOMATION`
   verbs (`key`, `screenshot`, `jump`, …) for verification on TCC-locked machines.
+- **Browser session, stage four: a browser can belong to a Claude session (ADR-0011 amended)** —
+  true containment on the shared surface: `browser_create` stamps the calling claude as owner
+  (⌘K browsers born unowned; Move under…/Detach re-parent by hand), owned rows nest one indent
+  under their owner and cascade-delete with a named confirm, and the comment ladder becomes
+  owner → boot owner → silently spawn-a-claude-that-adopts (replacing most-active-in-branch).

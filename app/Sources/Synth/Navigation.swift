@@ -116,7 +116,10 @@ extension AppStore {
             switch ref {
             case let .session(s):
                 guard let br = branch(of: s) else { return false }
-                return AppStore.shift(&br.sessions, id: s.id, by: delta)
+                // Containment (ADR-0011 stage four): an owned row keeps its place under
+                // its owner (no independent reorder); an owning claude hops as a block.
+                if s.ownerSessionID != nil { return false }
+                return AppStore.shiftSessionBlock(&br.sessions, id: s.id, by: delta)
             case let .branch(b):
                 guard let ws = workspace(of: b) else { return false }
                 return AppStore.shift(&ws.branches, id: b.id, by: delta)
@@ -139,6 +142,29 @@ extension AppStore {
         let j = i + delta
         guard j >= 0, j < array.count, j != i else { return false }
         array.insert(array.remove(at: i), at: j)
+        return true
+    }
+
+    /// `shift` at containment granularity (ADR-0011 stage four): sessions group into
+    /// blocks — an unowned row plus the owned browsers riding directly behind it — and
+    /// the block with `id` at its head moves `delta` block positions. Owned rows never
+    /// head a block (the caller no-ops them), so an owner always moves with its browsers.
+    private static func shiftSessionBlock(_ array: inout [Session], id: UUID, by delta: Int) -> Bool {
+        var blocks: [[Session]] = []
+        var blockOf: [UUID: Int] = [:]   // owner id → its block's index
+        for row in array {
+            if let o = row.ownerSessionID, let i = blockOf[o] {
+                blocks[i].append(row)
+            } else {
+                blockOf[row.id] = blocks.count
+                blocks.append([row])
+            }
+        }
+        guard let i = blocks.firstIndex(where: { $0.first?.id == id }) else { return false }
+        let j = i + delta
+        guard j >= 0, j < blocks.count, j != i else { return false }
+        blocks.insert(blocks.remove(at: i), at: j)
+        array = blocks.flatMap { $0 }
         return true
     }
 
@@ -348,7 +374,8 @@ extension AppStore {
                               onDelete: { [weak self] in self?.removeBranch(b, deleteWorktree: false) })
         case let .session(s):
             return ActiveMenu(rowID: s.id, level: .session, creates: [],
-                              onDelete: { [weak self] in self?.closeSession(s) })
+                              onDelete: { [weak self] in self?.closeSession(s) },
+                              confirmText: deleteSessionHint(s))
         }
     }
 

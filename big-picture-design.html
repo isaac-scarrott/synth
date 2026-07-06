@@ -398,6 +398,21 @@
   .browser__drop .browser__reclabel { margin-top: 12px; }
   @keyframes browser-drop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
   .browser__btn.is-on { background: var(--hover); color: var(--ink); }
+
+  /* Comment mode (ADR-0011 stages three/four): the target chip names where a comment lands —
+     the owning Claude session, or the fresh one an unowned browser's comment will spawn. */
+  .browser__target { padding: 3px 9px; border-radius: 999px; background: rgba(194,114,76,0.1); color: #b05f3c; font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; animation: browser-drop 150ms var(--ease-out); }
+  .browser__view { position: relative; }
+  .browser--commenting .browser__view { cursor: crosshair; }
+  .browser__ccard { position: absolute; z-index: 20; width: 248px; padding: 8px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); border-radius: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.18); animation: browser-drop 150ms var(--ease-out); }
+  .browser__ccard textarea { width: 100%; resize: none; border: 0.5px solid var(--line); border-radius: 7px; background: var(--raised); padding: 6px 8px; font-family: inherit; font-size: 12px; color: var(--ink); outline: none; }
+  .browser__ccard textarea:focus { border-color: var(--line-2); }
+  .browser__ccard-row { display: flex; gap: 6px; margin-top: 7px; }
+  .browser__ccard-target { font-size: 10.5px; color: var(--ink-4); padding: 0 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .browser__ccard .menu__btn--send { background: var(--accent); color: #fff; border-color: transparent; }
+  .browser__notice { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; padding: 5px 12px; border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); box-shadow: var(--notif-shadow); font-size: 11.5px; font-weight: 500; color: var(--ink-3); white-space: nowrap; animation: browser-drop 160ms var(--ease-out); transition: opacity 240ms ease; }
+  .browser__notice.out { opacity: 0; }
+
   .browser__devtools { height: 38%; min-height: 150px; display: flex; flex-direction: column; border-top: 0.5px solid var(--border-strong); background: var(--chrome); }
   .devtools__tabs { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 0.5px solid var(--border); }
   .devtools__tab { padding: 4px 9px; border: 0; border-radius: 6px; background: transparent; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: background 110ms ease, color 110ms ease; }
@@ -661,6 +676,12 @@
   .branches:empty::after { content: "No worktrees yet"; }
 
   .session { padding: 4px 8px; text-decoration: none; }
+
+  /* Containment (ADR-0011 stage four): a browser owned by a Claude session sits one indent
+     step under its owner — same session dials, the indent alone carries the relation. The
+     width shrinks by the same amount so the row's right edge (and its indicator) stays on
+     the sidebar's shared right axis. The transition is the adopt/detach animation. */
+  .session--owned { margin-left: 15px; width: calc(100% - 15px); transition: margin-left 180ms var(--ease-out), width 180ms var(--ease-out); }
 
   /* unread gutter bullet */
   .session__bullet {
@@ -1594,11 +1615,18 @@
               <div class="collapse"><div class="collapse__inner">
               <div class="sessions">
                 <!-- Claude Code — needs input -->
-                <a class="row session session--unread" data-row data-session data-type="ai">
+                <a class="row session session--unread" data-row data-session data-type="ai" data-sid="c1">
                   <span class="session__bullet"></span>
                   <span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg></span>
                   <span class="session__name">Claude Code</span>
                   <span class="ind ind--input"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg></span>
+                </a>
+                <!-- browser owned by the Claude session above (ADR-0011 stage four): one containment indent -->
+                <a class="row session session--owned" data-row data-session data-type="browser" data-owner="c1">
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg></span>
+                  <span class="session__name">localhost:5173</span>
+                  <span class="ind"><span class="sdot sdot--run"></span></span>
                 </a>
                 <!-- dev server — running -->
                 <a class="row session" data-row data-session data-type="terminal">
@@ -2075,6 +2103,7 @@
   const ICON_NAV_RELOAD = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.67,186.37a8,8,0,0,1,0,11.29C196.58,198.73,170.82,224,128,224c-37.39,0-64.53-22.4-80-39.85V208a8,8,0,0,1-16,0V160a8,8,0,0,1,8-8H88a8,8,0,0,1,0,16H55.44C67.76,183.35,93,208,128,208c36,0,58.14-21.46,58.36-21.68A8,8,0,0,1,197.67,186.37ZM216,40a8,8,0,0,0-8,8V71.85C192.53,54.4,165.39,32,128,32,85.18,32,59.42,57.27,58.34,58.34a8,8,0,0,0,11.3,11.34C69.86,69.46,92,48,128,48c35,0,60.24,24.65,72.56,40H168a8,8,0,0,0,0,16h48a8,8,0,0,0,8-8V48A8,8,0,0,0,216,40Z"/></svg>';
   const ICON_NAV_LOCK   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208Z"/></svg>';
   const ICON_DEVTOOLS   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></svg>';
+  const ICON_COMMENT    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm-40-76a12,12,0,1,1,12-12A12,12,0,0,1,88,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,128,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,168,140Z"/></svg>';
 
   // Recent destinations the "Go to…" surface offers. Static demo data; a real build seeds this from
   // the branch's dev-server port and the session's own visited history.
@@ -2126,6 +2155,8 @@
         <button class="browser__btn" data-nav="reload" aria-label="Reload">${ICON_NAV_RELOAD}</button>
       </div>
       <button class="browser__omni" data-omni><span class="browser__lock">${ICON_NAV_LOCK}</span><span class="browser__url">${esc(url)}</span></button>
+      <span class="browser__target" data-target hidden></span>
+      <button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button>
       <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
     </div>`;
   }
@@ -2139,6 +2170,7 @@
             <button class="browser__btn" data-nav="reload" disabled aria-label="Reload">${ICON_NAV_RELOAD}</button>
           </div>
           <button class="browser__omni" data-omni><span class="browser__url browser__url--ph">Search or enter address</span></button>
+          <button class="browser__btn" data-nav="comment" disabled aria-label="Comment mode">${ICON_COMMENT}</button>
           <button class="browser__btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
         </div>
         <div class="browser__home"><div class="browser__homeinner">
@@ -2153,12 +2185,15 @@
   }
   // The embedded browser is live: recents and the address bar navigate, history drives back/forward,
   // and the omnibox reopens the same "go to" surface floated over a loaded page.
+  // The open browser pane's comment-mode controls, for ⌘K ("Enter/Exit comment mode").
+  let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {} };
   function wireBrowser(openEl) {
     const host = content.querySelector('.browser'); if (!host) return;
     const titleEl = content.querySelector('.pane__title span:last-child');
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
     let devOpen = false, devTab = 'Elements';
+    let commentOn = false;
 
     function spin() {
       const r = host.querySelector('[data-nav="reload"]'); if (!r || reduceMotion) return;
@@ -2184,7 +2219,74 @@
       if (rel) { rel.disabled = idx < 0; rel.onclick = spin; }
       const dev = host.querySelector('[data-nav="devtools"]');
       if (dev) { dev.disabled = idx < 0; dev.classList.toggle('is-on', devOpen); dev.onclick = toggleDev; }
+      const com = host.querySelector('[data-nav="comment"]');
+      if (com) { com.disabled = idx < 0; com.onclick = toggleComment; }
       if (omni) omni.onclick = openOmni;
+      updateCommentUI();
+    }
+    // Comment mode (ADR-0011 stages three/four). The chip names the delivery target up front:
+    // the owning Claude session, or the fresh one this comment will spawn (which then adopts
+    // the browser — see sendComment). Mode survives navigation, exactly like the native app.
+    function toggleComment() {
+      if (idx < 0) return;                       // the "go to" home has nothing to comment on
+      commentOn = !commentOn;
+      if (!commentOn) closeCard();
+      updateCommentUI();
+    }
+    function updateCommentUI() {
+      host.classList.toggle('browser--commenting', commentOn);
+      const btn = host.querySelector('[data-nav="comment"]');
+      if (btn) btn.classList.toggle('is-on', commentOn);
+      const chip = host.querySelector('[data-target]');
+      if (chip) {
+        chip.hidden = !commentOn;
+        if (commentOn) { const o = ownerOf(openEl); chip.textContent = '→ ' + (o ? sessionTitle(o) : 'New Claude session'); }
+      }
+    }
+    function closeCard() { const c = host.querySelector('.browser__ccard'); if (c) c.remove(); }
+    function openCard(e, view) {
+      closeCard();
+      const o = ownerOf(openEl);
+      const card = document.createElement('div');
+      card.className = 'browser__ccard';
+      card.innerHTML = `<div class="browser__ccard-target">→ ${esc(o ? sessionTitle(o) : 'New Claude session')}</div>
+        <textarea rows="2" placeholder="Leave a comment…"></textarea>
+        <div class="browser__ccard-row"><span class="menu__btn" data-c="cancel">Cancel</span><span class="menu__btn menu__btn--send" data-c="send">Send</span></div>`;
+      const r = view.getBoundingClientRect();
+      card.style.left = Math.max(8, Math.min(e.clientX - r.left, r.width - 256)) + 'px';
+      card.style.top = Math.max(8, Math.min(e.clientY - r.top + 6, r.height - 130)) + 'px';
+      view.appendChild(card);
+      const ta = card.querySelector('textarea');
+      ta.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();                    // typing must not reach the app-level key handlers
+        if (ev.key === 'Escape') closeCard();
+        else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); if (ta.value.trim()) sendComment(); }
+      });
+      card.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const b = ev.target.closest('.menu__btn'); if (!b) return;
+        if (b.dataset.c === 'cancel') closeCard();
+        else if (ta.value.trim()) sendComment();
+      });
+      ta.focus();
+    }
+    // The mock of the stage-four ladder: owned → the owner receives it (its dot goes amber);
+    // unowned → a fresh Claude session spawns *silently* — the row appears, the browser
+    // re-nests under it, focus stays right here — and the chip flips to the new owner.
+    function sendComment() {
+      closeCard();
+      if (!openEl) return;
+      let o = ownerOf(openEl);
+      if (!o) { o = spawnOwnerClaude(openEl); updateCommentUI(); }
+      else setSessionState(o, 'work');
+      notice(`Comment sent to ${sessionTitle(o)}`);
+    }
+    function notice(text) {
+      const view = host.querySelector('.browser__view'); if (!view) return;
+      view.querySelectorAll('.browser__notice').forEach((n) => n.remove());
+      const n = document.createElement('div'); n.className = 'browser__notice'; n.textContent = text;
+      view.appendChild(n);
+      setTimeout(() => { n.classList.add('out'); setTimeout(() => n.remove(), 260); }, 2200);
     }
     function toggleDev() {
       devOpen = !devOpen;
@@ -2223,6 +2325,15 @@
       bindGoto(drop, close); if (input) input.focus();
       setTimeout(() => document.addEventListener('mousedown', onDoc), 0);
     }
+
+    // Picking an element in comment mode: any click on the page surface drops the comment card.
+    host.addEventListener('click', (e) => {
+      if (!commentOn) return;
+      const view = e.target.closest('.browser__view');
+      if (!view || e.target.closest('.browser__ccard') || e.target.closest('.browser__notice')) return;
+      openCard(e, view);
+    });
+    browserCommentAPI = { isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI };
 
     if (host.hasAttribute('data-home')) {
       bindBar();
@@ -2583,6 +2694,61 @@
   // Mouse use dismisses the keyboard ring (keeps the resting state clean).
   document.addEventListener('mousemove', () => document.body.classList.remove('kbd'), { passive: true });
 
+  // ===== Containment (ADR-0011 stage four): a browser can belong to a Claude session =====
+  // Ownership is a sidebar-visible structure: the owned row carries data-owner = the owner's
+  // data-sid and sits directly under it, one indent deeper. Ownership is set at creation
+  // (a spawned Claude adopts the browser it was spawned for) or by the user (kebab Move
+  // under… / Detach) — driving a browser never adopts it.
+  let sidSeq = nav.querySelectorAll('.session[data-sid]').length;
+  const claudeSid = (row) => row.dataset.sid || (row.dataset.sid = 'c' + (++sidSeq));
+  const ownerOf = (row) => row && row.dataset.owner ? nav.querySelector(`.session[data-sid="${row.dataset.owner}"]`) : null;
+  const ownedOf = (row) => row && row.dataset.sid ? [...row.parentElement.querySelectorAll(`.session[data-owner="${row.dataset.sid}"]`)] : [];
+  const sessionTitle = (row) => row.querySelector('.session__name').textContent.trim();
+  const claudesOf = (sessions) => [...sessions.querySelectorAll('.session[data-type="ai"]')];
+  // owned rows always sit directly after their owner — restored after any sibling reorder
+  function snapOwned(container) {
+    container.querySelectorAll(':scope > .session[data-sid]').forEach((o) => {
+      let ref = o;
+      ownedOf(o).forEach((b) => { container.insertBefore(b, ref.nextSibling); ref = b; });
+    });
+  }
+  function adopt(browserRow, ownerRow) {
+    claudeSid(ownerRow);
+    browserRow.dataset.owner = ownerRow.dataset.sid;
+    browserRow.classList.add('session--owned');
+    const block = ownedOf(ownerRow).filter((b) => b !== browserRow);
+    const ref = block.length ? block[block.length - 1] : ownerRow;
+    ref.parentElement.insertBefore(browserRow, ref.nextSibling);
+    browserCommentAPI.refresh();               // the open pane's target chip may name this owner
+  }
+  function detach(browserRow) {
+    const o = ownerOf(browserRow);
+    delete browserRow.dataset.owner;
+    browserRow.classList.remove('session--owned');
+    if (o) { const block = ownedOf(o); const ref = block.length ? block[block.length - 1] : o; o.parentElement.insertBefore(browserRow, ref.nextSibling); }
+    browserCommentAPI.refresh();               // a detached open browser's next comment spawns
+  }
+  // The spawn moment: a comment from an unowned browser births this browser's own Claude —
+  // silently. The row appears above it, already working on the comment; focus stays put.
+  function spawnOwnerClaude(browserRow) {
+    const spec = SESSION_KINDS.claude;
+    const a = document.createElement('a');
+    a.className = 'row session row-enter';
+    a.setAttribute('data-row', '');
+    a.setAttribute('data-session', '');
+    a.setAttribute('data-type', spec.type);
+    a.innerHTML = `<span class="session__bullet"></span>
+      ${spec.icon}
+      <span class="session__name">${spec.name}</span>
+      ${IND_HTML[spec.ind]}`;
+    addKebab(a);
+    browserRow.parentElement.insertBefore(a, browserRow);
+    a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
+    adopt(browserRow, a);
+    rollUpGroups();
+    return a;
+  }
+
   // ===== Row actions: hover kebab → popover menu (create / delete) =====
   const ICON_DOTS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm56-12a12,12,0,1,0,12,12A12,12,0,0,0,196,116ZM60,116a12,12,0,1,0,12,12A12,12,0,0,0,60,116Z"/></svg>';
   const ICON_TRASH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"/></svg>';
@@ -2610,7 +2776,8 @@
     if (!row) return;
     const lvl = rowLevel(row);
     let unit, sel;
-    if (lvl === 'session') { unit = row; sel = '.session'; }
+    // owned rows keep their place under their owner; an owner hops as a block (snapOwned below)
+    if (lvl === 'session') { if (row.dataset.owner) return; unit = row; sel = '.session:not([data-owner])'; }
     else if (lvl === 'branch' || lvl === 'repo') { unit = row.closest('[data-repo]'); sel = '[data-repo]'; }
     else return;
     if (!unit) return;
@@ -2618,9 +2785,10 @@
     const sibs = [...container.children].filter((el) => el.matches(sel));
     const i = sibs.indexOf(unit), j = i + dir;
     if (i < 0 || j < 0 || j >= sibs.length) return;   // already at an edge — no wrap
-    const firsts = sibs.map((el) => [el, el.getBoundingClientRect().top]);   // FLIP: capture
+    const firsts = [...container.children].map((el) => [el, el.getBoundingClientRect().top]);   // FLIP: capture
     if (dir > 0) container.insertBefore(sibs[j], unit);   // hop the next sibling above us
     else container.insertBefore(unit, sibs[j]);           // slot in above the previous sibling
+    if (lvl === 'session') snapOwned(container);          // owned rows follow their owner
     if (!reduceMotion) {
       for (const [el, top] of firsts) {
         const dy = top - el.getBoundingClientRect().top;
@@ -2721,11 +2889,18 @@
     if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-terminal">${ICON_TERMINAL}New terminal</span>`);
     if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-claude">${ICON_AI}New Claude Code</span>`);
     if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-browser">${ICON_BROWSER}New browser</span>`);
+    // containment verbs (browser rows only): the sole way structure changes by hand
+    if (level === 'session' && row.dataset.type === 'browser') {
+      const owner = ownerOf(row);
+      if (owner) parts.push(`<span class="menu__item" data-act="detach">${ICON_MINUS}Detach from “${esc(sessionTitle(owner))}”</span>`);
+      else claudesOf(row.parentElement).forEach((c) => parts.push(`<span class="menu__item" data-act="own" data-sid="${claudeSid(c)}">${ICON_AI}Move under “${esc(sessionTitle(c))}”</span>`));
+      if (owner || claudesOf(row.parentElement).length) parts.push('<div class="menu__sep"></div>');
+    }
     if (level !== 'session') parts.push('<div class="menu__sep"></div>');
     parts.push(`<span class="menu__item menu__item--danger" data-act="delete">${ICON_TRASH}${level === 'session' ? 'Delete' : 'Remove'}</span>`);
     menu.innerHTML = `<div class="menu__viewport">`
       + `<div class="menu__pane menu__pane--actions">${parts.join('')}</div>`
-      + `<div class="menu__pane menu__pane--confirm">${confirmMarkup(level)}</div>`
+      + `<div class="menu__pane menu__pane--confirm">${confirmMarkup(level, row)}</div>`
       + `</div>`;
 
     menu.addEventListener('click', (e) => {
@@ -2739,6 +2914,8 @@
         if (act === 'new-terminal') { closeMenu(); return addTerminal(row); }
         if (act === 'new-claude') { closeMenu(); return addClaude(row); }
         if (act === 'new-browser') { closeMenu(); return addBrowser(row); }
+        if (act === 'detach') { closeMenu(); return detach(row); }
+        if (act === 'own') { const sid = item.dataset.sid; closeMenu(); const o = nav.querySelector(`.session[data-sid="${sid}"]`); if (o) adopt(row, o); return; }
       } else if (btn) {
         if (btn.dataset.c === 'cancel') return closeMenu();
         if (btn.dataset.c === 'ok') { const unit = rowUnit(row); closeMenu(); removeUnit(unit); }
@@ -2763,10 +2940,13 @@
   }
 
   // Workspaces and branches are *removed* — sidebar-only; worktrees stay on disk.
-  // Sessions are deleted for real (the process ends).
-  function confirmMarkup(level) {
+  // Sessions are deleted for real (the process ends). Deleting a Claude session that owns
+  // browsers closes them with it — containment — so the confirm names what goes.
+  function confirmMarkup(level, row) {
+    const owned = level === 'session' && row ? ownedOf(row) : [];
     const label = level === 'repo' ? 'Remove this workspace from the sidebar? Nothing on disk is deleted.'
       : level === 'branch' ? 'Remove this branch from the sidebar? Its worktree stays on disk.'
+      : owned.length ? `Delete this session? This also closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
       : 'Delete this session?';
     const verb = level === 'session' ? 'Delete' : 'Remove';
     return `<div class="menu__confirm">
@@ -2790,6 +2970,9 @@
 
   function removeUnit(unit) {
     if (!unit) return;
+    // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
+    // live and die with it — the delete confirm names them before this runs.
+    if (unit.matches && unit.matches('.session[data-sid]')) ownedOf(unit).forEach(removeUnit);
     // If the keyboard cursor is on (or inside) the removed unit it falls back up the
     // hierarchy — session → its branch row, branch → its workspace head — instead of
     // resetting; a removed top-level workspace falls to a neighbouring workspace.
@@ -3132,7 +3315,8 @@
     // The unit a row drags as, and the CSS selector its siblings share.
     function dragUnit(row) {
       const lvl = rowLevel(row);
-      if (lvl === 'session') return { unit: row, sel: '.session' };
+      // owned rows aren't draggable (contained); non-owned sessions slot between blocks only
+      if (lvl === 'session') return row.dataset.owner ? null : { unit: row, sel: '.session:not([data-owner])' };
       if (lvl === 'branch' || lvl === 'repo') {
         const u = row.closest('[data-repo]');
         return u ? { unit: u, sel: '[data-repo]' } : null;
@@ -3196,6 +3380,7 @@
         if (clone) { clone.remove(); clone = null; }
         start.unit.classList.remove('drag-src');
         document.body.classList.remove('dragging');
+        if (start.sel.startsWith('.session')) snapOwned(start.container);   // reunite owner blocks
         select(start.row);                     // keep selection on the row you moved
         active = false;
       }
@@ -3460,6 +3645,8 @@
     const items = [];
     if (open && open.dataset.type === 'browser') browserActions(open).forEach((a) => items.push({ grp: 'Page', unit: seName(open), ...a }));
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });
+    if (open && open === openEl && open.dataset.type === 'browser' && browserCommentAPI.available())
+      items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_AI, label: 'New Claude Code', enter: () => runAndClose(() => addClaude(br)) });
@@ -3596,7 +3783,9 @@
   }
 
   // A session leaf has no children — its own actions (rename / delete) plus sibling
-  // creates on its branch (the ctx chip names the branch, as the crumb is the session).
+  // creates on its branch (the ctx chip names the branch, as the crumb is the session),
+  // plus the containment verbs on browser rows (Move under a Claude session / Detach —
+  // ADR-0011 stage four).
   function sessionFrame(row) {
     const name = seName(row);
     return {
@@ -3611,10 +3800,13 @@
           items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addClaude(br)) });
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
-        items.push(
-          { sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) },
-          { sec: 'act', icon: ICON_TRASH,  label: 'Delete ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) },
-        );
+        items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) });
+        if (row.dataset.type === 'browser') {
+          const owner = ownerOf(row);
+          if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
+          else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
+        }
+        items.push({ sec: 'act', icon: ICON_TRASH, label: 'Delete ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) });
         return items;
       },
     };
@@ -3661,7 +3853,9 @@
     if (level === 'branch') return removeWorktreeFrame(row);
     const name = level === 'repo' ? wsName(row) : seName(row);
     const verb = level === 'session' ? 'Delete' : 'Remove';
+    const owned = level === 'session' ? ownedOf(row) : [];
     const hint = level === 'repo' ? 'Remove this workspace? Nothing on disk is deleted.'
+      : owned.length ? `Delete this session? This also closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
       : 'Delete this session?';
     return {
       crumb: verb + ' ' + name + '?', mode: 'confirm', placeholder: hint + '  ↵ confirm · esc cancel',

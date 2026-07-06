@@ -52,8 +52,12 @@ enum SessionStatus: Equatable, Sendable {
     /// A browser session's current page (ADR-0011). Persisted so a restored browser reopens
     /// its URL in a fresh engine; nil for non-browsers and a fresh "go to" home surface.
     var browserURL: URL?
+    /// The Claude Code session that owns this browser (ADR-0011 stage four containment) —
+    /// the Synth row's id, not Claude's own session id, so ownership survives claude exits
+    /// and `--resume`. nil for unowned browsers and every non-browser session.
+    var ownerSessionID: UUID?
 
-    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, claudeSessionID: String? = nil, browserURL: URL? = nil) {
+    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, claudeSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil) {
         self.id = id
         self.kind = kind
         self.spawnedKind = kind
@@ -63,6 +67,7 @@ enum SessionStatus: Equatable, Sendable {
         self.titleIsCustom = titleIsCustom
         self.claudeSessionID = claudeSessionID
         self.browserURL = browserURL
+        self.ownerSessionID = ownerSessionID
     }
 }
 

@@ -17,6 +17,8 @@ The feature has three stages, and only **stage one** is being built now:
 3. **A browser you and Claude share.** A two-way mode: the user clicks/selects elements on the live
    page and leaves comments, which flow back to the Claude Code session that owns the browser as
    located context, and Claude acts on them.
+4. **A browser that belongs to a Claude session.** (Added 2026-07-06.) Ownership becomes a real,
+   visible containment relationship — see the stage-four section below.
 
 The stages are recorded here together because stage one must not paint stages two and three into a
 corner. Everything below is the decision; the reasoning that ruled out the alternatives follows.
@@ -186,6 +188,46 @@ click-to-comment. Decisions that turned out to be load-bearing:
   `claudeSessionCaptured` this run and not since ended. `submit()` is unreachable for a non-live row;
   a dormant-but-live-capable row is booted and delivery waits for the liveness signal, never for the
   terminal view; on timeout the comment is dropped and its screenshots deleted.
+
+## Stage four: a browser can belong to a Claude session (decided 2026-07-06)
+
+Stage three routes a comment to "the branch's most-active live claude" — a guess that is usually
+right but never stated. Stage four replaces the guess with structure: a browser session can be
+**owned** by a Claude Code session, and ownership is *true containment* — sidebar nesting, cascade
+lifecycle, and deterministic comment routing — not merely a stored routing hint.
+
+- **Shared-visible, exclusive owner.** Containment does not shrink the shared surface: `browser_list`
+  still returns every browser in the worktree (owned rows annotated), any claude may drive any
+  browser, and the user can always take the wheel. *Rejected:* private-to-owner scoping (breaks the
+  stage-two contract and blinds a second claude asked to "check the page") and read-only-for-others (a
+  permission matrix for a conflict that barely exists).
+- **Ownership is set at creation, changed only by the user.** `browser_create` stamps the calling
+  claude as owner: the launch shim already mints the claude session id, so it exports it into claude's
+  environment, the MCP server (claude's child) inherits it and passes it with the control-socket verb.
+  ⌘K browsers are born unowned siblings. *Rejected:* driving-adopts (a background navigate visibly
+  re-nesting a sidebar row is structure mutating as a side effect of automation). The row kebab gains
+  "Move under <claude>…" / "Detach". An external claude (no Synth row) creates unowned browsers.
+- **Cascade on delete, keyed to the row.** Deleting an owning claude row closes its browsers after a
+  confirm that names them; Detach is the escape hatch. Ownership keys off the Synth row UUID — it
+  survives claude exits and `--resume`. *Rejected:* orphan-to-sibling (a child that outlives its
+  parent's deletion is a pointer, not containment).
+- **Sidebar: one containment indent, same session dials.** Owned browsers render directly under their
+  owner, one indent step deeper, reusing the session-tier visual language — always expanded, no caret,
+  no new visual register. This amends the three-tier hierarchy decision to "three tiers + a
+  containment indent"; per the design workflow it lands in `working.html` + `big-picture-design.html`
+  before the native port.
+- **Comment ladder: owner → boot owner → spawn-and-adopt.** A comment from an owned browser goes to
+  its owner (booting it through the existing hook-liveness wait if dormant). A comment from an
+  *unowned* browser always spawns a fresh claude session — silently, with the bar chip reading "→ New
+  Claude session" pre-send — which receives the composed located context as its first message **and
+  adopts the browser** (creation-time stamping, so the next comment hits the first rung; without
+  adoption every comment would fork another session). Focus stays in the browser. *Replaced:* the
+  most-active-in-branch fallback, for unowned browsers, and with it the "no claude → drop" dead end.
+  The stage-three security boundary is untouched: delivery still submits only to a hook-confirmed-live
+  session, including the freshly spawned one.
+- **Consequences accepted knowingly:** commenting from a fresh ⌘K browser spawns a new claude even
+  when an active one sits on the branch (re-parent first to route there instead), and an adopted ⌘K
+  browser cascade-deletes with its spawned claude despite predating it (the confirm is the guard).
 
 ## Consequences
 

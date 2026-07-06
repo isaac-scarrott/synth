@@ -15,6 +15,8 @@ struct PersistedState: Codable {
     /// written before settings were persisted still decodes — a nil just keeps the default.
     var globalScript: String?
     var globalClaudeFlags: String?
+    /// The new-worktree session template (working.html globalTpl) — same optionality rule.
+    var globalSessionTemplate: [SessionTemplateEntry]?
 }
 
 struct PersistedWorkspace: Codable {
@@ -27,6 +29,8 @@ struct PersistedWorkspace: Codable {
     /// Optional/omitted when the workspace has no custom value (see PersistedState).
     var setupScript: String?
     var claudeFlags: String?
+    /// Omitted when empty — an empty list means "inherit global", same as no list.
+    var sessionTemplate: [SessionTemplateEntry]?
 }
 
 struct PersistedBranch: Codable {

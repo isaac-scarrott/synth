@@ -20,6 +20,7 @@ struct SettingsPane: View {
                     if isGlobal { appearanceSection }
                     if isGlobal { soundsSection }
                     scriptSection
+                    templateSection
                     flagsSection
                 }
                 .frame(maxWidth: 620, alignment: .leading)
@@ -142,6 +143,46 @@ struct SettingsPane: View {
         }
     }
 
+    // MARK: New worktree sessions — the ordered session set every worktree starts with
+    // (working.html sessionsSection). Same override model as the flags: a workspace's
+    // list replaces the global outright; an empty list inherits global.
+
+    @ViewBuilder private var templateSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("New worktree sessions")
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.repoName)
+            if isGlobal {
+                sub("Every new worktree starts with these sessions, created in order — the first one opens.")
+                TplList(entries: globalTplBinding,
+                        emptyText: "No sessions — new worktrees start empty.")
+                    .padding(.top, 14)
+                TplAddBar(entries: globalTplBinding).padding(.top, 8)
+                TplPreview(entries: store.globalSessionTemplate).padding(.top, 14)
+                note("Sessions spawn once the setup script finishes. The template only shapes the start — rename, reorder or close them freely afterwards.")
+            } else {
+                (Text("Starting sessions for ") + Text(name).fontWeight(.semibold)
+                    + Text(" worktrees — these replace the global set. Leave empty to inherit global."))
+                    .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
+                    .lineSpacing(3).padding(.top, 4)
+                flowStrip(note: "Workspace overrides global")
+                VStack(alignment: .leading, spacing: 7) {
+                    TplListHead(label: "Global — inherited when empty") { EditInGlobalLink() }
+                    TplListRO(entries: store.globalSessionTemplate, emptyText: "No global sessions.")
+                }
+                .padding(.top, 14)
+                VStack(alignment: .leading, spacing: 7) {
+                    TplListHead(label: "\(name) — overrides global") { EmptyView() }
+                    TplList(entries: wsTplBinding,
+                            emptyText: "Inheriting global — add a session to override.")
+                    TplAddBar(entries: wsTplBinding).padding(.top, 1)
+                }
+                .padding(.top, 14)
+                TplPreview(entries: store.sessionTemplate(for: ws)).padding(.top, 14)
+            }
+        }
+    }
+
     // MARK: Claude Code flags — default flags passed to `claude` on session start.
 
     @ViewBuilder private var flagsSection: some View {
@@ -241,6 +282,366 @@ struct SettingsPane: View {
             get: { id.flatMap { store.wsClaudeFlags[$0] } ?? "" },
             set: { v in if let id { store.wsClaudeFlags[id] = v } }
         )
+    }
+
+    private var globalTplBinding: Binding<[SessionTemplateEntry]> {
+        Binding(get: { store.globalSessionTemplate }, set: { store.globalSessionTemplate = $0 })
+    }
+    private var wsTplBinding: Binding<[SessionTemplateEntry]> {
+        let id = ws?.id
+        return Binding(
+            get: { id.flatMap { store.wsSessionTemplates[$0] } ?? [] },
+            set: { v in if let id { store.wsSessionTemplates[id] = v } }
+        )
+    }
+}
+
+// MARK: - New worktree sessions (working.html .tpl-*)
+
+/// The per-kind copy the template UI needs (working.html TPL_KINDS): the pill label and
+/// the name a freshly added entry starts with. Icon path/tint come from Theme's
+/// SessionKind extension — the same glyphs the sidebar rows use.
+private extension SessionKind {
+    var tplLabel: String {
+        switch self {
+        case .claudeCode: return "Claude Code"
+        case .terminal:   return "Terminal"
+        case .browser:    return "Browser"
+        }
+    }
+    var tplStart: String {
+        switch self {
+        case .claudeCode: return "Claude Code"
+        case .terminal:   return "shell"
+        case .browser:    return "Browser"
+        }
+    }
+}
+
+/// Row metrics shared by the list and the drag math: fixed row height + gap, so a drag
+/// target index is pure arithmetic on translation.height.
+private enum TplMetrics {
+    static let rowHeight: CGFloat = 32
+    static let gap: CGFloat = 4
+    static var step: CGFloat { rowHeight + gap }
+}
+
+/// The uppercase label row above a template list (working.html .set-code-head — the same
+/// dial as CodeCard's label row, reused standalone here).
+private struct TplListHead<Trailing: View>: View {
+    let label: String
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .semibold)).kerning(0.5)
+                .foregroundStyle(Theme.navLabel)
+            Spacer(minLength: 0)
+            trailing()
+        }
+    }
+}
+
+/// The editable template list (working.html .tpl-list[data-tpl]): reorderable rows with
+/// an inline name field, kind pill and remove button.
+private struct TplList: View {
+    @Binding var entries: [SessionTemplateEntry]
+    let emptyText: String
+
+    var body: some View {
+        if entries.isEmpty {
+            TplEmpty(text: emptyText)
+        } else {
+            VStack(spacing: TplMetrics.gap) {
+                ForEach(entries) { entry in
+                    TplRow(entries: $entries, entry: entry,
+                           index: entries.firstIndex(where: { $0.id == entry.id }) ?? 0)
+                }
+            }
+        }
+    }
+}
+
+/// The read-only mirror (working.html .tpl-list--ro): same rows minus grip/×, flat and
+/// dimmed — the inherited global list shown on a workspace scope.
+private struct TplListRO: View {
+    let entries: [SessionTemplateEntry]
+    let emptyText: String
+
+    var body: some View {
+        if entries.isEmpty {
+            TplEmpty(text: emptyText)
+        } else {
+            VStack(spacing: TplMetrics.gap) {
+                ForEach(Array(entries.enumerated()), id: \.element.id) { i, entry in
+                    HStack(spacing: 8) {
+                        TplIndex(i: i)
+                        TplKindIcon(kind: entry.kind)
+                        Text(entry.name)
+                            .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
+                            .padding(.horizontal, 5)
+                        Spacer(minLength: 4)
+                        TplKindPill(kind: entry.kind)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: TplMetrics.rowHeight)
+                }
+            }
+            .opacity(0.62)
+        }
+    }
+}
+
+/// Empty-state card (working.html .tpl-empty): a dashed hairline around a quiet line.
+private struct TplEmpty: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12)).foregroundStyle(Theme.inkFaint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .overlay(RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(Theme.line, style: StrokeStyle(lineWidth: 0.5, dash: [3, 3])))
+    }
+}
+
+/// One editable template row (working.html .tpl-row): grip · index · kind icon · name
+/// field · kind pill · ×. The grip's DragGesture reorders live — rows are fixed-height,
+/// so the target index is translation.height over the row step, moved as thresholds cross.
+private struct TplRow: View {
+    @Binding var entries: [SessionTemplateEntry]
+    let entry: SessionTemplateEntry
+    let index: Int
+    @State private var dragging = false
+    @State private var dragFrom = 0
+
+    var body: some View {
+        HStack(spacing: 8) {
+            grip
+            TplIndex(i: index)
+            TplKindIcon(kind: entry.kind)
+            TplNameField(text: nameBinding)
+            TplKindPill(kind: entry.kind)
+            removeButton
+        }
+        .padding(.horizontal, 9)
+        .frame(height: TplMetrics.rowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 9).fill(Theme.raised)
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, lineWidth: 0.5))
+                .shadow(color: .black.opacity(dragging ? 0.12 : 0.04), radius: dragging ? 4 : 0.75, y: 1)
+        )
+        .zIndex(dragging ? 1 : 0)
+    }
+
+    private var nameBinding: Binding<String> {
+        Binding(
+            get: { entries.first(where: { $0.id == entry.id })?.name ?? "" },
+            set: { v in if let i = entries.firstIndex(where: { $0.id == entry.id }) { entries[i].name = v } }
+        )
+    }
+
+    // .tpl-grip — global coordinates so the row moving under the pointer doesn't feed
+    // back into the translation.
+    private var grip: some View {
+        Phos(path: Phosphor.gripSix, size: 14)
+            .foregroundStyle(Theme.inkFaint)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { v in
+                        if !dragging {
+                            dragging = true
+                            dragFrom = entries.firstIndex(where: { $0.id == entry.id }) ?? 0
+                        }
+                        let delta = Int((v.translation.height / TplMetrics.step).rounded())
+                        let target = max(0, min(entries.count - 1, dragFrom + delta))
+                        guard let cur = entries.firstIndex(where: { $0.id == entry.id }),
+                              cur != target else { return }
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            entries.move(fromOffsets: IndexSet(integer: cur),
+                                         toOffset: target > cur ? target + 1 : target)
+                        }
+                    }
+                    .onEnded { _ in dragging = false }
+            )
+    }
+
+    private var removeButton: some View {
+        TplHover { hovering in
+            Button {
+                if let i = entries.firstIndex(where: { $0.id == entry.id }) {
+                    _ = withAnimation(.easeOut(duration: 0.15)) { entries.remove(at: i) }
+                }
+            } label: {
+                Phos(path: Phosphor.close, size: 12)
+                    .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 6)
+                        .fill(hovering ? Theme.rowSelected : Color.clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Remove")
+        }
+    }
+}
+
+/// .tpl-idx — the 1-based order number.
+private struct TplIndex: View {
+    let i: Int
+    var body: some View {
+        Text("\(i + 1)")
+            .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+            .foregroundStyle(Theme.inkFaint)
+            .frame(width: 13)
+    }
+}
+
+/// The 14pt kind glyph — same icon + tint as the sidebar session rows (.session__icon).
+private struct TplKindIcon: View {
+    let kind: SessionKind
+    var body: some View {
+        Phos(path: kind.iconPath, size: 14)
+            .foregroundStyle(kind.tint).frame(width: 14)
+    }
+}
+
+/// .tpl-kind — the kind pill on the row's right.
+private struct TplKindPill: View {
+    let kind: SessionKind
+    var body: some View {
+        Text(kind.tplLabel)
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(Theme.inkMuted)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Capsule().fill(Theme.rowSelected))
+    }
+}
+
+/// input.tpl-name — a plain inline field; a soft fill surfaces on hover/focus only.
+private struct TplNameField: View {
+    @Binding var text: String
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+            .foregroundStyle(Theme.ink)
+            .focused($focused)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(hovering || focused ? Theme.rowHover : Color.clear)
+                    .overlay(focused ? RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(Theme.selRing, lineWidth: 1.5) : nil)
+            )
+            .onHover { hovering = $0 }
+    }
+}
+
+/// .tpl-add — one pill button per kind; tapping appends `{kind, its start name}`.
+private struct TplAddBar: View {
+    @Binding var entries: [SessionTemplateEntry]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach([SessionKind.claudeCode, .terminal, .browser], id: \.self) { kind in
+                TplHover { hovering in
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            entries.append(SessionTemplateEntry(kind: kind, name: kind.tplStart))
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Phos(path: Phosphor.plus, size: 12).foregroundStyle(Theme.inkFaint)
+                            Text(kind.tplLabel)
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(hovering ? Theme.ink : Theme.ink3)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(hovering ? Theme.rowHover : Theme.raised)
+                                .overlay(RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(hovering ? Theme.borderStrong : Theme.line, lineWidth: 0.5))
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+/// Hover-tracking wrapper so the add/remove buttons can restyle without each carrying
+/// its own @State boilerplate.
+private struct TplHover<Content: View>: View {
+    @ViewBuilder var content: (Bool) -> Content
+    @State private var hovering = false
+    var body: some View {
+        content(hovering).onHover { hovering = $0 }
+    }
+}
+
+/// The live preview (working.html tplPreview): the sidebar subtree a new worktree would
+/// open with — a mock branch group with the template's sessions nested under the same
+/// hairline indent as the real sidebar. Display only; the first row carries the
+/// open-session tint, so "the first one opens" is visible.
+private struct TplPreview: View {
+    let entries: [SessionTemplateEntry]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TplListHead(label: "New worktree preview") { EmptyView() }
+            HStack(spacing: 6) {
+                Phos(path: Phosphor.caret, size: 12)
+                    .foregroundStyle(Theme.chevron)
+                    .rotationEffect(.degrees(90))
+                    .frame(width: 12)
+                Text("feature/next-thing")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.branchName)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 10).padding(.vertical, 5)
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Array(entries.enumerated()), id: \.element.id) { i, entry in
+                    HStack(spacing: 8) {
+                        TplKindIcon(kind: entry.kind)
+                        Text(entry.name)
+                            .font(.system(size: 11.5))
+                            .fontWeight(i == 0 ? .semibold : .regular)
+                            .foregroundStyle(i == 0 ? Theme.inkOpen : Theme.sessionName)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    // The open session's sticky tint on the first row (.session--open).
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(hex: 0x0A84FF).opacity(i == 0 ? 0.06 : 0)))
+                }
+            }
+            // .sessions indent: margin-left 15, border-left hairline, padding-left 11.
+            .padding(.leading, 11)
+            .overlay(alignment: .leading) {
+                Rectangle().fill(Theme.border).frame(width: 1)
+            }
+            .padding(.leading, 15)
+        }
+        .padding(.top, 10).padding(.horizontal, 12).padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10).fill(Theme.sidebar)
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.border, lineWidth: 0.5))
+        )
+        .allowsHitTesting(false)
     }
 }
 

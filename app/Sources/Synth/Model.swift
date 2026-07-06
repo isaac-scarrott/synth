@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// The kind of live thing running inside a branch.
-enum SessionKind: String, Sendable {
+enum SessionKind: String, Codable, Sendable {
     case terminal
     case claudeCode
     case browser
@@ -77,6 +77,16 @@ enum SessionStatus: Equatable, Sendable {
 struct BrowserRecent: Codable, Equatable, Sendable {
     var url: String
     var title: String
+}
+
+/// One entry of the new-worktree session template (working.html TPL_KINDS / globalTpl):
+/// the kind of session a new worktree starts with plus its starting name. Plain Codable
+/// value shared by the runtime store and the persisted snapshot (the BrowserRecent model).
+/// `id` is encoded so a row keeps its identity across restarts and while reordering.
+struct SessionTemplateEntry: Codable, Equatable, Sendable, Identifiable {
+    var id = UUID()
+    var kind: SessionKind
+    var name: String
 }
 
 extension URL {

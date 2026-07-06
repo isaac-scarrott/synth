@@ -422,8 +422,11 @@ enum ThemePref: String, CaseIterable, Identifiable {
         case let .browserPopupRequested(id, url):
             guard let s = session(id) else { return }
             // A popup opened from an owned browser inherits the owner (stage four) —
-            // it's the same claude's surface, just a second page.
-            newBrowser(in: branch(of: s), at: url, ownedBy: owner(of: s))
+            // it's the same claude's surface, just a second page. Owned means
+            // agent-driven (a CDP click looks like a real one), so it announces via
+            // the unread bullet; a popup from a browser the user drives opens in front.
+            let popupOwner = owner(of: s)
+            newBrowser(in: branch(of: s), at: url, ownedBy: popupOwner, focus: popupOwner == nil)
         }
     }
 
@@ -713,27 +716,46 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// and never raises status notifications — it stays .idle for life. `ownedBy` a
     /// claude row in the same branch makes it a contained browser (stage four) —
     /// nested, cascading, the deterministic comment target.
+    ///
+    /// `focus: false` is the agent-initiated path (MCP browser.create, popups off an
+    /// owned browser): the row appears with the unread bullet instead of stealing the
+    /// pane, and the engine boots detached so CDP callers can drive it before the
+    /// user ever clicks the row — the pane adopts the live engine on first render.
     @discardableResult
-    func newBrowser(in branch: Branch? = nil, at url: URL? = nil, ownedBy owner: Session? = nil) -> Session? {
+    func newBrowser(in branch: Branch? = nil, at url: URL? = nil, ownedBy owner: Session? = nil,
+                    focus: Bool = true) -> Session? {
         let session = addSession(kind: .browser,
                                  title: url?.browserHostPath ?? "Browser",
-                                 status: .idle, in: branch, ownedBy: owner)
+                                 status: .idle, in: branch, ownedBy: owner, focus: focus)
         session?.browserURL = url
+        if let session, !focus {
+            // Next runloop turn, same beat as a pane render would give it — creating
+            // inside this call would nest a SwiftUI render pass in the engine's
+            // creation pump (see BrowserManager.creating).
+            DispatchQueue.main.async { _ = BrowserManager.shared.controller(for: session) }
+        }
         return session
     }
 
     @discardableResult
     private func addSession(kind: SessionKind, title: String, status: SessionStatus,
-                            in branch: Branch?, ownedBy owner: Session? = nil) -> Session? {
+                            in branch: Branch?, ownedBy owner: Session? = nil,
+                            focus: Bool = true) -> Session? {
         // A pending branch has no checkout to run in yet — sessions wait for the worktree.
         guard let br = branch ?? defaultBranch(), !br.isPending else { return nil }
         let session = Session(kind: kind, title: title, status: status)
         br.sessions.append(session)
         if let owner { adopt(session, by: owner) }
         br.lastActivity = "now"
+        // Either way the row must be visible in the sidebar — expand down to it.
         if let ws = workspace(of: br) { expanded.insert(ws.id) }
         expanded.insert(br.id)
-        open(session)
+        if focus {
+            open(session)
+        } else {
+            // Agent-initiated: announce with the unread bullet, leave pane and cursor alone.
+            session.unread = true
+        }
         return session
     }
 

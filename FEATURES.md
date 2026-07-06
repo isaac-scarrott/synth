@@ -215,3 +215,7 @@ disclosure to dive deeper.
   session opens, the rest wait dormant until first opened; a non-stock template name spawns
   title-frozen so auto-naming never overwrites it. Adding a workspace (importing existing branches)
   deliberately doesn't spawn.
+- **Agent-created browsers don't steal focus (native app)** — `browser.create` (MCP) and popups
+  from claude-owned browsers now appear quiet: unread bullet in the sidebar, pane/cursor untouched,
+  engine booted detached so the CDP target still appears immediately. Popups from unowned browsers
+  (real user clicks) still open in front.

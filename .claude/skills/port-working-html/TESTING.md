@@ -49,12 +49,13 @@ SYNTH_STATE_DIR="$STATE" SYNTH_AUTOMATION=1 .build/debug/Synth &
 echo '{"verb":"automation.nav","worktreePath":"…"}' | nc -U /tmp/synth-ctl-<pid>.sock
 ```
 
-- `automation.nav` → rows/status/cursor/open session; `automation.notifs` → the toast deck +
-  `active`; `automation.newClaude` / `browser.create` open-and-select a session (the only
-  headless way to background the previous one); `automation.requestDelete` + `paletteEnter`
-  drive the delete flow. Global `claudeFlags` in the seeded state control what a spawned
-  claude runs (`--help` exits 0 in ~2s; a bogus flag exits 1) — the headless stand-in for
-  typing into a PTY.
+- `automation.nav` → rows (incl. `unread`)/status/cursor/open session; `automation.notifs` →
+  the toast deck + `active`; `automation.newClaude` opens-and-selects a session (headless way
+  to background the previous one) while `browser.create` is deliberately quiet — unread row, no
+  focus change, engine booted detached; `automation.jump` selects a row; `automation.requestDelete`
+  + `paletteEnter` drive the delete flow. Global `claudeFlags` in the seeded state control what a
+  spawned claude runs (`--help` exits 0 in ~2s; a bogus flag exits 1; omit the key for interactive
+  claude that stays alive) — the headless stand-in for typing into a PTY.
 - In-app toasts only raise while `NSApp.isActive`; activate your instance with
   `osascript -e 'tell application "System Events" to set frontmost of (first process whose
   unix id is <pid>) to true'` (NSRunningApplication.activate is refused on macOS 14+).

@@ -116,13 +116,12 @@ final class ControlServer: @unchecked Sendable {
             let owner = (request["ownerSessionId"] as? String)
                 .flatMap(UUID.init(uuidString:))
                 .flatMap { id in branch.sessions.first { $0.id == id && $0.kind == .claudeCode } }
-            guard let session = store.newBrowser(in: branch, at: url, ownedBy: owner) else {
+            // focus: false — an agent-created browser never steals the pane; the row
+            // announces itself with the unread bullet and the engine boots detached
+            // (next runloop turn), so callers still poll CDP for the target as before.
+            guard let session = store.newBrowser(in: branch, at: url, ownedBy: owner, focus: false) else {
                 return ["ok": false, "error": "session creation failed"]
             }
-            // The engine mounts when the selected pane renders (the next runloop
-            // turn) — the stage-one path. Creating it here instead would nest a
-            // SwiftUI render pass inside the engine's creation pump and duplicate
-            // the engine; callers poll CDP for the target, so the beat is invisible.
             return ["ok": true, "sessionId": session.id.uuidString]
 
         // Automation verbs (SYNTH_AUTOMATION=1 only): the self-verify harness's
@@ -235,7 +234,8 @@ final class ControlServer: @unchecked Sendable {
                         ["sessionId": s.id.uuidString,
                          "kind": s.kind.rawValue,
                          "title": s.title,
-                         "status": String(describing: s.status)]
+                         "status": String(describing: s.status),
+                         "unread": String(s.unread)]
                     }]
 
         // The `d` shortcut and the ⌘K palette keys, addressable where TCC blocks

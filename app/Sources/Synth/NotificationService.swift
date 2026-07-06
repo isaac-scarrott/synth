@@ -44,6 +44,20 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         submit(store, s, title: notifVerb(s.kind, kind), sound: soundOn)
     }
 
+    /// A background worktree op failed while Synth wasn't frontmost — a freeform alert
+    /// with no session to correlate; tapping it just activates Synth (the persistent
+    /// in-app card is also waiting for when focus returns).
+    @MainActor func postSystemError(title: String, body: String) {
+        guard available else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.interruptionLevel = .active
+        if store?.soundError ?? true { content.sound = .default }
+        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req)
+    }
+
     /// done → a transient banner (same `.active` interruption; the sound is opt-in and off by default).
     @MainActor func postDone(store: AppStore, id: UUID) {
         guard available, let s = store.session(id) else { return }
@@ -78,11 +92,10 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
-        if let sid = info["session"] as? String, let id = UUID(uuidString: sid) {
-            Task { @MainActor in
-                NSApp.activate(ignoringOtherApps: true)
-                if let s = self.store?.session(id) { self.store?.jump(to: s) }
-            }
+        let id = (info["session"] as? String).flatMap(UUID.init(uuidString:))
+        Task { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)   // system errors carry no session — just come front
+            if let id, let s = self.store?.session(id) { self.store?.jump(to: s) }
         }
         completionHandler()
     }

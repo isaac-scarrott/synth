@@ -689,18 +689,14 @@ struct PaletteFrame {
                     PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
                                 ctx: b.isRemote ? (b.remote ?? "origin") : "local",
                                 enter: { self.runAndClose {
-                                    if let err = self.store.createWorktree(in: ws, existingBranch: b.name) {
-                                        self.store.presentGitError("Couldn't create worktree", details: err)
-                                    }
+                                    self.store.createWorktree(in: ws, existingBranch: b.name)
                                 } })
                 }
             // Fallback: the typed query isn't an existing branch → offer cutting a fresh one.
             if !all.contains(where: { $0.name == v }) {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.plus), label: "New branch “\(v)”",
                             enter: { self.runAndClose {
-                                if let err = self.store.createWorktree(in: ws, newBranch: v, base: nil) {
-                                    self.store.presentGitError("Couldn't create worktree", details: err)
-                                }
+                                self.store.createWorktree(in: ws, newBranch: v, base: nil)
                             } }))
             }
             return items

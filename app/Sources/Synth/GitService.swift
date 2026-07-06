@@ -134,6 +134,40 @@ enum GitService {
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Drop administrative entries whose checkout folder is gone (a fast delete's rename,
+    /// or a folder removed outside Synth).
+    static func pruneWorktrees(at repo: URL) {
+        _ = runChecked(["-C", repo.path, "worktree", "prune"])
+    }
+
+    /// Phase one of a fast delete: atomically rename the checkout to a hidden
+    /// `.deleting-…` sibling (same volume, so O(1) regardless of tree size) and prune
+    /// git's administrative entry. Returns the moved folder for the caller to delete at
+    /// leisure off the critical path, or nil when the rename failed — the caller falls
+    /// back to the blocking `removeWorktree`.
+    static func detachWorktree(repo: URL, path: URL) -> URL? {
+        let trash = path.deletingLastPathComponent().appendingPathComponent(
+            ".deleting-\(path.lastPathComponent)-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        do { try FileManager.default.moveItem(at: path, to: trash) } catch { return nil }
+        _ = runChecked(["-C", repo.path, "worktree", "prune"])
+        return trash
+    }
+
+    /// Launch sweep: delete `.deleting-…` folders a crash left behind under the app's
+    /// worktree root (a detached delete that never finished its background rm).
+    static func sweepDetachedWorktrees() {
+        let fm = FileManager.default
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Synth/worktrees", isDirectory: true)
+        guard let repos = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
+        for repo in repos {
+            guard let entries = try? fm.contentsOfDirectory(at: repo, includingPropertiesForKeys: nil) else { continue }
+            for entry in entries where entry.lastPathComponent.hasPrefix(".deleting-") {
+                try? fm.removeItem(at: entry)
+            }
+        }
+    }
+
     /// Repos sharing a folder name get distinct worktree roots. hashValue is seeded
     /// per launch, so roots must come from a stable hash to be reused across runs.
     private static func stableHash(_ s: String) -> String {

@@ -121,14 +121,19 @@ extension URL {
     /// feeds the home surface / omnibox-dropdown "Recent" list. Empty until a browser
     /// session navigates (working.html's static BROWSER_RECENTS, made real + persisted).
     var browserRecents: [BrowserRecent]
+    /// True while the worktree is still being created in the background: the row is
+    /// already in the tree (grayed, spinner, inert) but has no checkout to act on yet.
+    /// Never persisted — a quit mid-create must not restore a half-made row.
+    var isPending: Bool
 
-    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", browserRecents: [BrowserRecent] = []) {
+    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", browserRecents: [BrowserRecent] = [], isPending: Bool = false) {
         self.id = id
         self.name = name
         self.worktreeURL = worktreeURL
         self.sessions = sessions
         self.lastActivity = lastActivity
         self.browserRecents = browserRecents
+        self.isPending = isPending
     }
 
     /// A branch with sessions is a live "branch group": expandable, with a roll-up.

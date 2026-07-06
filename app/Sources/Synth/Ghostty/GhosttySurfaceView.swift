@@ -40,6 +40,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         self.bus = bus
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         wantsLayer = true
+        registerForDraggedTypes([.fileURL, .string])
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -312,6 +313,28 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         let viewPoint = NSPoint(x: x, y: bounds.height - y)
         let windowRect = convert(NSRect(origin: viewPoint, size: .zero), to: nil)
         return window?.convertToScreen(windowRect) ?? .zero
+    }
+
+    // MARK: Drag & drop (Finder files → shell-quoted paths, like Terminal/Ghostty —
+    // Claude Code reads dropped images from the pasted path)
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self, NSString.self]) ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let pb = sender.draggingPasteboard
+        if let urls = pb.readObjects(forClasses: [NSURL.self],
+                                     options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           !urls.isEmpty {
+            sendPaste(urls.map { Self.shellQuote($0.path) }.joined(separator: " ") + " ")
+            return true
+        }
+        if let text = pb.string(forType: .string), !text.isEmpty {
+            sendPaste(text)
+            return true
+        }
+        return false
     }
 
     // MARK: Mouse

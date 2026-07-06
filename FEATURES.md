@@ -170,6 +170,9 @@ disclosure to dive deeper.
 - **`d` deletes through the ⌘K confirm frame (both designs + native app)** — the `d` shortcut now
   opens the palette's delete-confirm frame (one confirm surface, shared with the kebab and palette
   flows); the inline row confirm popover is unreachable legacy.
+- **Terminal accepts file/text drops (native app)** — dropping Finder files onto a terminal pastes
+  their shell-quoted paths (dropped text pastes as-is), so dragging an image into a Claude Code
+  session hands it the path, matching Terminal/Ghostty/iTerm.
 - **Browser ⌘K Page group, page shortcuts, and a home-page ⌘K hint (both designs)** — a browser
   session's ⌘K leads with a Page group (Go to address ⌘L, Reload ⌘R, Back/Forward ⌘[/⌘], Copy
   URL, Open in default browser, Show/Hide DevTools ⌥⌘I) that drives the visible toolbar controls;

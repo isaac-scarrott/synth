@@ -330,10 +330,19 @@ extension AppStore {
         }
     }
 
-    /// `d` on the selected row — open its menu straight in the confirm step so a single
-    /// keystroke can't delete (working.html requestDelete → showConfirm).
+    /// `d` on the selected row — drop into the ⌘K palette's confirm frame so a single
+    /// keystroke can't delete (working.html requestDelete → openPaletteAt(confirmFrame)).
     func requestDelete(_ ref: RowRef) {
-        activeMenu = rowMenu(for: ref)
-        menuConfirming = true
+        activeMenu = nil
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        let frame: PaletteFrame
+        switch ref {
+        case let .workspace(w): frame = pal.confirmRemoveWorkspace(w)
+        case let .branch(b):    frame = pal.confirmRemoveBranch(b)
+        case let .session(s):   frame = pal.confirmDeleteSession(s)
+        }
+        pal.stack = [pal.rootFrame()]
+        pal.push(frame)
     }
 }

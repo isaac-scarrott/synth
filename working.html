@@ -2537,7 +2537,7 @@
       e.preventDefault();
       addToRow(selEl);
     }
-    // r renames the selected row in place; d deletes it (through a confirm popover)
+    // r renames the selected row in place; d deletes it (through the ⌘K confirm frame)
     else if ((k === 'r' || k === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (!isTreeRow(selEl)) return;
       e.preventDefault();
@@ -2657,14 +2657,11 @@
     el.addEventListener('blur', onBlur);
   }
 
-  // Delete the selected row from the keyboard: opens the row's confirm popover so a single
-  // keystroke can't destroy a session — ↵ confirms, Esc cancels (see the menu key handler).
+  // Delete the selected row from the keyboard: drops into the ⌘K confirm frame so a single
+  // keystroke can't destroy a session — ↵ confirms, Esc cancels.
   function requestDelete(row) {
     if (!row) return;
-    const kebab = row.querySelector('.kebab');
-    if (!kebab) return;
-    openMenu(row, kebab);
-    if (openMenuEl) showConfirm(openMenuEl);
+    openPaletteAt(confirmFrame(row));
   }
 
   function addKebab(row) {

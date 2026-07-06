@@ -153,6 +153,36 @@ final class ControlServer: @unchecked Sendable {
                          "title": store.session(n.id)?.title ?? ""]
                     }]
 
+        // The `d` shortcut and the ⌘K palette keys, addressable where TCC blocks
+        // synthetic keystrokes — each verb is the exact call the key handler makes.
+        case "automation.requestDelete" where automation:
+            guard let session = requestedSession(request, in: branch) else {
+                return ["ok": false, "error": "no session for sessionId"]
+            }
+            store.requestDelete(.session(session))
+            return ["ok": true]
+
+        case "automation.paletteMove" where automation:
+            guard let pal = store.palette else { return ["ok": false, "error": "palette closed"] }
+            pal.move(request["delta"] as? Int ?? 1)
+            return ["ok": true]
+
+        case "automation.paletteEnter" where automation:
+            guard let pal = store.palette else { return ["ok": false, "error": "palette closed"] }
+            pal.runActive()
+            return ["ok": true]
+
+        case "automation.palette" where automation:
+            guard let pal = store.palette else {
+                return ["ok": true, "open": false, "menuOpen": store.activeMenu != nil]
+            }
+            let frame = pal.stack.last
+            return ["ok": true, "open": true,
+                    "crumb": frame?.crumb ?? "",
+                    "items": pal.items.map(\.label),
+                    "activeIndex": pal.activeIndex,
+                    "menuOpen": store.activeMenu != nil]
+
         default:
             return ["ok": false, "error": "unknown verb \(verb)"]
         }

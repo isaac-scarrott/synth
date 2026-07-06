@@ -219,3 +219,8 @@ disclosure to dive deeper.
   from claude-owned browsers now appear quiet: unread bullet in the sidebar, pane/cursor untouched,
   engine booted detached so the CDP target still appears immediately. Popups from unowned browsers
   (real user clicks) still open in front.
+- **Browser tools target sessions explicitly (MCP server)** — every action tool takes an optional
+  `sessionId` that overrides the focused session without moving it, because one server process
+  serves a Claude session *and* its sub-agents (no caller identity in MCP) and a process-wide
+  focus pointer had concurrent agents driving each other's browsers; superseded CDP connections
+  now retire on a delay so a reconnect can't kill another agent's in-flight call.

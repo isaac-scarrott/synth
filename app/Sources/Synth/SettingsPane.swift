@@ -628,8 +628,10 @@ private struct TplPreview: View {
                         .fill(Color(hex: 0x0A84FF).opacity(i == 0 ? 0.06 : 0)))
                 }
             }
-            // .sessions indent: margin-left 15, border-left hairline, padding-left 11.
-            .padding(.leading, 11)
+            // The live sidebar's sessions block verbatim (rows 15 past the leading
+            // hairline — Sidebar's Reveal), indented 15 under the branch row: the
+            // preview shows what the app will actually render, not the HTML metrics.
+            .padding(.leading, 15)
             .overlay(alignment: .leading) {
                 Rectangle().fill(Theme.border).frame(width: 1)
             }

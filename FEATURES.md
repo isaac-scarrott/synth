@@ -194,3 +194,7 @@ disclosure to dive deeper.
   (⌘K browsers born unowned; Move under…/Detach re-parent by hand), owned rows nest one indent
   under their owner and cascade-delete with a named confirm, and the comment ladder becomes
   owner → boot owner → silently spawn-a-claude-that-adopts (replacing most-active-in-branch).
+- **New worktree sessions: a per-scope template names the sessions every worktree starts with
+  (designs + native app)** — Settings gains an ordered, drag-reorderable list of kind+name entries
+  (first one opens) with a live sidebar-subtree preview; a workspace's list replaces global outright,
+  empty inherits (the flags model). Native app persists the template; spawn-on-create isn't wired yet.

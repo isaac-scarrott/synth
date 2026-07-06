@@ -89,6 +89,18 @@ struct SessionTemplateEntry: Codable, Equatable, Sendable, Identifiable {
     var name: String
 }
 
+extension SessionTemplateEntry {
+    /// An unknown persisted kind decodes as .terminal instead of throwing (the same guard
+    /// PersistedSession applies via rawValue): PersistenceStore.load() treats ANY decode
+    /// error as "snapshot unreadable", so one bad entry must never cost the whole tree.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.kind = SessionKind(rawValue: try c.decode(String.self, forKey: .kind)) ?? .terminal
+        self.name = try c.decode(String.self, forKey: .name)
+    }
+}
+
 extension URL {
     /// working.html's browserNorm, shared by the omnibox and the control-socket
     /// browser.create verb: a schemeless entry gets https:// — except loopback hosts,

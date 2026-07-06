@@ -206,3 +206,7 @@ disclosure to dive deeper.
   New-worktree frame and the Create-worktree dialog's Branch name field rewrite live (space→dash,
   leading whitespace dropped, pasted runs collapsed, caret preserved); rename and all other
   inputs keep their spaces.
+- **New worktree sessions: a per-scope template names the sessions every worktree starts with
+  (designs + native app)** — Settings gains an ordered, drag-reorderable list of kind+name entries
+  (first one opens) with a live sidebar-subtree preview; a workspace's list replaces global outright,
+  empty inherits (the flags model). Native app persists the template; spawn-on-create isn't wired yet.

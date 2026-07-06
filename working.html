@@ -1466,6 +1466,91 @@
   .set-cmd__prompt { color: var(--tui-dim); user-select: none; }
   .set-cmd__flag { color: var(--tui-blue); }
 
+  /* ---- New-worktree sessions (settings): the ordered session set every worktree starts with.
+     Each row is one template entry — drag the grip to reorder, type in the name to rename,
+     × removes. The preview underneath renders the resulting sidebar subtree live. */
+  .tpl-list { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
+  .set-code-wrap .tpl-list { margin-top: 0; }
+  .tpl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 9px;
+    background: var(--raised);
+    border: 0.5px solid var(--border);
+    border-radius: 9px;
+    box-shadow: 0 1px 1.5px rgba(0,0,0,0.04);
+  }
+  /* read-only mirror (the inherited global list on a workspace scope) — same dial as .set-code--ro */
+  .tpl-list--ro .tpl-row { background: transparent; box-shadow: none; opacity: 0.62; }
+  .tpl-grip { display: flex; flex-shrink: 0; color: var(--text-faint); cursor: grab; touch-action: none; }
+  .tpl-grip svg { width: 14px; height: 14px; display: block; }
+  .tpl-idx { flex-shrink: 0; width: 13px; text-align: center; font-size: 10.5px; font-weight: 500; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .tpl-row .session__icon { flex-shrink: 0; }
+  .tpl-name {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 5px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: -0.006em;
+    color: var(--ink);
+    outline: none;
+  }
+  input.tpl-name:hover { background: var(--hover-soft); }
+  input.tpl-name:focus { background: var(--hover-soft); box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.5); }
+  .tpl-kind { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; background: var(--hover); font-size: 10.5px; font-weight: 550; color: var(--text-muted); }
+  .tpl-x {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .tpl-x svg { width: 12px; height: 12px; display: block; }
+  .tpl-x:active { transform: scale(0.88); }
+  @media (hover: hover) and (pointer: fine) {
+    .tpl-x:hover { background: var(--hover); color: var(--error); }
+  }
+  .tpl-empty { padding: 10px 12px; border: 0.5px dashed var(--line); border-radius: 9px; font-size: 12px; color: var(--text-faint); }
+  .tpl-add { display: flex; gap: 6px; margin-top: 8px; }
+  .tpl-add__btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 0.5px solid var(--line);
+    border-radius: 8px;
+    background: var(--raised);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 550;
+    color: var(--ink-3);
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, transform 110ms var(--ease-out);
+  }
+  .tpl-add__btn svg { width: 12px; height: 12px; display: block; color: var(--text-faint); }
+  .tpl-add__btn:active { transform: scale(0.97); }
+  @media (hover: hover) and (pointer: fine) {
+    .tpl-add__btn:hover { background: var(--hover-soft); border-color: var(--line-2); color: var(--ink); }
+  }
+  /* live preview: the sidebar subtree a new worktree would open with — display only */
+  .tpl-preview { margin-top: 14px; padding: 10px 12px 12px; background: var(--sidebar); border: 0.5px solid var(--border); border-radius: 10px; }
+  .tpl-preview .set-code-head { margin-bottom: 4px; }
+  .tpl-preview .repo { margin: 0; }
+  .tpl-preview .row { pointer-events: none; }
+
   /* Respect reduced motion: keep opacity/color, drop movement + looping pulses */
   @media (prefers-reduced-motion: reduce) {
     * { transition-duration: 0.01ms !important; }
@@ -4241,6 +4326,129 @@
     </div>`;
   }
 
+  // New-worktree sessions: the ordered session set every new worktree starts with.
+  // Same override model as flags: a workspace's list replaces the global one outright,
+  // and an empty workspace list inherits global. Order is creation order — the first
+  // session is the one that opens.
+  const ICON_GRIP = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,60A12,12,0,1,1,92,48,12,12,0,0,1,104,60Zm60,12a12,12,0,1,0-12-12A12,12,0,0,0,164,72ZM92,116a12,12,0,1,0,12,12A12,12,0,0,0,92,116Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,116ZM92,184a12,12,0,1,0,12,12A12,12,0,0,0,92,184Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,184Z"/></svg>';
+  const TPL_KINDS = {
+    claude:   { label: 'Claude Code', start: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_AI}</span>` },
+    terminal: { label: 'Terminal',    start: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>` },
+    browser:  { label: 'Browser',     start: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>` },
+  };
+  let globalTpl = [
+    { kind: 'claude',   name: 'Claude Code' },
+    { kind: 'terminal', name: 'dev server' },
+    { kind: 'terminal', name: 'shell' },
+  ];
+  const wsTpls = { synth: [
+    { kind: 'claude',   name: 'Claude Code' },
+    { kind: 'terminal', name: 'pnpm dev' },
+    { kind: 'browser',  name: 'localhost:3000' },
+  ] };
+  const tplFor = (name) => wsTpls[name] || (wsTpls[name] = []);
+  const effectiveTpl = (isGlobal, name) => (isGlobal || !tplFor(name).length ? globalTpl : tplFor(name));
+
+  function tplRows(list, editable, emptyText) {
+    if (!list.length) return `<div class="tpl-empty">${emptyText}</div>`;
+    return list.map((s, i) => {
+      const k = TPL_KINDS[s.kind];
+      return `<div class="tpl-row" data-i="${i}">
+        ${editable ? `<span class="tpl-grip" title="Drag to reorder">${ICON_GRIP}</span>` : ''}
+        <span class="tpl-idx">${i + 1}</span>
+        ${k.icon}
+        ${editable ? `<input class="tpl-name" value="${esc(s.name)}" spellcheck="false" aria-label="Session name" />`
+                   : `<span class="tpl-name">${esc(s.name)}</span>`}
+        <span class="tpl-kind">${k.label}</span>
+        ${editable ? `<button class="tpl-x" title="Remove" aria-label="Remove session">${ICON_CLOSE}</button>` : ''}
+      </div>`;
+    }).join('');
+  }
+  const tplAddBar = () => `<div class="tpl-add">${Object.keys(TPL_KINDS).map((k) =>
+    `<button class="tpl-add__btn" data-add="${k}">${ICON_PLUS}${TPL_KINDS[k].label}</button>`).join('')}</div>`;
+
+  // what the sidebar will actually show: a branch group with the sessions nested in
+  // order — the first row carries the open tint, so "the first one opens" is visible
+  function tplPreview(list) {
+    const rows = list.map((s, i) => `<div class="row session${i === 0 ? ' session--open' : ''}">
+        <span class="session__bullet"></span>${TPL_KINDS[s.kind].icon}
+        <span class="session__name">${esc(s.name)}</span>
+      </div>`).join('');
+    return `<div class="tpl-preview">
+      <div class="set-code-head"><span class="set-code-head__label">New worktree preview</span></div>
+      <div class="repo repo--open">
+        <span class="row branch branch--group"><span class="chev">${ICON_CARET}</span><span class="branch__name">feature/next-thing</span></span>
+        <div class="sessions">${rows}</div>
+      </div>
+    </div>`;
+  }
+
+  function sessionsSection(isGlobal, name) {
+    if (isGlobal) {
+      return `<div class="set-section">
+        <div class="set-section__title">New worktree sessions</div>
+        <div class="set-section__sub">Every new worktree starts with these sessions, created in order — the first one opens.</div>
+        <div class="tpl-list" data-tpl>${tplRows(globalTpl, true, 'No sessions — new worktrees start empty.')}</div>
+        ${tplAddBar()}
+        ${tplPreview(globalTpl)}
+        <div class="set-note">${ICON_INFO}<span>Sessions spawn once the setup script finishes. The template only shapes the start — rename, reorder or close them freely afterwards.</span></div>
+      </div>`;
+    }
+    return `<div class="set-section">
+      <div class="set-section__title">New worktree sessions</div>
+      <div class="set-section__sub">Starting sessions for <b>${esc(name)}</b> worktrees — these replace the global set. Leave empty to inherit global.</div>
+      <div class="set-flow">
+        <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
+        <span class="set-flow__arrow">${ICON_CARET}</span>
+        <span class="set-flow__step">${wsChip(contextHeadByName(name))}${esc(name)}</span>
+        <span class="set-flow__note">Workspace overrides global</span>
+      </div>
+      <div class="set-code-wrap">
+        <div class="set-code-head"><span class="set-code-head__label">Global — inherited when empty</span><button class="set-link" data-goto="global">Edit in Global</button></div>
+        <div class="tpl-list tpl-list--ro">${tplRows(globalTpl, false, 'No global sessions.')}</div>
+      </div>
+      <div class="set-code-wrap">
+        <div class="set-code-head"><span class="set-code-head__label">${esc(name)} — overrides global</span></div>
+        <div class="tpl-list" data-tpl>${tplRows(tplFor(name), true, 'Inheriting global — add a session to override.')}</div>
+        ${tplAddBar()}
+      </div>
+      ${tplPreview(effectiveTpl(false, name))}
+    </div>`;
+  }
+
+  // drag-to-reorder within the template list: the grabbed row leaves a faded slot that
+  // live-reorders under the pointer while a lifted clone tracks it (same feel as the tree)
+  function startTplDrag(e, listEl, list) {
+    e.preventDefault();
+    const row = e.target.closest('.tpl-row');
+    const r = row.getBoundingClientRect();
+    const clone = row.cloneNode(true);
+    clone.classList.add('drag-clone');
+    clone.style.cssText += `width:${r.width}px;left:${r.left}px;top:${r.top}px;`;
+    document.body.appendChild(clone);
+    row.classList.add('drag-src');
+    document.body.classList.add('dragging');
+    const offY = e.clientY - r.top;
+    const onMove = (ev) => {
+      clone.style.top = (ev.clientY - offY) + 'px';
+      const others = [...listEl.querySelectorAll('.tpl-row')].filter((x) => x !== row);
+      const before = others.find((x) => { const b = x.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; }) || null;
+      if (before !== row && before !== row.nextElementSibling) listEl.insertBefore(row, before);
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      clone.remove();
+      document.body.classList.remove('dragging');
+      const next = [...listEl.querySelectorAll('.tpl-row')].map((x) => list[+x.dataset.i]);
+      list.length = 0;
+      list.push(...next);
+      renderSettings();
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
+
   // find a workspace head by its name (for the chip in the run-order strip)
   const contextHeadByName = (name) => workspaceHeads().find((h) => wsName(h) === name) || null;
 
@@ -4258,7 +4466,7 @@
         <div class="pane__crumb"><b>Settings</b> / ${esc(isGlobal ? 'All workspaces' : name)}</div>
         <div class="pane__spacer"></div>
       </div>
-      <div class="set-body"><div class="set-body__inner">${scriptSection(isGlobal, name)}${flagsSection(isGlobal, name)}</div></div>
+      <div class="set-body"><div class="set-body__inner">${scriptSection(isGlobal, name)}${sessionsSection(isGlobal, name)}${flagsSection(isGlobal, name)}</div></div>
     </div>`;
     markScope();
     // theme segmented control (Global scope only)
@@ -4281,6 +4489,37 @@
         const sec = ta.closest('.set-section');
         const pv = sec.querySelector('.set-cmd');
         if (pv) pv.outerHTML = cmdPreview(ta.dataset.flags === 'global' ? globalFlags : effectiveFlags(false, name));
+      });
+    });
+    // Session template: renames edit the store in place (preview refreshes, caret never
+    // yanked); add / remove / drag-reorder re-render the pane. data-tpl marks the one
+    // editable list on this scope — the global mirror on a workspace scope stays inert.
+    const tplList = () => (isGlobal ? globalTpl : tplFor(name));
+    const tplRefresh = () => {
+      const pv = content.querySelector('.tpl-preview');
+      if (pv) pv.outerHTML = tplPreview(effectiveTpl(isGlobal, name));
+    };
+    content.querySelectorAll('.tpl-list[data-tpl]').forEach((listEl) => {
+      listEl.addEventListener('input', (e) => {
+        const inp = e.target.closest('input.tpl-name');
+        if (!inp) return;
+        tplList()[+inp.closest('.tpl-row').dataset.i].name = inp.value;
+        tplRefresh();
+      });
+      listEl.addEventListener('click', (e) => {
+        const x = e.target.closest('.tpl-x');
+        if (!x) return;
+        tplList().splice(+x.closest('.tpl-row').dataset.i, 1);
+        renderSettings();
+      });
+      listEl.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('.tpl-grip')) startTplDrag(e, listEl, tplList());
+      });
+    });
+    content.querySelectorAll('.tpl-add__btn').forEach((b) => {
+      b.addEventListener('click', () => {
+        tplList().push({ kind: b.dataset.add, name: TPL_KINDS[b.dataset.add].start });
+        renderSettings();
       });
     });
   }

@@ -255,6 +255,24 @@ enum ThemePref: String, CaseIterable, Identifiable {
         return globalClaudeFlags.trimmingCharacters(in: .whitespaces)
     }
 
+    /// The ordered session set every new worktree starts with (working.html TPL_KINDS /
+    /// globalTpl) — the settings surface only; spawn-on-worktree-create is not wired up
+    /// yet (same status as the setup-script runner and claude flags above, see FEATURES).
+    /// Order is creation order — the first entry is the session that opens.
+    var globalSessionTemplate: [SessionTemplateEntry] = [
+        SessionTemplateEntry(kind: .claudeCode, name: "Claude Code"),
+        SessionTemplateEntry(kind: .terminal, name: "dev server"),
+        SessionTemplateEntry(kind: .terminal, name: "shell"),
+    ]
+    var wsSessionTemplates: [UUID: [SessionTemplateEntry]] = [:]
+
+    /// The effective template for a scope — same override model as the flags: a workspace
+    /// with its own list replaces the global outright; an empty (or absent) list inherits.
+    func sessionTemplate(for workspace: Workspace?) -> [SessionTemplateEntry] {
+        if let w = workspace.flatMap({ wsSessionTemplates[$0.id] }), !w.isEmpty { return w }
+        return globalSessionTemplate
+    }
+
     /// Session ids with a LIVE Claude Code attached THIS run — asserted only by the hook
     /// seam (claude-start / claudeSessionCaptured; cleared by claude-end / process exit).
     /// A persisted `.claudeCode` kind is NOT liveness: a restored row whose `--resume`
@@ -1022,13 +1040,18 @@ enum ThemePref: String, CaseIterable, Identifiable {
                             browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents)
                     },
                     setupScript: wsScripts[ws.id],
-                    claudeFlags: wsClaudeFlags[ws.id])
+                    claudeFlags: wsClaudeFlags[ws.id],
+                    // nil when empty: an empty workspace list means "inherit global",
+                    // the same fact as having no list at all.
+                    sessionTemplate: (wsSessionTemplates[ws.id]?.isEmpty ?? true)
+                        ? nil : wsSessionTemplates[ws.id])
             },
             // Sorted so an unchanged set always encodes to identical bytes (Set iteration
             // order is per-process nondeterministic) — the skip-if-unchanged check relies on it.
             expanded: expanded.sorted { $0.uuidString < $1.uuidString },
             globalScript: globalScript,
-            globalClaudeFlags: globalClaudeFlags
+            globalClaudeFlags: globalClaudeFlags,
+            globalSessionTemplate: globalSessionTemplate
         )
     }
 
@@ -1043,6 +1066,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         var restored: [Workspace] = []
         var scripts: [UUID: String] = [:]
         var flags: [UUID: String] = [:]
+        var templates: [UUID: [SessionTemplateEntry]] = [:]
         for pw in state.workspaces {
             guard !confirmedMissing(pw.url) else { continue }
             let branches: [Branch] = pw.branches.compactMap { pb in
@@ -1063,13 +1087,16 @@ enum ThemePref: String, CaseIterable, Identifiable {
                                       branches: branches, colorIndex: pw.colorIndex))
             if let s = pw.setupScript { scripts[pw.id] = s }
             if let f = pw.claudeFlags { flags[pw.id] = f }
+            if let t = pw.sessionTemplate, !t.isEmpty { templates[pw.id] = t }
         }
         workspaces = restored
         wsScripts = scripts
         wsClaudeFlags = flags
+        wsSessionTemplates = templates
         // Global settings: a nil (pre-settings snapshot) keeps the built-in default.
         if let gs = state.globalScript { globalScript = gs }
         if let gf = state.globalClaudeFlags { globalClaudeFlags = gf }
+        if let gt = state.globalSessionTemplate { globalSessionTemplate = gt }
         let liveIDs = Set(restored.flatMap { ws in
             [ws.id] + ws.branches.flatMap { [$0.id] + $0.sessions.map(\.id) }
         })

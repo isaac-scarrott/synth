@@ -98,8 +98,20 @@ import AppKit
     var devToolsOpen = false
     /// Bumped on every navigation — drives the reload button's one-shot spin.
     private(set) var spinNonce = 0
+    /// Set by ⌘L / the palette's "Go to address…" — the pane consumes it and presses
+    /// the omnibox: home refocuses the "Go to…" field, a loaded page opens the drop.
+    /// Consumable rather than a nonce so a palette action that jumps here first can
+    /// still land: the pane mounts after the set and consumes it on appear.
+    private(set) var pendingFocusAddress = false
 
     var isHome: Bool { address == nil }
+
+    func focusAddress() { pendingFocusAddress = true }
+
+    func consumeFocusAddress() -> Bool {
+        defer { pendingFocusAddress = false }
+        return pendingFocusAddress
+    }
 
     init(session: Session, bus: EventBus?) {
         self.sessionID = session.id
@@ -228,6 +240,18 @@ struct BrowserPane: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
         .padding(14)
+        // ⌘L / palette "Go to address…" — same routing as clicking the omnibox pill.
+        // onChange serves the live pane; onAppear one the action's jump just mounted.
+        .onChange(of: ctrl.pendingFocusAddress) { _, pending in
+            if pending, ctrl.consumeFocusAddress() { pressOmnibox(ctrl) }
+        }
+        .onAppear {
+            if ctrl.consumeFocusAddress() { pressOmnibox(ctrl) }
+        }
+    }
+
+    private func pressOmnibox(_ ctrl: BrowserSessionController) {
+        if ctrl.isHome { homeFocusNonce += 1 } else { dropOpen = true }
     }
 }
 
@@ -458,6 +482,17 @@ private struct BrowserHome: View {
                 if !recents.isEmpty {
                     RecentsList(recents: recents, labelTopPadding: 22) { go($0.url) }
                 }
+                // `.browser__cmdkhint`: the quiet pointer to the Page group's verbs.
+                HStack(spacing: 5) {
+                    Text("Press")
+                    KeyCap(text: "⌘")
+                    KeyCap(text: "K")
+                    Text("for quick actions")
+                }
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.inkFaint)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 26)
             }
             .frame(maxWidth: 440)
             .padding(.top, 60).padding(.horizontal, 22).padding(.bottom, 28)

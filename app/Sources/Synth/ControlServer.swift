@@ -139,7 +139,66 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true,
                     "commentModeActive": ctrl.commentMode?.active ?? false,
                     "targetTitle": ctrl.commentMode?.targetTitle ?? "",
-                    "notice": ctrl.commentMode?.notice ?? ""]
+                    "notice": ctrl.commentMode?.notice ?? "",
+                    "address": ctrl.address?.absoluteString ?? "",
+                    "isHome": ctrl.isHome,
+                    "canGoBack": ctrl.canGoBack,
+                    "canGoForward": ctrl.canGoForward,
+                    "devToolsOpen": ctrl.devToolsOpen]
+
+        // Drill the palette to a session row's frame — the row kebab's exact call.
+        case "automation.rowActions" where automation:
+            guard let session = requestedSession(request, in: branch) else {
+                return ["ok": false, "error": "no session for sessionId"]
+            }
+            store.openRowActions(.session(session))
+            return ["ok": true]
+
+        // Open a session exactly as a palette jump would.
+        case "automation.jump" where automation:
+            guard let session = requestedSession(request, in: branch) else {
+                return ["ok": false, "error": "no session for sessionId"]
+            }
+            store.jump(to: session)
+            return ["ok": true]
+
+        // Navigate a browser session — the home "Go to…" field's exact onSubmit call.
+        case "automation.browserGo" where automation:
+            guard let session = requestedSession(request, in: branch), session.kind == .browser,
+                  let ctrl = BrowserManager.shared.controller(for: session),
+                  let url = request["url"] as? String else {
+                return ["ok": false, "error": "no browser session/controller/url"]
+            }
+            return ["ok": ctrl.go(url)]
+
+        // Post a real key event through the app's own queue, so the RootView key
+        // monitor sees it exactly as a typed key — the window-wide-shortcut test
+        // path where TCC swallows CGEvent postToPid entirely.
+        case "automation.key" where automation:
+            guard let code = request["keyCode"] as? Int else {
+                return ["ok": false, "error": "missing keyCode"]
+            }
+            var mods = NSEvent.ModifierFlags()
+            for m in request["mods"] as? [String] ?? [] {
+                switch m {
+                case "cmd":   mods.insert(.command)
+                case "shift": mods.insert(.shift)
+                case "opt":   mods.insert(.option)
+                case "ctrl":  mods.insert(.control)
+                default: break
+                }
+            }
+            let chars = request["chars"] as? String ?? ""
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: mods,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: NSApp.windows.first(where: { $0.isVisible })?.windowNumber ?? 0,
+                context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                isARepeat: false, keyCode: UInt16(code)) else {
+                return ["ok": false, "error": "event build failed"]
+            }
+            NSApp.postEvent(event, atStart: false)
+            return ["ok": true]
 
         // The in-app deck exactly as NotificationDeck renders it (store.notifOrder), plus the
         // focus fact that decides deck-vs-Notification-Center routing — so a headless harness
@@ -180,8 +239,29 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true, "open": true,
                     "crumb": frame?.crumb ?? "",
                     "items": pal.items.map(\.label),
+                    "disabled": pal.items.map(\.disabled),
                     "activeIndex": pal.activeIndex,
                     "menuOpen": store.activeMenu != nil]
+
+        // A window-server-free screenshot: the app caches its own key window's content
+        // view into a PNG at `path` — the visual evidence path where TCC denies
+        // screencapture window access entirely.
+        case "automation.screenshot" where automation:
+            guard let path = request["path"] as? String else {
+                return ["ok": false, "error": "missing path"]
+            }
+            guard let view = NSApp.windows.first(where: { $0.isVisible })?.contentView,
+                  let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                return ["ok": false, "error": "no visible window to render"]
+            }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            guard let png = rep.representation(using: .png, properties: [:]) else {
+                return ["ok": false, "error": "png encode failed"]
+            }
+            do { try png.write(to: URL(fileURLWithPath: path)) } catch {
+                return ["ok": false, "error": String(describing: error)]
+            }
+            return ["ok": true, "path": path]
 
         default:
             return ["ok": false, "error": "unknown verb \(verb)"]

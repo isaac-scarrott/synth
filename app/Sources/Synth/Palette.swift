@@ -191,6 +191,13 @@ struct PaletteFrame {
         // the now-redundant context chip and search restores it (see rootFrame).
         var items: [PaletteItem] = []
         if let open {
+            // A browser session adds a Page group above Session — the page's own verbs,
+            // one keystroke from anywhere (working.html browserActions).
+            if open.kind == .browser {
+                items += browserActions(open).map { item -> PaletteItem in
+                    var it = item; it.group = "Page · \(open.title)"; it.ctx = open.title; return it
+                }
+            }
             let g = "Session · \(open.title)"
             // Browser only: toggle comment mode (ADR-0011 stage three) — the palette
             // twin of the bar button, so the keyboard can drive it without a click.
@@ -235,6 +242,52 @@ struct PaletteFrame {
                                      enter: { self.push(self.worktreeFrame(in: workspace)) }))
         }
         return items
+    }
+
+    /// The Page verbs for a browser session (working.html browserActions). Each drives
+    /// the visible toolbar control a click would — the palette adds no second navigation
+    /// path, so disabled states (home page, empty history) come for free. When `s` isn't
+    /// the open session there is no live page yet, so everything but "Go to address…"
+    /// (which opens the session first) reads disabled.
+    private func browserActions(_ s: Session) -> [PaletteItem] {
+        let live = store.openSessionID == s.id ? BrowserManager.shared.existing(s.id) : nil
+        let home = live?.isHome ?? true
+        // close palette → jump to the session if it isn't open → drive the control.
+        func drive(_ fn: @escaping (BrowserSessionController) -> Void) -> () -> Void {
+            { self.runAndClose { [store = self.store] in
+                if store.openSessionID != s.id { store.jump(to: s) }
+                if let ctrl = BrowserManager.shared.controller(for: s) { fn(ctrl) }
+            } }
+        }
+        return [
+            // On home the omnibox focuses the "Go to" field; on a page it opens the drop.
+            PaletteItem(icon: .phosphor(Phosphor.search), label: "Go to address…",
+                        kbd: ["⌘", "L"], enter: drive { $0.focusAddress() }),
+            PaletteItem(icon: .phosphor(Phosphor.reload), label: "Reload page",
+                        kbd: ["⌘", "R"], disabled: home,
+                        enter: drive { if !$0.isHome { $0.reload() } }),
+            PaletteItem(icon: .phosphor(Phosphor.back), label: "Back",
+                        kbd: ["⌘", "["], disabled: !(live?.canGoBack ?? false),
+                        enter: drive { if $0.canGoBack { $0.goBack() } }),
+            PaletteItem(icon: .phosphor(Phosphor.forward), label: "Forward",
+                        kbd: ["⌘", "]"], disabled: !(live?.canGoForward ?? false),
+                        enter: drive { if $0.canGoForward { $0.goForward() } }),
+            PaletteItem(icon: .phosphor(Phosphor.copy), label: "Copy URL", disabled: home,
+                        enter: { self.runAndClose {
+                            guard let url = live?.address else { return }
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        } }),
+            PaletteItem(icon: .phosphor(Phosphor.external), label: "Open in default browser",
+                        disabled: home,
+                        enter: { self.runAndClose {
+                            if let url = live?.address { NSWorkspace.shared.open(url) }
+                        } }),
+            PaletteItem(icon: .phosphor(Phosphor.devtools),
+                        label: live?.devToolsOpen == true ? "Hide DevTools" : "Show DevTools",
+                        kbd: ["⌥", "⌘", "I"], disabled: home,
+                        enter: drive { if !$0.isHome { $0.toggleDevTools() } }),
+        ]
     }
 
     private func wsOf(_ branch: Branch) -> String { store.workspace(of: branch)?.name ?? "" }
@@ -400,6 +453,12 @@ struct PaletteFrame {
     func sessionFrame(_ s: Session) -> PaletteFrame {
         PaletteFrame(crumb: s.title, placeholder: "Search \(s.title)…") { [self] _ in
             var items: [PaletteItem] = []
+            // A browser row's frame leads with its Page verbs (working.html sessionFrame).
+            if s.kind == .browser {
+                items += browserActions(s).map { item -> PaletteItem in
+                    var it = item; it.sec = "page"; return it
+                }
+            }
             if let br = store.branch(of: s) {
                 items += sessionCreates(in: br, ctx: br.name)
             }

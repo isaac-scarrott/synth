@@ -65,6 +65,13 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["D"], label: "Delete selected"),
             Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder down · up"),
         ]),
+        ShortcutGroup(name: "Browser", rows: [
+            Shortcut(keys: ["⌘", "L"], label: "Go to address"),
+            Shortcut(keys: ["⌘", "R"], label: "Reload page"),
+            Shortcut(keys: ["⌘", "["], label: "Back"),
+            Shortcut(keys: ["⌘", "]"], label: "Forward"),
+            Shortcut(keys: ["⌥", "⌘", "I"], label: "Toggle DevTools"),
+        ]),
         ShortcutGroup(name: "Command palette", rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),
             Shortcut(keys: ["↵"], label: "Open · drill in"),

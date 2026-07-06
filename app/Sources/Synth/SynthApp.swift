@@ -273,6 +273,28 @@ struct RootView: View {
                 Task { await cm.exit() }
                 return nil
             }
+            // An open browser session claims the standard page verbs window-wide: ⌘L
+            // address, ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each presses the
+            // visible toolbar control, so disabled states (home page, empty history)
+            // are respected for free. Before the passthrough guard: a focused page
+            // must not eat the chords (⌘-modified keys never edit text anyway).
+            if event.modifierFlags.contains(.command),
+               let open = store.openSession, open.kind == .browser,
+               let ctrl = BrowserManager.shared.controller(for: open) {
+                switch key {
+                case "l":
+                    ctrl.focusAddress(); return nil
+                case "r" where !event.modifierFlags.contains(.shift):
+                    if !ctrl.isHome { ctrl.reload() }; return nil
+                case "[":
+                    if ctrl.canGoBack { ctrl.goBack() }; return nil
+                case "]":
+                    if ctrl.canGoForward { ctrl.goForward() }; return nil
+                case "i" where event.modifierFlags.contains(.option):
+                    if !ctrl.isHome { ctrl.toggleDevTools() }; return nil
+                default: break
+                }
+            }
             if let fr = event.window?.firstResponder {
                 if fr is GhosttySurfaceView || fr is NSText || fr is NSTextView { return event }
                 // A focused browser page keeps its keys too (Space/Enter act in the page).

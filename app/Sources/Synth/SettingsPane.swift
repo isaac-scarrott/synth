@@ -298,21 +298,14 @@ struct SettingsPane: View {
 
 // MARK: - New worktree sessions (working.html .tpl-*)
 
-/// The per-kind copy the template UI needs (working.html TPL_KINDS): the pill label and
-/// the name a freshly added entry starts with. Icon path/tint come from Theme's
-/// SessionKind extension — the same glyphs the sidebar rows use.
+/// The template UI's pill label (working.html TPL_KINDS). Icon path/tint come from
+/// Theme's SessionKind extension — the same glyphs the sidebar rows use; the stock
+/// starting name (`tplStart`) lives with SessionTemplateEntry in Model.
 private extension SessionKind {
     var tplLabel: String {
         switch self {
         case .claudeCode: return "Claude Code"
         case .terminal:   return "Terminal"
-        case .browser:    return "Browser"
-        }
-    }
-    var tplStart: String {
-        switch self {
-        case .claudeCode: return "Claude Code"
-        case .terminal:   return "shell"
         case .browser:    return "Browser"
         }
     }

@@ -89,6 +89,20 @@ struct SessionTemplateEntry: Codable, Equatable, Sendable, Identifiable {
     var name: String
 }
 
+extension SessionKind {
+    /// The name a template entry of this kind starts with (working.html TPL_KINDS.start) —
+    /// the settings add-bar default, and the spawn side's "stock name" test: an entry
+    /// whose name still matches spawns with auto-naming live, a differing one is
+    /// hand-picked and freezes (titleIsCustom).
+    var tplStart: String {
+        switch self {
+        case .claudeCode: return "Claude Code"
+        case .terminal:   return "shell"
+        case .browser:    return "Browser"
+        }
+    }
+}
+
 extension SessionTemplateEntry {
     /// An unknown persisted kind decodes as .terminal instead of throwing (the same guard
     /// PersistedSession applies via rawValue): PersistenceStore.load() treats ANY decode

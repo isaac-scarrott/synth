@@ -934,7 +934,11 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     /// Run a background create for an already-visible pending row: success activates the
     /// row in place; failure drops it and raises the persistent error toast.
-    private func materialize(_ row: Branch, in ws: Workspace,
+    /// `spawningTemplate` applies the scope's new-worktree session template once the
+    /// checkout lands — the Create-worktree flows opt in; adding a workspace doesn't
+    /// (those rows import existing branches, and N rows fighting to open a session each
+    /// would be noise).
+    private func materialize(_ row: Branch, in ws: Workspace, spawningTemplate: Bool = false,
                              _ op: @escaping @Sendable () -> WorktreeOutcome) {
         let wsName = ws.name
         Task { [weak self] in
@@ -944,6 +948,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
                 row.worktreeURL = url
                 row.isPending = false
                 row.lastActivity = "now"
+                if spawningTemplate { applySessionTemplate(to: row, in: ws) }
                 saveNow()
             case .failed(let err):
                 removeBranch(row, deleteWorktree: false)
@@ -959,7 +964,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: existingBranch)
         let row = addBranchRow(in: ws, name: existingBranch, worktreeURL: planned, pending: true)
-        materialize(row, in: ws) {
+        materialize(row, in: ws, spawningTemplate: true) {
             if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == existingBranch }) {
                 return .ready(wt.path)
             }
@@ -974,7 +979,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: newBranch)
         let row = addBranchRow(in: ws, name: newBranch, worktreeURL: planned, pending: true)
-        materialize(row, in: ws) {
+        materialize(row, in: ws, spawningTemplate: true) {
             GitService.addWorktree(repo: repo, path: planned, newBranch: newBranch, base: base)
                 .map { .failed($0) } ?? .ready(planned)
         }
@@ -1013,6 +1018,27 @@ enum ThemePref: String, CaseIterable, Identifiable {
         expanded.insert(ws.id)
         navCursor = branch.id
         return branch
+    }
+
+    /// Spawn the scope's new-worktree session template into a just-materialized row
+    /// (working.html addBranch): entries in creation order, the first one opens; the
+    /// rest wait dormant like restored rows — their process starts on first open, so
+    /// only the opened session touches the PTY layer. A name differing from the kind's
+    /// stock start counts as hand-picked (titleIsCustom), so auto-naming — ai-title,
+    /// running command, page title — never overwrites a template name the user chose.
+    private func applySessionTemplate(to branch: Branch, in ws: Workspace) {
+        let entries = sessionTemplate(for: ws)
+        guard !entries.isEmpty else { return }   // an emptied global template means "start bare"
+        let sessions = entries.enumerated().map { i, entry in
+            Session(kind: entry.kind, title: entry.name,
+                    status: entry.kind == .claudeCode && i == 0 ? .working : .idle,
+                    titleIsCustom: entry.name != entry.kind.tplStart)
+        }
+        branch.sessions.append(contentsOf: sessions)
+        branch.lastActivity = "now"
+        expanded.insert(ws.id)
+        expanded.insert(branch.id)
+        if let first = sessions.first { open(first) }
     }
 
     // MARK: Persistence (ADR-0010)

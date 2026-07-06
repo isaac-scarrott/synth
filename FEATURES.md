@@ -210,3 +210,8 @@ disclosure to dive deeper.
   (designs + native app)** — Settings gains an ordered, drag-reorderable list of kind+name entries
   (first one opens) with a live sidebar-subtree preview; a workspace's list replaces global outright,
   empty inherits (the flags model). Native app persists the template; spawn-on-create isn't wired yet.
+- **New worktree sessions template now spawns (both designs + native app)** — creating a worktree
+  (⌘K / dialog, new or existing branch) spawns the scope's template once the checkout lands: first
+  session opens, the rest wait dormant until first opened; a non-stock template name spawns
+  title-frozen so auto-naming never overwrites it. Adding a workspace (importing existing branches)
+  deliberately doesn't spawn.

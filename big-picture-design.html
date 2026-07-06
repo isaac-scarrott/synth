@@ -3202,6 +3202,11 @@
     wrapper.querySelectorAll('[data-row]').forEach(addKebab);
     rollUpGroups();
     wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
+    // New-worktree sessions (settings): the scope's effective template spawns in
+    // creation order — the first session opens, the rest wait idle until first opened.
+    const wsName = repo.querySelector('.repo__name')?.textContent || '';
+    effectiveTpl(false, wsName).forEach((s, i) =>
+      addSession(wrapper.querySelector('.branch--group'), s.kind, { name: s.name, open: i === 0 }));
   }
 
   // Promote a plain branch into a session-holding group if needed, return its .sessions
@@ -3245,7 +3250,10 @@
     claude:   { type: 'ai',       name: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_AI}</span>`,      ind: 'work' },
     browser:  { type: 'browser',  name: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>`,                   ind: 'idle' },
   };
-  function addSession(branchRow, kind) {
+  // opts: a template spawn passes its entry name, and { open: false } for every session
+  // after the first — those wait idle (their process starts on first open), so only the
+  // opened one carries its kind's fresh indicator.
+  function addSession(branchRow, kind, opts = {}) {
     const spec = SESSION_KINDS[kind];
     const sessions = ensureGroup(branchRow);
     const a = document.createElement('a');
@@ -3255,13 +3263,13 @@
     a.setAttribute('data-type', spec.type);
     a.innerHTML = `<span class="session__bullet"></span>
       ${spec.icon}
-      <span class="session__name">${spec.name}</span>
-      ${IND_HTML[spec.ind]}`;
+      <span class="session__name">${esc(opts.name || spec.name)}</span>
+      ${IND_HTML[opts.open === false ? 'idle' : spec.ind]}`;
     addKebab(a);
     sessions.appendChild(a);
     a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
     rollUpGroups();
-    openSession(a); // a freshly spawned session opens straight into the content pane
+    if (opts.open !== false) openSession(a); // a freshly spawned session opens straight into the content pane
   }
   const addTerminal = (branchRow) => addSession(branchRow, 'terminal');
   const addClaude   = (branchRow) => addSession(branchRow, 'claude');

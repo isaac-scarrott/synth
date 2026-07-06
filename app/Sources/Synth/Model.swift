@@ -71,7 +71,7 @@ enum SessionStatus: Equatable, Sendable {
     }
 }
 
-/// One entry of a branch's browser "Recent" list (working.html BROWSER_RECENTS): the full
+/// One entry of a branch's browser "Recent" list (design.html BROWSER_RECENTS): the full
 /// URL plus the page's last-seen title for the right-hand name column. Plain Codable value —
 /// shared by the runtime model and the persisted snapshot.
 struct BrowserRecent: Codable, Equatable, Sendable {
@@ -79,7 +79,7 @@ struct BrowserRecent: Codable, Equatable, Sendable {
     var title: String
 }
 
-/// One entry of the new-worktree session template (working.html TPL_KINDS / globalTpl):
+/// One entry of the new-worktree session template (design.html TPL_KINDS / globalTpl):
 /// the kind of session a new worktree starts with plus its starting name. Plain Codable
 /// value shared by the runtime store and the persisted snapshot (the BrowserRecent model).
 /// `id` is encoded so a row keeps its identity across restarts and while reordering.
@@ -102,7 +102,7 @@ extension SessionTemplateEntry {
 }
 
 extension URL {
-    /// working.html's browserNorm, shared by the omnibox and the control-socket
+    /// design.html's browserNorm, shared by the omnibox and the control-socket
     /// browser.create verb: a schemeless entry gets https:// — except loopback hosts,
     /// which get http:// (the primary job is a branch's dev server, and
     /// `localhost:8733` over TLS would just fail). file:// URLs pass through — they
@@ -122,7 +122,7 @@ extension URL {
         return url
     }
 
-    /// working.html's `browserHost`, tightened to host+path: what browser sessions are named
+    /// design.html's `browserHost`, tightened to host+path: what browser sessions are named
     /// by and what the omnibox pill / recents show ("localhost:8733/palette", no scheme).
     var browserHostPath: String {
         var s = (host ?? "") + (port.map { ":\($0)" } ?? "") + path
@@ -141,7 +141,7 @@ extension URL {
     var lastActivity: String   // cosmetic for now ("2h", "now")
     /// The 5 most recent distinct URLs visited across this branch's browser sessions —
     /// feeds the home surface / omnibox-dropdown "Recent" list. Empty until a browser
-    /// session navigates (working.html's static BROWSER_RECENTS, made real + persisted).
+    /// session navigates (design.html's static BROWSER_RECENTS, made real + persisted).
     var browserRecents: [BrowserRecent]
     /// True while the worktree is still being created in the background: the row is
     /// already in the tree (grayed, spinner, inert) but has no checkout to act on yet.

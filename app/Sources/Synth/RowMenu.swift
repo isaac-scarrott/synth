@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The hover-kebab popover content. Level-scoped Create + Delete, where Delete
-/// swaps to an inline two-step confirm (working.html's non-invasive pattern).
+/// swaps to an inline two-step confirm (design.html's non-invasive pattern).
 /// Styling matches the mock's `.menu` / `.menu__item` / `.menu__confirm` exactly.
 struct RowMenu: View {
     enum Level { case workspace, branch, session }

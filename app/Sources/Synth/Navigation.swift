@@ -20,7 +20,7 @@ enum RowRef: Identifiable, Equatable {
 
 /// Stable ids for the non-tree cursor targets, so the one `navCursor: UUID?` primitive
 /// can address the Settings foot button and the settings scope list alongside tree rows
-/// (working.html addresses these by DOM element; here by constant id). Workspace scope
+/// (design.html addresses these by DOM element; here by constant id). Workspace scope
 /// rows reuse their workspace id — the tree and settings lists never render at once, so
 /// there's no collision.
 enum NavID {
@@ -48,7 +48,7 @@ extension AppStore {
 
     /// The tree row under the cursor — nil in Settings, where the cursor lives on the
     /// scope list, not a tree row. Everything gated on "cursor is a real tree row"
-    /// (create/rename/delete, Tab-toggle) reads through this (working.html `isTreeRow`).
+    /// (create/rename/delete, Tab-toggle) reads through this (design.html `isTreeRow`).
     var cursorRef: RowRef? { settingsOpen ? nil : visibleRows.first { $0.id == navCursor } }
 
     // MARK: Movement
@@ -56,7 +56,7 @@ extension AppStore {
     /// The single list the keyboard cursor walks — screen-aware. In the main view it's
     /// the tree followed by the Settings foot button, so ↓/j off the last leaf flows
     /// straight into Settings. In Settings it's the scope list (Back, Global, workspaces).
-    /// One list means every nav key works identically on both screens (working.html `activeRows`).
+    /// One list means every nav key works identically on both screens (design.html `activeRows`).
     var activeRows: [UUID] {
         if settingsOpen {
             return [NavID.back, NavID.scopeGlobal] + workspaces.map(\.id)
@@ -65,7 +65,7 @@ extension AppStore {
     }
 
     /// Where the cursor rests when nothing is explicitly selected: the open session in the
-    /// tree, or the active scope in Settings (working.html `currentRow`).
+    /// tree, or the active scope in Settings (design.html `currentRow`).
     func currentRow(_ rows: [UUID]) -> UUID? {
         if settingsOpen { return settingsWorkspace?.id ?? NavID.scopeGlobal }
         if let open = openSessionID, rows.contains(open) { return open }
@@ -84,7 +84,7 @@ extension AppStore {
     }
 
     /// ⌘0 / focus-sidebar landing: keep the cursor if it's already on a navigable row,
-    /// else drop it on the current row, else the first (working.html `focusSidebar`).
+    /// else drop it on the current row, else the first (design.html `focusSidebar`).
     func focusSidebarCursor() {
         let rows = activeRows
         guard !rows.isEmpty else { return }
@@ -177,7 +177,7 @@ extension AppStore {
         }
     }
 
-    /// → : open a closed toggle, else move down (mirrors working.html).
+    /// → : open a closed toggle, else move down (mirrors design.html).
     func expandOrIn() {
         keyboardActive = true
         if let ref = cursorRef, isToggle(ref), !expanded.contains(ref.id) {
@@ -187,7 +187,7 @@ extension AppStore {
         }
     }
 
-    /// ← : close an open toggle, else move up (mirrors working.html).
+    /// ← : close an open toggle, else move up (mirrors design.html).
     func collapseOrOut() {
         keyboardActive = true
         if let ref = cursorRef, isToggle(ref), expanded.contains(ref.id) {
@@ -198,7 +198,7 @@ extension AppStore {
     }
 
     /// Activate the row under the cursor — the shared ↵/Space action, dispatched by kind
-    /// (working.html `activateRow`).
+    /// (design.html `activateRow`).
     func activateCursor() {
         keyboardActive = true
         if settingsOpen {
@@ -227,7 +227,7 @@ extension AppStore {
     }
 
     /// Tab: toggle the highlighted group open↔closed (groups only; the cursor stays put).
-    /// `l`/`h` remain the directional expand/collapse — Tab is the toggle (working.html).
+    /// `l`/`h` remain the directional expand/collapse — Tab is the toggle (design.html).
     func toggleGroup() {
         guard let ref = cursorRef, isToggle(ref) else { return }
         keyboardActive = true
@@ -238,7 +238,7 @@ extension AppStore {
     // branches stay on disk untouched.
 
     /// The keyboard cursor sits on this row or any row inside it — the removal paths use
-    /// this to decide whether the cursor needs a new home (working.html `unit.contains(selEl)`).
+    /// this to decide whether the cursor needs a new home (design.html `unit.contains(selEl)`).
     func cursorInside(_ ref: RowRef) -> Bool {
         guard let c = navCursor else { return false }
         switch ref {
@@ -253,7 +253,7 @@ extension AppStore {
 
     func removeWorkspace(_ workspace: Workspace) {
         // A removed workspace has nothing above it — the cursor falls to a neighbouring
-        // workspace instead (working.html removeUnit fallback).
+        // workspace instead (design.html removeUnit fallback).
         if cursorInside(.workspace(workspace)), let i = workspaces.firstIndex(where: { $0.id == workspace.id }) {
             navCursor = i > 0 ? workspaces[i - 1].id
                 : workspaces.count > 1 ? workspaces[i + 1].id : nil
@@ -274,7 +274,7 @@ extension AppStore {
     /// The primary checkout (repo root) is never deleted from disk — git won't remove
     /// its own working tree.
     func removeBranch(_ branch: Branch, deleteWorktree: Bool) {
-        // Cursor falls up the hierarchy to the workspace head (working.html removeUnit fallback).
+        // Cursor falls up the hierarchy to the workspace head (design.html removeUnit fallback).
         if cursorInside(.branch(branch)) { navCursor = workspace(of: branch)?.id }
         for session in branch.sessions {
             TerminalManager.shared.terminate(session.id)
@@ -315,7 +315,7 @@ extension AppStore {
     }
 
     /// Write a new name onto the unit. Renaming the open session updates the pane title
-    /// for free — ContentPane reads `session.title` (no manual sync, unlike working.html).
+    /// for free — ContentPane reads `session.title` (no manual sync, unlike design.html).
     func rename(_ ref: RowRef, to name: String) {
         let v = name.trimmingCharacters(in: .whitespaces)
         guard !v.isEmpty else { return }
@@ -327,7 +327,7 @@ extension AppStore {
     }
 
     /// Drop a Claude Code session's manual name so its auto/AI-generated title takes over
-    /// again — the palette's "Reset to default name" (working.html renameFrame).
+    /// again — the palette's "Reset to default name" (design.html renameFrame).
     func resetSessionName(_ session: Session) {
         session.title = "Claude Code"
         session.titleIsCustom = false
@@ -384,7 +384,7 @@ extension AppStore {
     }
 
     /// `d` on the selected row — drop into the ⌘K palette's confirm frame so a single
-    /// keystroke can't delete (working.html requestDelete → openPaletteAt(confirmFrame)).
+    /// keystroke can't delete (design.html requestDelete → openPaletteAt(confirmFrame)).
     func requestDelete(_ ref: RowRef) {
         activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }

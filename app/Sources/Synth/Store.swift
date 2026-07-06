@@ -77,10 +77,10 @@ enum NotifKind: Sendable {
 }
 
 /// One live in-app notification — a background session escalated to a glass toast. `seq` is
-/// a monotonic raise counter so same-kind toasts order newest-first (working.html's
+/// a monotonic raise counter so same-kind toasts order newest-first (design.html's
 /// `notifState` Map value `{ kind, order }`).
 struct InAppNotif: Identifiable {
-    let id: UUID        // the session id — one toast per session, like working.html
+    let id: UUID        // the session id — one toast per session, like design.html
     var kind: NotifKind
     let seq: Int
     /// Display snapshot captured at raise time. A clean exit closes its session right after
@@ -106,13 +106,13 @@ enum NotifRoute { case inApp, notificationCenter }
 
 /// Which settings scope the full-screen settings page is showing. A workspace is
 /// referenced by id so a removed workspace leaves a dangling scope that falls back
-/// to Global rather than crashing (working.html's dangling-scope guard).
+/// to Global rather than crashing (design.html's dangling-scope guard).
 enum SettingsScope: Equatable {
     case global
     case workspace(UUID)
 }
 
-/// The appearance choice (working.html's System / Light / Dark segmented control).
+/// The appearance choice (design.html's System / Light / Dark segmented control).
 enum ThemePref: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }
@@ -129,7 +129,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var openSessionID: UUID?
     var sidebarCollapsed = false
 
-    /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
+    /// Appearance — System follows the OS, Light/Dark pin it (design.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).
     var themePref: ThemePref = (ThemePref(rawValue: UserDefaults.standard.string(forKey: AppStore.themeKey) ?? "") ?? .system) {
         didSet { UserDefaults.standard.set(themePref.rawValue, forKey: AppStore.themeKey) }
@@ -140,19 +140,19 @@ enum ThemePref: String, CaseIterable, Identifiable {
         switch themePref { case .system: return nil; case .light: return .light; case .dark: return .dark }
     }
 
-    /// Active in-app notifications (working.html `notifState`). Rendered as a stacked deck by
+    /// Active in-app notifications (design.html `notifState`). Rendered as a stacked deck by
     /// NotificationDeck while Synth is frontmost; the unfocused path goes through Notification
     /// Center instead (NotificationService). The open session is never in here — opening one
     /// clears its toast, mirroring the `.markUnread` open-guard.
     var notifs: [InAppNotif] = []
     @ObservationIgnored private var notifSeq = 0
 
-    /// One-shot ambient row-pulse tokens (working.html `session--pulse`). A `done` on an
+    /// One-shot ambient row-pulse tokens (design.html `session--pulse`). A `done` on an
     /// off-screen live session bumps its token; the sidebar row runs a single soft sweep on
     /// change. Keyed by session id — the value only has to *differ* to re-fire.
     var pulseTokens: [UUID: Int] = [:]
 
-    /// Per-type Notification-Center sound toggles (working.html's per-type sound setting).
+    /// Per-type Notification-Center sound toggles (design.html's per-type sound setting).
     /// Persisted to UserDefaults like `themePref`; defaults needs-input ON, error ON, done OFF.
     /// In-app toasts are always silent — this only gates the unfocused NC path.
     var soundNeedsInput = AppStore.loadSoundPref(AppStore.soundInputKey, default: true) {
@@ -173,7 +173,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         UserDefaults.standard.object(forKey: key) as? Bool ?? def
     }
 
-    /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
+    /// Draggable sidebar width, clamped and persisted (design.html's `--sidebar-w`).
     var sidebarWidth: CGFloat = {
         let w = UserDefaults.standard.double(forKey: AppStore.sidebarWidthKey)
         return (w >= Theme.sidebarMinWidth && w <= Theme.sidebarMaxWidth) ? CGFloat(w) : Theme.sidebarWidth
@@ -183,7 +183,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     static let sidebarWidthKey = "synth-sidebar-w"
 
     /// True only while the keyboard is driving nav — gates the selection ring
-    /// (mousemove clears it), mirroring working.html's `.kbd` class.
+    /// (mousemove clears it), mirroring design.html's `.kbd` class.
     var keyboardActive = false
 
     /// Drag-to-reorder (F2): the row being dragged (nil = none) and its live vertical
@@ -202,11 +202,11 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// in-progress delete confirmation.
     var activeMenu: ActiveMenu? { didSet { if activeMenu == nil { menuConfirming = false } } }
 
-    /// The open menu is showing its two-step delete confirm (working.html `.menu.confirming`).
+    /// The open menu is showing its two-step delete confirm (design.html `.menu.confirming`).
     /// Lifted out of RowMenu so the keyboard can drive it: `d` opens straight here, ↵ commits.
     var menuConfirming = false
 
-    /// The sidebar row being renamed inline, and its live text — working.html's
+    /// The sidebar row being renamed inline, and its live text — design.html's
     /// contentEditable name label. nil = nothing renaming.
     var renamingRowID: UUID?
     var renameText = ""
@@ -214,16 +214,16 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// The ⌘K palette (nil = closed).
     var palette: PaletteModel?
 
-    /// The ⌘? keyboard-shortcuts sheet (working.html's shortcutsEl).
+    /// The ⌘? keyboard-shortcuts sheet (design.html's shortcutsEl).
     var shortcutsOpen = false
 
-    /// Full-screen Settings page: a mode layered over the same shell (working.html's
+    /// Full-screen Settings page: a mode layered over the same shell (design.html's
     /// `.app.settings`). `settingsScope` picks which scope the right pane renders.
     var settingsOpen = false
     var settingsScope: SettingsScope = .global
 
     /// The worktree setup scripts the effective config is assembled from — a design
-    /// surface only. These live in memory (like working.html's mock store) so edits
+    /// surface only. These live in memory (like design.html's mock store) so edits
     /// survive scope hops; no setup-script runner is wired up yet (see FEATURES).
     var globalScript = """
     #!/usr/bin/env bash
@@ -255,7 +255,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         return globalClaudeFlags.trimmingCharacters(in: .whitespaces)
     }
 
-    /// The ordered session set every new worktree starts with (working.html TPL_KINDS /
+    /// The ordered session set every new worktree starts with (design.html TPL_KINDS /
     /// globalTpl) — the settings surface only; spawn-on-worktree-create is not wired up
     /// yet (same status as the setup-script runner and claude flags above, see FEATURES).
     /// Order is creation order — the first entry is the session that opens.
@@ -439,7 +439,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         br.browserRecents = Array(recents.prefix(5))
     }
 
-    // MARK: Notifications (working.html notifyOnTransition → the in-app deck / Notification Center)
+    // MARK: Notifications (design.html notifyOnTransition → the in-app deck / Notification Center)
 
     /// A background session's status transition, turned into a notification — the single seam
     /// terminals and Claude both reach (`term-*` and Claude signals alike flow through `apply`).
@@ -453,14 +453,14 @@ enum ThemePref: String, CaseIterable, Identifiable {
         switch next.rollup {
         case .input, .error:
             let kind: NotifKind = next.rollup == .error ? .error : .input
-            session(id)?.unread = true   // working.html notify() marks the row unread too
+            session(id)?.unread = true   // design.html notify() marks the row unread too
             if toNC { NotificationService.shared.postAttention(store: self, id: id, kind: kind) }
             else { raiseInApp(id, kind) }
         case .idle where prev.rollup != .idle:
             // A live session settling to idle off-screen → "done": the unread bullet, one
             // soft row sweep, and a transient toast that dismisses itself (a finished session
             // should be seen, but asks for nothing). Unfocused → a transient banner.
-            session(id)?.unread = true   // working.html done also marks the row unread
+            session(id)?.unread = true   // design.html done also marks the row unread
             if toNC {
                 clearNotif(id)
                 NotificationService.shared.postDone(store: self, id: id)
@@ -515,7 +515,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     /// Active toasts, most-urgent first: errors before needs-input before done, then newest
-    /// within a kind (working.html `notifOrder`). Drops any whose session vanished (except
+    /// within a kind (design.html `notifOrder`). Drops any whose session vanished (except
     /// the self-dismissing exit-close done toast) or is now the open one.
     var notifOrder: [InAppNotif] {
         notifs.filter { $0.id != openSessionID && (session($0.id) != nil || $0.outlivesSession) }.sorted { a, b in
@@ -525,7 +525,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     /// The ⌘↩ jump target — the most-urgent toast, or nil when the deck is empty (so the chord
-    /// stays free otherwise, working.html `notifTop`).
+    /// stays free otherwise, design.html `notifTop`).
     var topNotif: InAppNotif? { notifOrder.first }
 
     func jumpToTopNotif() {
@@ -612,19 +612,19 @@ enum ThemePref: String, CaseIterable, Identifiable {
         sidebarCollapsed = false
         settingsScope = scope
         settingsOpen = true
-        // Keyboard cursor lands on the active scope (working.html enterSettings → select .scope--on).
+        // Keyboard cursor lands on the active scope (design.html enterSettings → select .scope--on).
         navCursor = scopeCursorID(scope)
     }
 
     func exitSettings() {
         settingsOpen = false
         // Cursor returns to the tree — the open session if it's still visible, else the
-        // Settings foot button we came from (working.html exitSettings).
+        // Settings foot button we came from (design.html exitSettings).
         let visible = visibleRows.map(\.id)
         navCursor = openSessionID.flatMap { visible.contains($0) ? $0 : nil } ?? NavID.settingsFoot
     }
 
-    /// Switch scope — the settings-nav twin of opening a session (working.html selectScope):
+    /// Switch scope — the settings-nav twin of opening a session (design.html selectScope):
     /// used by both a scope-row click and ↵ on the cursor. Moves the cursor onto the scope.
     func selectScope(_ scope: SettingsScope) {
         settingsScope = scope
@@ -642,7 +642,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
 
     /// Palette jump: reveal the session (expand collapsed ancestors), open it, mark
-    /// read — working.html's jumpTo, selection ring shown as if keyboard-driven.
+    /// read — design.html's jumpTo, selection ring shown as if keyboard-driven.
     func jump(to session: Session) {
         if let br = branch(of: session) {
             expanded.insert(br.id)
@@ -660,7 +660,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     func closePalette() { palette = nil }
 
-    /// A row's ⋯ kebab opens the palette drilled to that row (working.html openRowActions),
+    /// A row's ⋯ kebab opens the palette drilled to that row (design.html openRowActions),
     /// rather than the hover popover. Re-drills if the palette is already open.
     func openRowActions(_ ref: RowRef) {
         activeMenu = nil
@@ -670,7 +670,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     /// `a` = add the row's natural child, dropping straight into its ⌘K frame: a worktree
     /// under a workspace (fuzzy branch search), a session under a worktree, or — on a
-    /// session leaf — a sibling session in that leaf's parent worktree (working.html addToRow).
+    /// session leaf — a sibling session in that leaf's parent worktree (design.html addToRow).
     /// Opens the palette if closed; if already open, resets to root then pushes the frame.
     func addToRow(_ ref: RowRef) {
         activeMenu = nil
@@ -700,7 +700,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     /// Claude Code is just a terminal that opened and ran `claude`, so it spawns
-    /// identically — only the kind, title and starting state differ (working.html
+    /// identically — only the kind, title and starting state differ (design.html
     /// SESSION_KINDS/addSession). It opens straight into the content pane.
     @discardableResult
     func newClaude(in branch: Branch? = nil) -> Session? {
@@ -741,7 +741,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
         // live and die with it — the delete confirm names them before this runs.
         for browser in ownedBrowsers(of: session) { closeSession(browser) }
-        // Cursor falls up the hierarchy to the branch row (working.html removeUnit fallback).
+        // Cursor falls up the hierarchy to the branch row (design.html removeUnit fallback).
         if navCursor == session.id { navCursor = branch(of: session)?.id }
         TerminalManager.shared.terminate(session.id)
         BrowserManager.shared.terminate(session.id)
@@ -792,7 +792,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     /// Containment's array invariant: owned rows sit contiguously right after their owner,
     /// preserving relative order — the flat `br.sessions` order IS the sidebar order, so
-    /// nesting is adjacency, not a second tree (working.html's snapOwned).
+    /// nesting is adjacency, not a second tree (design.html's snapOwned).
     private func snapOwned(in br: Branch) {
         var rows = br.sessions
         var ownedByOwner: [UUID: [Session]] = [:]
@@ -1144,7 +1144,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     #if DEBUG
-    // Design-time notification harness (working.html's ⌥N demo). Fires fake transitions on
+    // Design-time notification harness (design.html's ⌥N demo). Fires fake transitions on
     // real background sessions so the deck, hover-fan, ⌘↩-jump, "+N" and ambient pulse are
     // observable without live session events. `force` lets a driven (non-frontmost) instance
     // still exercise either surface. Left `#if DEBUG`-gated for the maintainer to keep or cut.
@@ -1154,7 +1154,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// driven headless), so the fanned state is screenshottable.
     var debugDeckSpread = false
 
-    /// Sessions the deck may notify — everything except the open one (working.html demo `bg`).
+    /// Sessions the deck may notify — everything except the open one (design.html demo `bg`).
     private var debugBackground: [Session] {
         workspaces.flatMap { $0.branches.flatMap(\.sessions) }.filter { $0.id != openSessionID }
     }

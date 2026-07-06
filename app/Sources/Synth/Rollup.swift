@@ -1,7 +1,7 @@
 import Foundation
 
 /// The roll-up token a status contributes, and its precedence.
-/// Mirrors working.html: needs-input > error > working > running > idle.
+/// Mirrors design.html: needs-input > error > working > running > idle.
 enum RollupState: Int, Comparable {
     case input = 0, error, work, run, idle
     static func < (lhs: RollupState, rhs: RollupState) -> Bool { lhs.rawValue < rhs.rawValue }

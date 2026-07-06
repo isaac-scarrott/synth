@@ -210,3 +210,7 @@ disclosure to dive deeper.
   (designs + native app)** — Settings gains an ordered, drag-reorderable list of kind+name entries
   (first one opens) with a live sidebar-subtree preview; a workspace's list replaces global outright,
   empty inherits (the flags model). Native app persists the template; spawn-on-create isn't wired yet.
+- **One design file: `design.html` (supersedes `working.html` + `big-picture-design.html` and the
+  sync + subset invariant)** — the pair merges into a single mock matching the app: browser row
+  stays, the unsupported simulator row/pane/CSS go; `port-working-html` skill renamed
+  `port-design-html`; docs, ADR and code-comment references updated.

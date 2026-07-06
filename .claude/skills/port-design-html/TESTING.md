@@ -10,7 +10,7 @@ Capture *your* window by its CGWindowID so it works even when occluded:
 
 ```bash
 APP_DIR=/Users/isaac/git/synth/app  # or .worktree/<slice>/app inside a slice worktree
-"$APP_DIR/../.claude/skills/port-working-html/scripts/capture.sh"  # from repo; prints PID= and SHOT=
+"$APP_DIR/../.claude/skills/port-design-html/scripts/capture.sh"  # from repo; prints PID= and SHOT=
 ```
 
 `capture.sh` builds, launches your instance, screenshots it, and **leaves it running** so you can
@@ -25,7 +25,7 @@ To re-capture after driving: `screencapture -x -o -l<WINID> <out.png>` (WINID fr
 another agent's app. Instead post CGEvents straight to your PID — reliable regardless of focus:
 
 ```bash
-D="$APP_DIR/../.claude/skills/port-working-html/scripts/drive.swift"
+D="$APP_DIR/../.claude/skills/port-design-html/scripts/drive.swift"
 swift "$D" <PID> key 40 cmd     # ⌘K (command palette)
 swift "$D" <PID> key 125        # ↓   (nav down; also 126 ↑, 124 →, 123 ←)
 swift "$D" <PID> type feat/x    # type into a focused field
@@ -74,5 +74,5 @@ echo '{"verb":"automation.nav","worktreePath":"…"}' | nc -U /tmp/synth-ctl-<pi
 - **Toolchain:** `swift-tools-version:5.10` (Swift 5 mode) — keep it; Swift 6 strict concurrency
   breaks the SwiftTerm delegate conformances. SwiftTerm is fetched via SPM (needs network on first build).
 - **Compare side by side:** serve the spec with `python3 -m http.server 8912` at the repo root and open
-  `http://localhost:8912/working.html` (claude-in-chrome) next to your screenshot.
+  `http://localhost:8912/design.html` (claude-in-chrome) next to your screenshot.
 - **`.build/` is gitignored** — screenshots and scratch files there are throwaway.

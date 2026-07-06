@@ -43,14 +43,14 @@ struct ContentPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.panel)
         // In-app notification deck, bottom-left hugging the sidebar — hidden in settings
-        // (working.html `.app.settings .notifs { display: none }`).
+        // (design.html `.app.settings .notifs { display: none }`).
         .overlay(alignment: .bottomLeading) {
             if !store.settingsOpen { NotificationDeck() }
         }
     }
 }
 
-/// working.html `.pane`: head (title · crumb · spacer) over the session body,
+/// design.html `.pane`: head (title · crumb · spacer) over the session body,
 /// entering with the 220ms fade + 4px rise.
 private struct SessionPane: View {
     @Environment(AppStore.self) private var store
@@ -88,7 +88,7 @@ private struct SessionPane: View {
     }
 }
 
-/// working.html `.pane__head`: 13/18 padding, hairline bottom border, 12 gap.
+/// design.html `.pane__head`: 13/18 padding, hairline bottom border, 12 gap.
 private struct PaneHead: View {
     @Environment(AppStore.self) private var store
     let session: Session
@@ -135,7 +135,7 @@ private struct PaneHead: View {
     }
 }
 
-/// working.html `.term`: the dark rounded card the shell lives in — 14 margin,
+/// design.html `.term`: the dark rounded card the shell lives in — 14 margin,
 /// 13/15 inner padding, #1b1b1e, inset hairline + soft drop shadow.
 private struct TermSurface: View {
     let terminal: GhosttySurfaceView
@@ -155,7 +155,7 @@ private struct TermSurface: View {
     }
 }
 
-/// working.html `.pane-empty`: centered terminal mark + "No session open".
+/// design.html `.pane-empty`: centered terminal mark + "No session open".
 private struct PaneEmpty: View {
     var body: some View {
         VStack(spacing: 12) {

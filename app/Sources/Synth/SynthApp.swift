@@ -81,7 +81,7 @@ struct RootView: View {
             }
         }
         .ignoresSafeArea()
-        // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
+        // Appearance: nil follows the OS (System), else pins light/dark. design.html parity.
         .preferredColorScheme(store.colorSchemeOverride)
         .overlay {
             if let ws = store.creatingWorktreeIn {
@@ -127,11 +127,11 @@ struct RootView: View {
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
 
-    /// Global keyboard nav — mirrors working.html's document keydown, but defers to
+    /// Global keyboard nav — mirrors design.html's document keydown, but defers to
     /// the terminal, text fields, and open sheets so they keep their own keys.
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
-        // Any mouse movement dismisses the keyboard selection ring (working.html).
+        // Any mouse movement dismisses the keyboard selection ring (design.html).
         NSApp.windows.forEach { $0.acceptsMouseMovedEvents = true }
         NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
             if store.keyboardActive { store.keyboardActive = false }
@@ -156,14 +156,14 @@ struct RootView: View {
             let key = event.charactersIgnoringModifiers?.lowercased()
 
             // ⌘↩ jumps to the most-urgent in-app notification — bound only while the deck is
-            // non-empty, so the chord is never stolen otherwise (working.html notifTop).
+            // non-empty, so the chord is never stolen otherwise (design.html notifTop).
             if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
                store.topNotif != nil {
                 store.jumpToTopNotif(); return nil
             }
 
             #if DEBUG
-            // Notification harness (working.html's ⌥N demo): ⌥N grows the deck, ⌥D fires an
+            // Notification harness (design.html's ⌥N demo): ⌥N grows the deck, ⌥D fires an
             // ambient "done", ⌥C clears. Add ⇧ to force the Notification Center path instead of
             // the in-app deck, so both surfaces are drivable when the instance isn't frontmost.
             if event.modifierFlags.contains(.option), let code = Optional(event.keyCode),
@@ -180,7 +180,7 @@ struct RootView: View {
             #endif
 
             // ⌘/ (⌘?) toggles the shortcuts sheet from anywhere; while open it owns
-            // the keyboard — Esc closes, everything else is swallowed (working.html).
+            // the keyboard — Esc closes, everything else is swallowed (design.html).
             if (key == "/" || key == "?"), event.modifierFlags.contains(.command) {
                 if store.shortcutsOpen { store.shortcutsOpen = false }
                 else {
@@ -200,7 +200,7 @@ struct RootView: View {
                 if store.palette == nil { store.openPalette() } else { store.closePalette() }
                 return nil
             }
-            // The palette owns the keyboard while open (working.html): ↑/↓ + Ctrl+J/K
+            // The palette owns the keyboard while open (design.html): ↑/↓ + Ctrl+J/K
             // (+ Ctrl+N/P) move, Enter runs, Backspace on an empty query pops, Esc
             // closes. Ctrl+K means "up" here — only ⌘K closes.
             if let pal = store.palette {
@@ -240,7 +240,7 @@ struct RootView: View {
                 focusSidebar()
                 store.keyboardActive = true
                 // Ring lands on a navigable row: keep the current cursor, else the open
-                // session / active scope, else the first row (working.html focusSidebar).
+                // session / active scope, else the first row (design.html focusSidebar).
                 store.focusSidebarCursor()
                 return nil
             }
@@ -250,7 +250,7 @@ struct RootView: View {
             }
 
             // Inline rename owns the keyboard: ↵ commits, Esc reverts, everything else
-            // edits the focused field (working.html startRename).
+            // edits the focused field (design.html startRename).
             if store.renamingRowID != nil {
                 switch event.keyCode {
                 case 53:     store.cancelRename(); return nil     // Esc
@@ -325,7 +325,7 @@ struct RootView: View {
             default:
                 // r renames the selected row in place; d deletes it (through a confirm).
                 // Both are bare letters — modified variants stay with the shell / earlier
-                // handlers (working.html: !metaKey && !ctrlKey && !altKey).
+                // handlers (design.html: !metaKey && !ctrlKey && !altKey).
                 let bare = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
                 switch key {
                 // ⇧J / ⇧K reorder the selected row within its sibling list (keyboard twin of

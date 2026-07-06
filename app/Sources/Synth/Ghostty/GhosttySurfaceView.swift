@@ -138,7 +138,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         if let surface { ghostty_surface_set_focus(surface, window.firstResponder === self) }
     }
 
-    /// Re-theme the surface to the view's current appearance (working.html's `--tui-*`,
+    /// Re-theme the surface to the view's current appearance (design.html's `--tui-*`,
     /// light "paper" vs dark card). Called on creation and whenever the appearance flips.
     private func applyTheme() {
         guard let surface else { return }

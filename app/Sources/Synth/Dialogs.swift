@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Centered modal over a dimmed backdrop, scale-in — matches working.html's dialogs
+/// Centered modal over a dimmed backdrop, scale-in — matches design.html's dialogs
 /// (not a native top-attached sheet).
 struct ModalBackdrop<Content: View>: View {
     let onDismiss: () -> Void

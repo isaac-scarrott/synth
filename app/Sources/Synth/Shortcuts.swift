@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// working.html's `.cmdk__key` — a small rounded key-cap. Shared by the palette's
+/// design.html's `.cmdk__key` — a small rounded key-cap. Shared by the palette's
 /// trailing shortcut hints and the ⌘? shortcuts sheet.
 struct KeyCap: View {
     let text: String
@@ -20,7 +20,7 @@ struct KeyCap: View {
     }
 }
 
-/// A run of key-caps rendered edge to edge (working.html's `.sc-row__keys`).
+/// A run of key-caps rendered edge to edge (design.html's `.sc-row__keys`).
 struct KeyCaps: View {
     let keys: [String]
 
@@ -45,7 +45,7 @@ private struct ShortcutGroup {
     let rows: [Shortcut]
 }
 
-/// Every binding, one glanceable modal — a straight port of working.html's SHORTCUTS.
+/// Every binding, one glanceable modal — a straight port of design.html's SHORTCUTS.
 struct ShortcutsSheet: View {
     private static let groups: [ShortcutGroup] = [
         ShortcutGroup(name: "General", rows: [

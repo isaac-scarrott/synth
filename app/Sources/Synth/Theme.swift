@@ -1,11 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// Colours and metrics lifted from working.html's CSS variables. Every colour is
+/// Colours and metrics lifted from design.html's CSS variables. Every colour is
 /// appearance-adaptive: a dynamic NSColor resolves to the light or dark value against
 /// the view's effective appearance (driven by `.preferredColorScheme`, see RootView).
 /// Call sites are unchanged — the whole app themes by editing this one file, exactly
-/// like working.html's `:root` / `:root[data-theme="dark"]`.
+/// like design.html's `:root` / `:root[data-theme="dark"]`.
 enum Theme {
     // Surfaces + structure
     static let canvas      = dyn(0xEBEBED, 0x0D0D0F)   // grey backdrop / near-black desktop
@@ -41,7 +41,7 @@ enum Theme {
                       : NSColor.white.withAlphaComponent(0.86)
     })
 
-    // Exact per-element greys from working.html
+    // Exact per-element greys from design.html
     static let repoName     = dyn(0x1D1D1F, 0xF2F2F4)
     static let repoCount    = dyn(0xB8B8BD, 0x7E7E85)
     static let navLabel     = dyn(0xA1A1A6, 0x8B8B92)

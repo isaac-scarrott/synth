@@ -28,7 +28,7 @@ launches through the shim and round-trips a `claude-start` signal back to the so
 string (`ghostty_config_load_string`), so behaviour is deterministic and a tester's global ghostty
 config can't perturb it — and, with the per-pid socket/shim from ADR-0008, parallel Synth instances
 stay isolated. `term = xterm-256color` avoids depending on the ghostty terminfo being installed on the
-host; colours and font match working.html's `.term` card.
+host; colours and font match design.html's `.term` card.
 
 **We link a prebuilt binary, and accept the risk.** `GhosttyKit.xcframework` (MIT, ~538 MB) is a
 universal static-library build of libghostty, gitignored and fetched by `app/vendor/fetch-ghostty.sh`

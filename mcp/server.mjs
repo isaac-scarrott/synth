@@ -244,7 +244,7 @@ async function focusedPage(inst) {
 // ---------------------------------------------------------------------------
 // Helpers.
 
-/** working.html's browserNorm plus files: schemeless input gets https://, loopback
+/** design.html's browserNorm plus files: schemeless input gets https://, loopback
  *  gets http://, and local paths (absolute, ~, relative-if-it-exists) get file://. */
 function normalizeURL(text) {
   const t = text.trim();

@@ -65,7 +65,7 @@ accepting a later engine swap; it is a schedule hedge, not the target.
 **The seam that makes the engine swappable.** The browser panel is built against a `BrowserEngine`
 protocol (navigate, back/forward, reload, current URL, title, snapshot) with the CDP endpoint exposed
 as a separate concern. The rest of Synth — the session model, sidebar row, keybindings, the pane
-chrome mocked in `working.html` — talks to the protocol, never the engine. This keeps the engine
+chrome mocked in `design.html` — talks to the protocol, never the engine. This keeps the engine
 decision reversible and contains the blast radius if the CEF/WKWebView call is revisited.
 
 ## Claude drives it through a custom MCP server we own — not `--chrome`, not hooks
@@ -116,7 +116,7 @@ with an address bar + back/forward/reload, one page per session (more pages = mo
 the sidebar like terminals), and a DevTools toggle in the browser bar that docks Chromium's own
 DevTools under the page (CEF `ShowDevTools`; the same `remote_debugging_port` additionally lets an
 external Chrome inspect the session via `chrome://inspect`). No agent control yet. The interaction and
-chrome are already mocked and driven in `working.html` / `big-picture-design.html`.
+chrome are already mocked and driven in `design.html`.
 
 Two things in stage one exist for the sake of stage two and must not be skipped: the browser sits
 behind the `BrowserEngine` protocol, and — if we build directly on CEF — its CDP endpoint is turned on
@@ -214,7 +214,7 @@ lifecycle, and deterministic comment routing — not merely a stored routing hin
 - **Sidebar: one containment indent, same session dials.** Owned browsers render directly under their
   owner, one indent step deeper, reusing the session-tier visual language — always expanded, no caret,
   no new visual register. This amends the three-tier hierarchy decision to "three tiers + a
-  containment indent"; per the design workflow it lands in `working.html` + `big-picture-design.html`
+  containment indent"; per the design workflow it lands in `design.html`
   before the native port.
 - **Comment ladder: owner → boot owner → spawn-and-adopt.** A comment from an owned browser goes to
   its owner (booting it through the existing hook-liveness wait if dormant). A comment from an

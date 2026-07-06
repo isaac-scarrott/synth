@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// The browser session's pane (ADR-0011 stage one): working.html's `.browser` chrome —
+// The browser session's pane (ADR-0011 stage one): design.html's `.browser` chrome —
 // back/forward/reload, the lock+URL omnibox pill, the DevTools toggle — around the live
 // engine view, with the "go to" home surface and its floating dropdown twin. Everything
 // here talks to `BrowserEngine`, never a concrete engine (the factory picks one).
@@ -191,7 +191,7 @@ extension BrowserSessionController: BrowserEngineDelegate {
 
 // MARK: - Pane
 
-/// working.html `.browser`: the rounded card (14 margin, radius 10, raised bg) holding
+/// design.html `.browser`: the rounded card (14 margin, radius 10, raised bg) holding
 /// the toolbar over the page — or over the "go to" home when nothing is loaded yet.
 struct BrowserPane: View {
     @Environment(AppStore.self) private var store
@@ -279,7 +279,7 @@ private struct EngineHost: NSViewRepresentable {
 
 // MARK: - Bar
 
-/// working.html `.browser__bar`: nav cluster · omnibox pill · comment-mode toggle ·
+/// design.html `.browser__bar`: nav cluster · omnibox pill · comment-mode toggle ·
 /// DevTools toggle, on the chrome-grey strip with a hairline below.
 private struct BrowserBar: View {
     @Environment(AppStore.self) private var store
@@ -589,7 +589,7 @@ private struct GoToField: View {
         .onAppear {
             focused = true
             // Seeded (dropdown): current address pre-selected so a keystroke replaces —
-            // working.html's input.select().
+            // design.html's input.select().
             if seed != nil {
                 DispatchQueue.main.async {
                     (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)

@@ -15,7 +15,7 @@ struct PersistedState: Codable {
     /// written before settings were persisted still decodes — a nil just keeps the default.
     var globalScript: String?
     var globalClaudeFlags: String?
-    /// The new-worktree session template (working.html globalTpl) — same optionality rule.
+    /// The new-worktree session template (design.html globalTpl) — same optionality rule.
     var globalSessionTemplate: [SessionTemplateEntry]?
 }
 

@@ -9,7 +9,7 @@ struct Sidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             topStrip
             // Settings mode swaps the tree + foot for a scope list; the shell is otherwise
-            // untouched (working.html `.app.settings`).
+            // untouched (design.html `.app.settings`).
             if store.settingsOpen {
                 SettingsNav()
             } else {
@@ -37,7 +37,7 @@ struct Sidebar: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, 16)
                 }
-                // nil anchor = working.html's scrollIntoView({block:'nearest'}): no scroll at
+                // nil anchor = design.html's scrollIntoView({block:'nearest'}): no scroll at
                 // all while the cursor moves within view — also what keeps arrow-key nav cheap
                 // in a tree of hundreds of rows (centering scrolls the LazyVStack every press).
                 .onChange(of: store.navCursor) { _, id in
@@ -101,7 +101,7 @@ private struct EmptySidebarHint: View {
 
 // MARK: - Sidebar foot (Settings entry) + settings-mode scope list
 
-/// working.html `.sidebar__foot` — pinned to the bottom of the left panel.
+/// design.html `.sidebar__foot` — pinned to the bottom of the left panel.
 private struct SidebarFoot: View {
     @Environment(AppStore.self) private var store
     // The foot button is the last row of the main-view navigable list, so it shows the
@@ -140,7 +140,7 @@ private struct FootButton: View {
     }
 }
 
-/// working.html `.settings-nav` — the left panel in settings mode: a Back button back
+/// design.html `.settings-nav` — the left panel in settings mode: a Back button back
 /// to the tree, then Global + one scope row per workspace.
 private struct SettingsNav: View {
     @Environment(AppStore.self) private var store
@@ -195,7 +195,7 @@ private struct BackButton: View {
 }
 
 /// One row in the scope list — Global (globe) or a workspace (chip). The selected scope
-/// gets the blue "you are here" tint (working.html `.scope--on`).
+/// gets the blue "you are here" tint (design.html `.scope--on`).
 private struct ScopeRow: View {
     let label: String
     var workspace: Workspace? = nil
@@ -204,7 +204,7 @@ private struct ScopeRow: View {
     let action: () -> Void
     @State private var hovering = false
 
-    // The keyboard ring wins over the blue "you are here" tint (working.html: `.scope.sel`
+    // The keyboard ring wins over the blue "you are here" tint (design.html: `.scope.sel`
     // outweighs `.scope--on`), so a selected scope reads as the cursor first.
     private var background: Color {
         if selected { return Theme.rowSelected }
@@ -347,7 +347,7 @@ private struct BranchRow: View {
     private var isActivePill: Bool {
         // The branch containing the open session — but an *expanded* group already
         // highlights the open session inside; the white header pill would
-        // double-encode, so it shows only while collapsed (working.html
+        // double-encode, so it shows only while collapsed (design.html
         // `.repo--open > .branch--active.branch--group`).
         guard let open = store.openSession, store.branch(of: open)?.id == branch.id else { return false }
         return !(branch.isLive && isOpen)
@@ -385,7 +385,7 @@ private struct BranchRow: View {
                             }
                         }
                         // Right pad 10→8 so the branch indicator shares one vertical axis
-                        // with the workspace count and session dots (working.html .branch).
+                        // with the workspace count and session dots (design.html .branch).
                         .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
@@ -450,7 +450,7 @@ private struct SessionRow: View {
     let selected: Bool
     @State private var hovering = false
     // Ambient "done" wash: a background session settling to idle sweeps a soft highlight once
-    // (working.html `session--pulse`). Bumping the store token starts a single 900ms fade.
+    // (design.html `session--pulse`). Bumping the store token starts a single 900ms fade.
     @State private var pulse = false
     private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
     private var isOpen: Bool { store.openSessionID == session.id }
@@ -479,7 +479,7 @@ private struct SessionRow: View {
                         Text(session.title)
                             .font(.system(size: 11.5))
                             // Only the focused session goes bold; unread surfaces via colour
-                            // + the gutter bullet, not weight (working.html .session--open).
+                            // + the gutter bullet, not weight (design.html .session--open).
                             .fontWeight(isOpen ? .semibold : .regular)
                             .foregroundStyle(nameColor)
                             .lineLimit(1)
@@ -487,7 +487,7 @@ private struct SessionRow: View {
                         StatusIndicator(status: session.status).opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    // The open session's sticky tint (working.html .session--open).
+                    // The open session's sticky tint (design.html .session--open).
                     .background(
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color(hex: 0x0A84FF).opacity(isOpen ? 0.06 : 0))
@@ -513,7 +513,7 @@ private struct SessionRow: View {
         // Containment (ADR-0011 stage four): a browser owned by a Claude session sits one
         // indent step under its owner — same session dials, the indent alone carries the
         // relation. Leading-only, so the row's right edge (and its 16px indicator slot)
-        // stays on the sidebar's shared right axis (working.html `.session--owned`).
+        // stays on the sidebar's shared right axis (design.html `.session--owned`).
         .padding(.leading, session.ownerSessionID != nil ? 15 : 0)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: session.ownerSessionID)
         .onHover { hovering = $0 }
@@ -532,7 +532,7 @@ private struct SessionRow: View {
 // MARK: - Shared bits
 
 /// An expanded group with no children reads as a quiet hint instead of a bare indent
-/// (working.html `.sessions:empty::after` / `.branches:empty::after`). Sits at the same
+/// (design.html `.sessions:empty::after` / `.branches:empty::after`). Sits at the same
 /// left indent as a child row would, since it's rendered inside the group's Reveal.
 private struct EmptyGroupHint: View {
     let text: String
@@ -553,12 +553,12 @@ private struct KebabButton: View {
 
     var body: some View {
         Button {
-            // The ⋯ kebab opens the ⌘K palette drilled to this row (working.html openRowActions),
+            // The ⋯ kebab opens the ⌘K palette drilled to this row (design.html openRowActions),
             // not the hover popover. The popover stays for the `d` quick-delete keybinding.
             store.openRowActions(ref)
         } label: {
             // 13px glyph in a 20px box; the open menu fills a rounded 7px hover box
-            // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
+            // (echoing the 8px row radius) and darkens the glyph (design.html .kebab).
             Phos(path: Phosphor.dots, size: 13)
                 .foregroundStyle(menuOpen ? Theme.ink2 : Theme.inkFaint)
                 .frame(width: 20, height: 20)
@@ -572,7 +572,7 @@ private struct KebabButton: View {
 }
 
 /// The name field shown in place of a row's label while it is being renamed —
-/// working.html's contentEditable `.renaming`: the label becomes an editable field in
+/// design.html's contentEditable `.renaming`: the label becomes an editable field in
 /// place with its text preselected and no ring of its own (the row's selection ring is
 /// the only ring).
 /// ↵/Esc are handled by the global key monitor; losing focus (blur) commits.
@@ -598,7 +598,7 @@ private struct RenameField: View {
     }
 }
 
-/// working.html `.kebab:active` — a firm 0.88 press dip.
+/// design.html `.kebab:active` — a firm 0.88 press dip.
 private struct KebabPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -630,7 +630,7 @@ private struct Monogram: View {
     }
 }
 
-/// working.html `.ind` — every right-side indicator lives in one fixed 16×16 slot,
+/// design.html `.ind` — every right-side indicator lives in one fixed 16×16 slot,
 /// contents centered, so every indicator shares one vertical axis down the whole
 /// sidebar regardless of glyph size (6px dot, 15px `?`/`!`).
 /// The slot pops in with a soft overshoot (ind-in, 240ms back-out) whenever it
@@ -672,7 +672,7 @@ private struct BranchRollup: View {
     let branch: Branch
     // Expanded, every session shows its own indicator inside, so the state roll-up
     // glyph beside the header is redundant and can read as out of sync — drop it
-    // while expanded (working.html `.repo--open > .branch--group .branch__roll .ind`).
+    // while expanded (design.html `.repo--open > .branch--group .branch__roll .ind`).
     // The activity meta isn't an indicator and stays.
     var collapsed: Bool
     var body: some View {
@@ -697,7 +697,7 @@ private struct AttentionGlyph: View {
     let state: RollupState
     var body: some View {
         // Breathe lives on the glyph, not the slot, so it composes under the slot's
-        // entry pop (working.html: attn-breathe on the svg inside .ind--input).
+        // entry pop (design.html: attn-breathe on the svg inside .ind--input).
         let glyph = Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
             .foregroundStyle(state == .input ? Theme.attention : Theme.danger)
         if state == .input { glyph.attnBreathe() } else { glyph }
@@ -721,7 +721,7 @@ private struct PendingSpinner: View {
     }
 }
 
-/// working.html `.sdot` — 6px liveness dot with a colour-matched soft round glow;
+/// design.html `.sdot` — 6px liveness dot with a colour-matched soft round glow;
 /// the two blurred box-shadow layers map to two stacked SwiftUI shadows.
 private struct Dot: View {
     let color: Color
@@ -754,7 +754,7 @@ extension View {
     // attn-breathe: 2s cycle, opacity 1↔0.55 + scale 1↔0.9.
     func attnBreathe() -> some View { modifier(PulseModifier(halfDuration: 1.0, minOpacity: 0.55, minScale: 0.9)) }
 
-    /// Row hover + keyboard-selection chrome (working.html: hover 3.5%, sel 5% + ring).
+    /// Row hover + keyboard-selection chrome (design.html: hover 3.5%, sel 5% + ring).
     func rowChrome(hovering: Bool, selected: Bool) -> some View {
         background(
             RoundedRectangle(cornerRadius: 8)
@@ -775,7 +775,7 @@ extension View {
 extension View {
     /// Hosts the reorder drag on a row's *header* (never its child rows), and measures the
     /// header height that sizes each reorder step. A ~5px threshold keeps a plain click
-    /// opening/toggling the row (working.html's press-vs-drag threshold).
+    /// opening/toggling the row (design.html's press-vs-drag threshold).
     func reorderGesture(_ ref: RowRef) -> some View { modifier(ReorderGesture(ref: ref)) }
     /// Lifts the whole row while it's the drag source: it tracks the pointer, elevates with
     /// a shadow, and rises above its siblings, which shift underneath it.
@@ -852,7 +852,7 @@ private struct ReorderLift: ViewModifier {
     }
 }
 
-/// Draggable seam on the sidebar's trailing edge (working.html's `.resize-handle`):
+/// Draggable seam on the sidebar's trailing edge (design.html's `.resize-handle`):
 /// drag resizes within [min,max]; double-click resets to the default width. The width
 /// tracks instantly (no animation) so the drag feels direct.
 struct SidebarResizeHandle: View {
@@ -900,7 +900,7 @@ struct SidebarResizeHandle: View {
 }
 
 /// Move focus into the content pane: make the open session's terminal first responder
-/// so the shell takes keys (working.html's focusContent). An AI session has no terminal
+/// so the shell takes keys (design.html's focusContent). An AI session has no terminal
 /// yet, so this is a no-op there for now — the composer is a forward-looking fallback.
 /// A browser session focuses its engine view (the page takes keys).
 @MainActor func focusContent(_ store: AppStore) {
@@ -953,7 +953,7 @@ struct RowButtonStyle: ButtonStyle {
     }
 }
 
-/// Height-accordion reveal — matches working.html's 0fr→1fr grid-rows transition
+/// Height-accordion reveal — matches design.html's 0fr→1fr grid-rows transition
 /// (185ms) plus the inner opacity fade. Content only exists while the group is open
 /// (or still collapsing): a tree of collapsed workspaces costs nothing per row, which
 /// is what keeps a sidebar of hundreds of branches instant. Opening mounts the content

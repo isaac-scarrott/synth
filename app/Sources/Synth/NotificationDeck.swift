@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The in-app notification layer (working.html's `.notifs`): background sessions escalated to
+/// The in-app notification layer (design.html's `.notifs`): background sessions escalated to
 /// quiet glass toasts, stacked bottom-left, hugging the sidebar. One toast reads plainly; two
 /// or more collapse into a deck — most-urgent in front, the two behind peeking, anything past
 /// three folded under a "+N" pill. Hovering the deck fans it into individually clickable cards;
@@ -11,7 +11,7 @@ struct NotificationDeck: View {
     @State private var hovering = false
     @State private var cardHeights: [UUID: CGFloat] = [:]
 
-    // How far peeking cards rise / dim behind the front (working.html --i math): each step up
+    // How far peeking cards rise / dim behind the front (design.html --i math): each step up
     // 10.5px, scaled 0.045 smaller, at opacity 1 / 0.7 / 0.45; a fourth+ card hides behind "+N".
     fileprivate static let peekRise: CGFloat = 10.5
     fileprivate static let peekOpacity: [Double] = [1, 0.7, 0.45]
@@ -85,7 +85,7 @@ private struct DeckPlacement: ViewModifier {
 
 /// One glass toast — the sidebar indicator escalated: the state glyph in a tinted chip, the
 /// row's identity (workspace colour · kind icon · title), a one-line verb, and — front only —
-/// the muted ⌘↩ hint. Entering with a calm rise (working.html `.notif.in`).
+/// the muted ⌘↩ hint. Entering with a calm rise (design.html `.notif.in`).
 private struct NotifCard: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -139,7 +139,7 @@ private struct NotifCard: View {
                     .onChange(of: g.size.height) { _, h in onHeight(h) }
             }
         )
-        // Entrance: a ~200ms ease-out rise, no bounce (working.html translateY/scale/opacity).
+        // Entrance: a ~200ms ease-out rise, no bounce (design.html translateY/scale/opacity).
         .scaleEffect(shown ? 1 : 0.975, anchor: .bottom)
         .opacity(shown ? 1 : 0)
         .offset(y: shown ? 0 : 12)
@@ -205,7 +205,7 @@ private struct NotifCard: View {
     }
 }
 
-/// working.html `.notifs__more` — a quiet "+N" pill for cards folded behind a deck deeper than three.
+/// design.html `.notifs__more` — a quiet "+N" pill for cards folded behind a deck deeper than three.
 private struct MorePill: View {
     let count: Int
     var body: some View {

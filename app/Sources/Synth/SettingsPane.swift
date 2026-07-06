@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The full-screen Settings content pane (working.html renderSettings). It shares the
+/// The full-screen Settings content pane (design.html renderSettings). It shares the
 /// shell — the sidebar swaps its tree for a scope list, this fills the content pane.
 /// Global shows one setup script; a workspace shows the run order plus the read-only
 /// global script ("runs first") above its own editable one ("runs next"): the effective
@@ -31,7 +31,7 @@ struct SettingsPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // working.html .pane__head — same head/breadcrumb chrome as a session pane.
+    // design.html .pane__head — same head/breadcrumb chrome as a session pane.
     private var head: some View {
         HStack(spacing: 10) {
             if store.sidebarCollapsed {
@@ -61,7 +61,7 @@ struct SettingsPane: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 
-    // MARK: Appearance — global only (working.html's global Appearance segmented control).
+    // MARK: Appearance — global only (design.html's global Appearance segmented control).
 
     @ViewBuilder private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -144,7 +144,7 @@ struct SettingsPane: View {
     }
 
     // MARK: New worktree sessions — the ordered session set every worktree starts with
-    // (working.html sessionsSection). Same override model as the flags: a workspace's
+    // (design.html sessionsSection). Same override model as the flags: a workspace's
     // list replaces the global outright; an empty list inherits global.
 
     @ViewBuilder private var templateSection: some View {
@@ -223,7 +223,7 @@ struct SettingsPane: View {
         .padding(.top, 12)
     }
 
-    // working.html .set-flow — makes "global first, then workspace" legible at a glance.
+    // design.html .set-flow — makes "global first, then workspace" legible at a glance.
     private func flowStrip(note: String) -> some View {
         HStack(spacing: 9) {
             HStack(spacing: 7) {
@@ -296,9 +296,9 @@ struct SettingsPane: View {
     }
 }
 
-// MARK: - New worktree sessions (working.html .tpl-*)
+// MARK: - New worktree sessions (design.html .tpl-*)
 
-/// The per-kind copy the template UI needs (working.html TPL_KINDS): the pill label and
+/// The per-kind copy the template UI needs (design.html TPL_KINDS): the pill label and
 /// the name a freshly added entry starts with. Icon path/tint come from Theme's
 /// SessionKind extension — the same glyphs the sidebar rows use.
 private extension SessionKind {
@@ -326,7 +326,7 @@ private enum TplMetrics {
     static var step: CGFloat { rowHeight + gap }
 }
 
-/// The uppercase label row above a template list (working.html .set-code-head — the same
+/// The uppercase label row above a template list (design.html .set-code-head — the same
 /// dial as CodeCard's label row, reused standalone here).
 private struct TplListHead<Trailing: View>: View {
     let label: String
@@ -343,7 +343,7 @@ private struct TplListHead<Trailing: View>: View {
     }
 }
 
-/// The editable template list (working.html .tpl-list[data-tpl]): reorderable rows with
+/// The editable template list (design.html .tpl-list[data-tpl]): reorderable rows with
 /// an inline name field, kind pill and remove button.
 private struct TplList: View {
     @Binding var entries: [SessionTemplateEntry]
@@ -363,7 +363,7 @@ private struct TplList: View {
     }
 }
 
-/// The read-only mirror (working.html .tpl-list--ro): same rows minus grip/×, flat and
+/// The read-only mirror (design.html .tpl-list--ro): same rows minus grip/×, flat and
 /// dimmed — the inherited global list shown on a workspace scope.
 private struct TplListRO: View {
     let entries: [SessionTemplateEntry]
@@ -395,7 +395,7 @@ private struct TplListRO: View {
     }
 }
 
-/// Empty-state card (working.html .tpl-empty): a dashed hairline around a quiet line.
+/// Empty-state card (design.html .tpl-empty): a dashed hairline around a quiet line.
 private struct TplEmpty: View {
     let text: String
     var body: some View {
@@ -408,7 +408,7 @@ private struct TplEmpty: View {
     }
 }
 
-/// One editable template row (working.html .tpl-row): grip · index · kind icon · name
+/// One editable template row (design.html .tpl-row): grip · index · kind icon · name
 /// field · kind pill · ×. The grip's DragGesture reorders live — rows are fixed-height,
 /// so the target index is translation.height over the row step, moved as thresholds cross.
 private struct TplRow: View {
@@ -590,7 +590,7 @@ private struct TplHover<Content: View>: View {
     }
 }
 
-/// The live preview (working.html tplPreview): the sidebar subtree a new worktree would
+/// The live preview (design.html tplPreview): the sidebar subtree a new worktree would
 /// open with — a mock branch group with the template's sessions nested under the same
 /// hairline indent as the real sidebar. Display only; the first row carries the
 /// open-session tint, so "the first one opens" is visible.
@@ -648,7 +648,7 @@ private struct TplPreview: View {
 }
 
 /// The effective `claude …` launch line, flags tinted like a terminal command — mirrors
-/// working.html's `.set-cmd` preview on the terminal-card surface.
+/// design.html's `.set-cmd` preview on the terminal-card surface.
 private struct CmdPreview: View {
     let flags: String
     private var tokens: [String] { flags.split(whereSeparator: \.isWhitespace).map(String.init) }
@@ -666,7 +666,7 @@ private struct CmdPreview: View {
     }
 }
 
-/// working.html's `.seg` — a pill segmented control. Global-only theme picker; the
+/// design.html's `.seg` — a pill segmented control. Global-only theme picker; the
 /// active segment lifts on a raised fill, both tuned to the current appearance.
 private struct ThemeSeg: View {
     @Environment(AppStore.self) private var store
@@ -699,7 +699,7 @@ private struct ThemeSeg: View {
     }
 }
 
-/// "Edit in Global" — jumps scope without leaving settings (working.html data-goto).
+/// "Edit in Global" — jumps scope without leaving settings (design.html data-goto).
 private struct EditInGlobalLink: View {
     @Environment(AppStore.self) private var store
     var body: some View {
@@ -712,7 +712,7 @@ private struct EditInGlobalLink: View {
     }
 }
 
-/// working.html .set-code — a dark rounded editor card with an uppercase label row.
+/// design.html .set-code — a dark rounded editor card with an uppercase label row.
 /// Read-only cards render dimmed static text ("what also runs"); editable cards a live
 /// TextEditor bound to the mock store.
 private struct CodeCard<Trailing: View>: View {
@@ -768,7 +768,7 @@ extension CodeCard where Trailing == EmptyView {
     }
 }
 
-/// A workspace monogram chip (working.html .repo__chip) at an arbitrary size — shared
+/// A workspace monogram chip (design.html .repo__chip) at an arbitrary size — shared
 /// by the settings pane head and the run-order strip.
 struct WsChip: View {
     let workspace: Workspace

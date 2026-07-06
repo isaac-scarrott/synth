@@ -2,7 +2,7 @@ import AppKit
 import GhosttyKit
 
 /// The terminal's ghostty configuration, themed to match the app appearance — the native
-/// counterpart of working.html's `--tui-*` tokens. Light mode is a warm "paper" surface with
+/// counterpart of design.html's `--tui-*` tokens. Light mode is a warm "paper" surface with
 /// a muted-but-legible palette; dark mode is a deep near-black card with brighter accents.
 /// Everything else (font, padding, clipboard, the shell-integration=none used by the env
 /// scrub) is scheme-independent and lives here too, so one config fully describes a surface.

@@ -1,7 +1,7 @@
 import AppKit
 import UserNotifications
 
-/// The unfocused-window notification path. working.html defers this case to "the native app";
+/// The unfocused-window notification path. design.html defers this case to "the native app";
 /// this is it: when Synth isn't frontmost, a background session's needs-input / error / done is
 /// raised through Notification Center instead of the in-app deck (the focus branch lives in
 /// `AppStore.routeTransition`). Attention states read as alerts, `done` as a transient banner;
@@ -109,7 +109,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
 }
 
 /// The one-line verb a state reads as — Claude phrased for an agent, a plain terminal for a
-/// process (working.html `notifWhat`). Shared by the in-app card and the NC title.
+/// process (design.html `notifWhat`). Shared by the in-app card and the NC title.
 func notifVerb(_ session: SessionKind, _ kind: NotifKind) -> String {
     switch (session, kind) {
     case (.claudeCode, .error): return "Claude hit an error"

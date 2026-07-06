@@ -1,14 +1,14 @@
 import AppKit
 import SwiftUI
 
-// The ⌘K command palette — a navigation stack of frames (working.html's cmdk).
+// The ⌘K command palette — a navigation stack of frames (design.html's cmdk).
 // Simple at rest, progressive search on typing; drill pushes a frame, Backspace on
 // an empty query pops. Create / delete / confirm happen inline as text — never a modal.
 
 // MARK: - Fuzzy matcher
 
 /// Subsequence match with word-boundary + contiguity bonuses; nil = no match.
-/// Ports working.html's `fuzzy()` exactly.
+/// Ports design.html's `fuzzy()` exactly.
 func fuzzyScore(_ query: String, _ text: String) -> Double? {
     if query.isEmpty { return 0 }
     let q = Array(query.lowercased())
@@ -30,7 +30,7 @@ func fuzzyScore(_ query: String, _ text: String) -> Double? {
 }
 
 /// Branch names can't contain spaces — inputs that name a new branch turn each
-/// space into a dash as you type (working.html's `dashSpaces`: leading whitespace
+/// space into a dash as you type (design.html's `dashSpaces`: leading whitespace
 /// dropped, runs collapsed).
 func dashSpaces(_ s: String) -> String {
     String(s.drop(while: \.isWhitespace))
@@ -107,7 +107,7 @@ struct PaletteFrame {
     var frame: PaletteFrame { stack[stack.count - 1] }
 
     /// The frame's items, fuzzy-filtered for `list` frames — section order preserved,
-    /// fuzzy-ranked within each section (working.html's renderFrame).
+    /// fuzzy-ranked within each section (design.html's renderFrame).
     var items: [PaletteItem] {
         let q = query.trimmingCharacters(in: .whitespaces)
         let built = frame.build(q)
@@ -115,7 +115,7 @@ struct PaletteFrame {
         var order: [String] = []
         var byKey: [String: [(PaletteItem, Double)]] = [:]
         for it in built {
-            // Fold the context chip into matching (working.html itemScore) so a bare-labelled
+            // Fold the context chip into matching (design.html itemScore) so a bare-labelled
             // action ("Rename") is still found by its target's name via `ctx`.
             let base = fuzzyScore(q, it.label)
             let withCtx = it.ctx.flatMap { c in fuzzyScore(q, "\(c) \(it.label)").map { $0 - 2 } }
@@ -161,7 +161,7 @@ struct PaletteFrame {
 
     // MARK: Store-derived helpers
 
-    /// The row ⌘K acts on. Mirrors working.html's contextRow: the focused sidebar row
+    /// The row ⌘K acts on. Mirrors design.html's contextRow: the focused sidebar row
     /// leads when the keyboard owns the sidebar (`keyboardActive` is the `body.kbd` guard —
     /// a live focus ring, not a stale cursor left behind after focus moved to the content
     /// pane), else the open session in the content pane.
@@ -175,7 +175,7 @@ struct PaletteFrame {
     /// context row leads (focused sidebar row, else the open session), and branch and
     /// workspace resolve up/down from it, each falling back to the first one available so
     /// ⌘K still offers "New terminal"/"New worktree…" when the anchor is a branch/workspace
-    /// or nothing is focused (working.html contextBranch/contextWorkspaceHead). Session
+    /// or nothing is focused (design.html contextBranch/contextWorkspaceHead). Session
     /// actions appear only when the anchor is a session leaf.
     private func contextActions() -> [PaletteItem] {
         let row = contextRow()
@@ -202,7 +202,7 @@ struct PaletteFrame {
         var items: [PaletteItem] = []
         if let open {
             // A browser session adds a Page group above Session — the page's own verbs,
-            // one keystroke from anywhere (working.html browserActions).
+            // one keystroke from anywhere (design.html browserActions).
             if open.kind == .browser {
                 items += browserActions(open).map { item -> PaletteItem in
                     var it = item; it.group = "Page · \(open.title)"; it.ctx = open.title; return it
@@ -255,7 +255,7 @@ struct PaletteFrame {
         return items
     }
 
-    /// The Page verbs for a browser session (working.html browserActions). Each drives
+    /// The Page verbs for a browser session (design.html browserActions). Each drives
     /// the visible toolbar control a click would — the palette adds no second navigation
     /// path, so disabled states (home page, empty history) come for free. When `s` isn't
     /// the open session there is no live page yet, so everything but "Go to address…"
@@ -477,14 +477,14 @@ struct PaletteFrame {
         }
     }
 
-    /// A leaf session's own frame (working.html sessionFrame) — reached by its ⋯ kebab.
+    /// A leaf session's own frame (design.html sessionFrame) — reached by its ⋯ kebab.
     /// Its own actions (rename / delete) plus sibling creates on its branch (the ctx
     /// chip names the branch, as the crumb is the session). Browser rows carry the
     /// containment verbs between Rename and Delete (stage four).
     func sessionFrame(_ s: Session) -> PaletteFrame {
         PaletteFrame(crumb: s.title, placeholder: "Search \(s.title)…") { [self] _ in
             var items: [PaletteItem] = []
-            // A browser row's frame leads with its Page verbs (working.html sessionFrame).
+            // A browser row's frame leads with its Page verbs (design.html sessionFrame).
             if s.kind == .browser {
                 items += browserActions(s).map { item -> PaletteItem in
                     var it = item; it.sec = "page"; return it
@@ -516,7 +516,7 @@ struct PaletteFrame {
     }
 
     /// Drill the palette straight to a row's frame — the row ⋯ kebab opens this instead of
-    /// the hover popover (working.html openRowActions). Root stays underneath for Back.
+    /// the hover popover (design.html openRowActions). Root stays underneath for Back.
     func drill(to ref: RowRef) {
         switch ref {
         case let .workspace(w): stack = [rootFrame(), workspaceFrame(w)]
@@ -631,7 +631,7 @@ struct PaletteFrame {
     }
 
     /// Rename any unit inline — the field seeds with the current name and commits once
-    /// it actually changes (working.html renameFrame).
+    /// it actually changes (design.html renameFrame).
     func renameFrame(_ ref: RowRef) -> PaletteFrame {
         let noun: String = {
             switch ref {
@@ -659,7 +659,7 @@ struct PaletteFrame {
     }
 
     /// `a` on a branch/worktree (or a session leaf) jumps straight to the "add a session"
-    /// choice — a terminal or a Claude Code, created in `branch` (working.html newSessionFrame).
+    /// choice — a terminal or a Claude Code, created in `branch` (design.html newSessionFrame).
     func newSessionFrame(branch: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "New session", placeholder: "New session in \(branch.name)…") { [self] _ in
             [
@@ -676,7 +676,7 @@ struct PaletteFrame {
     /// New worktree via ⌘K: empty until you type, then fuzzy-match every local and remote
     /// branch (top 5, already-checked-out hidden, local/remote dedup'd), or cut a new branch
     /// off the typed name. Each pick checks the branch out into its own worktree (ADR-0007).
-    /// working.html fakes the remotes; here they come from real git (GitService.allBranches).
+    /// design.html fakes the remotes; here they come from real git (GitService.allBranches).
     func worktreeFrame(in workspace: Workspace?) -> PaletteFrame {
         // Kick off the off-main git read; `build` reads from the cache as it fills, so the
         // frame opens instantly and populates when branches arrive. Per-keystroke `build`
@@ -715,7 +715,7 @@ struct PaletteFrame {
 }
 
 extension SessionStatus {
-    // working.html's STATE_LABEL + .cmdk__meta--* colours.
+    // design.html's STATE_LABEL + .cmdk__meta--* colours.
     var paletteLabel: String {
         switch self {
         case .running:       return "running"
@@ -826,7 +826,7 @@ struct PaletteOverlay: View {
                     .onChange(of: model.stack.count) {
                         focused = true
                         // A seeded rename frame pre-fills the name — select it so a keystroke
-                        // replaces (working.html pushFrame → input.select()).
+                        // replaces (design.html pushFrame → input.select()).
                         if model.frame.seed != nil {
                             DispatchQueue.main.async {
                                 (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)

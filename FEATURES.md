@@ -194,6 +194,15 @@ disclosure to dive deeper.
   (⌘K browsers born unowned; Move under…/Detach re-parent by hand), owned rows nest one indent
   under their owner and cascade-delete with a named confirm, and the comment ladder becomes
   owner → boot owner → silently spawn-a-claude-that-adopts (replacing most-active-in-branch).
+- **Worktree ops never block the app (native app)** — all git subprocess calls move to a per-repo
+  serialized background queue; creates show grayed pending rows (spinner, inert, never persisted)
+  that activate in place; delete renames the folder aside and drops the row instantly (background
+  rm + crash sweep); failures raise a persistent branch·workspace error toast; sidebar and
+  branch-picker lists go lazy so hundreds of rows stay instant.
+- **Branch-name inputs turn spaces into dashes as you type (both designs + native app)** — ⌘K's
+  New-worktree frame and the Create-worktree dialog's Branch name field rewrite live (space→dash,
+  leading whitespace dropped, pasted runs collapsed, caret preserved); rename and all other
+  inputs keep their spaces.
 - **New worktree sessions: a per-scope template names the sessions every worktree starts with
   (designs + native app)** — Settings gains an ordered, drag-reorderable list of kind+name entries
   (first one opens) with a live sidebar-subtree preview; a workspace's list replaces global outright,

@@ -29,6 +29,14 @@ func fuzzyScore(_ query: String, _ text: String) -> Double? {
     return score - Double(first) * 0.5
 }
 
+/// Branch names can't contain spaces — inputs that name a new branch turn each
+/// space into a dash as you type (working.html's `dashSpaces`: leading whitespace
+/// dropped, runs collapsed).
+func dashSpaces(_ s: String) -> String {
+    String(s.drop(while: \.isWhitespace))
+        .replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
+}
+
 // MARK: - Model
 
 enum PaletteIcon {
@@ -58,6 +66,8 @@ struct PaletteFrame {
     var mode: Mode = .list
     /// A pre-filled query for input frames (rename seeds the current name, selected).
     var seed: String? = nil
+    /// Input frames that name a new branch rewrite spaces to dashes as you type.
+    var dashSpaces = false
     var build: (String) -> [PaletteItem]
 }
 
@@ -674,7 +684,7 @@ struct PaletteFrame {
         if let ws = workspace { loadBranches(for: ws) }
         let shown = Set(workspace?.branches.map(\.name) ?? [])
         return PaletteFrame(crumb: "New worktree", placeholder: "Search branches to check out…",
-                            mode: .input) { [self] q in
+                            mode: .input, dashSpaces: true) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace else { return [] }
             let all = branchCache[ws.id] ?? []
@@ -689,18 +699,14 @@ struct PaletteFrame {
                     PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
                                 ctx: b.isRemote ? (b.remote ?? "origin") : "local",
                                 enter: { self.runAndClose {
-                                    if let err = self.store.createWorktree(in: ws, existingBranch: b.name) {
-                                        self.store.presentGitError("Couldn't create worktree", details: err)
-                                    }
+                                    self.store.createWorktree(in: ws, existingBranch: b.name)
                                 } })
                 }
             // Fallback: the typed query isn't an existing branch → offer cutting a fresh one.
             if !all.contains(where: { $0.name == v }) {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.plus), label: "New branch “\(v)”",
                             enter: { self.runAndClose {
-                                if let err = self.store.createWorktree(in: ws, newBranch: v, base: nil) {
-                                    self.store.presentGitError("Couldn't create worktree", details: err)
-                                }
+                                self.store.createWorktree(in: ws, newBranch: v, base: nil)
                             } }))
             }
             return items
@@ -810,7 +816,9 @@ struct PaletteOverlay: View {
                         }
                     }
                 }
-                TextField(model.frame.placeholder, text: $model.query)
+                TextField(model.frame.placeholder, text: Binding(
+                    get: { model.query },
+                    set: { model.query = model.frame.dashSpaces ? dashSpaces($0) : $0 }))
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.repoName)

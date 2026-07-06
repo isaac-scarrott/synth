@@ -92,6 +92,11 @@ struct InAppNotif: Identifiable {
     /// Only the exit-close "done" toast may outlive its session in `notifOrder`; it always
     /// self-dismisses. Every other toast still drops the moment its session vanishes.
     let outlivesSession: Bool
+    /// System toasts (no session behind them — e.g. a failed background worktree op)
+    /// carry their own verb line and glyph; session toasts leave these nil and derive
+    /// both from the session. A system toast persists until clicked.
+    var message: String? = nil
+    var iconPath: String? = nil
 }
 
 /// Where a notification is surfaced. `nil` at a call site means "the real rule" — branch on
@@ -491,6 +496,24 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// Drop a session's toast (opening it, or a work/run/idle transition off it).
     func clearNotif(_ id: UUID) { notifs.removeAll { $0.id == id } }
 
+    /// A background worktree op failed after its row already changed — raise a persistent
+    /// system toast (no session behind it; it stays until clicked, never self-dismisses).
+    /// Unfocused, Notification Center is alerted too, and the in-app card still waits so
+    /// the failure is there when focus returns. The full git message goes to the log —
+    /// the card is one line.
+    func raiseWorktreeError(_ verb: String, branch: String, workspace: String, details: String) {
+        NSLog("Synth: %@ (%@ · %@): %@", verb, branch, workspace, details)
+        notifSeq += 1
+        notifs.append(InAppNotif(id: UUID(), kind: .error, seq: notifSeq,
+                                 sessionKind: .terminal, title: "\(branch) · \(workspace)",
+                                 colorIndex: nil, outlivesSession: true,
+                                 message: verb, iconPath: Phosphor.branch))
+        if !NSApp.isActive {
+            NotificationService.shared.postSystemError(title: verb,
+                                                       body: "\(branch) · \(workspace)\n\(details)")
+        }
+    }
+
     /// Active toasts, most-urgent first: errors before needs-input before done, then newest
     /// within a kind (working.html `notifOrder`). Drops any whose session vanished (except
     /// the self-dismissing exit-close done toast) or is now the open one.
@@ -506,7 +529,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var topNotif: InAppNotif? { notifOrder.first }
 
     func jumpToTopNotif() {
-        if let n = topNotif, let s = session(n.id) { jump(to: s) }
+        guard let n = topNotif else { return }
+        // A system toast has nowhere to jump — ⌘↩ acknowledges (dismisses) it instead.
+        if let s = session(n.id) { jump(to: s) } else { clearNotif(n.id) }
     }
 
     // MARK: Lookups
@@ -664,7 +689,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     private func defaultBranch() -> Branch? {
         if let open = openSession, let br = branch(of: open) { return br }
-        return workspaces.first?.branches.first
+        return workspaces.first?.branches.first { !$0.isPending }
     }
 
     @discardableResult
@@ -700,7 +725,8 @@ enum ThemePref: String, CaseIterable, Identifiable {
     @discardableResult
     private func addSession(kind: SessionKind, title: String, status: SessionStatus,
                             in branch: Branch?, ownedBy owner: Session? = nil) -> Session? {
-        guard let br = branch ?? defaultBranch() else { return nil }
+        // A pending branch has no checkout to run in yet — sessions wait for the worktree.
+        guard let br = branch ?? defaultBranch(), !br.isPending else { return nil }
         let session = Session(kind: kind, title: title, status: status)
         br.sessions.append(session)
         if let owner { adopt(session, by: owner) }
@@ -794,6 +820,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// (GhosttySurfaceView spawns on window attach), then returns to the browser.
     @discardableResult
     func spawnClaude(in branch: Branch) -> Session? {
+        guard !branch.isPending else { return nil }
         let session = Session(kind: .claudeCode, title: "Claude Code", status: .working)
         branch.sessions.append(session)
         branch.lastActivity = "now"
@@ -814,47 +841,58 @@ enum ThemePref: String, CaseIterable, Identifiable {
         beginAddWorkspace(url: url)
     }
 
-    /// Discover branches + existing worktrees, then open the multi-select picker.
-    /// A non-repo folder skips the picker (nothing to pick).
+    /// Discover branches + existing worktrees (off the main thread — `for-each-ref` on a
+    /// large/cold repo can take a beat), then open the multi-select picker. A non-repo
+    /// folder skips the picker (nothing to pick).
     func beginAddWorkspace(url: URL) {
-        let branches = GitService.branches(at: url)
-        guard !branches.isEmpty else {
-            finishAddWorkspace(url: url, branches: [])
-            return
+        Task { [weak self] in
+            guard let self else { return }
+            let (branches, worktreeByBranch) = await runGit(repo: url) {
+                () -> ([GitService.BranchInfo], [String: URL]) in
+                let branches = GitService.branches(at: url)
+                guard !branches.isEmpty else { return ([], [:]) }
+                return (branches, Dictionary(
+                    GitService.worktrees(at: url).compactMap { wt in wt.branch.map { ($0, wt.path) } },
+                    uniquingKeysWith: { first, _ in first }
+                ))
+            }
+            guard !branches.isEmpty else {
+                finishAddWorkspace(url: url, branches: [])
+                return
+            }
+            pendingWorkspace = PendingWorkspace(url: url, candidates: branches.map {
+                BranchCandidate(name: $0.name,
+                                age: GitService.compactAge($0.lastCommitUnix),
+                                existingWorktree: worktreeByBranch[$0.name])
+            })
         }
-        let worktreeByBranch = Dictionary(
-            GitService.worktrees(at: url).compactMap { wt in wt.branch.map { ($0, wt.path) } },
-            uniquingKeysWith: { first, _ in first }
-        )
-        pendingWorkspace = PendingWorkspace(url: url, candidates: branches.map {
-            BranchCandidate(name: $0.name,
-                            age: GitService.compactAge($0.lastCommitUnix),
-                            existingWorktree: worktreeByBranch[$0.name])
-        })
     }
 
-    /// Materialise the chosen branches — reusing existing worktrees, creating the
-    /// missing ones — and add the workspace.
+    /// Materialise the chosen branches: existing worktrees become ready rows at once;
+    /// the rest appear pending and check out in the background (features 2026-07-06) —
+    /// the dialog never blocks the app on git.
     func confirmAddWorkspace(_ pending: PendingWorkspace, selected: Set<UUID>) {
         pendingWorkspace = nil
         var rows: [Branch] = []
-        var failures: [String] = []
+        var creating: [Branch] = []
         for c in pending.candidates where selected.contains(c.id) {
-            let path: URL
             if let existing = c.existingWorktree {
-                path = existing
+                rows.append(Branch(name: c.name, worktreeURL: existing, lastActivity: c.age))
             } else {
-                path = GitService.plannedWorktreePath(repo: pending.url, branch: c.name)
-                if let err = GitService.addWorktree(repo: pending.url, path: path, branch: c.name) {
-                    failures.append("\(c.name): \(err)")
-                    continue
-                }
+                let path = GitService.plannedWorktreePath(repo: pending.url, branch: c.name)
+                let row = Branch(name: c.name, worktreeURL: path, lastActivity: c.age, isPending: true)
+                rows.append(row)
+                creating.append(row)
             }
-            rows.append(Branch(name: c.name, worktreeURL: path, lastActivity: c.age))
         }
         finishAddWorkspace(url: pending.url, branches: rows)
-        if !failures.isEmpty {
-            presentGitError("Some worktrees couldn't be created", details: failures.joined(separator: "\n"))
+        guard let ws = workspaces.last else { return }
+        for row in creating {
+            let repo = pending.url, path = row.worktreeURL, name = row.name
+            materialize(row, in: ws) {
+                GitService.addWorktree(repo: repo, path: path, branch: name).map { .failed($0) }
+                    ?? .ready(path)
+            }
         }
     }
 
@@ -870,36 +908,111 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     // MARK: Worktrees (ADR-0007: every branch row is a real folder)
 
-    /// Check an existing branch out into a worktree (reusing one if the branch
-    /// already has it) and add the row. Returns git's error message, or nil.
-    @discardableResult
-    func createWorktree(in ws: Workspace, existingBranch: String) -> String? {
-        if let wt = GitService.worktrees(at: ws.url).first(where: { $0.branch == existingBranch }) {
-            addBranchRow(in: ws, name: existingBranch, worktreeURL: wt.path)
-            return nil
-        }
-        let path = GitService.plannedWorktreePath(repo: ws.url, branch: existingBranch)
-        if let err = GitService.addWorktree(repo: ws.url, path: path, branch: existingBranch) { return err }
-        addBranchRow(in: ws, name: existingBranch, worktreeURL: path)
-        return nil
+    /// How a background create resolved: the row's real checkout, or git's message.
+    private enum WorktreeOutcome: Sendable {
+        case ready(URL)
+        case failed(String)
     }
 
-    /// Cut a new branch off `base` (repo HEAD when nil) into a fresh worktree.
-    @discardableResult
-    func createWorktree(in ws: Workspace, newBranch: String, base: String?) -> String? {
-        let path = GitService.plannedWorktreePath(repo: ws.url, branch: newBranch)
-        if let err = GitService.addWorktree(repo: ws.url, path: path, newBranch: newBranch, base: base) {
-            return err
+    /// Tail of each repo's background git chain. Worktree mutations on one repo are
+    /// serialized — concurrent `git worktree` calls race the repo's locks — while
+    /// different repos run independently. Ops run detached so a full checkout or a
+    /// multi-GB delete never touches the main thread.
+    @ObservationIgnored private var gitTails: [URL: Task<Void, Never>] = [:]
+
+    /// Run `op` off the main thread, behind any in-flight op on `repo`, returning its
+    /// result on the main actor.
+    private func runGit<T: Sendable>(repo: URL, _ op: @escaping @Sendable () -> T) async -> T {
+        let prev = gitTails[repo]
+        let task = Task<T, Never> {
+            await prev?.value
+            return await Task.detached(priority: .userInitiated) { op() }.value
         }
-        addBranchRow(in: ws, name: newBranch, worktreeURL: path)
-        return nil
+        gitTails[repo] = Task { _ = await task.value }
+        return await task.value
     }
 
-    private func addBranchRow(in ws: Workspace, name: String, worktreeURL: URL) {
-        let branch = Branch(name: name, worktreeURL: worktreeURL, lastActivity: "now")
+    /// Run a background create for an already-visible pending row: success activates the
+    /// row in place; failure drops it and raises the persistent error toast.
+    private func materialize(_ row: Branch, in ws: Workspace,
+                             _ op: @escaping @Sendable () -> WorktreeOutcome) {
+        let wsName = ws.name
+        Task { [weak self] in
+            guard let self else { return }
+            switch await runGit(repo: ws.url, op) {
+            case .ready(let url):
+                row.worktreeURL = url
+                row.isPending = false
+                row.lastActivity = "now"
+                saveNow()
+            case .failed(let err):
+                removeBranch(row, deleteWorktree: false)
+                raiseWorktreeError("Couldn't create worktree", branch: row.name,
+                                   workspace: wsName, details: err)
+            }
+        }
+    }
+
+    /// Check an existing branch out into a worktree (reusing one if the branch already
+    /// has it). The row appears pending immediately; the checkout lands in the background.
+    func createWorktree(in ws: Workspace, existingBranch: String) {
+        let repo = ws.url
+        let planned = GitService.plannedWorktreePath(repo: repo, branch: existingBranch)
+        let row = addBranchRow(in: ws, name: existingBranch, worktreeURL: planned, pending: true)
+        materialize(row, in: ws) {
+            if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == existingBranch }) {
+                return .ready(wt.path)
+            }
+            return GitService.addWorktree(repo: repo, path: planned, branch: existingBranch)
+                .map { .failed($0) } ?? .ready(planned)
+        }
+    }
+
+    /// Cut a new branch off `base` (repo HEAD when nil) into a fresh worktree — same
+    /// pending-row shape as the existing-branch path.
+    func createWorktree(in ws: Workspace, newBranch: String, base: String?) {
+        let repo = ws.url
+        let planned = GitService.plannedWorktreePath(repo: repo, branch: newBranch)
+        let row = addBranchRow(in: ws, name: newBranch, worktreeURL: planned, pending: true)
+        materialize(row, in: ws) {
+            GitService.addWorktree(repo: repo, path: planned, newBranch: newBranch, base: base)
+                .map { .failed($0) } ?? .ready(planned)
+        }
+    }
+
+    /// The fast delete path (features 2026-07-06): the row is already gone; the folder is
+    /// renamed aside + pruned (O(1)) behind any in-flight op on the repo, and the real
+    /// delete runs afterwards where nobody waits on it. A failed rename falls back to the
+    /// blocking `git worktree remove` — still off the main thread.
+    func deleteWorktreeFolder(repo: URL, path: URL, branchName: String, workspaceName: String) {
+        Task { [weak self] in
+            guard let self else { return }
+            let err = await runGit(repo: repo) { () -> String? in
+                guard FileManager.default.fileExists(atPath: path.path) else {
+                    GitService.pruneWorktrees(at: repo)   // gone already — just tidy the entry
+                    return nil
+                }
+                if let trash = GitService.detachWorktree(repo: repo, path: path) {
+                    Task.detached(priority: .background) { try? FileManager.default.removeItem(at: trash) }
+                    return nil
+                }
+                return GitService.removeWorktree(repo: repo, path: path)
+            }
+            if let err {
+                raiseWorktreeError("Couldn't delete worktree", branch: branchName,
+                                   workspace: workspaceName, details: err)
+            }
+        }
+    }
+
+    @discardableResult
+    private func addBranchRow(in ws: Workspace, name: String, worktreeURL: URL, pending: Bool = false) -> Branch {
+        let branch = Branch(name: name, worktreeURL: worktreeURL,
+                            lastActivity: pending ? "" : "now", isPending: pending)
         ws.branches.append(branch)
         expanded.insert(ws.id)
         navCursor = branch.id
+        return branch
     }
 
     // MARK: Persistence (ADR-0010)
@@ -911,7 +1024,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
             workspaces: workspaces.map { ws in
                 PersistedWorkspace(
                     id: ws.id, name: ws.name, url: ws.url, colorIndex: ws.colorIndex,
-                    branches: ws.branches.map { br in
+                    // Pending rows are still being created — a quit mid-create must not
+                    // restore a row whose checkout may never have landed.
+                    branches: ws.branches.filter { !$0.isPending }.map { br in
                         PersistedBranch(
                             id: br.id, name: br.name, worktreeURL: br.worktreeURL,
                             lastActivity: br.lastActivity,
@@ -1026,14 +1141,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
     func saveNow() {
         lastSavedBytes = PersistenceStore.save(snapshot(), lastBytes: lastSavedBytes)
         syncAgentBridge()
-    }
-
-    func presentGitError(_ message: String, details: String) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.informativeText = details
-        alert.alertStyle = .warning
-        alert.runModal()
     }
 
     #if DEBUG

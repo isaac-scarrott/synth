@@ -267,10 +267,12 @@ extension AppStore {
         expanded.remove(workspace.id)
     }
 
-    /// Remove a worktree row. `deleteWorktree` deletes the checkout on disk via
-    /// `git worktree remove`; otherwise the folder is left in place and only the
-    /// sidebar entry drops (re-addable later). The primary checkout (repo root) is
-    /// never deleted from disk — git won't remove its own working tree.
+    /// Remove a worktree row. The row vanishes instantly either way; `deleteWorktree`
+    /// then deletes the checkout on disk in the background (rename-aside + prune, so
+    /// even a multi-GB tree never stalls the app — features 2026-07-06). Otherwise the
+    /// folder is left in place and only the sidebar entry drops (re-addable later).
+    /// The primary checkout (repo root) is never deleted from disk — git won't remove
+    /// its own working tree.
     func removeBranch(_ branch: Branch, deleteWorktree: Bool) {
         // Cursor falls up the hierarchy to the workspace head (working.html removeUnit fallback).
         if cursorInside(.branch(branch)) { navCursor = workspace(of: branch)?.id }
@@ -279,12 +281,14 @@ extension AppStore {
             BrowserManager.shared.terminate(session.id)
             if openSessionID == session.id { openSessionID = nil }
         }
-        if deleteWorktree, let ws = workspaces.first(where: { $0.branches.contains { $0.id == branch.id } }),
-           branch.worktreeURL != ws.url {
-            _ = GitService.removeWorktree(repo: ws.url, path: branch.worktreeURL)
-        }
+        let ws = workspaces.first { $0.branches.contains { $0.id == branch.id } }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)
+        if deleteWorktree, let ws, branch.worktreeURL != ws.url {
+            // Serialized per repo, so deleting a still-pending row queues behind its create.
+            deleteWorktreeFolder(repo: ws.url, path: branch.worktreeURL,
+                                 branchName: branch.name, workspaceName: ws.name)
+        }
     }
 
     // MARK: Rename

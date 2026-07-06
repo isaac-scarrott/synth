@@ -103,8 +103,8 @@ func notifVerb(_ session: SessionKind, _ kind: NotifKind) -> String {
     case (.claudeCode, .input): return "Claude needs your input"
     case (.claudeCode, .done):  return "Claude finished"
     case (.terminal, .input), (.browser, .input): return "waiting for input"
-    // A browser session has no error status of its own (its liveness is just "running");
-    // it only reaches here defensively, phrased like any non-Claude process.
+    // A browser session never changes status (it stays .idle for life, no indicator),
+    // so its cases exist for exhaustiveness only, phrased like any non-Claude process.
     case (.terminal, .error), (.browser, .error): return "exited with an error"
     case (.terminal, .done), (.browser, .done):   return "finished"
     }

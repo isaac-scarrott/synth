@@ -11,35 +11,41 @@ import AppKit
 /// Owns the live engines keyed by session id, *outside* the SwiftUI view tree — the
 /// TerminalManager pattern: a session's page survives navigating away and back, and
 /// only derived facts (address, page title, popups) reach the store via the bus.
-@MainActor final class BrowserManager {
+/// A browser session carries no liveness: the engine's existence never touches
+/// `Session.status`, so its sidebar row shows no indicator.
+@MainActor @Observable final class BrowserManager {
     static let shared = BrowserManager()
 
-    weak var bus: EventBus?
-    private var controllers: [UUID: BrowserSessionController] = [:]
+    @ObservationIgnored weak var bus: EventBus?
+    @ObservationIgnored private var controllers: [UUID: BrowserSessionController] = [:]
 
     /// Sessions already terminated. A pane re-render mid-delete must not lazily
     /// resurrect an engine for a dead row — that orphans a CDP target and a profile
     /// dir until app quit (session ids are never reused, so tombstones are safe).
-    private var dead: Set<UUID> = []
+    @ObservationIgnored private var dead: Set<UUID> = []
 
     /// Sessions whose engine is being created right now. Engine creation pumps the
     /// main runloop (CEF's async browser bootstrap), which can run a SwiftUI render
     /// pass that re-enters this method for the same session — without the guard that
     /// second entry builds a duplicate engine (two CDP targets claiming one session,
     /// one of them leaked).
-    private var creating: Set<UUID> = []
+    @ObservationIgnored private var creating: Set<UUID> = []
+
+    /// Bumped when an engine finishes bootstrapping. A pane that rendered nil during
+    /// a reentrant render (the `creating` guard) observes this and re-renders now that
+    /// the controller is cached — the nudge the old `.statusChanged(.running)` post
+    /// provided before browser rows dropped status entirely.
+    private var generation = 0
 
     func controller(for session: Session) -> BrowserSessionController? {
+        _ = generation   // subscribe the calling render to engine-creation completions
         guard !dead.contains(session.id), !creating.contains(session.id) else { return nil }
         if let existing = controllers[session.id] { return existing }
         creating.insert(session.id)
         defer { creating.remove(session.id) }
         let ctrl = BrowserSessionController(session: session, bus: bus)
         controllers[session.id] = ctrl
-        // The engine is the session's live process: running while it exists (a restored
-        // row sat idle until this first open). The event also re-renders the pane that
-        // saw nil during a reentrant render, now that the controller is cached.
-        bus?.post(.statusChanged(session.id, .running))
+        generation += 1
         return ctrl
     }
 

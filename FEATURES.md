@@ -163,6 +163,10 @@ disclosure to dive deeper.
   session settling to idle gets the same self-dismissing green-check done toast as terminals and
   browsers (was ambient-only: unread bullet + row pulse), matching the "Claude finished" banner the
   unfocused Notification Center path already posted.
+- **Browser rows carry no status indicator (both designs + native app)** — the never-changing green
+  "running" dot is gone: browser sessions stay status-less for life (empty indicator slot, no done
+  toast, no roll-up contribution); the engine-mount status post is replaced by an observable
+  generation counter that keeps the reentrant-render nudge.
 - **`d` deletes through the ⌘K confirm frame (both designs + native app)** — the `d` shortcut now
   opens the palette's delete-confirm frame (one confirm surface, shared with the kebab and palette
   flows); the inline row confirm popover is unreachable legacy.

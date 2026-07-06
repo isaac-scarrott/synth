@@ -14,10 +14,13 @@ enum TerminalTheme {
         let ansi: [String]   // 16 entries
     }
 
+    // Light-mode legibility: every colour holds ≥4.5:1 contrast on the paper bg, and the
+    // bright set (8–15) is *darker* than normal — TUIs lean on bright for emphasis, and on
+    // a light background "brighter" must mean deeper ink, not lighter.
     private static let light = Palette(
         bg: "f4f2ec", fg: "33333a", cursor: "33333a", selection: "d8e4f5",
-        ansi: ["33333a", "d1453b", "2f9e51", "a97e14", "2b6fd6", "9a4fc4", "1f8f98", "8a8a90",
-               "9a9aa0", "e0564c", "37b25f", "c0902a", "3f82e6", "ab63d2", "26a7b0", "26262b"])
+        ansi: ["33333a", "c03a30", "1e7f42", "8a660c", "2361c4", "8b40b5", "16717a", "6e6e78",
+               "6b6b74", "a52e25", "176b37", "75560a", "1c4fa8", "76349c", "115e66", "26262b"])
 
     private static let dark = Palette(
         bg: "131315", fg: "e3e3e7", cursor: "e3e3e7", selection: "333a48",

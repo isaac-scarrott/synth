@@ -29,13 +29,13 @@
     --term-bg: #1b1b1e;      /* terminal / code surfaces */
     --tui-bg: #f4f2ec;       /* terminal surface — light "paper" */
     --tui-fg: #33333a;       /* terminal default text */
-    --tui-dim: #9a9aa0;      /* terminal dim / comments */
-    --tui-red: #d1453b;      /* terminal red — errors */
-    --tui-green: #2f9e51;    /* terminal green — success */
-    --tui-yellow: #a97e14;   /* terminal yellow — warnings */
-    --tui-blue: #2b6fd6;     /* terminal blue — commands / info */
-    --tui-magenta: #9a4fc4;  /* terminal magenta */
-    --tui-cyan: #1f8f98;     /* terminal cyan */
+    --tui-dim: #6b6b74;      /* terminal dim / comments */
+    --tui-red: #c03a30;      /* terminal red — errors */
+    --tui-green: #1e7f42;    /* terminal green — success */
+    --tui-yellow: #8a660c;   /* terminal yellow — warnings */
+    --tui-blue: #2361c4;     /* terminal blue — commands / info */
+    --tui-magenta: #8b40b5;  /* terminal magenta */
+    --tui-cyan: #16717a;     /* terminal cyan */
     --tui-cursor: #33333a;   /* terminal cursor */
     --tui-sel: #d8e4f5;      /* terminal selection */
     --tui-hair: rgba(0,0,0,0.13);   /* terminal card inset hairline */
@@ -780,7 +780,7 @@
      error rises as a quiet glass toast — the sidebar indicator escalated: same glyphs, same
      state colours, plus the row's identity. 'done' (a live session settling to idle
      off-screen) raises a transient green-check toast that dismisses itself — Claude and
-     terminal/browser alike. 2+ collapse
+     terminal alike (browsers carry no state, so they never transition). 2+ collapse
      into a deck (most-urgent in front) that fans on hover; ⌘↩ jumps to the front card, a
      click to any. Driven by setSessionState → notifyOnTransition. When Synth is unfocused
      the native app raises these through Notification Center instead — this is the
@@ -1632,12 +1632,12 @@
                   <span class="session__name">migrate</span>
                   <span class="ind"></span>
                 </a>
-                <!-- browser — running -->
+                <!-- browser — no liveness of its own, so no indicator -->
                 <a class="row session" data-row data-session data-type="browser">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg></span>
                   <span class="session__name">localhost:8733</span>
-                  <span class="ind"><span class="sdot sdot--run"></span></span>
+                  <span class="ind"></span>
                 </a>
                 <!-- simulator — running -->
                 <a class="row session" data-row data-session data-type="simulator">
@@ -1865,7 +1865,7 @@
   // quiet glass toast, bottom-left. Several collapse into a deck — most-urgent in front — that
   // fans out on hover; ⌘↩ jumps to the front card, a click to any. 'done' (a live session
   // settling to idle off-screen) raises a transient toast that dismisses itself — it asks
-  // for nothing, so it never persists; Claude and terminal/browser alike.
+  // for nothing, so it never persists; Claude and terminal alike (browsers carry no state).
   // When Synth is unfocused the native app raises these through Notification Center instead;
   // this is the focused-window counterpart.
   const notifsEl = document.getElementById('notifs');
@@ -2017,7 +2017,7 @@
     if (!e.altKey || e.code !== 'KeyN') return;
     const a = document.activeElement;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
-    const bg = [...nav.querySelectorAll('.session')].filter((s) => s !== openEl && s.dataset.type);
+    const bg = [...nav.querySelectorAll('.session')].filter((s) => s !== openEl && s.dataset.type && s.dataset.type !== 'browser');
     if (!bg.length) return;
     e.preventDefault();
     setSessionState(bg[notifDemo % bg.length], ['input', 'error', 'input', 'idle'][notifDemo % 4]);
@@ -2935,7 +2935,7 @@
   const SESSION_KINDS = {
     terminal: { type: 'terminal', name: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>`,                  ind: 'idle' },
     claude:   { type: 'ai',       name: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_AI}</span>`,      ind: 'work' },
-    browser:  { type: 'browser',  name: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>`,                   ind: 'run' },
+    browser:  { type: 'browser',  name: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>`,                   ind: 'idle' },
   };
   function addSession(branchRow, kind) {
     const spec = SESSION_KINDS[kind];

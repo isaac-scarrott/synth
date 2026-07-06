@@ -614,13 +614,14 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     /// A browser session (ADR-0011 stage one): titled "Browser" until it navigates, then
-    /// named by its page (host+path). `url` non-nil pre-navigates — the popup path. Running
-    /// from birth: opening it mounts the engine immediately.
+    /// named by its page (host+path). `url` non-nil pre-navigates — the popup path.
+    /// Browsers carry no liveness of their own, so the row never shows an indicator
+    /// and never raises status notifications — it stays .idle for life.
     @discardableResult
     func newBrowser(in branch: Branch? = nil, at url: URL? = nil) -> Session? {
         let session = addSession(kind: .browser,
                                  title: url?.browserHostPath ?? "Browser",
-                                 status: .running, in: branch)
+                                 status: .idle, in: branch)
         session?.browserURL = url
         return session
     }

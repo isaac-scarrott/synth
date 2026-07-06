@@ -13,6 +13,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { chromium } from "playwright-core";
@@ -201,6 +202,18 @@ async function sessionPages(inst) {
   return out;
 }
 
+/** sessionPages, retried once on a fresh connection when `want` finds no match —
+ *  CEF's CDP endpoint emits no attach events for targets created after a client
+ *  connected, so a page opened since then is invisible until we reconnect. */
+async function sessionPagesSeeking(inst, want) {
+  let pages = await sessionPages(inst);
+  if (!pages.some(want)) {
+    if (cdp) { try { await cdp.browser.close(); } catch { /* already gone */ } cdp = null; }
+    pages = await sessionPages(inst);
+  }
+  return pages;
+}
+
 let focusedSessionId = null;
 
 /** The page subsequent tools act on: the focused session's target, defaulting to
@@ -208,7 +221,8 @@ let focusedSessionId = null;
  *  A vanished focus is an ERROR, not a silent retarget — acting on whatever page
  *  happens to be newest is how an agent wrecks the wrong session. */
 async function focusedPage(inst) {
-  const pages = await sessionPages(inst);
+  const pages = await sessionPagesSeeking(inst,
+    focusedSessionId ? (p) => p.sessionId === focusedSessionId : (p) => p.sessionId);
   const mapped = pages.filter((p) => p.sessionId);
   if (mapped.length === 0) {
     throw new Error("no Synth browser sessions are open — create one with browser_create");
@@ -230,10 +244,17 @@ async function focusedPage(inst) {
 // ---------------------------------------------------------------------------
 // Helpers.
 
-/** working.html's browserNorm: schemeless input gets https://, loopback gets http://. */
+/** working.html's browserNorm plus files: schemeless input gets https://, loopback
+ *  gets http://, and local paths (absolute, ~, relative-if-it-exists) get file://. */
 function normalizeURL(text) {
   const t = text.trim();
   if (t.includes("://")) return t;
+  const asPath = t.startsWith("~/") ? path.join(os.homedir(), t.slice(2))
+    : path.resolve(projectDir, t);
+  if (t.startsWith("/") || t.startsWith("~/") || t.startsWith("./") ||
+      t.startsWith("../") || fs.existsSync(asPath)) {
+    return String(pathToFileURL(asPath));
+  }
   if (/^(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(t)) return `http://${t}`;
   return `https://${t}`;
 }
@@ -300,7 +321,8 @@ tool("browser_create",
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       try {
-        const pages = await sessionPages(requireInstance());
+        const pages = await sessionPagesSeeking(
+          requireInstance(), (p) => p.sessionId === res.sessionId);
         if (pages.some((p) => p.sessionId === res.sessionId)) {
           return text(JSON.stringify({ sessionId: res.sessionId }));
         }
@@ -317,7 +339,8 @@ tool("browser_focus",
   "Select which browser session subsequent tools act on.",
   { sessionId: z.string().describe("a sessionId from browser_list") },
   async ({ sessionId }) => {
-    const pages = await sessionPages(requireInstance());
+    const pages = await sessionPagesSeeking(
+      requireInstance(), (p) => p.sessionId === sessionId);
     if (!pages.some((p) => p.sessionId === sessionId)) {
       throw new Error(`no live browser session ${sessionId} — see browser_list`);
     }

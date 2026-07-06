@@ -73,7 +73,8 @@ extension URL {
     /// working.html's browserNorm, shared by the omnibox and the control-socket
     /// browser.create verb: a schemeless entry gets https:// — except loopback hosts,
     /// which get http:// (the primary job is a branch's dev server, and
-    /// `localhost:8733` over TLS would just fail). nil when the text isn't navigable.
+    /// `localhost:8733` over TLS would just fail). file:// URLs pass through — they
+    /// have no host to require. nil when the text isn't navigable.
     static func fromBrowserInput(_ text: String) -> URL? {
         let t = text.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return nil }
@@ -85,7 +86,7 @@ extension URL {
         } else {
             norm = "https://" + t
         }
-        guard let url = URL(string: norm), url.host != nil else { return nil }
+        guard let url = URL(string: norm), url.host != nil || url.isFileURL else { return nil }
         return url
     }
 

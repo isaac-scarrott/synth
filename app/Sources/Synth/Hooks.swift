@@ -256,6 +256,12 @@ final class HookServer: @unchecked Sendable {
     /// (alive, not ours to signal). ESRCH means it's gone and its leftovers are reapable.
     private static func isAlive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
 
+    /// A synth-injected `$ZDOTDIR` from ANY instance (this one or an ancestor's), never the
+    /// user's own — these are per-pid temp dirs that die with their instance.
+    private static func isInjectedZDotDir(_ path: String) -> Bool {
+        (path as NSString).lastPathComponent.hasPrefix("synth-zdotdir-")
+    }
+
     /// Overlay the hook correlation/callback env + shim PATH onto a base environment.
     static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String) -> [String: String] {
         var env = base
@@ -275,7 +281,15 @@ final class HookServer: @unchecked Sendable {
             env["SYNTH_SESSION_ID"] = sessionID.uuidString
             env["SYNTH_SOCKET_PATH"] = socketPath
             env["SYNTH_HOOK_BIN"] = hookBin
-            env["SYNTH_USER_ZDOTDIR"] = base["ZDOTDIR"] ?? ""
+            // Synth may itself be running inside another Synth's session (dev.sh in a claude
+            // turn), so the inherited ZDOTDIR can be the *outer* instance's injected dir —
+            // recording that as the user's would chase a dir that vanishes when the outer
+            // instance dies (reapStale), silently skipping ~/.zshrc: a bare default zsh that
+            // reads as "my config is gone". The outer instance already captured the real dir
+            // in SYNTH_USER_ZDOTDIR, so take the first inherited value that isn't injected.
+            env["SYNTH_USER_ZDOTDIR"] = [base["ZDOTDIR"], base["SYNTH_USER_ZDOTDIR"]]
+                .compactMap { $0 }
+                .first { !$0.isEmpty && !isInjectedZDotDir($0) } ?? ""
             env["ZDOTDIR"] = zdotDir
         }
         // Claude interception additionally needs a real `claude` to exec and the shim PATH

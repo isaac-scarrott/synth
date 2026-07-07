@@ -227,31 +227,20 @@ disclosure to dive deeper.
 
 ## [2026-07-07](docs/features/2026-07-07.md)
 
-- **⌘K rationalised — one vocabulary, five laws** — every palette label/order/affordance now falls
-  out of fixed rules: navigate by *branch* and say *worktree* only for on-disk create/delete
-  (Create worktree… / Delete worktree), Add workspace… matches the dialog, Remove≠Delete stays
-  deliberate (ADR-0007) and every confirm states its consequence; ellipsis iff you must type or
-  open Settings; bare verbs under a naming crumb (no "Rename synth…"); order create→navigate→
-  modify→destroy-last. Nav category frames become pure lists; the redundant bulk delete-pickers
-  (and dead `deletePicker`) are gone. Both designs; subset invariant preserved.
-- **⌘K drops the ellipsis (refines the entry above)** — action labels become plain verbs
-  (`Rename`, `Create worktree`, `Settings`); the `…` menu-bar convention is dead weight in a
-  keyboard palette where Enter reveals the next frame instantly.
-- **⌘K hardened by a fresh-eyes focus group (11 personas)** — ranking now lets an exact/name match
-  beat loose-subsequence + actions (no destructive on the Enter line), fresh open pre-selects nothing,
-  active Delete stays red in dark, the branch-remove fork defaults to the safe row, consequence copy
-  is a visible wrapping line, Esc pops one frame; plus a Recent (frecency) group, "New branch"
-  create wording, ⌘T new-terminal, and browser-ownership verbs inline in ⌘K. A11y ARIA/focus-trap
-  deferred. Both designs; invariant held.
-- **⌘K final polish (focus-group follow-ups)** — real focus trap + focus-restore (the copy is now
-  true), reversible Remove de-emphasised so red only ever means destruction, worktree-remove clarifies
-  the branch survives, new-branch create shows base + on-disk path in one quiet line, and the retired
-  popover menu (JS + `.menu` CSS, ~11 KB) is deleted. Both designs; invariant held.
-- **Native app: ⌘K session work ported** — the whole ⌘K rationalization + focus-group hardening now
-  runs in SwiftUI on the real store: New branch / Add workspace / bare verbs, Remove≠Delete colours,
-  name-beats-action ranking, fresh-open-highlights-nothing, wrapping consequence note, Esc-pops, Recent
-  frecency group, ⌘T in the sheet; dead popover-menu deleted (~500 lines net removed). Behavior verified
-  over the control socket; fidelity audit 13/14, 5 gaps fixed.
+- **Worktree creation switches optimistically; a slow checkout never yanks the pane (both designs + native app)** —
+  the content-pane switch now rides the create keystroke, not the async `git worktree add`: creating
+  a worktree shows a "Setting up worktree…" skeleton at once, and when the checkout lands it resolves
+  in place *only while the user is still parked there* (`openSetupBranchID`); if they've moved on the
+  ready worktree announces itself with the quiet unread bullet instead of stealing focus
+  (last-intent-wins). Empty templates settle onto the bare row; failures keep the existing error toast.
+- **Clicking a terminal link now opens it, routed by host (native app + both designs)** — the
+  libghostty `OPEN_URL` action was unhandled, so clicked links went nowhere. Now handled, with a
+  host-aware default: a loopback dev-server page (`localhost`/`127.0.0.1`/`0.0.0.0`/`[::1]`/
+  `*.localhost`) opens in Synth's own browser — owned by the clicking Claude session, one row
+  reused across clicks — so the agent can drive the exact page the human sees; every other web URL
+  and every non-web scheme (`mailto:`/`file://`/`vscode://`…) goes to the OS default browser, which
+  keeps the user's real auth and matches every macOS terminal. Browser toolbar gains an
+  open-in-default-browser icon button (the ⌘K action, surfaced) next to DevTools.
 - **In-app feedback (⌘⇧F) — one textbox that forks (both designs + native app)** — ⌘⇧F (also a ⌘K
   action + ⌘? row) opens one textbox; ⌘↵ sends, Esc dismisses, draft persists. Resolved once at
   launch by git identity: the author turns a gripe into a real `feedback/<slug>` worktree with a

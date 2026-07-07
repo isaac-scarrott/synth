@@ -161,6 +161,116 @@ private struct Checkbox: View {
     }
 }
 
+/// Kebab "Create worktree…": check an existing branch out into a worktree, or cut
+/// a new branch off a base — either way the result is a real folder that becomes a
+/// row. Enter submits, Esc/backdrop cancels.
+struct CreateWorktreeSheet: View {
+    @Environment(AppStore.self) private var store
+    let workspace: Workspace
+    let onClose: () -> Void
+
+    private enum Mode: String, CaseIterable {
+        case existing = "Existing branch"
+        case new = "New branch"
+    }
+
+    @State private var mode: Mode = .existing
+    @State private var available: [String] = []   // branches without a row yet
+    @State private var allBranches: [String] = []
+    @State private var existing = ""
+    @State private var base = ""
+    @State private var name = ""
+    @State private var submitted = false
+    @FocusState private var nameFocused: Bool
+
+    private var canCreate: Bool {
+        switch mode {
+        case .existing: return !existing.isEmpty
+        case .new:      return !name.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
+    var body: some View {
+        DialogFrame(title: "Create worktree") {
+            Picker("", selection: $mode) {
+                ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .labelsHidden().pickerStyle(.segmented)
+
+            switch mode {
+            case .existing:
+                Field(label: "Branch") {
+                    if available.isEmpty {
+                        Text("All branches are already shown")
+                            .font(.system(size: 11.5)).foregroundStyle(Theme.inkFaint)
+                    } else {
+                        Picker("", selection: $existing) {
+                            ForEach(available, id: \.self) { Text($0).tag($0) }
+                        }
+                        .labelsHidden().pickerStyle(.menu)
+                    }
+                }
+            case .new:
+                Field(label: "Base branch") {
+                    Picker("", selection: $base) {
+                        ForEach(allBranches, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden().pickerStyle(.menu)
+                }
+                Field(label: "Branch name") {
+                    TextField("feat/…", text: Binding(
+                        get: { name },
+                        set: { name = dashSpaces($0) }))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                        .focused($nameFocused)
+                        .onSubmit(submit)
+                }
+            }
+
+        } actions: {
+            Button("Cancel", action: onClose).keyboardShortcut(.cancelAction)
+            Button("Create", action: submit).keyboardShortcut(.defaultAction).disabled(!canCreate)
+        }
+        .onAppear {
+            // for-each-ref off the main thread — a large/cold repo can take a beat.
+            let repo = workspace.url
+            let shown = Set(workspace.branches.map(\.name))
+            Task {
+                let names = await Task.detached(priority: .userInitiated) {
+                    GitService.branches(at: repo).map(\.name)
+                }.value
+                allBranches = names
+                available = names.filter { !shown.contains($0) }
+                existing = available.first ?? ""
+                base = names.first ?? ""
+                if available.isEmpty { mode = .new }
+            }
+        }
+        .onChange(of: mode) { _, m in
+            if m == .new {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { nameFocused = true }
+            }
+        }
+    }
+
+    /// Creation errors surface later through the pending row's toast — the sheet's job
+    /// ends the moment the pending row is in the tree, so it just closes.
+    private func submit() {
+        guard !submitted, canCreate else { return }
+        submitted = true
+        switch mode {
+        case .existing:
+            store.createWorktree(in: workspace, existingBranch: existing)
+        case .new:
+            store.createWorktree(in: workspace,
+                                 newBranch: name.trimmingCharacters(in: .whitespaces),
+                                 base: base.isEmpty ? nil : base)
+        }
+        onClose()
+    }
+}
+
 /// One frictionless textbox (⌘⇧F). Send routes on `store.feedbackMode`: the author spawns a
 /// `feedback/<slug>` fix, everyone else gets a pre-filled email. Enter is a newline, ⌘↵ sends,
 /// Esc dismisses (handled centrally in the key monitor). The draft persists across reopens.
@@ -235,5 +345,16 @@ private struct DialogFrame<Content: View, Actions: View>: View {
         .padding(20)
         .frame(width: 340)
         .background(Theme.panel)
+    }
+}
+
+private struct Field<Content: View>: View {
+    let label: String
+    @ViewBuilder let content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.inkMuted)
+            content
+        }
     }
 }

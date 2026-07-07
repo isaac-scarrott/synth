@@ -34,6 +34,10 @@ enum SessionEvent: Sendable {
     /// window.open / target=_blank: one page per session, so a popup becomes a NEW
     /// browser session in the same branch, pre-navigated and selected.
     case browserPopupRequested(UUID, URL)
+    /// A link clicked in a terminal surface (libghostty OPEN_URL). The UUID is the clicking
+    /// session (nil for an app-scoped action → the on-screen session). Scheme + host route
+    /// it: loopback dev-server pages open in the in-app browser, everything else to the OS.
+    case openURLRequested(UUID?, URL)
 }
 
 /// The transient transport carrying derived facts to the single consumer (the store).
@@ -147,26 +151,14 @@ enum FeedbackMode {
     var expanded: Set<UUID> = []
     var navCursor: UUID?
     var openSessionID: UUID?
+    /// The still-materialising branch whose "setting up…" skeleton the content pane is
+    /// showing. Set the instant a worktree create is requested (the switch rides the
+    /// keystroke, not the async checkout) and cleared the moment the user opens anything
+    /// else — so a finished checkout resolves in place only while this still points at it,
+    /// and otherwise lands as a quiet unread row instead of yanking the viewport
+    /// (last-intent-wins). Never persisted; a pending row can't outlive a quit.
+    var openSetupBranchID: UUID?
     var sidebarCollapsed = false
-
-    /// Frecency for the cold palette's "Recent" group (working.html `visits`/`visitClock`).
-    /// A monotonic tick per open stamps last-use; in-memory only — muscle memory for this
-    /// run, deliberately not persisted.
-    var visits: [UUID: Int] = [:]
-    var visitClock = 0
-    func recordVisit(_ id: UUID) { visitClock += 1; visits[id] = visitClock }
-
-    /// The most-recently-opened stable targets, newest first (working.html `recentTargets`).
-    /// Dynamically-named sessions are excluded — an AI title or browser URL shifts, so it
-    /// can't earn a fixed spot; terminals and any hand-renamed session are stable. Only rows
-    /// whose id still resolves live are returned.
-    func recentTargets(_ limit: Int) -> [Session] {
-        visits.sorted { $0.value > $1.value }
-            .compactMap { session($0.key) }
-            .filter { s in !((s.spawnedKind == .claudeCode || s.spawnedKind == .browser) && !s.titleIsCustom) }
-            .prefix(limit)
-            .map { $0 }
-    }
 
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).
@@ -234,13 +226,23 @@ enum FeedbackMode {
     var reorderScrollNonce = 0
 
     /// Sheet drivers.
+    var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?
 
-/// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
+    /// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
     /// like working.html. `feedbackMode` is resolved once at launch (see init).
     var feedbackOpen = false
     var feedbackDraft = ""
     @ObservationIgnored var feedbackMode: FeedbackMode = .email
+
+    /// The row-action menu currently open (nil = none). Clearing it always drops any
+    /// in-progress delete confirmation.
+    var activeMenu: ActiveMenu? { didSet { if activeMenu == nil { menuConfirming = false } } }
+
+    /// The open menu is showing its two-step delete confirm (working.html `.menu.confirming`).
+    /// Lifted out of RowMenu so the keyboard can drive it: `d` opens straight here, ↵ commits.
+    var menuConfirming = false
+
     /// The sidebar row being renamed inline, and its live text — working.html's
     /// contentEditable name label. nil = nothing renaming.
     var renamingRowID: UUID?
@@ -318,6 +320,10 @@ enum FeedbackMode {
     /// True exit statuses reported over the hook socket (`.exitCodeReported`), keyed by
     /// session, consumed by the `.exited` that follows moments later.
     @ObservationIgnored private var reportedExitCodes: [UUID: Int32] = [:]
+    /// The in-app browser each terminal/Claude session sends its clicked loopback links to,
+    /// so reclicking a dev-server URL reuses one row instead of spawning per click. Keyed by
+    /// source session; the entry (and any pointing at a closed browser) is dropped on close.
+    @ObservationIgnored private var linkBrowsers: [UUID: UUID] = [:]
 
     func isLiveClaude(_ id: UUID) -> Bool { liveClaudeIDs.contains(id) }
 
@@ -463,7 +469,38 @@ enum FeedbackMode {
             // the unread bullet; a popup from a browser the user drives opens in front.
             let popupOwner = owner(of: s)
             newBrowser(in: branch(of: s), at: url, ownedBy: popupOwner, focus: popupOwner == nil)
+        case let .openURLRequested(sourceID, url):
+            openTerminalLink(url, from: sourceID)
         }
+    }
+
+    /// A clicked terminal link. Scheme + host decide the target: a loopback dev-server page
+    /// opens in the in-app browser (owned by the clicking Claude session, reused across
+    /// clicks) so the agent can drive the same page the human sees. Every other web URL and
+    /// every non-web scheme goes to the OS default handler — that keeps the user's real
+    /// auth/extensions and matches every other macOS terminal (an embedded browser is a
+    /// fresh, logged-out profile, wrong for github.com/stripe.com and blank for mailto:).
+    func openTerminalLink(_ url: URL, from sourceID: UUID?) {
+        let scheme = url.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https", url.isLoopbackHost else {
+            NSWorkspace.shared.open(url); return
+        }
+        let source = sourceID.flatMap(session) ?? openSessionID.flatMap(session)
+        // Reuse this session's link browser if it's still alive — reclicking a dev-server URL
+        // must not mint a row per click.
+        if let srcID = source?.id, let bid = linkBrowsers[srcID], let existing = session(bid) {
+            existing.browserURL = url
+            BrowserManager.shared.existing(bid)?.navigate(to: url)
+            open(existing)
+            return
+        }
+        // Only a Claude session can own a browser; a plain terminal spawns an unowned one.
+        let owner = source?.kind == .claudeCode ? source : nil
+        guard let browser = newBrowser(in: source.flatMap { branch(of: $0) },
+                                       at: url, ownedBy: owner, focus: true) else {
+            NSWorkspace.shared.open(url); return   // no branch to host it — don't lose the click
+        }
+        if let srcID = source?.id { linkBrowsers[srcID] = browser.id }
     }
 
     /// Front of the branch's Recent list, deduped by URL (keeping the known title), capped at 5.
@@ -577,6 +614,15 @@ enum FeedbackMode {
 
     var openSession: Session? { openSessionID.flatMap(session) }
 
+    /// The branch whose setup skeleton the content pane is showing, or nil.
+    var openSetupBranch: Branch? {
+        guard let id = openSetupBranchID else { return nil }
+        for ws in workspaces {
+            if let br = ws.branches.first(where: { $0.id == id }) { return br }
+        }
+        return nil
+    }
+
     func session(_ id: UUID) -> Session? {
         for ws in workspaces {
             for br in ws.branches {
@@ -626,11 +672,23 @@ enum FeedbackMode {
 
     func open(_ session: Session) {
         settingsOpen = false   // jumping to a session leaves settings mode
+        openSetupBranchID = nil   // opening a real session revokes any armed setup-resolve
         openSessionID = session.id
         navCursor = session.id
         session.unread = false
         clearNotif(session.id)   // opening a notified session dismisses its standing toast
-        recordVisit(session.id)  // frecency for the palette's Recent group
+    }
+
+    /// Optimistically move the content pane onto a still-materialising worktree's
+    /// "setting up…" skeleton — tying the switch to the create keystroke, so it can never
+    /// surprise the user after an async gap. While this skeleton is what's shown the
+    /// finished checkout resolves in place; opening anything else clears it, and the
+    /// checkout then lands as a quiet unread row instead (applySessionTemplate).
+    func openWorktreeSetup(_ branch: Branch) {
+        settingsOpen = false
+        openSessionID = nil
+        openSetupBranchID = branch.id
+        navCursor = branch.id
     }
 
     // MARK: Settings
@@ -646,9 +704,11 @@ enum FeedbackMode {
     }
 
     func enterSettings(_ scope: SettingsScope = .global) {
+        activeMenu = nil
         closePalette()
         shortcutsOpen = false
         sidebarCollapsed = false
+        openSetupBranchID = nil   // leaving for settings revokes any armed setup-resolve
         settingsScope = scope
         settingsOpen = true
         // Keyboard cursor lands on the active scope (working.html enterSettings → select .scope--on).
@@ -693,6 +753,7 @@ enum FeedbackMode {
 
     func openPalette() {
         guard palette == nil else { return }
+        activeMenu = nil
         palette = PaletteModel(store: self)
     }
 
@@ -701,6 +762,7 @@ enum FeedbackMode {
     /// A row's ⋯ kebab opens the palette drilled to that row (working.html openRowActions),
     /// rather than the hover popover. Re-drills if the palette is already open.
     func openRowActions(_ ref: RowRef) {
+        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         palette?.drill(to: ref)
     }
@@ -710,6 +772,7 @@ enum FeedbackMode {
     /// session leaf — a sibling session in that leaf's parent worktree (working.html addToRow).
     /// Opens the palette if closed; if already open, resets to root then pushes the frame.
     func addToRow(_ ref: RowRef) {
+        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         let frame: PaletteFrame?
@@ -807,6 +870,10 @@ enum FeedbackMode {
         liveClaudeIDs.remove(session.id)
         pulseTokens.removeValue(forKey: session.id)
         reportedExitCodes.removeValue(forKey: session.id)
+        // Drop this row's link-browser mapping whether it's the source terminal or the
+        // browser itself that just closed.
+        linkBrowsers[session.id] = nil
+        linkBrowsers = linkBrowsers.filter { $0.value != session.id }
     }
 
     // MARK: Containment (ADR-0011 stage four: a browser can belong to a Claude session)
@@ -864,9 +931,9 @@ enum FeedbackMode {
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
         let owned = ownedBrowsers(of: session)
-        guard !owned.isEmpty else { return "Ends this session and its process." }
+        guard !owned.isEmpty else { return "Delete this session?" }
         let what = owned.count == 1 ? "browser" : "\(owned.count) browsers"
-        return "Ends this session and its process, and closes its \(what)."
+        return "Delete this session? This also closes its \(what)."
     }
 
     /// The comment ladder's spawn rung (CommentMode rung 3): a claude row created exactly
@@ -1159,6 +1226,7 @@ enum FeedbackMode {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: existingBranch)
         let row = addBranchRow(in: ws, name: existingBranch, worktreeURL: planned, pending: true)
+        openWorktreeSetup(row)
         materialize(row, in: ws, spawningTemplate: true) {
             if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == existingBranch }) {
                 return .ready(wt.path)
@@ -1174,6 +1242,7 @@ enum FeedbackMode {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: newBranch)
         let row = addBranchRow(in: ws, name: newBranch, worktreeURL: planned, pending: true)
+        openWorktreeSetup(row)
         materialize(row, in: ws, spawningTemplate: true) {
             GitService.addWorktree(repo: repo, path: planned, newBranch: newBranch, base: base)
                 .map { .failed($0) } ?? .ready(planned)
@@ -1222,8 +1291,16 @@ enum FeedbackMode {
     /// stock start counts as hand-picked (titleIsCustom), so auto-naming — ai-title,
     /// running command, page title — never overwrites a template name the user chose.
     private func applySessionTemplate(to branch: Branch, in ws: Workspace) {
+        // Whether the user is still parked on this row's setup skeleton decides the whole
+        // handoff: still here → resolve in place; moved on → don't touch the viewport.
+        let watching = openSetupBranchID == branch.id
         let entries = sessionTemplate(for: ws)
-        guard !entries.isEmpty else { return }   // an emptied global template means "start bare"
+        guard !entries.isEmpty else {
+            // An emptied template means "start bare": nothing to open. If we're still on
+            // the skeleton, drop it so the pane settles onto the now-ready (empty) row.
+            if watching { openSetupBranchID = nil }
+            return
+        }
         let sessions = entries.enumerated().map { i, entry in
             Session(kind: entry.kind, title: entry.name,
                     status: entry.kind == .claudeCode && i == 0 ? .working : .idle,
@@ -1233,7 +1310,13 @@ enum FeedbackMode {
         branch.lastActivity = "now"
         expanded.insert(ws.id)
         expanded.insert(branch.id)
-        if let first = sessions.first { open(first) }
+        if watching, let first = sessions.first {
+            open(first)   // last intent still points here — resolve the skeleton in place
+        } else {
+            // The user moved on after requesting — announce the ready worktree with the
+            // quiet unread bullet (browser-ownership idiom) instead of stealing the pane.
+            sessions.first?.unread = true
+        }
     }
 
     // MARK: Persistence (ADR-0010)

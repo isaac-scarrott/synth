@@ -68,22 +68,14 @@ struct PaletteFrame {
     var seed: String? = nil
     /// Input frames that name a new branch rewrite spaces to dashes as you type.
     var dashSpaces = false
-    /// A wrapping consequence line rendered above the list (working.html `cmdk__note`) —
-    /// confirm frames spell out what a choice does where a truncating placeholder can't.
-    var note: String? = nil
     var build: (String) -> [PaletteItem]
 }
 
 @MainActor @Observable final class PaletteModel {
     unowned let store: AppStore
     var stack: [PaletteFrame] = []
-    // A real query change snaps the cursor to the best match (index 0 after ranking). The
-    // `oldValue` guard ignores the empty→empty write SwiftUI's TextField binding fires on
-    // open, so a fresh palette keeps its unhighlighted `-1` (reflexive ⌘K→Enter is a no-op).
-    var query = "" { didSet { if query != oldValue { activeIndex = 0 } } }
-    /// A fresh open highlights nothing (`-1`); the first ↓ / keystroke / drill selects a real
-    /// row (working.html's `fresh` flag). `move` wraps -1 → 0; `drill` selects index 0.
-    var activeIndex = -1
+    var query = "" { didSet { activeIndex = 0 } }
+    var activeIndex = 0
 
     /// Branch lists for the New-worktree search, read OFF the main thread so pressing
     /// `a` on a workspace never blocks the UI on git (a large/cold repo's `for-each-ref`
@@ -114,41 +106,28 @@ struct PaletteFrame {
 
     var frame: PaletteFrame { stack[stack.count - 1] }
 
-    /// The frame's items, fuzzy-filtered for `list` frames — ranked so a typed NAME beats
-    /// loose matches and the group holding the global-best match leads (working.html's
-    /// itemScore + renderFrame). Typing a row's exact name lands the cursor on that row,
-    /// not on an action that merely mentions it via `ctx`.
+    /// The frame's items, fuzzy-filtered for `list` frames — section order preserved,
+    /// fuzzy-ranked within each section (working.html's renderFrame).
     var items: [PaletteItem] {
         let q = query.trimmingCharacters(in: .whitespaces)
         let built = frame.build(q)
         guard frame.mode == .list, !q.isEmpty else { return built }
-        let ql = q.lowercased()
         var order: [String] = []
         var byKey: [String: [(PaletteItem, Double)]] = [:]
         for it in built {
-            // A label hit outranks a ctx-only hit: exact/prefix boosts the label, and the
-            // context path is folded in only as a weak fallback (working.html itemScore).
-            let b = it.label.lowercased()
-            let boost: Double = b == ql ? 1000 : b.hasPrefix(ql) ? 200 : 0
-            let labelScore = fuzzyScore(q, it.label).map { $0 + boost } ?? -.infinity
-            let ctxScore = it.ctx.flatMap { fuzzyScore(q, "\($0) \(it.label)") }.map { $0 - 6 } ?? -.infinity
-            let s = max(labelScore, ctxScore)
-            guard s > -.infinity else { continue }
+            // Fold the context chip into matching (working.html itemScore) so a bare-labelled
+            // action ("Rename") is still found by its target's name via `ctx`.
+            let base = fuzzyScore(q, it.label)
+            let withCtx = it.ctx.flatMap { c in fuzzyScore(q, "\(c) \(it.label)").map { $0 - 2 } }
+            guard let s = [base, withCtx].compactMap({ $0 }).max() else { continue }
             let k = it.group ?? it.sec ?? ""
             if byKey[k] == nil { byKey[k] = []; order.append(k) }
             byKey[k]!.append((it, s))
         }
-        for k in byKey.keys { byKey[k]!.sort { $0.1 > $1.1 } }
-        // Order groups by their best member's score (first-appearance breaks ties), so the
-        // overall top row is the strongest hit.
-        let ranked = order.enumerated().sorted { a, br in
-            let sa = byKey[a.element]![0].1, sb = byKey[br.element]![0].1
-            return sa != sb ? sa > sb : a.offset < br.offset
-        }.map(\.element)
-        return ranked.flatMap { byKey[$0]!.map(\.0) }
+        return order.flatMap { byKey[$0]!.sorted { $0.1 > $1.1 }.map(\.0) }
     }
 
-    func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? ""; activeIndex = 0 }
+    func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? "" }
     func pop() { if stack.count > 1 { stack.removeLast(); query = "" } }
     func pop(to depth: Int) { stack.removeLast(stack.count - max(1, depth + 1)); query = "" }
 
@@ -172,7 +151,7 @@ struct PaletteFrame {
 
     func runActive() {
         let its = items
-        guard activeIndex >= 0, activeIndex < its.count else { return }
+        guard activeIndex < its.count else { return }
         let it = its[activeIndex]
         guard !it.disabled else { return }
         it.enter()
@@ -230,9 +209,6 @@ struct PaletteFrame {
                 }
             }
             let g = "Session · \(open.title)"
-            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
-                                     group: g, ctx: open.title,
-                                     enter: { self.push(self.renameFrame(.session(open))) }))
             // Browser only: toggle comment mode (ADR-0011 stage three) — the palette
             // twin of the bar button, so the keyboard can drive it without a click.
             if open.kind == .browser {
@@ -245,6 +221,9 @@ struct PaletteFrame {
                                                  .toggleCommentMode(store: store)
                                          } }))
             }
+            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
+                                     group: g, ctx: open.title,
+                                     enter: { self.push(self.renameFrame(.session(open))) }))
             items += containmentItems(open, group: g)
             items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete",
                                      group: g, ctx: open.title, danger: true,
@@ -264,12 +243,12 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
                                      group: g, ctx: branch.name,
                                      enter: { self.push(self.renameFrame(.branch(branch))) }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove",
-                                     group: g, ctx: branch.name,
+            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove",
+                                     group: g, ctx: branch.name, danger: true,
                                      enter: { self.push(self.confirmRemoveBranch(branch)) }))
         }
         if let workspace {
-            items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New branch",
+            items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
                                      group: "Workspace · \(workspace.name)", ctx: workspace.name,
                                      enter: { self.push(self.worktreeFrame(in: workspace)) }))
         }
@@ -293,7 +272,7 @@ struct PaletteFrame {
         }
         return [
             // On home the omnibox focuses the "Go to" field; on a page it opens the drop.
-            PaletteItem(icon: .phosphor(Phosphor.search), label: "Go to address",
+            PaletteItem(icon: .phosphor(Phosphor.search), label: "Go to address…",
                         kbd: ["⌘", "L"], enter: drive { $0.focusAddress() }),
             PaletteItem(icon: .phosphor(Phosphor.reload), label: "Reload page",
                         kbd: ["⌘", "R"], disabled: home,
@@ -364,10 +343,7 @@ struct PaletteFrame {
         PaletteFrame(placeholder: "Search or jump to anything…") { [self] q in
             let here = contextActions()
             if q.isEmpty {
-                // Frecency leads the cold palette: your most-recent stable targets, one keystroke
-                // away (working.html recentTargets). Absent on a fresh state with no history.
-                var items = store.recentTargets(4).map { sessionItem($0, ctx: true, group: "Recent") }
-                items += here.map { item -> PaletteItem in
+                var items = here.map { item -> PaletteItem in
                     var it = item; it.ctx = nil; return it
                 }
                 items += [
@@ -396,7 +372,7 @@ struct PaletteFrame {
                 var it = item; it.group = "Actions"; return it
             }
             items += [
-                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add workspace", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace…", group: "Actions",
                             enter: { self.push(self.createWorkspaceFrame()) }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
                             kbd: ["⌘", "B"],
@@ -435,8 +411,10 @@ struct PaletteFrame {
     func workspacesFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Workspaces", placeholder: "Search workspaces…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add workspace", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace…", sec: "act",
                             enter: { self.push(self.createWorkspaceFrame()) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove workspace…", sec: "act",
+                            danger: true, enter: { self.push(self.removeWorkspacePicker()) }),
             ]
             for ws in store.workspaces {
                 items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, sec: "list",
@@ -448,7 +426,10 @@ struct PaletteFrame {
 
     func branchesFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Branches", placeholder: "Search branches…") { [self] _ in
-            var items: [PaletteItem] = []
+            var items = [
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove branch…", sec: "act",
+                            danger: true, enter: { self.push(self.removeBranchPicker()) }),
+            ]
             for ws in store.workspaces {
                 for br in ws.branches {
                     items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name,
@@ -462,7 +443,10 @@ struct PaletteFrame {
 
     func sessionsFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Sessions", placeholder: "Search sessions…") { [self] _ in
-            var items: [PaletteItem] = []
+            var items = [
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete session…", sec: "act",
+                            danger: true, enter: { self.push(self.deleteSessionPicker()) }),
+            ]
             for ws in store.workspaces {
                 for br in ws.branches {
                     for s in br.sessions { items.append(sessionItem(s, ctx: true, sec: "list")) }
@@ -475,7 +459,7 @@ struct PaletteFrame {
     func workspaceFrame(_ ws: Workspace) -> PaletteFrame {
         PaletteFrame(crumb: ws.name, placeholder: "Search \(ws.name)…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New branch", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", sec: "act",
                             enter: { self.push(self.worktreeFrame(in: ws)) }),
             ]
             // Session creates land on the workspace's first branch (contextActions' fallback);
@@ -484,12 +468,12 @@ struct PaletteFrame {
                 items += sessionCreates(in: br, ctx: br.name)
             }
             items += [
-                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Settings", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Workspace settings…", sec: "act",
                             enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }),
-                PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.workspace(ws))) }),
-                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove", sec: "act",
-                            enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(ws.name)", sec: "act",
+                            danger: true, enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
             ]
             for br in ws.branches {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, sec: "list",
@@ -515,10 +499,10 @@ struct PaletteFrame {
             if let br = store.branch(of: s) {
                 items += sessionCreates(in: br, ctx: br.name)
             }
-            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename", sec: "act",
+            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(s.title)…", sec: "act",
                                      enter: { self.push(self.renameFrame(.session(s))) }))
             items += containmentItems(s, sec: "act")
-            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete", sec: "act",
+            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(s.title)", sec: "act",
                                      danger: true, enter: { self.push(self.confirmDeleteSession(s)) }))
             return items
         }
@@ -553,25 +537,54 @@ struct PaletteFrame {
         PaletteFrame(crumb: branch.name, placeholder: "Search \(branch.name)…") { [self] _ in
             var items = sessionCreates(in: branch)
             items += [
-                PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(branch.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.branch(branch))) }),
-                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove", sec: "act",
-                            enter: { self.push(self.confirmRemoveBranch(branch)) }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(branch.name)", sec: "act",
+                            danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
             ]
             for s in branch.sessions { items.append(sessionItem(s, ctx: false, sec: "list")) }
             return items
         }
     }
 
-    // MARK: Remove/delete → inline confirm
+    // MARK: Remove/delete pickers → inline confirm
 
-    private func confirmFrame(verb: String, name: String, note: String,
-                              icon: String, danger: Bool,
+    func removeWorkspacePicker() -> PaletteFrame {
+        PaletteFrame(crumb: "Remove workspace", placeholder: "Select a workspace to remove…") { [self] _ in
+            store.workspaces.map { ws in
+                PaletteItem(icon: chipIcon(ws), label: ws.name, danger: true,
+                            enter: { self.push(self.confirmRemoveWorkspace(ws)) })
+            }
+        }
+    }
+
+    func removeBranchPicker() -> PaletteFrame {
+        PaletteFrame(crumb: "Remove branch", placeholder: "Select a branch to remove…") { [self] _ in
+            store.workspaces.flatMap { ws in
+                ws.branches.map { br in
+                    PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, ctx: ws.name,
+                                danger: true, enter: { self.push(self.confirmRemoveBranch(br)) })
+                }
+            }
+        }
+    }
+
+    func deleteSessionPicker() -> PaletteFrame {
+        PaletteFrame(crumb: "Delete session", placeholder: "Select a session to delete…") { [self] _ in
+            store.workspaces.flatMap(\.branches).flatMap(\.sessions).map { s in
+                PaletteItem(icon: .session(s.kind), label: s.title, ctx: ctxOf(s),
+                            meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
+                            danger: true, enter: { self.push(self.confirmDeleteSession(s)) })
+            }
+        }
+    }
+
+    private func confirmFrame(verb: String, name: String, hint: String,
                               perform: @escaping () -> Void) -> PaletteFrame {
-        PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "↵ confirm · esc cancel",
-                     mode: .confirm, note: note) { [self] _ in
+        PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "\(hint)  ↵ confirm · esc cancel",
+                     mode: .confirm) { [self] _ in
             [
-                PaletteItem(icon: .phosphor(icon), label: verb, danger: danger,
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "\(verb) \(name)", danger: true,
                             enter: { self.runAndClose(perform) }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
@@ -580,8 +593,7 @@ struct PaletteFrame {
 
     func confirmRemoveWorkspace(_ ws: Workspace) -> PaletteFrame {
         confirmFrame(verb: "Remove", name: ws.name,
-                     note: "Removes it from the sidebar — the repo and everything on disk stay.",
-                     icon: Phosphor.minusCircle, danger: false) { [store] in
+                     hint: "Remove this workspace? Nothing on disk is deleted.") { [store] in
             store.removeWorkspace(ws)
         }
     }
@@ -590,30 +602,28 @@ struct PaletteFrame {
     // The destructive path is danger-styled; the list-only path isn't — the colour is the tell.
     func confirmRemoveBranch(_ br: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "Remove \(br.name)?",
-                     placeholder: "↵ select · esc cancel",
-                     mode: .confirm,
-                     note: "Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way.") { [self] _ in
+                     placeholder: "Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel",
+                     mode: .confirm) { [self] _ in
             [
-                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
-                            ctx: "folder and branch stay on disk",
-                            enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: false) } }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
-                            ctx: "removes the folder from disk", danger: true,
+                            ctx: "git worktree remove + delete its folder on disk", danger: true,
                             enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: true) } }),
+                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
+                            ctx: "stop tracking it here — the worktree stays on disk",
+                            enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: false) } }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
         }
     }
     func confirmDeleteSession(_ s: Session) -> PaletteFrame {
         confirmFrame(verb: "Delete", name: s.title,
-                     note: store.deleteSessionHint(s),
-                     icon: Phosphor.trash, danger: true) { [store] in store.closeSession(s) }
+                     hint: store.deleteSessionHint(s)) { [store] in store.closeSession(s) }
     }
 
     // MARK: Create frames — the search input becomes the name field
 
     func createWorkspaceFrame() -> PaletteFrame {
-        PaletteFrame(crumb: "Add workspace", placeholder: "Repository path…", mode: .input) { [self] q in
+        PaletteFrame(crumb: "New workspace", placeholder: "Repository path…", mode: .input) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             return [PaletteItem(icon: .phosphor(Phosphor.plus),
                                 label: v.isEmpty ? "Type a repository path…" : "Add workspace “\(v)”",
@@ -679,10 +689,7 @@ struct PaletteFrame {
         // stays allocation-only.
         if let ws = workspace { loadBranches(for: ws) }
         let shown = Set(workspace?.branches.map(\.name) ?? [])
-        // A fresh branch forks off the workspace's current checkout (its first branch row,
-        // the main worktree) — surfaced as a muted "from <base>" so the fork point is legible.
-        let base = workspace?.branches.first?.name ?? "main"
-        return PaletteFrame(crumb: "New branch", placeholder: "Search branches to check out…",
+        return PaletteFrame(crumb: "New worktree", placeholder: "Search branches to check out…",
                             mode: .input, dashSpaces: true) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace else { return [] }
@@ -704,9 +711,8 @@ struct PaletteFrame {
             // Fallback: the typed query isn't an existing branch → offer cutting a fresh one.
             if !all.contains(where: { $0.name == v }) {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.plus), label: "New branch “\(v)”",
-                            ctx: "from \(base)",
                             enter: { self.runAndClose {
-                                self.store.createWorktree(in: ws, newBranch: v, base: base)
+                                self.store.createWorktree(in: ws, newBranch: v, base: nil)
                             } }))
             }
             return items
@@ -837,16 +843,6 @@ struct PaletteOverlay: View {
             .padding(.horizontal, 16).padding(.vertical, 13)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Theme.border).frame(height: 0.5)
-            }
-
-            if let note = model.frame.note {
-                Text(note)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.inkFaint)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14).padding(.top, 9).padding(.bottom, 5)
             }
 
             list

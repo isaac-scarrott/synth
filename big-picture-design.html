@@ -246,6 +246,25 @@
   .pane-empty__mark svg { width: 100%; height: 100%; display: block; }
   .pane-empty span { font-size: 12.5px; letter-spacing: -0.005em; }
 
+  /* the optimistic "setting up worktree…" skeleton — same centred body as pane-empty,
+     shown inside a normal .pane so the resolve into the first session is a cross-fade */
+  .pane-setup {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-faint);
+    user-select: none;
+  }
+  .pane-setup__spin {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--text-faint); border-top-color: transparent;
+    animation: browser-spin 0.9s linear infinite;
+  }
+  .pane-setup span { font-size: 12.5px; letter-spacing: -0.005em; }
+
   .pane {
     flex: 1;
     display: flex;
@@ -652,6 +671,15 @@
   .repo--open > .branch--active.branch--group { background: none; box-shadow: none; }
   .repo--open > .branch--active.branch--group .branch__name { color: var(--ink-5); font-weight: 450; }
 
+  /* A worktree still materialising: the row is present but grayed and inert, a small arc
+     spinning where its roll-up will land, while the pane carries the setup skeleton. */
+  .branch--pending { opacity: 0.5; pointer-events: none; }
+  .wt-spinner {
+    display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+    border: 1.5px solid var(--text-faint); border-top-color: transparent;
+    animation: browser-spin 0.9s linear infinite;
+  }
+
   /* ---- Sessions inside a branch ---- */
   .sessions {
     margin: 2px 0 4px 15px;
@@ -892,6 +920,60 @@
   }
   .row.menu-open > .ind,
   .row.menu-open > .branch__meta,
+  .row.menu-open > .repo__count,
+  .row.menu-open > .branch__roll { opacity: 0; }
+
+  /* ---- Popover menu (origin-aware: scales out of the kebab) ---- */
+  .menu {
+    position: fixed;
+    z-index: 100;
+    min-width: 172px;
+    padding: 5px;
+    background: var(--glass);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border: 0.5px solid var(--line);
+    border-radius: 11px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.18);
+    transform-origin: var(--mo, top right);
+    opacity: 0;
+    transform: scale(0.95);
+    overflow: hidden;
+    transition: opacity 140ms var(--ease-out), transform 150ms var(--ease-out);
+  }
+  .menu.open { opacity: 1; transform: scale(1); }
+
+  /* Delete confirm morphs in place: container resizes + panes crossfade (no innerHTML swap) */
+  .menu__viewport { position: relative; transition: height 190ms var(--ease-out); }
+  .menu__pane { transition: opacity 120ms var(--ease-out); }
+  .menu__pane--confirm { position: absolute; top: 0; left: 0; right: 0; opacity: 0; pointer-events: none; }
+  .menu.confirming .menu__pane--actions { opacity: 0; pointer-events: none; }
+  .menu.confirming .menu__pane--confirm { opacity: 1; pointer-events: auto; }
+
+  .menu__item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 450;
+    color: var(--ink);
+    transition: background-color 100ms ease;
+  }
+  .menu__item svg { width: 15px; height: 15px; flex-shrink: 0; color: #7a7a80; }
+  @media (hover: hover) and (pointer: fine) {
+    .menu__item:hover { background: var(--hover); }
+  }
+  .menu__item--danger { color: var(--error); }
+  .menu__item--danger svg { color: var(--error); }
+  .menu__sep { height: 0.5px; background: var(--press); margin: 4px 6px; }
+
+  .menu__confirm { padding: 7px 8px 8px; }
+  .menu__confirm-label { font-size: 11.5px; line-height: 1.35; color: var(--ink-4); padding: 2px 2px 9px; }
+  .menu__confirm-row { display: flex; gap: 6px; }
   .menu__btn {
     flex: 1;
     padding: 6px 10px;
@@ -907,6 +989,7 @@
     transition: background-color 100ms ease, transform 110ms var(--ease-out);
   }
   .menu__btn:active { transform: scale(0.97); }
+  .menu__btn--danger { background: var(--error); color: #fff; border-color: transparent; }
 
   /* ---- Dialog (modal — stays centered) ---- */
   .backdrop {
@@ -1210,7 +1293,6 @@
     min-width: 17px;
     text-align: center;
   }
-  .cmdk__note { padding: 9px 14px 5px; font-size: 12px; line-height: 1.5; color: var(--text-faint); white-space: normal; }
   .cmdk__empty {
     padding: 24px 8px;
     text-align: center;
@@ -1600,7 +1682,6 @@
   /* ⌘K palette: the active-row label + status meta were tuned for a white panel —
      lift them to bright, legible values on the dark frosted glass */
   :root[data-theme="dark"] .cmdk__item.is-active .cmdk__label { color: #6ba9ff; }
-  :root[data-theme="dark"] .cmdk__item--danger.is-active .cmdk__label { color: var(--error); }
   :root[data-theme="dark"] .cmdk__meta--run   { color: var(--run); }
   :root[data-theme="dark"] .cmdk__meta--work  { color: var(--work); }
   :root[data-theme="dark"] .cmdk__meta--input { color: var(--input); }
@@ -1897,6 +1978,10 @@
     idle:  `<span class="ind"></span>`,
   };
   let openEl = null, streamTimer = null;
+  // The still-creating branch whose setup skeleton the pane is showing (null = none). Set
+  // the instant a create is requested and cleared the moment anything else opens — so a
+  // finished checkout resolves in place only while this still points at it (last-intent-wins).
+  let setupEl = null;
 
   function outerRepoOf(el) {
     let repo = el.closest('[data-repo]');
@@ -1930,6 +2015,7 @@
   function openSession(el) {
     if (!el) return;
     app.classList.remove('settings');   // jumping to a session leaves settings mode
+    setupEl = null;                     // opening a real session revokes any armed setup-resolve
     if (openEl) openEl.classList.remove('session--open');
     openEl = el;
     el.classList.add('session--open');
@@ -1937,6 +2023,34 @@
     clearNotif(el);                            // …and dismisses any toast for it
     derivePill(el);
     renderOpen();
+  }
+
+  // Optimistic switch: move the pane onto a still-creating worktree's "setting up…"
+  // skeleton, tying the switch to the create keystroke so it can't surprise the user after
+  // an async gap. Opening anything else clears setupEl (openSession / enterSettings), so a
+  // finished checkout only resolves in place while this still points here.
+  function openWorktreeSetup(groupRow) {
+    app.classList.remove('settings');
+    if (openEl) openEl.classList.remove('session--open');
+    openEl = null;
+    setupEl = groupRow;
+    nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
+    groupRow.classList.add('branch--active');   // the grayed pending row still reads as "you are here"
+    renderSetup(groupRow);
+  }
+
+  function renderSetup(groupRow) {
+    stopStream();
+    const name = groupRow.querySelector('.branch__name').textContent.trim();
+    const ws = workspaceNameOf(groupRow);
+    content.innerHTML = `<div class="pane">
+      <div class="pane__head">
+        <div class="pane__title"><span class="session__icon">${ICON_BRANCH}</span><span>${esc(name)}</span></div>
+        <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(name)}</div>
+        <div class="pane__spacer"></div>
+      </div>
+      <div class="pane__body"><div class="pane-setup"><span class="pane-setup__spin"></span><span>Setting up worktree…</span></div></div>
+    </div>`;
   }
 
   // A session moves to a new derived status: swap its sidebar indicator, re-roll, and
@@ -2162,6 +2276,7 @@
   const ICON_NAV_LOCK   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208Z"/></svg>';
   const ICON_DEVTOOLS   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></svg>';
   const ICON_COMMENT    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm-40-76a12,12,0,1,1,12-12A12,12,0,0,1,88,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,128,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,168,140Z"/></svg>';
+  const ICON_EXTERNAL   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>';
 
   // Recent destinations the "Go to…" surface offers. Static demo data; a real build seeds this from
   // the branch's dev-server port and the session's own visited history.
@@ -2216,6 +2331,7 @@
       <span class="browser__target" data-target hidden></span>
       <button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button>
       <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
+      <button class="browser__btn" data-nav="external" aria-label="Open in default browser">${ICON_EXTERNAL}</button>
     </div>`;
   }
   function renderBrowser(name) {
@@ -2230,6 +2346,7 @@
           <button class="browser__omni" data-omni><span class="browser__url browser__url--ph">Search or enter address</span></button>
           <button class="browser__btn" data-nav="comment" disabled aria-label="Comment mode">${ICON_COMMENT}</button>
           <button class="browser__btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
+          <button class="browser__btn" data-nav="external" disabled aria-label="Open in default browser">${ICON_EXTERNAL}</button>
         </div>
         <div class="browser__home"><div class="browser__homeinner">
           <span class="browser__glyph">${ICON_BROWSER}</span>
@@ -2279,6 +2396,8 @@
       if (dev) { dev.disabled = idx < 0; dev.classList.toggle('is-on', devOpen); dev.onclick = toggleDev; }
       const com = host.querySelector('[data-nav="comment"]');
       if (com) { com.disabled = idx < 0; com.onclick = toggleComment; }
+      const ext = host.querySelector('[data-nav="external"]');
+      if (ext) { ext.disabled = idx < 0; ext.onclick = () => { if (idx >= 0) window.open(hist[idx], '_blank', 'noopener'); }; }
       if (omni) omni.onclick = openOmni;
       updateCommentUI();
     }
@@ -2674,12 +2793,6 @@
     // Cmd/Ctrl+0 focuses the sidebar; Cmd/Ctrl+1 focuses the open session's surface
     if ((e.metaKey || e.ctrlKey) && k === '0') { e.preventDefault(); focusSidebar(); return; }
     if ((e.metaKey || e.ctrlKey) && k === '1') { e.preventDefault(); focusContent(); return; }
-    // Cmd/Ctrl+T spawns a terminal in the branch you're on (matches the native app)
-    if ((e.metaKey || e.ctrlKey) && (k === 't' || k === 'T') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
-      const br = contextBranch();
-      if (br) { e.preventDefault(); addTerminal(br); }
-      return;
-    }
     // An open browser session claims the standard page verbs window-wide: ⌘L address,
     // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each drives the visible toolbar control,
     // so disabled states (home page, empty history) are respected for free.
@@ -2949,6 +3062,96 @@
     if (openMenuRow) { openMenuRow.classList.remove('menu-open'); openMenuRow = null; }
   }
 
+  function openMenu(row, anchor) {
+    if (openMenuRow === row) { closeMenu(); return; }
+    closeMenu();
+    const level = rowLevel(row);
+    const menu = document.createElement('div');
+    menu.className = 'menu';
+    const parts = [];
+    if (level === 'repo') parts.push(`<span class="menu__item" data-act="create-worktree">${ICON_BRANCH}Create worktree…</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-terminal">${ICON_TERMINAL}New terminal</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-claude">${ICON_AI}New Claude Code</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-browser">${ICON_BROWSER}New browser</span>`);
+    // containment verbs (browser rows only): the sole way structure changes by hand
+    if (level === 'session' && row.dataset.type === 'browser') {
+      const owner = ownerOf(row);
+      if (owner) parts.push(`<span class="menu__item" data-act="detach">${ICON_MINUS}Detach from “${esc(sessionTitle(owner))}”</span>`);
+      else claudesOf(row.parentElement).forEach((c) => parts.push(`<span class="menu__item" data-act="own" data-sid="${claudeSid(c)}">${ICON_AI}Move under “${esc(sessionTitle(c))}”</span>`));
+      if (owner || claudesOf(row.parentElement).length) parts.push('<div class="menu__sep"></div>');
+    }
+    if (level !== 'session') parts.push('<div class="menu__sep"></div>');
+    parts.push(`<span class="menu__item menu__item--danger" data-act="delete">${ICON_TRASH}${level === 'session' ? 'Delete' : 'Remove'}</span>`);
+    menu.innerHTML = `<div class="menu__viewport">`
+      + `<div class="menu__pane menu__pane--actions">${parts.join('')}</div>`
+      + `<div class="menu__pane menu__pane--confirm">${confirmMarkup(level, row)}</div>`
+      + `</div>`;
+
+    menu.addEventListener('click', (e) => {
+      e.stopPropagation(); // in-menu clicks must not reach the outside-click handler
+      const item = e.target.closest('.menu__item');
+      const btn = e.target.closest('.menu__btn');
+      if (item) {
+        const act = item.dataset.act;
+        if (act === 'delete') return showConfirm(menu);
+        if (act === 'create-worktree') { closeMenu(); return openWorktreeDialog(row); }
+        if (act === 'new-terminal') { closeMenu(); return addTerminal(row); }
+        if (act === 'new-claude') { closeMenu(); return addClaude(row); }
+        if (act === 'new-browser') { closeMenu(); return addBrowser(row); }
+        if (act === 'detach') { closeMenu(); return detach(row); }
+        if (act === 'own') { const sid = item.dataset.sid; closeMenu(); const o = nav.querySelector(`.session[data-sid="${sid}"]`); if (o) adopt(row, o); return; }
+      } else if (btn) {
+        if (btn.dataset.c === 'cancel') return closeMenu();
+        if (btn.dataset.c === 'ok') { const unit = rowUnit(row); closeMenu(); removeUnit(unit); }
+      }
+    });
+
+    document.body.appendChild(menu);
+    positionMenu(menu, anchor);
+    requestAnimationFrame(() => menu.classList.add('open'));
+    openMenuEl = menu; openMenuRow = row; row.classList.add('menu-open');
+  }
+
+  function positionMenu(menu, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    let left = Math.max(8, r.right - mw);
+    let top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) { top = r.top - mh - 6; menu.style.setProperty('--mo', 'bottom right'); }
+    else menu.style.setProperty('--mo', 'top right');
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  }
+
+  // Workspaces and branches are *removed* — sidebar-only; worktrees stay on disk.
+  // Sessions are deleted for real (the process ends). Deleting a Claude session that owns
+  // browsers closes them with it — containment — so the confirm names what goes.
+  function confirmMarkup(level, row) {
+    const owned = level === 'session' && row ? ownedOf(row) : [];
+    const label = level === 'repo' ? 'Remove this workspace from the sidebar? Nothing on disk is deleted.'
+      : level === 'branch' ? 'Remove this branch from the sidebar? Its worktree stays on disk.'
+      : owned.length ? `Delete this session? This also closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
+      : 'Delete this session?';
+    const verb = level === 'session' ? 'Delete' : 'Remove';
+    return `<div class="menu__confirm">
+      <div class="menu__confirm-label">${label}</div>
+      <div class="menu__confirm-row">
+        <span class="menu__btn" data-c="cancel">Cancel</span>
+        <span class="menu__btn menu__btn--danger" data-c="ok">${verb}</span>
+      </div></div>`;
+  }
+
+  function showConfirm(menu) {
+    if (menu.classList.contains('confirming')) return;
+    const vp = menu.querySelector('.menu__viewport');
+    const startH = vp.offsetHeight;
+    const endH = menu.querySelector('.menu__pane--confirm').offsetHeight;
+    vp.style.height = startH + 'px';
+    void vp.offsetHeight;            // flush the start height before animating
+    menu.classList.add('confirming');
+    vp.style.height = endH + 'px';   // container resizes to the confirm state; panes crossfade
+  }
+
   function removeUnit(unit) {
     if (!unit) return;
     // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
@@ -2966,6 +3169,7 @@
     unit.classList.add('row-exit');
     const done = () => {
       unit.remove(); rollUpGroups();
+      if (setupEl && !document.contains(setupEl)) { setupEl = null; renderEmpty(); }
       if (openEl && !document.contains(openEl)) { openEl = null; renderEmpty(); }
       if (fallback && document.contains(fallback)) select(fallback, true);
     };
@@ -3009,6 +3213,72 @@
     input.setSelectionRange(pos, pos);
   }
 
+  // Kebab "Create worktree…": check out an existing branch, or cut a new one off a
+  // base — either way the result is a real folder that becomes a row (ADR-0007).
+  function openWorktreeDialog(row) {
+    const repo = row.closest('[data-repo]');
+    const branchesEl = repo.querySelector('.branches');
+    const shown = new Set(branchesEl ? [...branchesEl.querySelectorAll(':scope > .branch .branch__name, :scope > [data-repo] > .branch--group .branch__name')].map((n) => n.textContent) : []);
+    const available = FAKE_BRANCHES.map((c) => c.name).filter((n) => !shown.has(n));
+    const all = [...new Set([...shown, ...FAKE_BRANCHES.map((c) => c.name)])];
+    let mode = available.length ? 'existing' : 'new';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="Create worktree">
+      <div class="dialog__title">Create worktree</div>
+      <div class="seg">
+        <button class="seg__btn" data-m="existing">Existing branch</button>
+        <button class="seg__btn" data-m="new">New branch</button>
+      </div>
+      <div data-pane="existing">
+        <div class="field"><label>Branch</label>
+          <select id="dlgExisting">${available.map((n) => `<option>${esc(n)}</option>`).join('')}</select></div>
+      </div>
+      <div data-pane="new">
+        <div class="field"><label>Base branch</label>
+          <select id="dlgBase">${all.map((n) => `<option>${esc(n)}</option>`).join('')}</select></div>
+        <div class="field"><label>Branch name</label>
+          <input id="dlgName" placeholder="feat/…" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <div class="dialog__actions">
+        <span class="dialog__btn" data-d="cancel">Cancel</span>
+        <span class="dialog__btn dialog__btn--primary" data-d="create">Create</span>
+      </div></div>`;
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+
+    const input = backdrop.querySelector('#dlgName');
+    const existingSel = backdrop.querySelector('#dlgExisting');
+    const createBtn = backdrop.querySelector('[data-d="create"]');
+    const paint = () => {
+      backdrop.querySelectorAll('.seg__btn').forEach((b) => b.classList.toggle('is-on', b.dataset.m === mode));
+      backdrop.querySelector('[data-pane="existing"]').style.display = mode === 'existing' ? '' : 'none';
+      backdrop.querySelector('[data-pane="new"]').style.display = mode === 'new' ? '' : 'none';
+      const ok = mode === 'existing' ? !!existingSel.value : !!input.value.trim();
+      createBtn.classList.toggle('is-disabled', !ok);
+      if (mode === 'new') setTimeout(() => input.focus(), 60);
+    };
+    paint();
+    backdrop.querySelectorAll('.seg__btn').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.m; paint(); }));
+    input.addEventListener('input', () => { dashSpacesOnInput(input); paint(); });
+
+    const close = () => { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey); };
+    const submit = () => {
+      const name = mode === 'existing' ? existingSel.value : input.value.trim();
+      if (!name) return;
+      addBranch(repo, name);
+      close();
+    };
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) return close();
+      const b = e.target.closest('.dialog__btn'); if (!b) return;
+      if (b.dataset.d === 'cancel') close(); else submit();
+    });
+    function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter' && !e.target.closest('.seg__btn')) { e.preventDefault(); submit(); } }
+    document.addEventListener('keydown', onKey);
+  }
+
   // Every branch is a group shell (chevron + empty sessions) so indentation is uniform.
   function branchGroupShell(name, activity) {
     const wrapper = document.createElement('div');
@@ -3028,15 +3298,35 @@
     const branches = repo.querySelector('.branches');
     const wrapper = branchGroupShell(name, 'now');
     wrapper.classList.add('row-enter');
+    const groupRow = wrapper.querySelector('.branch--group');
+    // The checkout runs in the background: the row lands at once — grayed, a small arc
+    // spinning where its roll-up will go — and the pane switches now (riding the create)
+    // to the setup skeleton, instead of waiting on the async checkout to yank it later.
+    groupRow.classList.add('branch--pending');
+    groupRow.querySelector('.branch__roll').innerHTML = '<span class="wt-spinner"></span>';
     branches.appendChild(wrapper);
     wrapper.querySelectorAll('[data-row]').forEach(addKebab);
     rollUpGroups();
     wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
-    // New-worktree sessions (settings): the scope's effective template spawns in
-    // creation order — the first session opens, the rest wait idle until first opened.
+    openWorktreeSetup(groupRow);
+
     const wsName = repo.querySelector('.repo__name')?.textContent || '';
-    effectiveTpl(false, wsName).forEach((s, i) =>
-      addSession(wrapper.querySelector('.branch--group'), s.kind, { name: s.name, open: i === 0 }));
+    // Simulated `git worktree add`: when it lands, spawn the scope's effective template in
+    // creation order. Resolve in place — first session opens — only while the user is still
+    // parked on this skeleton (last-intent-wins); if they moved on, don't touch the viewport:
+    // announce the ready worktree with the quiet unread bullet (the agent-browser idiom).
+    setTimeout(() => {
+      groupRow.classList.remove('branch--pending');
+      groupRow.querySelector('.branch__roll').innerHTML = '';
+      const watching = setupEl === groupRow;
+      const tpl = effectiveTpl(false, wsName);
+      if (watching && tpl.length === 0) { setupEl = null; renderEmpty(); return; }  // start bare
+      tpl.forEach((s, i) => addSession(groupRow, s.kind, { name: s.name, open: watching && i === 0 }));
+      if (!watching) {
+        const first = wrapper.querySelector('.session');
+        if (first) first.classList.add('session--unread');
+      }
+    }, 1200);
   }
 
   // Promote a plain branch into a session-holding group if needed, return its .sessions
@@ -3357,8 +3647,22 @@
     }
   })();
 
-  // wire kebabs onto every existing row — each opens the ⌘K palette at that row's frame
+  // wire kebabs onto every existing row; dismiss menu on outside click / Escape
   nav.querySelectorAll('[data-row]').forEach(addKebab);
+  document.addEventListener('click', (e) => {
+    if (openMenuEl && !openMenuEl.contains(e.target) && !e.target.closest('.kebab')) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (paletteOpen || !openMenuEl) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+    // when the menu is showing its delete confirm, ↵ commits the removal
+    else if (e.key === 'Enter' && openMenuEl.classList.contains('confirming')) {
+      e.preventDefault();
+      const unit = rowUnit(openMenuRow);
+      closeMenu();
+      removeUnit(unit);
+    }
+  });
 
   // ===== Keyboard shortcuts sheet (⌘?) — every binding above, one glanceable modal =====
   const ICON_KEYS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200Z"/><path d="M192,112H64a8,8,0,0,1,0-16H192a8,8,0,0,1,0,16Z"/><path d="M160,160H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z"/></svg>';
@@ -3366,7 +3670,6 @@
   const SHORTCUTS = [
     ['General', [
       [['⌘', 'K'], 'Command palette'],
-      [['⌘', 'T'], 'New terminal'],
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '0'], 'Focus sidebar'],
       [['⌘', '1'], 'Focus open session'],
@@ -3394,7 +3697,7 @@
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
       [['↵'], 'Open · drill in'],
       [['⌫'], 'Back (empty search)'],
-      [['esc'], 'Back · close'],
+      [['esc'], 'Close'],
     ]],
   ];
   let shortcutsEl = null;
@@ -3577,12 +3880,8 @@
   // so "synth dev" finds the dev server without outranking exact label hits
   function itemScore(q, it) {
     const s = fuzzy(q, it.label);
-    const L = it.label.toLowerCase(), Q = q.toLowerCase();
-    const boost = L === Q ? 1000 : L.startsWith(Q) ? 200 : 0;   // typing a name must land on that name
-    const labelScore = s > -Infinity ? s + boost : -Infinity;
-    if (!it.ctx) return labelScore;
-    // the context path is only a weak fallback — a label match must always beat a ctx-only hit
-    return Math.max(labelScore, fuzzy(q, it.ctx + ' ' + it.label) - 6);
+    if (!it.ctx) return s;
+    return Math.max(s, fuzzy(q, it.ctx + ' ' + it.label) - 2);
   }
 
   // Which row a context-sensitive action targets. ⌘K follows the keyboard focus: when the
@@ -3621,7 +3920,6 @@
     if (row.matches('[data-session]')) openSession(row);
     document.body.classList.add('kbd');
     select(row, true);
-    recordVisit(row);
   }
 
   // The palette is a navigation STACK of frames. Root is simple; typing filters and progressively
@@ -3679,7 +3977,7 @@
     const navOff = (dir) => !live || live.querySelector('[data-nav="' + dir + '"]').disabled;
     return [
       // on home the omnibox focuses the "Go to" field; on a page it opens the address drop
-      { icon: ICON_SEARCH,     label: 'Go to address', kbd: ['⌘', 'L'], enter: () => press('[data-omni]') },
+      { icon: ICON_SEARCH,     label: 'Go to address…', kbd: ['⌘', 'L'], enter: () => press('[data-omni]') },
       { icon: ICON_NAV_RELOAD, label: 'Reload page', kbd: ['⌘', 'R'], disabled: home, enter: () => press('[data-nav="reload"]') },
       { icon: ICON_NAV_BACK,   label: 'Back',    kbd: ['⌘', '['], disabled: navOff('back'), enter: () => press('[data-nav="back"]') },
       { icon: ICON_NAV_FWD,    label: 'Forward', kbd: ['⌘', ']'], disabled: navOff('fwd'), enter: () => press('[data-nav="fwd"]') },
@@ -3697,49 +3995,15 @@
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });
     if (open && open === openEl && open.dataset.type === 'browser' && browserCommentAPI.available())
       items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
-    if (open && open.dataset.type === 'browser') {
-      const owner = ownerOf(open);
-      if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
-      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
-    }
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_AI, label: 'New Claude Code', enter: () => runAndClose(() => addClaude(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
-    if (head) items.push({ grp: 'Workspace', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TRASH, label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(br)) });
+    if (head) items.push({ grp: 'Workspace', unit: wsName(head), icon: ICON_BRANCH, label: 'New worktree…', enter: () => pushFrame(createFrame('worktree', head)) });
     return { items };
   }
-
-  // ── Recents / frecency ──────────────────────────────────────────────────
-  // The cold palette floats your most-used STABLE targets so they're one keystroke away.
-  // Actions keep fixed positions (never ranked by use); dynamically-named sessions (AI titles,
-  // browser URLs) are excluded — a target whose name shifts can't earn muscle memory. The native
-  // app persists this; here it's in-memory, lightly seeded so the group shows in the static demo.
-  let visitClock = 0;
-  const visits = new Map();   // row element → { n: times used, t: last-use tick }
-  function recordVisit(row) {
-    if (!row || !isTreeRow(row)) return;
-    if (row.matches('.session') && (row.dataset.type === 'ai' || row.dataset.type === 'browser')) return;
-    const v = visits.get(row) || { n: 0, t: 0 };
-    v.n += 1; v.t = ++visitClock; visits.set(row, v);
-  }
-  function recentTargets(limit) {
-    return [...visits.entries()].filter(([row]) => document.contains(row))
-      .sort((a, b) => (b[1].n - a[1].n) || (b[1].t - a[1].t)).slice(0, limit).map(([row]) => row);
-  }
-  function recentItem(row) {
-    const lvl = rowLevel(row);
-    if (lvl === 'branch') return { g: 'Recent', icon: ICON_BRANCH, label: brName(row), ctx: wsOf(row), enter: () => { recordVisit(row); pushFrame(branchFrame(row)); } };
-    if (lvl === 'repo')   return { g: 'Recent', icon: wsChip(row), label: wsName(row), enter: () => { recordVisit(row); pushFrame(workspaceFrame(row)); } };
-    return { g: 'Recent', icon: seIcon(row), label: seName(row), ctx: seCtx(row), meta: seStatus(row), metaState: sessionState(row), enter: () => runAndClose(() => jumpTo(row)) };
-  }
-  (function seedRecents() {   // a little history so the Recent group is visible on first load
-    const se = (n) => [...nav.querySelectorAll('.session')].find((s) => { const e = s.querySelector('.session__name'); return e && e.textContent === n; });
-    const be = (n) => [...nav.querySelectorAll('.branch')].find((b) => { const e = b.querySelector('.branch__name'); return e && e.textContent === n; });
-    [se('dev server'), se('dev server'), se('dev server'), be('main'), be('main'), se('migrate')].forEach(recordVisit);
-  })();
 
   function rootFrame() {
     return {
@@ -3747,7 +4011,6 @@
       build(q) {
         const here = contextActions();
         if (!q) return [
-          ...recentTargets(4).map(recentItem),
           ...here.items.map((it) => ({ ...it, g: it.grp + ' · ' + it.unit })),
           { sec: 'nav', icon: ICON_FOLDER,  label: 'Workspaces', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
@@ -3759,7 +4022,7 @@
         ];
         const items = [
           ...here.items.map((it) => ({ ...it, g: 'Actions', ctx: it.unit })),
-          { g: 'Actions', icon: ICON_PLUS,     label: 'Add workspace', enter: () => pushFrame(createFrame('workspace')) },
+          { g: 'Actions', icon: ICON_PLUS,     label: 'New workspace…', enter: () => pushFrame(createFrame('workspace')) },
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
@@ -3779,7 +4042,8 @@
       crumb: 'Workspaces', placeholder: 'Search workspaces…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_PLUS, label: 'Add workspace', enter: () => pushFrame(createFrame('workspace')) },
+          { sec: 'act', icon: ICON_PLUS,  label: 'New workspace…',    enter: () => pushFrame(createFrame('workspace')) },
+          { sec: 'act', icon: ICON_TRASH, label: 'Remove workspace…', danger: true, enter: () => pushFrame(deletePicker('workspace')) },
         ];
         allRows('.repo__head').forEach((h) => items.push({ sec: 'list', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         return items;
@@ -3795,7 +4059,8 @@
     return {
       crumb: cfg.crumb, placeholder: cfg.ph,
       build() {
-        const items = [];
+        const verb = kind === 'session' ? 'Delete' : 'Remove';
+        const items = [{ sec: 'act', icon: ICON_TRASH, label: verb + ' ' + kind + '…', danger: true, enter: () => pushFrame(deletePicker(kind)) }];
         allRows(cfg.sel).forEach((r) => items.push(cfg.mk(r)));
         return items;
       },
@@ -3808,7 +4073,7 @@
       crumb: name, placeholder: 'Search ' + name + '…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_BRANCH, label: 'New branch',  enter: () => pushFrame(createFrame('worktree', head)) },
+          { sec: 'act', icon: ICON_BRANCH, label: 'New worktree…',  enter: () => pushFrame(createFrame('worktree', head)) },
         ];
         // Session creates land on the workspace's active branch (contextBranch's fallback);
         // the ctx chip names it since the crumb only establishes the workspace.
@@ -3821,9 +4086,9 @@
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
         items.push(
-          { sec: 'act', icon: ICON_GEAR,   label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) },
-          { sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) },
-          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', enter: () => pushFrame(confirmFrame(head)) },
+          { sec: 'act', icon: ICON_GEAR,   label: 'Workspace settings…', enter: () => runAndClose(() => enterSettings(head)) },
+          { sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(head)) },
+          { sec: 'act', icon: ICON_TRASH,  label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(head)) },
         );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -3841,8 +4106,8 @@
           { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    enter: () => runAndClose(() => addTerminal(row)) },
           { sec: 'act', icon: ICON_AI,       label: 'New Claude Code', enter: () => runAndClose(() => addClaude(row)) },
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
-          { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
-          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', enter: () => pushFrame(confirmFrame(row)) },
+          { sec: 'act', icon: ICON_RENAME,   label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) },
+          { sec: 'act', icon: ICON_TRASH,    label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
           row.closest('[data-repo]').querySelectorAll('.sessions .session').forEach((s) =>
@@ -3885,13 +4150,13 @@
           items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addClaude(br)) });
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
-        items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(row)) });
+        items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) });
         if (row.dataset.type === 'browser') {
           const owner = ownerOf(row);
           if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
           else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
         }
-        items.push({ sec: 'act', icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(row)) });
+        items.push({ sec: 'act', icon: ICON_TRASH, label: 'Delete ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) });
         return items;
       },
     };
@@ -3921,20 +4186,32 @@
     else if (lvl === 'session') { const b = branchGroupOf(row); if (b) openPaletteAt(newSessionFrame(b)); }
   }
 
+  function deletePicker(kind) {
+    const cfg = {
+      workspace: { crumb: 'Remove workspace', ph: 'Select a workspace to remove…', sel: '.repo__head', icon: wsChip, label: wsName },
+      branch:    { crumb: 'Remove branch',    ph: 'Select a branch to remove…',    sel: '.branch',     icon: () => ICON_BRANCH, label: brName, ctx: wsOf },
+      session:   { crumb: 'Delete session',   ph: 'Select a session to delete…',   sel: '.session',    icon: seIcon, label: seName, meta: seStatus, ctx: seCtx, state: sessionState },
+    }[kind];
+    return {
+      crumb: cfg.crumb, placeholder: cfg.ph,
+      build() { return allRows(cfg.sel).map((r) => ({ icon: cfg.icon(r), label: cfg.label(r), ctx: cfg.ctx && cfg.ctx(r), meta: cfg.meta && cfg.meta(r), metaState: cfg.state && cfg.state(r), danger: true, enter: () => pushFrame(confirmFrame(r)) })); },
+    };
+  }
+
   function confirmFrame(row) {
     const level = rowLevel(row);
     if (level === 'branch') return removeWorktreeFrame(row);
     const name = level === 'repo' ? wsName(row) : seName(row);
     const verb = level === 'session' ? 'Delete' : 'Remove';
     const owned = level === 'session' ? ownedOf(row) : [];
-    const hint = level === 'repo' ? 'Removes it from the sidebar — the repo and everything on disk stay.'
-      : owned.length ? `Ends this session and its process, and closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
-      : 'Ends this session and its process.';
+    const hint = level === 'repo' ? 'Remove this workspace? Nothing on disk is deleted.'
+      : owned.length ? `Delete this session? This also closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
+      : 'Delete this session?';
     return {
-      crumb: verb + ' ' + name + '?', mode: 'confirm', note: hint, placeholder: '↵ confirm · esc cancel',
+      crumb: verb + ' ' + name + '?', mode: 'confirm', placeholder: hint + '  ↵ confirm · esc cancel',
       build() {
         return [
-          { icon: level === 'session' ? ICON_TRASH : ICON_MINUS, label: verb, danger: level === 'session', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_TRASH, label: verb + ' ' + name, danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },
@@ -3948,11 +4225,11 @@
     const name = brName(row);
     return {
       crumb: 'Remove ' + name + '?', mode: 'confirm',
-      note: 'Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way.', placeholder: '↵ select · esc cancel',
+      placeholder: 'Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel',
       build() {
         return [
-          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
-          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'git worktree remove + delete its folder on disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'stop tracking it here — the worktree stays on disk', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },
@@ -3962,7 +4239,7 @@
   function createFrame(kind, ctx) {
     if (kind === 'worktree') return worktreeFrame(ctx);
     const cfg = {
-      workspace: { crumb: 'Add workspace', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add workspace “' + v + '”', go: (v) => openWorktreePicker(v) },
+      workspace: { crumb: 'New workspace', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add workspace “' + v + '”', go: (v) => openWorktreePicker(v) },
     }[kind];
     return {
       crumb: cfg.crumb, mode: 'input', placeholder: cfg.ph,
@@ -3973,24 +4250,18 @@
     };
   }
 
-  // New branch via ⌘K: empty until you type, then fuzzy-match every local and remote
-  // branch (top 5), or cut a new branch off the typed name. A new branch shows, in one
-  // quiet line, the base it forks from and where its worktree lands on disk (ADR-0007).
+  // New worktree via ⌘K: empty until you type, then fuzzy-match every local and
+  // remote branch (top 5), or cut a new branch off the typed name. Each pick
+  // checks the branch out into its own worktree (ADR-0007).
   function worktreeFrame(ctx) {
     const repo = ctx && ctx.closest('[data-repo]');
-    const repoName = ctx ? wsName(ctx) : 'repo';
-    const baseEl = repo && (repo.querySelector('.branch--active .branch__name') || repo.querySelector('.branch__name'));
-    const baseName = baseEl ? baseEl.textContent : 'main';
-    const pathFor = (name) => '…/Synth/worktrees/' + repoName + '/' + name.replace(/[^\w.-]+/g, '-');
     const shown = () => new Set(repo ? [...repo.querySelectorAll('.branch__name')].map((n) => n.textContent) : []);
-    const isNew = (v) => v && !ALL_BRANCHES.some((b) => b.name === v);
     return {
-      crumb: 'New branch', mode: 'input', placeholder: 'Search branches to check out…',
+      crumb: 'New worktree', mode: 'input', placeholder: 'Search branches to check out…',
       dashSpaces: true,
-      note: (v) => isNew(v) ? 'New branch off ' + baseName + ' · ' + pathFor(v) : '',
       build(q) {
         const v = q.trim();
-        if (!v) return [{ icon: ICON_SEARCH, label: 'Type a branch name to check out or create…', disabled: true }];   // guide, not "No results", on an untouched field
+        if (!v) return [];   // empty by default — the branch list only appears once you search
         const skip = shown(), seen = new Set(), scored = [];
         ALL_BRANCHES.forEach((b) => {
           if (seen.has(b.name) || skip.has(b.name)) return;   // dedup local/remote + hide already-checked-out
@@ -4048,11 +4319,9 @@
     if (!fr.mode && q) {   // 'list' frames fuzzy-filter by query; 'input'/'confirm' frames don't
       const sectioned = items.some((it) => it.g || it.sec);
       if (sectioned) {
-        const byK = new Map();
-        items.forEach((it) => { const s = itemScore(q, it); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) byK.set(k, []); byK.get(k).push({ it, s }); });
-        byK.forEach((arr) => arr.sort((a, b) => b.s - a.s));
-        const order = [...byK.keys()].sort((a, b) => byK.get(b)[0].s - byK.get(a)[0].s);   // group with the best match leads
-        items = order.flatMap((k) => byK.get(k).map((x) => x.it));
+        const order = [], byK = new Map();
+        items.forEach((it) => { const s = itemScore(q, it); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) { byK.set(k, []); order.push(k); } byK.get(k).push({ it, s }); });
+        items = order.flatMap((k) => byK.get(k).sort((a, b) => b.s - a.s).map((x) => x.it));
       } else {
         items = items.map((it) => ({ it, s: itemScore(q, it) })).filter((x) => x.s > -Infinity).sort((a, b) => b.s - a.s).map((x) => x.it);
       }
@@ -4062,10 +4331,7 @@
 
   function paintList(items) {
     palItems = items;
-    const fr = curFrame();
-    const note = typeof fr.note === 'function' ? fr.note(pal.input.value.trim()) : fr.note;
-    let html = note ? '<div class="cmdk__note">' + esc(note) + '</div>' : '';
-    let lastG = null, lastSec = null;
+    let html = '', lastG = null, lastSec = null;
     items.forEach((it, i) => {
       if (it.g && it.g !== lastG) { html += '<div class="cmdk__group">' + esc(it.g) + '</div>'; lastG = it.g; lastSec = it.sec || null; }
       else if (it.sec && it.sec !== lastSec) { if (i > 0) html += '<div class="cmdk__div"></div>'; lastSec = it.sec; }
@@ -4075,9 +4341,8 @@
       html += '<div class="cmdk__item' + (it.danger ? ' cmdk__item--danger' : '') + (it.disabled ? ' is-disabled' : '') + '" data-i="' + i + '">'
         + '<span class="cmdk__ico">' + it.icon + '</span><span class="cmdk__label">' + esc(it.label) + '</span>' + ctx + meta + hint + '</div>';
     });
-    pal.list.innerHTML = (items.length || fr.note) ? html : '<div class="cmdk__empty">No results</div>';
-    palActive = pal.fresh ? -1 : 0;   // fresh open: nothing pre-highlighted so reflexive Enter is a no-op
-    pal.fresh = false;
+    pal.list.innerHTML = items.length ? html : '<div class="cmdk__empty">No results</div>';
+    palActive = 0;
     paintActive();
     sizeList();
   }
@@ -4111,13 +4376,13 @@
     closeMenu();
     const backdrop = document.createElement('div');
     backdrop.className = 'cmdk';
-    backdrop.innerHTML = '<div class="cmdk__panel" role="dialog" aria-modal="true" aria-label="Command palette">'
+    backdrop.innerHTML = '<div class="cmdk__panel" role="dialog" aria-label="Command palette">'
       + '<div class="cmdk__search"><span class="cmdk__search-ico">' + ICON_SEARCH + '</span>'
       + '<span class="cmdk__crumbs"></span>'
       + '<input class="cmdk__input" autocomplete="off" spellcheck="false" /></div>'
       + '<div class="cmdk__list"></div></div>';
     document.body.appendChild(backdrop);
-    pal = { backdrop, input: backdrop.querySelector('.cmdk__input'), list: backdrop.querySelector('.cmdk__list'), crumbs: backdrop.querySelector('.cmdk__crumbs'), stack: [rootFrame()], fresh: true, prevFocus: document.activeElement };
+    pal = { backdrop, input: backdrop.querySelector('.cmdk__input'), list: backdrop.querySelector('.cmdk__list'), crumbs: backdrop.querySelector('.cmdk__crumbs'), stack: [rootFrame()] };
     paletteOpen = true;
     renderFrame();
     requestAnimationFrame(() => backdrop.classList.add('open'));
@@ -4137,11 +4402,10 @@
   }
   function closePalette() {
     if (!pal) return;
-    const b = pal.backdrop, prev = pal.prevFocus;
+    const b = pal.backdrop;
     b.classList.remove('open');
     setTimeout(() => b.remove(), 180);
     pal = null; paletteOpen = false;
-    if (prev && prev.focus && document.contains(prev)) prev.focus();
   }
 
   // The palette owns the keyboard while open. ↑/↓ + Ctrl+J/K (+ Ctrl+N/P) move the active row;
@@ -4149,8 +4413,7 @@
   document.addEventListener('keydown', (e) => {
     if (!paletteOpen) return;
     const k = e.key;
-    if (k === 'Tab') { e.preventDefault(); pal.input.focus(); return; }   // trap focus inside the open palette
-    if (k === 'Escape') { e.preventDefault(); if (pal.stack.length > 1) popFrame(); else closePalette(); return; }
+    if (k === 'Escape') { e.preventDefault(); closePalette(); return; }
     if (k === 'Enter') { e.preventDefault(); runActive(); return; }
     if (k === 'ArrowDown' || (e.ctrlKey && !e.metaKey && (k === 'j' || k === 'J' || k === 'n' || k === 'N'))) { e.preventDefault(); palMove(1); return; }
     if (k === 'ArrowUp'   || (e.ctrlKey && !e.metaKey && (k === 'k' || k === 'K' || k === 'p' || k === 'P'))) { e.preventDefault(); palMove(-1); return; }
@@ -4533,6 +4796,7 @@
     closeMenu();
     if (paletteOpen) closePalette();
     if (shortcutsEl) closeShortcuts();
+    setupEl = null;   // leaving for settings revokes any armed setup-resolve
     app.classList.remove('collapsed');
     settingsScope = scope || 'global';
     buildScopeNav();

@@ -50,6 +50,7 @@ struct ShortcutsSheet: View {
     private static let groups: [ShortcutGroup] = [
         ShortcutGroup(name: "General", rows: [
             Shortcut(keys: ["⌘", "K"], label: "Command palette"),
+            Shortcut(keys: ["⌘", "T"], label: "New terminal"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
             Shortcut(keys: ["⌘", "0"], label: "Focus sidebar"),
             Shortcut(keys: ["⌘", "1"], label: "Focus open session"),
@@ -76,7 +77,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),
             Shortcut(keys: ["↵"], label: "Open · drill in"),
             Shortcut(keys: ["⌫"], label: "Back (empty search)"),
-            Shortcut(keys: ["esc"], label: "Close"),
+            Shortcut(keys: ["esc"], label: "Back · close"),
         ]),
     ]
 

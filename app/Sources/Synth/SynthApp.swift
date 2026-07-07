@@ -202,10 +202,12 @@ struct RootView: View {
             }
             // The palette owns the keyboard while open (working.html): ↑/↓ + Ctrl+J/K
             // (+ Ctrl+N/P) move, Enter runs, Backspace on an empty query pops, Esc
-            // closes. Ctrl+K means "up" here — only ⌘K closes.
+            // pops one frame and closes at the root. Ctrl+K means "up" here — only ⌘K closes.
             if let pal = store.palette {
                 switch event.keyCode {
-                case 53:  store.closePalette(); return nil   // Esc
+                case 53:                                     // Esc pops one frame, closes at root
+                    if pal.stack.count > 1 { pal.pop() } else { store.closePalette() }
+                    return nil
                 case 36, 76: pal.runActive(); return nil     // Return / keypad Enter
                 case 125: pal.move(1); return nil            // ↓
                 case 126: pal.move(-1); return nil           // ↑

@@ -214,16 +214,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var reorderScrollNonce = 0
 
     /// Sheet drivers.
-    var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?
-
-    /// The row-action menu currently open (nil = none). Clearing it always drops any
-    /// in-progress delete confirmation.
-    var activeMenu: ActiveMenu? { didSet { if activeMenu == nil { menuConfirming = false } } }
-
-    /// The open menu is showing its two-step delete confirm (working.html `.menu.confirming`).
-    /// Lifted out of RowMenu so the keyboard can drive it: `d` opens straight here, ↵ commits.
-    var menuConfirming = false
 
     /// The sidebar row being renamed inline, and its live text — working.html's
     /// contentEditable name label. nil = nothing renaming.
@@ -629,7 +620,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
     }
 
     func enterSettings(_ scope: SettingsScope = .global) {
-        activeMenu = nil
         closePalette()
         shortcutsOpen = false
         sidebarCollapsed = false
@@ -677,7 +667,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     func openPalette() {
         guard palette == nil else { return }
-        activeMenu = nil
         palette = PaletteModel(store: self)
     }
 
@@ -686,7 +675,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// A row's ⋯ kebab opens the palette drilled to that row (working.html openRowActions),
     /// rather than the hover popover. Re-drills if the palette is already open.
     func openRowActions(_ ref: RowRef) {
-        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         palette?.drill(to: ref)
     }
@@ -696,7 +684,6 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// session leaf — a sibling session in that leaf's parent worktree (working.html addToRow).
     /// Opens the palette if closed; if already open, resets to root then pushes the frame.
     func addToRow(_ ref: RowRef) {
-        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         let frame: PaletteFrame?

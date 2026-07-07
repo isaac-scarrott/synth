@@ -249,8 +249,7 @@ private struct WorkspaceRow: View {
 
     private var isOpen: Bool { store.expanded.contains(workspace.id) }
     private var selected: Bool { store.keyboardActive && store.navCursor == workspace.id }
-    private var menuOpen: Bool { store.activeMenu?.rowID == workspace.id }
-    private var revealed: Bool { hovering || menuOpen }
+    private var revealed: Bool { hovering }
     private var renaming: Bool { store.renamingRowID == workspace.id }
 
     var body: some View {
@@ -342,7 +341,7 @@ private struct BranchRow: View {
     @State private var hovering = false
 
     private var isOpen: Bool { store.expanded.contains(branch.id) }
-    private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
+    private var revealed: Bool { hovering }
     private var renaming: Bool { store.renamingRowID == branch.id }
     private var isActivePill: Bool {
         // The branch containing the open session — but an *expanded* group already
@@ -452,7 +451,7 @@ private struct SessionRow: View {
     // Ambient "done" wash: a background session settling to idle sweeps a soft highlight once
     // (working.html `session--pulse`). Bumping the store token starts a single 900ms fade.
     @State private var pulse = false
-    private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
+    private var revealed: Bool { hovering }
     private var isOpen: Bool { store.openSessionID == session.id }
     private var renaming: Bool { store.renamingRowID == session.id }
 
@@ -549,25 +548,20 @@ private struct KebabButton: View {
     @Environment(AppStore.self) private var store
     let ref: RowRef
 
-    private var menuOpen: Bool { store.activeMenu?.rowID == ref.id }
-
     var body: some View {
         Button {
-            // The ⋯ kebab opens the ⌘K palette drilled to this row (working.html openRowActions),
-            // not the hover popover. The popover stays for the `d` quick-delete keybinding.
+            // The ⋯ kebab opens the ⌘K palette drilled to this row (working.html openRowActions).
             store.openRowActions(ref)
         } label: {
-            // 13px glyph in a 20px box; the open menu fills a rounded 7px hover box
-            // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
+            // 13px glyph in a 20px box (working.html .kebab).
             Phos(path: Phosphor.dots, size: 13)
-                .foregroundStyle(menuOpen ? Theme.ink2 : Theme.inkFaint)
+                .foregroundStyle(Theme.inkFaint)
                 .frame(width: 20, height: 20)
-                .background(RoundedRectangle(cornerRadius: 7).fill(menuOpen ? Theme.rowSelected : .clear))
+                .background(RoundedRectangle(cornerRadius: 7).fill(.clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(KebabPressStyle())
         .help("Actions")
-        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [id = ref.id] anchor in [id: anchor] }
     }
 }
 

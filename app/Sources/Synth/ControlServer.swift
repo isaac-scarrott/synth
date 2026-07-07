@@ -267,15 +267,14 @@ final class ControlServer: @unchecked Sendable {
 
         case "automation.palette" where automation:
             guard let pal = store.palette else {
-                return ["ok": true, "open": false, "menuOpen": store.activeMenu != nil]
+                return ["ok": true, "open": false]
             }
             let frame = pal.stack.last
             return ["ok": true, "open": true,
                     "crumb": frame?.crumb ?? "",
                     "items": pal.items.map(\.label),
                     "disabled": pal.items.map(\.disabled),
-                    "activeIndex": pal.activeIndex,
-                    "menuOpen": store.activeMenu != nil]
+                    "activeIndex": pal.activeIndex]
 
         // A window-server-free screenshot: the app caches its own key window's content
         // view into a PNG at `path` — the visual evidence path where TCC denies

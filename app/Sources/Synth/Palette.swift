@@ -362,6 +362,9 @@ struct PaletteFrame {
                     PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts", sec: "act",
                                 kbd: ["⌘", "?"],
                                 enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
+                    PaletteItem(icon: .phosphor(Phosphor.commentMode), label: "Send feedback…", sec: "act",
+                                kbd: ["⌘", "⇧", "F"],
+                                enter: { self.runAndClose { self.store.feedbackOpen = true } }),
                 ]
                 return items
             }
@@ -380,6 +383,9 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts", group: "Actions",
                             kbd: ["⌘", "?"],
                             enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
+                PaletteItem(icon: .phosphor(Phosphor.commentMode), label: "Send feedback…", group: "Actions",
+                            kbd: ["⌘", "⇧", "F"],
+                            enter: { self.runAndClose { self.store.feedbackOpen = true } }),
             ]
             // Search groups run most-local-first: Actions (above), then Sessions, Branches, Workspaces.
             for ws in store.workspaces {

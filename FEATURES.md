@@ -224,3 +224,14 @@ disclosure to dive deeper.
   serves a Claude session *and* its sub-agents (no caller identity in MCP) and a process-wide
   focus pointer had concurrent agents driving each other's browsers; superseded CDP connections
   now retire on a delay so a reconnect can't kill another agent's in-flight call.
+
+## [2026-07-07](docs/features/2026-07-07.md)
+
+- **In-app feedback (⌘⇧F) — one textbox that forks (both designs + native app)** — ⌘⇧F (also a ⌘K
+  action + ⌘? row) opens one textbox; ⌘↵ sends, Esc dismisses, draft persists. Resolved once at
+  launch by git identity: the author turns a gripe into a real `feedback/<slug>` worktree with a
+  Claude session already working it (reusing lazy worktrees + CommentMode's live-Claude PTY
+  delivery, seeded with the text + structural context); everyone else gets a pre-filled
+  `mailto:isaac.scarrott11@gmail.com`. Context is captured silently, allowlisted to scalar facts
+  (session kind/status/counts, theme, version/OS) — never file contents, paths, terminal output,
+  env or clipboard; the email attaches only version/OS.

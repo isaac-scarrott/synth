@@ -1025,6 +1025,31 @@
   .dialog__btn--primary { background: var(--input); color: #fff; border-color: transparent; }
   .dialog__btn.is-disabled { opacity: 0.4; pointer-events: none; }
 
+  /* ---- Feedback (⌘⇧F) — one textbox; author spawns a fix, everyone else emails ---- */
+  .dialog--feedback { width: 460px; padding: 16px; }
+  .fb__text {
+    width: 100%; box-sizing: border-box; resize: none; display: block;
+    font-family: var(--font); font-size: 14px; line-height: 1.45; color: var(--ink);
+    background: var(--raised); border: 0.5px solid var(--line-2); border-radius: 10px;
+    padding: 11px 12px; outline: none; min-height: 66px; max-height: 210px; overflow-y: auto;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .fb__text::placeholder { color: var(--text-faint); }
+  .fb__text:focus { border-color: var(--input); box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
+
+  .fb__foot { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; }
+  .fb__dismiss { font-size: 11px; color: var(--text-faint); }
+  .fb__send { display: inline-flex; align-items: center; gap: 7px; }
+  .fb__send kbd { font-family: inherit; font-size: 10.5px; font-weight: 600; opacity: 0.85; padding: 1px 5px; border-radius: 5px; background: rgba(255,255,255,0.18); }
+
+  .fb-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(8px); z-index: 300; display: flex; align-items: center; gap: 9px; padding: 9px 15px 9px 13px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); border-radius: 999px; box-shadow: var(--notif-shadow); font-size: 12.5px; font-weight: 550; color: var(--ink-2); opacity: 0; transition: opacity 200ms ease, transform 240ms var(--ease-out); pointer-events: none; }
+  .fb-toast.in { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .fb-toast__glyph { display: flex; }
+  .fb-toast__glyph svg { width: 15px; height: 15px; }
+  .fb-toast--done .fb-toast__glyph { color: var(--run); }
+  .fb-toast--mail .fb-toast__glyph { color: var(--input); }
+  .fb-toast b { font-weight: 600; color: var(--ink); }
+
   /* ---- Add-worktrees picker (multi-select, keyboard-first like the tree) ---- */
   .wtlist { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 12px; max-height: 264px; overflow-y: auto; }
   .wtrow {
@@ -1269,6 +1294,7 @@
   .sc-row__label { font-size: 12.5px; color: var(--ink-2); }
   .sc-row__keys { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
   .sc-row__or { font-size: 10.5px; color: #b6b6bb; padding: 0 3px; }
+  .sc-hint { margin-top: 8px; padding-top: 11px; border-top: 0.5px solid var(--line-soft); display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-muted); }
 
   /* ---- Sidebar footer: Settings entry (pinned to the bottom of the left panel) ---- */
   .sidebar__foot {
@@ -2671,6 +2697,13 @@
       return;
     }
     if (shortcutsEl) { if (k === 'Escape') closeShortcuts(); return; }
+    // ⌘⇧F — send feedback from anywhere. One textbox; the author path spawns a fix, everyone else emails.
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (k === 'f' || k === 'F')) {
+      e.preventDefault();
+      if (paletteOpen) closePalette();
+      openFeedback();
+      return;
+    }
     // Cmd/Ctrl+K opens the palette; Cmd+K also closes it. Ctrl+K while open = nav-up (handled in-palette).
     if ((e.metaKey || e.ctrlKey) && (k === 'k' || k === 'K')) {
       if (!paletteOpen) { e.preventDefault(); openPalette(); return; }
@@ -3555,6 +3588,7 @@
       [['⌘', '1'], 'Focus open session'],
       [['⌘', ','], 'Settings'],
       [['⌘', '?'], 'Keyboard shortcuts'],
+      [['⌘', '⇧', 'F'], 'Send feedback'],
     ]],
     ['Sidebar', [
       [['↑', '↓'], 'Move selection', ['J', 'K']],
@@ -3592,6 +3626,7 @@
         + rows.map(([ks, label, alt]) => '<div class="sc-row"><span class="sc-row__label">' + label + '</span>'
           + '<span class="sc-row__keys">' + keys(ks) + (alt ? '<span class="sc-row__or">or</span>' + keys(alt) : '') + '</span></div>').join('')
         + '</div>').join('')
+      + '<div class="sc-hint">Something off? Send feedback with ' + keys(['⌘', '⇧', 'F']) + '</div>'
       + '</div>';
     document.body.appendChild(backdrop);
     requestAnimationFrame(() => backdrop.classList.add('open'));
@@ -3603,6 +3638,128 @@
     const b = shortcutsEl; shortcutsEl = null;
     b.classList.remove('open');
     setTimeout(() => b.remove(), 200);
+  }
+
+  // ===== Feedback (⌘⇧F) — one frictionless textbox that forks on who is running Synth =====
+  // The author (running Synth over its own source, git identity matched) turns a gripe into a real
+  // feedback/<slug> worktree with a Claude session already working it; everyone else gets a
+  // pre-filled email. One surface, identical until send — the fork lives only in the outcome.
+  // Context (session kind, status, counts, theme) is captured silently and attached for repro —
+  // structural only: file contents, paths, terminal output, env values and clipboard never leave;
+  // the email path attaches only version/OS. Append ?guest to preview it; the native port resolves
+  // the mode from git identity + the Synth workspace instead.
+  const ICON_CHAT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216ZM84,116a12,12,0,1,1,12,12A12,12,0,0,1,84,116Zm44,0a12,12,0,1,1,12,12A12,12,0,0,1,128,116Zm44,0a12,12,0,1,1,12,12A12,12,0,0,1,172,116Z"/></svg>';
+  const FEEDBACK_EMAIL = 'isaac.scarrott11@gmail.com';
+  const AUTHOR_MODE = !/[?&]guest\b/.test(location.search);
+  let feedbackEl = null, feedbackDraft = '';
+
+  // Structural facts only — what Synth is doing, never what you're building. Captured at send and
+  // folded into the payload silently; the user never has to manage it.
+  function captureContext() {
+    const kindLabel = { ai: 'Claude Code', terminal: 'Terminal', browser: 'Browser', simulator: 'Simulator' };
+    const rows = [];
+    if (openEl) rows.push(['Here', (kindLabel[openEl.dataset.type] || 'session') + ' · ' + branchNameOf(openEl)]);
+    const ws = document.querySelectorAll('.repo__head').length;
+    const working = document.querySelectorAll('.session .sdot--work').length;
+    const unread = document.querySelectorAll('.session--unread').length;
+    rows.push(['State', ws + (ws === 1 ? ' workspace' : ' workspaces') + ' · ' + working + ' working · ' + unread + ' unread']);
+    rows.push(['Env', 'Synth 0.4 · macOS 15 · ' + (document.documentElement.dataset.theme || 'system') + ' theme']);
+    return rows;
+  }
+
+  function openFeedback() {
+    if (feedbackEl) return;
+    closeMenu();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    backdrop.innerHTML = '<div class="dialog dialog--feedback" role="dialog" aria-label="Send feedback">'
+      + '<textarea class="fb__text" placeholder="What&#39;s off?" spellcheck="true">' + esc(feedbackDraft) + '</textarea>'
+      + '<div class="fb__foot"><span class="fb__dismiss">esc to dismiss</span>'
+      + '<span class="dialog__btn dialog__btn--primary fb__send is-disabled" data-send>Send <kbd>⌘↵</kbd></span></div>'
+      + '</div>';
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+    feedbackEl = backdrop;
+
+    const ta = backdrop.querySelector('.fb__text');
+    const sendBtn = backdrop.querySelector('[data-send]');
+    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 210) + 'px'; };
+    const paint = () => sendBtn.classList.toggle('is-disabled', !ta.value.trim());
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); grow(); }, 60);
+    ta.addEventListener('input', () => { feedbackDraft = ta.value; grow(); paint(); });
+    paint();
+
+    const close = () => { feedbackEl = null; backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey, true); };
+    const submit = () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      feedbackDraft = '';
+      const ctx = captureContext();
+      close();
+      if (AUTHOR_MODE) sendFeedbackAsFix(text, ctx); else sendFeedbackAsEmail(text, ctx);
+    };
+    backdrop.addEventListener('click', (ev) => { if (ev.target === backdrop) close(); });
+    sendBtn.addEventListener('click', submit);
+    function onKey(ev) {
+      if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+      else if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); submit(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  function slugify(text) {
+    const s = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').filter(Boolean).slice(0, 4).join('-');
+    return s || 'note';
+  }
+
+  // Author path: the gripe becomes a real feedback/<slug> branch group with a Claude session
+  // already working it — spawned quietly (unread bullet, no focus steal), exactly like an
+  // agent-created browser. The session appearing in the tree is the confirmation.
+  function sendFeedbackAsFix(text, ctx) {
+    const repo = (openEl && outerRepoOf(openEl)) || document.querySelector('.repo[data-repo]');
+    const slug = slugify(text);
+    const seed = text + '\n\n' + ctx.map(([kk, v]) => kk + ': ' + v).join('\n');   // the prompt Claude is seeded with
+    if (repo) {
+      repo.classList.add('repo--open');
+      const branches = repo.querySelector('.branches');
+      const wrapper = branchGroupShell('feedback/' + slug, 'now');
+      wrapper.classList.add('row-enter');
+      branches.appendChild(wrapper);
+      wrapper.querySelectorAll('[data-row]').forEach(addKebab);
+      wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
+      addSession(wrapper.querySelector('.branch--group'), 'claude', { name: 'Claude Code', open: false });
+      const sess = wrapper.querySelector('.session');
+      if (sess) { setSessionState(sess, 'work'); sess.classList.add('session--unread'); sess.title = seed; }
+      rollUpGroups();
+    }
+    flashToast('done', 'On it', 'feedback/' + slug);
+  }
+
+  // Everyone else: a pre-filled email, capped for mailto's practical body limit. No client → the
+  // native port copies to clipboard and says so; the prototype just fires the mailto and confirms.
+  function sendFeedbackAsEmail(text, ctx) {
+    const env = (ctx.find(([kk]) => kk === 'Env') || [])[1] || '';   // email path attaches only version/OS — no branch/session names
+    const body = (text + (env ? '\n\n— — —\n' + env : '') + '\n\nSent from Synth').slice(0, 1600);
+    const url = 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent('Synth feedback') + '&body=' + encodeURIComponent(body);
+    try { location.href = url; } catch (e) {}
+    flashToast('mail', 'Handed to Mail', '');
+  }
+
+  const TOAST_MARK = {
+    done: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z"/></svg>',
+    mail: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48ZM98.71,128,40,181.81V74.19Zm11.84,10.85,12,11.05a8,8,0,0,0,10.82,0l12-11.05,58,53.15H52.57ZM157.29,128,216,74.18V181.82ZM203.43,64,128,133.15,52.57,64Z"/></svg>',
+  };
+  let toastTimer = null;
+  function flashToast(kind, title, sub) {
+    document.querySelectorAll('.fb-toast').forEach((t) => t.remove());
+    if (toastTimer) clearTimeout(toastTimer);
+    const t = document.createElement('div');
+    t.className = 'fb-toast fb-toast--' + kind;
+    t.innerHTML = '<span class="fb-toast__glyph">' + (TOAST_MARK[kind] || TOAST_MARK.done) + '</span>'
+      + '<span><b>' + esc(title) + '</b>' + (sub ? '&nbsp;&nbsp;' + esc(sub) : '') + '</span>';
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('in'));
+    toastTimer = setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 260); }, 3400);
   }
 
   // ===== Command palette (⌘K) — Linear-style fuzzy command + jump menu =====
@@ -3774,6 +3931,7 @@
           { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { sec: 'act', icon: ICON_GEAR,    label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { sec: 'act', icon: ICON_KEYS,    label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
+          { sec: 'act', icon: ICON_CHAT,    label: 'Send feedback…', kbd: ['⌘', '⇧', 'F'], enter: () => runAndClose(openFeedback) },
         ];
         const items = [
           ...here.items.map((it) => ({ ...it, g: 'Actions', ctx: it.unit })),
@@ -3781,6 +3939,7 @@
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
+          { g: 'Actions', icon: ICON_CHAT,     label: 'Send feedback…', kbd: ['⌘', '⇧', 'F'], enter: () => runAndClose(openFeedback) },
         ];
         // Search groups run most-local-first: Actions (above), then Sessions, Branches, Workspaces.
         allRows('.session').forEach((s) => items.push({ g: 'Sessions', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }));

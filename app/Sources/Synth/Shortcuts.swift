@@ -55,6 +55,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "1"], label: "Focus open session"),
             Shortcut(keys: ["⌘", ","], label: "Settings"),
             Shortcut(keys: ["⌘", "?"], label: "Keyboard shortcuts"),
+            Shortcut(keys: ["⌘", "⇧", "F"], label: "Send feedback"),
         ]),
         ShortcutGroup(name: "Sidebar", rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move selection", alt: ["J", "K"]),

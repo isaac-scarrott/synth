@@ -129,6 +129,25 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var openSessionID: UUID?
     var sidebarCollapsed = false
 
+    /// Frecency for the cold palette's "Recent" group (working.html `visits`/`visitClock`).
+    /// A monotonic tick per open stamps last-use; in-memory only — muscle memory for this
+    /// run, deliberately not persisted.
+    var visits: [UUID: Int] = [:]
+    var visitClock = 0
+    func recordVisit(_ id: UUID) { visitClock += 1; visits[id] = visitClock }
+
+    /// The most-recently-opened stable targets, newest first (working.html `recentTargets`).
+    /// Dynamically-named sessions are excluded — an AI title or browser URL shifts, so it
+    /// can't earn a fixed spot; terminals and any hand-renamed session are stable. Only rows
+    /// whose id still resolves live are returned.
+    func recentTargets(_ limit: Int) -> [Session] {
+        visits.sorted { $0.value > $1.value }
+            .compactMap { session($0.key) }
+            .filter { s in !((s.spawnedKind == .claudeCode || s.spawnedKind == .browser) && !s.titleIsCustom) }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).
     var themePref: ThemePref = (ThemePref(rawValue: UserDefaults.standard.string(forKey: AppStore.themeKey) ?? "") ?? .system) {
@@ -594,6 +613,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         navCursor = session.id
         session.unread = false
         clearNotif(session.id)   // opening a notified session dismisses its standing toast
+        recordVisit(session.id)  // frecency for the palette's Recent group
     }
 
     // MARK: Settings

@@ -68,14 +68,22 @@ struct PaletteFrame {
     var seed: String? = nil
     /// Input frames that name a new branch rewrite spaces to dashes as you type.
     var dashSpaces = false
+    /// A wrapping consequence line rendered above the list (working.html `cmdk__note`) —
+    /// confirm frames spell out what a choice does where a truncating placeholder can't.
+    var note: String? = nil
     var build: (String) -> [PaletteItem]
 }
 
 @MainActor @Observable final class PaletteModel {
     unowned let store: AppStore
     var stack: [PaletteFrame] = []
-    var query = "" { didSet { activeIndex = 0 } }
-    var activeIndex = 0
+    // A real query change snaps the cursor to the best match (index 0 after ranking). The
+    // `oldValue` guard ignores the empty→empty write SwiftUI's TextField binding fires on
+    // open, so a fresh palette keeps its unhighlighted `-1` (reflexive ⌘K→Enter is a no-op).
+    var query = "" { didSet { if query != oldValue { activeIndex = 0 } } }
+    /// A fresh open highlights nothing (`-1`); the first ↓ / keystroke / drill selects a real
+    /// row (working.html's `fresh` flag). `move` wraps -1 → 0; `drill` selects index 0.
+    var activeIndex = -1
 
     /// Branch lists for the New-worktree search, read OFF the main thread so pressing
     /// `a` on a workspace never blocks the UI on git (a large/cold repo's `for-each-ref`
@@ -106,25 +114,38 @@ struct PaletteFrame {
 
     var frame: PaletteFrame { stack[stack.count - 1] }
 
-    /// The frame's items, fuzzy-filtered for `list` frames — section order preserved,
-    /// fuzzy-ranked within each section (working.html's renderFrame).
+    /// The frame's items, fuzzy-filtered for `list` frames — ranked so a typed NAME beats
+    /// loose matches and the group holding the global-best match leads (working.html's
+    /// itemScore + renderFrame). Typing a row's exact name lands the cursor on that row,
+    /// not on an action that merely mentions it via `ctx`.
     var items: [PaletteItem] {
         let q = query.trimmingCharacters(in: .whitespaces)
         let built = frame.build(q)
         guard frame.mode == .list, !q.isEmpty else { return built }
+        let ql = q.lowercased()
         var order: [String] = []
         var byKey: [String: [(PaletteItem, Double)]] = [:]
         for it in built {
-            // Fold the context chip into matching (working.html itemScore) so a bare-labelled
-            // action ("Rename") is still found by its target's name via `ctx`.
-            let base = fuzzyScore(q, it.label)
-            let withCtx = it.ctx.flatMap { c in fuzzyScore(q, "\(c) \(it.label)").map { $0 - 2 } }
-            guard let s = [base, withCtx].compactMap({ $0 }).max() else { continue }
+            // A label hit outranks a ctx-only hit: exact/prefix boosts the label, and the
+            // context path is folded in only as a weak fallback (working.html itemScore).
+            let b = it.label.lowercased()
+            let boost: Double = b == ql ? 1000 : b.hasPrefix(ql) ? 200 : 0
+            let labelScore = fuzzyScore(q, it.label).map { $0 + boost } ?? -.infinity
+            let ctxScore = it.ctx.flatMap { fuzzyScore(q, "\($0) \(it.label)") }.map { $0 - 6 } ?? -.infinity
+            let s = max(labelScore, ctxScore)
+            guard s > -.infinity else { continue }
             let k = it.group ?? it.sec ?? ""
             if byKey[k] == nil { byKey[k] = []; order.append(k) }
             byKey[k]!.append((it, s))
         }
-        return order.flatMap { byKey[$0]!.sorted { $0.1 > $1.1 }.map(\.0) }
+        for k in byKey.keys { byKey[k]!.sort { $0.1 > $1.1 } }
+        // Order groups by their best member's score (first-appearance breaks ties), so the
+        // overall top row is the strongest hit.
+        let ranked = order.enumerated().sorted { a, br in
+            let sa = byKey[a.element]![0].1, sb = byKey[br.element]![0].1
+            return sa != sb ? sa > sb : a.offset < br.offset
+        }.map(\.element)
+        return ranked.flatMap { byKey[$0]!.map(\.0) }
     }
 
     func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? "" }
@@ -151,7 +172,7 @@ struct PaletteFrame {
 
     func runActive() {
         let its = items
-        guard activeIndex < its.count else { return }
+        guard activeIndex >= 0, activeIndex < its.count else { return }
         let it = its[activeIndex]
         guard !it.disabled else { return }
         it.enter()
@@ -343,7 +364,10 @@ struct PaletteFrame {
         PaletteFrame(placeholder: "Search or jump to anything…") { [self] q in
             let here = contextActions()
             if q.isEmpty {
-                var items = here.map { item -> PaletteItem in
+                // Frecency leads the cold palette: your most-recent stable targets, one keystroke
+                // away (working.html recentTargets). Absent on a fresh state with no history.
+                var items = store.recentTargets(4).map { sessionItem($0, ctx: true, group: "Recent") }
+                items += here.map { item -> PaletteItem in
                     var it = item; it.ctx = nil; return it
                 }
                 items += [
@@ -535,11 +559,11 @@ struct PaletteFrame {
 
     // MARK: Remove/delete → inline confirm
 
-    private func confirmFrame(verb: String, name: String, hint: String,
+    private func confirmFrame(verb: String, name: String, note: String,
                               icon: String, danger: Bool,
                               perform: @escaping () -> Void) -> PaletteFrame {
-        PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "\(hint)  ↵ confirm · esc cancel",
-                     mode: .confirm) { [self] _ in
+        PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "↵ confirm · esc cancel",
+                     mode: .confirm, note: note) { [self] _ in
             [
                 PaletteItem(icon: .phosphor(icon), label: "\(verb) \(name)", danger: danger,
                             enter: { self.runAndClose(perform) }),
@@ -550,7 +574,7 @@ struct PaletteFrame {
 
     func confirmRemoveWorkspace(_ ws: Workspace) -> PaletteFrame {
         confirmFrame(verb: "Remove", name: ws.name,
-                     hint: "Remove this workspace? Nothing on disk is deleted.",
+                     note: "Removes it from the sidebar — the repo and everything on disk stay.",
                      icon: Phosphor.minusCircle, danger: false) { [store] in
             store.removeWorkspace(ws)
         }
@@ -560,14 +584,15 @@ struct PaletteFrame {
     // The destructive path is danger-styled; the list-only path isn't — the colour is the tell.
     func confirmRemoveBranch(_ br: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "Remove \(br.name)?",
-                     placeholder: "Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel",
-                     mode: .confirm) { [self] _ in
+                     placeholder: "↵ select · esc cancel",
+                     mode: .confirm,
+                     note: "Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way.") { [self] _ in
             [
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
-                            ctx: "stop tracking it here — the worktree stays on disk",
+                            ctx: "folder and branch stay on disk",
                             enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: false) } }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
-                            ctx: "git worktree remove + delete its folder on disk", danger: true,
+                            ctx: "removes the folder from disk", danger: true,
                             enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: true) } }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
@@ -575,7 +600,7 @@ struct PaletteFrame {
     }
     func confirmDeleteSession(_ s: Session) -> PaletteFrame {
         confirmFrame(verb: "Delete", name: s.title,
-                     hint: store.deleteSessionHint(s),
+                     note: store.deleteSessionHint(s),
                      icon: Phosphor.trash, danger: true) { [store] in store.closeSession(s) }
     }
 
@@ -806,6 +831,16 @@ struct PaletteOverlay: View {
             .padding(.horizontal, 16).padding(.vertical, 13)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Theme.border).frame(height: 0.5)
+            }
+
+            if let note = model.frame.note {
+                Text(note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.inkFaint)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14).padding(.top, 9).padding(.bottom, 5)
             }
 
             list

@@ -143,6 +143,15 @@ extension URL {
         while s.hasSuffix("/") { s.removeLast() }
         return s.isEmpty ? absoluteString : s
     }
+
+    /// A dev server on this machine — the one web target that belongs in Synth's own browser
+    /// (no login to lose, and the agent can drive the exact page). Everything else is the
+    /// user's real browser's job. Mirrors fromBrowserInput's loopback set.
+    var isLoopbackHost: Bool {
+        guard let h = host?.lowercased() else { return false }
+        return h == "localhost" || h == "127.0.0.1" || h == "0.0.0.0"
+            || h == "::1" || h == "[::1]" || h.hasSuffix(".localhost")
+    }
 }
 
 @Observable final class Branch: Identifiable {

@@ -313,6 +313,10 @@ private struct BrowserBar: View {
                       disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
             BarButton(icon: Phosphor.devtools, help: "DevTools",
                       disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
+            BarButton(icon: Phosphor.external, help: "Open in default browser",
+                      disabled: ctrl.isHome) {
+                if let url = ctrl.address { NSWorkspace.shared.open(url) }
+            }
         }
         .padding(.vertical, 7).padding(.horizontal, 10)
         .background(Theme.chrome)

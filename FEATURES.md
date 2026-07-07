@@ -224,9 +224,20 @@ disclosure to dive deeper.
   serves a Claude session *and* its sub-agents (no caller identity in MCP) and a process-wide
   focus pointer had concurrent agents driving each other's browsers; superseded CDP connections
   now retire on a delay so a reconnect can't kill another agent's in-flight call.
+
+## [2026-07-07](docs/features/2026-07-07.md)
+
 - **Worktree creation switches optimistically; a slow checkout never yanks the pane (both designs + native app)** —
   the content-pane switch now rides the create keystroke, not the async `git worktree add`: creating
   a worktree shows a "Setting up worktree…" skeleton at once, and when the checkout lands it resolves
   in place *only while the user is still parked there* (`openSetupBranchID`); if they've moved on the
   ready worktree announces itself with the quiet unread bullet instead of stealing focus
   (last-intent-wins). Empty templates settle onto the bare row; failures keep the existing error toast.
+- **Clicking a terminal link now opens it, routed by host (native app + both designs)** — the
+  libghostty `OPEN_URL` action was unhandled, so clicked links went nowhere. Now handled, with a
+  host-aware default: a loopback dev-server page (`localhost`/`127.0.0.1`/`0.0.0.0`/`[::1]`/
+  `*.localhost`) opens in Synth's own browser — owned by the clicking Claude session, one row
+  reused across clicks — so the agent can drive the exact page the human sees; every other web URL
+  and every non-web scheme (`mailto:`/`file://`/`vscode://`…) goes to the OS default browser, which
+  keeps the user's real auth and matches every macOS terminal. Browser toolbar gains an
+  open-in-default-browser icon button (the ⌘K action, surfaced) next to DevTools.

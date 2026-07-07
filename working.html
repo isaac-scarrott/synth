@@ -2236,6 +2236,7 @@
   const ICON_NAV_LOCK   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208Z"/></svg>';
   const ICON_DEVTOOLS   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></svg>';
   const ICON_COMMENT    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm-40-76a12,12,0,1,1,12-12A12,12,0,0,1,88,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,128,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,168,140Z"/></svg>';
+  const ICON_EXTERNAL   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>';
 
   // Recent destinations the "Go to…" surface offers. Static demo data; a real build seeds this from
   // the branch's dev-server port and the session's own visited history.
@@ -2290,6 +2291,7 @@
       <span class="browser__target" data-target hidden></span>
       <button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button>
       <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
+      <button class="browser__btn" data-nav="external" aria-label="Open in default browser">${ICON_EXTERNAL}</button>
     </div>`;
   }
   function renderBrowser(name) {
@@ -2304,6 +2306,7 @@
           <button class="browser__omni" data-omni><span class="browser__url browser__url--ph">Search or enter address</span></button>
           <button class="browser__btn" data-nav="comment" disabled aria-label="Comment mode">${ICON_COMMENT}</button>
           <button class="browser__btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
+          <button class="browser__btn" data-nav="external" disabled aria-label="Open in default browser">${ICON_EXTERNAL}</button>
         </div>
         <div class="browser__home"><div class="browser__homeinner">
           <span class="browser__glyph">${ICON_BROWSER}</span>
@@ -2353,6 +2356,8 @@
       if (dev) { dev.disabled = idx < 0; dev.classList.toggle('is-on', devOpen); dev.onclick = toggleDev; }
       const com = host.querySelector('[data-nav="comment"]');
       if (com) { com.disabled = idx < 0; com.onclick = toggleComment; }
+      const ext = host.querySelector('[data-nav="external"]');
+      if (ext) { ext.disabled = idx < 0; ext.onclick = () => { if (idx >= 0) window.open(hist[idx], '_blank', 'noopener'); }; }
       if (omni) omni.onclick = openOmni;
       updateCommentUI();
     }

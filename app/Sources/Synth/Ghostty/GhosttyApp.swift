@@ -93,9 +93,10 @@ import GhosttyKit
         }
     }
 
-    /// libghostty → host actions. Most are surface-scoped; we only need the child-exited
-    /// signal (a session's shell ended) to flow onto the bus. Everything else is handled
-    /// by libghostty itself, so return false.
+    /// libghostty → host actions. Most are handled by libghostty itself, but a couple are
+    /// the embedded apprt's responsibility and flow onto the bus: the child-exited signal
+    /// (a session's shell ended) and OPEN_URL (a clicked link — libghostty has no macOS
+    /// fallback for an embedded host, so without this the click is silently dropped).
     private static func handleAction(
         _ appPtr: ghostty_app_t?, _ target: ghostty_target_s, _ action: ghostty_action_s
     ) -> Bool {
@@ -108,6 +109,36 @@ import GhosttyKit
                 // action's job is the exit *fact*, not the code.
                 let code = Int32(action.action.child_exited.exit_code)
                 GhosttySurfaceContext.from(ghostty_surface_userdata(surface))?.postExited(code)
+            }
+            return true
+        case GHOSTTY_ACTION_OPEN_URL:
+            let payload = action.action.open_url
+            // HTML kind is a rendered-content payload (e.g. man pages), not a link — skip it.
+            guard payload.kind != GHOSTTY_ACTION_OPEN_URL_KIND_HTML,
+                  let ptr = payload.url, payload.len > 0 else { return true }
+            // `url` is a `char*`+`len`, not guaranteed NUL-terminated — read exactly `len` bytes.
+            let raw = String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(payload.len)),
+                             as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            // URL(string:) is strict about spaces/UTF-8; percent-encode as a fallback, then drop.
+            guard !raw.isEmpty,
+                  let url = URL(string: raw)
+                    ?? raw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+                        .flatMap({ URL(string: $0) })
+            else { return true }
+            // The clicking surface names the source session (ownership + reuse of its link
+            // browser); an app-scoped action falls back to whichever session is on screen.
+            var sessionID: UUID?
+            var ctxBus: EventBus?
+            if target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface,
+               let ctx = GhosttySurfaceContext.from(ghostty_surface_userdata(surface)) {
+                sessionID = ctx.sessionID
+                ctxBus = ctx.bus
+            }
+            let sid = sessionID
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    (ctxBus ?? GhosttyApp.shared.bus)?.post(.openURLRequested(sid, url))
+                }
             }
             return true
         default:

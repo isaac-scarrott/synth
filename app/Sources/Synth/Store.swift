@@ -34,6 +34,10 @@ enum SessionEvent: Sendable {
     /// window.open / target=_blank: one page per session, so a popup becomes a NEW
     /// browser session in the same branch, pre-navigated and selected.
     case browserPopupRequested(UUID, URL)
+    /// A link clicked in a terminal surface (libghostty OPEN_URL). The UUID is the clicking
+    /// session (nil for an app-scoped action → the on-screen session). Scheme + host route
+    /// it: loopback dev-server pages open in the in-app browser, everything else to the OS.
+    case openURLRequested(UUID?, URL)
 }
 
 /// The transient transport carrying derived facts to the single consumer (the store).
@@ -290,6 +294,10 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// True exit statuses reported over the hook socket (`.exitCodeReported`), keyed by
     /// session, consumed by the `.exited` that follows moments later.
     @ObservationIgnored private var reportedExitCodes: [UUID: Int32] = [:]
+    /// The in-app browser each terminal/Claude session sends its clicked loopback links to,
+    /// so reclicking a dev-server URL reuses one row instead of spawning per click. Keyed by
+    /// source session; the entry (and any pointing at a closed browser) is dropped on close.
+    @ObservationIgnored private var linkBrowsers: [UUID: UUID] = [:]
 
     func isLiveClaude(_ id: UUID) -> Bool { liveClaudeIDs.contains(id) }
 
@@ -434,7 +442,38 @@ enum ThemePref: String, CaseIterable, Identifiable {
             // the unread bullet; a popup from a browser the user drives opens in front.
             let popupOwner = owner(of: s)
             newBrowser(in: branch(of: s), at: url, ownedBy: popupOwner, focus: popupOwner == nil)
+        case let .openURLRequested(sourceID, url):
+            openTerminalLink(url, from: sourceID)
         }
+    }
+
+    /// A clicked terminal link. Scheme + host decide the target: a loopback dev-server page
+    /// opens in the in-app browser (owned by the clicking Claude session, reused across
+    /// clicks) so the agent can drive the same page the human sees. Every other web URL and
+    /// every non-web scheme goes to the OS default handler — that keeps the user's real
+    /// auth/extensions and matches every other macOS terminal (an embedded browser is a
+    /// fresh, logged-out profile, wrong for github.com/stripe.com and blank for mailto:).
+    func openTerminalLink(_ url: URL, from sourceID: UUID?) {
+        let scheme = url.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https", url.isLoopbackHost else {
+            NSWorkspace.shared.open(url); return
+        }
+        let source = sourceID.flatMap(session) ?? openSessionID.flatMap(session)
+        // Reuse this session's link browser if it's still alive — reclicking a dev-server URL
+        // must not mint a row per click.
+        if let srcID = source?.id, let bid = linkBrowsers[srcID], let existing = session(bid) {
+            existing.browserURL = url
+            BrowserManager.shared.existing(bid)?.navigate(to: url)
+            open(existing)
+            return
+        }
+        // Only a Claude session can own a browser; a plain terminal spawns an unowned one.
+        let owner = source?.kind == .claudeCode ? source : nil
+        guard let browser = newBrowser(in: source.flatMap { branch(of: $0) },
+                                       at: url, ownedBy: owner, focus: true) else {
+            NSWorkspace.shared.open(url); return   // no branch to host it — don't lose the click
+        }
+        if let srcID = source?.id { linkBrowsers[srcID] = browser.id }
     }
 
     /// Front of the branch's Recent list, deduped by URL (keeping the known title), capped at 5.
@@ -804,6 +843,10 @@ enum ThemePref: String, CaseIterable, Identifiable {
         liveClaudeIDs.remove(session.id)
         pulseTokens.removeValue(forKey: session.id)
         reportedExitCodes.removeValue(forKey: session.id)
+        // Drop this row's link-browser mapping whether it's the source terminal or the
+        // browser itself that just closed.
+        linkBrowsers[session.id] = nil
+        linkBrowsers = linkBrowsers.filter { $0.value != session.id }
     }
 
     // MARK: Containment (ADR-0011 stage four: a browser can belong to a Claude session)

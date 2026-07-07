@@ -127,6 +127,13 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var expanded: Set<UUID> = []
     var navCursor: UUID?
     var openSessionID: UUID?
+    /// The still-materialising branch whose "setting up…" skeleton the content pane is
+    /// showing. Set the instant a worktree create is requested (the switch rides the
+    /// keystroke, not the async checkout) and cleared the moment the user opens anything
+    /// else — so a finished checkout resolves in place only while this still points at it,
+    /// and otherwise lands as a quiet unread row instead of yanking the viewport
+    /// (last-intent-wins). Never persisted; a pending row can't outlive a quit.
+    var openSetupBranchID: UUID?
     var sidebarCollapsed = false
 
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
@@ -541,6 +548,15 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     var openSession: Session? { openSessionID.flatMap(session) }
 
+    /// The branch whose setup skeleton the content pane is showing, or nil.
+    var openSetupBranch: Branch? {
+        guard let id = openSetupBranchID else { return nil }
+        for ws in workspaces {
+            if let br = ws.branches.first(where: { $0.id == id }) { return br }
+        }
+        return nil
+    }
+
     func session(_ id: UUID) -> Session? {
         for ws in workspaces {
             for br in ws.branches {
@@ -590,10 +606,23 @@ enum ThemePref: String, CaseIterable, Identifiable {
 
     func open(_ session: Session) {
         settingsOpen = false   // jumping to a session leaves settings mode
+        openSetupBranchID = nil   // opening a real session revokes any armed setup-resolve
         openSessionID = session.id
         navCursor = session.id
         session.unread = false
         clearNotif(session.id)   // opening a notified session dismisses its standing toast
+    }
+
+    /// Optimistically move the content pane onto a still-materialising worktree's
+    /// "setting up…" skeleton — tying the switch to the create keystroke, so it can never
+    /// surprise the user after an async gap. While this skeleton is what's shown the
+    /// finished checkout resolves in place; opening anything else clears it, and the
+    /// checkout then lands as a quiet unread row instead (applySessionTemplate).
+    func openWorktreeSetup(_ branch: Branch) {
+        settingsOpen = false
+        openSessionID = nil
+        openSetupBranchID = branch.id
+        navCursor = branch.id
     }
 
     // MARK: Settings
@@ -613,6 +642,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         closePalette()
         shortcutsOpen = false
         sidebarCollapsed = false
+        openSetupBranchID = nil   // leaving for settings revokes any armed setup-resolve
         settingsScope = scope
         settingsOpen = true
         // Keyboard cursor lands on the active scope (working.html enterSettings → select .scope--on).
@@ -986,6 +1016,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: existingBranch)
         let row = addBranchRow(in: ws, name: existingBranch, worktreeURL: planned, pending: true)
+        openWorktreeSetup(row)
         materialize(row, in: ws, spawningTemplate: true) {
             if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == existingBranch }) {
                 return .ready(wt.path)
@@ -1001,6 +1032,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: newBranch)
         let row = addBranchRow(in: ws, name: newBranch, worktreeURL: planned, pending: true)
+        openWorktreeSetup(row)
         materialize(row, in: ws, spawningTemplate: true) {
             GitService.addWorktree(repo: repo, path: planned, newBranch: newBranch, base: base)
                 .map { .failed($0) } ?? .ready(planned)
@@ -1049,8 +1081,16 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// stock start counts as hand-picked (titleIsCustom), so auto-naming — ai-title,
     /// running command, page title — never overwrites a template name the user chose.
     private func applySessionTemplate(to branch: Branch, in ws: Workspace) {
+        // Whether the user is still parked on this row's setup skeleton decides the whole
+        // handoff: still here → resolve in place; moved on → don't touch the viewport.
+        let watching = openSetupBranchID == branch.id
         let entries = sessionTemplate(for: ws)
-        guard !entries.isEmpty else { return }   // an emptied global template means "start bare"
+        guard !entries.isEmpty else {
+            // An emptied template means "start bare": nothing to open. If we're still on
+            // the skeleton, drop it so the pane settles onto the now-ready (empty) row.
+            if watching { openSetupBranchID = nil }
+            return
+        }
         let sessions = entries.enumerated().map { i, entry in
             Session(kind: entry.kind, title: entry.name,
                     status: entry.kind == .claudeCode && i == 0 ? .working : .idle,
@@ -1060,7 +1100,13 @@ enum ThemePref: String, CaseIterable, Identifiable {
         branch.lastActivity = "now"
         expanded.insert(ws.id)
         expanded.insert(branch.id)
-        if let first = sessions.first { open(first) }
+        if watching, let first = sessions.first {
+            open(first)   // last intent still points here — resolve the skeleton in place
+        } else {
+            // The user moved on after requesting — announce the ready worktree with the
+            // quiet unread bullet (browser-ownership idiom) instead of stealing the pane.
+            sessions.first?.unread = true
+        }
     }
 
     // MARK: Persistence (ADR-0010)

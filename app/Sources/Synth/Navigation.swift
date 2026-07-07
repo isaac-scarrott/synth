@@ -276,6 +276,8 @@ extension AppStore {
     func removeBranch(_ branch: Branch, deleteWorktree: Bool) {
         // Cursor falls up the hierarchy to the workspace head (working.html removeUnit fallback).
         if cursorInside(.branch(branch)) { navCursor = workspace(of: branch)?.id }
+        // A failed/cancelled create whose setup skeleton was on screen falls back to empty.
+        if openSetupBranchID == branch.id { openSetupBranchID = nil }
         for session in branch.sessions {
             TerminalManager.shared.terminate(session.id)
             BrowserManager.shared.terminate(session.id)

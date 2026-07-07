@@ -246,6 +246,25 @@
   .pane-empty__mark svg { width: 100%; height: 100%; display: block; }
   .pane-empty span { font-size: 12.5px; letter-spacing: -0.005em; }
 
+  /* the optimistic "setting up worktree…" skeleton — same centred body as pane-empty,
+     shown inside a normal .pane so the resolve into the first session is a cross-fade */
+  .pane-setup {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-faint);
+    user-select: none;
+  }
+  .pane-setup__spin {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--text-faint); border-top-color: transparent;
+    animation: browser-spin 0.9s linear infinite;
+  }
+  .pane-setup span { font-size: 12.5px; letter-spacing: -0.005em; }
+
   .pane {
     flex: 1;
     display: flex;
@@ -651,6 +670,15 @@
      the only "you are here" cue). */
   .repo--open > .branch--active.branch--group { background: none; box-shadow: none; }
   .repo--open > .branch--active.branch--group .branch__name { color: var(--ink-5); font-weight: 450; }
+
+  /* A worktree still materialising: the row is present but grayed and inert, a small arc
+     spinning where its roll-up will land, while the pane carries the setup skeleton. */
+  .branch--pending { opacity: 0.5; pointer-events: none; }
+  .wt-spinner {
+    display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+    border: 1.5px solid var(--text-faint); border-top-color: transparent;
+    animation: browser-spin 0.9s linear infinite;
+  }
 
   /* ---- Sessions inside a branch ---- */
   .sessions {
@@ -1910,6 +1938,10 @@
     idle:  `<span class="ind"></span>`,
   };
   let openEl = null, streamTimer = null;
+  // The still-creating branch whose setup skeleton the pane is showing (null = none). Set
+  // the instant a create is requested and cleared the moment anything else opens — so a
+  // finished checkout resolves in place only while this still points at it (last-intent-wins).
+  let setupEl = null;
 
   function outerRepoOf(el) {
     let repo = el.closest('[data-repo]');
@@ -1943,6 +1975,7 @@
   function openSession(el) {
     if (!el) return;
     app.classList.remove('settings');   // jumping to a session leaves settings mode
+    setupEl = null;                     // opening a real session revokes any armed setup-resolve
     if (openEl) openEl.classList.remove('session--open');
     openEl = el;
     el.classList.add('session--open');
@@ -1950,6 +1983,34 @@
     clearNotif(el);                            // …and dismisses any toast for it
     derivePill(el);
     renderOpen();
+  }
+
+  // Optimistic switch: move the pane onto a still-creating worktree's "setting up…"
+  // skeleton, tying the switch to the create keystroke so it can't surprise the user after
+  // an async gap. Opening anything else clears setupEl (openSession / enterSettings), so a
+  // finished checkout only resolves in place while this still points here.
+  function openWorktreeSetup(groupRow) {
+    app.classList.remove('settings');
+    if (openEl) openEl.classList.remove('session--open');
+    openEl = null;
+    setupEl = groupRow;
+    nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
+    groupRow.classList.add('branch--active');   // the grayed pending row still reads as "you are here"
+    renderSetup(groupRow);
+  }
+
+  function renderSetup(groupRow) {
+    stopStream();
+    const name = groupRow.querySelector('.branch__name').textContent.trim();
+    const ws = workspaceNameOf(groupRow);
+    content.innerHTML = `<div class="pane">
+      <div class="pane__head">
+        <div class="pane__title"><span class="session__icon">${ICON_BRANCH}</span><span>${esc(name)}</span></div>
+        <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(name)}</div>
+        <div class="pane__spacer"></div>
+      </div>
+      <div class="pane__body"><div class="pane-setup"><span class="pane-setup__spin"></span><span>Setting up worktree…</span></div></div>
+    </div>`;
   }
 
   // A session moves to a new derived status: swap its sidebar indicator, re-roll, and
@@ -3056,6 +3117,7 @@
     unit.classList.add('row-exit');
     const done = () => {
       unit.remove(); rollUpGroups();
+      if (setupEl && !document.contains(setupEl)) { setupEl = null; renderEmpty(); }
       if (openEl && !document.contains(openEl)) { openEl = null; renderEmpty(); }
       if (fallback && document.contains(fallback)) select(fallback, true);
     };
@@ -3184,15 +3246,35 @@
     const branches = repo.querySelector('.branches');
     const wrapper = branchGroupShell(name, 'now');
     wrapper.classList.add('row-enter');
+    const groupRow = wrapper.querySelector('.branch--group');
+    // The checkout runs in the background: the row lands at once — grayed, a small arc
+    // spinning where its roll-up will go — and the pane switches now (riding the create)
+    // to the setup skeleton, instead of waiting on the async checkout to yank it later.
+    groupRow.classList.add('branch--pending');
+    groupRow.querySelector('.branch__roll').innerHTML = '<span class="wt-spinner"></span>';
     branches.appendChild(wrapper);
     wrapper.querySelectorAll('[data-row]').forEach(addKebab);
     rollUpGroups();
     wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
-    // New-worktree sessions (settings): the scope's effective template spawns in
-    // creation order — the first session opens, the rest wait idle until first opened.
+    openWorktreeSetup(groupRow);
+
     const wsName = repo.querySelector('.repo__name')?.textContent || '';
-    effectiveTpl(false, wsName).forEach((s, i) =>
-      addSession(wrapper.querySelector('.branch--group'), s.kind, { name: s.name, open: i === 0 }));
+    // Simulated `git worktree add`: when it lands, spawn the scope's effective template in
+    // creation order. Resolve in place — first session opens — only while the user is still
+    // parked on this skeleton (last-intent-wins); if they moved on, don't touch the viewport:
+    // announce the ready worktree with the quiet unread bullet (the agent-browser idiom).
+    setTimeout(() => {
+      groupRow.classList.remove('branch--pending');
+      groupRow.querySelector('.branch__roll').innerHTML = '';
+      const watching = setupEl === groupRow;
+      const tpl = effectiveTpl(false, wsName);
+      if (watching && tpl.length === 0) { setupEl = null; renderEmpty(); return; }  // start bare
+      tpl.forEach((s, i) => addSession(groupRow, s.kind, { name: s.name, open: watching && i === 0 }));
+      if (!watching) {
+        const first = wrapper.querySelector('.session');
+        if (first) first.classList.add('session--unread');
+      }
+    }, 1200);
   }
 
   // Promote a plain branch into a session-holding group if needed, return its .sessions
@@ -4536,6 +4618,7 @@
     closeMenu();
     if (paletteOpen) closePalette();
     if (shortcutsEl) closeShortcuts();
+    setupEl = null;   // leaving for settings revokes any armed setup-resolve
     app.classList.remove('collapsed');
     settingsScope = scope || 'global';
     buildScopeNav();

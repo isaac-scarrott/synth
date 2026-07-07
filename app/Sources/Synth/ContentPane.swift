@@ -36,6 +36,9 @@ struct ContentPane: View {
             } else if let session = store.openSession {
                 SessionPane(session: session)
                     .id(session.id)
+            } else if let branch = store.openSetupBranch {
+                WorktreeSetupPane(branch: branch)
+                    .id(branch.id)
             } else {
                 PaneEmpty()
             }
@@ -167,6 +170,85 @@ private struct PaneEmpty: View {
                 .foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The optimistic "setting up worktree…" skeleton: shown the instant a create is
+/// requested (so the switch rides the keystroke), resolving in place into the first
+/// session once the checkout lands — but only while the user is still parked here
+/// (Store.applySessionTemplate). Same head shape as a real session pane so the resolve
+/// is a quiet cross-fade, not a jump.
+private struct WorktreeSetupPane: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let branch: Branch
+    @State private var shown = false
+
+    private var collapsed: Bool { store.sidebarCollapsed }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if collapsed {
+                    IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
+                        store.sidebarCollapsed = false
+                    }
+                }
+                Phos(path: Phosphor.branch, size: 15)
+                    .foregroundStyle(Theme.inkFaint)
+                    .frame(width: 15, height: 15)
+                Text(branch.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .kerning(-0.13)
+                    .foregroundStyle(Theme.ink)
+                if let ws = store.workspace(of: branch) {
+                    (Text(ws.name).foregroundColor(Theme.inkMuted).fontWeight(.medium)
+                        + Text(" / \(branch.name)").foregroundColor(Theme.inkFaint))
+                        .font(.system(size: 11, design: .monospaced))
+                        .kerning(-0.11)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, collapsed ? 76 : 18)
+            .padding(.trailing, 18)
+            .frame(height: collapsed ? 30 : 44)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Theme.border).frame(height: 0.5)
+            }
+
+            VStack(spacing: 12) {
+                SetupSpinner()
+                Text("Setting up worktree…")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .opacity(shown ? 1 : 0)
+        .offset(y: shown ? 0 : 4)
+        .onAppear {
+            if reduceMotion { shown = true }
+            else { withAnimation(.easeOut(duration: 0.22)) { shown = true } }
+        }
+    }
+}
+
+/// The setup pane's centred arc spinner — the pending-row spinner (Sidebar) scaled up
+/// to carry the empty pane.
+private struct SetupSpinner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var spinning = false
+    var body: some View {
+        Circle()
+            .trim(from: 0.12, to: 1)
+            .stroke(Theme.inkFaint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .frame(width: 22, height: 22)
+            .rotationEffect(.degrees(spinning ? 360 : 0))
+            .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false),
+                       value: spinning)
+            .onAppear { spinning = true }
     }
 }
 

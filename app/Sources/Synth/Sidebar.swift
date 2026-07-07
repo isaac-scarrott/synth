@@ -345,6 +345,9 @@ private struct BranchRow: View {
     private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
     private var renaming: Bool { store.renamingRowID == branch.id }
     private var isActivePill: Bool {
+        // Its own setup skeleton is what the content pane is showing — highlight the row
+        // so the still-grayed pending pill still reads as "this is the one you're on".
+        if store.openSetupBranchID == branch.id { return true }
         // The branch containing the open session — but an *expanded* group already
         // highlights the open session inside; the white header pill would
         // double-encode, so it shows only while collapsed (working.html

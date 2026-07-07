@@ -224,3 +224,9 @@ disclosure to dive deeper.
   serves a Claude session *and* its sub-agents (no caller identity in MCP) and a process-wide
   focus pointer had concurrent agents driving each other's browsers; superseded CDP connections
   now retire on a delay so a reconnect can't kill another agent's in-flight call.
+- **Worktree creation switches optimistically; a slow checkout never yanks the pane (both designs + native app)** —
+  the content-pane switch now rides the create keystroke, not the async `git worktree add`: creating
+  a worktree shows a "Setting up worktree…" skeleton at once, and when the checkout lands it resolves
+  in place *only while the user is still parked there* (`openSetupBranchID`); if they've moved on the
+  ready worktree announces itself with the quiet unread bullet instead of stealing focus
+  (last-intent-wins). Empty templates settle onto the bare row; failures keep the existing error toast.

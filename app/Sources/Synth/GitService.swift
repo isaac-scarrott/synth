@@ -193,6 +193,14 @@ enum GitService {
         runChecked(args).output
     }
 
+    /// The configured git identity (global/user config — no repo needed). nil when unset.
+    /// Feedback gates its author path on this matching a known author address.
+    static func gitUserEmail() -> String? {
+        let (status, out) = runChecked(["config", "--get", "user.email"])
+        let email = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return status == 0 && !email.isEmpty ? email : nil
+    }
+
     private static func runChecked(_ args: [String]) -> (status: Int32, output: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")

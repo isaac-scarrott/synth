@@ -104,6 +104,13 @@ struct RootView: View {
                 }
             }
         }
+        .overlay {
+            if store.feedbackOpen {
+                ModalBackdrop(onDismiss: { store.feedbackOpen = false }) {
+                    FeedbackSheet().environment(store)
+                }
+            }
+        }
         .onAppear(perform: installKeyMonitor)
         .onAppear { NotificationService.shared.bootstrap(store: store) }
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
@@ -127,12 +134,13 @@ struct RootView: View {
             NSCursor.setHiddenUntilMouseMoves(true)
 
             // Modal Esc must win even while its text field is first responder.
-            if store.pendingWorkspace != nil {
+            if store.pendingWorkspace != nil || store.feedbackOpen {
                 if event.keyCode == 53 {   // Esc closes the modal
                     store.pendingWorkspace = nil
+                    store.feedbackOpen = false
                     return nil
                 }
-                return event
+                return event   // ⌘↵ Send + typing pass through to the sheet
             }
             let key = event.charactersIgnoringModifiers?.lowercased()
 
@@ -141,6 +149,13 @@ struct RootView: View {
             if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
                store.topNotif != nil {
                 store.jumpToTopNotif(); return nil
+            }
+
+            // ⌘⇧F opens the feedback sheet from anywhere — even over the terminal (like ⌘K).
+            if key == "f", event.modifierFlags.contains(.command), event.modifierFlags.contains(.shift) {
+                if store.palette != nil { store.closePalette() }
+                store.feedbackOpen = true
+                return nil
             }
 
             #if DEBUG

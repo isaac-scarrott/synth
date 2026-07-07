@@ -119,6 +119,26 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
+/// Who is running this Synth, resolved once at launch. The author (git identity matched)
+/// gets the feedback→worktree loop; everyone else gets a pre-filled email. `SYNTH_AUTHOR=1`
+/// / `=0` forces it (the established env-override idiom), else it's the git `user.email`.
+enum FeedbackMode {
+    case author, email
+
+    static let recipient = "isaac.scarrott11@gmail.com"
+    static let authorEmails: Set<String> = ["isaac@holibob.tech", "isaac.scarrott11@gmail.com"]
+
+    static func resolve() -> FeedbackMode {
+        switch ProcessInfo.processInfo.environment["SYNTH_AUTHOR"] {
+        case "1": return .author
+        case "0": return .email
+        default:
+            let email = GitService.gitUserEmail()?.lowercased() ?? ""
+            return authorEmails.contains(email) ? .author : .email
+        }
+    }
+}
+
 /// The durable, observed source of truth. Holds only the low-frequency facts the
 /// UI reads: the tree, per-session status, expansion, and the two selection fields
 /// (nav cursor + open session) from docs/adr/0005.
@@ -216,6 +236,11 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// Sheet drivers.
     var pendingWorkspace: PendingWorkspace?
 
+/// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
+    /// like working.html. `feedbackMode` is resolved once at launch (see init).
+    var feedbackOpen = false
+    var feedbackDraft = ""
+    @ObservationIgnored var feedbackMode: FeedbackMode = .email
     /// The sidebar row being renamed inline, and its live text — working.html's
     /// contentEditable name label. nil = nothing renaming.
     var renamingRowID: UUID?
@@ -307,6 +332,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     @ObservationIgnored private var lastSavedBytes: Data?
 
     init() {
+        feedbackMode = FeedbackMode.resolve()
         hookServer = HookServer(bus: bus)
         TerminalManager.shared.bus = bus
         BrowserManager.shared.bus = bus
@@ -858,6 +884,144 @@ enum ThemePref: String, CaseIterable, Identifiable {
         return session
     }
 
+    // MARK: Feedback (⌘⇧F)
+
+    /// One textbox, resolved by `feedbackMode`: the author turns a gripe into a real
+    /// `feedback/<slug>` worktree with a Claude session already working it (seeded with the
+    /// text + captured context); everyone else gets a pre-filled email. Called from the sheet.
+    func submitFeedback(_ raw: String) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        feedbackDraft = ""
+        feedbackOpen = false
+        guard !text.isEmpty else { return }
+        switch feedbackMode {
+        case .author: startFeedbackFix(text)
+        case .email:  openFeedbackEmail(text)
+        }
+    }
+
+    /// Author path: cut a `feedback/<slug>` worktree off the open session's workspace and, once
+    /// it lands, spawn a single Claude and seed it with the feedback + context — the comment-mode
+    /// delivery loop pointed at Synth itself. Falls back to email if there's nowhere to host it.
+    private func startFeedbackFix(_ text: String) {
+        guard let ws = feedbackWorkspace() else { openFeedbackEmail(text); return }
+        let branchName = "feedback/\(Self.feedbackSlug(from: text))"
+        let seed = text + "\n\n" + captureFeedbackContext()
+        let repo = ws.url
+        let planned = GitService.plannedWorktreePath(repo: repo, branch: branchName)
+        let row = addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
+        materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
+            self?.seedFeedbackClaude(in: branch, seed: seed)
+        }) {
+            GitService.addWorktree(repo: repo, path: planned, newBranch: branchName, base: nil)
+                .map { .failed($0) } ?? .ready(planned)
+        }
+        raiseFeedbackToast(.done, message: "On it", title: branchName)
+    }
+
+    /// Spawn a quiet Claude in the freshly-materialized branch, mount it for a beat so its PTY
+    /// boots (GhosttySurfaceView spawns on window attach), bounce focus back, then boot-and-wait
+    /// for the hook liveness signal and paste the seed — mirroring CommentMode rung 3.
+    private func seedFeedbackClaude(in branch: Branch, seed: String) {
+        guard let session = spawnClaude(in: branch) else { return }
+        let previous = openSessionID
+        open(session)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.openSessionID == session.id,
+                  let previous, let back = self.session(previous) else { return }
+            self.open(back)
+        }
+        // SECURITY (CommentMode): only ever submit to a hook-confirmed-live Claude — pasting
+        // into a bare shell would be arbitrary execution. Poll ~20s, settle a beat, re-check.
+        Task { [weak self] in
+            for _ in 0..<40 {
+                try? await Task.sleep(for: .seconds(0.5))
+                guard let self, self.isLiveClaude(session.id) else { continue }
+                try? await Task.sleep(for: .seconds(1))
+                guard self.isLiveClaude(session.id) else { continue }
+                if TerminalManager.shared.submit(seed, to: session.id) { return }
+            }
+            NSLog("Synth: feedback seed never delivered (Claude didn't report in)")
+        }
+    }
+
+    /// Other path: open the user's mail client with a pre-filled draft. The body attaches only
+    /// version/OS (no branch or session names leave the machine), capped for mailto's practical
+    /// limit. No mail client → copy to the clipboard and say so.
+    private func openFeedbackEmail(_ text: String) {
+        let body = String((text + "\n\n— — —\n" + feedbackEnvLine() + "\n\nSent from Synth").prefix(1600))
+        var comps = URLComponents()
+        comps.scheme = "mailto"
+        comps.path = FeedbackMode.recipient
+        comps.queryItems = [URLQueryItem(name: "subject", value: "Synth feedback"),
+                            URLQueryItem(name: "body", value: body)]
+        if let url = comps.url, NSWorkspace.shared.open(url) {
+            raiseFeedbackToast(.done, message: "Handed to Mail", title: "Synth feedback")
+        } else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(body, forType: .string)
+            raiseFeedbackToast(.error, message: "No mail app — feedback copied", title: FeedbackMode.recipient)
+        }
+    }
+
+    /// Where a feedback fix lands: the open session's workspace, else the first one.
+    private func feedbackWorkspace() -> Workspace? {
+        if let s = openSession, let b = branch(of: s), let ws = workspace(of: b) { return ws }
+        return workspaces.first
+    }
+
+    /// Structural facts only — what Synth is doing, never what you're building. Attached to the
+    /// author seed silently; no file contents, paths, terminal output, env values or clipboard.
+    func captureFeedbackContext() -> String {
+        var lines: [String] = []
+        if let s = openSession {
+            let kind: String
+            switch s.kind {
+            case .claudeCode: kind = "Claude Code"
+            case .terminal:   kind = "Terminal"
+            case .browser:    kind = "Browser"
+            }
+            lines.append("Here: \(kind) · \(branch(of: s)?.name ?? "—")")
+        }
+        let wsCount = workspaces.count
+        let allSessions = workspaces.flatMap { $0.branches }.flatMap { $0.sessions }
+        let working = allSessions.filter { if case .working = $0.status { return true } else { return false } }.count
+        let unread = allSessions.filter(\.unread).count
+        lines.append("State: \(wsCount) workspace\(wsCount == 1 ? "" : "s") · \(working) working · \(unread) unread")
+        lines.append("Env: \(feedbackEnvLine())")
+        return lines.joined(separator: "\n")
+    }
+
+    private func feedbackEnvLine() -> String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let version = Bundle.main.bundleIdentifier != nil
+            ? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev") : "dev"
+        return "Synth \(version) · macOS \(v.majorVersion).\(v.minorVersion) · \(themePref.rawValue) theme"
+    }
+
+    /// feedback text → a short branch slug: first four alphanumeric words, dash-joined.
+    static func feedbackSlug(from text: String) -> String {
+        let cleaned = String(text.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : " " })
+        let slug = cleaned.split(separator: " ").prefix(4).joined(separator: "-")
+        return slug.isEmpty ? "note" : slug
+    }
+
+    /// A session-less confirmation toast (mirrors `raiseWorktreeError`); `.done` self-dismisses.
+    private func raiseFeedbackToast(_ kind: NotifKind, message: String, title: String) {
+        notifSeq += 1
+        let id = UUID()
+        notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq, sessionKind: .terminal,
+                                 title: title, colorIndex: nil, outlivesSession: true,
+                                 message: message, iconPath: Phosphor.commentMode))
+        if kind == .done {
+            let seq = notifSeq
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(6))
+                self?.notifs.removeAll { $0.id == id && $0.seq == seq }
+            }
+        }
+    }
+
     /// Folder picker → branch picker. Panel runs modally, so state mutation happens after dismiss.
     func promptAddWorkspace() {
         let panel = NSOpenPanel()
@@ -968,6 +1132,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// (those rows import existing branches, and N rows fighting to open a session each
     /// would be noise).
     private func materialize(_ row: Branch, in ws: Workspace, spawningTemplate: Bool = false,
+                             onReady: ((Branch) -> Void)? = nil,
                              _ op: @escaping @Sendable () -> WorktreeOutcome) {
         let wsName = ws.name
         Task { [weak self] in
@@ -978,6 +1143,7 @@ enum ThemePref: String, CaseIterable, Identifiable {
                 row.isPending = false
                 row.lastActivity = "now"
                 if spawningTemplate { applySessionTemplate(to: row, in: ws) }
+                onReady?(row)
                 saveNow()
             case .failed(let err):
                 removeBranch(row, deleteWorktree: false)

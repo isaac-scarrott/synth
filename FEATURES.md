@@ -252,3 +252,11 @@ disclosure to dive deeper.
   name-beats-action ranking, fresh-open-highlights-nothing, wrapping consequence note, Esc-pops, Recent
   frecency group, ⌘T in the sheet; dead popover-menu deleted (~500 lines net removed). Behavior verified
   over the control socket; fidelity audit 13/14, 5 gaps fixed.
+- **In-app feedback (⌘⇧F) — one textbox that forks (both designs + native app)** — ⌘⇧F (also a ⌘K
+  action + ⌘? row) opens one textbox; ⌘↵ sends, Esc dismisses, draft persists. Resolved once at
+  launch by git identity: the author turns a gripe into a real `feedback/<slug>` worktree with a
+  Claude session already working it (reusing lazy worktrees + CommentMode's live-Claude PTY
+  delivery, seeded with the text + structural context); everyone else gets a pre-filled
+  `mailto:isaac.scarrott11@gmail.com`. Context is captured silently, allowlisted to scalar facts
+  (session kind/status/counts, theme, version/OS) — never file contents, paths, terminal output,
+  env or clipboard; the email attaches only version/OS.

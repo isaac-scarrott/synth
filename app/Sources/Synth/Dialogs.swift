@@ -161,6 +161,64 @@ private struct Checkbox: View {
     }
 }
 
+/// One frictionless textbox (⌘⇧F). Send routes on `store.feedbackMode`: the author spawns a
+/// `feedback/<slug>` fix, everyone else gets a pre-filled email. Enter is a newline, ⌘↵ sends,
+/// Esc dismisses (handled centrally in the key monitor). The draft persists across reopens.
+struct FeedbackSheet: View {
+    @Environment(AppStore.self) private var store
+    @FocusState private var focused: Bool
+    @State private var submitted = false
+
+    private var canSend: Bool {
+        !store.feedbackDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        @Bindable var store = store
+        VStack(alignment: .leading, spacing: 13) {
+            TextEditor(text: $store.feedbackDraft)
+                .font(.system(size: 14))
+                .scrollContentBackground(.hidden)
+                .padding(7)
+                .frame(width: 428, height: 96, alignment: .topLeading)
+                .background(Theme.raised)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .stroke(focused ? Theme.attention : Theme.line, lineWidth: focused ? 2 : 0.5))
+                .overlay(alignment: .topLeading) {
+                    if store.feedbackDraft.isEmpty {
+                        Text("What's off?")
+                            .font(.system(size: 14)).foregroundStyle(Theme.inkFaint)
+                            .padding(.horizontal, 12).padding(.vertical, 15)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .focused($focused)
+
+            HStack {
+                Text("esc to dismiss").font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
+                Spacer()
+                Button(action: send) {
+                    HStack(spacing: 6) { Text("Send"); Text("⌘↵").opacity(0.75) }
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSend)
+            }
+        }
+        .padding(16)
+        .frame(width: 460)
+        .background(Theme.panel)
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { focused = true } }
+    }
+
+    private func send() {
+        guard !submitted, canSend else { return }
+        submitted = true
+        store.submitFeedback(store.feedbackDraft)
+    }
+}
+
 // MARK: - Shared chrome
 
 private struct DialogFrame<Content: View, Actions: View>: View {

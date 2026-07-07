@@ -160,6 +160,25 @@ enum FeedbackMode {
     var openSetupBranchID: UUID?
     var sidebarCollapsed = false
 
+    /// Frecency for the cold palette's "Recent" group (working.html `visits`/`visitClock`).
+    /// A monotonic tick per open stamps last-use; in-memory only — muscle memory for this
+    /// run, deliberately not persisted.
+    var visits: [UUID: Int] = [:]
+    var visitClock = 0
+    func recordVisit(_ id: UUID) { visitClock += 1; visits[id] = visitClock }
+
+    /// The most-recently-opened stable targets, newest first (working.html `recentTargets`).
+    /// Dynamically-named sessions are excluded — an AI title or browser URL shifts, so it
+    /// can't earn a fixed spot; terminals and any hand-renamed session are stable. Only rows
+    /// whose id still resolves live are returned.
+    func recentTargets(_ limit: Int) -> [Session] {
+        visits.sorted { $0.value > $1.value }
+            .compactMap { session($0.key) }
+            .filter { s in !((s.spawnedKind == .claudeCode || s.spawnedKind == .browser) && !s.titleIsCustom) }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).
     var themePref: ThemePref = (ThemePref(rawValue: UserDefaults.standard.string(forKey: AppStore.themeKey) ?? "") ?? .system) {
@@ -226,23 +245,13 @@ enum FeedbackMode {
     var reorderScrollNonce = 0
 
     /// Sheet drivers.
-    var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?
 
-    /// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
+/// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
     /// like working.html. `feedbackMode` is resolved once at launch (see init).
     var feedbackOpen = false
     var feedbackDraft = ""
     @ObservationIgnored var feedbackMode: FeedbackMode = .email
-
-    /// The row-action menu currently open (nil = none). Clearing it always drops any
-    /// in-progress delete confirmation.
-    var activeMenu: ActiveMenu? { didSet { if activeMenu == nil { menuConfirming = false } } }
-
-    /// The open menu is showing its two-step delete confirm (working.html `.menu.confirming`).
-    /// Lifted out of RowMenu so the keyboard can drive it: `d` opens straight here, ↵ commits.
-    var menuConfirming = false
-
     /// The sidebar row being renamed inline, and its live text — working.html's
     /// contentEditable name label. nil = nothing renaming.
     var renamingRowID: UUID?
@@ -677,6 +686,7 @@ enum FeedbackMode {
         navCursor = session.id
         session.unread = false
         clearNotif(session.id)   // opening a notified session dismisses its standing toast
+        recordVisit(session.id)  // frecency for the palette's Recent group
     }
 
     /// Optimistically move the content pane onto a still-materialising worktree's
@@ -704,7 +714,6 @@ enum FeedbackMode {
     }
 
     func enterSettings(_ scope: SettingsScope = .global) {
-        activeMenu = nil
         closePalette()
         shortcutsOpen = false
         sidebarCollapsed = false
@@ -753,7 +762,6 @@ enum FeedbackMode {
 
     func openPalette() {
         guard palette == nil else { return }
-        activeMenu = nil
         palette = PaletteModel(store: self)
     }
 
@@ -762,7 +770,6 @@ enum FeedbackMode {
     /// A row's ⋯ kebab opens the palette drilled to that row (working.html openRowActions),
     /// rather than the hover popover. Re-drills if the palette is already open.
     func openRowActions(_ ref: RowRef) {
-        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         palette?.drill(to: ref)
     }
@@ -772,7 +779,6 @@ enum FeedbackMode {
     /// session leaf — a sibling session in that leaf's parent worktree (working.html addToRow).
     /// Opens the palette if closed; if already open, resets to root then pushes the frame.
     func addToRow(_ ref: RowRef) {
-        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         let frame: PaletteFrame?
@@ -931,9 +937,9 @@ enum FeedbackMode {
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
         let owned = ownedBrowsers(of: session)
-        guard !owned.isEmpty else { return "Delete this session?" }
+        guard !owned.isEmpty else { return "Ends this session and its process." }
         let what = owned.count == 1 ? "browser" : "\(owned.count) browsers"
-        return "Delete this session? This also closes its \(what)."
+        return "Ends this session and its process, and closes its \(what)."
     }
 
     /// The comment ladder's spawn rung (CommentMode rung 3): a claude row created exactly

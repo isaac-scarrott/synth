@@ -257,17 +257,24 @@ final class ControlServer: @unchecked Sendable {
             pal.runActive()
             return ["ok": true]
 
+        // Set the search field exactly as typing into it would (the binding's `query` write),
+        // so the harness can drive query-ranked flows where an unfocused window won't take keys.
+        case "automation.paletteQuery" where automation:
+            guard let pal = store.palette else { return ["ok": false, "error": "palette closed"] }
+            pal.query = pal.frame.dashSpaces ? dashSpaces(request["query"] as? String ?? "")
+                                             : (request["query"] as? String ?? "")
+            return ["ok": true]
+
         case "automation.palette" where automation:
             guard let pal = store.palette else {
-                return ["ok": true, "open": false, "menuOpen": store.activeMenu != nil]
+                return ["ok": true, "open": false]
             }
             let frame = pal.stack.last
             return ["ok": true, "open": true,
                     "crumb": frame?.crumb ?? "",
                     "items": pal.items.map(\.label),
                     "disabled": pal.items.map(\.disabled),
-                    "activeIndex": pal.activeIndex,
-                    "menuOpen": store.activeMenu != nil]
+                    "activeIndex": pal.activeIndex]
 
         // A window-server-free screenshot: the app caches its own key window's content
         // view into a PNG at `path` — the visual evidence path where TCC denies

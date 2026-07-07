@@ -84,28 +84,10 @@ struct RootView: View {
         // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
         .preferredColorScheme(store.colorSchemeOverride)
         .overlay {
-            if let ws = store.creatingWorktreeIn {
-                ModalBackdrop(onDismiss: { store.creatingWorktreeIn = nil }) {
-                    CreateWorktreeSheet(workspace: ws, onClose: { store.creatingWorktreeIn = nil })
-                        .environment(store)
-                }
-            }
-        }
-        .overlay {
             if let pending = store.pendingWorkspace {
                 ModalBackdrop(onDismiss: { store.pendingWorkspace = nil }) {
                     AddWorktreesSheet(pending: pending, onClose: { store.pendingWorkspace = nil })
                         .environment(store)
-                }
-            }
-        }
-        .overlayPreferenceValue(MenuAnchorKey.self) { anchors in
-            GeometryReader { proxy in
-                if let m = store.activeMenu, let anchor = anchors[m.rowID] {
-                    MenuOverlay(menu: m, kebabRect: proxy[anchor], container: proxy.size) {
-                        store.activeMenu = nil
-                    }
-                    .environment(store)
                 }
             }
         }
@@ -152,9 +134,8 @@ struct RootView: View {
             NSCursor.setHiddenUntilMouseMoves(true)
 
             // Modal Esc must win even while its text field is first responder.
-            if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil || store.feedbackOpen {
+            if store.pendingWorkspace != nil || store.feedbackOpen {
                 if event.keyCode == 53 {   // Esc closes the modal
-                    store.creatingWorktreeIn = nil
                     store.pendingWorkspace = nil
                     store.feedbackOpen = false
                     return nil
@@ -173,7 +154,6 @@ struct RootView: View {
             // ⌘⇧F opens the feedback sheet from anywhere — even over the terminal (like ⌘K).
             if key == "f", event.modifierFlags.contains(.command), event.modifierFlags.contains(.shift) {
                 if store.palette != nil { store.closePalette() }
-                store.activeMenu = nil
                 store.feedbackOpen = true
                 return nil
             }
@@ -201,7 +181,6 @@ struct RootView: View {
                 if store.shortcutsOpen { store.shortcutsOpen = false }
                 else {
                     if store.palette != nil { store.closePalette() }
-                    store.activeMenu = nil
                     store.shortcutsOpen = true
                 }
                 return nil
@@ -218,10 +197,12 @@ struct RootView: View {
             }
             // The palette owns the keyboard while open (working.html): ↑/↓ + Ctrl+J/K
             // (+ Ctrl+N/P) move, Enter runs, Backspace on an empty query pops, Esc
-            // closes. Ctrl+K means "up" here — only ⌘K closes.
+            // pops one frame and closes at the root. Ctrl+K means "up" here — only ⌘K closes.
             if let pal = store.palette {
                 switch event.keyCode {
-                case 53:  store.closePalette(); return nil   // Esc
+                case 53:                                     // Esc pops one frame, closes at root
+                    if pal.stack.count > 1 { pal.pop() } else { store.closePalette() }
+                    return nil
                 case 36, 76: pal.runActive(); return nil     // Return / keypad Enter
                 case 125: pal.move(1); return nil            // ↓
                 case 126: pal.move(-1); return nil           // ↑
@@ -275,14 +256,6 @@ struct RootView: View {
                 }
             }
 
-            if let menu = store.activeMenu {
-                if event.keyCode == 53 { store.activeMenu = nil; return nil }   // Esc closes menu
-                // ↵ commits the removal while the menu is showing its delete confirm.
-                if (event.keyCode == 36 || event.keyCode == 76), store.menuConfirming {
-                    menu.onDelete(); store.activeMenu = nil; return nil
-                }
-                return event
-            }
             // Esc exits browser comment mode (ADR-0011 stage three) — checked before the
             // page passthrough so it works while the page owns keys; the overlay's own
             // exitMode binding call flips the same state, so the button follows either path.

@@ -148,7 +148,7 @@ struct PaletteFrame {
         return ranked.flatMap { byKey[$0]!.map(\.0) }
     }
 
-    func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? "" }
+    func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? ""; activeIndex = 0 }
     func pop() { if stack.count > 1 { stack.removeLast(); query = "" } }
     func pop(to depth: Int) { stack.removeLast(stack.count - max(1, depth + 1)); query = "" }
 
@@ -230,6 +230,9 @@ struct PaletteFrame {
                 }
             }
             let g = "Session · \(open.title)"
+            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
+                                     group: g, ctx: open.title,
+                                     enter: { self.push(self.renameFrame(.session(open))) }))
             // Browser only: toggle comment mode (ADR-0011 stage three) — the palette
             // twin of the bar button, so the keyboard can drive it without a click.
             if open.kind == .browser {
@@ -242,9 +245,6 @@ struct PaletteFrame {
                                                  .toggleCommentMode(store: store)
                                          } }))
             }
-            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
-                                     group: g, ctx: open.title,
-                                     enter: { self.push(self.renameFrame(.session(open))) }))
             items += containmentItems(open, group: g)
             items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete",
                                      group: g, ctx: open.title, danger: true,
@@ -393,7 +393,7 @@ struct PaletteFrame {
                 var it = item; it.group = "Actions"; return it
             }
             items += [
-                PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add workspace", group: "Actions",
                             enter: { self.push(self.createWorkspaceFrame()) }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
                             kbd: ["⌘", "B"],
@@ -429,7 +429,7 @@ struct PaletteFrame {
     func workspacesFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Workspaces", placeholder: "Search workspaces…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add workspace", sec: "act",
                             enter: { self.push(self.createWorkspaceFrame()) }),
             ]
             for ws in store.workspaces {
@@ -565,7 +565,7 @@ struct PaletteFrame {
         PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "↵ confirm · esc cancel",
                      mode: .confirm, note: note) { [self] _ in
             [
-                PaletteItem(icon: .phosphor(icon), label: "\(verb) \(name)", danger: danger,
+                PaletteItem(icon: .phosphor(icon), label: verb, danger: danger,
                             enter: { self.runAndClose(perform) }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
@@ -607,7 +607,7 @@ struct PaletteFrame {
     // MARK: Create frames — the search input becomes the name field
 
     func createWorkspaceFrame() -> PaletteFrame {
-        PaletteFrame(crumb: "New workspace", placeholder: "Repository path…", mode: .input) { [self] q in
+        PaletteFrame(crumb: "Add workspace", placeholder: "Repository path…", mode: .input) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             return [PaletteItem(icon: .phosphor(Phosphor.plus),
                                 label: v.isEmpty ? "Type a repository path…" : "Add workspace “\(v)”",

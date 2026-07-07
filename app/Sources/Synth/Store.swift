@@ -838,9 +838,9 @@ enum ThemePref: String, CaseIterable, Identifiable {
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
         let owned = ownedBrowsers(of: session)
-        guard !owned.isEmpty else { return "Delete this session?" }
+        guard !owned.isEmpty else { return "Ends this session and its process." }
         let what = owned.count == 1 ? "browser" : "\(owned.count) browsers"
-        return "Delete this session? This also closes its \(what)."
+        return "Ends this session and its process, and closes its \(what)."
     }
 
     /// The comment ladder's spawn rung (CommentMode rung 3): a claude row created exactly

@@ -178,6 +178,35 @@
   .traffic .y { background: #febc2e; }
   .traffic .g { background: #28c840; }
 
+  /* Development-build tag: mirrors the traffic lights at the top-right, amber to match
+     the Synth Dev icon. Shown only when the shell carries `is-dev` (the native app sets it
+     from the `.dev` bundle id); absent entirely on the stable build. */
+  .dev-tag {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 7px;
+    font: 600 10.5px/1 var(--mono);
+    letter-spacing: 0.13em;
+    color: var(--work);
+    background: rgba(245, 166, 35, 0.13);
+    border: 1px solid rgba(245, 166, 35, 0.5);
+    -webkit-app-region: no-drag;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .dev-tag::before {
+    content: "";
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--work);
+  }
+  .app.is-dev .dev-tag { display: inline-flex; }
+
   /* ---- Icon buttons (collapse / expand) ---- */
   .icon-btn {
     -webkit-app-region: no-drag;
@@ -1661,7 +1690,7 @@
   </script>
 </head>
 <body>
-  <main class="app" id="app">
+  <main class="app is-dev" id="app">
     <div class="resize-handle" id="resizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize · double-click to reset"></div>
     <button class="icon-btn expand-btn" id="expandBtn" aria-label="Expand sidebar">
       <svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>
@@ -1670,6 +1699,7 @@
     <div class="traffic">
       <i class="r"></i><i class="y"></i><i class="g"></i>
     </div>
+    <div class="dev-tag" aria-label="Development build" title="Development build">DEV</div>
 
     <aside class="sidebar">
       <div class="sidebar__top">

@@ -88,7 +88,7 @@ targets.append(
         name: "Synth",
         dependencies: synthDependencies,
         // CommentOverlay.js (ADR-0011 stage three): the page overlay, injected over
-        // CDP. .copy — it must land byte-identical (dev.sh/build-app.sh copy the
+        // CDP. .copy — it must land byte-identical (dev.sh/dist.sh copy the
         // resource bundle into Contents/Resources so the bundled app finds it).
         resources: [.copy("Resources/CommentOverlay.js")],
         linkerSettings: synthLinkerSettings

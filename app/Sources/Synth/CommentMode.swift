@@ -342,9 +342,7 @@ import Observation
     }
 
     private static func commentsDir(sessionID: UUID) -> URL {
-        let dir = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Synth/comments/\(sessionID.uuidString)", isDirectory: true)
+        let dir = AppSupport.dir("comments/\(sessionID.uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

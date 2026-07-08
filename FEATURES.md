@@ -303,3 +303,18 @@ disclosure to dive deeper.
   group of jump rows that drill into their own frame where their actions live. Acting on a parent is a
   deliberate step up, not a careless-Enter neighbour. Also fixed a duplicate `const ICON_EXTERNAL`
   merge artifact whose top-level `SyntaxError` had been killing the whole palette script.
+- **Two build channels (Stable / Dev) + generated app icon** — `dist.sh` builds/installs the stable
+  "Synth" (`tech.holibob.synth`) to `/Applications`; `dev.sh` builds "Synth Dev"
+  (`tech.holibob.synth.dev`) for the live loop; a shared `lib.sh` keeps their bundles identical.
+  `AppSupport.root` keys the Application Support sandbox off `CFBundleName` so the two coexist without
+  colliding (state, worktrees, browser profiles, instances all isolated; `SYNTH_SUPPORT_DIR` /
+  `SYNTH_STATE_DIR` overrides preserved). Icon is a Higgsfield-generated "liquid swirl" gradient in
+  Synth's own accent hues (stable full-colour, dev amber), masked to a squircle and built to
+  `AppIcon.icns`. Icon art is a champagne-on-charcoal "synthesis of instruments" mark (equalizer pins
+  + violin-scroll curls); `app/icon/mockicon.swift` keys the mark, composites it at 74% on a clean
+  charcoal squircle (no rim), and retints it amber for the dev variant (deterministic, no AI redraw),
+  packed by `build-icons.sh`. The dev build also shows an amber "DEV" pill top-right
+  (`.dev-tag` / `is-dev` in both designs; `DevTagBadge` gated on the `.dev` bundle id natively), absent
+  on stable. Distribution to teammates via a private Homebrew cask (ad-hoc + quarantine strip,
+  notarization later) is decided but not yet built. Verified: both channels built, launched, and
+  running side by side; DEV tag confirmed in the design over CDP.

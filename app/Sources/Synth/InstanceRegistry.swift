@@ -16,9 +16,7 @@ import Foundation
     /// recorded in the JSON so clients never hardcode the convention.
     static let controlSocketPath = "/tmp/synth-ctl-\(getpid()).sock"
 
-    private static let dir = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Synth/instances", isDirectory: true)
+    private static let dir = AppSupport.dir("instances")
 
     private let createdAt = ISO8601DateFormatter().string(from: Date())
     private var cdpPort: UInt16 = 0

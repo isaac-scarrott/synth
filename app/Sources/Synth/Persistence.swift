@@ -71,9 +71,7 @@ enum PersistenceStore {
         if let dir = ProcessInfo.processInfo.environment["SYNTH_STATE_DIR"], !dir.isEmpty {
             return URL(fileURLWithPath: dir, isDirectory: true).appendingPathComponent("state.json")
         }
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("Synth", isDirectory: true)
-                      .appendingPathComponent("state.json")
+        return AppSupport.root.appendingPathComponent("state.json")
     }
     static var backupURL: URL {
         fileURL.deletingLastPathComponent().appendingPathComponent("state-previous.json")

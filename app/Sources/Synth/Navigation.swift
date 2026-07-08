@@ -338,6 +338,7 @@ extension AppStore {
     // MARK: Inline rename (r on the selected row)
 
     func beginRename(_ ref: RowRef) {
+        activeMenu = nil
         renameText = currentName(of: ref)
         renamingRowID = ref.id
         keyboardActive = true
@@ -355,11 +356,39 @@ extension AppStore {
     /// Esc — leave the name untouched.
     func cancelRename() { renamingRowID = nil }
 
-    // MARK: Row delete (shared by the kebab and the `d` shortcut)
+    // MARK: Row menu (shared by the kebab and the `d` shortcut)
+
+    /// The action menu for a row — the same card the kebab opens, centralised so the
+    /// `d` shortcut can raise it straight into its confirm step.
+    func rowMenu(for ref: RowRef) -> ActiveMenu {
+        switch ref {
+        case let .workspace(w):
+            return ActiveMenu(rowID: w.id, level: .workspace,
+                              creates: [MenuCreate(icon: Phosphor.branch, title: "Create worktree…",
+                                                   run: { [weak self] in self?.creatingWorktreeIn = w })],
+                              onDelete: { [weak self] in self?.removeWorkspace(w) })
+        case let .branch(b):
+            return ActiveMenu(rowID: b.id, level: .branch,
+                              creates: [
+                                MenuCreate(icon: Phosphor.terminal, title: "New terminal",
+                                           run: { [weak self] in self?.newTerminal(in: b) }),
+                                MenuCreate(icon: Phosphor.sparkle, title: "New Claude Code",
+                                           run: { [weak self] in self?.newClaude(in: b) }),
+                                MenuCreate(icon: Phosphor.globe, title: "New browser",
+                                           run: { [weak self] in self?.newBrowser(in: b) }),
+                              ],
+                              onDelete: { [weak self] in self?.removeBranch(b, deleteWorktree: false) })
+        case let .session(s):
+            return ActiveMenu(rowID: s.id, level: .session, creates: [],
+                              onDelete: { [weak self] in self?.closeSession(s) },
+                              confirmText: deleteSessionHint(s))
+        }
+    }
 
     /// `d` on the selected row — drop into the ⌘K palette's confirm frame so a single
     /// keystroke can't delete (working.html requestDelete → openPaletteAt(confirmFrame)).
     func requestDelete(_ ref: RowRef) {
+        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         let frame: PaletteFrame

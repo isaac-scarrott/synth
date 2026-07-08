@@ -160,25 +160,6 @@ enum FeedbackMode {
     var openSetupBranchID: UUID?
     var sidebarCollapsed = false
 
-    /// Frecency for the cold palette's "Recent" group (working.html `visits`/`visitClock`).
-    /// A monotonic tick per open stamps last-use; in-memory only — muscle memory for this
-    /// run, deliberately not persisted.
-    var visits: [UUID: Int] = [:]
-    var visitClock = 0
-    func recordVisit(_ id: UUID) { visitClock += 1; visits[id] = visitClock }
-
-    /// The most-recently-opened stable targets, newest first (working.html `recentTargets`).
-    /// Dynamically-named sessions are excluded — an AI title or browser URL shifts, so it
-    /// can't earn a fixed spot; terminals and any hand-renamed session are stable. Only rows
-    /// whose id still resolves live are returned.
-    func recentTargets(_ limit: Int) -> [Session] {
-        visits.sorted { $0.value > $1.value }
-            .compactMap { session($0.key) }
-            .filter { s in !((s.spawnedKind == .claudeCode || s.spawnedKind == .browser) && !s.titleIsCustom) }
-            .prefix(limit)
-            .map { $0 }
-    }
-
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).
     var themePref: ThemePref = (ThemePref(rawValue: UserDefaults.standard.string(forKey: AppStore.themeKey) ?? "") ?? .system) {
@@ -245,13 +226,26 @@ enum FeedbackMode {
     var reorderScrollNonce = 0
 
     /// Sheet drivers.
+    var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?
 
-/// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
-    /// like working.html. `feedbackMode` is resolved once at launch (see init).
+    /// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
+    /// like working.html. `feedbackTitle` is the author-only name that becomes the
+    /// `feedback/<slug>` branch (email mode never shows it). `feedbackMode` is resolved
+    /// once at launch (see init).
     var feedbackOpen = false
     var feedbackDraft = ""
+    var feedbackTitle = ""
     @ObservationIgnored var feedbackMode: FeedbackMode = .email
+
+    /// The row-action menu currently open (nil = none). Clearing it always drops any
+    /// in-progress delete confirmation.
+    var activeMenu: ActiveMenu? { didSet { if activeMenu == nil { menuConfirming = false } } }
+
+    /// The open menu is showing its two-step delete confirm (working.html `.menu.confirming`).
+    /// Lifted out of RowMenu so the keyboard can drive it: `d` opens straight here, ↵ commits.
+    var menuConfirming = false
+
     /// The sidebar row being renamed inline, and its live text — working.html's
     /// contentEditable name label. nil = nothing renaming.
     var renamingRowID: UUID?
@@ -686,7 +680,6 @@ enum FeedbackMode {
         navCursor = session.id
         session.unread = false
         clearNotif(session.id)   // opening a notified session dismisses its standing toast
-        recordVisit(session.id)  // frecency for the palette's Recent group
     }
 
     /// Optimistically move the content pane onto a still-materialising worktree's
@@ -714,6 +707,7 @@ enum FeedbackMode {
     }
 
     func enterSettings(_ scope: SettingsScope = .global) {
+        activeMenu = nil
         closePalette()
         shortcutsOpen = false
         sidebarCollapsed = false
@@ -762,6 +756,7 @@ enum FeedbackMode {
 
     func openPalette() {
         guard palette == nil else { return }
+        activeMenu = nil
         palette = PaletteModel(store: self)
     }
 
@@ -770,6 +765,7 @@ enum FeedbackMode {
     /// A row's ⋯ kebab opens the palette drilled to that row (working.html openRowActions),
     /// rather than the hover popover. Re-drills if the palette is already open.
     func openRowActions(_ ref: RowRef) {
+        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         palette?.drill(to: ref)
     }
@@ -779,6 +775,7 @@ enum FeedbackMode {
     /// session leaf — a sibling session in that leaf's parent worktree (working.html addToRow).
     /// Opens the palette if closed; if already open, resets to root then pushes the frame.
     func addToRow(_ ref: RowRef) {
+        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         let frame: PaletteFrame?
@@ -937,9 +934,9 @@ enum FeedbackMode {
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
         let owned = ownedBrowsers(of: session)
-        guard !owned.isEmpty else { return "Ends this session and its process." }
+        guard !owned.isEmpty else { return "Delete this session?" }
         let what = owned.count == 1 ? "browser" : "\(owned.count) browsers"
-        return "Ends this session and its process, and closes its \(what)."
+        return "Delete this session? This also closes its \(what)."
     }
 
     /// The comment ladder's spawn rung (CommentMode rung 3): a claude row created exactly
@@ -959,29 +956,37 @@ enum FeedbackMode {
 
     // MARK: Feedback (⌘⇧F)
 
-    /// One textbox, resolved by `feedbackMode`: the author turns a gripe into a real
-    /// `feedback/<slug>` worktree with a Claude session already working it (seeded with the
-    /// text + captured context); everyone else gets a pre-filled email. Called from the sheet.
+    /// Resolved by `feedbackMode`: the author names a fix (title) and optionally details it
+    /// (body), turning it into a real `feedback/<slug>` worktree with a Claude session already
+    /// working it (seeded with title + body + captured context); everyone else gets a pre-filled
+    /// email from the one box. Called from the sheet.
     func submitFeedback(_ raw: String) {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = feedbackTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         feedbackDraft = ""
+        feedbackTitle = ""
         feedbackOpen = false
-        guard !text.isEmpty else { return }
         switch feedbackMode {
-        case .author: startFeedbackFix(text)
-        case .email:  openFeedbackEmail(text)
+        case .author:
+            guard !title.isEmpty else { return }
+            startFeedbackFix(title: title, body: body)
+        case .email:
+            guard !body.isEmpty else { return }
+            openFeedbackEmail(body)
         }
     }
 
     /// Author path: cut a `feedback/<slug>` worktree off the open session's workspace and, once
     /// it lands, spawn a single Claude and seed it with the feedback + context — the comment-mode
     /// delivery loop pointed at Synth itself. Falls back to email if there's nowhere to host it.
-    private func startFeedbackFix(_ text: String) {
-        guard let ws = feedbackWorkspace() else { openFeedbackEmail(text); return }
-        let branchName = "feedback/\(Self.feedbackSlug(from: text))"
-        let seed = text + "\n\n" + captureFeedbackContext()
+    /// The slug is derived from the title the author gave and de-duplicated against existing
+    /// branches, so a repeated gripe never collides `git worktree add` (its old failure mode).
+    private func startFeedbackFix(title: String, body: String) {
+        guard let ws = feedbackWorkspace() else { openFeedbackEmail(body.isEmpty ? title : body); return }
         let repo = ws.url
-        let planned = GitService.plannedWorktreePath(repo: repo, branch: branchName)
+        let (branchName, planned) = uniqueFeedbackBranch(slug: Self.feedbackSlug(from: title), repo: repo)
+        let gripe = body.isEmpty ? title : title + "\n\n" + body
+        let seed = gripe + "\n\n" + captureFeedbackContext()
         let row = addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
         materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
             self?.seedFeedbackClaude(in: branch, seed: seed)
@@ -990,6 +995,22 @@ enum FeedbackMode {
                 .map { .failed($0) } ?? .ready(planned)
         }
         raiseFeedbackToast(.done, message: "On it", title: branchName)
+    }
+
+    /// Resolve `feedback/<slug>` to a name no existing branch or planned worktree dir already
+    /// holds, suffixing `-2`, `-3`… on collision — so a repeated gripe (or the `note` fallback)
+    /// can never hard-fail `git worktree add` with "a branch already exists".
+    private func uniqueFeedbackBranch(slug: String, repo: URL) -> (branch: String, path: URL) {
+        let taken = Set(GitService.allBranches(at: repo).map(\.name))
+        var n = 1
+        while true {
+            let branch = n == 1 ? "feedback/\(slug)" : "feedback/\(slug)-\(n)"
+            let path = GitService.plannedWorktreePath(repo: repo, branch: branch)
+            if !taken.contains(branch) && !FileManager.default.fileExists(atPath: path.path) {
+                return (branch, path)
+            }
+            n += 1
+        }
     }
 
     /// Spawn a quiet Claude in the freshly-materialized branch, mount it for a beat so its PTY
@@ -1037,10 +1058,23 @@ enum FeedbackMode {
         }
     }
 
-    /// Where a feedback fix lands: the open session's workspace, else the first one.
+    /// Where a feedback fix lands: author gripes are always about Synth, so target the Synth repo
+    /// itself wherever it sits in the sidebar — never whatever workspace happens to be open (that
+    /// could be some unrelated client repo). Falls back to the open session's workspace, then the
+    /// first, only if Synth isn't among the workspaces at all.
     private func feedbackWorkspace() -> Workspace? {
+        if let synth = workspaces.first(where: { Self.isSynthRepo($0.url) }) { return synth }
         if let s = openSession, let b = branch(of: s), let ws = workspace(of: b) { return ws }
         return workspaces.first
+    }
+
+    /// True when `repo`'s working tree is Synth's own source — its root carries the design HTML
+    /// and the app sources together, a pairing no other repo has. Matches the main checkout or any
+    /// of its worktrees (both carry the full tree).
+    private static func isSynthRepo(_ repo: URL) -> Bool {
+        let fm = FileManager.default
+        return fm.fileExists(atPath: repo.appendingPathComponent("big-picture-design.html").path)
+            && fm.fileExists(atPath: repo.appendingPathComponent("app/Sources/Synth/SynthApp.swift").path)
     }
 
     /// Structural facts only — what Synth is doing, never what you're building. Attached to the
@@ -1072,10 +1106,14 @@ enum FeedbackMode {
         return "Synth \(version) · macOS \(v.majorVersion).\(v.minorVersion) · \(themePref.rawValue) theme"
     }
 
-    /// feedback text → a short branch slug: first four alphanumeric words, dash-joined.
+    /// A title → a filesystem- and ref-safe branch slug: alphanumeric words, dash-joined, then
+    /// capped at 48 chars so a pasted URL/hash can't push a single ref component past git's
+    /// 255-byte limit (its old "File name too long" failure). Empty input falls back to "note".
     static func feedbackSlug(from text: String) -> String {
         let cleaned = String(text.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : " " })
-        let slug = cleaned.split(separator: " ").prefix(4).joined(separator: "-")
+        let joined = cleaned.split(separator: " ").prefix(6).joined(separator: "-")
+        var slug = String(joined.prefix(48))
+        while slug.hasSuffix("-") { slug.removeLast() }
         return slug.isEmpty ? "note" : slug
     }
 

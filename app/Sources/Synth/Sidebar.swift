@@ -464,6 +464,14 @@ private struct SessionRow: View {
         return session.unread ? Theme.sessionNameUnread : Theme.sessionName
     }
 
+    // Owned browsers surface their tie in the tooltip too (working.html `.ind--owned` title).
+    private var ownershipHelp: String {
+        if let owner = session.ownerSessionID, let name = store.session(owner)?.title {
+            return "\(session.title) · belongs to \(name)"
+        }
+        return "\(session.title) · \(session.status.label)"
+    }
+
     var body: some View {
         ZStack(alignment: .trailing) {
             if renaming {
@@ -487,7 +495,11 @@ private struct SessionRow: View {
                             .foregroundStyle(nameColor)
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        StatusIndicator(status: session.status).opacity(revealed ? 0 : 1)
+                        Group {
+                            if session.ownerSessionID != nil { OwnedIndicator() }
+                            else { StatusIndicator(status: session.status) }
+                        }
+                        .opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     // The open session's sticky tint (working.html .session--open).
@@ -513,14 +525,11 @@ private struct SessionRow: View {
         .rowChrome(hovering: hovering, selected: selected)
         // The pulse wash sits behind the row chrome (a soft one-shot sweep, not a standing tint).
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.attention.opacity(pulse ? 0.11 : 0)))
-        // Containment (ADR-0011 stage four): a browser owned by a Claude session sits one
-        // indent step under its owner — same session dials, the indent alone carries the
-        // relation. Leading-only, so the row's right edge (and its 16px indicator slot)
-        // stays on the sidebar's shared right axis (working.html `.session--owned`).
-        .padding(.leading, session.ownerSessionID != nil ? 15 : 0)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: session.ownerSessionID)
+        // Containment (ADR-0011 stage four, revised): an owned browser is NOT nested — it
+        // stays a plain sibling on the shared indent; the accent sparkle in its indicator
+        // slot carries the tie instead (working.html `.ind--owned`, no `.session--owned` indent).
         .onHover { hovering = $0 }
-        .help("\(session.title) · \(session.status.label)")
+        .help(ownershipHelp)
         .id(session.id)
         .onChange(of: store.pulseTokens[session.id]) { _, _ in
             guard !reduceMotion else { return }
@@ -667,6 +676,20 @@ private struct StatusIndicator: View {
         case .working: Ind { Dot(color: Theme.working).sdotPulse() }
         case .needsInput: Ind { AttentionGlyph(state: .input) }
         case .error:      Ind { AttentionGlyph(state: .error) }
+        }
+    }
+}
+
+/// A browser owned by a Claude session carries the owner's accent sparkle in its indicator
+/// slot instead of a liveness dot — the sidebar-visible tie that replaced the old containment
+/// indent (working.html `.ind--owned`). Browsers are status-less, so this only ever stands
+/// where a StatusIndicator's empty idle slot would be.
+private struct OwnedIndicator: View {
+    var body: some View {
+        Ind {
+            Phos(path: Phosphor.sparkle, size: 12)
+                .foregroundStyle(Theme.claude)
+                .opacity(0.9)
         }
     }
 }

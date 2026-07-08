@@ -274,3 +274,14 @@ disclosure to dive deeper.
   and every non-web scheme (`mailto:`/`file://`/`vscode://`…) goes to the OS default browser, which
   keeps the user's real auth and matches every macOS terminal. Browser toolbar gains an
   open-in-default-browser icon button (the ⌘K action, surfaced) next to DevTools.
+
+## [2026-07-08](docs/features/2026-07-08.md)
+
+- **Owned browsers are siblings with a Claude mark, not nested (ADR-0011 stage four, revised; both
+  designs + native app)** — a browser owned by a Claude session no longer indents one step under
+  its owner; it sits as a plain sibling on the shared session indent and carries a small accent
+  Claude sparkle (12px, `session__icon--ai` terracotta) in its right-hand indicator slot instead —
+  mirroring the owner's icon so the mark reads "belongs to Claude." Browsers are status-less, so
+  this reuses the otherwise-empty slot and stays on the shared right axis; the row still sits
+  directly beneath its owner and the tooltip names it ("… · belongs to Claude Code"). Adopt/detach
+  animate the mark, not a margin (`.ind--owned` carries the tie; `.session--owned` drops its indent).

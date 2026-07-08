@@ -227,39 +227,6 @@ disclosure to dive deeper.
 
 ## [2026-07-07](docs/features/2026-07-07.md)
 
-- **⌘K rationalised — one vocabulary, five laws** — every palette label/order/affordance now falls
-  out of fixed rules: navigate by *branch* and say *worktree* only for on-disk create/delete
-  (Create worktree… / Delete worktree), Add workspace… matches the dialog, Remove≠Delete stays
-  deliberate (ADR-0007) and every confirm states its consequence; ellipsis iff you must type or
-  open Settings; bare verbs under a naming crumb (no "Rename synth…"); order create→navigate→
-  modify→destroy-last. Nav category frames become pure lists; the redundant bulk delete-pickers
-  (and dead `deletePicker`) are gone. Both designs; subset invariant preserved.
-- **⌘K drops the ellipsis (refines the entry above)** — action labels become plain verbs
-  (`Rename`, `Create worktree`, `Settings`); the `…` menu-bar convention is dead weight in a
-  keyboard palette where Enter reveals the next frame instantly.
-- **⌘K hardened by a fresh-eyes focus group (11 personas)** — ranking now lets an exact/name match
-  beat loose-subsequence + actions (no destructive on the Enter line), fresh open pre-selects nothing,
-  active Delete stays red in dark, the branch-remove fork defaults to the safe row, consequence copy
-  is a visible wrapping line, Esc pops one frame; plus a Recent (frecency) group, "New branch"
-  create wording, ⌘T new-terminal, and browser-ownership verbs inline in ⌘K. A11y ARIA/focus-trap
-  deferred. Both designs; invariant held.
-- **⌘K final polish (focus-group follow-ups)** — real focus trap + focus-restore (the copy is now
-  true), reversible Remove de-emphasised so red only ever means destruction, worktree-remove clarifies
-  the branch survives, new-branch create shows base + on-disk path in one quiet line, and the retired
-  popover menu (JS + `.menu` CSS, ~11 KB) is deleted. Both designs; invariant held.
-- **Native app: ⌘K session work ported** — the whole ⌘K rationalization + focus-group hardening now
-  runs in SwiftUI on the real store: New branch / Add workspace / bare verbs, Remove≠Delete colours,
-  name-beats-action ranking, fresh-open-highlights-nothing, wrapping consequence note, Esc-pops, Recent
-  frecency group, ⌘T in the sheet; dead popover-menu deleted (~500 lines net removed). Behavior verified
-  over the control socket; fidelity audit 13/14, 5 gaps fixed.
-- **In-app feedback (⌘⇧F) — one textbox that forks (both designs + native app)** — ⌘⇧F (also a ⌘K
-  action + ⌘? row) opens one textbox; ⌘↵ sends, Esc dismisses, draft persists. Resolved once at
-  launch by git identity: the author turns a gripe into a real `feedback/<slug>` worktree with a
-  Claude session already working it (reusing lazy worktrees + CommentMode's live-Claude PTY
-  delivery, seeded with the text + structural context); everyone else gets a pre-filled
-  `mailto:isaac.scarrott11@gmail.com`. Context is captured silently, allowlisted to scalar facts
-  (session kind/status/counts, theme, version/OS) — never file contents, paths, terminal output,
-  env or clipboard; the email attaches only version/OS.
 - **Worktree creation switches optimistically; a slow checkout never yanks the pane (both designs + native app)** —
   the content-pane switch now rides the create keystroke, not the async `git worktree add`: creating
   a worktree shows a "Setting up worktree…" skeleton at once, and when the checkout lands it resolves
@@ -274,3 +241,32 @@ disclosure to dive deeper.
   and every non-web scheme (`mailto:`/`file://`/`vscode://`…) goes to the OS default browser, which
   keeps the user's real auth and matches every macOS terminal. Browser toolbar gains an
   open-in-default-browser icon button (the ⌘K action, surfaced) next to DevTools.
+- **In-app feedback (⌘⇧F) — one textbox that forks (both designs + native app)** — ⌘⇧F (also a ⌘K
+  action + ⌘? row) opens one textbox; ⌘↵ sends, Esc dismisses, draft persists. Resolved once at
+  launch by git identity: the author turns a gripe into a real `feedback/<slug>` worktree with a
+  Claude session already working it (reusing lazy worktrees + CommentMode's live-Claude PTY
+  delivery, seeded with the text + structural context); everyone else gets a pre-filled
+  `mailto:isaac.scarrott11@gmail.com`. Context is captured silently, allowlisted to scalar facts
+  (session kind/status/counts, theme, version/OS) — never file contents, paths, terminal output,
+  env or clipboard; the email attaches only version/OS.
+- **Author feedback names its own fix; worktree creation is collision-proof (both designs + native
+  app)** — author-mode ⌘⇧F now takes a required **Title** ("Name this fix") that becomes the
+  `feedback/<slug>` branch, with the box as optional detail; email mode is unchanged. Fixes two
+  hard-fail modes of the old auto-slug: the slug is length-capped (can't trip git's 255-byte ref
+  limit) and de-duplicated against existing branches + the planned dir (suffix `-2`, `-3`…), so a
+  repeated gripe lands a fresh sibling instead of *"a branch already exists"*. The fix now always
+  lands in the **Synth repo** (found by its source markers), not whatever workspace is open.
+
+## [2026-07-08](docs/features/2026-07-08.md)
+
+- **Split / monitor: the content pane tiles 2+ linked sessions (both designs)** — a persistent split
+  group (survives navigating away, reopens from its sidebar capsule) tiles siblings side by side to
+  watch e.g. an embedded browser next to its streaming dev-server logs. Sidebar shows the group as an
+  Arc-style pill capsule that **mirrors the pane order** (no owner↔browser join — ownership stays a
+  tree chip); only same-worktree siblings can link. Add via `⌘\` *Open beside* (a **`⌘K` palette
+  frame**, sharing that primitive) / drag-into-pane — **always appended at the end, no column
+  ceiling**; `⌘⌥←/→` move focus, `⌘↵` zoom, `⌘W`
+  unlink, `esc` collapse to the focused pane, `⌘B` hands the sidebar's width to the panes. Single-
+  session render stays byte-identical; the split is purely additive at 2+ panes and both files seed a
+  2-pane default on load. Also fixed a pre-existing fatal duplicate `const ICON_EXTERNAL` that was
+  breaking the script. Native SwiftUI port is a later, separate effort.

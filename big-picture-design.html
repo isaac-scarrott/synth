@@ -454,6 +454,71 @@
   .sim__hero { padding: 46px 22px 0; }
   .sim__hero .skel--title { width: 62%; }
 
+  /* ---- Split / monitor: the content pane can tile 2+ sessions side by side ----
+     One open session stays a bare .pane (byte-identical to before); a linked group
+     tiles as .panes > .spane. Panes append at the end, no column ceiling. */
+  .panes { flex: 1; display: flex; min-height: 0; min-width: 0; }
+  .spane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; flex-grow: var(--grow, 1); flex-basis: 0; border-left: 0.5px solid var(--border); transition: opacity 200ms ease, flex-grow 220ms var(--ease-out); }
+  .spane:first-child { border-left: 0; }
+  .panes.multi .spane:not(.is-focus) { opacity: 0.55; }
+  .panes.multi .spane:not(.is-focus) .pane__body { filter: saturate(0.75); }
+  .spane.enter { animation: spane-in 220ms var(--ease-out); }
+  @keyframes spane-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+  .spane::after { content: ""; position: absolute; inset: 0; border-radius: 4px; box-shadow: inset 0 0 0 2px rgba(10,132,255,0.55); pointer-events: none; z-index: 4; opacity: 0; transition: opacity 130ms ease; }
+  .panes.multi .spane.is-focus::after { opacity: 1; }
+  .panes.zoomed .spane:not(.is-focus) { flex-grow: 0.0001 !important; opacity: 0; pointer-events: none; border-left: 0; }
+  .panes.zoomed .pane-div { display: none; }
+  .spane .pane__head { padding: 10px 12px 10px 14px; min-height: 42px; }
+  .spane .pane__title .nm { overflow: hidden; text-overflow: ellipsis; }
+  /* collapsed sidebar: first pane's head clears the traffic-light zone */
+  .app.collapsed .panes .spane:first-child .pane__head { padding-left: 104px; }
+
+  /* per-pane hover controls: zoom this pane full, or unlink it */
+  .pane__ctl { display: flex; gap: 1px; opacity: 0; transition: opacity 120ms ease; }
+  .spane:hover .pane__ctl, .spane.is-focus .pane__ctl { opacity: 1; }
+  .pctl { width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 110ms ease, color 110ms ease; }
+  .pctl svg { width: 15px; height: 15px; display: block; }
+  .pctl:hover { background: var(--hover); color: var(--ink); }
+
+  /* draggable seam between panes */
+  .pane-div { position: relative; flex: 0 0 1px; background: var(--border); cursor: col-resize; z-index: 5; }
+  .pane-div::after { content: ""; position: absolute; inset: 0 -4px; }
+  .pane-div:hover, .pane-div.drag { background: var(--input); }
+
+  /* zoom chip — the escape hatch back to all panes */
+  .zoomchip { position: absolute; top: 12px; right: 14px; z-index: 30; display: none; align-items: center; gap: 8px; padding: 5px 8px 5px 11px; background: var(--glass); -webkit-backdrop-filter: blur(20px) saturate(1.7); backdrop-filter: blur(20px) saturate(1.7); border: 0.5px solid var(--border-strong); border-radius: 999px; box-shadow: var(--notif-shadow); font-size: 11px; font-weight: 550; color: var(--ink-3); cursor: pointer; animation: chip-in 160ms var(--ease-out); }
+  .content.zoomed .zoomchip { display: flex; }
+  .zoomchip:hover { color: var(--ink); }
+  .zoomchip kbd { font-family: var(--mono); font-size: 10px; min-width: 15px; height: 16px; padding: 0 4px; display: inline-grid; place-items: center; color: var(--ink-4); background: var(--raised); border: 0.5px solid var(--line); border-radius: 5px; }
+  @keyframes chip-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  /* drag-a-session-into-the-content drop zone */
+  .dropzone { position: absolute; inset: 10px; z-index: 36; display: none; align-items: center; justify-content: center; border: 2px dashed var(--input); border-radius: 14px; background: color-mix(in srgb, var(--input) 8%, transparent); color: var(--input); font-size: 13px; font-weight: 600; letter-spacing: -0.01em; pointer-events: none; }
+  .content.dropsplit .dropzone { display: flex; }
+
+  /* ---- Arc-style inline split capsule: a linked group's sibling rows become pills, side ----
+     by side, mirroring the panes on screen (left→right pills = left→right panes). No join. */
+  .splitcap { display: flex; align-items: stretch; gap: 4px; margin: 3px 0 4px; padding: 3px; border-radius: 11px; background: var(--press); }
+  .splitpill { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px; background: transparent; border: 0; cursor: pointer; font-family: inherit; text-align: left; transition: background 120ms ease, box-shadow 120ms ease; }
+  @media (hover: hover) and (pointer: fine) { .splitpill:hover { background: color-mix(in srgb, var(--raised) 50%, transparent); } }
+  .splitpill.is-focus { background: var(--raised); box-shadow: 0 1px 2px rgba(0,0,0,0.09), inset 0 0 0 0.5px var(--border-strong); }
+  .splitpill__ico { position: relative; width: 15px; height: 15px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #a1a1a6; }
+  .splitpill__ico svg { width: 15px; height: 15px; display: block; }
+  .splitpill__ico--ai { color: #c2724c; }
+  .splitpill__dot { position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--sidebar); }
+  .splitpill.is-focus .splitpill__dot { box-shadow: 0 0 0 1.5px var(--raised); }
+  .splitpill__dot.run { background: var(--run); }
+  .splitpill__dot.work { background: var(--work); animation: sdot-pulse 1.5s var(--ease-in-out) infinite; }
+  .splitpill__dot.error { background: var(--error); }
+  .splitpill__dot.input { background: var(--input); }
+  .splitpill .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 500; letter-spacing: -0.005em; color: var(--ink-3); }
+  .splitpill.is-focus .nm { color: var(--ink); font-weight: 600; }
+  /* tight (3+ pills): inactive pills collapse to icon-only, the focused pill keeps its name */
+  .splitcap--tight .splitpill { flex: 0 0 auto; gap: 0; padding: 5px 7px; }
+  .splitcap--tight .splitpill .nm { display: none; }
+  .splitcap--tight .splitpill.is-focus { flex: 1 1 0; gap: 6px; }
+  .splitcap--tight .splitpill.is-focus .nm { display: block; }
+
   /* ---- Sidebar nav: workspace → branches → sessions ---- */
   .nav {
     flex: 1;
@@ -920,6 +985,60 @@
   }
   .row.menu-open > .ind,
   .row.menu-open > .branch__meta,
+  .row.menu-open > .repo__count,
+  .row.menu-open > .branch__roll { opacity: 0; }
+
+  /* ---- Popover menu (origin-aware: scales out of the kebab) ---- */
+  .menu {
+    position: fixed;
+    z-index: 100;
+    min-width: 172px;
+    padding: 5px;
+    background: var(--glass);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border: 0.5px solid var(--line);
+    border-radius: 11px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.18);
+    transform-origin: var(--mo, top right);
+    opacity: 0;
+    transform: scale(0.95);
+    overflow: hidden;
+    transition: opacity 140ms var(--ease-out), transform 150ms var(--ease-out);
+  }
+  .menu.open { opacity: 1; transform: scale(1); }
+
+  /* Delete confirm morphs in place: container resizes + panes crossfade (no innerHTML swap) */
+  .menu__viewport { position: relative; transition: height 190ms var(--ease-out); }
+  .menu__pane { transition: opacity 120ms var(--ease-out); }
+  .menu__pane--confirm { position: absolute; top: 0; left: 0; right: 0; opacity: 0; pointer-events: none; }
+  .menu.confirming .menu__pane--actions { opacity: 0; pointer-events: none; }
+  .menu.confirming .menu__pane--confirm { opacity: 1; pointer-events: auto; }
+
+  .menu__item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 450;
+    color: var(--ink);
+    transition: background-color 100ms ease;
+  }
+  .menu__item svg { width: 15px; height: 15px; flex-shrink: 0; color: #7a7a80; }
+  @media (hover: hover) and (pointer: fine) {
+    .menu__item:hover { background: var(--hover); }
+  }
+  .menu__item--danger { color: var(--error); }
+  .menu__item--danger svg { color: var(--error); }
+  .menu__sep { height: 0.5px; background: var(--press); margin: 4px 6px; }
+
+  .menu__confirm { padding: 7px 8px 8px; }
+  .menu__confirm-label { font-size: 11.5px; line-height: 1.35; color: var(--ink-4); padding: 2px 2px 9px; }
+  .menu__confirm-row { display: flex; gap: 6px; }
   .menu__btn {
     flex: 1;
     padding: 6px 10px;
@@ -935,6 +1054,7 @@
     transition: background-color 100ms ease, transform 110ms var(--ease-out);
   }
   .menu__btn:active { transform: scale(0.97); }
+  .menu__btn--danger { background: var(--error); color: #fff; border-color: transparent; }
 
   /* ---- Dialog (modal — stays centered) ---- */
   .backdrop {
@@ -998,8 +1118,17 @@
   .dialog__btn--primary { background: var(--input); color: #fff; border-color: transparent; }
   .dialog__btn.is-disabled { opacity: 0.4; pointer-events: none; }
 
-  /* ---- Feedback (⌘⇧F) — one textbox; author spawns a fix, everyone else emails ---- */
+  /* ---- Feedback (⌘⇧F) — author names a fix (title + detail), everyone else emails ---- */
   .dialog--feedback { width: 460px; padding: 16px; }
+  .fb__title {
+    width: 100%; box-sizing: border-box; display: block; margin-bottom: 10px;
+    font-family: var(--font); font-size: 14px; font-weight: 500; color: var(--ink);
+    background: var(--raised); border: 0.5px solid var(--line-2); border-radius: 10px;
+    padding: 10px 12px; outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .fb__title::placeholder { color: var(--text-faint); }
+  .fb__title:focus { border-color: var(--input); box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
   .fb__text {
     width: 100%; box-sizing: border-box; resize: none; display: block;
     font-family: var(--font); font-size: 14px; line-height: 1.45; color: var(--ink);
@@ -1238,7 +1367,6 @@
     min-width: 17px;
     text-align: center;
   }
-  .cmdk__note { padding: 9px 14px 5px; font-size: 12px; line-height: 1.5; color: var(--text-faint); white-space: normal; }
   .cmdk__empty {
     padding: 24px 8px;
     text-align: center;
@@ -1628,7 +1756,6 @@
   /* ⌘K palette: the active-row label + status meta were tuned for a white panel —
      lift them to bright, legible values on the dark frosted glass */
   :root[data-theme="dark"] .cmdk__item.is-active .cmdk__label { color: #6ba9ff; }
-  :root[data-theme="dark"] .cmdk__item--danger.is-active .cmdk__label { color: var(--error); }
   :root[data-theme="dark"] .cmdk__meta--run   { color: var(--run); }
   :root[data-theme="dark"] .cmdk__meta--work  { color: var(--work); }
   :root[data-theme="dark"] .cmdk__meta--input { color: var(--input); }
@@ -1916,6 +2043,8 @@
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ICON_SEND = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z"/></svg>';
   const ICON_EMPTY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
+  // split / monitor glyphs — pane zoom + unlink, and the "new session" picker entries
+  const ICON_ZOOM = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M136,72v48a8,8,0,0,1-16,0V91.31L43.31,168H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V128a8,8,0,0,1,16,0v28.69L120.69,80H92a8,8,0,0,1,0-16h48A8,8,0,0,1,136,72Zm96-40H184a8,8,0,0,0,0,16h28.69L136,124.69V96a8,8,0,0,0-16,0v48a8,8,0,0,0,8,8h48a8,8,0,0,0,0-16H147.31L224,59.31V88a8,8,0,0,0,16,0V40A8,8,0,0,0,232,32Z"/></svg>';
   const STATE_LABEL = { run: 'running', work: 'working', input: 'needs input', error: 'error', idle: 'idle' };
   const IND_HTML = {
     input: `<span class="ind ind--input">${MARK_INPUT}</span>`,
@@ -1924,7 +2053,13 @@
     run:   `<span class="ind"><span class="sdot sdot--run"></span></span>`,
     idle:  `<span class="ind"></span>`,
   };
-  let openEl = null, streamTimer = null;
+  let openEl = null, streamTimers = [];
+  // ---- Split / monitor: the content pane can tile 2+ linked sessions. `panes` is the row
+  // elements on screen (left→right), `focusIdx` the active one, `openEl` aliases panes[focusIdx]
+  // so all the single-session code (notifications, pill, browser verbs) keeps working. A split
+  // is a persistent group in LINKS, so it survives navigating away and reopens from its capsule. ----
+  let panes = [], focusIdx = 0, zoomed = false;
+  const LINKS = [];   // persistent split groups: arrays of session-row elements (siblings only)
   // The still-creating branch whose setup skeleton the pane is showing (null = none). Set
   // the instant a create is requested and cleared the moment anything else opens — so a
   // finished checkout resolves in place only while this still points at it (last-intent-wins).
@@ -1957,18 +2092,33 @@
     if (g) g.classList.add('branch--active');
   }
 
-  function stopStream() { if (streamTimer) { clearInterval(streamTimer); streamTimer = null; } }
+  function stopStream() { streamTimers.forEach(clearInterval); streamTimers = []; }
 
+  // Open a session. If it belongs to a persistent split, the whole group tiles (focused on it);
+  // otherwise it opens solo — and any split it left still lives on in the sidebar as a capsule.
   function openSession(el) {
     if (!el) return;
+    const g = linkOf(el);
+    setPanes(g ? [...g] : [el], g ? g.indexOf(el) : 0);
+  }
+
+  // The one place panes/focus/openEl are set together, so all the single-session bookkeeping
+  // (open marks, read state, notif clear, active pill) stays correct for the focused pane.
+  function setPanes(arr, idx) {
     app.classList.remove('settings');   // jumping to a session leaves settings mode
     setupEl = null;                     // opening a real session revokes any armed setup-resolve
-    if (openEl) openEl.classList.remove('session--open');
-    openEl = el;
-    el.classList.add('session--open');
-    el.classList.remove('session--unread');   // opening marks it read
-    clearNotif(el);                            // …and dismisses any toast for it
-    derivePill(el);
+    arr = arr.filter((e) => e && document.contains(e));
+    if (!arr.length) return;
+    idx = Math.max(0, Math.min(arr.length - 1, idx));
+    nav.querySelectorAll('.session--open').forEach((s) => s.classList.remove('session--open'));
+    panes = arr;
+    focusIdx = idx;
+    zoomed = false;
+    openEl = panes[focusIdx];
+    panes.forEach((e) => { e.classList.add('session--open'); });
+    openEl.classList.remove('session--unread');   // focusing marks the focused pane read
+    clearNotif(openEl);
+    derivePill(openEl);
     renderOpen();
   }
 
@@ -2154,6 +2304,9 @@
   // ⌘↩ jumps to the most-urgent notification — inert when the deck is empty, so the chord
   // is never stolen otherwise.
   document.addEventListener('keydown', (e) => {
+    // an overlay that owns the keyboard (palette, shortcuts sheet, row menu, any modal dialog)
+    // must not let ⌘↵ jump to a notification behind it
+    if (paletteOpen || shortcutsEl || openMenuEl || document.querySelector('.backdrop')) return;
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       const el = notifTop();
       if (el) { e.preventDefault(); jumpTo(el); }
@@ -2309,9 +2462,9 @@
   // and the omnibox reopens the same "go to" surface floated over a loaded page.
   // The open browser pane's comment-mode controls, for ⌘K ("Enter/Exit comment mode").
   let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {} };
-  function wireBrowser(openEl) {
-    const host = content.querySelector('.browser'); if (!host) return;
-    const titleEl = content.querySelector('.pane__title span:last-child');
+  function wireBrowser(openEl, scope) {
+    const host = (scope || content).querySelector('.browser'); if (!host) return;
+    const titleEl = (scope || content).querySelector('.pane__title .nm, .pane__title span:last-child');
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
     let devOpen = false, devTab = 'Elements';
@@ -2512,39 +2665,84 @@
     content.innerHTML = `<div class="pane-empty"><span class="pane-empty__mark">${ICON_EMPTY}</span><span>No session open</span></div>`;
   }
 
+  function paneBodyFor(el, type, name, state, ws, br) {
+    if (type === 'ai') return renderChat(state);
+    if (type === 'browser') return renderBrowser(name);
+    if (type === 'simulator') return renderSim(name);
+    return renderTerminal(name, state, ws, br);
+  }
+  function wirePane(scope, el) {
+    if (!scope || !el) return;
+    const type = el.dataset.type || 'terminal';
+    if (type === 'ai') wireComposer(el, scope);
+    else if (type === 'browser') wireBrowser(el, scope);
+    else if (type === 'terminal' && sessionState(el) === 'run' && !reduceMotion) startStream(scope);
+  }
+
   function renderOpen() {
     stopStream();
     if (!openEl || !document.contains(openEl)) { renderEmpty(); return; }
-    const type = openEl.dataset.type || 'terminal';
-    const name = openEl.querySelector('.session__name').textContent.trim();
-    const state = sessionState(openEl);
-    const ws = workspaceNameOf(openEl), br = branchNameOf(openEl);
-    const iconHTML = openEl.querySelector('.session__icon').outerHTML;
-    let body;
-    if (type === 'ai') body = renderChat(state);
-    else if (type === 'browser') body = renderBrowser(name);
-    else if (type === 'simulator') body = renderSim(name);
-    else body = renderTerminal(name, state, ws, br);
-    content.innerHTML = `<div class="pane">
+    // keep the pane list coherent with openEl (legacy callers just set openEl then call this)
+    panes = panes.filter((p) => document.contains(p));
+    if (!panes.includes(openEl)) { panes = [openEl]; zoomed = false; }
+    focusIdx = panes.indexOf(openEl);
+    const multi = panes.length > 1;
+
+    if (!multi) {
+      // one session fills the pane — byte-identical to the pre-split render
+      const el = openEl;
+      const type = el.dataset.type || 'terminal';
+      const name = el.querySelector('.session__name').textContent.trim();
+      const state = sessionState(el);
+      const ws = workspaceNameOf(el), br = branchNameOf(el);
+      const iconHTML = el.querySelector('.session__icon').outerHTML;
+      content.classList.remove('zoomed');
+      content.innerHTML = `<div class="pane">
       <div class="pane__head">
         <div class="pane__title">${iconHTML}<span>${esc(name)}</span></div>
         <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(br)}</div>
         <div class="pane__spacer"></div>
       </div>
-      <div class="pane__body">${body}</div>
+      <div class="pane__body">${paneBodyFor(el, type, name, state, ws, br)}</div>
     </div>`;
-    if (type === 'ai') wireComposer(openEl);
-    else if (type === 'browser') wireBrowser(openEl);
-    else if (type === 'terminal' && state === 'run' && !reduceMotion) startStream();
+      wirePane(content.querySelector('.pane'), el);
+      syncCapsules();
+      return;
+    }
+
+    // 2+ linked sessions tile side by side, in append order (no column ceiling)
+    content.classList.toggle('zoomed', zoomed);
+    let html = `<div class="panes multi${zoomed ? ' zoomed' : ''}">`;
+    panes.forEach((el, i) => {
+      if (i > 0) html += `<div class="pane-div" data-div="${i}"></div>`;
+      const type = el.dataset.type || 'terminal';
+      const name = el.querySelector('.session__name').textContent.trim();
+      const state = sessionState(el);
+      const ws = workspaceNameOf(el), br = branchNameOf(el);
+      const iconHTML = el.querySelector('.session__icon').outerHTML;
+      html += `<div class="spane${i === focusIdx ? ' is-focus' : ''}" data-pi="${i}" style="--grow:${el.__grow || 1}">
+      <div class="pane__head">
+        <div class="pane__title">${iconHTML}<span class="nm">${esc(name)}</span></div>
+        <div class="pane__spacer"></div>
+        <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(br)}</div>
+        <div class="pane__ctl"><button class="pctl" data-pact="zoom" title="Zoom (⌘↵)">${ICON_ZOOM}</button><button class="pctl" data-pact="close" title="Unlink pane (⌘W)">${ICON_CLOSE}</button></div>
+      </div>
+      <div class="pane__body">${paneBodyFor(el, type, name, state, ws, br)}</div>
+    </div>`;
+    });
+    html += `</div><button class="zoomchip" data-zoomchip>Zoomed — back to all <kbd>esc</kbd></button>`;
+    content.innerHTML = html;
+    content.querySelectorAll('.spane').forEach((sp) => wirePane(sp, panes[+sp.dataset.pi]));
+    syncCapsules();
   }
 
   // running terminals feel alive: a fresh log line trickles in every couple seconds
-  function startStream() {
-    const term = content.querySelector('[data-term]');
+  function startStream(scope) {
+    const term = (scope || content).querySelector('[data-term]');
     if (!term) return;
     let i = 0;
-    streamTimer = setInterval(() => {
-      if (!document.contains(term)) return stopStream();
+    const t = setInterval(() => {
+      if (!document.contains(term)) { clearInterval(t); return; }
       const div = document.createElement('div');
       div.className = 'term__ln dim';
       div.textContent = `  12:0${5 + (i % 4)}:${(12 + i * 7) % 60} [vite] ${STREAM_MSGS[i % STREAM_MSGS.length]}`;
@@ -2553,15 +2751,16 @@
       term.scrollTop = term.scrollHeight;
       i++;
     }, 2600);
+    streamTimers.push(t);
   }
 
   // Replying to the agent: append the message, flip it to working, then settle back to running.
-  function wireComposer(sessionEl) {
-    const composerEl = content.querySelector('.chat__composer');
+  function wireComposer(sessionEl, scope) {
+    const composerEl = (scope || content).querySelector('.chat__composer');
     if (!composerEl) return;
     const input = composerEl.querySelector('.chat__input');
     const send = composerEl.querySelector('.chat__send');
-    const scroll = content.querySelector('.chat__scroll');
+    const scroll = (scope || content).querySelector('.chat__scroll');
     const submit = () => {
       const text = (input.textContent || '').trim() || 'Just commands and sessions for now.';
       const u = document.createElement('div');
@@ -2595,6 +2794,14 @@
   }
 
   nav.addEventListener('click', (e) => {
+    // a capsule pill focuses that pane (opening its split if you'd navigated away)
+    const pill = e.target.closest('.splitpill');
+    if (pill && pill._sess) {
+      e.preventDefault();
+      openSession(pill._sess);
+      focusContent();
+      return;
+    }
     const toggleEl = e.target.closest('[data-toggle]');
     if (toggleEl) {
       e.preventDefault();
@@ -2617,6 +2824,7 @@
   function treeRows() {
     // A tree row is navigable only if none of its ancestors are collapsed.
     return [...nav.querySelectorAll('[data-row]')].filter((row) => {
+      if (row.classList.contains('is-capsuled')) return false;   // rows folded into a split capsule aren't tree-navigable
       let p = row.parentElement;
       while (p && p !== nav) {
         if (p.classList.contains('collapse') &&
@@ -2643,7 +2851,10 @@
   // in the tree, or the active scope in Settings.
   function currentRow(rows) {
     if (app.classList.contains('settings')) return settingsNav.querySelector('.scope--on');
-    return openEl && rows.includes(openEl) ? openEl : null;
+    if (openEl && rows.includes(openEl)) return openEl;
+    // openEl folded into a split capsule (hidden) → resume nav from its visible branch group
+    if (openEl) { const g = branchGroupOf(openEl); if (g && rows.includes(g)) return g; }
+    return null;
   }
   // rows that own the create/rename/delete verbs — the tree only (you can't
   // rename Settings or a scope). Guards a/r/d against the shared cursor landing there.
@@ -2696,7 +2907,8 @@
   }
   function focusContent() {
     document.body.classList.remove('kbd');
-    const el = content.querySelector('.chat__input') || content.querySelector('[data-term]');
+    const scope = content.querySelector('.spane.is-focus') || content;
+    const el = scope.querySelector('.chat__input') || scope.querySelector('[data-term]');
     if (el) el.focus();
   }
 
@@ -2740,16 +2952,11 @@
     // Cmd/Ctrl+0 focuses the sidebar; Cmd/Ctrl+1 focuses the open session's surface
     if ((e.metaKey || e.ctrlKey) && k === '0') { e.preventDefault(); focusSidebar(); return; }
     if ((e.metaKey || e.ctrlKey) && k === '1') { e.preventDefault(); focusContent(); return; }
-    // Cmd/Ctrl+T spawns a terminal in the branch you're on (matches the native app)
-    if ((e.metaKey || e.ctrlKey) && (k === 't' || k === 'T') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
-      const br = contextBranch();
-      if (br) { e.preventDefault(); addTerminal(br); }
-      return;
-    }
     // An open browser session claims the standard page verbs window-wide: ⌘L address,
     // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each drives the visible toolbar control,
     // so disabled states (home page, empty history) are respected for free.
-    const bhost = openEl && openEl.dataset.type === 'browser' ? content.querySelector('.browser') : null;
+    const fscope = content.querySelector('.spane.is-focus') || content;
+    const bhost = openEl && openEl.dataset.type === 'browser' ? fscope.querySelector('.browser') : null;
     if (bhost && (e.metaKey || e.ctrlKey)) {
       const bpress = (sel) => { const b = bhost.querySelector(sel); if (b && !b.disabled) b.click(); };
       if (k === 'l' || k === 'L') { e.preventDefault(); bpress('[data-omni]'); return; }
@@ -3015,6 +3222,96 @@
     if (openMenuRow) { openMenuRow.classList.remove('menu-open'); openMenuRow = null; }
   }
 
+  function openMenu(row, anchor) {
+    if (openMenuRow === row) { closeMenu(); return; }
+    closeMenu();
+    const level = rowLevel(row);
+    const menu = document.createElement('div');
+    menu.className = 'menu';
+    const parts = [];
+    if (level === 'repo') parts.push(`<span class="menu__item" data-act="create-worktree">${ICON_BRANCH}Create worktree…</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-terminal">${ICON_TERMINAL}New terminal</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-claude">${ICON_AI}New Claude Code</span>`);
+    if (level === 'branch') parts.push(`<span class="menu__item" data-act="new-browser">${ICON_BROWSER}New browser</span>`);
+    // containment verbs (browser rows only): the sole way structure changes by hand
+    if (level === 'session' && row.dataset.type === 'browser') {
+      const owner = ownerOf(row);
+      if (owner) parts.push(`<span class="menu__item" data-act="detach">${ICON_MINUS}Detach from “${esc(sessionTitle(owner))}”</span>`);
+      else claudesOf(row.parentElement).forEach((c) => parts.push(`<span class="menu__item" data-act="own" data-sid="${claudeSid(c)}">${ICON_AI}Move under “${esc(sessionTitle(c))}”</span>`));
+      if (owner || claudesOf(row.parentElement).length) parts.push('<div class="menu__sep"></div>');
+    }
+    if (level !== 'session') parts.push('<div class="menu__sep"></div>');
+    parts.push(`<span class="menu__item menu__item--danger" data-act="delete">${ICON_TRASH}${level === 'session' ? 'Delete' : 'Remove'}</span>`);
+    menu.innerHTML = `<div class="menu__viewport">`
+      + `<div class="menu__pane menu__pane--actions">${parts.join('')}</div>`
+      + `<div class="menu__pane menu__pane--confirm">${confirmMarkup(level, row)}</div>`
+      + `</div>`;
+
+    menu.addEventListener('click', (e) => {
+      e.stopPropagation(); // in-menu clicks must not reach the outside-click handler
+      const item = e.target.closest('.menu__item');
+      const btn = e.target.closest('.menu__btn');
+      if (item) {
+        const act = item.dataset.act;
+        if (act === 'delete') return showConfirm(menu);
+        if (act === 'create-worktree') { closeMenu(); return openWorktreeDialog(row); }
+        if (act === 'new-terminal') { closeMenu(); return addTerminal(row); }
+        if (act === 'new-claude') { closeMenu(); return addClaude(row); }
+        if (act === 'new-browser') { closeMenu(); return addBrowser(row); }
+        if (act === 'detach') { closeMenu(); return detach(row); }
+        if (act === 'own') { const sid = item.dataset.sid; closeMenu(); const o = nav.querySelector(`.session[data-sid="${sid}"]`); if (o) adopt(row, o); return; }
+      } else if (btn) {
+        if (btn.dataset.c === 'cancel') return closeMenu();
+        if (btn.dataset.c === 'ok') { const unit = rowUnit(row); closeMenu(); removeUnit(unit); }
+      }
+    });
+
+    document.body.appendChild(menu);
+    positionMenu(menu, anchor);
+    requestAnimationFrame(() => menu.classList.add('open'));
+    openMenuEl = menu; openMenuRow = row; row.classList.add('menu-open');
+  }
+
+  function positionMenu(menu, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    let left = Math.max(8, r.right - mw);
+    let top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) { top = r.top - mh - 6; menu.style.setProperty('--mo', 'bottom right'); }
+    else menu.style.setProperty('--mo', 'top right');
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  }
+
+  // Workspaces and branches are *removed* — sidebar-only; worktrees stay on disk.
+  // Sessions are deleted for real (the process ends). Deleting a Claude session that owns
+  // browsers closes them with it — containment — so the confirm names what goes.
+  function confirmMarkup(level, row) {
+    const owned = level === 'session' && row ? ownedOf(row) : [];
+    const label = level === 'repo' ? 'Remove this workspace from the sidebar? Nothing on disk is deleted.'
+      : level === 'branch' ? 'Remove this branch from the sidebar? Its worktree stays on disk.'
+      : owned.length ? `Delete this session? This also closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
+      : 'Delete this session?';
+    const verb = level === 'session' ? 'Delete' : 'Remove';
+    return `<div class="menu__confirm">
+      <div class="menu__confirm-label">${label}</div>
+      <div class="menu__confirm-row">
+        <span class="menu__btn" data-c="cancel">Cancel</span>
+        <span class="menu__btn menu__btn--danger" data-c="ok">${verb}</span>
+      </div></div>`;
+  }
+
+  function showConfirm(menu) {
+    if (menu.classList.contains('confirming')) return;
+    const vp = menu.querySelector('.menu__viewport');
+    const startH = vp.offsetHeight;
+    const endH = menu.querySelector('.menu__pane--confirm').offsetHeight;
+    vp.style.height = startH + 'px';
+    void vp.offsetHeight;            // flush the start height before animating
+    menu.classList.add('confirming');
+    vp.style.height = endH + 'px';   // container resizes to the confirm state; panes crossfade
+  }
+
   function removeUnit(unit) {
     if (!unit) return;
     // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
@@ -3074,6 +3371,72 @@
     const pos = Math.max(0, input.selectionStart - (input.value.length - v.length));
     input.value = v;
     input.setSelectionRange(pos, pos);
+  }
+
+  // Kebab "Create worktree…": check out an existing branch, or cut a new one off a
+  // base — either way the result is a real folder that becomes a row (ADR-0007).
+  function openWorktreeDialog(row) {
+    const repo = row.closest('[data-repo]');
+    const branchesEl = repo.querySelector('.branches');
+    const shown = new Set(branchesEl ? [...branchesEl.querySelectorAll(':scope > .branch .branch__name, :scope > [data-repo] > .branch--group .branch__name')].map((n) => n.textContent) : []);
+    const available = FAKE_BRANCHES.map((c) => c.name).filter((n) => !shown.has(n));
+    const all = [...new Set([...shown, ...FAKE_BRANCHES.map((c) => c.name)])];
+    let mode = available.length ? 'existing' : 'new';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="Create worktree">
+      <div class="dialog__title">Create worktree</div>
+      <div class="seg">
+        <button class="seg__btn" data-m="existing">Existing branch</button>
+        <button class="seg__btn" data-m="new">New branch</button>
+      </div>
+      <div data-pane="existing">
+        <div class="field"><label>Branch</label>
+          <select id="dlgExisting">${available.map((n) => `<option>${esc(n)}</option>`).join('')}</select></div>
+      </div>
+      <div data-pane="new">
+        <div class="field"><label>Base branch</label>
+          <select id="dlgBase">${all.map((n) => `<option>${esc(n)}</option>`).join('')}</select></div>
+        <div class="field"><label>Branch name</label>
+          <input id="dlgName" placeholder="feat/…" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <div class="dialog__actions">
+        <span class="dialog__btn" data-d="cancel">Cancel</span>
+        <span class="dialog__btn dialog__btn--primary" data-d="create">Create</span>
+      </div></div>`;
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+
+    const input = backdrop.querySelector('#dlgName');
+    const existingSel = backdrop.querySelector('#dlgExisting');
+    const createBtn = backdrop.querySelector('[data-d="create"]');
+    const paint = () => {
+      backdrop.querySelectorAll('.seg__btn').forEach((b) => b.classList.toggle('is-on', b.dataset.m === mode));
+      backdrop.querySelector('[data-pane="existing"]').style.display = mode === 'existing' ? '' : 'none';
+      backdrop.querySelector('[data-pane="new"]').style.display = mode === 'new' ? '' : 'none';
+      const ok = mode === 'existing' ? !!existingSel.value : !!input.value.trim();
+      createBtn.classList.toggle('is-disabled', !ok);
+      if (mode === 'new') setTimeout(() => input.focus(), 60);
+    };
+    paint();
+    backdrop.querySelectorAll('.seg__btn').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.m; paint(); }));
+    input.addEventListener('input', () => { dashSpacesOnInput(input); paint(); });
+
+    const close = () => { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey); };
+    const submit = () => {
+      const name = mode === 'existing' ? existingSel.value : input.value.trim();
+      if (!name) return;
+      addBranch(repo, name);
+      close();
+    };
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) return close();
+      const b = e.target.closest('.dialog__btn'); if (!b) return;
+      if (b.dataset.d === 'cancel') close(); else submit();
+    });
+    function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter' && !e.target.closest('.seg__btn')) { e.preventDefault(); submit(); } }
+    document.addEventListener('keydown', onKey);
   }
 
   // Every branch is a group shell (chevron + empty sessions) so indentation is uniform.
@@ -3187,6 +3550,7 @@
     a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
     rollUpGroups();
     if (opts.open !== false) openSession(a); // a freshly spawned session opens straight into the content pane
+    return a;
   }
   const addTerminal = (branchRow) => addSession(branchRow, 'terminal');
   const addClaude   = (branchRow) => addSession(branchRow, 'claude');
@@ -3380,6 +3744,12 @@
         begin();
       }
       moveClone(e.clientX, e.clientY);
+      // dragging a session over the content pane → offer to split (open beside) instead of reorder
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      const overContent = !!(under && under.closest && under.closest('.content'));
+      start.overContent = overContent && canSplitRow(start.row);
+      content.classList.toggle('dropsplit', !!start.overContent);
+      if (overContent) { autoscroll(e.clientY); return; }   // hold position; don't reorder while over the panes
       // insert before the first sibling whose vertical midpoint is below the pointer
       let ref = null;
       for (const el of sibs(start.container, start.sel)) {
@@ -3401,8 +3771,13 @@
         if (clone) { clone.remove(); clone = null; }
         start.unit.classList.remove('drag-src');
         document.body.classList.remove('dragging');
-        if (start.sel.startsWith('.session')) snapOwned(start.container);   // reunite owner blocks
-        select(start.row);                     // keep selection on the row you moved
+        content.classList.remove('dropsplit');
+        if (start.overContent && canSplitRow(start.row)) {
+          addToSplit(start.row);               // dropped over the panes → open beside the focused pane
+        } else {
+          if (start.sel.startsWith('.session')) snapOwned(start.container);   // reunite owner blocks
+          select(start.row);                   // keep selection on the row you moved
+        }
         active = false;
       }
       start = null;
@@ -3444,8 +3819,22 @@
     }
   })();
 
-  // wire kebabs onto every existing row — each opens the ⌘K palette at that row's frame
+  // wire kebabs onto every existing row; dismiss menu on outside click / Escape
   nav.querySelectorAll('[data-row]').forEach(addKebab);
+  document.addEventListener('click', (e) => {
+    if (openMenuEl && !openMenuEl.contains(e.target) && !e.target.closest('.kebab')) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (paletteOpen || !openMenuEl) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+    // when the menu is showing its delete confirm, ↵ commits the removal
+    else if (e.key === 'Enter' && openMenuEl.classList.contains('confirming')) {
+      e.preventDefault();
+      const unit = rowUnit(openMenuRow);
+      closeMenu();
+      removeUnit(unit);
+    }
+  });
 
   // ===== Keyboard shortcuts sheet (⌘?) — every binding above, one glanceable modal =====
   const ICON_KEYS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200Z"/><path d="M192,112H64a8,8,0,0,1,0-16H192a8,8,0,0,1,0,16Z"/><path d="M160,160H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z"/></svg>';
@@ -3453,7 +3842,6 @@
   const SHORTCUTS = [
     ['General', [
       [['⌘', 'K'], 'Command palette'],
-      [['⌘', 'T'], 'New terminal'],
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '0'], 'Focus sidebar'],
       [['⌘', '1'], 'Focus open session'],
@@ -3481,7 +3869,7 @@
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
       [['↵'], 'Open · drill in'],
       [['⌫'], 'Back (empty search)'],
-      [['esc'], 'Back · close'],
+      [['esc'], 'Close'],
     ]],
   ];
   let shortcutsEl = null;
@@ -3511,10 +3899,11 @@
     setTimeout(() => b.remove(), 200);
   }
 
-  // ===== Feedback (⌘⇧F) — one frictionless textbox that forks on who is running Synth =====
-  // The author (running Synth over its own source, git identity matched) turns a gripe into a real
-  // feedback/<slug> worktree with a Claude session already working it; everyone else gets a
-  // pre-filled email. One surface, identical until send — the fork lives only in the outcome.
+  // ===== Feedback (⌘⇧F) — one surface that forks on who is running Synth =====
+  // The author (running Synth over its own source, git identity matched) names a fix (title) and
+  // optionally details it, turning it into a real feedback/<slug> worktree — the slug derived from
+  // the title and de-duplicated so a repeated gripe never collides — with a Claude session already
+  // working it; everyone else gets a pre-filled email from the one box. The fork lives in the send.
   // Context (session kind, status, counts, theme) is captured silently and attached for repro —
   // structural only: file contents, paths, terminal output, env values and clipboard never leave;
   // the email path attaches only version/OS. Append ?guest to preview it; the native port resolves
@@ -3522,7 +3911,7 @@
   const ICON_CHAT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216ZM84,116a12,12,0,1,1,12,12A12,12,0,0,1,84,116Zm44,0a12,12,0,1,1,12,12A12,12,0,0,1,128,116Zm44,0a12,12,0,1,1,12,12A12,12,0,0,1,172,116Z"/></svg>';
   const FEEDBACK_EMAIL = 'isaac.scarrott11@gmail.com';
   const AUTHOR_MODE = !/[?&]guest\b/.test(location.search);
-  let feedbackEl = null, feedbackDraft = '';
+  let feedbackEl = null, feedbackDraft = '', feedbackTitle = '';
 
   // Structural facts only — what Synth is doing, never what you're building. Captured at send and
   // folded into the payload silently; the user never has to manage it.
@@ -3543,8 +3932,14 @@
     closeMenu();
     const backdrop = document.createElement('div');
     backdrop.className = 'backdrop';
+    // Author names the fix (title → branch, required); everyone else just fills the one box.
+    const titleField = AUTHOR_MODE
+      ? '<input class="fb__title" type="text" placeholder="Name this fix" spellcheck="true" value="' + esc(feedbackTitle) + '">'
+      : '';
+    const bodyPlaceholder = AUTHOR_MODE ? 'Add detail (optional)' : 'What&#39;s off?';
     backdrop.innerHTML = '<div class="dialog dialog--feedback" role="dialog" aria-label="Send feedback">'
-      + '<textarea class="fb__text" placeholder="What&#39;s off?" spellcheck="true">' + esc(feedbackDraft) + '</textarea>'
+      + titleField
+      + '<textarea class="fb__text" placeholder="' + bodyPlaceholder + '" spellcheck="true">' + esc(feedbackDraft) + '</textarea>'
       + '<div class="fb__foot"><span class="fb__dismiss">esc to dismiss</span>'
       + '<span class="dialog__btn dialog__btn--primary fb__send is-disabled" data-send>Send <kbd>⌘↵</kbd></span></div>'
       + '</div>';
@@ -3553,21 +3948,27 @@
     feedbackEl = backdrop;
 
     const ta = backdrop.querySelector('.fb__text');
+    const titleEl = backdrop.querySelector('.fb__title');
     const sendBtn = backdrop.querySelector('[data-send]');
     const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 210) + 'px'; };
-    const paint = () => sendBtn.classList.toggle('is-disabled', !ta.value.trim());
-    setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); grow(); }, 60);
+    const paint = () => sendBtn.classList.toggle('is-disabled', !(AUTHOR_MODE ? (titleEl && titleEl.value.trim()) : ta.value.trim()));
+    setTimeout(() => { const first = titleEl || ta; first.focus(); if (first === ta) ta.setSelectionRange(ta.value.length, ta.value.length); grow(); }, 60);
     ta.addEventListener('input', () => { feedbackDraft = ta.value; grow(); paint(); });
+    if (titleEl) {
+      titleEl.addEventListener('input', () => { feedbackTitle = titleEl.value; paint(); });
+      titleEl.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.metaKey && !ev.ctrlKey) { ev.preventDefault(); ta.focus(); } });
+    }
     paint();
 
     const close = () => { feedbackEl = null; backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey, true); };
     const submit = () => {
-      const text = ta.value.trim();
-      if (!text) return;
-      feedbackDraft = '';
+      const title = (titleEl ? titleEl.value : '').trim();
+      const body = ta.value.trim();
+      if (AUTHOR_MODE ? !title : !body) return;
+      feedbackDraft = ''; feedbackTitle = '';
       const ctx = captureContext();
       close();
-      if (AUTHOR_MODE) sendFeedbackAsFix(text, ctx); else sendFeedbackAsEmail(text, ctx);
+      if (AUTHOR_MODE) sendFeedbackAsFix(title, body, ctx); else sendFeedbackAsEmail(body, ctx);
     };
     backdrop.addEventListener('click', (ev) => { if (ev.target === backdrop) close(); });
     sendBtn.addEventListener('click', submit);
@@ -3578,22 +3979,30 @@
     document.addEventListener('keydown', onKey, true);
   }
 
+  // Title → a filesystem- and ref-safe slug: alphanumeric words, dash-joined, capped so a pasted
+  // URL/hash can't push a ref component past git's 255-byte limit. Empty falls back to 'note'.
   function slugify(text) {
-    const s = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').filter(Boolean).slice(0, 4).join('-');
+    const s = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      .split('-').filter(Boolean).slice(0, 6).join('-').slice(0, 48).replace(/-+$/, '');
     return s || 'note';
   }
 
-  // Author path: the gripe becomes a real feedback/<slug> branch group with a Claude session
+  // Author path: the named fix becomes a real feedback/<slug> branch group with a Claude session
   // already working it — spawned quietly (unread bullet, no focus steal), exactly like an
-  // agent-created browser. The session appearing in the tree is the confirmation.
-  function sendFeedbackAsFix(text, ctx) {
+  // agent-created browser. The session appearing in the tree is the confirmation. The slug is
+  // de-duplicated against existing branches (suffix -2, -3…) so a repeated gripe never collides.
+  function sendFeedbackAsFix(title, body, ctx) {
     const repo = (openEl && outerRepoOf(openEl)) || document.querySelector('.repo[data-repo]');
-    const slug = slugify(text);
-    const seed = text + '\n\n' + ctx.map(([kk, v]) => kk + ': ' + v).join('\n');   // the prompt Claude is seeded with
+    const taken = new Set(Array.prototype.map.call(document.querySelectorAll('.branch__name'), (n) => n.textContent.trim()));
+    const base = 'feedback/' + slugify(title);
+    let branch = base, n = 1;
+    while (taken.has(branch)) { n += 1; branch = base + '-' + n; }
+    const gripe = body ? title + '\n\n' + body : title;
+    const seed = gripe + '\n\n' + ctx.map(([kk, v]) => kk + ': ' + v).join('\n');   // the prompt Claude is seeded with
     if (repo) {
       repo.classList.add('repo--open');
       const branches = repo.querySelector('.branches');
-      const wrapper = branchGroupShell('feedback/' + slug, 'now');
+      const wrapper = branchGroupShell(branch, 'now');
       wrapper.classList.add('row-enter');
       branches.appendChild(wrapper);
       wrapper.querySelectorAll('[data-row]').forEach(addKebab);
@@ -3603,7 +4012,7 @@
       if (sess) { setSessionState(sess, 'work'); sess.classList.add('session--unread'); sess.title = seed; }
       rollUpGroups();
     }
-    flashToast('done', 'On it', 'feedback/' + slug);
+    flashToast('done', 'On it', branch);
   }
 
   // Everyone else: a pre-filled email, capped for mailto's practical body limit. No client → the
@@ -3664,12 +4073,8 @@
   // so "synth dev" finds the dev server without outranking exact label hits
   function itemScore(q, it) {
     const s = fuzzy(q, it.label);
-    const L = it.label.toLowerCase(), Q = q.toLowerCase();
-    const boost = L === Q ? 1000 : L.startsWith(Q) ? 200 : 0;   // typing a name must land on that name
-    const labelScore = s > -Infinity ? s + boost : -Infinity;
-    if (!it.ctx) return labelScore;
-    // the context path is only a weak fallback — a label match must always beat a ctx-only hit
-    return Math.max(labelScore, fuzzy(q, it.ctx + ' ' + it.label) - 6);
+    if (!it.ctx) return s;
+    return Math.max(s, fuzzy(q, it.ctx + ' ' + it.label) - 2);
   }
 
   // Which row a context-sensitive action targets. ⌘K follows the keyboard focus: when the
@@ -3708,7 +4113,6 @@
     if (row.matches('[data-session]')) openSession(row);
     document.body.classList.add('kbd');
     select(row, true);
-    recordVisit(row);
   }
 
   // The palette is a navigation STACK of frames. Root is simple; typing filters and progressively
@@ -3749,7 +4153,6 @@
   // the same heading as a branch or workspace action. A browser session adds a Page group above
   // Session — the page's own verbs, one keystroke from anywhere.
   const ICON_COPY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg>';
-  const ICON_EXTERNAL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>';
   // Page verbs drive the same toolbar controls a click would — the palette adds no second
   // navigation path. When the row isn't the open session there is no live page yet, so
   // everything but "Go to address…" (which opens the session first) reads disabled.
@@ -3766,7 +4169,7 @@
     const navOff = (dir) => !live || live.querySelector('[data-nav="' + dir + '"]').disabled;
     return [
       // on home the omnibox focuses the "Go to" field; on a page it opens the address drop
-      { icon: ICON_SEARCH,     label: 'Go to address', kbd: ['⌘', 'L'], enter: () => press('[data-omni]') },
+      { icon: ICON_SEARCH,     label: 'Go to address…', kbd: ['⌘', 'L'], enter: () => press('[data-omni]') },
       { icon: ICON_NAV_RELOAD, label: 'Reload page', kbd: ['⌘', 'R'], disabled: home, enter: () => press('[data-nav="reload"]') },
       { icon: ICON_NAV_BACK,   label: 'Back',    kbd: ['⌘', '['], disabled: navOff('back'), enter: () => press('[data-nav="back"]') },
       { icon: ICON_NAV_FWD,    label: 'Forward', kbd: ['⌘', ']'], disabled: navOff('fwd'), enter: () => press('[data-nav="fwd"]') },
@@ -3784,49 +4187,15 @@
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });
     if (open && open === openEl && open.dataset.type === 'browser' && browserCommentAPI.available())
       items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
-    if (open && open.dataset.type === 'browser') {
-      const owner = ownerOf(open);
-      if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
-      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
-    }
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_AI, label: 'New Claude Code', enter: () => runAndClose(() => addClaude(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
-    if (head) items.push({ grp: 'Workspace', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TRASH, label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(br)) });
+    if (head) items.push({ grp: 'Workspace', unit: wsName(head), icon: ICON_BRANCH, label: 'New worktree…', enter: () => pushFrame(createFrame('worktree', head)) });
     return { items };
   }
-
-  // ── Recents / frecency ──────────────────────────────────────────────────
-  // The cold palette floats your most-used STABLE targets so they're one keystroke away.
-  // Actions keep fixed positions (never ranked by use); dynamically-named sessions (AI titles,
-  // browser URLs) are excluded — a target whose name shifts can't earn muscle memory. The native
-  // app persists this; here it's in-memory, lightly seeded so the group shows in the static demo.
-  let visitClock = 0;
-  const visits = new Map();   // row element → { n: times used, t: last-use tick }
-  function recordVisit(row) {
-    if (!row || !isTreeRow(row)) return;
-    if (row.matches('.session') && (row.dataset.type === 'ai' || row.dataset.type === 'browser')) return;
-    const v = visits.get(row) || { n: 0, t: 0 };
-    v.n += 1; v.t = ++visitClock; visits.set(row, v);
-  }
-  function recentTargets(limit) {
-    return [...visits.entries()].filter(([row]) => document.contains(row))
-      .sort((a, b) => (b[1].n - a[1].n) || (b[1].t - a[1].t)).slice(0, limit).map(([row]) => row);
-  }
-  function recentItem(row) {
-    const lvl = rowLevel(row);
-    if (lvl === 'branch') return { g: 'Recent', icon: ICON_BRANCH, label: brName(row), ctx: wsOf(row), enter: () => { recordVisit(row); pushFrame(branchFrame(row)); } };
-    if (lvl === 'repo')   return { g: 'Recent', icon: wsChip(row), label: wsName(row), enter: () => { recordVisit(row); pushFrame(workspaceFrame(row)); } };
-    return { g: 'Recent', icon: seIcon(row), label: seName(row), ctx: seCtx(row), meta: seStatus(row), metaState: sessionState(row), enter: () => runAndClose(() => jumpTo(row)) };
-  }
-  (function seedRecents() {   // a little history so the Recent group is visible on first load
-    const se = (n) => [...nav.querySelectorAll('.session')].find((s) => { const e = s.querySelector('.session__name'); return e && e.textContent === n; });
-    const be = (n) => [...nav.querySelectorAll('.branch')].find((b) => { const e = b.querySelector('.branch__name'); return e && e.textContent === n; });
-    [se('dev server'), se('dev server'), se('dev server'), be('main'), be('main'), se('migrate')].forEach(recordVisit);
-  })();
 
   function rootFrame() {
     return {
@@ -3834,7 +4203,6 @@
       build(q) {
         const here = contextActions();
         if (!q) return [
-          ...recentTargets(4).map(recentItem),
           ...here.items.map((it) => ({ ...it, g: it.grp + ' · ' + it.unit })),
           { sec: 'nav', icon: ICON_FOLDER,  label: 'Workspaces', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
@@ -3846,7 +4214,7 @@
         ];
         const items = [
           ...here.items.map((it) => ({ ...it, g: 'Actions', ctx: it.unit })),
-          { g: 'Actions', icon: ICON_PLUS,     label: 'Add workspace', enter: () => pushFrame(createFrame('workspace')) },
+          { g: 'Actions', icon: ICON_PLUS,     label: 'New workspace…', enter: () => pushFrame(createFrame('workspace')) },
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
@@ -3866,7 +4234,8 @@
       crumb: 'Workspaces', placeholder: 'Search workspaces…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_PLUS, label: 'Add workspace', enter: () => pushFrame(createFrame('workspace')) },
+          { sec: 'act', icon: ICON_PLUS,  label: 'New workspace…',    enter: () => pushFrame(createFrame('workspace')) },
+          { sec: 'act', icon: ICON_TRASH, label: 'Remove workspace…', danger: true, enter: () => pushFrame(deletePicker('workspace')) },
         ];
         allRows('.repo__head').forEach((h) => items.push({ sec: 'list', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         return items;
@@ -3882,7 +4251,8 @@
     return {
       crumb: cfg.crumb, placeholder: cfg.ph,
       build() {
-        const items = [];
+        const verb = kind === 'session' ? 'Delete' : 'Remove';
+        const items = [{ sec: 'act', icon: ICON_TRASH, label: verb + ' ' + kind + '…', danger: true, enter: () => pushFrame(deletePicker(kind)) }];
         allRows(cfg.sel).forEach((r) => items.push(cfg.mk(r)));
         return items;
       },
@@ -3895,7 +4265,7 @@
       crumb: name, placeholder: 'Search ' + name + '…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_BRANCH, label: 'New branch',  enter: () => pushFrame(createFrame('worktree', head)) },
+          { sec: 'act', icon: ICON_BRANCH, label: 'New worktree…',  enter: () => pushFrame(createFrame('worktree', head)) },
         ];
         // Session creates land on the workspace's active branch (contextBranch's fallback);
         // the ctx chip names it since the crumb only establishes the workspace.
@@ -3908,9 +4278,9 @@
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
         items.push(
-          { sec: 'act', icon: ICON_GEAR,   label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) },
-          { sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) },
-          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', enter: () => pushFrame(confirmFrame(head)) },
+          { sec: 'act', icon: ICON_GEAR,   label: 'Workspace settings…', enter: () => runAndClose(() => enterSettings(head)) },
+          { sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(head)) },
+          { sec: 'act', icon: ICON_TRASH,  label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(head)) },
         );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -3928,8 +4298,8 @@
           { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    enter: () => runAndClose(() => addTerminal(row)) },
           { sec: 'act', icon: ICON_AI,       label: 'New Claude Code', enter: () => runAndClose(() => addClaude(row)) },
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
-          { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
-          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', enter: () => pushFrame(confirmFrame(row)) },
+          { sec: 'act', icon: ICON_RENAME,   label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) },
+          { sec: 'act', icon: ICON_TRASH,    label: 'Remove ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
           row.closest('[data-repo]').querySelectorAll('.sessions .session').forEach((s) =>
@@ -3972,13 +4342,13 @@
           items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addClaude(br)) });
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
-        items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(row)) });
+        items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename ' + name + '…', enter: () => pushFrame(renameFrame(row)) });
         if (row.dataset.type === 'browser') {
           const owner = ownerOf(row);
           if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
           else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
         }
-        items.push({ sec: 'act', icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(row)) });
+        items.push({ sec: 'act', icon: ICON_TRASH, label: 'Delete ' + name, danger: true, enter: () => pushFrame(confirmFrame(row)) });
         return items;
       },
     };
@@ -3998,6 +4368,29 @@
   }
   function openRowActions(row) { openPaletteAt(frameForRow(row)); }
 
+  // `⌘\` "Open beside" — the split picker is a ⌘K frame, not a bespoke dialog: same list rows,
+  // same fuzzy filter, same ↑↓/↵/esc/back. Lists the focused pane's siblings (not already tiled)
+  // plus new-session-here; choosing one tiles it beside the focused pane.
+  function openBesideFrame(cur) {
+    const br = branchGroupOf(cur);
+    const bn = br ? brName(br) : '';
+    return {
+      crumb: 'Open beside', placeholder: 'Open beside in ' + bn + '…',
+      build() {
+        const items = [];
+        if (br) {
+          items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addToSplit(addSession(br, 'terminal', { open: false }))) });
+          items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addToSplit(addSession(br, 'claude',   { open: false }))) });
+          items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addToSplit(addSession(br, 'browser',  { open: false }))) });
+        }
+        const container = cur.closest('.sessions');
+        if (container) [...container.querySelectorAll(':scope > .session')].filter((s) => !panes.includes(s)).forEach((s) =>
+          items.push({ sec: 'list', icon: seIcon(s), label: seName(s), ctx: bn, meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => addToSplit(s)) }));
+        return items;
+      },
+    };
+  }
+
   // `a` = add the natural child: a worktree under a workspace, a session under a worktree.
   // On a session leaf it adds a sibling session to that leaf's worktree. Drops straight into
   // the ⌘K frame for that action rather than the row's full action list.
@@ -4008,20 +4401,32 @@
     else if (lvl === 'session') { const b = branchGroupOf(row); if (b) openPaletteAt(newSessionFrame(b)); }
   }
 
+  function deletePicker(kind) {
+    const cfg = {
+      workspace: { crumb: 'Remove workspace', ph: 'Select a workspace to remove…', sel: '.repo__head', icon: wsChip, label: wsName },
+      branch:    { crumb: 'Remove branch',    ph: 'Select a branch to remove…',    sel: '.branch',     icon: () => ICON_BRANCH, label: brName, ctx: wsOf },
+      session:   { crumb: 'Delete session',   ph: 'Select a session to delete…',   sel: '.session',    icon: seIcon, label: seName, meta: seStatus, ctx: seCtx, state: sessionState },
+    }[kind];
+    return {
+      crumb: cfg.crumb, placeholder: cfg.ph,
+      build() { return allRows(cfg.sel).map((r) => ({ icon: cfg.icon(r), label: cfg.label(r), ctx: cfg.ctx && cfg.ctx(r), meta: cfg.meta && cfg.meta(r), metaState: cfg.state && cfg.state(r), danger: true, enter: () => pushFrame(confirmFrame(r)) })); },
+    };
+  }
+
   function confirmFrame(row) {
     const level = rowLevel(row);
     if (level === 'branch') return removeWorktreeFrame(row);
     const name = level === 'repo' ? wsName(row) : seName(row);
     const verb = level === 'session' ? 'Delete' : 'Remove';
     const owned = level === 'session' ? ownedOf(row) : [];
-    const hint = level === 'repo' ? 'Removes it from the sidebar — the repo and everything on disk stay.'
-      : owned.length ? `Ends this session and its process, and closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
-      : 'Ends this session and its process.';
+    const hint = level === 'repo' ? 'Remove this workspace? Nothing on disk is deleted.'
+      : owned.length ? `Delete this session? This also closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
+      : 'Delete this session?';
     return {
-      crumb: verb + ' ' + name + '?', mode: 'confirm', note: hint, placeholder: '↵ confirm · esc cancel',
+      crumb: verb + ' ' + name + '?', mode: 'confirm', placeholder: hint + '  ↵ confirm · esc cancel',
       build() {
         return [
-          { icon: level === 'session' ? ICON_TRASH : ICON_MINUS, label: verb, danger: level === 'session', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_TRASH, label: verb + ' ' + name, danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },
@@ -4035,11 +4440,11 @@
     const name = brName(row);
     return {
       crumb: 'Remove ' + name + '?', mode: 'confirm',
-      note: 'Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way.', placeholder: '↵ select · esc cancel',
+      placeholder: 'Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel',
       build() {
         return [
-          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
-          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'git worktree remove + delete its folder on disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'stop tracking it here — the worktree stays on disk', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },
@@ -4049,7 +4454,7 @@
   function createFrame(kind, ctx) {
     if (kind === 'worktree') return worktreeFrame(ctx);
     const cfg = {
-      workspace: { crumb: 'Add workspace', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add workspace “' + v + '”', go: (v) => openWorktreePicker(v) },
+      workspace: { crumb: 'New workspace', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add workspace “' + v + '”', go: (v) => openWorktreePicker(v) },
     }[kind];
     return {
       crumb: cfg.crumb, mode: 'input', placeholder: cfg.ph,
@@ -4060,24 +4465,18 @@
     };
   }
 
-  // New branch via ⌘K: empty until you type, then fuzzy-match every local and remote
-  // branch (top 5), or cut a new branch off the typed name. A new branch shows, in one
-  // quiet line, the base it forks from and where its worktree lands on disk (ADR-0007).
+  // New worktree via ⌘K: empty until you type, then fuzzy-match every local and
+  // remote branch (top 5), or cut a new branch off the typed name. Each pick
+  // checks the branch out into its own worktree (ADR-0007).
   function worktreeFrame(ctx) {
     const repo = ctx && ctx.closest('[data-repo]');
-    const repoName = ctx ? wsName(ctx) : 'repo';
-    const baseEl = repo && (repo.querySelector('.branch--active .branch__name') || repo.querySelector('.branch__name'));
-    const baseName = baseEl ? baseEl.textContent : 'main';
-    const pathFor = (name) => '…/Synth/worktrees/' + repoName + '/' + name.replace(/[^\w.-]+/g, '-');
     const shown = () => new Set(repo ? [...repo.querySelectorAll('.branch__name')].map((n) => n.textContent) : []);
-    const isNew = (v) => v && !ALL_BRANCHES.some((b) => b.name === v);
     return {
-      crumb: 'New branch', mode: 'input', placeholder: 'Search branches to check out…',
+      crumb: 'New worktree', mode: 'input', placeholder: 'Search branches to check out…',
       dashSpaces: true,
-      note: (v) => isNew(v) ? 'New branch off ' + baseName + ' · ' + pathFor(v) : '',
       build(q) {
         const v = q.trim();
-        if (!v) return [{ icon: ICON_SEARCH, label: 'Type a branch name to check out or create…', disabled: true }];   // guide, not "No results", on an untouched field
+        if (!v) return [];   // empty by default — the branch list only appears once you search
         const skip = shown(), seen = new Set(), scored = [];
         ALL_BRANCHES.forEach((b) => {
           if (seen.has(b.name) || skip.has(b.name)) return;   // dedup local/remote + hide already-checked-out
@@ -4135,11 +4534,9 @@
     if (!fr.mode && q) {   // 'list' frames fuzzy-filter by query; 'input'/'confirm' frames don't
       const sectioned = items.some((it) => it.g || it.sec);
       if (sectioned) {
-        const byK = new Map();
-        items.forEach((it) => { const s = itemScore(q, it); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) byK.set(k, []); byK.get(k).push({ it, s }); });
-        byK.forEach((arr) => arr.sort((a, b) => b.s - a.s));
-        const order = [...byK.keys()].sort((a, b) => byK.get(b)[0].s - byK.get(a)[0].s);   // group with the best match leads
-        items = order.flatMap((k) => byK.get(k).map((x) => x.it));
+        const order = [], byK = new Map();
+        items.forEach((it) => { const s = itemScore(q, it); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) { byK.set(k, []); order.push(k); } byK.get(k).push({ it, s }); });
+        items = order.flatMap((k) => byK.get(k).sort((a, b) => b.s - a.s).map((x) => x.it));
       } else {
         items = items.map((it) => ({ it, s: itemScore(q, it) })).filter((x) => x.s > -Infinity).sort((a, b) => b.s - a.s).map((x) => x.it);
       }
@@ -4149,10 +4546,7 @@
 
   function paintList(items) {
     palItems = items;
-    const fr = curFrame();
-    const note = typeof fr.note === 'function' ? fr.note(pal.input.value.trim()) : fr.note;
-    let html = note ? '<div class="cmdk__note">' + esc(note) + '</div>' : '';
-    let lastG = null, lastSec = null;
+    let html = '', lastG = null, lastSec = null;
     items.forEach((it, i) => {
       if (it.g && it.g !== lastG) { html += '<div class="cmdk__group">' + esc(it.g) + '</div>'; lastG = it.g; lastSec = it.sec || null; }
       else if (it.sec && it.sec !== lastSec) { if (i > 0) html += '<div class="cmdk__div"></div>'; lastSec = it.sec; }
@@ -4162,9 +4556,8 @@
       html += '<div class="cmdk__item' + (it.danger ? ' cmdk__item--danger' : '') + (it.disabled ? ' is-disabled' : '') + '" data-i="' + i + '">'
         + '<span class="cmdk__ico">' + it.icon + '</span><span class="cmdk__label">' + esc(it.label) + '</span>' + ctx + meta + hint + '</div>';
     });
-    pal.list.innerHTML = (items.length || fr.note) ? html : '<div class="cmdk__empty">No results</div>';
-    palActive = pal.fresh ? -1 : 0;   // fresh open: nothing pre-highlighted so reflexive Enter is a no-op
-    pal.fresh = false;
+    pal.list.innerHTML = items.length ? html : '<div class="cmdk__empty">No results</div>';
+    palActive = 0;
     paintActive();
     sizeList();
   }
@@ -4198,13 +4591,13 @@
     closeMenu();
     const backdrop = document.createElement('div');
     backdrop.className = 'cmdk';
-    backdrop.innerHTML = '<div class="cmdk__panel" role="dialog" aria-modal="true" aria-label="Command palette">'
+    backdrop.innerHTML = '<div class="cmdk__panel" role="dialog" aria-label="Command palette">'
       + '<div class="cmdk__search"><span class="cmdk__search-ico">' + ICON_SEARCH + '</span>'
       + '<span class="cmdk__crumbs"></span>'
       + '<input class="cmdk__input" autocomplete="off" spellcheck="false" /></div>'
       + '<div class="cmdk__list"></div></div>';
     document.body.appendChild(backdrop);
-    pal = { backdrop, input: backdrop.querySelector('.cmdk__input'), list: backdrop.querySelector('.cmdk__list'), crumbs: backdrop.querySelector('.cmdk__crumbs'), stack: [rootFrame()], fresh: true, prevFocus: document.activeElement };
+    pal = { backdrop, input: backdrop.querySelector('.cmdk__input'), list: backdrop.querySelector('.cmdk__list'), crumbs: backdrop.querySelector('.cmdk__crumbs'), stack: [rootFrame()] };
     paletteOpen = true;
     renderFrame();
     requestAnimationFrame(() => backdrop.classList.add('open'));
@@ -4224,11 +4617,10 @@
   }
   function closePalette() {
     if (!pal) return;
-    const b = pal.backdrop, prev = pal.prevFocus;
+    const b = pal.backdrop;
     b.classList.remove('open');
     setTimeout(() => b.remove(), 180);
     pal = null; paletteOpen = false;
-    if (prev && prev.focus && document.contains(prev)) prev.focus();
   }
 
   // The palette owns the keyboard while open. ↑/↓ + Ctrl+J/K (+ Ctrl+N/P) move the active row;
@@ -4236,8 +4628,7 @@
   document.addEventListener('keydown', (e) => {
     if (!paletteOpen) return;
     const k = e.key;
-    if (k === 'Tab') { e.preventDefault(); pal.input.focus(); return; }   // trap focus inside the open palette
-    if (k === 'Escape') { e.preventDefault(); if (pal.stack.length > 1) popFrame(); else closePalette(); return; }
+    if (k === 'Escape') { e.preventDefault(); closePalette(); return; }
     if (k === 'Enter') { e.preventDefault(); runActive(); return; }
     if (k === 'ArrowDown' || (e.ctrlKey && !e.metaKey && (k === 'j' || k === 'J' || k === 'n' || k === 'N'))) { e.preventDefault(); palMove(1); return; }
     if (k === 'ArrowUp'   || (e.ctrlKey && !e.metaKey && (k === 'k' || k === 'K' || k === 'p' || k === 'P'))) { e.preventDefault(); palMove(-1); return; }
@@ -4655,7 +5046,172 @@
   });
 
   // Open a session by default so the workspace feels live on load (the Claude Code hero).
-  openSession(nav.querySelector('.session[data-type="ai"]') || nav.querySelector('.session'));
+  // ============================ Split / monitor ============================
+  function linkOf(el) { return LINKS.find((g) => g.includes(el)) || null; }
+  function dissolve(g) { if (g && g.length < 2) { const i = LINKS.indexOf(g); if (i >= 0) LINKS.splice(i, 1); } }
+
+  // only siblings (the same worktree's session list) can link, and not one already tiled
+  function canSplitRow(row) {
+    if (!row || !row.matches || !row.matches('[data-session]')) return false;
+    const cur = panes[focusIdx] || openEl;
+    if (!cur || row === cur || panes.includes(row)) return false;
+    const c = row.closest('.sessions');
+    return !!c && c === cur.closest('.sessions');
+  }
+
+  // move the focus ring between tiled panes without tearing them down
+  function setFocus(i) {
+    if (i < 0 || i >= panes.length) return;
+    focusIdx = i;
+    openEl = panes[i];
+    content.querySelectorAll('.spane').forEach((sp) => sp.classList.toggle('is-focus', +sp.dataset.pi === i));
+    derivePill(openEl);
+    clearNotif(openEl);
+    syncCapsules();
+  }
+  function moveFocus(dir) {
+    if (panes.length < 2) return false;
+    if (zoomed) { focusIdx = (focusIdx + dir + panes.length) % panes.length; openEl = panes[focusIdx]; renderOpen(); return true; }
+    const n = focusIdx + dir;
+    if (n < 0 || n >= panes.length) return true;   // no wrap in the tiled view
+    setFocus(n);
+    return true;
+  }
+  function toggleZoom() {
+    if (panes.length < 2) return false;
+    zoomed = !zoomed;
+    renderOpen();
+    focusContent();
+    return true;
+  }
+  // Esc: unzoom, else collapse the tiled VIEW to the focused pane (the split persists in the sidebar)
+  function backToOne() {
+    if (zoomed) { zoomed = false; renderOpen(); return true; }
+    if (panes.length < 2) return false;
+    setPanes([panes[focusIdx]], 0);
+    return true;
+  }
+  // ⌘W: unlink the focused pane; the group persists (dissolving only when it drops to one)
+  function closeFocused() {
+    if (panes.length < 2) return;
+    const sid = panes[focusIdx];
+    const g = linkOf(sid);
+    let remaining;
+    if (g) { g.splice(g.indexOf(sid), 1); dissolve(g); remaining = g.length > 1 ? [...g] : [g[0]]; }
+    else remaining = panes.filter((p) => p !== sid);
+    setPanes(remaining, Math.min(focusIdx, remaining.length - 1));
+  }
+  // add a session — always appended at the END, no column ceiling — growing/creating the group
+  function addToSplit(newRow) {
+    const cur = panes[focusIdx];
+    if (!cur || newRow === cur || panes.includes(newRow)) return;
+    if (newRow.closest('.sessions') !== cur.closest('.sessions')) return;   // siblings only
+    let g = linkOf(cur);
+    if (!g) { g = [cur]; LINKS.push(g); }
+    LINKS.forEach((og) => { if (og !== g) { const i = og.indexOf(newRow); if (i >= 0) { og.splice(i, 1); dissolve(og); } } });
+    if (!g.includes(newRow)) g.push(newRow);
+    setPanes([...g], g.indexOf(newRow));
+    const sp = content.querySelector(`.spane[data-pi="${focusIdx}"]`);
+    if (sp) sp.classList.add('enter');
+  }
+
+  // ---- Sidebar capsule: a linked group's rows fold into a row of pills, in pane order ----
+  function syncCapsules() {
+    nav.querySelectorAll('.splitcap').forEach((c) => c.remove());
+    nav.querySelectorAll('.session.is-capsuled').forEach((s) => { s.classList.remove('is-capsuled'); s.style.display = ''; });
+    LINKS.forEach((g) => {
+      const members = g.filter((el) => document.contains(el));
+      if (members.length < 2) return;
+      const container = members[0].closest('.sessions');
+      if (!container) return;
+      const domFirst = [...container.querySelectorAll(':scope > .session')].find((s) => members.includes(s));
+      const cap = document.createElement('div');
+      cap.className = 'splitcap' + (g.length > 2 ? ' splitcap--tight' : '');
+      g.forEach((el) => {
+        if (!document.contains(el)) return;
+        const type = el.dataset.type || 'terminal';
+        const nm = el.querySelector('.session__name').textContent.trim();
+        const st = sessionState(el);
+        const dot = (st && st !== 'idle') ? `<span class="splitpill__dot ${st}"></span>` : '';
+        const ico = el.querySelector('.session__icon').innerHTML;
+        const pill = document.createElement('button');
+        pill.className = 'splitpill' + (el === openEl ? ' is-focus' : '');
+        pill.title = nm;
+        pill._sess = el;
+        pill.innerHTML = `<span class="splitpill__ico${type === 'ai' ? ' splitpill__ico--ai' : ''}">${ico}${dot}</span><span class="nm">${esc(nm)}</span>`;
+        cap.appendChild(pill);
+      });
+      container.insertBefore(cap, domFirst || null);
+      members.forEach((el) => { el.classList.add('is-capsuled'); el.style.display = 'none'; });
+    });
+  }
+
+  // ---- Split keyboard (capture phase so it wins the shared shortcuts, and only when relevant) ----
+  document.addEventListener('keydown', (e) => {
+    // Anything that owns the keyboard — a palette / picker / menu / shortcuts sheet, ANY modal
+    // dialog (.backdrop), Settings mode, or a focused text field — takes precedence. The split
+    // shortcuts must never reach a pane hidden behind an overlay (else ⌘↵ zooms instead of
+    // submitting a dialog, ⌘W unlinks a pane behind it, etc.).
+    const editing = e.target instanceof Element && (e.target.isContentEditable || e.target.matches('input, textarea'));
+    if (paletteOpen || shortcutsEl || openMenuEl || editing ||
+        app.classList.contains('settings') || document.querySelector('.backdrop')) return;
+    const k = e.key, cmd = e.metaKey || e.ctrlKey;
+    // ⌘\ opens the split picker — as a ⌘K palette frame, sharing that primitive
+    if (cmd && k === '\\') { const cur = panes[focusIdx] || openEl; if (cur && cur.closest('.sessions')) { e.preventDefault(); e.stopImmediatePropagation(); openPaletteAt(openBesideFrame(cur)); } return; }
+    if (panes.length < 2) return;   // everything below is for an active split only
+    // ⌘↵ zooms the focused pane — but yield to a pending notification jump (⌘↵'s standing meaning)
+    if (cmd && k === 'Enter') { if (notifTop()) return; e.preventDefault(); e.stopImmediatePropagation(); toggleZoom(); return; }
+    if (cmd && (k === 'w' || k === 'W')) { e.preventDefault(); e.stopImmediatePropagation(); closeFocused(); return; }
+    if (cmd && e.altKey && (k === 'ArrowLeft' || k === 'h' || k === 'H')) { e.preventDefault(); e.stopImmediatePropagation(); moveFocus(-1); return; }
+    if (cmd && e.altKey && (k === 'ArrowRight' || k === 'l' || k === 'L')) { e.preventDefault(); e.stopImmediatePropagation(); moveFocus(1); return; }
+    // Esc: unzoom from anywhere; otherwise collapse the tiled view only when focus is in the panes —
+    // so Esc from the sidebar keeps its meaning (hand focus to the content).
+    if (k === 'Escape' && !cmd) {
+      if (zoomed) { e.preventDefault(); e.stopImmediatePropagation(); backToOne(); return; }
+      if (e.target instanceof Element && e.target.closest('.content')) { e.preventDefault(); e.stopImmediatePropagation(); backToOne(); return; }
+    }
+  }, true);
+
+  // ---- Split mouse: zoom chip, per-pane controls, click-to-focus, and the pane splitter ----
+  content.addEventListener('click', (e) => {
+    if (e.target.closest('.zoomchip')) { zoomed = false; renderOpen(); focusContent(); return; }
+    const ctl = e.target.closest('.pctl');
+    if (ctl) {
+      const sp = ctl.closest('.spane'); if (sp) { focusIdx = +sp.dataset.pi; openEl = panes[focusIdx]; }
+      if (ctl.dataset.pact === 'zoom') toggleZoom(); else closeFocused();
+      return;
+    }
+    const sp = e.target.closest('.spane');
+    if (sp && panes.length > 1 && +sp.dataset.pi !== focusIdx) setFocus(+sp.dataset.pi);
+  });
+  let pdrag = null;
+  content.addEventListener('mousedown', (e) => {
+    const d = e.target.closest('.pane-div'); if (!d) return;
+    const ri = +d.dataset.div, li = ri - 1;
+    const lsp = content.querySelector(`.spane[data-pi="${li}"]`), rsp = content.querySelector(`.spane[data-pi="${ri}"]`);
+    if (!lsp || !rsp) return;
+    const L = panes[li], R = panes[ri];
+    pdrag = { x: e.clientX, L, R, lw: lsp.offsetWidth, rw: rsp.offsetWidth, lg: +(L.__grow || 1), rg: +(R.__grow || 1), lsp, rsp };
+    d.classList.add('drag'); document.body.style.cursor = 'col-resize'; e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!pdrag) return;
+    const dx = e.clientX - pdrag.x, tot = pdrag.lw + pdrag.rw, totg = pdrag.lg + pdrag.rg;
+    const lw = Math.max(140, Math.min(tot - 140, pdrag.lw + dx));
+    pdrag.L.__grow = totg * (lw / tot); pdrag.R.__grow = totg * (1 - lw / tot);
+    pdrag.lsp.style.setProperty('--grow', pdrag.L.__grow);
+    pdrag.rsp.style.setProperty('--grow', pdrag.R.__grow);
+  });
+  window.addEventListener('mouseup', () => { if (pdrag) { pdrag = null; document.body.style.cursor = ''; content.querySelectorAll('.pane-div').forEach((d) => d.classList.remove('drag')); } });
+
+  // Boot: seed a 2-pane split — the agent beside the app it's driving — so the monitor view
+  // shows on load. (Remove the LINKS seed to land on a single session instead.)
+  (function () {
+    const claude = nav.querySelector('.session[data-sid="c1"]');
+    const browser = nav.querySelector('.session[data-owner="c1"]');
+    if (claude && browser) { LINKS.push([claude, browser]); setPanes([claude, browser], 0); }
+    else openSession(nav.querySelector('.session[data-type="ai"]') || nav.querySelector('.session'));
+  })();
 
   // Resizable sidebar — drag the seam to set the sidebar width (persists); ⌘B collapse still wins.
   (() => {

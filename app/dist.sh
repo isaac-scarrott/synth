@@ -39,9 +39,9 @@ fi
 
 stage_resources "$APP" "$BIN" "$ICON"
 
-# Ad-hoc sign so the bundle runs without Gatekeeper nagging on this machine; --deep also
-# covers the CEF framework and the four helper apps. (Ad-hoc signatures don't cross to
-# other Macs — teammate distribution strips quarantine via the Homebrew cask instead.)
+# Ad-hoc sign — required just for the binary to run on Apple Silicon (no Apple Developer
+# account needed); --deep also covers the CEF framework and the four helper apps. It runs on
+# any Mac once the download quarantine is cleared (see the xattr line dist prints at the end).
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 # Install to /Applications for everyday use — replace any previous install in place.
@@ -49,6 +49,18 @@ DEST="/Applications/$NAME.app"
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
 
-echo "Built + installed $DEST  (v$SYNTH_SHORT_VERSION build $SYNTH_BUILD_VERSION)"
-echo "Shareable bundle staged at $(pwd)/$APP"
-echo "Launch it with:  open -a \"$NAME\""
+# Shareable archive for teammates — no signature required. ditto -c -k --keepParent makes a
+# proper macOS zip that preserves the bundle. Recipients clear the one-time download
+# quarantine with the printed xattr command, then it opens like any app.
+ZIP="build/$NAME.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+
+echo
+echo "Installed $DEST  (v$SYNTH_SHORT_VERSION build $SYNTH_BUILD_VERSION)"
+echo "Launch locally with:  open -a \"$NAME\""
+echo
+echo "Share with a teammate — send:  $(pwd)/$ZIP"
+echo "They unzip it, move $NAME.app into /Applications, then run once:"
+echo "    xattr -dr com.apple.quarantine \"/Applications/$NAME.app\""
+echo "…then open it normally. No signing or Apple account required."

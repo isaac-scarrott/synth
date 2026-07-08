@@ -3774,12 +3774,13 @@
 
   // ---- Frames: each returns { crumb?, placeholder, mode?, build(query) -> items[] } ----
   // An item: { icon, label, kbd?, danger?, disabled?, g?(group), enter() }. enter() drills or runs.
-  // ⌘K opens context-aware: the actions that act on where you are — the focused session, its branch,
-  // its workspace — lead the root frame, each grouped and labelled by the scope it targets, most-local
-  // first. "Where you are" is the focused sidebar row when its ring is showing, else the open session;
-  // Session actions only appear when that anchor is a session leaf. A session action never sits under
-  // the same heading as a branch or workspace action. A browser session adds a Page group above
-  // Session — the page's own verbs, one keystroke from anywhere.
+  // ⌘K opens context-aware but SCOPED: the root frame shows only the actions of the single innermost
+  // thing you're focused on — the session if a session leaf is focused, else its branch, else its
+  // workspace — never all three stacked (which made a session context a wall of branch + workspace
+  // verbs, easy to misfire). "Where you are" is the focused sidebar row when its ring is showing,
+  // else the open session. To act on a parent you step up to it: the parent branch and workspace
+  // surface as "Go to" jump rows that drill into their own frame, where their actions live. A browser
+  // session adds a Page group above Session — the page's own verbs, one keystroke from anywhere.
   const ICON_COPY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg>';
   // Page verbs drive the same toolbar controls a click would — the palette adds no second
   // navigation path. When the row isn't the open session there is no live page yet, so
@@ -3806,28 +3807,50 @@
       { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-devtools]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
     ];
   }
+  // Scoped to the innermost focused level. `items` are that level's own verbs (grouped under its
+  // scope · name); `parents` are the enclosing branch / workspace as jump rows that drill into their
+  // frame — that's how you reach a parent's actions, deliberately one step away.
   function contextActions() {
     const row = contextRow();
-    const open = row && row.matches('.session') ? row : null;
+    if (!row) return { items: [], parents: [] };
+    const lvl = rowLevel(row);
     const br = contextBranch(), head = contextWorkspaceHead();
-    const items = [];
-    if (open && open.dataset.type === 'browser') browserActions(open).forEach((a) => items.push({ grp: 'Page', unit: seName(open), ...a }));
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });
-    if (open && open === openEl && open.dataset.type === 'browser' && browserCommentAPI.available())
-      items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
-    if (open && open.dataset.type === 'browser') {
-      const owner = ownerOf(open);
-      if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
-      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
+    const items = [], parents = [];
+    const upBranch = () => { if (br) parents.push({ icon: ICON_BRANCH, label: brName(br), ctx: 'Branch', enter: () => pushFrame(branchFrame(br)) }); };
+    const upWorkspace = () => { if (head) parents.push({ icon: wsChip(head), label: wsName(head), ctx: 'Workspace', enter: () => pushFrame(workspaceFrame(head)) }); };
+
+    if (lvl === 'session') {
+      const open = row, name = seName(open);
+      const push = (a) => items.push({ grp: 'Session', unit: name, ...a });
+      if (open.dataset.type === 'browser') browserActions(open).forEach((a) => items.push({ grp: 'Page', unit: name, ...a }));
+      push({ icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });
+      if (open === openEl && open.dataset.type === 'browser' && browserCommentAPI.available())
+        push({ icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
+      if (open.dataset.type === 'browser') {
+        const owner = ownerOf(open);
+        if (owner) push({ icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
+        else claudesOf(open.parentElement).forEach((c) => push({ icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
+      }
+      push({ icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
+      upBranch(); upWorkspace();
+    } else if (lvl === 'branch' && br) {
+      const name = brName(br);
+      const push = (a) => items.push({ grp: 'Branch', unit: name, ...a });
+      push({ icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
+      push({ icon: ICON_AI, label: 'New Claude Code', enter: () => runAndClose(() => addClaude(br)) });
+      push({ icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
+      push({ icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
+      push({ icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
+      upWorkspace();
+    } else if (head) {
+      const name = wsName(head);
+      const push = (a) => items.push({ grp: 'Workspace', unit: name, ...a });
+      push({ icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
+      push({ icon: ICON_GEAR, label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) });
+      push({ icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) });
+      push({ icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(head)) });
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_AI, label: 'New Claude Code', enter: () => runAndClose(() => addClaude(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
-    if (head) items.push({ grp: 'Workspace', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
-    return { items };
+    return { items, parents };
   }
 
   // ── Recents / frecency ──────────────────────────────────────────────────
@@ -3867,6 +3890,7 @@
         if (!q) return [
           ...recentTargets(4).map(recentItem),
           ...here.items.map((it) => ({ ...it, g: it.grp + ' · ' + it.unit })),
+          ...here.parents.map((p) => ({ ...p, g: 'Go to' })),
           { sec: 'nav', icon: ICON_FOLDER,  label: 'Workspaces', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
           { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },

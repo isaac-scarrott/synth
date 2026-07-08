@@ -297,3 +297,9 @@ disclosure to dive deeper.
   browser and by driving the built app over the control socket. En route, removed a duplicate
   top-level `const ICON_EXTERNAL` in `working.html` that was a SyntaxError silently killing the
   whole page script.
+- **⌘K root shows one scope, not the whole ancestry (both designs; refines "grouping is scope-aware")** —
+  the root frame's context block is now just the innermost focused level (Session *or* Branch *or*
+  Workspace verbs), never all three stacked; the enclosing branch/workspace demote to a new **Go to**
+  group of jump rows that drill into their own frame where their actions live. Acting on a parent is a
+  deliberate step up, not a careless-Enter neighbour. Also fixed a duplicate `const ICON_EXTERNAL`
+  merge artifact whose top-level `SyntaxError` had been killing the whole palette script.

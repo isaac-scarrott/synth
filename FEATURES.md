@@ -285,3 +285,15 @@ disclosure to dive deeper.
   this reuses the otherwise-empty slot and stays on the shared right axis; the row still sits
   directly beneath its owner and the tooltip names it ("… · belongs to Claude Code"). Adopt/detach
   animate the mark, not a margin (`.ind--owned` carries the tie; `.session--owned` drops its indent).
+- **Unread roll-up indicator for a collapsed worktree/branch (both designs + native app)** — a
+  collapsed row surfaced its live states (needs-input / error / working / running) but not a
+  session that had simply *finished off-screen and not yet been seen*; that fell through to
+  last-activity text, so a row with output waiting looked like one with nothing. Unread now joins
+  the roll-up one rung below liveness (input > error > work > run > **unread** > idle): it surfaces
+  only once the group has settled to idle, and only while collapsed. Shown as a flat blue dot (the
+  row's gutter bullet, `--input` / `Theme.attention`, no glow) — setting the roll-up's grammar:
+  dots = ambient status, glyphs = needs action, glowing/pulsing dots = live. Both designs (subset
+  invariant held) + native (`Branch.hasUnread` + `UnreadDot` in `BranchRollup`); verified in the
+  browser and by driving the built app over the control socket. En route, removed a duplicate
+  top-level `const ICON_EXTERNAL` in `working.html` that was a SyntaxError silently killing the
+  whole page script.

@@ -711,7 +711,12 @@ private struct BranchRollup: View {
         // so nothing rolls up to the header.
         case .input, .error, .work, .run: EmptyView()
         case .idle, .none:
-            if !branch.lastActivity.isEmpty {
+            // Settled, but holding unread output: the collapsed roll-up is the only
+            // cue there's something to read in here (working.html rollUpGroups unread
+            // fallback). Expanded, each session's own gutter bullet carries it instead.
+            if collapsed && branch.hasUnread {
+                Ind { UnreadDot() }
+            } else if !branch.lastActivity.isEmpty {
                 Text(branch.lastActivity)
                     .font(.system(size: 10.5)).foregroundStyle(Theme.branchMeta).monospacedDigit()
             }
@@ -755,6 +760,15 @@ private struct Dot: View {
         Circle().fill(color).frame(width: 6, height: 6)
             .shadow(color: color.opacity(0.55), radius: 1.5)
             .shadow(color: color.opacity(0.3), radius: 4)
+    }
+}
+
+/// working.html `.udot` — a flat 6px blue dot, no glow (unlike the live `Dot`): the
+/// collapsed roll-up cue for a settled branch holding unread output. Same blue as the
+/// row's gutter bullet, so it reads as ambient "something to read", not liveness.
+private struct UnreadDot: View {
+    var body: some View {
+        Circle().fill(Theme.attention).frame(width: 6, height: 6)
     }
 }
 

@@ -38,6 +38,12 @@ extension Branch {
         let worst = sessions.map(\.status.rollup).min()
         return (worst == nil || worst == .idle) ? nil : worst
     }
+
+    /// A collapsed branch with a finished-but-unseen session surfaces an unread
+    /// cue once it has settled: below the live roll-up states (which win while
+    /// anything is still live), above last-activity. Mirrors working.html
+    /// rollUpGroups' unread fallback.
+    var hasUnread: Bool { sessions.contains(where: \.unread) }
 }
 
 extension Workspace {

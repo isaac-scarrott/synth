@@ -657,6 +657,18 @@
     background: var(--run);
   }
 
+  /* unread roll-up dot: a collapsed worktree/branch holding finished-but-unseen output.
+     Same blue as the row's gutter bullet (.session__bullet), on the shared indicator axis.
+     Flat (no glow) — an ambient "something to read", quieter than the live sdots and the
+     attention glyphs, so it ranks below them in the roll-up and only surfaces once the
+     group has settled to idle. */
+  .udot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--input);
+  }
+
   .branch--active {
     background: var(--raised);
     box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -1762,7 +1774,16 @@
                 <span class="branch__roll"></span>
               </a>
               <div class="collapse"><div class="collapse__inner">
-              <div class="sessions"></div>
+              <div class="sessions">
+                <!-- typecheck — idle, unread (finished off-screen, not yet seen). Collapsed,
+                     its roll-up dot is the only cue there's output waiting in here. -->
+                <a class="row session session--unread" data-row data-session data-type="terminal">
+                  <span class="session__bullet"></span>
+                  <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
+                  <span class="session__name">typecheck</span>
+                  <span class="ind"></span>
+                </a>
+              </div>
               </div></div>
             </div>
             <div class="repo" data-repo>
@@ -1883,14 +1904,17 @@
     error: () => `<span class="ind ind--error">${MARK_ERROR}</span>`,
     work:  () => `<span class="ind"><span class="sdot sdot--work"></span></span>`,
     run:   () => `<span class="ind"><span class="sdot sdot--run"></span></span>`,
+    unread:() => `<span class="ind"><span class="udot"></span></span>`,
   };
   function rollUpGroups() {
     nav.querySelectorAll('[data-group]').forEach((group) => {
       const repo = group.closest('[data-repo]');
       const sessions = [...repo.querySelectorAll('.sessions .session')];
       const worst = PRIORITY.find((p) => sessions.some((s) => sessionState(s) === p)) || 'idle';
+      const hasUnread = sessions.some((s) => s.classList.contains('session--unread'));
       const slot = group.querySelector('.branch__roll');
       slot.innerHTML = worst !== 'idle' ? ROLL[worst]()
+        : hasUnread ? ROLL.unread()  // all idle, but finished-and-unseen output waits inside
         : group.classList.contains('branch--active') ? `<span class="ind"><span class="branch__dot"></span></span>`  // checked-out branch
         : `<span class="branch__meta">${group.dataset.activity}</span>`;  // all idle → last activity
     });
@@ -3743,7 +3767,6 @@
   // the same heading as a branch or workspace action. A browser session adds a Page group above
   // Session — the page's own verbs, one keystroke from anywhere.
   const ICON_COPY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg>';
-  const ICON_EXTERNAL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>';
   // Page verbs drive the same toolbar controls a click would — the palette adds no second
   // navigation path. When the row isn't the open session there is no live page yet, so
   // everything but "Go to address…" (which opens the session first) reads disabled.

@@ -705,11 +705,12 @@
 
   .session { padding: 4px 8px; text-decoration: none; }
 
-  /* Containment (ADR-0011 stage four): a browser owned by a Claude session sits one indent
-     step under its owner — same session dials, the indent alone carries the relation. The
-     width shrinks by the same amount so the row's right edge (and its indicator) stays on
-     the sidebar's shared right axis. The transition is the adopt/detach animation. */
-  .session--owned { margin-left: 15px; width: calc(100% - 15px); transition: margin-left 180ms var(--ease-out), width 180ms var(--ease-out); }
+  /* Containment (ADR-0011 stage four, revised): a browser owned by a Claude session is NOT
+     nested — it stays a plain sibling on the shared indent. The tie is carried by a small
+     accent Claude mark in the row's indicator slot (right axis, like every other indicator),
+     not by an indent. The mark fades in/out as the adopt/detach animation. */
+  .ind--owned { color: var(--session-ai, #c2724c); }
+  .ind--owned svg { width: 12px; height: 12px; opacity: 0.9; }
 
   /* unread gutter bullet */
   .session__bullet {
@@ -1707,12 +1708,13 @@
                   <span class="session__name">Claude Code</span>
                   <span class="ind ind--input"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg></span>
                 </a>
-                <!-- browser owned by the Claude session above (ADR-0011 stage four): one containment indent -->
+                <!-- browser owned by the Claude session above (ADR-0011 stage four, revised):
+                     a plain sibling, not nested — the accent Claude mark on the right shows the tie -->
                 <a class="row session session--owned" data-row data-session data-type="browser" data-owner="c1">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg></span>
                   <span class="session__name">localhost:5173</span>
-                  <span class="ind"><span class="sdot sdot--run"></span></span>
+                  <span class="ind ind--owned" title="Belongs to Claude Code"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg></span>
                 </a>
                 <!-- dev server — running -->
                 <a class="row session" data-row data-session data-type="terminal">
@@ -2819,9 +2821,11 @@
 
   // ===== Containment (ADR-0011 stage four): a browser can belong to a Claude session =====
   // Ownership is a sidebar-visible structure: the owned row carries data-owner = the owner's
-  // data-sid and sits directly under it, one indent deeper. Ownership is set at creation
+  // data-sid and sits directly under it as a plain sibling (no indent) — the tie shows as a
+  // small accent Claude mark in the row's indicator slot. Ownership is set at creation
   // (a spawned Claude adopts the browser it was spawned for) or by the user (kebab Move
   // under… / Detach) — driving a browser never adopts it.
+  const IND_OWNED = (owner) => `<span class="ind ind--owned" title="Belongs to ${esc(owner)}">${ICON_AI}</span>`;
   let sidSeq = nav.querySelectorAll('.session[data-sid]').length;
   const claudeSid = (row) => row.dataset.sid || (row.dataset.sid = 'c' + (++sidSeq));
   const ownerOf = (row) => row && row.dataset.owner ? nav.querySelector(`.session[data-sid="${row.dataset.owner}"]`) : null;
@@ -2839,6 +2843,8 @@
     claudeSid(ownerRow);
     browserRow.dataset.owner = ownerRow.dataset.sid;
     browserRow.classList.add('session--owned');
+    const bInd = browserRow.querySelector(':scope > .ind');
+    if (bInd) bInd.outerHTML = IND_OWNED(sessionTitle(ownerRow));
     const block = ownedOf(ownerRow).filter((b) => b !== browserRow);
     const ref = block.length ? block[block.length - 1] : ownerRow;
     ref.parentElement.insertBefore(browserRow, ref.nextSibling);
@@ -2848,6 +2854,8 @@
     const o = ownerOf(browserRow);
     delete browserRow.dataset.owner;
     browserRow.classList.remove('session--owned');
+    const bInd = browserRow.querySelector(':scope > .ind');
+    if (bInd) bInd.outerHTML = `<span class="ind"></span>`;   // detached → status-less browser
     if (o) { const block = ownedOf(o); const ref = block.length ? block[block.length - 1] : o; o.parentElement.insertBefore(browserRow, ref.nextSibling); }
     browserCommentAPI.refresh();               // a detached open browser's next comment spawns
   }

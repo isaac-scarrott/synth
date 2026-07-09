@@ -21,8 +21,8 @@ enum TerminalTheme {
     // 16-colour ANSI hue set (red/green/yellow/blue/magenta/cyan) is deliberately unchanged.
     private static let light = Palette(
         bg: "f3efe7", fg: "33353c", cursor: "33353c", selection: "dde3ec",
-        ansi: ["33353c", "c03a30", "1e7f42", "8a660c", "2361c4", "8b40b5", "16717a", "6e6e78",
-               "6b6e78", "a52e25", "176b37", "75560a", "1c4fa8", "76349c", "115e66", "26262b"])
+        ansi: ["33353c", "c03a30", "1c7d40", "8a660c", "2361c4", "8b40b5", "16717a", "6c6c76",
+               "696c76", "a52e25", "176b37", "75560a", "1c4fa8", "76349c", "115e66", "26262b"])
 
     private static let dark = Palette(
         bg: "121317", fg: "e3e5ea", cursor: "e3e5ea", selection: "333a48",

@@ -402,3 +402,11 @@ disclosure to dive deeper.
   **Go to** parent jump rows are gone. The earlier `ICON_EXTERNAL` SyntaxError fix and the OpenCode
   agent registry are both preserved across the revert; the workspace scope's Settings / Rename /
   Remove, which that commit had added, go away with it.
+- **The terminal palette is its own contract, and light mode owed it 4.5:1** — the icon retint
+  darkened `--tui-bg` and quietly pushed light-mode `green`, `white` and `dim` under the ≥4.5:1
+  contrast floor that `TerminalTheme.swift` promises; repaired to `#1c7d40` / `#6c6c76` / `#696c76`
+  (green tightest at 4.51), solving white and dim together so bright-black stays dimmer than white.
+  The selection colours stay put in both themes: dark `#333a48` already sits in the retinted slate's
+  hue family, and warming the light selection loses contrast against every ANSI hue. The twelve
+  chromatic ANSI slots do not follow the accent — they answer to the programs running inside the
+  terminal, not to Synth's brand.

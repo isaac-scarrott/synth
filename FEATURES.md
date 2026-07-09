@@ -397,3 +397,8 @@ disclosure to dive deeper.
   An owned browser now mirrors its owner's mark instead of a generic sparkle. Proving it surfaced a
   crash: a client that hung up before reading a control-socket reply killed Synth via `SIGPIPE` — any
   local process could take the app down. Now ignored at process entry.
+- **Reverted: "⌘K root shows one scope, not the whole ancestry"** — `a93d280` backed out of both
+  designs and the native app; the root frame stacks Session + Branch + Workspace verbs again and the
+  **Go to** parent jump rows are gone. The earlier `ICON_EXTERNAL` SyntaxError fix and the OpenCode
+  agent registry are both preserved across the revert; the workspace scope's Settings / Rename /
+  Remove, which that commit had added, go away with it.

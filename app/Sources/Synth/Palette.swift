@@ -171,36 +171,47 @@ struct PaletteFrame {
         return nil
     }
 
-    /// ⌘K acts on the single innermost thing you're focused on — the session leaf, else its
-    /// branch, else its workspace (the context row: focused sidebar row, else the open session).
-    /// It returns just that one scope's own verbs, grouped under "Level · unit" so labels stay
-    /// bare. The enclosing branch/workspace come back as `parents` — "Go to" jump rows that drill
-    /// into their own frame, where their actions live — so acting on a parent is a deliberate step
-    /// up, never a careless-Enter neighbour of a session's verbs (working.html contextActions).
-    private func contextActions() -> (items: [PaletteItem], parents: [PaletteItem]) {
+    /// ⌘K acts on where you are: the focused session, its branch, its workspace — the
+    /// context row leads (focused sidebar row, else the open session), and branch and
+    /// workspace resolve up/down from it, each falling back to the first one available so
+    /// ⌘K still offers "New terminal"/"New worktree…" when the anchor is a branch/workspace
+    /// or nothing is focused (working.html contextBranch/contextWorkspaceHead). Session
+    /// actions appear only when the anchor is a session leaf.
+    private func contextActions() -> [PaletteItem] {
+        let row = contextRow()
+        let open: Session? = { if case let .session(s) = row { return s }; return nil }()
+        let workspace: Workspace? = {
+            switch row {
+            case let .workspace(w): return w
+            case let .branch(b):    return store.workspace(of: b)
+            case let .session(s):   return store.branch(of: s).flatMap { store.workspace(of: $0) }
+            case .none:             return nil
+            }
+        }() ?? store.workspaces.first
+        let branch: Branch? = {
+            switch row {
+            case let .branch(b):    return b
+            case let .session(s):   return store.branch(of: s)
+            case let .workspace(w): return w.branches.first
+            case .none:             return nil
+            }
+        }() ?? workspace?.branches.first
+        // Grouped by the scope each action targets, most-local-first (Session → Branch →
+        // Workspace). The header carries "Level · unit", so labels stay bare; browse drops
+        // the now-redundant context chip and search restores it (see rootFrame).
         var items: [PaletteItem] = []
-        var parents: [PaletteItem] = []
-        func upBranch(_ b: Branch) {
-            parents.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
-                                       group: "Go to", ctx: "Branch",
-                                       enter: { self.push(self.branchFrame(b)) }))
-        }
-        func upWorkspace(_ w: Workspace) {
-            parents.append(PaletteItem(icon: chipIcon(w), label: w.name,
-                                       group: "Go to", ctx: "Workspace",
-                                       enter: { self.push(self.workspaceFrame(w)) }))
-        }
-
-        switch contextRow() {
-        case let .session(open):
-            let g = "Session · \(open.title)"
-            // A browser session leads with a Page group — the page's own verbs, one keystroke
-            // away — then a comment-mode toggle (ADR-0011 stage three), the palette twin of the
-            // bar button so the keyboard can drive it without a click.
+        if let open {
+            // A browser session adds a Page group above Session — the page's own verbs,
+            // one keystroke from anywhere (working.html browserActions).
             if open.kind == .browser {
                 items += browserActions(open).map { item -> PaletteItem in
                     var it = item; it.group = "Page · \(open.title)"; it.ctx = open.title; return it
                 }
+            }
+            let g = "Session · \(open.title)"
+            // Browser only: toggle comment mode (ADR-0011 stage three) — the palette
+            // twin of the bar button, so the keyboard can drive it without a click.
+            if open.kind == .browser {
                 let on = BrowserManager.shared.existing(open.id)?.commentMode?.active ?? false
                 items.append(PaletteItem(icon: .phosphor(Phosphor.commentMode),
                                          label: on ? "Exit comment mode" : "Enter comment mode",
@@ -217,11 +228,8 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete",
                                      group: g, ctx: open.title, danger: true,
                                      enter: { self.push(self.confirmDeleteSession(open)) }))
-            if let br = store.branch(of: open) {
-                upBranch(br)
-                if let ws = store.workspace(of: br) { upWorkspace(ws) }
-            }
-        case let .branch(branch):
+        }
+        if let branch {
             let g = "Branch · \(branch.name)"
             items.append(PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal",
                                      group: g, ctx: branch.name,
@@ -240,25 +248,13 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove",
                                      group: g, ctx: branch.name, danger: true,
                                      enter: { self.push(self.confirmRemoveBranch(branch)) }))
-            if let ws = store.workspace(of: branch) { upWorkspace(ws) }
-        case let .workspace(ws):
-            let g = "Workspace · \(ws.name)"
-            items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
-                                     group: g, ctx: ws.name,
-                                     enter: { self.push(self.worktreeFrame(in: ws)) }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.gear), label: "Settings…",
-                                     group: g, ctx: ws.name,
-                                     enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
-                                     group: g, ctx: ws.name,
-                                     enter: { self.push(self.renameFrame(.workspace(ws))) }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove",
-                                     group: g, ctx: ws.name, danger: true,
-                                     enter: { self.push(self.confirmRemoveWorkspace(ws)) }))
-        case .none:
-            break
         }
-        return (items, parents)
+        if let workspace {
+            items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
+                                     group: "Workspace · \(workspace.name)", ctx: workspace.name,
+                                     enter: { self.push(self.worktreeFrame(in: workspace)) }))
+        }
+        return items
     }
 
     /// The Page verbs for a browser session (working.html browserActions). Each drives
@@ -350,13 +346,9 @@ struct PaletteFrame {
         PaletteFrame(placeholder: "Search or jump to anything…") { [self] q in
             let here = contextActions()
             if q.isEmpty {
-                // Browse: the focused scope's verbs drop the now-redundant context chip (the
-                // group header names the unit), but the "Go to" parents keep theirs — there the
-                // chip is the level ("Branch" / "Workspace"), not a repeat of the header.
-                var items = here.items.map { item -> PaletteItem in
+                var items = here.map { item -> PaletteItem in
                     var it = item; it.ctx = nil; return it
                 }
-                items += here.parents
                 items += [
                     PaletteItem(icon: .phosphor(Phosphor.folder), label: "Workspaces", sec: "nav",
                                 enter: { self.push(self.workspacesFrame()) }),
@@ -379,9 +371,7 @@ struct PaletteFrame {
                 ]
                 return items
             }
-            // Search folds only the focused scope's verbs under Actions (the parents are browse-only
-            // navigation; the Branches / Workspaces groups below already reach them).
-            var items = here.items.map { item -> PaletteItem in
+            var items = here.map { item -> PaletteItem in
                 var it = item; it.group = "Actions"; return it
             }
             items += [

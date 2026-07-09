@@ -334,3 +334,19 @@ disclosure to dive deeper.
   `engaged` (covers the in-flight CDP attach), since the user is composing the very thing that would
   be deleted. `sessionId` required, no implicit "close the focused one". Verified against a running
   app with a live CEF engine, over both the control socket and the real MCP server on stdio.
+- **The storefront palette is derived from the app icon (both designs)** — sampled `AppIcon-source.png`
+  rather than eyeballing it: the mark is `#eedfcc` (`hsl(34,50%,87%)`, cream not gold) and the squircle
+  runs `#282b30 → #15181c` at a steady hue 223° / ~10% sat — the charcoal was never neutral. Surfaces
+  are now the squircle's own gradient (`--raised` is its top stop, `--canvas` one past its bottom).
+  All 19 iOS-system-blue call-sites are gone; champagne is the accent and stays scarce — selection,
+  focus, ⌘K active row, send, awaited reply — with `--accent-rgb` backing every alpha wash so hue flips
+  per theme without geometry moving. Light mode can't use the mark (fails contrast on white), so it
+  takes a copper `#a86038` plus a new `--on-accent`. `--work` amber sits 4° from champagne, so it stays
+  byte-identical, the copper clears it by 15°, and blue survives only as `--input` — a desaturated
+  sibling of the charcoal's 223° hue, meaning "needs you", never brand. Workspace avatar chips muted
+  onto the palette (34% sat, ≥15° from every reserved colour, ≥27° apart, ≥4.6:1 white letter) — identity
+  survives, the shouting doesn't. Eight near-identical faint greys (within 5% lightness, several at
+  ~2.4:1) collapsed into one `--ink-meta` at 4.63:1 — the only change that isn't a pure retint.
+  *Rejected:* champagne-only chips (workspaces stop being distinguishable at a glance) and champagne as
+  the needs-input state (collides with selection, drags back toward amber). Colour literals only: 117
+  lines, no shadow offset, radius, border width or easing moved.

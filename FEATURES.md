@@ -318,3 +318,19 @@ disclosure to dive deeper.
   on stable. Distribution to teammates via a private Homebrew cask (ad-hoc + quarantine strip,
   notarization later) is decided but not yet built. Verified: both channels built, launched, and
   running side by side; DEV tag confirmed in the design over CDP.
+
+## [2026-07-09](docs/features/2026-07-09.md)
+
+- **An agent can close the browsers it opened (`browser_close`; ADR-0011 stage two + four,
+  extended)** — `browser_create` had no counterpart, so every browser an agent opened to check its
+  own work outlived the turn and silted up the sidebar. New MCP tool + `browser.close` control verb
+  (same path as deleting the row), with the norm written into the tool description: close what you
+  opened only to check your own work; leave open what you opened *for* the user to see or comment
+  in, and say so. Permission falls out of stage-four ownership rather than a new concept — a session
+  may close what it owns and nothing else, so ⌘K browsers (unowned = the user's), detached or
+  re-parented browsers, and external claudes (no Synth row) are all refused with their own message.
+  *Rejected:* any-claude-closes-any-browser — the shared surface means any claude may **drive** any
+  browser, but driving isn't destroying. One extra guard: a close is refused while comment mode is
+  `engaged` (covers the in-flight CDP attach), since the user is composing the very thing that would
+  be deleted. `sessionId` required, no implicit "close the focused one". Verified against a running
+  app with a live CEF engine, over both the control socket and the real MCP server on stdio.

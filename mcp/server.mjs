@@ -348,7 +348,8 @@ tool("browser_create",
   "sidebar, selected), optionally pre-navigated to a URL. Focuses the new session. " +
   "The browser belongs to this Claude session — user comments made in it are routed " +
   "back to this session. Returns the sessionId: keep it, and pass it as sessionId " +
-  "on every subsequent tool call if other agents may be driving browsers too.",
+  "on every subsequent tool call if other agents may be driving browsers too. " +
+  "Close it with browser_close once you're done, unless you opened it for the user.",
   { url: z.string().optional().describe("URL to open (scheme optional)") },
   async ({ url }) => {
     const scope = requireScope();
@@ -376,6 +377,25 @@ tool("browser_create",
       sessionId: res.sessionId,
       warning: "session created but its CDP target never appeared within 15s",
     }));
+  });
+
+tool("browser_close",
+  "Close a browser session you created, removing its row from the sidebar. Do this as " +
+  "soon as you're done with a browser the user has no reason to keep — one you opened " +
+  "only to check your own work, where you don't need their eyes on it or a comment back. " +
+  "Leave it open when you opened it FOR the user (to look at, or to comment in), and tell " +
+  "them it's there. Only browsers this Claude session owns can be closed: the user's own " +
+  "⌘K browsers, and any browser they detached or moved to another session, are theirs.",
+  { sessionId: z.string().describe("the sessionId to close (from browser_create/browser_list)") },
+  async ({ sessionId }) => {
+    const scope = requireScope();
+    await controlCall(scope.inst, {
+      verb: "browser.close", worktreePath: scope.path, sessionId,
+      ...(process.env.SYNTH_SESSION_ID &&
+          { ownerSessionId: process.env.SYNTH_SESSION_ID }),
+    });
+    if (focusedSessionId === sessionId) focusedSessionId = null;
+    return text(`closed ${sessionId}`);
   });
 
 tool("browser_focus",

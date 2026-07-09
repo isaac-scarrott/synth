@@ -15,6 +15,9 @@ import Foundation
 ///     → {"ok":true,"sessionId":"…"}   (created exactly like ⌘K New browser:
 ///        in the matching branch, pre-navigated if url given, selected;
 ///        ownerSessionId naming a claude row in the branch makes it owned)
+///   {"verb":"browser.close","worktreePath":"…","sessionId":"…","ownerSessionId":"…"?}
+///     → {"ok":true}   (agent cleanup: closes a browser the calling claude OWNS,
+///        exactly as deleting its row would; anything it doesn't own is refused)
 final class ControlServer: @unchecked Sendable {
     let socketPath = InstanceRegistry.controlSocketPath
     private weak var store: AppStore?
@@ -123,6 +126,34 @@ final class ControlServer: @unchecked Sendable {
                 return ["ok": false, "error": "session creation failed"]
             }
             return ["ok": true, "sessionId": session.id.uuidString]
+
+        case "browser.close":
+            guard let session = requestedSession(request, in: branch), session.kind == .browser else {
+                return ["ok": false, "error": "no browser session for sessionId"]
+            }
+            // An agent may clean up only what it made. Ownership is the record of that, and
+            // it changes only by the user (stage four) — so a ⌘K browser, one the user
+            // detached, and one re-parented to another claude are all beyond reach here.
+            guard let caller = (request["ownerSessionId"] as? String).flatMap(UUID.init(uuidString:)) else {
+                return ["ok": false,
+                        "error": "this Claude session has no Synth row, so it owns no browsers — " +
+                                 "only the session that created a browser may close it"]
+            }
+            guard session.ownerSessionID == caller else {
+                let whose = session.ownerSessionID == nil ? "unowned — the user's"
+                                                          : "owned by another Claude session"
+                return ["ok": false,
+                        "error": "browser \(session.id.uuidString) is \(whose); only its owner may " +
+                                 "close it. Ask the user to close it if it's in the way."]
+            }
+            // Comment mode engaged means the user is picking an element or composing right now;
+            // closing would delete what they were about to send back to this very session.
+            if BrowserManager.shared.existing(session.id)?.commentMode?.engaged == true {
+                return ["ok": false,
+                        "error": "the user is commenting in this browser — leave it open"]
+            }
+            store.closeSession(session)
+            return ["ok": true]
 
         // Automation verbs (SYNTH_AUTOMATION=1 only): the self-verify harness's
         // stand-in for driving the real UI on machines whose TCC denies synthetic

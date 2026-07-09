@@ -66,7 +66,7 @@ struct RowMenu: View {
 
     @ViewBuilder private var actionsPane: some View {
         ForEach(creates) { create in
-            MenuItem(icon: create.icon, title: create.title, danger: false) {
+            MenuItem(icon: create.icon, kind: create.kind, title: create.title, danger: false) {
                 isPresented = false
                 create.run()
             }
@@ -81,6 +81,7 @@ struct RowMenu: View {
 
 private struct MenuItem: View {
     let icon: String
+    var kind: SessionKind? = nil
     let title: String
     let danger: Bool
     let action: () -> Void
@@ -89,9 +90,15 @@ private struct MenuItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Phos(path: icon, size: 15)
-                    .foregroundStyle(danger ? Theme.danger : Theme.menuIcon)
-                    .frame(width: 15)
+                Group {
+                    if let kind, !danger {
+                        SessionIcon(kind: kind, size: 15)
+                    } else {
+                        Phos(path: icon, size: 15)
+                            .foregroundStyle(danger ? Theme.danger : Theme.menuIcon)
+                    }
+                }
+                .frame(width: 15)
                 Text(title)
                     .font(.system(size: 12.5))
                     .foregroundStyle(danger ? Theme.danger : Theme.repoName)

@@ -108,17 +108,23 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
     }
 }
 
-/// The one-line verb a state reads as — Claude phrased for an agent, a plain terminal for a
-/// process (working.html `notifWhat`). Shared by the in-app card and the NC title.
-func notifVerb(_ session: SessionKind, _ kind: NotifKind) -> String {
-    switch (session, kind) {
-    case (.claudeCode, .error): return "Claude hit an error"
-    case (.claudeCode, .input): return "Claude needs your input"
-    case (.claudeCode, .done):  return "Claude finished"
-    case (.terminal, .input), (.browser, .input): return "waiting for input"
+/// The one-line verb a state reads as — named for the agent doing it ("Claude finished",
+/// "OpenCode needs your input"), a plain process for a terminal (working.html `notifWhat`).
+/// Shared by the in-app card and the NC title.
+@MainActor func notifVerb(_ session: SessionKind, _ kind: NotifKind) -> String {
+    if let agent = session.agentID {
+        let who = AgentRegistry.descriptor(agent)?.shortName ?? agent.rawValue
+        switch kind {
+        case .error: return "\(who) hit an error"
+        case .input: return "\(who) needs your input"
+        case .done:  return "\(who) finished"
+        }
+    }
+    switch kind {
+    case .input: return "waiting for input"
     // A browser session never changes status (it stays .idle for life, no indicator),
-    // so its cases exist for exhaustiveness only, phrased like any non-Claude process.
-    case (.terminal, .error), (.browser, .error): return "exited with an error"
-    case (.terminal, .done), (.browser, .done):   return "finished"
+    // so these read as they would for any plain process.
+    case .error: return "exited with an error"
+    case .done:  return "finished"
     }
 }

@@ -476,8 +476,7 @@ private struct SessionRow: View {
         ZStack(alignment: .trailing) {
             if renaming {
                 HStack(spacing: 8) {
-                    Phos(path: session.kind.iconPath, size: 14)
-                        .foregroundStyle(session.kind.tint).frame(width: 14)
+                    SessionIcon(kind: session.kind, size: 14).frame(width: 14)
                     RenameField(font: .system(size: 11.5))
                     Spacer(minLength: 4)
                 }
@@ -485,8 +484,7 @@ private struct SessionRow: View {
             } else {
                 Button { store.open(session); focusContent(store) } label: {
                     HStack(spacing: 8) {
-                        Phos(path: session.kind.iconPath, size: 14)
-                            .foregroundStyle(session.kind.tint).frame(width: 14)
+                        SessionIcon(kind: session.kind, size: 14).frame(width: 14)
                         Text(session.title)
                             .font(.system(size: 11.5))
                             // Only the focused session goes bold; unread surfaces via colour
@@ -496,8 +494,15 @@ private struct SessionRow: View {
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         Group {
-                            if session.ownerSessionID != nil { OwnedIndicator() }
-                            else { StatusIndicator(status: session.status) }
+                            // The mark mirrors the OWNER's icon, so the tie names which agent.
+                            if session.ownerSessionID != nil,
+                               let owner = store.owner(of: session) {
+                                OwnedIndicator(ownerKind: owner.kind)
+                            } else if session.ownerSessionID != nil {
+                                OwnedIndicator()
+                            } else {
+                                StatusIndicator(status: session.status)
+                            }
                         }
                         .opacity(revealed ? 0 : 1)
                     }
@@ -680,15 +685,18 @@ private struct StatusIndicator: View {
     }
 }
 
-/// A browser owned by a Claude session carries the owner's accent sparkle in its indicator
-/// slot instead of a liveness dot — the sidebar-visible tie that replaced the old containment
-/// indent (working.html `.ind--owned`). Browsers are status-less, so this only ever stands
-/// where a StatusIndicator's empty idle slot would be.
+/// A browser owned by an agent session carries its OWNER'S mark in its indicator slot instead of
+/// a liveness dot — the sidebar-visible tie that replaced the old containment indent
+/// (working.html `.ind--owned`). It mirrors the owner's icon, so a browser owned by Claude Code
+/// shows Clawd and one owned by OpenCode shows OpenCode's mark. Browsers are status-less, so this
+/// only ever stands where a StatusIndicator's empty idle slot would be.
 private struct OwnedIndicator: View {
+    /// The owning row's kind; nil owner falls back to the generic agent glyph.
+    var ownerKind: SessionKind = .agent(.claudeCode)
+
     var body: some View {
         Ind {
-            Phos(path: Phosphor.sparkle, size: 12)
-                .foregroundStyle(Theme.claude)
+            SessionIcon(kind: ownerKind, size: 12)
                 .opacity(0.9)
         }
     }

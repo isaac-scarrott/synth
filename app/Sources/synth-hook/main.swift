@@ -3,35 +3,44 @@ import Foundation
 import Glibc
 #endif
 
-// synth-hook — the bridge between a Claude Code process and the Synth app.
+// synth-hook — the bridge between a coding-agent process and the Synth app.
 //
-// Two roles, dispatched by how it's invoked:
-//   • as `claude` (a symlink Synth puts first on PATH): the LAUNCH role. Claude Code
-//     has no way to know it's inside Synth, so we intercept the `claude` command,
-//     inject our hook config (`--settings`) + a fresh `--session-id`, and exec the
-//     real binary. Non-interactive invocations (`claude -p`, subcommands) pass through.
+// Roles, dispatched by how it's invoked:
+//   • as an agent's binary name (`claude`, `opencode` — symlinks Synth puts first on PATH):
+//     the LAUNCH role. An agent has no way to know it's inside Synth, so we intercept its
+//     command, inject whatever makes it observable, and hand control to the real binary.
+//       – claude:   inject our hook config (`--settings`) + a fresh `--session-id`. Status
+//                   then arrives as hook callbacks (the EVENT role below).
+//       – opencode: inject `--port <assigned>` so its built-in server listens where the app
+//                   already subscribes, and report agent-start/agent-end around it. opencode
+//                   publishes its own typed event stream, so no hooks are needed.
+//     Non-interactive invocations (`claude -p`, `opencode run`, subcommands) pass through.
 //   • as `synth-hook event <Event>`: the EVENT role. Claude fires this per hook; we read
 //     the event JSON on stdin, classify it to a status signal, and write one line to the
 //     app's unix socket (path in $SYNTH_SOCKET_PATH), tagged with $SYNTH_SESSION_ID.
 //   • as `synth-hook report --signal <name>`: the REPORT role. Synth's injected zsh hooks
 //     fire this on a plain terminal's command start/finish, writing the same signal line to
-//     the same socket — so a bare shell reports its process lifecycle through Claude's pipe.
+//     the same socket — so a bare shell reports its process lifecycle through the same pipe.
 //
 // Correlation is entirely by env: Synth spawns the PTY with SYNTH_SESSION_ID (the row),
-// SYNTH_SOCKET_PATH, SYNTH_HOOK_BIN and SYNTH_REAL_CLAUDE; Claude and its hooks inherit them.
+// SYNTH_SOCKET_PATH, SYNTH_HOOK_BIN and a SYNTH_REAL_<AGENT> per installed agent; the agent
+// and its hooks inherit them.
 
 let env = ProcessInfo.processInfo.environment
 let invokedName = (CommandLine.arguments[0] as NSString).lastPathComponent
 
-if invokedName == "claude" {
-    runLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
-} else {
+switch invokedName {
+case "claude":
+    runClaudeLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
+case "opencode":
+    runOpencodeLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
+default:
     let sub = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
     switch sub {
     case "launch":
         // `synth-hook launch -- <args>` (explicit form, in case PATH-shim isn't used)
         let after = CommandLine.arguments.firstIndex(of: "--").map { Array(CommandLine.arguments[($0 + 1)...]) } ?? []
-        runLaunch(userArgs: after)
+        runClaudeLaunch(userArgs: after)
     case "event":
         runEvent(name: CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "")
     case "report":
@@ -42,16 +51,26 @@ if invokedName == "claude" {
     }
 }
 
+/// Announce an agent attaching/detaching from this row, so Synth flips the row's kind and
+/// (for a stream-based agent) connects its supervisor.
+func reportAgent(_ signal: String) {
+    guard let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"] else { return }
+    sendLines(socketPath: socketPath, jsonLine(["session": sessionID, "signal": signal]))
+}
+
 // MARK: - Launch role
 
-func runLaunch(userArgs: [String]) -> Never {
-    // `SYNTH_REAL_CLAUDE` can point back at a shim when Synth is launched from inside
-    // another Synth session (its PATH already carries a `synth-shims-*` dir). Exec'ing a
-    // shim would re-enter this launch role and self-exec forever, growing argv by a
-    // `--session-id` + re-merged `--settings` each pass until execv fails with E2BIG.
-    let hinted = env["SYNTH_REAL_CLAUDE"].flatMap { $0.isEmpty ? nil : $0 }
-    let real = hinted.flatMap { isShim($0) ? nil : $0 } ?? resolveRealClaude()
-    guard let real else {
+/// The real binary for `agent`, or nil. `SYNTH_REAL_<AGENT>` can point back at a shim when Synth
+/// is launched from inside another Synth session (its PATH already carries a `synth-shims-*`
+/// dir). Exec'ing a shim would re-enter this launch role and self-exec forever, growing argv
+/// each pass until execv fails with E2BIG.
+func resolveAgentBinary(_ agent: String) -> String? {
+    let hinted = env["SYNTH_REAL_" + agent.uppercased()].flatMap { $0.isEmpty ? nil : $0 }
+    return hinted.flatMap { isShim($0) ? nil : $0 } ?? resolveOnPath(agent)
+}
+
+func runClaudeLaunch(userArgs: [String]) -> Never {
+    guard let real = resolveAgentBinary("claude") else {
         FileHandle.standardError.write(Data("synth: claude not found\n".utf8))
         exit(127)
     }
@@ -78,11 +97,51 @@ func runLaunch(userArgs: [String]) -> Never {
     spawnReportingExit(real, idArgs + ["--settings", settings] + args)
 }
 
-/// Run the real claude as a child, then mirror its exit — reporting the true code over the
+/// opencode publishes its own event stream, so it needs no hooks — only a known port. The app
+/// assigns one per row (`SYNTH_OPENCODE_PORT`) and subscribes there; the shim makes the TUI's
+/// built-in server listen on it. The credentials the app locks that server to ride the env.
+///
+/// `agent-start` is reported by the shim rather than by the agent (as Claude's SessionStart hook
+/// does), because opencode has nothing to call back with — the shim's own lifetime *is* the
+/// session's.
+func runOpencodeLaunch(userArgs: [String]) -> Never {
+    guard let real = resolveAgentBinary("opencode") else {
+        FileHandle.standardError.write(Data("synth: opencode not found\n".utf8))
+        exit(127)
+    }
+
+    // Only the bare TUI is a session. `opencode run …`, `serve`, and the management
+    // subcommands pass through untouched, exactly as `claude -p` does.
+    let subcommands: Set<String> = ["run", "serve", "attach", "acp", "web", "auth", "providers",
+                                    "models", "upgrade", "uninstall", "mcp", "agent", "stats",
+                                    "export", "import", "github", "pr", "session", "plugin",
+                                    "db", "debug", "completion", "--version", "-v"]
+    let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
+    let port = env["SYNTH_OPENCODE_PORT"].flatMap { $0.isEmpty ? nil : $0 }
+    let instrument = env["SYNTH_SESSION_ID"] != nil && !isSubcommand && port != nil
+
+    guard instrument, let port else { execReal(real, userArgs) }
+
+    // A user's own `--port` wins — they've asked for a specific one, and the supervisor simply
+    // never connects rather than fighting them for the socket.
+    let portArgs = userArgs.contains("--port") ? [] : ["--port", port]
+    reportAgent("agent-start:\(AgentIDRaw.opencode)")
+    spawnReportingExit(real, portArgs + userArgs, agent: AgentIDRaw.opencode)
+}
+
+/// The `AgentID.rawValue`s the app persists and the shim reports. Duplicated (not shared) because
+/// synth-hook is a standalone Foundation-only executable that must not link the app target.
+enum AgentIDRaw {
+    static let claudeCode = "claudeCode"
+    static let opencode = "opencode"
+}
+
+/// Run the real agent as a child, then mirror its exit — reporting the true code over the
 /// hook socket first. An exec would be simpler, but the code would die on the way up:
 /// libghostty wraps every PTY child in macOS `login`, which exits 0 whatever its child's
 /// status was, so the socket is the only channel the code survives (features 2026-07-06).
-func spawnReportingExit(_ path: String, _ args: [String]) -> Never {
+/// `agent` also announces the agent's departure once the child is gone.
+func spawnReportingExit(_ path: String, _ args: [String], agent: String? = nil) -> Never {
     // The shim must outlive the session's own signals to still be there to report:
     // ignore INT/QUIT here, hand the child the defaults back.
     var attr: posix_spawnattr_t?
@@ -107,6 +166,7 @@ func spawnReportingExit(_ path: String, _ args: [String]) -> Never {
     var status: Int32 = 0
     while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
     let code: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
+    if let agent { reportAgent("agent-end:\(agent)") }
     if let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"] {
         sendLines(socketPath: socketPath, jsonLine(["session": sessionID, "exitCode": String(code)]))
     }
@@ -202,20 +262,20 @@ func execReal(_ path: String, _ args: [String]) -> Never {
     exit(126)
 }
 
-/// Fallback claude lookup when SYNTH_REAL_CLAUDE is unset or points at a shim — scan PATH
-/// for the first `claude` that is the real binary, not one of our shims. Skipping only
-/// `$SYNTH_SHIM_DIR` isn't enough: stale `synth-shims-*` dirs accumulate on PATH, and any
-/// of their `claude` symlinks resolves back to this binary, so exec'ing one would loop.
-func resolveRealClaude() -> String? {
+/// Fallback lookup when `SYNTH_REAL_<AGENT>` is unset or points at a shim — scan PATH for the
+/// first `name` that is the real binary, not one of our shims. Skipping only `$SYNTH_SHIM_DIR`
+/// isn't enough: stale `synth-shims-*` dirs accumulate on PATH, and any of their symlinks
+/// resolves back to this binary, so exec'ing one would loop.
+func resolveOnPath(_ name: String) -> String? {
     for dir in (env["PATH"] ?? "").split(separator: ":").map(String.init) {
-        let candidate = dir + "/claude"
+        let candidate = dir + "/" + name
         if FileManager.default.isExecutableFile(atPath: candidate), !isShim(candidate) { return candidate }
     }
     return nil
 }
 
 /// True when `path` is (or symlinks to) a `synth-hook` shim — the identity we must never
-/// exec as "claude", or the launch role re-enters itself.
+/// exec as the agent, or the launch role re-enters itself.
 func isShim(_ path: String) -> Bool {
     let resolved = (try? FileManager.default.destinationOfSymbolicLink(atPath: path)).map {
         ($0 as NSString).isAbsolutePath ? $0 : (path as NSString).deletingLastPathComponent + "/" + $0
@@ -232,8 +292,8 @@ func runEvent(name: String) -> Never {
 
     let signal: String?
     switch name {
-    case "SessionStart":     signal = "claude-start"
-    case "SessionEnd":       signal = "claude-end"
+    case "SessionStart":     signal = "agent-start:\(AgentIDRaw.claudeCode)"
+    case "SessionEnd":       signal = "agent-end:\(AgentIDRaw.claudeCode)"
     case "UserPromptSubmit": signal = "working"
     // A tool completing (or failing) means the user has answered / approved and Claude is
     // running again — clears whatever `needsInput` the preceding PreToolUse/PermissionRequest set.
@@ -262,13 +322,13 @@ func runEvent(name: String) -> Never {
 
     // Claude's own session id (present on every hook payload) — forwarded so Synth can
     // resume this conversation with `claude --resume <id>` after a restart.
-    let claudeSession = (payload["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    let agentSession = (payload["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
 
     var lines = ""
     if let signal { lines += jsonLine(["session": sessionID, "signal": signal]) }
     if resetTitle { lines += jsonLine(["session": sessionID, "titleReset": "1"]) }
     if let title  { lines += jsonLine(["session": sessionID, "title": title]) }
-    if let claudeSession { lines += jsonLine(["session": sessionID, "claudeSession": claudeSession]) }
+    if let agentSession { lines += jsonLine(["session": sessionID, "agentSession": agentSession]) }
     if !lines.isEmpty { sendLines(socketPath: socketPath, lines) }
     exit(0)   // never block Claude — we only observe
 }

@@ -76,15 +76,16 @@ private struct SessionPane: View {
         }
     }
 
-    // A session — terminal or Claude Code — is backed by a PTY running in its worktree;
-    // Claude Code just runs `claude` inside it. The kind drives the sidebar/head visual,
-    // not what the pane shows. A browser session hosts an engine instead of a PTY.
+    // A session — terminal or coding agent — is backed by a PTY running in its worktree; an
+    // agent just runs its binary inside it. The kind drives the sidebar/head visual, not what
+    // the pane shows. A browser session hosts an engine instead of a PTY.
     @ViewBuilder private var paneBody: some View {
         if session.kind == .browser {
             BrowserPane(session: session)
         } else if let cwd = store.cwd(for: session) {
-            let flags = store.claudeFlags(for: store.branch(of: session).flatMap { store.workspace(of: $0) })
-            TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd, claudeFlags: flags))
+            let workspace = store.branch(of: session).flatMap { store.workspace(of: $0) }
+            let flags = session.spawnedKind.agentID.map { store.agentFlags($0, for: workspace) } ?? ""
+            TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd, agentFlags: flags))
         } else {
             Placeholder(title: session.title, subtitle: "No working directory for this session.")
         }
@@ -109,8 +110,7 @@ private struct PaneHead: View {
                     store.sidebarCollapsed = false
                 }
             }
-            Phos(path: session.kind.iconPath, size: 15)
-                .foregroundStyle(session.kind.tint)
+            SessionIcon(kind: session.kind, size: 15)
                 .frame(width: 15, height: 15)
             Text(session.title)
                 .font(.system(size: 13, weight: .semibold))
@@ -259,7 +259,7 @@ private struct Placeholder: View {
         VStack(spacing: 10) {
             Image(systemName: "sparkle")
                 .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.claude)
+                .foregroundStyle(Theme.agent)
             Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
             Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
         }

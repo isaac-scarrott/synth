@@ -18,13 +18,18 @@ enum SessionEvent: Sendable {
     /// wrapper — exits 0 whatever its child's status was, so `.exited`'s own code is
     /// always 0 and can't carry the clean-vs-failure fact (features 2026-07-06).
     case exitCodeReported(UUID, Int32)
-    /// A terminal was detected running Claude Code (or stopped) — flips the row's visual.
+    /// A terminal was detected running a coding agent (or stopped) — flips the row's visual.
     case kindChanged(UUID, SessionKind)
     /// A background session finished a turn — surface it unless it's the one on screen.
     case markUnread(UUID)
-    /// Claude Code reported its own session id (via the SessionStart hook) — stored so a
-    /// restored row can resume the conversation with `claude --resume` (ADR-0010).
-    case claudeSessionCaptured(UUID, String)
+    /// The agent reported its own session id (Claude Code via its SessionStart hook, opencode
+    /// off `session.created`) — stored so a restored row can resume the conversation (ADR-0010).
+    case agentSessionCaptured(UUID, String)
+    /// The agent is not merely *starting* but reachable — its supervisor can hand it text.
+    /// Only a supervisor posts this: Claude Code is ready the moment its own hook fires from
+    /// inside the running process, while opencode is ready only once its event stream connects
+    /// (its shim announces the launch a beat before the server binds).
+    case agentReady(UUID)
     /// A browser session's address changed — every navigation, including ones the engine's
     /// future CDP clients initiate (ADR-0011). Renames the row and feeds the branch recents.
     case browserNavigated(UUID, URL)
@@ -279,28 +284,33 @@ enum FeedbackMode {
     # No extra setup for this workspace yet.
     """
 
-    /// Default flags passed to `claude` when a Claude Code session starts (no claude
-    /// auto-launch is wired up yet — see FEATURES). The raw string is the source of truth,
-    /// so ANY claude flag works; the Settings switches are shortcuts for common ones.
-    /// A workspace's flags OVERRIDE the global outright — unlike the setup scripts, flags
-    /// don't compose; the last word wins. An empty workspace value inherits global.
-    var globalClaudeFlags = "--dangerously-skip-permissions"
-    var wsClaudeFlags: [UUID: String] = [:]
+    /// Default flags passed to an agent's binary when one of its sessions starts, per agent.
+    /// The raw string is the source of truth, so ANY flag the agent accepts works; the
+    /// Settings switches are shortcuts for common ones. A workspace's flags OVERRIDE the
+    /// global outright — unlike the setup scripts, flags don't compose; the last word wins.
+    /// An empty workspace value inherits global.
+    ///
+    /// opencode needs none: it auto-approves by default, and the needs-input signal Synth
+    /// relies on rides the question tool (enabled by env), not a permission flag.
+    var globalAgentFlags: [AgentID: String] = [
+        .claudeCode: "--dangerously-skip-permissions",
+        .opencode: "",
+    ]
+    var wsAgentFlags: [UUID: [AgentID: String]] = [:]
 
-    /// The effective flags for a scope. A workspace with its own flags replaces the global
-    /// outright; an empty (or absent) workspace value inherits global.
-    func claudeFlags(for workspace: Workspace?) -> String {
-        let w = (workspace.flatMap { wsClaudeFlags[$0.id] } ?? "").trimmingCharacters(in: .whitespaces)
+    /// The effective flags for an agent in a scope. A workspace with its own flags replaces
+    /// the global outright; an empty (or absent) workspace value inherits global.
+    func agentFlags(_ agent: AgentID, for workspace: Workspace?) -> String {
+        let w = (workspace.flatMap { wsAgentFlags[$0.id]?[agent] } ?? "")
+            .trimmingCharacters(in: .whitespaces)
         if !w.isEmpty { return w }
-        return globalClaudeFlags.trimmingCharacters(in: .whitespaces)
+        return (globalAgentFlags[agent] ?? "").trimmingCharacters(in: .whitespaces)
     }
 
     /// The ordered session set every new worktree starts with (working.html TPL_KINDS /
-    /// globalTpl) — the settings surface only; spawn-on-worktree-create is not wired up
-    /// yet (same status as the setup-script runner and claude flags above, see FEATURES).
-    /// Order is creation order — the first entry is the session that opens.
+    /// globalTpl). Order is creation order — the first entry is the session that opens.
     var globalSessionTemplate: [SessionTemplateEntry] = [
-        SessionTemplateEntry(kind: .claudeCode, name: "Claude Code"),
+        SessionTemplateEntry(kind: .agent(.claudeCode), name: "Claude Code"),
         SessionTemplateEntry(kind: .terminal, name: "dev server"),
         SessionTemplateEntry(kind: .terminal, name: "shell"),
     ]
@@ -313,13 +323,13 @@ enum FeedbackMode {
         return globalSessionTemplate
     }
 
-    /// Session ids with a LIVE Claude Code attached THIS run — asserted only by the hook
-    /// seam (claude-start / claudeSessionCaptured; cleared by claude-end / process exit).
-    /// A persisted `.claudeCode` kind is NOT liveness: a restored row whose `--resume`
-    /// fails drops to a bare shell, and pasting a browser comment there (page-controlled
-    /// text submitted with Enter) would hand the page shell execution. Comment delivery
-    /// gates on this set (CommentModeController.deliver).
-    private(set) var liveClaudeIDs: Set<UUID> = []
+    /// Session ids with a LIVE coding agent attached THIS run — asserted only by the supervisor
+    /// seam (agent-start / agentSessionCaptured; cleared by agent-end / process exit).
+    /// A persisted `.agent` kind is NOT liveness: a restored row whose resume fails drops to a
+    /// bare shell, and pasting a browser comment there (page-controlled text submitted with
+    /// Enter) would hand the page shell execution. Comment delivery gates on this set
+    /// (CommentModeController.deliver).
+    private(set) var liveAgentIDs: Set<UUID> = []
     /// True exit statuses reported over the hook socket (`.exitCodeReported`), keyed by
     /// session, consumed by the `.exited` that follows moments later.
     @ObservationIgnored private var reportedExitCodes: [UUID: Int32] = [:]
@@ -328,7 +338,20 @@ enum FeedbackMode {
     /// source session; the entry (and any pointing at a closed browser) is dropped on close.
     @ObservationIgnored private var linkBrowsers: [UUID: UUID] = [:]
 
-    func isLiveClaude(_ id: UUID) -> Bool { liveClaudeIDs.contains(id) }
+    func isLiveAgent(_ id: UUID) -> Bool { liveAgentIDs.contains(id) }
+
+    /// Tear down a session's supervision. Safe to call for a row that never hosted an agent
+    /// (nil id) or whose supervisor never attached — both are no-ops.
+    private func detachSupervisor(_ agent: AgentID?, _ session: UUID) {
+        guard let agent else { return }
+        AgentRegistry.supervisor(agent)?.detach(session: session)
+    }
+
+    /// The live agent hosted by `session`, if any — the supervisor that can be handed text.
+    func liveSupervisor(for session: Session) -> (any AgentSupervisor)? {
+        guard isLiveAgent(session.id), let agent = session.kind.agentID else { return nil }
+        return AgentRegistry.supervisor(agent)
+    }
 
     let bus = EventBus()
     let hookServer: HookServer
@@ -346,6 +369,7 @@ enum FeedbackMode {
         TerminalManager.shared.bus = bus
         BrowserManager.shared.bus = bus
         TerminalManager.shared.hookSocketPath = hookServer.socketPath
+        AgentRegistry.startSupervisors(bus: bus)
         HookEnvironment.setup()
         hookServer.start()
         Task { [weak self] in
@@ -394,15 +418,16 @@ enum FeedbackMode {
             // Claude Code's ai-title, refined each turn — but never clobber a hand-picked name.
             if let s = session(id), !s.titleIsCustom, s.title != title { s.title = title }
         case let .titleReset(id):
-            // Keep a hand-picked name; otherwise fall back to the neutral Claude default until
-            // the new conversation generates its own ai-title (arriving as .titleChanged).
-            if let s = session(id), !s.titleIsCustom { s.title = "Claude Code" }
+            // Keep a hand-picked name; otherwise fall back to the agent's neutral default until
+            // the new conversation generates its own title (arriving as .titleChanged).
+            if let s = session(id), !s.titleIsCustom { s.title = s.spawnedKind.tplStart }
         case let .exitCodeReported(id, code):
             reportedExitCodes[id] = code
         case let .exited(id, code):
             guard let s = session(id) else { break }
             let prev = s.status
-            liveClaudeIDs.remove(id)
+            liveAgentIDs.remove(id)
+            detachSupervisor(s.kind.agentID ?? s.spawnedKind.agentID, id)
             // The PTY's own code is blind on macOS — libghostty wraps the child in `login`,
             // which exits 0 whatever really happened — so prefer the code the session
             // reported over the hook socket just before dying. The user-interrupt statuses
@@ -424,31 +449,37 @@ enum FeedbackMode {
             }
         case let .kindChanged(id, kind):
             guard let s = session(id) else { break }
-            // A browser session never runs claude, so a claude lifecycle signal carrying its
+            // A browser session never runs an agent, so an agent lifecycle signal carrying its
             // id is spurious — applying it would flip the pane to a terminal while
             // BrowserManager still holds the browser controller, desyncing the two and
             // wedging ⌘K on that row.
             if s.spawnedKind == .browser { break }
-            // A session spawned as Claude never reverts to a plain terminal: it execed
-            // claude, so a claude-end is either the process about to exit (the child-exited
+            // A session spawned as an agent never reverts to a plain terminal: it exec'd the
+            // agent, so an agent-end is either the process about to exit (the child-exited
             // signal closes the row moments later) or a /clear's end/start pair — neither
             // should blip the kind.
-            if kind == .terminal, s.spawnedKind == .claudeCode {
-                liveClaudeIDs.remove(id)
+            if kind == .terminal, s.spawnedKind.isAgent {
+                liveAgentIDs.remove(id)
+                detachSupervisor(s.spawnedKind.agentID, id)
                 break
             }
             s.kind = kind
-            // The hook seam's claude lifecycle: claude-start posts .claudeCode, claude-end
-            // posts .terminal (HookServer.apply) — the only writers of comment-target liveness.
-            if kind == .claudeCode {
-                liveClaudeIDs.insert(id)
+            // The supervisor seam's agent lifecycle: agent-start posts .agent(id), agent-end
+            // posts .terminal. Liveness is NOT asserted here — an agent that has been *launched*
+            // may not yet be reachable, and delivering into a not-yet-listening agent silently
+            // drops the text. Its supervisor posts `.agentReady` when it truly is.
+            if let agent = kind.agentID {
+                AgentRegistry.supervisor(agent)?.attach(session: id)
             } else {
-                liveClaudeIDs.remove(id)
+                liveAgentIDs.remove(id)
+                detachSupervisor(s.spawnedKind.agentID, id)
             }
         case let .markUnread(id): if openSessionID != id { session(id)?.unread = true }
-        case let .claudeSessionCaptured(id, claudeID):
-            if let s = session(id), s.claudeSessionID != claudeID { s.claudeSessionID = claudeID }
-            liveClaudeIDs.insert(id)
+        case let .agentReady(id):
+            liveAgentIDs.insert(id)
+        case let .agentSessionCaptured(id, agentSessionID):
+            if let s = session(id), s.agentSessionID != agentSessionID { s.agentSessionID = agentSessionID }
+            liveAgentIDs.insert(id)
         case let .browserNavigated(id, url):
             guard let s = session(id) else { return }
             s.browserURL = url
@@ -497,8 +528,8 @@ enum FeedbackMode {
             open(existing)
             return
         }
-        // Only a Claude session can own a browser; a plain terminal spawns an unowned one.
-        let owner = source?.kind == .claudeCode ? source : nil
+        // Only an agent session can own a browser; a plain terminal spawns an unowned one.
+        let owner = (source?.kind.isAgent ?? false) ? source : nil
         guard let browser = newBrowser(in: source.flatMap { branch(of: $0) },
                                        at: url, ownedBy: owner, focus: true) else {
             NSWorkspace.shared.open(url); return   // no branch to host it — don't lose the click
@@ -526,9 +557,15 @@ enum FeedbackMode {
     /// unfocused → Notification Center. `force` overrides the focus rule for the DEBUG trigger.
     /// `closing` marks the exit-close transition: the caller removes the row right after,
     /// so the raised done toast must outlive its session.
+    /// Harness seam (`SYNTH_AUTOMATION`, ControlServer `automation.notifRoute`): pin the surface
+    /// a transition routes to. Focus normally decides, and a driven instance never holds focus on
+    /// a live desktop — other apps take it straight back — so the deck path is otherwise untestable.
+    @ObservationIgnored var automationNotifRoute: NotifRoute?
+
     func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil, closing: Bool = false) {
         if openSessionID == id { clearNotif(id); return }
-        let toNC = force.map { $0 == .notificationCenter } ?? !NSApp.isActive
+        let route = force ?? automationNotifRoute
+        let toNC = route.map { $0 == .notificationCenter } ?? !NSApp.isActive
         switch next.rollup {
         case .input, .error:
             let kind: NotifKind = next.rollup == .error ? .error : .input
@@ -801,12 +838,13 @@ enum FeedbackMode {
         addSession(kind: .terminal, title: "shell", status: .idle, in: branch)
     }
 
-    /// Claude Code is just a terminal that opened and ran `claude`, so it spawns
+    /// A coding agent is just a terminal that opened and ran the agent's binary, so it spawns
     /// identically — only the kind, title and starting state differ (working.html
     /// SESSION_KINDS/addSession). It opens straight into the content pane.
     @discardableResult
-    func newClaude(in branch: Branch? = nil) -> Session? {
-        addSession(kind: .claudeCode, title: "Claude Code", status: .working, in: branch)
+    func newAgent(_ agent: AgentID, in branch: Branch? = nil) -> Session? {
+        let kind = SessionKind.agent(agent)
+        return addSession(kind: kind, title: kind.tplStart, status: .working, in: branch)
     }
 
     /// A browser session (ADR-0011 stage one): titled "Browser" until it navigates, then
@@ -870,7 +908,8 @@ enum FeedbackMode {
             br.sessions.removeAll { $0.id == session.id }
         }
         if openSessionID == session.id { openSessionID = nil }
-        liveClaudeIDs.remove(session.id)
+        liveAgentIDs.remove(session.id)
+        detachSupervisor(session.kind.agentID ?? session.spawnedKind.agentID, session.id)
         pulseTokens.removeValue(forKey: session.id)
         reportedExitCodes.removeValue(forKey: session.id)
         // Drop this row's link-browser mapping whether it's the source terminal or the
@@ -879,30 +918,30 @@ enum FeedbackMode {
         linkBrowsers = linkBrowsers.filter { $0.value != session.id }
     }
 
-    // MARK: Containment (ADR-0011 stage four: a browser can belong to a Claude session)
+    // MARK: Containment (ADR-0011 stage four: a browser can belong to an agent session)
 
-    /// The claude row owning `session`, or nil — a dangling owner id (owner deleted out
+    /// The agent row owning `session`, or nil — a dangling owner id (owner deleted out
     /// from under a snapshot) resolves to nil, i.e. the browser is effectively unowned.
     func owner(of session: Session) -> Session? {
         guard let id = session.ownerSessionID else { return nil }
-        return branch(of: session)?.sessions.first { $0.id == id && $0.kind == .claudeCode }
+        return branch(of: session)?.sessions.first { $0.id == id && $0.kind.isAgent }
     }
 
-    /// The browsers a claude row owns, in sidebar order.
+    /// The browsers an agent row owns, in sidebar order.
     func ownedBrowsers(of session: Session) -> [Session] {
-        guard session.kind == .claudeCode, let br = branch(of: session) else { return [] }
+        guard session.kind.isAgent, let br = branch(of: session) else { return [] }
         return br.sessions.filter { $0.ownerSessionID == session.id }
     }
 
-    /// Nest `browser` under `claude` (creation stamping, the kebab's "Move under…", or a
-    /// comment-spawned claude adopting its browser). Ownership keys off the Synth row id,
-    /// so it survives claude exits and `--resume`.
-    func adopt(_ browser: Session, by claude: Session) {
-        guard browser.kind == .browser, claude.kind == .claudeCode,
+    /// Nest `browser` under `agent` (creation stamping, the kebab's "Move under…", or a
+    /// comment-spawned agent adopting its browser). Ownership keys off the Synth row id,
+    /// so it survives agent exits and resumes.
+    func adopt(_ browser: Session, by agent: Session) {
+        guard browser.kind == .browser, agent.kind.isAgent,
               let br = branch(of: browser),
-              br.sessions.contains(where: { $0.id == claude.id })
+              br.sessions.contains(where: { $0.id == agent.id })
         else { return }
-        browser.ownerSessionID = claude.id
+        browser.ownerSessionID = agent.id
         snapOwned(in: br)
     }
 
@@ -921,7 +960,7 @@ enum FeedbackMode {
     private func snapOwned(in br: Branch) {
         var rows = br.sessions
         var ownedByOwner: [UUID: [Session]] = [:]
-        let ownerIDs = Set(rows.filter { $0.kind == .claudeCode }.map(\.id))
+        let ownerIDs = Set(rows.filter { $0.kind.isAgent }.map(\.id))
         rows.removeAll { row in
             guard let o = row.ownerSessionID, ownerIDs.contains(o) else { return false }
             ownedByOwner[o, default: []].append(row)
@@ -939,14 +978,15 @@ enum FeedbackMode {
         return "Delete this session? This also closes its \(what)."
     }
 
-    /// The comment ladder's spawn rung (CommentMode rung 3): a claude row created exactly
-    /// like `newClaude` but WITHOUT `open()` — the spawn is silent, focus stays on the
+    /// The comment ladder's spawn rung (CommentMode rung 3): an agent row created exactly
+    /// like `newAgent` but WITHOUT `open()` — the spawn is silent, focus stays on the
     /// browser pane. The caller mounts the row for a beat so its PTY boots
     /// (GhosttySurfaceView spawns on window attach), then returns to the browser.
     @discardableResult
-    func spawnClaude(in branch: Branch) -> Session? {
+    func spawnAgent(_ agent: AgentID, in branch: Branch) -> Session? {
         guard !branch.isPending else { return nil }
-        let session = Session(kind: .claudeCode, title: "Claude Code", status: .working)
+        let kind = SessionKind.agent(agent)
+        let session = Session(kind: kind, title: kind.tplStart, status: .working)
         branch.sessions.append(session)
         branch.lastActivity = "now"
         if let ws = workspace(of: branch) { expanded.insert(ws.id) }
@@ -989,7 +1029,7 @@ enum FeedbackMode {
         let seed = gripe + "\n\n" + captureFeedbackContext()
         let row = addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
         materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
-            self?.seedFeedbackClaude(in: branch, seed: seed)
+            self?.seedFeedbackAgent(in: branch, seed: seed)
         }) {
             GitService.addWorktree(repo: repo, path: planned, newBranch: branchName, base: nil)
                 .map { .failed($0) } ?? .ready(planned)
@@ -1013,11 +1053,12 @@ enum FeedbackMode {
         }
     }
 
-    /// Spawn a quiet Claude in the freshly-materialized branch, mount it for a beat so its PTY
+    /// Spawn a quiet agent in the freshly-materialized branch, mount it for a beat so its PTY
     /// boots (GhosttySurfaceView spawns on window attach), bounce focus back, then boot-and-wait
-    /// for the hook liveness signal and paste the seed — mirroring CommentMode rung 3.
-    private func seedFeedbackClaude(in branch: Branch, seed: String) {
-        guard let session = spawnClaude(in: branch) else { return }
+    /// for the supervisor's liveness signal and hand it the seed — mirroring CommentMode rung 3.
+    private func seedFeedbackAgent(in branch: Branch, seed: String) {
+        guard let agent = AgentRegistry.default?.id,
+              let session = spawnAgent(agent, in: branch) else { return }
         let previous = openSessionID
         open(session)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -1025,17 +1066,19 @@ enum FeedbackMode {
                   let previous, let back = self.session(previous) else { return }
             self.open(back)
         }
-        // SECURITY (CommentMode): only ever submit to a hook-confirmed-live Claude — pasting
-        // into a bare shell would be arbitrary execution. Poll ~20s, settle a beat, re-check.
+        // SECURITY (CommentMode): only ever submit to a supervisor-confirmed-live agent — an
+        // agent that never started leaves a bare shell, and Claude Code's delivery is a paste
+        // plus Enter, i.e. arbitrary execution. Poll ~20s, settle a beat, re-check.
         Task { [weak self] in
             for _ in 0..<40 {
                 try? await Task.sleep(for: .seconds(0.5))
-                guard let self, self.isLiveClaude(session.id) else { continue }
+                guard let self, self.isLiveAgent(session.id) else { continue }
                 try? await Task.sleep(for: .seconds(1))
-                guard self.isLiveClaude(session.id) else { continue }
-                if TerminalManager.shared.submit(seed, to: session.id) { return }
+                guard self.isLiveAgent(session.id),
+                      let supervisor = self.liveSupervisor(for: session) else { continue }
+                if supervisor.deliver(seed, to: session.id) { return }
             }
-            NSLog("Synth: feedback seed never delivered (Claude didn't report in)")
+            NSLog("Synth: feedback seed never delivered (agent didn't report in)")
         }
     }
 
@@ -1084,9 +1127,9 @@ enum FeedbackMode {
         if let s = openSession {
             let kind: String
             switch s.kind {
-            case .claudeCode: kind = "Claude Code"
-            case .terminal:   kind = "Terminal"
-            case .browser:    kind = "Browser"
+            case .agent:    kind = s.kind.tplStart
+            case .terminal: kind = "Terminal"
+            case .browser:  kind = "Browser"
             }
             lines.append("Here: \(kind) · \(branch(of: s)?.name ?? "—")")
         }
@@ -1347,7 +1390,7 @@ enum FeedbackMode {
         }
         let sessions = entries.enumerated().map { i, entry in
             Session(kind: entry.kind, title: entry.name,
-                    status: entry.kind == .claudeCode && i == 0 ? .working : .idle,
+                    status: entry.kind.isAgent && i == 0 ? .working : .idle,
                     titleIsCustom: entry.name != entry.kind.tplStart)
         }
         branch.sessions.append(contentsOf: sessions)
@@ -1381,14 +1424,16 @@ enum FeedbackMode {
                             sessions: br.sessions.map { s in
                                 PersistedSession(id: s.id, kind: s.kind.rawValue, title: s.title,
                                                  titleIsCustom: s.titleIsCustom,
-                                                 claudeSessionID: s.claudeSessionID,
+                                                 agentSessionID: s.agentSessionID,
                                                  browserURL: s.browserURL,
                                                  ownerSessionID: s.ownerSessionID)
                             },
                             browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents)
                     },
                     setupScript: wsScripts[ws.id],
-                    claudeFlags: wsClaudeFlags[ws.id],
+                    agentFlags: wsAgentFlags[ws.id].map { flags in
+                        flags.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value }
+                    },
                     // nil when empty: an empty workspace list means "inherit global",
                     // the same fact as having no list at all.
                     sessionTemplate: (wsSessionTemplates[ws.id]?.isEmpty ?? true)
@@ -1398,7 +1443,7 @@ enum FeedbackMode {
             // order is per-process nondeterministic) — the skip-if-unchanged check relies on it.
             expanded: expanded.sorted { $0.uuidString < $1.uuidString },
             globalScript: globalScript,
-            globalClaudeFlags: globalClaudeFlags,
+            globalAgentFlags: globalAgentFlags.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
             globalSessionTemplate: globalSessionTemplate
         )
     }
@@ -1413,16 +1458,16 @@ enum FeedbackMode {
     private func restore(from state: PersistedState) {
         var restored: [Workspace] = []
         var scripts: [UUID: String] = [:]
-        var flags: [UUID: String] = [:]
+        var flags: [UUID: [AgentID: String]] = [:]
         var templates: [UUID: [SessionTemplateEntry]] = [:]
         for pw in state.workspaces {
             guard !confirmedMissing(pw.url) else { continue }
-            let branches: [Branch] = pw.branches.compactMap { pb in
+            let branches: [Branch] = pw.branches.compactMap { pb -> Branch? in
                 guard !confirmedMissing(pb.worktreeURL) else { return nil }
                 let sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
-                            claudeSessionID: ps.claudeSessionID, browserURL: ps.browserURL,
+                            agentSessionID: ps.resumeID, browserURL: ps.browserURL,
                             ownerSessionID: ps.ownerSessionID)
                 }
                 // Scrub hostless recents (about:blank) recorded before the filter existed.
@@ -1434,16 +1479,18 @@ enum FeedbackMode {
             restored.append(Workspace(id: pw.id, name: pw.name, url: pw.url,
                                       branches: branches, colorIndex: pw.colorIndex))
             if let s = pw.setupScript { scripts[pw.id] = s }
-            if let f = pw.claudeFlags { flags[pw.id] = f }
+            if let f = pw.effectiveAgentFlags { flags[pw.id] = f }
             if let t = pw.sessionTemplate, !t.isEmpty { templates[pw.id] = t }
         }
         workspaces = restored
         wsScripts = scripts
-        wsClaudeFlags = flags
+        wsAgentFlags = flags
         wsSessionTemplates = templates
-        // Global settings: a nil (pre-settings snapshot) keeps the built-in default.
+        // Global settings: a nil (pre-settings snapshot) keeps the built-in default. A
+        // pre-agents snapshot carries only Claude's flags — merge, don't replace, or the
+        // other agents' defaults vanish.
         if let gs = state.globalScript { globalScript = gs }
-        if let gf = state.globalClaudeFlags { globalClaudeFlags = gf }
+        if let gf = state.effectiveGlobalAgentFlags { globalAgentFlags.merge(gf) { _, new in new } }
         if let gt = state.globalSessionTemplate { globalSessionTemplate = gt }
         let liveIDs = Set(restored.flatMap { ws in
             [ws.id] + ws.branches.flatMap { [$0.id] + $0.sessions.map(\.id) }

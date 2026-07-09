@@ -1,0 +1,1120 @@
+[
+  {
+    "area": "detection-lifecycle",
+    "mappings": [
+      {
+        "touchpoint": "PATH-shim claude interception (launch role)",
+        "ccDependency": "Claude entrypoint is a PATH-resolved `claude` binary you can shadow with an earlier same-named symlink; the shim re-execs the real binary with injected argv, distinguishing interactive launch from `-p` one-shots/subcommands that must pass through uninstrumented.",
+        "opencodeMechanism": "Global auto-loaded plugin dir `~/.config/opencode/plugin/` (and project `.opencode/plugin/`); alternatively Synth owns the process by launching `opencode` itself. No PATH shadowing needed.",
+        "approach": "Drop the whole PATH-shim idea. Instrumentation is achieved zero-config by placing a Synth plugin in `~/.config/opencode/plugin/` — it auto-loads into EVERY opencode process (TUI, `opencode run`, `serve`) in any cwd, no symlink/argv0 trick, no re-exec. Synth still spawns `opencode` in the PTY (optionally with `--port`/`--hostname` so it can also subscribe over HTTP). Because the plugin only fires events, there is no interactive-vs-oneshot pass-through hazard to police. This is strictly simpler and safer than shadowing a binary on PATH.",
+        "feasibility": "adaptation",
+        "gap": "No binary-interception mechanism (and none needed). One behavioral difference: a global plugin instruments ALL opencode invocations including a user's own scripted `opencode run`; harmless (events only) but not opt-out per-invocation the way the shim skips `-p`. If Synth wants to instrument only its own launches, prefer the serve/launch-owned-process path over the global plugin.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "Inline --settings hook injection",
+        "ccDependency": "Claude's `--settings <inline-json>` flag carrying a `hooks` map (event-name -> matcher/command groups) injected at exec with zero on-disk config.",
+        "opencodeMechanism": "Plugin auto-discovery (no registration needed) + config merge via `OPENCODE_CONFIG_CONTENT` env (inline JSON, highest precedence) or `OPENCODE_CONFIG` path.",
+        "approach": "Hooks are not passed as data on a flag — they are a JS plugin module that opencode discovers on disk and loads. So instead of building/injecting a JSON blob per launch, Synth ships a static plugin file once (global dir) that exports the `event`/`tool.execute.*`/`permission.ask` handlers. If any inline config IS needed (e.g. force a small_model for titles, set permission defaults, register the browser MCP for that launch only), Synth sets `OPENCODE_CONFIG_CONTENT` in the PTY env with an inline JSON object — the documented highest-precedence inline config that merges over the user's files. No worktree files written either way.",
+        "feasibility": "adaptation",
+        "gap": "There is no per-launch flag that carries executable hook logic; hook behavior lives in a plugin file that must exist on disk (installed once by Synth). Truly ephemeral per-launch hook logic isn't a thing — but `OPENCODE_CONFIG_CONTENT` covers per-launch config injection.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/config/"
+        ]
+      },
+      {
+        "touchpoint": "Hook-event -> SessionStatus mapping (working/idle/needs-input/error)",
+        "ccDependency": "Exact Claude hook event names + firing semantics: UserPromptSubmit->working, Stop->idle, StopFailure->error, PostToolUse->working, PermissionRequest/Notification->needs-input; SubagentStop deliberately unregistered.",
+        "opencodeMechanism": "Event bus / `/event` SSE stream (also deliverable via the plugin `event` hook): `session.status`, `session.idle`, `session.error`, `message.updated` / `message.part.updated`, `permission.asked` / `permission.replied` (plugin `permission.ask` hook), `tool.execute.before`/`after`.",
+        "approach": "Map onto real named lifecycle events instead of shell-command hooks: working = `chat.message` / first `message.part.updated` / `session.status` busy after a prompt; idle = `session.idle` (explicit 'agent finished responding'); error = `session.error`; needs-input = `permission.asked` (or the `permission.ask` hook) and cleared by `permission.replied`. This is a genuine typed event stream — richer and better-defined than Claude's hook names, with no `--dangerously-skip` special-casing and no ambiguity about firing. Subagent filtering is available: session events carry `parentID` (present on `session.created`/`session.updated`) so Synth can ignore child/subagent sessions rather than relying on 'don't register SubagentStop'.",
+        "feasibility": "direct",
+        "gap": "No single event literally named 'working'; Synth derives it from `session.status`/`message.part.updated`/`chat.message` (trivial). Note (per issue #30043) `session.status` omits `parentID`, so subagent discrimination must key off `session.created`/`session.updated` which do carry it.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/server/",
+          "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/plugin/src/index.ts",
+          "https://github.com/anomalyco/opencode/issues/30043"
+        ]
+      },
+      {
+        "touchpoint": "SessionStart/SessionEnd -> attach/detach lifecycle",
+        "ccDependency": "Claude fires SessionStart at begin and SessionEnd at end over the same hook pipe, including on `/clear`; Synth flips row kind and liveness on these.",
+        "opencodeMechanism": "`session.created` / `session.updated` / `session.idle` (attach + activity), `session.deleted` / `session.compacted` (end/clear-like), all over `/event` or the plugin `event` hook; `server.connected` as the stream-open signal.",
+        "approach": "Attach when the first `session.created` (or `server.connected` + a live session) arrives for the process Synth spawned; mark the row opencode-kind then. Detach on `session.deleted` or on PTY child exit. The `/clear` analog is `session.compacted` (or a new `session.created`) rather than an end/start pair. Because Synth owns the server/process, liveness is anchored to the transport itself (SSE connected + session present) — a stronger 'is this live right now' fact than Claude's start/end pipe.",
+        "feasibility": "direct",
+        "gap": "opencode has no single event named SessionEnd; end is inferred from `session.deleted` and/or process/stream teardown. `/clear` maps to compaction/new-session semantics, not a symmetric end+start, so the Store guard logic needs restating in opencode terms.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "--dangerously-skip-permissions needs-input fallback",
+        "ccDependency": "Under skip-permissions Claude suppresses PermissionRequest but still fires PreToolUse for AskUserQuestion/ExitPlanMode; relies on PreToolUse matcher alternation + PostToolUse clearing.",
+        "opencodeMechanism": "`question` permission key + the ask/plan agents; `--auto` auto-approval flag; `tool.execute.before`/`after` hooks; `permission.asked` event.",
+        "approach": "Even with `--auto` (opencode's skip-permissions analog), a model that explicitly asks the user goes through the dedicated `question` tool/permission, which is distinct from tool-execution approvals. So needs-input can be detected from `permission.asked` for `question` (or a `tool.execute.before` where `tool === 'question'`) and cleared on the matching `permission.replied` / `tool.execute.after`. Cleaner than Claude's two-tool matcher hack because 'ask the user' is a first-class tool rather than a special-cased permission suppression.",
+        "feasibility": "adaptation",
+        "gap": "Unverified whether `--auto` still surfaces the `question`/plan interaction as a `permission.asked` event vs auto-approving it silently; if `--auto` swallows it, Synth would fall back to `tool.execute.before` on the `question` tool. Exact behavior needs a runtime check.",
+        "effort": "M",
+        "confidence": "low",
+        "sources": [
+          "https://opencode.ai/docs/permissions/",
+          "https://opencode.ai/docs/agents/",
+          "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/plugin/src/index.ts"
+        ]
+      },
+      {
+        "touchpoint": "Unix-socket transport + SYNTH_SESSION_ID env correlation",
+        "ccDependency": "Hook subprocesses inherit the PTY env so injected SYNTH_* vars reach them; Synth binds /tmp/synth-hook-<pid>.sock and routes by SYNTH_SESSION_ID because there is no Claude-side correlation id.",
+        "opencodeMechanism": "HTTP server `/event` Server-Sent-Events stream consumed via `@opencode-ai/sdk` (`client.event.subscribe()`); native `sessionID` on every event; per-instance `--port`/`--hostname` or random-port server.",
+        "approach": "Replace the hand-rolled unix socket entirely with opencode's real event stream: one `opencode` process per PTY, launched with a known `--port`/`--hostname` (or read the random port), and Synth subscribes to `/event`. Every event already carries the native `sessionID`, so correlation is intrinsic — no injected SYNTH_SESSION_ID needed. If Synth prefers not to open a port, the alternative transport is the in-process plugin `event` hook writing to a socket (1:1 with today), but the SSE stream is the better path: typed, ordered, no bespoke framing. Routing to the right sidebar row is 1 server-instance <-> 1 row (or by sessionID within a shared server).",
+        "feasibility": "direct",
+        "gap": "None functionally; it's a superior transport. Minor: to subscribe over HTTP Synth must know the port (pass `--port`, or use the plugin transport to avoid port discovery). opencode DOES expose `OPENCODE_SESSION_ID` to child processes if an env-based correlation is still wanted.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/sdk/",
+          "https://github.com/anomalyco/opencode/issues/9292"
+        ]
+      },
+      {
+        "touchpoint": "Clean close on claude exit (exec + socket-carried exit code)",
+        "ccDependency": "`exec claude` makes claude's exit the PTY child exit; macOS `login` zeroes the code so the shim spawns claude as a child and reports the true exit code over the socket; treats 0/130/143 as clean.",
+        "opencodeMechanism": "PTY child exit of the `opencode` process (exit status directly observable); `session.deleted` / stream teardown as session-end signals; `--auto`/normal foreground process semantics.",
+        "approach": "Synth launches `opencode` as the foreground PTY process directly (no `exec` under `login`), so its exit status is already meaningful and reaches Synth unmangled — the whole 'login zeroes the code, spawn-a-child-and-report-over-socket' workaround disappears. Clean-quit vs error is decided from opencode's real exit code plus whether the last session ended via `session.deleted`/idle vs `session.error`. If Synth keeps a launcher wrapper it can still forward the code, but the driving reason for it is gone.",
+        "feasibility": "direct",
+        "gap": "Signal-handling nuance (shim outliving SIGINT/SIGQUIT to still report) only mattered because of the exec+login+socket design; needs re-derivation, but is simpler here. Confirm which exit codes opencode uses for clean quit vs interrupt.",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "Claude session-id capture + --resume restore",
+        "ccDependency": "Every hook payload carries `session_id`; `claude --resume <id>` (and -r/-c) reattaches; --session-id and --resume are mutually exclusive.",
+        "opencodeMechanism": "Native `sessionID` on every event / SDK object; persisted server-side; resume via `opencode --session <id>` / `-s` and `--continue`/`-c` (and `opencode session list`); TUI attach to an existing session.",
+        "approach": "Capture the native `sessionID` from the first event (no need to mint one; opencode generates and persists it). On app restart, restore by launching `opencode` with `--session <id>` (or `run -s <id>` for headless), or by attaching the TUI to the still-running server and selecting the session. Sessions are durable server-side and enumerable via `session list --format json`, so restore is more robust than typing `exec claude --resume` into a shell. The mutually-exclusive-flags concern doesn't apply since Synth never mints a custom id.",
+        "feasibility": "direct",
+        "gap": "Interactive TUI resume-by-id flag semantics are slightly less documented than `run -s`; verify that launching the TUI (not `run`) with `-s <id>` reopens that conversation. Custom/predetermined session ids at creation are not clearly supported (server generates them) — a non-issue given native persistence.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/sdk/"
+        ]
+      },
+      {
+        "touchpoint": "Live-Claude gate for safe comment/seed delivery",
+        "ccDependency": "liveClaudeIDs asserted only by the hook seam (SessionStart / any payload session_id), cleared on end/exit; a persisted `.claudeCode` kind is not trusted; gate before pasting text into the TUI.",
+        "opencodeMechanism": "Server reachability + live `sessionID` from `/event`; `session.prompt` (SDK/`POST /session/:id/message`, with `noReply` for context injection) or `tui.appendPrompt` + `tui.submitPrompt`.",
+        "approach": "Liveness = the opencode server for that PTY is reachable AND a non-deleted session is present on the stream (positively confirmed by `session.status`/`session.idle`/`session.created`), never inferred from a persisted kind — same discipline as today, but anchored to a real API. Crucially, delivering a browser comment/seed no longer means blind-pasting into a shell: Synth calls `session.prompt`/`session/:id/message` (or `tui.submitPrompt`) against the server, so a failed resume that dropped to a bare shell simply has no server/session to accept the call — the 'arbitrary shell execution' risk is structurally removed, not just gated.",
+        "feasibility": "direct",
+        "gap": "None material; the API-delivery path is safer than paste-and-submit. If Synth still injects via the PTY (typing into the TUI) rather than the API, the original gating discipline still applies.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "Inherited Claude-Code env-marker scrubbing",
+        "ccDependency": "Claude sets CLAUDECODE / CLAUDE_CODE_* markers in child env; CLAUDE_CODE_CHILD_SESSION makes a nested claude behave as a crippled subagent, so Synth unsets them at PTY spawn.",
+        "opencodeMechanism": "opencode sets `OPENCODE`, `AGENT`, `OPENCODE_SESSION_ID`, `OPENCODE_SESSION_TITLE` in child/tool process env (set per-spawn / at middleware).",
+        "approach": "Exact same defense, renamed targets: when Synth spawns an opencode PTY it strips inherited `OPENCODE`, `AGENT`, `OPENCODE_SESSION_ID`, `OPENCODE_SESSION_TITLE` (and any `OPENCODE_*`) from the environment so a Synth launched from inside another opencode session starts a clean top-level session rather than a nested/subagent one. One-line change to the existing scrub list.",
+        "feasibility": "direct",
+        "gap": "Need to confirm opencode's full marker set and whether any single var forces subagent/child semantics the way CLAUDE_CODE_CHILD_SESSION does; scrubbing the whole `OPENCODE_*` prefix is the safe superset.",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://github.com/anomalyco/opencode/issues/9292",
+          "https://deepwiki.com/tencent-source/opencode/5.3-environment-variables"
+        ]
+      },
+      {
+        "touchpoint": "Detection-availability gating & real-claude resolution",
+        "ccDependency": "Requires resolving the real `claude` past Synth's own shim (avoid E2BIG self-exec), across npm/homebrew/native install layouts, and re-asserting shim PATH priority against zprofile/zshrc rebuilds; degrades to no-op if absent.",
+        "opencodeMechanism": "Resolve the `opencode` binary on PATH (single install); plugin auto-load or server reachability as the availability signal. No shim, so no self-exec/PATH-priority problem.",
+        "approach": "Availability collapses to: is `opencode` on PATH (and, if using the server path, does it start/serve). Because Synth doesn't shadow the binary, the entire class of shim-vs-real disambiguation, E2BIG self-exec, and .zshrc/path_helper PATH-priority re-assertion disappears. Degradation to a plain terminal is just 'opencode not found -> run the shell normally', same end state, far less machinery.",
+        "feasibility": "direct",
+        "gap": "None from the shim side; loss is only theoretical (no zero-config binary shadowing). If Synth relies on a global plugin, it must ensure the plugin file is installed to `~/.config/opencode/plugin/` (an install step Claude's PATH-shim also effectively needed).",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "preferredNotifChannel silencing",
+        "ccDependency": "Claude honors settings key `preferredNotifChannel: notifications_disabled` to suppress its built-in terminal/OSC notifications so Synth's derived ones don't double-fire.",
+        "opencodeMechanism": "opencode TUI notification settings (config) and `tui.toast.show` event; no documented exact 1:1 'disable all notifications' key surfaced.",
+        "approach": "Silence opencode's own notifications via config (TUI notification settings) so only Synth's derived notifications fire, mirroring the intent. Since Synth derives status from the event stream, it can also simply ignore/pass-through opencode's `tui.toast.show` rather than suppress at source. Exact config key for full suppression needs confirmation.",
+        "feasibility": "adaptation",
+        "gap": "No confirmed single config key equivalent to `notifications_disabled`; opencode's notification model is TUI-centric (toasts/OS notifications) and may need per-channel disabling or just be tolerated. Low stakes.",
+        "effort": "S",
+        "confidence": "low",
+        "sources": [
+          "https://opencode.ai/docs/config/",
+          "https://opencode.ai/docs/tui/"
+        ]
+      },
+      {
+        "touchpoint": "ai-title transcript scraping + title reset",
+        "ccDependency": "Claude writes `ai-title` records into the `transcript_path` JSONL and includes it on hook payloads; SessionStart `source` (startup/clear vs resume/compact) drives keep-vs-reset of the title.",
+        "opencodeMechanism": "Native auto-title: built-in hidden title agent generates a session title from the first user message using `small_model`; title stored on `Session.title`, readable via `session.get` / `session.updated` event, settable via `session.update`.",
+        "approach": "Drop the JSONL scraping entirely. opencode auto-generates the session title server-side and exposes it as a structured field — Synth just reads `Session.title` (or listens for `session.updated`) to name the row, and can even set/override it via `session.update`. Reset semantics map to a new `session.created` / compaction rather than parsing a `source` field. This is far cleaner than tailing a transcript file for the last `ai-title` line.",
+        "feasibility": "direct",
+        "gap": "Auto-title only fires if a `small_model` is configured and reachable (can fail silently, per issue #9902), and it typically fires once after the first message rather than as a continuously-evolving title — so Synth loses the 'short evolving title' behavior and gets a one-shot title (which it can override). Configure `small_model` (e.g. a Haiku) to guarantee titles.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/config/",
+          "https://github.com/anomalyco/opencode/issues/9902"
+        ]
+      },
+      {
+        "touchpoint": "User --settings deep-merge preservation",
+        "ccDependency": "Claude accepts one --settings whose `hooks` map must be additively merged with the user's inline/file settings so Synth doesn't clobber the user's hooks.",
+        "opencodeMechanism": "opencode config is discovered from multiple layered sources and merged (non-conflicting keys merge, later sources override); plugins are additive by nature (multiple plugin files coexist).",
+        "approach": "The clobber risk is designed out. Synth's instrumentation is a separate plugin file and/or a distinct config source (`OPENCODE_CONFIG_CONTENT`), and opencode merges all config sources natively rather than honoring only one blob — the user's `opencode.json` hooks/MCP/permissions keep firing alongside Synth's. No manual deep-merge of hook arrays to hand-write; concatenation of plugin handlers is automatic because each plugin loads independently.",
+        "feasibility": "direct",
+        "gap": "If Synth uses `OPENCODE_CONFIG_CONTENT` (highest precedence) it must set additive keys carefully so it doesn't override a user scalar; but hooks-as-plugins avoid config collisions entirely. No real gap.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/config/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "Per-Synth-instance claudeFlags on launch",
+        "ccDependency": "Claude accepts arbitrary CLI flags after `claude` (user's own tokens), notably `--dangerously-skip-permissions` paired with the PreToolUse needs-input fallback.",
+        "opencodeMechanism": "opencode CLI flags: `--auto` (auto-approve), `--agent`, `--model`/`-m`, `--session`/`-s`, plus per-workspace `opencode.json` (`permission`, `default_agent`, `model`).",
+        "approach": "Same pattern: append the workspace/global default opencode flags to the launched `opencode` invocation. The `--dangerously-skip-permissions` analog is `--auto` (or a `permission` config of all-allow); model/agent defaults map to `-m`/`--agent` or config keys. Flags are the user's own opencode tokens, forwarded verbatim, exactly as today.",
+        "feasibility": "direct",
+        "gap": "Flag vocabulary differs (opencode has no identical `--dangerously-skip-permissions`; use `--auto` or a permissions config). Straight rename of the defaults Synth stores.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/permissions/"
+        ]
+      }
+    ]
+  },
+  {
+    "area": "naming-title",
+    "mappings": [
+      {
+        "touchpoint": "ai-title read from transcript JSONL",
+        "ccDependency": "Claude Code generates a conversation title and persists it as a typed {\"type\":\"ai-title\",\"aiTitle\":\"...\"} line in its transcript JSONL; readAITitle tails the file for that record shape.",
+        "opencodeMechanism": "Session.title field on the Session object, populated by opencode's hidden 'title' agent (small_model). Read it via the session.updated bus event (properties {info: Session}), SDK event.subscribe()/session.get(), or GET /session/:id.",
+        "approach": "Drop the JSONL tail-scan entirely. opencode already produces an LLM-generated 5-10 word title per session and exposes it as first-class structured data. Synth reads session.updated.info.title (event-driven) or session.get(id).title (pull), no file parsing and no record-shape contract to depend on. Strictly better than the ai-title JSONL contract.",
+        "feasibility": "direct",
+        "gap": "Behavioral: opencode generates the title once on the first user message (ensureTitle early-returns unless isDefaultTitle), so it does not evolve every turn the way Claude's ai-title can. A community plugin or a custom 'regenerate on idle' hook would be needed if Synth wants an evolving title.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/server/",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/prompt.ts",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/sdk/js/src/gen/types.gen.ts",
+          "https://github.com/anomalyco/opencode/issues/17631"
+        ]
+      },
+      {
+        "touchpoint": "transcript_path from hook payload",
+        "ccDependency": "Claude Code supplies transcript_path in every hook payload pointing at the on-disk ~/.claude/projects/... transcript, so Synth knows which file to read the ai-title from.",
+        "opencodeMechanism": "Session id. Every opencode event and API object carries sessionID / info.id; the title lives on that session record. No file path needed.",
+        "approach": "Obsolete under opencode. There is no transcript file to locate: the session id is the stable handle and the title is attached to the Session object. Synth maps a sidebar row to a session id (from session.created / the id it created via POST /session or the id the embedded TUI reports) and reads title off events for that id.",
+        "feasibility": "direct",
+        "gap": "None functionally; the whole 'find the transcript file' concern disappears because titles are structured data keyed by session id rather than a file on disk.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/sdk/js/src/gen/types.gen.ts",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts"
+        ]
+      },
+      {
+        "touchpoint": "title line to socket -> .titleChanged reducer",
+        "ccDependency": "Claude Code fires hooks repeatedly across a turn; synth-hook re-reads the newest ai-title each fire and pushes it over a unix socket, which HookServer turns into a .titleChanged(id,title) bus event and the Store reducer writes onto the row.",
+        "opencodeMechanism": "session.updated event on the server /event SSE stream (also delivered to plugin 'event' hooks and SDK event.subscribe()), emitted by Session.patch() -> events.publish(Session.Event.Updated,{sessionID,info}) whenever setTitle runs.",
+        "approach": "Replace the PATH-shim + synth-hook + unix-socket transport with a single long-lived subscription to opencode's /event stream (or an in-process plugin 'event' handler). On session.updated where info.id maps to a row, set the row title to info.title (unless frozen). The event bus is a real push channel, so no polling/hook-fire trick is needed to keep the row current; Synth keeps its own .titleChanged reducer but feeds it from the SSE stream instead of a socket line.",
+        "feasibility": "direct",
+        "gap": "Transport differs (SSE stream vs bespoke socket) and the title updates only when opencode actually changes it (primarily the one-shot generation), not on every turn. Synth must run/point at an opencode server and hold the subscription; the multi-fire re-forward pattern is neither available nor needed.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/server/",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/sdk/js/src/gen/types.gen.ts"
+        ]
+      },
+      {
+        "touchpoint": "titleReset on fresh SessionStart (startup/clear)",
+        "ccDependency": "Claude Code's SessionStart hook carries a source discriminator (startup/clear/resume/compact); synth-hook branches on those exact strings to reset the row to the neutral default only for a genuinely-new conversation, keeping the title on resume/compact.",
+        "opencodeMechanism": "Session identity + distinct lifecycle events: session.created (new/cleared conversation gets a fresh session id with a default title 'New session - <ISO>'), session.compacted (compaction), plus isDefaultTitle() to recognise the neutral state. No single 'source' string field.",
+        "approach": "Instead of interpreting a source discriminator on one reused session, rely on opencode giving each conversation its own session id: a new/cleared conversation surfaces as session.created with a title that isDefaultTitle() reports true, which Synth renders as its neutral label until the generated title arrives. A resumed conversation reuses its existing id and already-set title, so nothing to reset; session.compacted keeps the same id and title. Synth maps its 4-way branch onto (event type + isDefaultTitle) rather than a string.",
+        "feasibility": "adaptation",
+        "gap": "No direct startup/clear/resume/compact enum. Synth must reconstruct the same intent from event types (session.created vs compacted vs resuming an existing id) and the isDefaultTitle predicate, and decide how a Synth 'row' maps to a possibly-changing opencode session id when the user starts a new conversation in place.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/prompt.ts"
+        ]
+      },
+      {
+        "touchpoint": "child-session env scrub enables ai-titles",
+        "ccDependency": "Claude Code demotes a claude process to a transcript-less child when it inherits CLAUDE_CODE_*/CLAUDECODE markers (esp. CLAUDE_CODE_CHILD_SESSION=1); Synth unsetenvs those so spawned claudes become top-level, write a transcript, and generate an ai-title.",
+        "opencodeMechanism": "Explicit parentID field on Session (children created via POST /session with parentID / server-managed sub-agent sessions). No inherited-env-marker demotion model; a freshly launched opencode process/session is top-level by construction.",
+        "approach": "The env-scrub problem does not exist on opencode. There is no CLAUDE_CODE_CHILD_SESSION-style environment contract that silently demotes a session; child/sub-agent sessions are first-class records distinguished by parentID (and default-titled 'Child session - <ISO>'). Synth simply filters row-naming to top-level sessions (parentID == null / undefined) instead of scrubbing environment variables. If Synth wants only top-level titles it ignores session.updated for sessions with a parentID.",
+        "feasibility": "gap",
+        "gap": "The specific mechanism (unsetenv of CC markers) has no analog and is unnecessary, but Synth must instead add parentID-based filtering. Unverified whether opencode runs the title agent for child sessions; regardless, filtering by parentID makes it moot.",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/sdk/js/src/gen/types.gen.ts",
+          "https://opencode.ai/docs/agents/"
+        ]
+      },
+      {
+        "touchpoint": "titleIsCustom freezes hand-picked names",
+        "ccDependency": "Synth-owned flag that gates .titleChanged/.titleReset so a hand-picked name is not overwritten by the CC ai-title stream; resetSessionName clears it to hand control back to ai-title.",
+        "opencodeMechanism": "Built-in: Session.setTitle (PATCH /session/:id or SDK) writes a title; ensureTitle in prompt.ts early-returns when !isDefaultTitle(session.title), so any non-default title (a manual rename) permanently suppresses auto-generation.",
+        "approach": "opencode natively implements the freeze semantics Synth hand-rolled: a manual rename sets a non-default title, and the title agent then refuses to overwrite it because isDefaultTitle is false. Synth's rename simply calls setTitle; auto-naming stops server-side. 'Reset to default' is implemented by writing a title back into the default format (or Synth keeps a thin local isCustom flag layered over its own neutral-label rendering) so isDefaultTitle becomes true and the agent can regenerate.",
+        "feasibility": "adaptation",
+        "gap": "No explicit 'un-freeze / regenerate' API; re-enabling auto-gen requires re-establishing a default-format title (opencode currently generates only once, so even that would not re-fire without a plugin). Synth likely keeps a small local isCustom flag anyway to distinguish its neutral placeholder from opencode's timestamp default.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/prompt.ts",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "neutral \"Claude Code\" default name",
+        "ccDependency": "Placeholder 'Claude Code' shown before any ai-title exists and used as the titleReset fallback, bridging the empty-transcript window.",
+        "opencodeMechanism": "opencode's own default title is 'New session - <ISO>' / 'Child session - <ISO>', detectable via isDefaultTitle(); Synth substitutes its own neutral label when that predicate is true.",
+        "approach": "Synth-side rendering choice. When isDefaultTitle(info.title) is true (no generated title yet), render Synth's neutral label ('opencode' or similar) instead of opencode's raw timestamp default; render info.title once a real one arrives. This preserves the exact bridge behavior with a one-line predicate rather than a literal fallback string.",
+        "feasibility": "direct",
+        "gap": "opencode's raw default is an ISO-timestamped string, not a pretty label, so Synth must map default-detected titles to its own placeholder rather than displaying opencode's default verbatim.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/prompt.ts"
+        ]
+      },
+      {
+        "touchpoint": "claude excluded from per-command terminal titling",
+        "ccDependency": "The injected zsh preexec reporter returns early for the `claude` command word so the coarse 'name row after running command' path yields the row to Claude's ai-title pipeline.",
+        "opencodeMechanism": "Same preexec mechanism, just gate on the `opencode` command word (strip leading `exec `). If Synth drives opencode via its server/SDK rather than a bare PTY command, the terminal auto-namer never competes at all.",
+        "approach": "Rename the excluded token from `claude` to `opencode` in the preexec reporter so the session-title pipeline owns the row. Under a server-driven model (opencode serve + SDK), the row is bound to a session id and titled from session.updated, so the per-command titling path is bypassed entirely and this exclusion may become unnecessary.",
+        "feasibility": "direct",
+        "gap": "Only the matched command word changes; conceptually identical. Fully obviated if Synth stops launching opencode as a raw shell command and uses the server instead.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "title / titleIsCustom persisted across restart",
+        "ccDependency": "PersistedSession snapshots s.title and s.titleIsCustom so a restored row comes back with its last ai-title/hand-picked name and freeze state without waiting for Claude to regenerate.",
+        "opencodeMechanism": "opencode persists titles server-side in its own SQLite session store; GET /session (SDK session.list) / GET /session/:id return the current title on reconnect, and isDefaultTitle() derives whether it is custom vs auto.",
+        "approach": "opencode is the source of truth: on restart Synth reconnects to the server and reads each mapped session's title via session.list()/get() rather than snapshotting it locally. The custom-vs-default distinction is recoverable from isDefaultTitle(title). Synth may still persist its own row->sessionID mapping (and optionally a local isCustom flag for its neutral-label rendering), but title text no longer needs local persistence.",
+        "feasibility": "direct",
+        "gap": "Requires the opencode server/session store to survive across Synth restarts (or Synth re-attaching to persisted session ids). Synth must persist the row->sessionID association; the title itself is read back from opencode instead of from PersistedSession.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/sdk/",
+          "https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "area": "mcp-browser-driving",
+    "mappings": [
+      {
+        "touchpoint": "Per-worktree .mcp.json registration",
+        "ccDependency": "Claude Code's project-scoped .mcp.json discovery at the worktree root, with the mcpServers.<name>.command/args stdio schema and its trust/enable prompt, auto-loaded without a CLI flag.",
+        "opencodeMechanism": "opencode.json / opencode.jsonc top-level `mcp` key; local stdio server shape `{ \"type\": \"local\", \"command\": [\"node\", \"…/server.mjs\"], \"enabled\": true, \"environment\": {…}, \"cwd\": \"…\" }`. Project config is auto-discovered by starting at cwd and traversing up to the nearest git dir; global (~/.config/opencode) and project configs are merged, not replaced.",
+        "approach": "Same idea, different file+schema: write a per-worktree opencode.jsonc at the worktree root instead of .mcp.json. Keep the merge-preserving, sorted-key, atomic, skip-if-byte-equal write. Three schema deltas to handle: key is `mcp` not `mcpServers`; `command` is a single array `[\"node\", \"server.mjs\"]` not command+args; each entry needs `type: \"local\"`. Bonus vs CC: you can bake `environment` and `cwd` straight into the entry (see scoping touchpoint), so registration also carries scope. Every managed worktree is itself a git dir, so opencode's git-root traversal lands on the worktree root as desired.",
+        "feasibility": "adaptation",
+        "gap": "No drop-in .mcp.json; must emit opencode's `mcp` schema (array command, type:local). Global+project merge means a same-named server in global config could shadow/merge — namespace defensively. Unclear whether opencode gates project-config MCP behind a trust prompt the way CC gates project-scope servers (docs don't mention one); if it does, first-run enablement may need handling.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/mcp-servers/",
+          "https://opencode.ai/docs/config/"
+        ]
+      },
+      {
+        "touchpoint": "Bundled stdio MCP server (SDK + transport)",
+        "ccDependency": "Claude Code acting as an MCP client that spawns a stdio child (node server.mjs), performs the MCP handshake, and surfaces its tools to the model.",
+        "opencodeMechanism": "opencode is an MCP client that launches `type:\"local\"` servers as stdio children via the same Model Context Protocol JSON-RPC handshake (`command` array executed as a child process).",
+        "approach": "server.mjs is reused essentially unchanged — @modelcontextprotocol/sdk McpServer + StdioServerTransport speak vanilla MCP, which opencode consumes identically. Keep the stable install path under ~/Library/Application Support/Synth/browser-mcp/; the opencode.jsonc entry just points at it. Only the surfaced tool-name prefix changes (see next touchpoint).",
+        "feasibility": "direct",
+        "gap": "None at the transport/handshake level — stdio MCP is portable across both harnesses.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/mcp-servers/"
+        ]
+      },
+      {
+        "touchpoint": "13 browser_* tools with optional sessionId",
+        "ccDependency": "Claude Code invoking tools by the `mcp__<server>__<tool>` name, passing JSON args per inputSchema, and rendering text + base64-image content blocks; relies on tool descriptions to prompt the model to pass sessionId.",
+        "opencodeMechanism": "opencode surfaces MCP tools to the model (namespaced by server) and renders text and image content parts. Alternatively, plugins can define native custom tools via the `tool()` helper whose `execute(args, context)` gets `{ agent, sessionID, messageID, directory, worktree }`.",
+        "approach": "As a straight MCP port the 13 tools work unchanged; only the name prefix differs — opencode namespaces MCP tools as `<server>_<tool>` (e.g. `synth-browser_browser_navigate`) rather than CC's `mcp__synth-browser__browser_*`, so update any hardcoded tool-name references, allow-lists, or permission globs (`\"synth-browser*\"`). Image screenshot results map to opencode image content parts. Better path: reimplement the verbs as opencode plugin custom tools, which lets each call read `context.sessionID` directly and drop the optional sessionId param (see shared-focus touchpoint).",
+        "feasibility": "direct",
+        "gap": "Tool-name prefix format differs (`server_tool` vs `mcp__server__tool`); any code matching the CC naming must change. Exact separator (underscore) is high-likelihood but not 100% pinned from docs.",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/mcp-servers/",
+          "https://opencode.ai/docs/custom-tools/"
+        ]
+      },
+      {
+        "touchpoint": "CLAUDE_PROJECT_DIR instance/worktree scoping",
+        "ccDependency": "Claude Code exporting CLAUDE_PROJECT_DIR (session project root) into every stdio MCP child's env; sole signal binding the server to the right worktree/instance.",
+        "opencodeMechanism": "The MCP entry's `environment` and `cwd` config keys inject arbitrary env vars and a working dir into the stdio child. For plugin/native paths, tool.execute hooks and custom-tool context expose `directory` and `worktree`.",
+        "approach": "Stronger than CC: don't depend on the harness implicitly exporting a project-dir env. When writing the per-worktree opencode.jsonc, set `environment: { \"SYNTH_WORKTREE\": \"<abs worktree path>\" }` (and/or `cwd`) explicitly, and have server.mjs read that instead of CLAUDE_PROJECT_DIR. Deterministic and self-documenting — the scope travels with the registration. The existing realpath/deepest-ancestor matching against instance files stays; only the env source changes.",
+        "feasibility": "direct",
+        "gap": "None functionally — arguably better. Requires swapping the read from CLAUDE_PROJECT_DIR to the Synth-injected env/cwd. (opencode does still set the child cwd, so cwd fallback also works.)",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/mcp-servers/",
+          "https://opencode.ai/docs/custom-tools/"
+        ]
+      },
+      {
+        "touchpoint": "One server serves a claude session AND its sub-agents (shared focus)",
+        "ccDependency": "Claude Code's contract that sub-agents (Task tool) reuse the parent's MCP connection and that MCP tool calls carry no per-agent caller identity — forcing the sessionId-everywhere API to disambiguate concurrent drivers.",
+        "opencodeMechanism": "Sub-agents run as child sessions with their own sessionID (linked by parentID). Plugin `tool.execute.before`/`tool.execute.after` hooks receive `{ tool, sessionID, callID }`; custom-tool `execute` context receives `{ agent, sessionID, messageID }`. So opencode always knows which session issued a tool call.",
+        "approach": "Meaningful improvement over CC's identity-blind model. Two routes: (a) keep the external MCP server but ship a small Synth opencode plugin that hooks `tool.execute.before`, reads `sessionID`, and sets per-session browser focus so concurrent agents auto-target their own browser — no explicit param needed; (b) reimplement the verbs as plugin custom tools where `context.sessionID` is in hand at execute time. Either eliminates the process-wide-focus contention the sessionId param exists to work around. Caveat: a raw stdio MCP server still can't see caller identity in the tool ARGS (MCP has no such field) — the identity lives on the opencode side, so bridging it requires the plugin/context path, not the MCP process alone. Keep the explicit sessionId param as a fallback for the pure-MCP config.",
+        "feasibility": "adaptation",
+        "gap": "Caller identity is not injected into MCP tool args; obtaining per-call sessionID requires an opencode plugin hook or a native custom tool (more moving parts than a self-contained stdio server, but far cleaner semantics than CC's guess-from-descriptions contract).",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/agents/",
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/custom-tools/"
+        ]
+      },
+      {
+        "touchpoint": "SYNTH_SESSION_ID inheritance for browser ownership stamping",
+        "ccDependency": "Two-link chain: PATH launch-shim mints the Synth row id and exports SYNTH_SESSION_ID into the claude process, then Claude passes its env through to stdio MCP children. Breaks if the harness strips env for MCP children.",
+        "opencodeMechanism": "sessionID is first-class: available in custom-tool `context.sessionID` and in `tool.execute.before` input; and when Synth creates sessions via the server/SDK, `session.create()` returns the id up front. No launch-shim or env inheritance is involved.",
+        "approach": "Replace the fragile shim→env→MCP-child chain with opencode's native sessionID. If Synth drives sessions through the SDK/server it already holds each session id at creation, so browser_create's owner = the calling context's sessionID (custom tool) or the tool.execute.before sessionID (plugin hook). Deletes SYNTH_SESSION_ID entirely and the env-stripping failure mode.",
+        "feasibility": "adaptation",
+        "gap": "Only if browser stays a raw external MCP server with no accompanying plugin: the config `environment` key is static per-worktree, so it can't carry a per-session owner id — per-session ownership then requires the plugin-hook/custom-tool path. That path is the recommended one anyway.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/custom-tools/",
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/sdk/"
+        ]
+      },
+      {
+        "touchpoint": "Session↔CDP-target mapping via window.__synthSessionId",
+        "ccDependency": "None directly on Claude Code — pure CDP/CEF; it is the resolution layer behind the sessionId tool param.",
+        "opencodeMechanism": "NONE (not an opencode concern).",
+        "approach": "Unchanged: the CEF shim keeps stamping window.__synthSessionId on main-frame load-end, and the server keeps reading it per page over playwright-core connectOverCDP. The only downstream change is where the 'sessionId' being resolved originates (opencode context.sessionID / plugin hook rather than a tool param), which does not touch this layer.",
+        "feasibility": "direct",
+        "gap": "None — harness-independent.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/custom-tools/"
+        ]
+      },
+      {
+        "touchpoint": "Tool-output token cap",
+        "ccDependency": "Sized to a Claude conversation's context budget so one snapshot/evaluate can't exhaust it.",
+        "opencodeMechanism": "NONE specific; opencode does per-model context tracking with auto-compaction, and the cap itself is just a constant in server.mjs.",
+        "approach": "Keep the MAX_TEXT truncation in the text() helper; optionally re-tune the constant to opencode's configured model context window. Self-contained, no mechanism dependency.",
+        "feasibility": "direct",
+        "gap": "None — only re-sizing a constant, and opencode's auto-compaction is an additional safety net.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/config/"
+        ]
+      },
+      {
+        "touchpoint": "Comment delivery routed into the owning claude's PTY",
+        "ccDependency": "Absence of any Claude Code API to inject a message into a live conversation — forces bracketed-paste + CR into the interactive claude TUI via libghostty; depends on claude running interactively and treating paste-then-Enter as a turn.",
+        "opencodeMechanism": "Server injection APIs: `POST /session/:id/prompt_async` (fire-and-forget) and `POST /session/:id/message` (await); SDK `client.session.prompt({ path:{id}, body:{ parts:[{type:\"text\", text}] } })`. Plugin `tui.prompt.append` can also push text into the TUI.",
+        "approach": "Major win and net simplification: opencode gives a real API to inject a user turn into a running session, so the PTY bracketed-paste hack disappears. Deliver the composed comment (text + screenshot context) via `prompt_async` to the owning session id. Drop TerminalManager.submit for this path and its timing fragility. Requires Synth to reach the opencode server (embed via @opencode-ai/sdk or run `opencode serve`) and to know the owning session id (available from the ownership touchpoint).",
+        "feasibility": "direct",
+        "gap": "None for delivery — this is exactly the capability CC lacked. New dependency: Synth must run/attach to an opencode server (SDK or serve) rather than only owning a PTY.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "Comment delivery gated on SessionStart hook-liveness (security boundary)",
+        "ccDependency": "Claude Code's SessionStart/SessionEnd hooks (via shim-injected --settings) as the only trustworthy signal that a live claude — not a fallback shell left by a failed resume — owns the PTY, preventing page-controlled strings from being pasted into a bare shell.",
+        "opencodeMechanism": "The server is authoritative for session existence/state: `GET /session/:id`, `GET /session/status`, and the `/event` SSE stream carrying `session.created`, `session.idle`, `session.updated`, `session.error`; plugin `session.created`/`session.idle` events mirror these.",
+        "approach": "The security seam largely dissolves. Injection goes to a real session object through the server API, not into a PTY that might have degraded to a shell — so a hostile page's string can't become a shell command (the original threat model doesn't exist over the API channel). 'Liveness' becomes: the session exists and is queryable/idle per the server + event stream, replacing the SessionStart-hook heuristic and the ~20s boot poll. If Synth still embeds opencode's TUI in a PTY for the interactive view, route comment input through the server rather than the PTY to keep the boundary clean.",
+        "feasibility": "adaptation",
+        "gap": "No SessionStart-as-liveness analog is needed once delivery is API-based. Residual check: confirm opencode has no 'resume falls back to a bare shell' mode (it doesn't — `opencode` / `opencode run` either start a real session or error), so the fallback-shell hazard the hook guarded against is designed out.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "Control socket for app-owned session verbs (list/create)",
+        "ccDependency": "Indirect: worktreePath it sends derives from CLAUDE_PROJECT_DIR scoping and ownerSessionId from SYNTH_SESSION_ID; the unix socket itself is Synth-internal, not a Claude Code contract.",
+        "opencodeMechanism": "Synth-internal — no opencode contract required. Optionally the app could bridge to opencode via @opencode-ai/sdk instead of a raw socket, now that Synth already talks to the opencode server.",
+        "approach": "Keep the unix control socket (browser.list / browser.create over one JSON line) unchanged — it belongs to Synth's own session/sidebar model. Only its upstream inputs move: worktreePath now comes from the config-injected env/cwd (scoping touchpoint) and ownerSessionId from context.sessionID (ownership touchpoint) rather than CLAUDE_PROJECT_DIR / SYNTH_SESSION_ID. Nothing opencode-specific blocks it.",
+        "feasibility": "direct",
+        "gap": "None — the socket is harness-agnostic; only the provenance of worktreePath/ownerSessionId changes.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/custom-tools/"
+        ]
+      }
+    ]
+  },
+  {
+    "area": "input-delivery",
+    "mappings": [
+      {
+        "touchpoint": "PTY paste-then-Enter prompt delivery",
+        "ccDependency": "Claude Code running as an interactive TUI in a PTY that ingests bracketed-paste stdin and treats a trailing CR as submit; a 0.35s beat between paste and Enter avoids the first-paint paste being eaten.",
+        "opencodeMechanism": "Server HTTP endpoint POST /session/:id/message (SDK client.session.prompt({ path:{id}, body:{ parts:[{type:'text',text}], noReply? } })), driven against `opencode serve`; observe delivery via the /event SSE bus.",
+        "approach": "Stop typing into a PTY entirely. Run `opencode serve` (or an embedded server) and deliver the composed comment/feedback as a structured message via the SDK's session.prompt. This removes the whole bracketed-paste + timing-beat hazard: no first-paint race, no shell-escape ambiguity, no trailing-CR heuristic. If Synth still wants a visible terminal it can embed the TUI attached to the same server (opencode attach / --attach), and messages posted via the SDK land in that server's session; the TUI is then a viewer, not the input channel. Better path than CC: a first-class message API replaces stdin injection.",
+        "feasibility": "direct",
+        "gap": "Delivery is an API call rather than keystrokes, so the paste/Enter timing logic is deleted rather than ported. Minor: whether a prompt posted via SDK visually renders in a concurrently-attached TUI is not documented (medium confidence) — if it must be visible, verify TUI-reflection or render Synth's own transcript from the event stream.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "Live-Claude liveness gate before any paste",
+        "ccDependency": "SessionStart/SessionEnd hooks (via synth-hook → claude-start/claude-end) plus session_id on hook payloads establish a trusted 'this row is a live Claude TUI' fact; a persisted .claudeCode kind is not trusted; delivery is gated on it because paste+Enter into a bare shell is arbitrary exec.",
+        "opencodeMechanism": "Server-owned session lifecycle: sessions exist on the server (GET /session, /session/:id) independent of any PTY; /event SSE emits session.created / session.updated / session.idle / session.deleted / session.error; plugin `event` hook mirrors the same bus.",
+        "approach": "Replace the shim-derived liveness set with server truth. A session's existence on the server is authoritative — there is no 'resume dropped to a bare shell' failure mode because the server owns the conversation, not a PTY child. Track live/idle/busy from session.idle / session.status(.updated) events. The security boundary largely evaporates: you POST a structured message to a specific session id, never keystrokes to whatever process happens to hold the PTY, so page-controlled text can't become shell exec. Subscribe once to /event (SDK client.event.subscribe()) and maintain the liveness map from there.",
+        "feasibility": "direct",
+        "gap": "Conceptual reframe rather than a missing feature: 'live' becomes 'session id known to the server', asserted by SSE events instead of a hook socket. No PTY-shell ambiguity to defend against, so the strict gate can be relaxed to 'session exists and is not errored'.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/sdk/"
+        ]
+      },
+      {
+        "touchpoint": "Boot-and-wait delivery ladder",
+        "ccDependency": "CC must boot and fire SessionStart within ~20s of `exec claude` before a row is targetable; deliver/bootAndSubmit poll isLiveClaude every 0.5s for 40 iterations then paste.",
+        "opencodeMechanism": "SDK session.create({ body:{ title? } }) returns a Session synchronously; session.prompt can be issued immediately; no model/agent boot handshake precedes message acceptance.",
+        "approach": "Collapse the three-rung poll ladder. Rung 1 (live owner) = the session id already exists → prompt now. Rung 2/3 (need a session) = session.create returns an id you can immediately prompt; there is no ~20s boot-and-fire-SessionStart race because the server accepts the message and starts the turn itself. The ~20s polling window and the 1s settle re-check exist only to paper over CC's TUI startup and can be removed. If you want to wait for the agent to be free before sending, gate on the session.idle event rather than a fixed timer.",
+        "feasibility": "direct",
+        "gap": "The whole poll-then-settle timing ladder is deleted, not ported — session creation is synchronous and message acceptance is immediate. Optional: use session.idle to avoid interleaving with an in-flight turn.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "Feedback (⌘⇧F) worktree seeded with a working Claude",
+        "ccDependency": "Materialize feedback/<slug> worktree, spawnClaude, mount pane a beat, bounce focus, poll isLiveClaude (~20s), then TerminalManager.submit(seed) — reuses the SessionStart liveness signal and `exec claude` launch path.",
+        "opencodeMechanism": "Plugin/SDK context is worktree-aware (context.worktree, context.directory); create a session bound to the worktree dir then session.prompt(seed). `opencode serve` can be pointed at a directory; SDK createOpencode()/createOpencodeClient connect to it.",
+        "approach": "After git worktree materialization, either (a) start/point an opencode server at the worktree path and session.create there, or (b) if one server spans directories, create a session and pass the directory. Then send the title+body+structural context as a single session.prompt — no pane mount beat, no focus bounce, no liveness poll. Same simplification as the comment ladder: seeding becomes one create + one prompt. The security 'only paste once it reports in' rule is unnecessary because you're addressing a known session id via API.",
+        "feasibility": "direct",
+        "gap": "Need to confirm the per-directory/worktree binding model for sessions (one server-per-worktree is simplest and matches context.worktree). Medium-confidence on multi-directory single-server routing; one-server-per-worktree is the safe default.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "synth-hook launch interception injecting --settings hooks",
+        "ccDependency": "PATH `claude`→synth-hook shim strips user --settings, deep-merges and re-injects inline-JSON --settings wiring SessionStart/End, UserPromptSubmit, Stop, Notification, PermissionRequest, PreToolUse(AskUserQuestion|ExitPlanMode), PostToolUse(*) to `synth-hook event <Event>`, sets preferredNotifChannel=disabled.",
+        "opencodeMechanism": "Auto-loaded plugin (.opencode/plugins/ or ~/.config/opencode/plugins/) exporting hooks (event, tool.execute.before/after, permission.ask, chat.message) + the /event SSE bus — no launch wrapper, no settings injection, no PATH shim.",
+        "approach": "Eliminate the shim wholesale. opencode auto-loads plugins at startup, so lifecycle/status/tool/permission signals are available without wrapping the launch, without stripping/merging a --settings flag, and without a PATH symlink. Map CC hook events to opencode equivalents: SessionStart/End→session.created/deleted(+session.updated); UserPromptSubmit→message.updated / chat.message; Stop→session.idle; Notification/PermissionRequest→permission.asked/permission.updated; Pre/PostToolUse→tool.execute.before/after. A plugin (or a direct /event subscriber) forwards these to Synth over its own channel. This is the single biggest architectural win: the entire launch-interception seam collapses into config + a plugin.",
+        "feasibility": "direct",
+        "gap": "One-to-one event names differ and must be re-mapped; there is no single injected-settings object, so any per-launch dynamic config (e.g. a run-specific socket path) moves to plugin code / env visible to the plugin. Historically some plugin hooks (permission.ask) were flaky — see permission touchpoints.",
+        "effort": "L",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/server/",
+          "https://gist.github.com/rstacruz/946d02757525c9a0f49b25e316fbe715"
+        ]
+      },
+      {
+        "touchpoint": "Spawn-a-claude-that-adopts launch string",
+        "ccDependency": "Store.spawnClaude adds a .claudeCode row and GhosttySurfaceView types `exec claude <flags>\\n` into the login shell so a fresh CC boots without stealing the pane; shim PATH attaches hooks; SessionStart confirms liveness.",
+        "opencodeMechanism": "SDK session.create({ body }) creates a session server-side with no terminal at all; the returned Session.id is the durable handle. No `exec` into a login shell, no hook attachment step.",
+        "approach": "'Spawn a silent owner' becomes session.create — a background session that exists immediately and is ready for the next comment on rung 1. No pane, no focus, no shell exec, no SessionStart wait. If a visible terminal is desired later, attach a TUI to that session id. This removes the exec-so-exit-maps-to-PTY-child trick entirely since lifecycle no longer rides on a process.",
+        "feasibility": "direct",
+        "gap": "None functionally; the mental model shifts from 'a process in a pane' to 'a session id on the server'. Synth's row model must key off session id rather than PTY child pid.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "claude --resume <id> restore of a delivery target",
+        "ccDependency": "GhosttySurfaceView `exec claude --resume '<id>' <flags>`; id captured via claudeSessionCaptured; --session-id and --resume mutually exclusive; a failed resume drops to bare shell (the reason delivery is gated).",
+        "opencodeMechanism": "CLI `--session`/`-s <id>` and `--continue`/`-c` (+ `--fork`); server-side sessions persist so a 'dormant' session is simply fetched by id (GET /session/:id) and prompted — no resume step needed to deliver.",
+        "approach": "Two options. (a) Pure server model: sessions never die with a PTY, so there is nothing to 'resume' before delivering — you just session.prompt the persisted id; the failed-resume-to-bare-shell hazard cannot occur. (b) If Synth embeds a TUI per row, launch it with `opencode --session <id>` (or `--continue`) to reopen the conversation view. Either way the delivery target is addressed by a durable server session id, strictly safer than CC's resume.",
+        "feasibility": "direct",
+        "gap": "CC's mutual-exclusion rule between mint-id and resume disappears; the failed-resume risk disappears in the server model. If embedding a TUI, confirm `--session <id>` reattaches to an existing server session vs forking (—fork exists to branch).",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/sdk/"
+        ]
+      },
+      {
+        "touchpoint": "--session-id minting for fresh sessions",
+        "ccDependency": "synth-hook prepends `--session-id <UUID>` (unless resume/continue) so Synth knows the id before the session speaks, correlating hooks to the row and enabling later resume.",
+        "opencodeMechanism": "session.create returns the server-generated Session.id in its response; there is currently NO way to supply a caller-chosen id (open feature request sst/opencode#12916).",
+        "approach": "Invert the flow: don't pre-mint, read-back. session.create hands you the id synchronously, so you learn it at creation instead of forcing it in. Store that id on the row exactly as you'd have stored the minted UUID. This fully covers the correlation and resume needs. The only thing lost is caller-chosen ids — not required here since you always create the session yourself and capture the returned id.",
+        "feasibility": "adaptation",
+        "gap": "Cannot force a Synth-chosen UUID onto a new session (feature-requested, unimplemented). Any code that pre-computes an id before the process exists must instead consume the id from the create response. If a session is ever created outside Synth's SDK call, Synth won't have pre-registered its id — but Synth always originates these sessions, so this is moot.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://github.com/anomalyco/opencode/issues/12916"
+        ]
+      },
+      {
+        "touchpoint": "claudeFlags launch surface (default --dangerously-skip-permissions)",
+        "ccDependency": "Arbitrary flags appended after `claude`; default --dangerously-skip-permissions makes a seeded/comment-driven agent run unattended (and suppresses PermissionRequest, forcing synth-hook to watch PreToolUse AskUserQuestion|ExitPlanMode instead).",
+        "opencodeMechanism": "`--auto` flag (auto-approve anything not explicitly denied) and/or the `permission` config key (opencode.json: {\"permission\":{\"*\":\"allow\"|\"ask\"|\"deny\", \"bash\":{...}}}); `--permissions <list>`; per-agent permission overrides.",
+        "approach": "Replace the raw flag string with structured, per-scope config. For unattended seeded/comment agents, either launch with `--auto` or ship an opencode.json (project/worktree scoped) setting permission '*':'allow' with targeted 'deny' rules (e.g. `rm -rf *`). This is strictly better than CC's all-or-nothing --dangerously-skip-permissions: you can auto-approve edits/reads while still gating destructive bash. Per-agent permission overrides let a comment-driver agent be permissive without loosening others.",
+        "feasibility": "direct",
+        "gap": "Config-driven granular rules rather than a raw appended flag; user/workspace-scoped flag persistence must map onto opencode.json layering (global ~/.config vs project) or the --auto/--permissions CLI flags. Slightly different surface, fully covered.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/permissions/",
+          "https://opencode.ai/docs/config/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "Inherited CLAUDE_CODE_* marker scrubbing",
+        "ccDependency": "Unset CLAUDECODE / CLAUDE_CODE_CHILD_SESSION / _SESSION_ID / _ENTRYPOINT / _EXECPATH / _SSE_PORT so a Synth-spawned CC (possibly inside a parent CC) is a top-level resumable session with a transcript, not an unresumable child.",
+        "opencodeMechanism": "NONE — opencode has no equivalent child-session env-marker contract; every session created via server/SDK is a first-class server-owned session with its own persisted history regardless of the launching process's env.",
+        "approach": "Delete this concern. Because opencode sessions are owned by the server and created explicitly via session.create, there is no ambient 'you are a child session, don't persist a transcript' env inheritance to scrub. A session started from inside another opencode agent is still a normal session on the server. No env decoration/unsetenv step is needed.",
+        "feasibility": "direct",
+        "gap": "The specific CLAUDE_CODE_* markers have no opencode analog to strip; the failure mode they guarded against (child session, no transcript, unresumable) does not exist in the server model. Confirm there is no analogous OPENCODE_* nesting marker (none documented; medium-high confidence).",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/sdk/"
+        ]
+      },
+      {
+        "touchpoint": "One-shot / gate passthrough (claude -p | --print)",
+        "ccDependency": "synth-hook detects -p/--print and CC subcommands (mcp/config/update/doctor/...) and execs the real claude un-instrumented so the self-verify/gate flow runs unchanged.",
+        "opencodeMechanism": "`opencode run [message..]` is the native non-interactive one-shot; `--format json` emits raw JSON events; subcommands (`opencode serve`, `opencode session`, `opencode auth`, etc.) are first-class.",
+        "approach": "There is no shim to pass through, so nothing to detect or exempt. Where Synth used `claude -p` for a scripted gate/self-verify, call `opencode run \"...\"` (optionally `--format json` to parse the result programmatically, or use the SDK directly). Because instrumentation lives in an auto-loaded plugin rather than a launch wrapper, a one-shot run is naturally un-gated unless the plugin chooses to react — you control that in plugin code.",
+        "feasibility": "direct",
+        "gap": "The '-p means skip instrumentation' branch has no analog because instrumentation isn't launch-injected. If the plugin must stay silent for scripted runs, add an env/flag check inside the plugin. Minor.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "Target chip / row title from Claude ai-title",
+        "ccDependency": "synth-hook scans transcript JSONL for ai-title lines and forwards the evolving title; SessionStart source in {startup,clear} resets a stale title; surfaced as Session.title for the comment chip and toasts.",
+        "opencodeMechanism": "Native auto-title: opencode's built-in hidden 'title' agent generates a session title from the first user message using the configured small_model; the title lives on the Session object (Session.title) and updates arrive via the session.updated event; readable via GET /session or session.get.",
+        "approach": "Drop the transcript-scraping entirely. Read Session.title from the session object and keep the chip fresh by listening for session.updated on the /event bus (the plugin `event` hook or SDK event.subscribe). No JSONL parsing, no ai-title line format dependency. A fresh/cleared session simply carries the default timestamp title until the first message triggers ensureTitle(); Synth can show 'New session' until session.updated delivers the real title.",
+        "feasibility": "direct",
+        "gap": "Title is model-generated after the first user message (not streamed token-by-token as CC's ai-title), and can stay default if small_model is misconfigured (known issue). No explicit startup-vs-clear 'source' distinction to reset on — but server-created sessions start with a default title anyway, so the reset case is inherent.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://github.com/anomalyco/opencode/issues/9902",
+          "https://github.com/anomalyco/opencode/issues/6819"
+        ]
+      },
+      {
+        "touchpoint": "True exit-code reporting over the hook socket",
+        "ccDependency": "synth-hook spawns the real claude as a child and reports {session,exitCode} over $SYNTH_SOCKET_PATH before exiting, because macOS `login` zeroes PTY-child exit codes; distinguishes clean-exit (auto-close row) from failure (keep as error).",
+        "opencodeMechanism": "Session lifecycle/health is observable server-side via /event: session.idle (turn finished), session.error (failure with error payload), session.deleted; the SDK exposes session state directly — no process exit code involved.",
+        "approach": "Stop inferring success from a process exit code. In the server model there is no PTY child whose code `login` can zero — the session's terminal outcome is an event. Treat session.error (and its error payload) as 'failure → keep row as error' and normal completion / session.idle / explicit session.deleted as 'clean → auto-close'. This is more informative than an int exit code (you get the error object), and doesn't need the spawn-as-child-instead-of-exec trick or a side-channel socket.",
+        "feasibility": "direct",
+        "gap": "No numeric exit code; success/failure is derived from event types + error payloads rather than a $?-style status. Need to define exactly which event(s) map to Synth's 'error' vs 'clean' row state (session.error vs graceful idle/delete). Semantics differ slightly from a process code.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/sdk/"
+        ]
+      }
+    ]
+  },
+  {
+    "area": "notifications",
+    "mappings": [
+      {
+        "touchpoint": "Hook-signal socket feed (the whole notification pipeline's input)",
+        "ccDependency": "Claude hooks exec synth-hook per event, which writes JSON signal lines to Synth's unix socket; HookServer turns them into SessionEvents that AppStore routes to the deck / Notification Center.",
+        "opencodeMechanism": "opencode event bus: GET /event (SSE) from `opencode serve`, or `client.event.subscribe()` in @opencode-ai/sdk, or a plugin `event: async ({event}) => {}` hook. Every event is `{type, properties}` and carries a `sessionID`.",
+        "approach": "Replace the synth-hook→socket transport entirely. Synth runs (or attaches to) an opencode server and subscribes to the event stream; a small translator maps opencode event types to Synth's SessionEvent/SessionStatus model. This is a strictly better path than CC's hook-socket: one ordered, typed, in-process stream instead of N independent hook processes each racing to write a socket line. No PATH-shim, no env injection, no per-event fork/exec.",
+        "feasibility": "direct",
+        "gap": "Different transport and event vocabulary, so the ingestion layer (synth-hook + HookServer socket) is rewritten as an SSE/SDK subscriber. Behavior is equivalent-or-better; only the wiring changes.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/plugins/",
+          "https://gist.github.com/johnlindquist/0adf1032b4e84942f3e1050aba3c5e4a"
+        ]
+      },
+      {
+        "touchpoint": "preferredNotifChannel: notifications_disabled (double-fire suppression)",
+        "ccDependency": "buildSettingsJSON injects preferredNotifChannel=notifications_disabled so Claude's own OS/terminal notifications don't post alongside Synth's.",
+        "opencodeMechanism": "NONE — opencode has no built-in OS/terminal notification channel; native notifications exist only if a user installs a community plugin (e.g. opencode-notify, opencode-notifier).",
+        "approach": "Nothing to suppress: simply don't ship/enable a notification plugin in Synth's opencode config, so opencode stays silent and only Synth's deck/NC fire. The whole double-fire hazard is designed away.",
+        "feasibility": "direct",
+        "gap": "No suppression key needed. Residual risk only if the end user independently installs a notify plugin; Synth can document/omit it or disable known ones via the `plugin` config key.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://github.com/kdcokenny/opencode-notify",
+          "https://opencode.ai/docs/config/"
+        ]
+      },
+      {
+        "touchpoint": "needs-input classification from block-style hook events",
+        "ccDependency": "PermissionRequest and PreToolUse(matcher AskUserQuestion|ExitPlanMode) hooks → needsInput; PermissionRequest is observe-only exit 0; PreToolUse covers the --dangerously-skip-permissions case.",
+        "opencodeMechanism": "`permission.asked` event (properties include sessionID, tool, decisionOptions, suggestedAlwaysPattern). Governed by the `permission` config map (read/edit/bash/webfetch/task/question/... = ask|allow|deny). Also a `permission.ask` plugin hook exists.",
+        "approach": "Map `permission.asked` → needsInput signal, keyed by sessionID. This is purely observational (subscribing to the event does not alter the approval flow), matching CC's exit-0 discipline. Plan-approval and question prompts surface through the same event since opencode gates them via the `question`/task permissions. Prefer the event over the `permission.ask` plugin hook, which per open issues (#7006, #19927) is not reliably triggered for first-encounter commands.",
+        "feasibility": "adaptation",
+        "gap": "opencode's `--auto` (auto-approve) analog to --dangerously-skip-permissions means `permission.asked` does NOT fire for allowed tools, so a question/plan that is auto-approved won't raise needs-input. CC works around this with a wildcard PreToolUse; opencode's nearest equivalent is `tool.execute.before`, but with auto-approve there's genuinely no pending-user state to notify. Coverage is equal in the interactive (ask) mode; only the auto-approve corner differs.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/permissions/",
+          "https://codeongrass.com/blog/opencode-permission-events-mobile-approval-queue/",
+          "https://github.com/anomalyco/opencode/issues/7006",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "needs-input from Notification hook payload types",
+        "ccDependency": "Claude Notification hook payload notification_type ∈ {permission_prompt, idle_prompt, agent_needs_input, elicitation_dialog} → needsInput.",
+        "opencodeMechanism": "`permission.asked` covers the permission_prompt / agent_needs_input / MCP-elicitation cases. There is no opencode event equivalent to CC's `idle_prompt` (user-has-been-idle ambient nudge).",
+        "approach": "Fold permission_prompt/agent_needs_input/elicitation into the same `permission.asked` handler as the touchpoint above. MCP elicitation mid-tool likewise surfaces as a permission/question ask. Drop idle_prompt (opencode's session.idle is turn-completion, not a user-idle nag).",
+        "feasibility": "adaptation",
+        "gap": "No idle_prompt analog — opencode doesn't emit an 'agent has been waiting on you' ambient notification distinct from a concrete permission ask. Minor loss of one ambient nudge; the load-bearing permission/elicitation cases are covered.",
+        "effort": "M",
+        "confidence": "low",
+        "sources": [
+          "https://codeongrass.com/blog/opencode-permission-events-mobile-approval-queue/",
+          "https://opencode.ai/docs/permissions/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "error notification from StopFailure",
+        "ccDependency": "StopFailure hook → error signal → statusChanged(.error) → error alert.",
+        "opencodeMechanism": "`session.error` event (properties: optional sessionID + `error`, shaped like MessageV2.Assistant error).",
+        "approach": "Map `session.error` → error signal. opencode already emits failure as its own first-class event distinct from turn-completion, so no need to distinguish Stop vs StopFailure heuristically — cleaner 1:1.",
+        "feasibility": "direct",
+        "gap": "None material. Note session.error may omit messageID (per oh-my-openagent #2046) but sessionID + error are what Synth needs.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://github.com/code-yeongyu/oh-my-openagent/issues/2046"
+        ]
+      },
+      {
+        "touchpoint": "done notification from Stop→idle transition",
+        "ccDependency": "Stop hook → idle signal → self-dismissing 'done' toast.",
+        "opencodeMechanism": "`session.idle` event (properties: sessionID), emitted when the agent finishes responding / all processing for the message completes.",
+        "approach": "Map `session.idle` → idle signal → existing done-toast path (6s in-app / transient NC banner). Direct 1:1.",
+        "feasibility": "direct",
+        "gap": "None. Caveat: sub-agent/child sessions also emit session.idle; Synth must filter to the top-level session (event carries sessionID; parentID distinction is a known rough edge, issue #30043).",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://github.com/anomalyco/opencode/issues/16879",
+          "https://github.com/anomalyco/opencode/issues/30043"
+        ]
+      },
+      {
+        "touchpoint": "Stop/needsInput race made order-independent",
+        "ccDependency": "AppStore gates a needsInput statusChange on isLive so a late ambient waiting-notification after Stop is dropped; relies on Stop and the waiting-notification being independent, unordered hook processes.",
+        "opencodeMechanism": "Single ordered event bus delivers permission.asked / permission.replied / session.idle / session.error sequentially, plus session.status (running/idle) transitions.",
+        "approach": "Port the isLive gate against opencode's status model. Because opencode multiplexes these onto one ordered stream (rather than N racing hook execs), the specific Stop-vs-waiting race is largely structurally removed — but the reconcile logic (a permission answered right as the turn ends) still wants the same 'if already idle, drop a late needs-input' guard, re-expressed over permission.asked vs session.idle.",
+        "feasibility": "adaptation",
+        "gap": "The exact CC race disappears, but a new (milder) ordering question — does permission.replied always precede session.idle when a turn ends right after approval? — must be validated empirically; there's a known issue (#16879) that plugin handlers aren't awaited on session.idle, hinting at timing subtleties.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://github.com/anomalyco/opencode/issues/16879",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "PostToolUse/PostToolUseFailure → working clears a standing needs-input toast",
+        "ccDependency": "Wildcard PostToolUse/PostToolUseFailure hooks → working, inferring the user unblocked Claude because a tool completed (no dedicated 'resumed' hook in CC).",
+        "opencodeMechanism": "`permission.replied` event — an explicit signal that the user answered a permission/question — plus `session.status` (running) and `tool.execute.after`.",
+        "approach": "Map `permission.replied` → working/clear needs-input. This is strictly better than CC: opencode gives an explicit 'the user replied' event, so Synth no longer has to infer resume from tool completion. Keep session.status(running)/tool.execute.after as a self-heal fallback.",
+        "feasibility": "direct",
+        "gap": "None — arguably an upgrade. Only nuance: permission.replied fires for reject too, so 'clear the toast' semantics (any reply resolves the pending state) still hold.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://codeongrass.com/blog/opencode-permission-events-mobile-approval-queue/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "Claude-phrased notification verbs via kind flip on SessionStart/SessionEnd",
+        "ccDependency": "SessionStart→claudeCode / SessionEnd→terminal so notifVerb knows a row is a Claude agent vs plain terminal, choosing 'Claude needs your input' etc.",
+        "opencodeMechanism": "`session.created` / `session.deleted` events; more directly, Synth itself spawns/creates the opencode session so it already knows the row is an agent from creation.",
+        "approach": "Set the row's kind at spawn (Synth launches opencode ⇒ kind = opencode-agent) rather than waiting on a boundary hook; optionally confirm via session.created. Rephrase verbs to opencode wording. Simpler than CC because the agent identity is known a priori, not discovered from a hook.",
+        "feasibility": "direct",
+        "gap": "Only a copy change (Claude→opencode wording). No dependency on a runtime boundary event.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "Notification identity/body from Claude's ai-title",
+        "ccDependency": "readAITitle scans transcript_path tail for {type:ai-title,aiTitle} JSONL lines → title signal → session.title, rendered in NC body and card.",
+        "opencodeMechanism": "Session object has a first-class `title` field, auto-generated by opencode's built-in hidden title agent (uses configured small_model, ~80 tok) on the first user message and refined; readable via `session.get`/`session.list`, and delivered on the `session.updated` event.",
+        "approach": "Subscribe to `session.updated` and read `properties.info.title` (or call session.get) — no transcript file tailing, no JSONL parsing. Store as session.title as today. This is a cleaner, structured path than CC's ai-title scraping. If richer titles are wanted, a community title plugin (Smart Title / autotitle) or an SDK-driven regenerate can layer on.",
+        "feasibility": "direct",
+        "gap": "Title cadence differs: opencode titles on first message (+ optional plugin refinement) rather than continuously per-turn like CC's ai-title. Usually equivalent or better for a stable notification identity.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/agents/",
+          "https://github.com/pawelma/opencode-autotitle",
+          "https://www.opencode.asia/ecosystem/plugins/smart-title/"
+        ]
+      },
+      {
+        "touchpoint": "Exit-code-over-socket → done-vs-error routing and outliving 'done' toast",
+        "ccDependency": "synth-hook wraps claude as a child to capture the real exit code (0/130/143 clean → done+close, else → error) because libghostty's login wrapper masks the PTY exit code as 0.",
+        "opencodeMechanism": "done-vs-error comes from `session.idle` (clean) vs `session.error` (failure) events, independent of any process exit code. Abort/interrupt is a session state, not a signal exit.",
+        "approach": "Stop deriving done-vs-error from the child exit code entirely: classify on session.idle vs session.error from the event stream. This removes the whole libghostty exit-code-masking workaround and the spawnReportingExit child-wrapping. The 'outlivesSession' toast ordering logic stays Synth-side (still valid when a row closes while its done toast lingers).",
+        "feasibility": "adaptation",
+        "gap": "Interrupt neutrality (CC's SIGINT130/SIGTERM143 = 'not an error') must be re-derived from opencode's abort semantics: a user-aborted turn should land on session.idle (or an abort status), not session.error — needs empirical confirmation that abort doesn't emit session.error. If it does, add an abort filter.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "User --settings merge preserving both hooks and preferredNotifChannel",
+        "ccDependency": "takeSettingsValue/mergeSettings pull the user's --settings out of argv and deep-merge Synth's hooks + preferredNotifChannel back in, because claude keeps only one --settings and its precedence shifted across versions.",
+        "opencodeMechanism": "opencode has no per-launch --settings hook injection. Extension is via config files (global ~/.config/opencode/opencode.json[c] + project .opencode/, layered/merged) and auto-loaded plugins (~/.config/opencode/plugin, .opencode/plugin, or `plugin` config key). Best of all: observation needs no config injection when Synth uses `opencode serve` + SDK event subscription.",
+        "approach": "Preferred: don't inject anything into the launch — Synth attaches to the opencode server and observes the event stream out-of-band, so there's no argv to merge and no risk of clobbering user settings. If a plugin is still wanted, drop it in the global/project plugin dir where opencode layers it over user config automatically. The whole argv-rewriting merge problem dissolves.",
+        "feasibility": "direct",
+        "gap": "No argv --settings surface exists, so the takeSettingsValue/mergeSettings machinery is deleted rather than ported. Only need to confirm opencode's config layering (global+project) merges rather than replaces user config (documented as layered).",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/config/",
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "Per-kind notification sound preferences",
+        "ccDependency": "postAttention/postDone gate sound on soundError/soundNeedsInput/soundDone; the three kinds exist because CC hooks distinguish error/needs-input/done.",
+        "opencodeMechanism": "Same three kinds derive cleanly from session.error / permission.asked / session.idle. Sound gating is entirely Synth-side.",
+        "approach": "Keep the per-kind sound toggles unchanged; just source the kind from the opencode events above. No opencode capability needed beyond the events already mapped.",
+        "feasibility": "direct",
+        "gap": "None — Synth-side preference logic is untouched.",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://codeongrass.com/blog/opencode-permission-events-mobile-approval-queue/"
+        ]
+      },
+      {
+        "touchpoint": "Tap-to-jump correlation via SYNTH_SESSION_ID",
+        "ccDependency": "notification userInfo carries the Synth Session UUID = injected $SYNTH_SESSION_ID echoed on every hook line; didReceive resolves it to a row via store.session(id)→jump.",
+        "opencodeMechanism": "Every opencode event natively carries opencode's own `sessionID` (and events/permission payloads carry projectDirectory/worktree). Sessions can be created via SDK `session.create` or captured from `opencode run --format json`, and session.created is emitted on creation.",
+        "approach": "Correlate on opencode's sessionID instead of an injected env var: capture the sessionID when Synth spawns/creates the session (via SDK session.create, run --format json, or the first session.created matched by directory/worktree), and store a sessionID↔Synth-row map. Notification userInfo then carries that sessionID; didReceive resolves via the map. No env inheritance / no PTY env injection required.",
+        "feasibility": "adaptation",
+        "gap": "Needs a reliable spawn→sessionID capture step that CC got 'for free' via env inheritance. If Synth embeds the TUI in a PTY (rather than driving via SDK), the TUI mints its own sessionID that Synth must discover (match by worktree/directory on session.created, or drive session creation through the server so Synth owns the id up front).",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/sdk/",
+          "https://opencode.ai/docs/cli/",
+          "https://codeongrass.com/blog/opencode-permission-events-mobile-approval-queue/",
+          "https://github.com/anomalyco/opencode/issues/30043"
+        ]
+      }
+    ]
+  },
+  {
+    "area": "spawn-templates",
+    "mappings": [
+      {
+        "touchpoint": "exec claude launcher (initial_input)",
+        "ccDependency": "Bare `claude` (no subcommand) launches an interactive TUI in cwd; `exec` makes it the PTY child so its exit ends the row.",
+        "opencodeMechanism": "Bare `opencode` command launches the TUI (docs: 'starts the TUI when run without any arguments'). Same `exec opencode` initial_input pattern.",
+        "approach": "One-for-one substitution: GhosttySurfaceView types `exec opencode<flags>\\n` instead of `exec claude`. opencode-as-PTY-child behaves identically — bare launch = interactive TUI in cwd, exit ends the row. Note a strictly better alternative also exists: run `opencode serve` once and drive/observe sessions over the SDK + /event stream, decoupling row status from the PTY entirely; but for TUI-in-a-row parity the exec path is a drop-in.",
+        "feasibility": "direct",
+        "gap": "",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/tui/"
+        ]
+      },
+      {
+        "touchpoint": "claudeFlags plumbed through TerminalManager.view",
+        "ccDependency": "`claude` accepts an arbitrary raw flag string appended on the command line; the string is the source of truth for per-scope model/permission/etc.",
+        "opencodeMechanism": "The bare `opencode` TUI accepts flags (`--model/-m provider/model`, `--agent`, `--continue/-c`, `--session/-s`, `--port`, `--log-level`); durable per-scope config lives in opencode.json / per-agent config, not flags.",
+        "approach": "Keep the raw-flags string as a passthrough for the subset opencode exposes as TUI flags (notably `-m provider/model` and `--agent`). But opencode's config surface is split differently from CC: most 'per-workspace' knobs (permissions, MCP, tool scoping) are expressed in a project `opencode.json`/agent rather than CLI flags. Best design: write a worktree-local `.opencode/opencode.json` (or set OPENCODE_CONFIG) for durable scope config, and reserve the raw string for genuine per-launch flags. Flag names differ from CC entirely, so the Settings editor's default/preview copy must change.",
+        "feasibility": "adaptation",
+        "gap": "No single raw-flags string covers everything CC flags do; opencode splits durable config into opencode.json/agents. Flag vocabulary is completely different from claude's, so preset/preview strings can't carry over verbatim.",
+        "effort": "M",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/config/"
+        ]
+      },
+      {
+        "touchpoint": "--dangerously-skip-permissions default flag",
+        "ccDependency": "The specific flag `--dangerously-skip-permissions` exists and suppresses the interactive permission dialog.",
+        "opencodeMechanism": "opencode defaults to allow-all ('By default, all operations are allowed without approval'); explicit equivalents are the `--auto` run flag ('auto-approve permissions that are not explicitly denied') and `\"permission\": { \"*\": \"allow\" }` in opencode.json.",
+        "approach": "Replace the literal default with either nothing (opencode is already permissive out of the box) or an explicit `\"permission\": {\"*\":\"allow\"}` block in the injected worktree config for determinism. Update the Settings note/CmdPreview to show `opencode` (optionally `--auto`) rather than the CC flag. Caveat: `--auto` is documented on `opencode run`; whether it applies to the bare TUI is unconfirmed, so the config-key form is the safer durable mechanism.",
+        "feasibility": "adaptation",
+        "gap": "No identically-named flag; permissiveness is the default rather than an opt-in flag. The exact skip-permissions semantics map to a config block, and `--auto`'s applicability to the TUI (vs only `run`) is unverified.",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/permissions/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "--dangerously-skip-permissions changes which hooks mean needs-input",
+        "ccDependency": "Under skip-permissions PermissionRequest doesn't fire, so Synth instead watches AskUserQuestion/ExitPlanMode (which always block) via a PreToolUse matcher, cleared by PostToolUse.",
+        "opencodeMechanism": "First-class permission events: plugin hooks `permission.asked` / `permission.replied` (also on the /event bus), plus the `question` permission key and the server respond endpoint `POST /session/:id/permissions/:permissionID`. `session.idle` marks a turn settling.",
+        "approach": "This is where opencode is cleaner than CC: instead of inferring needs-input from which tool is blocking, subscribe to `permission.asked` = needs-input and `permission.replied`/`session.idle` = cleared, directly off the event bus (plugin or /event). To keep that signal alive you must NOT put everything on allow-all — leave the tools you want to gate on (e.g. `edit`, or the `question`/plan tools) as `\"ask\"` so `permission.asked` still fires; the rest can be `allow`. No PreToolUse-matcher gymnastics needed.",
+        "feasibility": "adaptation",
+        "gap": "opencode has no AskUserQuestion/ExitPlanMode tool-name matcher; the needs-input concept is modeled as permission events + `question` permission, so the classification logic in Hooks.swift/runEvent must be rewritten around `permission.asked`/`permission.replied`, and permission config must intentionally keep some tools at `ask`.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/permissions/",
+          "https://opencode.ai/docs/server/"
+        ]
+      },
+      {
+        "touchpoint": "Per-scope session template spawns claude on worktree create",
+        "ccDependency": "Claude spawns identically to a plain terminal; a dormant row runs `claude` only when first opened, first entry starts optimistically .working pending SessionStart.",
+        "opencodeMechanism": "Same dormant-terminal model — `exec opencode` runs only on first open. Optimistic-working confirmation comes from bus events `session.created` / `message.updated`, settled by `session.idle`.",
+        "approach": "applySessionTemplate builds Session(kind:.opencode) rows exactly as today; the first opens and execs opencode. Swap the optimistic-.working confirmation source from the CC SessionStart hook to opencode's `session.created`/first `message.updated` (working) and `session.idle` (settled), delivered via plugin or /event stream.",
+        "feasibility": "direct",
+        "gap": "",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "Non-stock template name spawns title-frozen",
+        "ccDependency": "Claude continuously refines an ai-title; the freeze protects a hand-picked name from being overwritten by CC auto-naming.",
+        "opencodeMechanism": "opencode auto-titles only when the session still has a default title — `ensureTitle()` guards on `Session.isDefaultTitle()` using `small_model`; set a title via `POST /session {title}` or `PATCH /session/:id`, and `session.updated` carries title changes.",
+        "approach": "opencode makes the freeze native and cleaner: create the session with the user's chosen title (server `POST /session { title }` or `session.update`) and opencode's own `isDefaultTitle()` guard permanently suppresses auto-naming — no titleIsCustom flag needed. For stock-named rows, leave the default title so opencode auto-names, and mirror the evolving name into Synth by watching the `session.updated` event's title field (replacing the transcript ai-title scrape).",
+        "feasibility": "direct",
+        "gap": "",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/config/",
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "New Claude on every creation surface",
+        "ccDependency": "`claude` launches a usable interactive session on demand in any cwd; optimistic .working assumes SessionStart/Stop will settle it.",
+        "opencodeMechanism": "Bare `opencode` launches on demand in any cwd; `session.created` + `session.idle` bus events replace SessionStart/Stop for the optimistic-working settle.",
+        "approach": "newClaude/spawnClaude become newOpencode/spawnOpencode constructing Session(kind:.opencode); every surface (palette, nav menu, ControlServer automation, CommentMode, feedback-fix) funnels unchanged. Only the launch command word and the status-settling event source change. Purely mechanical rename + event rewire once touchpoints 1/5/8 land.",
+        "feasibility": "direct",
+        "gap": "",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "--settings hook config injected at launch",
+        "ccDependency": "`claude --settings <inline-json>` accepts a per-launch hooks map keyed by exact CC event names, each a type:command hook; a PATH-shim deep-merges Synth's hooks into the user's settings before exec.",
+        "opencodeMechanism": "Two native, shim-free channels: (a) a global plugin at `~/.config/opencode/plugin/` (auto-loaded, subscribes to the full event set — tool.execute.before/after, session.*, message.*, permission.asked/replied, etc.); (b) `opencode serve` + `@opencode-ai/sdk` `event.subscribe()` / GET `/event` SSE stream. Config comes from opencode.json (project/global) or `OPENCODE_CONFIG`.",
+        "approach": "Biggest architectural win of the port: delete the PATH-shim entirely. Instead install one global Synth plugin (or run a persistent `opencode serve` that Synth already owns) and consume the real event bus. This removes the deep-merge-into-user-settings dance, the per-launch inline-JSON injection, and the whole synth-hook launch role. There's no inline `--settings` flag, but you don't need per-launch injection because a single global plugin observes every session, and any per-worktree config goes in a written `.opencode/opencode.json` / `OPENCODE_CONFIG`. Map CC event names → opencode events: SessionStart→session.created, Stop/idle→session.idle, PermissionRequest→permission.asked, PostToolUse→tool.execute.after, UserPromptSubmit→message.updated.",
+        "feasibility": "adaptation",
+        "gap": "No per-invocation inline settings object; hooks are a global/project plugin (or server consumer), not injected per `exec`. Event names and payload shapes differ from CC's, so buildSettingsJSON and Hooks.swift's runEvent classifier must be rewritten as a plugin/SDK consumer. Net simpler, but not a code-level 1:1.",
+        "effort": "L",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/",
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/config/"
+        ]
+      },
+      {
+        "touchpoint": "Fresh --session-id minted per launch",
+        "ccDependency": "`claude --session-id <uuid>` sets a Synth-minted conversation id (rejected alongside --resume/--continue); session_id echoes on every hook payload for capture.",
+        "opencodeMechanism": "opencode mints its own session id — no caller-supplied-id flag. `POST /session` returns a Session `{ id, title }`; the TUI attaches to an existing id via `--session <id>`; `session.created` events carry the id.",
+        "approach": "Invert the flow: instead of minting a UUID and passing it in, either (a) capture opencode's own id from the `session.created` event / `session.list` and store it as Session.opencodeSessionID, or (b) create the session first via server `POST /session` (get its id), then boot the TUI attached to it with `exec opencode --session <id>`. Path (b) preserves Synth's 'know the id before/at launch' invariant cleanly.",
+        "feasibility": "adaptation",
+        "gap": "No `--session-id` create flag; you cannot force a Synth-chosen UUID onto the TUI. Requires either post-hoc id capture from events or a create-then-attach two-step via the server.",
+        "effort": "M",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/cli/",
+          "https://opencode.ai/docs/server/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "claude --resume <id> for restored/dormant Claude rows",
+        "ccDependency": "`claude --resume <session-id>` restores a prior conversation; hooks still fire under resume; failed resume drops to a bare shell.",
+        "opencodeMechanism": "`opencode --session <id>` / `-s` resumes a specific session, `--continue`/`-c` resumes the last; docs state -c/-s work across 'run, TUI, attach'. Events still fire under resume since the plugin/server is global.",
+        "approach": "GhosttySurfaceView emits `exec opencode --session '<id>'<flags>` (shell-quoted) from the stored opencodeSessionID instead of `--resume`. Status wiring keeps working because the global plugin/server observes the resumed session regardless. Same failed-resume fallback semantics apply (drop to bare shell, gate comment delivery on liveness).",
+        "feasibility": "direct",
+        "gap": "Flag spelling differs (`--session <id>` vs `--resume <id>`); confirm the bare-TUI form of `-s` behaves as documented across TUI (docs say yes).",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "Inherited CLAUDE_CODE_* markers scrubbed before spawn",
+        "ccDependency": "CC leaves env markers (esp. CLAUDE_CODE_CHILD_SESSION) that make a claude spawned inside a claude behave as a subagent with no on-disk transcript; Synth scrubs them so spawns are top-level/resumable.",
+        "opencodeMechanism": "opencode does not spawn subagents by exec-nesting — the task tool creates child sessions internally within the same server process. A separately-exec'd `opencode` is always a fresh top-level process; no unresumable-subagent env marker exists.",
+        "approach": "Largely moot: the problem this touchpoint solves doesn't arise, because opencode's subagent model is in-process (task tool → child session), not process-nesting. A Synth-launched `opencode` inside an opencode-driven shell just starts its own top-level session. Recommend a light audit of opencode's env (OPENCODE_* vars, e.g. OPENCODE_CLIENT) and strip any that would confuse a nested launch, but no CHILD_SESSION-style scrub is required.",
+        "feasibility": "direct",
+        "gap": "None functionally; residual low-confidence on whether any OPENCODE_* env var (e.g. an internal server/session pointer) leaks into nested spawns and needs a defensive unset — undocumented, so verify empirically.",
+        "effort": "S",
+        "confidence": "medium",
+        "sources": [
+          "https://opencode.ai/docs/agents/",
+          "https://opencode.ai/docs/cli/"
+        ]
+      },
+      {
+        "touchpoint": "preferredNotifChannel silences Claude's own notifications",
+        "ccDependency": "CC honors settings key `preferredNotifChannel: notifications_disabled` to suppress its built-in OSC/terminal notification channel.",
+        "opencodeMechanism": "No documented equivalent settings key. opencode surfaces notifications via the bus (`tui.toast.show`) and there's no confirmed OSC/OS-notification channel that would double up with Synth's deck.",
+        "approach": "Likely a non-issue: opencode's TUI notifications are in-app toasts, not the OS/terminal channel CC uses, so the double-notification problem may not exist. If a suppressible channel does emerge, handle it via config or by not surfacing opencode toasts. Treat as verify-then-maybe-noop rather than a required setting.",
+        "feasibility": "gap",
+        "gap": "No `preferredNotifChannel` analog documented; unknown whether opencode emits an OS/terminal notification that needs silencing. If it does, no config key is documented to disable just that channel.",
+        "effort": "S",
+        "confidence": "low",
+        "sources": [
+          "https://opencode.ai/docs/config/",
+          "https://opencode.ai/docs/plugins/"
+        ]
+      },
+      {
+        "touchpoint": "spawned-claude command excluded from per-command term reporting",
+        "ccDependency": "Synth's zsh preexec strips a leading `exec ` and returns early when the command word is `claude`, so CC's hook-driven status owns the row instead of the coarse shell dot.",
+        "opencodeMechanism": "Same shell-level mechanism; only the matched command word changes. opencode's own status comes from the plugin/event bus, exactly the role CC's hooks played.",
+        "approach": "Change the preexec early-return to match command word `opencode` (after stripping leading `exec `) instead of `claude`. The rationale is unchanged: defer the row's status to opencode's fine-grained event-driven signal so the coarse per-command dot doesn't double-track it.",
+        "feasibility": "direct",
+        "gap": "",
+        "effort": "S",
+        "confidence": "high",
+        "sources": [
+          "https://opencode.ai/docs/plugins/"
+        ]
+      }
+    ]
+  }
+]

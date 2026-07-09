@@ -177,8 +177,14 @@ private struct NotifCard: View {
     private var who: some View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 3).fill(chipColor).frame(width: 7, height: 7)
-            Phos(path: notif.iconPath ?? displayKind.iconPath, size: 12)
-                .foregroundStyle(Theme.inkFaint).frame(width: 12, height: 12)
+            Group {
+                if let path = notif.iconPath {
+                    Phos(path: path, size: 12).foregroundStyle(Theme.inkFaint)
+                } else {
+                    SessionIcon(kind: displayKind, size: 12, tint: Theme.inkFaint)
+                }
+            }
+            .frame(width: 12, height: 12)
             Text(displayTitle)
                 .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
                 .lineLimit(1).truncationMode(.tail)

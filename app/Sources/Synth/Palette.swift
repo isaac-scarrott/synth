@@ -226,9 +226,11 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal",
                                      group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newTerminal(in: branch) } }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code",
-                                     group: g, ctx: branch.name,
-                                     enter: { self.runAndClose { self.store.newClaude(in: branch) } }))
+            items += AgentRegistry.installed.map { agent in
+                PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)",
+                            group: g, ctx: branch.name,
+                            enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
+            }
             items.append(PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser",
                                      group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newBrowser(in: branch) } }))
@@ -316,11 +318,12 @@ struct PaletteFrame {
                                 enter: { self.runAndClose { self.store.detach(s) } })]
         }
         guard let br = store.branch(of: s) else { return [] }
-        return br.sessions.filter { $0.kind == .claudeCode }.map { claude in
-            PaletteItem(icon: .phosphor(Phosphor.sparkle),
-                        label: "Move under “\(claude.title)”",
+        return br.sessions.filter { $0.kind.isAgent }.map { agent in
+            // The row shows the agent it would move the browser under, not a generic sparkle.
+            PaletteItem(icon: .session(agent.kind),
+                        label: "Move under “\(agent.title)”",
                         sec: sec, group: group, ctx: s.title,
-                        enter: { self.runAndClose { self.store.adopt(s, by: claude) } })
+                        enter: { self.runAndClose { self.store.adopt(s, by: agent) } })
         }
     }
 
@@ -518,17 +521,18 @@ struct PaletteFrame {
         }
     }
 
-    /// The three session creates on a branch — shared by the branch frame and the
-    /// workspace/session frames, which borrow them with a ctx chip naming the branch.
+    /// The session creates on a branch — a terminal, one per installed agent, a browser —
+    /// shared by the branch frame and the workspace/session frames, which borrow them with a
+    /// ctx chip naming the branch.
     private func sessionCreates(in branch: Branch, ctx: String? = nil) -> [PaletteItem] {
-        [
-            PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
-                        ctx: ctx, enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
-            PaletteItem(icon: .phosphor(Phosphor.sparkle), label: "New Claude Code", sec: "act",
-                        ctx: ctx, enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
-            PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser", sec: "act",
-                        ctx: ctx, enter: { self.runAndClose { self.store.newBrowser(in: branch) } }),
-        ]
+        [PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
+                     ctx: ctx, enter: { self.runAndClose { self.store.newTerminal(in: branch) } })]
+        + AgentRegistry.installed.map { agent in
+            PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)", sec: "act",
+                        ctx: ctx, enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
+        }
+        + [PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser", sec: "act",
+                       ctx: ctx, enter: { self.runAndClose { self.store.newBrowser(in: branch) } })]
     }
 
     /// Drill the palette straight to a row's frame — the row ⋯ kebab opens this instead of
@@ -665,9 +669,9 @@ struct PaletteFrame {
                                      label: v.isEmpty ? "Type a new name…" : "Rename to “\(v)”",
                                      disabled: !changed,
                                      enter: { if changed { self.runAndClose { self.store.rename(ref, to: v) } } })]
-            if case let .session(s) = ref, s.kind == .claudeCode, s.title != "Claude Code" {
+            if case let .session(s) = ref, s.kind.isAgent, s.title != s.kind.tplStart {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.reset), label: "Reset to default name",
-                                         ctx: "Claude Code",
+                                         ctx: s.kind.tplStart,
                                          enter: { self.runAndClose { self.store.resetSessionName(s) } }))
             }
             return items
@@ -675,17 +679,20 @@ struct PaletteFrame {
     }
 
     /// `a` on a branch/worktree (or a session leaf) jumps straight to the "add a session"
-    /// choice — a terminal or a Claude Code, created in `branch` (working.html newSessionFrame).
+    /// choice — a terminal, any installed agent, or a browser, created in `branch`
+    /// (working.html newSessionFrame). Order: create→navigate→modify→destroy, and within
+    /// the creates, terminal first then the agents in registry order.
     func newSessionFrame(branch: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "New session", placeholder: "New session in \(branch.name)…") { [self] _ in
-            [
-                PaletteItem(icon: .session(.terminal), label: "New terminal", ctx: branch.name,
-                            enter: { self.runAndClose { self.store.newTerminal(in: branch) } }),
-                PaletteItem(icon: .session(.claudeCode), label: "New Claude Code", ctx: branch.name,
-                            enter: { self.runAndClose { self.store.newClaude(in: branch) } }),
-                PaletteItem(icon: .session(.browser), label: "New browser", ctx: branch.name,
-                            enter: { self.runAndClose { self.store.newBrowser(in: branch) } }),
-            ]
+            var items = [PaletteItem(icon: .session(.terminal), label: "New terminal", ctx: branch.name,
+                                     enter: { self.runAndClose { self.store.newTerminal(in: branch) } })]
+            items += AgentRegistry.installed.map { agent in
+                PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)", ctx: branch.name,
+                            enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
+            }
+            items.append(PaletteItem(icon: .session(.browser), label: "New browser", ctx: branch.name,
+                                     enter: { self.runAndClose { self.store.newBrowser(in: branch) } }))
+            return items
         }
     }
 
@@ -994,8 +1001,7 @@ private struct PaletteItemRow: View {
             Phos(path: path, size: 16)
                 .foregroundStyle(item.danger ? Theme.danger : Theme.ink4)
         case let .session(kind):
-            Phos(path: kind.iconPath, size: 16)
-                .foregroundStyle(item.danger ? Theme.danger : kind.tint)
+            SessionIcon(kind: kind, size: 16, tint: item.danger ? Theme.danger : nil)
         case let .chip(text, color):
             RoundedRectangle(cornerRadius: 5).fill(color).frame(width: 16, height: 16)
                 .overlay(Text(text).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.white))

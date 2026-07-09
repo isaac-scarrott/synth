@@ -12,12 +12,12 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     private let kind: SessionKind
     /// Set when restoring a Claude row (ADR-0010): its terminal resumes the conversation
     /// with `claude --resume <id>` instead of a fresh `claude`. nil for a new session.
-    private let resumeClaudeID: String?
+    private let resumeAgentID: String?
     private let env: [String: String]
     private let command: String
     /// Default flags typed after `claude` on launch (Settings → Claude Code flags). The
     /// effective string for this session's workspace; empty runs a bare `claude`.
-    private let claudeFlags: String
+    private let agentFlags: String
     private weak var bus: EventBus?
 
     /// Retained C-side via `surface_config.userdata`; released in `close()`.
@@ -29,14 +29,14 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     private var keyText: [String] = []
     private var markedText = NSMutableAttributedString()
 
-    init(session: Session, cwd: URL, env: [String: String], command: String, claudeFlags: String = "", bus: EventBus?) {
+    init(session: Session, cwd: URL, env: [String: String], command: String, agentFlags: String = "", bus: EventBus?) {
         self.sessionID = session.id
         self.cwd = cwd
         self.kind = session.kind
-        self.resumeClaudeID = session.claudeSessionID
+        self.resumeAgentID = session.agentSessionID
         self.env = env
         self.command = command
-        self.claudeFlags = claudeFlags
+        self.agentFlags = agentFlags
         self.bus = bus
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         wantsLayer = true
@@ -83,25 +83,20 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         cfg.scale_factor = window.backingScaleFactor
         cfg.font_size = 0  // 0 → use the config default
 
-        // A Claude session is a native login shell that immediately `exec`s `claude` (typed
-        // via initial_input, so the shim PATH attaches hooks). exec, not run: the session
-        // exists to run claude, so claude's end is the PTY child exiting — the same
+        // An agent session is a native login shell that immediately `exec`s the agent's binary
+        // (typed via initial_input, so the shim PATH intercepts it). exec, not run: the session
+        // exists to run the agent, so the agent's end is the PTY child exiting — the same
         // child-exited signal a terminal's `exit` raises (clean → the row closes itself,
         // features 2026-07-06). The exit *code* can't ride that signal (macOS `login`
-        // zeroes it); the shim reports it over the hook socket instead. A plain terminal
-        // is just the login shell. A restored Claude row (resumeClaudeID set) resumes its
-        // saved conversation instead. The id comes from Claude's hook payload (a UUID in
-        // practice) and is typed into the shell, so shell-quote it rather than trust the
-        // format. The workspace's default flags are appended raw — they're the user's own
-        // shell tokens (Settings → Claude Code flags).
-        let initialInput: String?
-        switch kind {
-        case .claudeCode:
-            let extra = claudeFlags.isEmpty ? "" : " " + claudeFlags
-            initialInput = resumeClaudeID.map { "exec claude --resume \(Self.shellQuote($0))\(extra)\n" } ?? "exec claude\(extra)\n"
-        case .terminal, .browser:   // a browser session never hosts a PTY (BrowserPane owns it)
-            initialInput = nil
-        }
+        // zeroes it); the shim reports it over the hook socket instead. A plain terminal is
+        // just the login shell; a browser session never hosts a PTY (BrowserPane owns it).
+        // A restored agent row (resumeAgentID set) resumes its saved conversation instead —
+        // the id is typed into the shell, so the supervisor shell-quotes it rather than
+        // trusting its format. The workspace's default flags are appended raw: they're the
+        // user's own shell tokens (Settings → agent flags).
+        let initialInput: String? = kind.agentID
+            .flatMap { AgentRegistry.supervisor($0) }
+            .map { $0.launchCommand(resume: resumeAgentID, flags: agentFlags) }
 
         // env_vars must outlive ghostty_surface_new; strdup then free after the call.
         var envVars: [ghostty_env_var_s] = []

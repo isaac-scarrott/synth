@@ -32,11 +32,11 @@ enum TerminalLauncher {
     static let shared = TerminalManager()
 
     weak var bus: EventBus?
-    /// The app's hook socket path, injected into every PTY so Claude Code hooks can call back.
+    /// The app's hook socket path, injected into every PTY so agent hooks can call back.
     var hookSocketPath = ""
     private var views: [UUID: GhosttySurfaceView] = [:]
 
-    func view(for session: Session, cwd: URL, claudeFlags: String = "") -> GhosttySurfaceView {
+    func view(for session: Session, cwd: URL, agentFlags: String = "") -> GhosttySurfaceView {
         if let existing = views[session.id] { return existing }
 
         GhosttyApp.shared.bus = bus
@@ -45,10 +45,13 @@ enum TerminalLauncher {
         var base = ProcessInfo.processInfo.environment
         // libghostty sets its own TERM to match `term` in the inline config.
         base.removeValue(forKey: "TERM")
+        // decorate() lets every installed agent's supervisor stamp its env — including the port
+        // opencode's server will listen on. Supervisors are attached by the agent-start signal
+        // (Hooks), never here: a launched agent is not yet a reachable one.
         let env = HookEnvironment.decorate(base, sessionID: session.id, socketPath: hookSocketPath)
 
         let view = GhosttySurfaceView(session: session, cwd: cwd, env: env,
-                                      command: TerminalLauncher.command, claudeFlags: claudeFlags, bus: bus)
+                                      command: TerminalLauncher.command, agentFlags: agentFlags, bus: bus)
         views[session.id] = view
         return view
     }

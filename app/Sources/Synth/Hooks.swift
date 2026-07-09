@@ -69,8 +69,8 @@ final class HookServer: @unchecked Sendable {
             if obj["titleReset"] != nil {
                 Task { @MainActor in bus?.post(.titleReset(id)) }
             }
-            if let claude = obj["claudeSession"] as? String, !claude.isEmpty {
-                Task { @MainActor in bus?.post(.claudeSessionCaptured(id, claude)) }
+            if let agentSession = obj["agentSession"] as? String, !agentSession.isEmpty {
+                Task { @MainActor in bus?.post(.agentSessionCaptured(id, agentSession)) }
             }
             // The session's true exit status (zshexit / the claude shim), sent moments
             // before the process dies — the PTY's own code arrives later as 0 (login).
@@ -80,17 +80,28 @@ final class HookServer: @unchecked Sendable {
         }
     }
 
-    /// Map a signal to bus events. Status maps 1:1 onto `SessionStatus`; the terracotta
-    /// Claude visual is switched on/off by flipping the session's kind on start/end.
+    /// Map a signal to bus events. Status maps 1:1 onto `SessionStatus`; an agent's visual is
+    /// switched on/off by flipping the session's kind on start/end.
+    ///
+    /// `agent-start:<id>` / `agent-end:<id>` name which agent attached, so a terminal that runs
+    /// `opencode` becomes an opencode row and one that runs `claude` a Claude Code row.
     @MainActor static func apply(signal: String, session id: UUID, bus: EventBus?) {
         guard let bus else { return }
+        if let agent = signal.strippingPrefix("agent-start:") {
+            bus.post(.kindChanged(id, .agent(AgentID(agent))))
+            bus.post(.statusChanged(id, .idle))
+            return
+        }
+        if signal.hasPrefix("agent-end:") {
+            bus.post(.kindChanged(id, .terminal))
+            bus.post(.statusChanged(id, .idle))
+            return
+        }
         switch signal {
         case "working":    bus.post(.statusChanged(id, .working))
         case "needsInput": bus.post(.statusChanged(id, .needsInput))
         case "error":      bus.post(.statusChanged(id, .error))
         case "idle":       bus.post(.statusChanged(id, .idle)); bus.post(.markUnread(id))
-        case "claude-start": bus.post(.kindChanged(id, .claudeCode)); bus.post(.statusChanged(id, .idle))
-        case "claude-end":   bus.post(.kindChanged(id, .terminal));   bus.post(.statusChanged(id, .idle))
         // A plain terminal's per-command lifecycle, from the injected zsh hooks (synth-hook
         // report). `term-run` greens the row while a foreground process runs; on finish a
         // long or failed command marks unread — a clean/interrupted quick one stays quiet.
@@ -102,10 +113,10 @@ final class HookServer: @unchecked Sendable {
     }
 }
 
-/// Resolves the paths and environment that let a spawned terminal report Claude Code
-/// status back to Synth: a shim dir with a `claude` symlink placed first on PATH, plus the
-/// correlation/callback env. Detection is a no-op (returns the base env unchanged) when
-/// either `synth-hook` or a real `claude` can't be found — the terminal just runs normally.
+/// Resolves the paths and environment that let a spawned terminal report a coding agent's
+/// status back to Synth: a shim dir carrying one symlink per installed agent binary, placed
+/// first on PATH, plus the correlation/callback env. Detection degrades to a no-op (the base
+/// env unchanged) when `synth-hook` or every agent binary is missing — the terminal just runs.
 @MainActor enum HookEnvironment {
     static let shimDir = "/tmp/synth-shims-\(getpid())"
 
@@ -123,53 +134,37 @@ final class HookServer: @unchecked Sendable {
         return FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }()
 
-    /// The real `claude`, resolved once on the original PATH (before our shim is prepended).
-    /// Skips any `claude` that resolves to a `synth-hook` shim — when Synth is launched from
-    /// inside another Synth session its PATH already carries a `synth-shims-*` dir, and
-    /// handing that shim to a spawned terminal as SYNTH_REAL_CLAUDE makes synth-hook exec
-    /// itself in a loop until the argv blows past ARG_MAX (E2BIG, "Argument list too long").
-    static let realClaude: String? = {
-        // A Dock/`open` launch gets the bare LaunchServices PATH (/usr/bin:/bin:…), which
-        // never contains claude — and a silent nil here turns the whole hook layer off:
-        // bare claude, no --settings, no signals, so a fresh row's optimistic .working
-        // never clears. Fall back to the standard install locations after the PATH scan.
-        let home = NSHomeDirectory()
-        let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        let fallbacks = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin",
-                         "\(home)/.npm-global/bin", "\(home)/.claude/local"]
-        for dir in pathDirs + fallbacks {
-            let candidate = dir + "/claude"
-            guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
-            let resolved = (try? FileManager.default.destinationOfSymbolicLink(atPath: candidate)) ?? candidate
-            if (resolved as NSString).lastPathComponent == "synth-hook" { continue }
-            return candidate
-        }
-        return nil
-    }()
+    static var available: Bool { hookBin != nil && !AgentRegistry.installed.isEmpty }
 
-    static var available: Bool { hookBin != nil && realClaude != nil }
+    /// Session markers a parent agent leaves in our environment when Synth is launched from
+    /// inside one. A spawned agent must not see them: `CLAUDE_CODE_CHILD_SESSION` makes Claude
+    /// treat the session as a subagent — no transcript on disk (unresumable), no history — and
+    /// `CLAUDECODE`/`OPENCODE`-aware tools misbehave in plain shells. opencode has no
+    /// child-session contract (its subagents are in-process), so the whole prefix is the safe
+    /// superset rather than a known-bad list.
+    static let inheritedAgentMarkers = ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION",
+                                        "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT",
+                                        "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT",
+                                        "OPENCODE", "AGENT", "OPENCODE_SESSION_ID",
+                                        "OPENCODE_SESSION_TITLE", "OPENCODE_CONFIG_CONTENT",
+                                        "OPENCODE_PERMISSION", "OPENCODE_SERVER_USERNAME",
+                                        "OPENCODE_SERVER_PASSWORD"]
 
-    /// Create the shim dir and (re)point its `claude` symlink at `synth-hook`. When Claude
-    /// execs `claude`, the shim runs `synth-hook` in its launch role.
-    /// Claude Code session markers a parent claude leaves in our environment when Synth is
-    /// launched from inside one. Spawned claudes must not see them: CLAUDE_CODE_CHILD_SESSION
-    /// makes Claude treat the session as a subagent — no transcript on disk (unresumable),
-    /// no history — and CLAUDECODE-aware tools misbehave in plain shells.
-    static let inheritedClaudeMarkers = ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION",
-                                         "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT",
-                                         "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT"]
-
+    /// Create the shim dir and (re)point one symlink per installed agent at `synth-hook`. When
+    /// a terminal runs `claude` or `opencode`, the shim runs `synth-hook` in its launch role.
     static func setup() {
         // Scrub at the process level, not just in decorate()'s overlay: libghostty merges
         // surface env_vars ON TOP of the app's inherited environ, so a key merely absent
         // from the overlay still reaches the PTY child. unsetenv is the only real removal.
-        for key in inheritedClaudeMarkers { unsetenv(key) }
+        for key in inheritedAgentMarkers { unsetenv(key) }
         guard let hookBin else { return }
         reapStale()
         try? FileManager.default.createDirectory(atPath: shimDir, withIntermediateDirectories: true)
-        let link = shimDir + "/claude"
-        try? FileManager.default.removeItem(atPath: link)
-        try? FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: hookBin)
+        for agent in AgentRegistry.installed {
+            let link = shimDir + "/" + agent.binaryName
+            try? FileManager.default.removeItem(atPath: link)
+            try? FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: hookBin)
+        }
         writeZDotDir()
     }
 
@@ -215,10 +210,12 @@ final class HookServer: @unchecked Sendable {
             # A background timer paints the row green only once a command outlasts ~0.5s, so
             # trivial commands (ls, cd, git status) finish first, are killed, and never strobe
             # the sidebar. The command line rides along so the row auto-names itself after the
-            # thing it's running. `claude` is left entirely to Claude's own pipeline.
+            # thing it's running. An agent binary is left entirely to its own supervisor, whose
+            # status is richer and mustn't fight the coarse per-command dot.
             _synth_preexec() {
-                local cmd="${1#exec }"          # spawned claude rows type `exec claude …`
-                [[ "${cmd%% *}" == claude ]] && return
+                local cmd="${1#exec }"          # spawned agent rows type `exec claude …`
+                local word="${cmd%% *}"
+                [[ " $SYNTH_AGENT_BINS " == *" $word "* ]] && return
                 [[ -n "$_synth_run_timer" ]] && kill "$_synth_run_timer" 2>/dev/null
                 _synth_cmd_start=$EPOCHREALTIME
                 ( sleep 0.5; _synth_report term-run "$1" ) &!
@@ -307,10 +304,10 @@ final class HookServer: @unchecked Sendable {
     /// Overlay the hook correlation/callback env + shim PATH onto a base environment.
     static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String) -> [String: String] {
         var env = base
-        // Sessions inside Synth are top-level, never child sessions — drop inherited claude
+        // Sessions inside Synth are top-level, never child sessions — drop inherited agent
         // markers from the overlay too (setup()'s unsetenv is the real removal; this guards
         // callers that pass a base env other than our own environ).
-        for key in inheritedClaudeMarkers { env.removeValue(forKey: key) }
+        for key in inheritedAgentMarkers { env.removeValue(forKey: key) }
         // Terminal per-command reporting needs only synth-hook + the socket + the injected
         // ZDOTDIR — not a real `claude` — so wire it up whenever the helper exists, so a plain
         // shell lights up even on a machine without Claude Code installed.
@@ -318,6 +315,8 @@ final class HookServer: @unchecked Sendable {
             env["SYNTH_SESSION_ID"] = sessionID.uuidString
             env["SYNTH_SOCKET_PATH"] = socketPath
             env["SYNTH_HOOK_BIN"] = hookBin
+            // The per-command reporter skips these words — each has its own supervisor.
+            env["SYNTH_AGENT_BINS"] = AgentRegistry.installed.map(\.binaryName).joined(separator: " ")
             // Synth may itself be running inside another Synth's session (dev.sh in a claude
             // turn), so the inherited ZDOTDIR can be the *outer* instance's injected dir —
             // recording that as the user's would chase a dir that vanishes when the outer
@@ -329,12 +328,23 @@ final class HookServer: @unchecked Sendable {
                 .first { !$0.isEmpty && !isInjectedZDotDir($0) } ?? ""
             env["ZDOTDIR"] = zdotDir
         }
-        // Claude interception additionally needs a real `claude` to exec and the shim PATH
-        // that routes `claude` through synth-hook's launch role.
-        guard available, let realClaude else { return env }
+        // Agent interception additionally needs the shim PATH that routes each agent's binary
+        // through synth-hook's launch role, plus whatever that agent needs to report back —
+        // the real binary to exec, and for opencode the port/credentials of the server its TUI
+        // will serve. Every terminal gets this: any terminal may become any agent.
+        guard available else { return env }
         env["PATH"] = shimDir + ":" + (base["PATH"] ?? "/usr/bin:/bin")
         env["SYNTH_SHIM_DIR"] = shimDir
-        env["SYNTH_REAL_CLAUDE"] = realClaude
+        for agent in AgentRegistry.installed {
+            AgentRegistry.supervisor(agent.id)?.decorate(&env, sessionID: sessionID)
+        }
         return env
+    }
+}
+
+extension String {
+    /// The remainder after `prefix`, or nil when it doesn't match.
+    func strippingPrefix(_ prefix: String) -> String? {
+        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : nil
     }
 }

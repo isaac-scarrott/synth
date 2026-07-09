@@ -1,7 +1,9 @@
 // Synth's browser MCP server (ADR-0011 stage two, stdio).
 //
-// Claude Code drives the embedded CEF browser of the Synth instance that manages
-// $CLAUDE_PROJECT_DIR. Discovery: each running Synth writes
+// A coding agent drives the embedded CEF browser of the Synth instance that manages
+// its worktree — named by $SYNTH_WORKTREE (opencode, which Synth sets explicitly in the
+// server's `environment`) or $CLAUDE_PROJECT_DIR (Claude Code, which sets it itself),
+// falling back to the cwd. Discovery: each running Synth writes
 // ~/Library/Application Support/Synth/instances/<pid>.json (pid, cdpPort, createdAt,
 // worktreePaths, controlSocket). Session list/create go through the app's control
 // socket (the app owns the session model); everything else is CDP via Playwright's
@@ -55,7 +57,7 @@ function liveInstances() {
   return out;
 }
 
-const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const projectDir = process.env.SYNTH_WORKTREE || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
 /** The managed worktree this server is scoped to: an exact worktreePaths match,
  *  else the DEEPEST managed ancestor (agents run in nested `.worktree/<slice>`

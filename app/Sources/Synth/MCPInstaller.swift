@@ -105,25 +105,55 @@ import os.log
         return candidates.first { fm.isExecutableFile(atPath: $0) }
     }
 
-    // MARK: Per-worktree .mcp.json
+    // MARK: Per-worktree agent config
 
     /// In-memory skip: the sync runs on the autosave cadence, so an unchanged
     /// worktree set costs nothing.
     private static var lastSyncedPaths: [String]?
 
+    /// Each agent discovers project MCP servers from its own file, with its own schema. Both
+    /// are written into every worktree: whichever agent runs there finds the browser server
+    /// already registered, and the other's file is inert.
     static func syncWorktreeConfigs(_ worktreePaths: [String]) {
         guard worktreePaths != lastSyncedPaths else { return }
         lastSyncedPaths = worktreePaths
-        for path in worktreePaths { writeConfig(atWorktree: path) }
+        for path in worktreePaths {
+            writeClaudeConfig(atWorktree: path)
+            writeOpencodeConfig(atWorktree: path)
+        }
     }
 
-    private static func writeConfig(atWorktree path: String) {
-        guard FileManager.default.fileExists(atPath: path) else { return }
-        let file = URL(fileURLWithPath: path).appendingPathComponent(".mcp.json")
+    private static var serverPath: String {
+        installDir.appendingPathComponent("server.mjs").path
+    }
+
+    /// Claude Code: `.mcp.json` → `mcpServers.<name>.{command,args}`.
+    private static func writeClaudeConfig(atWorktree path: String) {
+        let entry: [String: Any] = ["command": "node", "args": [serverPath]]
+        merge(atWorktree: path, file: ".mcp.json", container: "mcpServers", entry: entry)
+    }
+
+    /// opencode: `opencode.json` → `mcp.<name>.{type,command,enabled,environment}`. A single
+    /// `command` array rather than command+args, and the worktree travels in the env because
+    /// the server can no longer read Claude's `CLAUDE_PROJECT_DIR`.
+    private static func writeOpencodeConfig(atWorktree path: String) {
         let entry: [String: Any] = [
-            "command": "node",
-            "args": [installDir.appendingPathComponent("server.mjs").path],
+            "type": "local",
+            "command": ["node", serverPath],
+            "enabled": true,
+            "environment": ["SYNTH_WORKTREE": path],
         ]
+        merge(atWorktree: path, file: "opencode.json", container: "mcp", entry: entry,
+              extra: ["$schema": "https://opencode.ai/config.json"])
+    }
+
+    /// Register `synth-browser` under `container` in `file`, preserving whatever else the user
+    /// keeps there. A no-op when the entry is already correct — the worktree is the user's
+    /// working tree, and a needless rewrite shows up as a dirty file in their `git status`.
+    private static func merge(atWorktree path: String, file name: String, container: String,
+                              entry: [String: Any], extra: [String: Any] = [:]) {
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        let file = URL(fileURLWithPath: path).appendingPathComponent(name)
 
         var root: [String: Any] = [:]
         if let data = try? Data(contentsOf: file) {
@@ -134,13 +164,14 @@ import os.log
             }
             root = existing
         }
-        var servers = root["mcpServers"] as? [String: Any] ?? [:]
+        var servers = root[container] as? [String: Any] ?? [:]
         if let current = servers["synth-browser"] as? [String: Any],
            NSDictionary(dictionary: current).isEqual(to: entry) {
             return   // already correct — never dirty the worktree needlessly
         }
         servers["synth-browser"] = entry
-        root["mcpServers"] = servers
+        root[container] = servers
+        for (k, v) in extra where root[k] == nil { root[k] = v }
         guard let data = try? JSONSerialization.data(
             withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) else { return }
         try? data.write(to: file, options: .atomic)

@@ -57,7 +57,7 @@ enum Theme {
     static let working     = Color(hex: 0xF5A623)   // amber (working)
     static let attention   = Color(hex: 0x0A84FF)   // needs-input (?) / unread bullet
     static let danger      = Color(hex: 0xFF3B30)   // error (!)
-    static let claude      = Color(hex: 0xC2724C)   // terracotta accent (session__icon--ai)
+    static let agent       = Color(hex: 0xC2724C)   // terracotta accent (session__icon--ai)
 
     static let chipColors: [Color] = [
         Color(hex: 0x6366F1), Color(hex: 0x0EA5E9), Color(hex: 0xF59E0B),
@@ -112,16 +112,19 @@ extension NSColor {
 }
 
 extension SessionKind {
+    /// The monochrome glyph a kind falls back to. Agents normally render their own mark
+    /// (`SessionIcon` / AgentMarks.swift); the sparkle stands in for one Synth has no artwork
+    /// for, so a third agent looks reasonable before anyone draws it.
     var iconPath: String {
         switch self {
-        case .terminal:   return Phosphor.terminal
-        case .claudeCode: return Phosphor.sparkle
-        case .browser:    return Phosphor.globe
+        case .terminal: return Phosphor.terminal
+        case .agent:    return Phosphor.sparkle
+        case .browser:  return Phosphor.globe
         }
     }
     var tint: Color {
         switch self {
-        case .claudeCode: return Theme.claude
+        case .agent: return Theme.agent
         case .terminal, .browser: return Theme.sessionIcon
         }
     }

@@ -14,3 +14,7 @@ app/Package.resolved
 !docs/
 !docs/adr/
 !docs/adr/**
+
+# MCPInstaller writes this into every worktree, and its `SYNTH_WORKTREE` is an absolute path
+# to *that* worktree — unlike .mcp.json, which only names the shared server install.
+/opencode.json

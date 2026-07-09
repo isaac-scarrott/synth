@@ -50,6 +50,11 @@ final class ControlServer: @unchecked Sendable {
         while true {
             let conn = accept(listenFD, nil, nil)
             if conn < 0 { if errno == EINTR { continue }; break }
+            // A client that connects and hangs up before reading the reply would otherwise
+            // raise SIGPIPE on the write below — whose default action kills Synth. Any local
+            // process could take the app down by probing the socket. Fail the write instead.
+            var on: Int32 = 1
+            setsockopt(conn, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
             Thread.detachNewThread { [weak self] in self?.handle(conn) }
         }
     }
@@ -109,13 +114,14 @@ final class ControlServer: @unchecked Sendable {
 
         case "browser.create":
             let url = (request["url"] as? String).flatMap(URL.fromBrowserInput)
-            // Stage four creation stamping: the calling claude names its own Synth row and
-            // becomes the owner. Valid only for a claude-kind row in this branch; anything
-            // else (absent, malformed, external claude) just creates an unowned sibling —
+            // Stage four creation stamping: the calling agent names its own Synth row and
+            // becomes the owner. Valid only for an agent-kind row in this branch; anything
+            // else (absent, malformed, external agent) just creates an unowned sibling —
             // ownership is best-effort, never an error.
-            let owner = (request["ownerSessionId"] as? String)
-                .flatMap(UUID.init(uuidString:))
-                .flatMap { id in branch.sessions.first { $0.id == id && $0.kind == .claudeCode } }
+            let ownerID = (request["ownerSessionId"] as? String).flatMap(UUID.init(uuidString:))
+            let owner = ownerID.flatMap { id in
+                branch.sessions.first { $0.id == id && $0.kind.isAgent }
+            }
             // focus: false — an agent-created browser never steals the pane; the row
             // announces itself with the unread bullet and the engine boots detached
             // (next runloop turn), so callers still poll CDP for the target as before.
@@ -128,8 +134,11 @@ final class ControlServer: @unchecked Sendable {
         // stand-in for driving the real UI on machines whose TCC denies synthetic
         // input. Each maps 1:1 onto the exact call the UI performs — no separate
         // logic — so exercising a verb exercises the product path.
-        case "automation.newClaude" where automation:
-            guard let session = store.newClaude(in: branch) else {
+        // `agent` names which one (an AgentID rawValue); absent means Claude Code, the verb's
+        // original and only meaning.
+        case "automation.newAgent" where automation, "automation.newClaude" where automation:
+            let agent = (request["agent"] as? String).map(AgentID.init) ?? .claudeCode
+            guard let session = store.newAgent(agent, in: branch) else {
                 return ["ok": false, "error": "session creation failed"]
             }
             return ["ok": true, "sessionId": session.id.uuidString]
@@ -141,6 +150,54 @@ final class ControlServer: @unchecked Sendable {
             }
             ctrl.toggleCommentMode(store: store)   // the bar button's exact call
             return ["ok": true]
+
+        // Pin which surface a background transition notifies on. Focus normally decides, and a
+        // driven instance never holds focus on a live desktop, so neither branch is otherwise
+        // reachable. "auto" hands the decision back to focus.
+        case "automation.notifRoute" where automation:
+            switch request["route"] as? String {
+            case "deck": store.automationNotifRoute = .inApp
+            case "nc":   store.automationNotifRoute = .notificationCenter
+            case "auto": store.automationNotifRoute = nil
+            default: return ["ok": false, "error": "route must be deck|nc|auto"]
+            }
+            return ["ok": true, "active": NSApp.isActive]
+
+        // Cut a new worktree — the ⌘K "Create worktree" frame's exact call, template spawn and
+        // all. Returns the path the checkout will land at so the harness can watch it fill.
+        case "automation.createWorktree" where automation:
+            guard let ws = store.workspace(of: branch), let newBranch = request["branch"] as? String else {
+                return ["ok": false, "error": "need branch"]
+            }
+            let planned = GitService.plannedWorktreePath(repo: ws.url, branch: newBranch)
+            store.createWorktree(in: ws, newBranch: newBranch, base: request["base"] as? String)
+            return ["ok": true, "worktreePath": planned.path]
+
+        // Hand text to a live agent exactly as a browser comment does (CommentMode rung 1),
+        // so exercising the verb exercises the product path.
+        case "automation.deliver" where automation:
+            guard let session = requestedSession(request, in: branch),
+                  let text = request["text"] as? String else {
+                return ["ok": false, "error": "need sessionId + text"]
+            }
+            guard let supervisor = store.liveSupervisor(for: session) else {
+                return ["ok": false, "error": "no live agent for sessionId"]
+            }
+            return ["ok": supervisor.deliver(text, to: session.id)]
+
+        // Every session row's derived facts — what the sidebar renders. The seam the agent
+        // self-verify harness reads to prove a supervisor is driving kind/status/title.
+        case "automation.sessions" where automation:
+            let rows = branch.sessions.map { s -> [String: Any] in
+                ["sessionId": s.id.uuidString,
+                 "kind": s.kind.rawValue,
+                 "title": s.title,
+                 "status": String(describing: s.status),
+                 "unread": s.unread,
+                 "liveAgent": store.isLiveAgent(s.id),
+                 "agentSessionId": s.agentSessionID ?? ""]
+            }
+            return ["ok": true, "sessions": rows]
 
         case "automation.state" where automation:
             guard let session = requestedSession(request, in: branch),

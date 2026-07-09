@@ -3,17 +3,21 @@ import Foundation
 /// Plain Codable snapshot of the durable tree (ADR-0010). Kept deliberately separate from
 /// the @Observable runtime models so the on-disk format is explicit and runtime-only facts —
 /// live status, unread, keyboard selection, the terminal process itself — never reach disk.
-/// Restore is reconstruction: respawn a shell in the worktree, and for a Claude row resume
-/// its conversation with `claude --resume`. No live process survives a restart (see cmux,
-/// which converges on the same model).
+/// Restore is reconstruction: respawn a shell in the worktree, and for an agent row resume
+/// its conversation (`claude --resume`, `opencode --session`). No live process survives a
+/// restart (see cmux, which converges on the same model).
 struct PersistedState: Codable {
     var version: Int
     var workspaces: [PersistedWorkspace]
     /// Ids of expanded rows (workspaces/branches), so the tree reopens as the user left it.
     var expanded: [UUID]
-    /// Settings (ADR-0010): the global setup script + Claude flags. Optional so a snapshot
+    /// Settings (ADR-0010): the global setup script + per-agent flags. Optional so a snapshot
     /// written before settings were persisted still decodes — a nil just keeps the default.
     var globalScript: String?
+    /// Flags per agent, keyed by `AgentID.rawValue`.
+    var globalAgentFlags: [String: String]?
+    /// Superseded by `globalAgentFlags`. Read-only now: a pre-agents snapshot carried Claude's
+    /// flags alone, and dropping the key would silently reset a user's configured flags.
     var globalClaudeFlags: String?
     /// The new-worktree session template (working.html globalTpl) — same optionality rule.
     var globalSessionTemplate: [SessionTemplateEntry]?
@@ -28,6 +32,9 @@ struct PersistedWorkspace: Codable {
     /// Per-workspace settings, carried with the workspace so they drop when it's removed.
     /// Optional/omitted when the workspace has no custom value (see PersistedState).
     var setupScript: String?
+    /// Flags per agent, keyed by `AgentID.rawValue`.
+    var agentFlags: [String: String]?
+    /// Superseded by `agentFlags` — kept so a pre-agents snapshot keeps its Claude flags.
     var claudeFlags: String?
     /// Omitted when empty — an empty list means "inherit global", same as no list.
     var sessionTemplate: [SessionTemplateEntry]?
@@ -46,16 +53,43 @@ struct PersistedBranch: Codable {
 
 struct PersistedSession: Codable {
     var id: UUID
-    var kind: String            // SessionKind.rawValue
+    var kind: String            // SessionKind.rawValue ("terminal" / "browser" / an AgentID)
     var title: String
     var titleIsCustom: Bool
+    /// The agent's own conversation id, used to resume on restore.
+    var agentSessionID: String?
+    /// Superseded by `agentSessionID` — kept so a pre-agents snapshot still resumes its
+    /// Claude conversation instead of silently opening a fresh one.
     var claudeSessionID: String?
     /// A browser session's current page — a restored row reopens it in a fresh engine
     /// (ADR-0011; same reconstruction model as `claude --resume`).
     var browserURL: URL?
-    /// The owning Claude row's id for a contained browser (ADR-0011 stage four).
+    /// The owning agent row's id for a contained browser (ADR-0011 stage four).
     /// Optional/omitted when unowned so pre-containment snapshots decode unchanged.
     var ownerSessionID: UUID?
+}
+
+extension PersistedSession {
+    /// The conversation to resume: the current key, falling back to the pre-agents one.
+    var resumeID: String? { agentSessionID ?? claudeSessionID }
+}
+
+extension PersistedWorkspace {
+    /// Per-agent flags, migrating a pre-agents snapshot's lone Claude string.
+    var effectiveAgentFlags: [AgentID: String]? {
+        if let agentFlags { return agentFlags.reduce(into: [:]) { $0[AgentID($1.key)] = $1.value } }
+        if let claudeFlags { return [.claudeCode: claudeFlags] }
+        return nil
+    }
+}
+
+extension PersistedState {
+    /// Global per-agent flags, migrating a pre-agents snapshot's lone Claude string.
+    var effectiveGlobalAgentFlags: [AgentID: String]? {
+        if let globalAgentFlags { return globalAgentFlags.reduce(into: [:]) { $0[AgentID($1.key)] = $1.value } }
+        if let globalClaudeFlags { return [.claudeCode: globalClaudeFlags] }
+        return nil
+    }
 }
 
 /// Reads and writes the state snapshot under Application Support. Atomic writes with a

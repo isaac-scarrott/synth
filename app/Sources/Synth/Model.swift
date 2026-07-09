@@ -1,11 +1,54 @@
 import Foundation
 import Observation
 
-/// The kind of live thing running inside a branch.
-enum SessionKind: String, Codable, Sendable {
+/// The kind of live thing running inside a branch. `agent` carries *which* coding agent, so
+/// every surface renders any agent without switching on a specific one (see Agents.swift).
+enum SessionKind: Codable, Sendable, Hashable {
     case terminal
-    case claudeCode
+    case agent(AgentID)
     case browser
+
+    /// The agent hosted by this session, if it is one.
+    var agentID: AgentID? {
+        if case let .agent(id) = self { return id }
+        return nil
+    }
+
+    var isAgent: Bool { agentID != nil }
+}
+
+extension SessionKind: RawRepresentable {
+    /// Persisted verbatim (ADR-0010). An agent's rawValue is its `AgentID` — so snapshots
+    /// written before agents were generalised, whose sessions say `"claudeCode"`, still decode.
+    var rawValue: String {
+        switch self {
+        case .terminal: return "terminal"
+        case .browser: return "browser"
+        case .agent(let id): return id.rawValue
+        }
+    }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "terminal": self = .terminal
+        case "browser": self = .browser
+        default: self = .agent(AgentID(rawValue))
+        }
+    }
+}
+
+extension SessionKind {
+    /// Encoded as the bare rawValue string, not the keyed container Swift would synthesise for
+    /// a case with an associated value — snapshots store `"claudeCode"` / `"terminal"`.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = SessionKind(rawValue: raw) ?? .terminal
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 /// A session's derived status fact — the only session-level thing that reaches the
@@ -31,8 +74,9 @@ enum SessionStatus: Equatable, Sendable {
     /// Stable across restarts: restored from disk (ADR-0010) so persisted expansion and
     /// selection, which key off this id, keep pointing at the same row.
     let id: UUID
-    /// Mutable: a terminal that runs `claude` is detected and upgraded to `.claudeCode`
-    /// (and reverts when it exits) — the kind reflects what's running, not a creation label.
+    /// Mutable: a terminal that runs an agent's binary is detected and upgraded to
+    /// `.agent(id)` (and reverts when it exits) — the kind reflects what's running, not a
+    /// creation label.
     var kind: SessionKind
     /// The creation label `kind` drifts from: a session spawned as Claude execs `claude`
     /// (no shell to fall back to), so its claude-end never reverts the kind — the whole
@@ -45,10 +89,11 @@ enum SessionStatus: Equatable, Sendable {
     /// Claude Code's evolving ai-title, a terminal's running command, a browser's page
     /// title — stops overwriting a chosen name.
     var titleIsCustom: Bool
-    /// Claude Code's own session id — minted by our launch shim, reported back over the hook
-    /// socket (Hooks/synth-hook). A restored Claude row uses it to resume the conversation
-    /// with `claude --resume <id>`. nil for terminals and not-yet-started Claude sessions.
-    var claudeSessionID: String?
+    /// The agent's own session id — Claude Code's is minted by our launch shim and reported
+    /// over the hook socket; opencode's is minted by its server and read off `session.created`.
+    /// A restored agent row uses it to resume the conversation. nil for terminals, browsers,
+    /// and not-yet-started agent sessions.
+    var agentSessionID: String?
     /// A browser session's current page (ADR-0011). Persisted so a restored browser reopens
     /// its URL in a fresh engine; nil for non-browsers and a fresh "go to" home surface.
     var browserURL: URL?
@@ -57,7 +102,7 @@ enum SessionStatus: Equatable, Sendable {
     /// and `--resume`. nil for unowned browsers and every non-browser session.
     var ownerSessionID: UUID?
 
-    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, claudeSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil) {
+    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, agentSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil) {
         self.id = id
         self.kind = kind
         self.spawnedKind = kind
@@ -65,7 +110,7 @@ enum SessionStatus: Equatable, Sendable {
         self.status = status
         self.unread = unread
         self.titleIsCustom = titleIsCustom
-        self.claudeSessionID = claudeSessionID
+        self.agentSessionID = agentSessionID
         self.browserURL = browserURL
         self.ownerSessionID = ownerSessionID
     }
@@ -94,11 +139,11 @@ extension SessionKind {
     /// the settings add-bar default, and the spawn side's "stock name" test: an entry
     /// whose name still matches spawns with auto-naming live, a differing one is
     /// hand-picked and freezes (titleIsCustom).
-    var tplStart: String {
+    @MainActor var tplStart: String {
         switch self {
-        case .claudeCode: return "Claude Code"
-        case .terminal:   return "shell"
-        case .browser:    return "Browser"
+        case .agent(let id): return AgentRegistry.descriptor(id)?.displayName ?? id.rawValue
+        case .terminal:      return "shell"
+        case .browser:       return "Browser"
         }
     }
 }

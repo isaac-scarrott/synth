@@ -303,3 +303,35 @@ disclosure to dive deeper.
   group of jump rows that drill into their own frame where their actions live. Acting on a parent is a
   deliberate step up, not a careless-Enter neighbour. Also fixed a duplicate `const ICON_EXTERNAL`
   merge artifact whose top-level `SyntaxError` had been killing the whole palette script.
+
+## [2026-07-09](docs/features/2026-07-09.md)
+
+- **Synth hosts more than one coding agent: OpenCode joins Claude Code (ADR-0012; both designs +
+  native app)** — `SessionKind.claudeCode` becomes `.agent(AgentID)`, so which agent a row hosts is
+  data, not a case: adding a third agent is one `AgentDescriptor` + one `AgentSupervisor` and nothing
+  else. Claude Code keeps its manufactured surface (PATH shim → injected `--settings` hooks → unix
+  socket, ADR-0008); OpenCode is *subscribed to* instead — its own `/event` SSE bus drives status,
+  title and needs-input, and text is delivered through its TUI prompt API rather than a paste+Enter.
+  Liveness is now asserted by the supervisor (`.agentReady`), never by the launcher, because a
+  launched-but-unreachable agent silently swallows a browser comment (and, for Claude, a paste into a
+  fallback shell is arbitrary execution). Per-agent flags in Settings, per-agent notification copy,
+  one create row per installed agent, per-agent browser-MCP registration (`.mcp.json` vs
+  `opencode.json`), and a persistence migration that keeps old trees and resumes intact.
+- **The coding-agent gate: everything the port claimed, driven end to end (`app/harness/agents/`)** —
+  eight suites / 73 checks against a real CEF build over the control socket: template spawn, true
+  conversation resume (`opencode --session <id>`), background done + needs-input toasts, per-agent MCP
+  registration, a live OpenCode agent driving the embedded browser via `browser_navigate`,
+  click-to-comment reaching its owning agent, abort-is-not-an-error, and Claude's hook path unchanged.
+  Adds two `SYNTH_AUTOMATION` seams (`automation.notifRoute`, `automation.createWorktree`) and a
+  fail-fast CEF guard. Surfaced a pre-existing truth: **a Claude row in a brand-new worktree stalls at
+  Claude's "trust this folder" prompt** (Synth's own `.mcp.json` triggers it), so it is never live and
+  never a comment/feedback target until answered; OpenCode has no such gate. Left unfixed on purpose —
+  pre-accepting trust is a security decision.
+- **Each agent wears its own official mark; OpenCode is spelled the way it spells itself** — labels
+  become "OpenCode" (the command stays `opencode`, as does the persisted `AgentID`). `AgentDescriptor`
+  gains a `mark` and one `SessionIcon` view chooses every session icon: Claude Code renders **Clawd**,
+  pixel-exact from the sprite `claude` draws on startup (no vector exists), and OpenCode renders its
+  **official square mark** in the brand's own light/dark colour pairs rather than Synth's terracotta.
+  An owned browser now mirrors its owner's mark instead of a generic sparkle. Proving it surfaced a
+  crash: a client that hung up before reading a control-socket reply killed Synth via `SIGPIPE` — any
+  local process could take the app down. Now ignored at process entry.

@@ -328,10 +328,10 @@ extension AppStore {
         }
     }
 
-    /// Drop a Claude Code session's manual name so its auto/AI-generated title takes over
+    /// Drop an agent session's manual name so its auto/AI-generated title takes over
     /// again — the palette's "Reset to default name" (working.html renameFrame).
     func resetSessionName(_ session: Session) {
-        session.title = "Claude Code"
+        session.title = session.kind.tplStart
         session.titleIsCustom = false
     }
 
@@ -369,14 +369,15 @@ extension AppStore {
                               onDelete: { [weak self] in self?.removeWorkspace(w) })
         case let .branch(b):
             return ActiveMenu(rowID: b.id, level: .branch,
-                              creates: [
-                                MenuCreate(icon: Phosphor.terminal, title: "New terminal",
-                                           run: { [weak self] in self?.newTerminal(in: b) }),
-                                MenuCreate(icon: Phosphor.sparkle, title: "New Claude Code",
-                                           run: { [weak self] in self?.newClaude(in: b) }),
-                                MenuCreate(icon: Phosphor.globe, title: "New browser",
-                                           run: { [weak self] in self?.newBrowser(in: b) }),
-                              ],
+                              creates: [MenuCreate(icon: Phosphor.terminal, title: "New terminal",
+                                                   run: { [weak self] in self?.newTerminal(in: b) })]
+                                + AgentRegistry.installed.map { agent in
+                                    MenuCreate(icon: Phosphor.sparkle, kind: .agent(agent.id),
+                                               title: "New \(agent.displayName)",
+                                               run: { [weak self] in self?.newAgent(agent.id, in: b) })
+                                }
+                                + [MenuCreate(icon: Phosphor.globe, title: "New browser",
+                                              run: { [weak self] in self?.newBrowser(in: b) })],
                               onDelete: { [weak self] in self?.removeBranch(b, deleteWorktree: false) })
         case let .session(s):
             return ActiveMenu(rowID: s.id, level: .session, creates: [],

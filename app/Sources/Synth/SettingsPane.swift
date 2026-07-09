@@ -183,41 +183,51 @@ struct SettingsPane: View {
         }
     }
 
-    // MARK: Claude Code flags — default flags passed to `claude` on session start.
+    // MARK: Agent flags — default flags passed to each agent's binary on session start.
 
+    /// One block per installed agent, so a machine with only one of them shows only that one.
     @ViewBuilder private var flagsSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Claude Code flags")
-                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
-                .foregroundStyle(Theme.repoName)
-            if isGlobal {
-                (Text("Passed to ") + Text("claude").font(.system(size: 12, design: .monospaced))
-                    + Text(" every time a Claude Code session starts — across all workspaces."))
-                    .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
-                    .lineSpacing(3).padding(.top, 4)
-                CodeCard(label: "flags", text: globalFlagsBinding, minHeight: 44).padding(.top, 14)
-                CmdPreview(flags: store.globalClaudeFlags).padding(.top, 14)
-                claudeNote
-            } else {
-                (Text("Flags for ") + Text(name).fontWeight(.semibold)
-                    + Text(" Claude sessions. These override the global flags for this workspace — leave empty to inherit global."))
-                    .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
-                    .lineSpacing(3).padding(.top, 4)
-                flowStrip(note: "Workspace overrides global").padding(.top, 14)
-                CodeCard(label: "Global — inherited when empty", text: .constant(store.globalClaudeFlags),
-                         readOnly: true, minHeight: 44, trailing: { EditInGlobalLink() }).padding(.top, 14)
-                CodeCard(label: "\(name) — overrides global", text: wsFlagsBinding, minHeight: 44).padding(.top, 14)
-                CmdPreview(flags: store.claudeFlags(for: ws)).padding(.top, 14)
+        VStack(alignment: .leading, spacing: 30) {
+            ForEach(AgentRegistry.installed, id: \.id) { agent in
+                agentFlags(agent)
             }
         }
     }
 
-    private var claudeNote: some View {
+    @ViewBuilder private func agentFlags(_ agent: AgentDescriptor) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("\(agent.displayName) flags")
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.repoName)
+            if isGlobal {
+                (Text("Passed to ") + Text(agent.binaryName).font(.system(size: 12, design: .monospaced))
+                    + Text(" every time a \(agent.displayName) session starts — across all workspaces."))
+                    .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
+                    .lineSpacing(3).padding(.top, 4)
+                CodeCard(label: "flags", text: globalFlagsBinding(agent), minHeight: 44).padding(.top, 14)
+                CmdPreview(binary: agent.binaryName, flags: store.globalAgentFlags[agent.id] ?? "").padding(.top, 14)
+                agentNote(agent)
+            } else {
+                (Text("Flags for ") + Text(name).fontWeight(.semibold)
+                    + Text(" \(agent.displayName) sessions. These override the global flags for this workspace — leave empty to inherit global."))
+                    .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
+                    .lineSpacing(3).padding(.top, 4)
+                flowStrip(note: "Workspace overrides global").padding(.top, 14)
+                CodeCard(label: "Global — inherited when empty",
+                         text: .constant(store.globalAgentFlags[agent.id] ?? ""),
+                         readOnly: true, minHeight: 44, trailing: { EditInGlobalLink() }).padding(.top, 14)
+                CodeCard(label: "\(name) — overrides global", text: wsFlagsBinding(agent), minHeight: 44).padding(.top, 14)
+                CmdPreview(binary: agent.binaryName, flags: store.agentFlags(agent.id, for: ws)).padding(.top, 14)
+            }
+        }
+    }
+
+    private func agentNote(_ agent: AgentDescriptor) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Phos(path: Phosphor.info, size: 14).foregroundStyle(Color(hex: 0xB0B0B5)).padding(.top, 1)
-            (Text("Any ") + Text("claude").font(.system(size: 11.5, design: .monospaced))
+            (Text("Any ") + Text(agent.binaryName).font(.system(size: 11.5, design: .monospaced))
                 + Text(" flag works here — type them as you would on the command line, like ")
-                + Text("--dangerously-skip-permissions --model opus").font(.system(size: 11.5, design: .monospaced)) + Text("."))
+                + Text(agent.exampleFlags).font(.system(size: 11.5, design: .monospaced)) + Text("."))
                 .font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted).lineSpacing(2)
         }
         .padding(.top, 12)
@@ -273,14 +283,15 @@ struct SettingsPane: View {
         )
     }
 
-    private var globalFlagsBinding: Binding<String> {
-        Binding(get: { store.globalClaudeFlags }, set: { store.globalClaudeFlags = $0 })
+    private func globalFlagsBinding(_ agent: AgentDescriptor) -> Binding<String> {
+        Binding(get: { store.globalAgentFlags[agent.id] ?? "" },
+                set: { store.globalAgentFlags[agent.id] = $0 })
     }
-    private var wsFlagsBinding: Binding<String> {
+    private func wsFlagsBinding(_ agent: AgentDescriptor) -> Binding<String> {
         let id = ws?.id
         return Binding(
-            get: { id.flatMap { store.wsClaudeFlags[$0] } ?? "" },
-            set: { v in if let id { store.wsClaudeFlags[id] = v } }
+            get: { id.flatMap { store.wsAgentFlags[$0]?[agent.id] } ?? "" },
+            set: { v in if let id { store.wsAgentFlags[id, default: [:]][agent.id] = v } }
         )
     }
 
@@ -302,11 +313,11 @@ struct SettingsPane: View {
 /// Theme's SessionKind extension — the same glyphs the sidebar rows use; the stock
 /// starting name (`tplStart`) lives with SessionTemplateEntry in Model.
 private extension SessionKind {
-    var tplLabel: String {
+    @MainActor var tplLabel: String {
         switch self {
-        case .claudeCode: return "Claude Code"
-        case .terminal:   return "Terminal"
-        case .browser:    return "Browser"
+        case .agent:    return tplStart
+        case .terminal: return "Terminal"
+        case .browser:  return "Browser"
         }
     }
 }
@@ -544,7 +555,7 @@ private struct TplAddBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach([SessionKind.claudeCode, .terminal, .browser], id: \.self) { kind in
+            ForEach(AgentRegistry.installed.map { SessionKind.agent($0.id) } + [.terminal, .browser], id: \.self) { kind in
                 TplHover { hovering in
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) {
@@ -643,12 +654,13 @@ private struct TplPreview: View {
 /// The effective `claude …` launch line, flags tinted like a terminal command — mirrors
 /// working.html's `.set-cmd` preview on the terminal-card surface.
 private struct CmdPreview: View {
+    let binary: String
     let flags: String
     private var tokens: [String] { flags.split(whereSeparator: \.isWhitespace).map(String.init) }
 
     var body: some View {
         let blue = Theme.dyn(0x2B6FD6, 0x8AB4F8)
-        (Text("$ ").foregroundStyle(Theme.inkMuted) + Text("claude").foregroundStyle(Theme.repoName)
+        (Text("$ ").foregroundStyle(Theme.inkMuted) + Text(binary).foregroundStyle(Theme.repoName)
             + tokens.reduce(Text("")) { $0 + Text(" ") + Text($1).foregroundStyle(blue) })
             .font(.system(size: 11.5, design: .monospaced)).lineSpacing(3)
             .frame(maxWidth: .infinity, alignment: .leading)

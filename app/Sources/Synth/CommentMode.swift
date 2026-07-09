@@ -207,7 +207,7 @@ import Observation
 
     // MARK: Delivery — the ownership ladder (ADR-0011 stage four)
 
-    /// The browser's owning claude row (stage four containment) — the deterministic
+    /// The browser's owning agent row (stage four containment) — the deterministic
     /// comment target, replacing stage three's most-active-in-branch guess.
     private func ownerRow() -> Session? {
         guard let store, let session = store.session(sessionID) else { return nil }
@@ -215,20 +215,22 @@ import Observation
     }
 
     /// The bar chip's label source: the owner when owned; nil for an unowned browser,
-    /// whose comment always spawns a fresh claude ("New Claude session" in the chip).
+    /// whose comment always spawns a fresh agent ("New agent session" in the chip).
     private func prospectiveTarget() -> Session? { ownerRow() }
 
-    /// SECURITY: a comment embeds page-controlled text (title / selector / element HTML)
-    /// and submit() follows the paste with Enter. Pasting that into anything except a live
-    /// Claude TUI — e.g. the bare shell left behind when a restored row's `claude --resume`
-    /// fails — would hand a hostile page arbitrary shell execution. So submit() is called
-    /// ONLY for a session the hook seam has confirmed live (claude-start /
-    /// claudeSessionCaptured, not since ended or exited): immediately when one exists,
-    /// else after booting the target row — including a freshly spawned one — and WAITING
-    /// for its liveness signal, never merely for its terminal view existing.
+    /// SECURITY: a comment embeds page-controlled text (title / selector / element HTML).
+    /// Claude Code has no injection API, so its delivery pastes the text and presses Enter —
+    /// into anything but a live Claude TUI (e.g. the bare shell left behind when a restored
+    /// row's `claude --resume` fails) that would hand a hostile page arbitrary shell
+    /// execution. So delivery runs ONLY against a session the supervisor seam has confirmed
+    /// live (agent-start / agentSessionCaptured, not since ended or exited): immediately when
+    /// one exists, else after booting the target row — including a freshly spawned one — and
+    /// WAITING for its liveness signal, never merely for its terminal view existing.
+    /// (opencode delivers over its message API instead, where there is no shell to fall back
+    /// to; the same gate applies, and costs nothing.)
     ///
     /// The ladder: owner live → deliver; owner dormant → boot it and wait; no owner →
-    /// spawn a fresh claude in the branch, adopt the browser under it (so the next
+    /// spawn a fresh agent in the branch, adopt the browser under it (so the next
     /// comment hits the first rung), and boot-and-wait. The spawn is silent — no
     /// confirmation, focus returns to the browser pane.
     private func deliver(_ message: String, screenshots: [String]) {
@@ -238,27 +240,28 @@ import Observation
         }
         if let owner = ownerRow() {
             targetTitle = owner.title
-            // Rung 1: live owner — submit now.
-            if store.isLiveClaude(owner.id), TerminalManager.shared.submit(message, to: owner.id) {
-                NSLog("Synth: browser comment delivered to owning Claude session %@ (%@)",
+            // Rung 1: live owner — hand it to the agent's supervisor now.
+            if let supervisor = store.liveSupervisor(for: owner), supervisor.deliver(message, to: owner.id) {
+                NSLog("Synth: browser comment delivered to owning agent session %@ (%@)",
                       owner.id.uuidString, owner.title)
                 showNotice("Comment sent to \(owner.title)")
                 return
             }
-            // Rung 2: dormant owner — open it (mounts the pane, launches claude /
-            // --resume), then wait for the hook seam before submitting.
+            // Rung 2: dormant owner — open it (mounts the pane, launches the agent /
+            // resumes), then wait for the supervisor seam before delivering.
             showNotice("Opening \(owner.title) to deliver the comment…")
             store.open(owner)
             bootAndSubmit(owner, message: message, screenshots: screenshots)
             return
         }
-        // Rung 3: unowned — spawn this browser's own claude. The PTY only boots when its
+        // Rung 3: unowned — spawn this browser's own agent. The PTY only boots when its
         // pane mounts (GhosttySurfaceView creates the surface on window attach), so open
         // the row for one beat and come straight back to the browser; both views live
         // outside the SwiftUI tree (TerminalManager / BrowserManager) and survive the swap.
         guard let branch = store.branch(of: browser),
-              let spawned = store.spawnClaude(in: branch) else {
-            showNotice("Couldn't start a Claude session for the comment")
+              let agent = AgentRegistry.default?.id,
+              let spawned = store.spawnAgent(agent, in: branch) else {
+            showNotice("Couldn't start an agent session for the comment")
             Self.discard(screenshots)
             return
         }
@@ -279,22 +282,23 @@ import Observation
     private func bootAndSubmit(_ row: Session, message: String, screenshots: [String]) {
         deliveryTask?.cancel()
         deliveryTask = Task { [weak self] in
-            for _ in 0..<40 {   // ~20s: claude boots and fires SessionStart, or never will
+            for _ in 0..<40 {   // ~20s: the agent boots and reports in, or never will
                 try? await Task.sleep(for: .seconds(0.5))
                 guard let self, !Task.isCancelled else { return }
-                guard let store = self.store, store.isLiveClaude(row.id) else { continue }
-                // Live confirmed — one more beat so the TUI is past its first paint and
-                // won't eat the early paste; re-check liveness after the beat.
+                guard let store = self.store, store.isLiveAgent(row.id) else { continue }
+                // Live confirmed — one more beat so a TUI is past its first paint and
+                // won't eat an early paste; re-check liveness after the beat.
                 try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled, store.isLiveClaude(row.id) else { continue }
-                if TerminalManager.shared.submit(message, to: row.id) {
-                    NSLog("Synth: browser comment delivered to Claude session %@ (%@) after booting it",
+                guard !Task.isCancelled, store.isLiveAgent(row.id),
+                      let supervisor = store.liveSupervisor(for: row) else { continue }
+                if supervisor.deliver(message, to: row.id) {
+                    NSLog("Synth: browser comment delivered to agent session %@ (%@) after booting it",
                           row.id.uuidString, row.title)
                     self.showNotice("Comment sent to \(row.title)")
                     return
                 }
             }
-            // Claude never reported in (e.g. the resume failed and left a bare shell):
+            // The agent never reported in (e.g. the resume failed and left a bare shell):
             // drop the comment — and its now-orphaned screenshots — rather than paste.
             self?.showNotice("Couldn't reach “\(row.title)” — comment not delivered")
             Self.discard(screenshots)

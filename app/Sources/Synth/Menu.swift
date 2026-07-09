@@ -4,6 +4,8 @@ import SwiftUI
 struct MenuCreate: Identifiable {
     let id = UUID()
     let icon: String
+    /// An agent create row shows that agent's own mark instead of the Phosphor glyph.
+    var kind: SessionKind? = nil
     let title: String
     let run: () -> Void
 }

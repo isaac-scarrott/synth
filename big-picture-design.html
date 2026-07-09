@@ -748,6 +748,8 @@
   }
   .session__icon svg { width: 14px; height: 14px; display: block; }
   .session__icon--ai { color: #c2724c; }
+  /* OpenCode's official mark colours (light). The dark pair lives in the dark block. */
+  :root { --oc-ring: #211e1e; --oc-inner: #cfcecd; }
 
   .session__name {
     flex: 1;
@@ -1581,6 +1583,8 @@
      Only variables change here — every surface reads them, so the whole shell,
      the ⌘K palette, menus, dialogs, settings and the terminal all move together. */
   :root[data-theme="dark"] {
+    --oc-ring: #f1ecec;
+    --oc-inner: #4b4646;
     --canvas: #0d0d0f;
     --panel: #1b1b1d;
     --sidebar: #202023;
@@ -1714,9 +1718,9 @@
               <div class="collapse"><div class="collapse__inner">
               <div class="sessions">
                 <!-- Claude Code — needs input -->
-                <a class="row session session--unread" data-row data-session data-type="ai" data-sid="c1">
+                <a class="row session session--unread" data-row data-session data-type="ai" data-agent="claude" data-sid="c1">
                   <span class="session__bullet"></span>
-                  <span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg></span>
+                  <span class="session__icon session__icon--ai"><svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg></span>
                   <span class="session__name">Claude Code</span>
                   <span class="ind ind--input"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg></span>
                 </a>
@@ -1726,7 +1730,7 @@
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg></span>
                   <span class="session__name">localhost:5173</span>
-                  <span class="ind ind--owned" title="Belongs to Claude Code"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg></span>
+                  <span class="ind ind--owned" title="Belongs to Claude Code"><svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg></span>
                 </a>
                 <!-- dev server — running -->
                 <a class="row session" data-row data-session data-type="terminal">
@@ -2863,7 +2867,8 @@
   // small accent Claude mark in the row's indicator slot. Ownership is set at creation
   // (a spawned Claude adopts the browser it was spawned for) or by the user (kebab Move
   // under… / Detach) — driving a browser never adopts it.
-  const IND_OWNED = (owner) => `<span class="ind ind--owned" title="Belongs to ${esc(owner)}">${ICON_AI}</span>`;
+  const IND_OWNED = (owner, kind = 'claude') =>
+    `<span class="ind ind--owned" title="Belongs to ${esc(owner)}">${agentIcon(kind)}</span>`;
   let sidSeq = nav.querySelectorAll('.session[data-sid]').length;
   const claudeSid = (row) => row.dataset.sid || (row.dataset.sid = 'c' + (++sidSeq));
   const ownerOf = (row) => row && row.dataset.owner ? nav.querySelector(`.session[data-sid="${row.dataset.owner}"]`) : null;
@@ -2882,7 +2887,7 @@
     browserRow.dataset.owner = ownerRow.dataset.sid;
     browserRow.classList.add('session--owned');
     const bInd = browserRow.querySelector(':scope > .ind');
-    if (bInd) bInd.outerHTML = IND_OWNED(sessionTitle(ownerRow));
+    if (bInd) bInd.outerHTML = IND_OWNED(sessionTitle(ownerRow), ownerRow.getAttribute('data-agent') || 'claude');
     const block = ownedOf(ownerRow).filter((b) => b !== browserRow);
     const ref = block.length ? block[block.length - 1] : ownerRow;
     ref.parentElement.insertBefore(browserRow, ref.nextSibling);
@@ -2900,12 +2905,13 @@
   // The spawn moment: a comment from an unowned browser births this browser's own Claude —
   // silently. The row appears above it, already working on the comment; focus stays put.
   function spawnOwnerClaude(browserRow) {
-    const spec = SESSION_KINDS.claude;
+    const spec = SESSION_KINDS[AGENTS[0]];
     const a = document.createElement('a');
     a.className = 'row session row-enter';
     a.setAttribute('data-row', '');
     a.setAttribute('data-session', '');
     a.setAttribute('data-type', spec.type);
+    a.setAttribute('data-agent', AGENTS[0]);
     a.innerHTML = `<span class="session__bullet"></span>
       ${spec.icon}
       <span class="session__name">${spec.name}</span>
@@ -2924,6 +2930,15 @@
   const ICON_BRANCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H96a23.84,23.84,0,0,0-8,1.38V95a32,32,0,1,0-16,0v66a32,32,0,1,0,16,0V144a8,8,0,0,1,8-8h88a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,232,64ZM64,64A16,16,0,1,1,80,80,16,16,0,0,1,64,64ZM96,192a16,16,0,1,1-16-16A16,16,0,0,1,96,192ZM200,80a16,16,0,1,1,16-16A16,16,0,0,1,200,80Z"/></svg>';
   const ICON_TERMINAL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
   const ICON_AI = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg>';
+  // Clawd, Claude Code's mascot — pixel-exact from the sprite `claude` draws on startup.
+  // Anthropic publishes no vector of him. The 16x5 grid of quadrant blocks is NOT square: a
+  // quadrant is half a terminal cell each way and a cell is ~1:2, so each cell renders twice as
+  // tall as it is wide. He is 16x10 (1.6:1); drawing the cells square squashes him.
+  const ICON_CLAWD = '<svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg>';
+  // OpenCode's official square mark (opencode.ai/favicon.svg): the block "o" — an outer ring
+  // with a two-tone inner block, its upper half open so the row background shows through.
+  // Brand colours, not the agent accent: the glyph says "agent", the colour doesn't.
+  const ICON_OPENCODE = '<svg viewBox="128 96 256 320" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="var(--oc-ring)"/><path d="M320 224V352H192V224H320Z" fill="var(--oc-inner)"/></svg>';
   const ICON_BROWSER = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg>';
   const ICON_CARET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
 
@@ -3196,7 +3211,8 @@
   // starting state differ.
   const SESSION_KINDS = {
     terminal: { type: 'terminal', name: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>`,                  ind: 'idle' },
-    claude:   { type: 'ai',       name: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_AI}</span>`,      ind: 'work' },
+    claude:   { type: 'ai',       name: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_CLAWD}</span>`, ind: 'work' },
+    opencode: { type: 'ai',       name: 'OpenCode',    icon: `<span class="session__icon">${ICON_OPENCODE}</span>`,                   ind: 'work' },
     browser:  { type: 'browser',  name: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>`,                   ind: 'idle' },
   };
   // opts: a template spawn passes its entry name, and { open: false } for every session
@@ -3210,6 +3226,7 @@
     a.setAttribute('data-row', '');
     a.setAttribute('data-session', '');
     a.setAttribute('data-type', spec.type);
+    if (spec.type === 'ai') a.setAttribute('data-agent', kind);
     a.innerHTML = `<span class="session__bullet"></span>
       ${spec.icon}
       <span class="session__name">${esc(opts.name || spec.name)}</span>
@@ -3221,7 +3238,12 @@
     if (opts.open !== false) openSession(a); // a freshly spawned session opens straight into the content pane
   }
   const addTerminal = (branchRow) => addSession(branchRow, 'terminal');
-  const addClaude   = (branchRow) => addSession(branchRow, 'claude');
+  // Every coding agent Synth can host, in creation order (Agents.swift AgentRegistry).
+  const AGENTS = ['claude', 'opencode'];
+  // Each agent's own mark. An agent with no artwork falls back to the generic sparkle.
+  const AGENT_ICON = { claude: ICON_CLAWD, opencode: ICON_OPENCODE };
+  const agentIcon = (k) => AGENT_ICON[k] || ICON_AI;
+  const addAgent    = (branchRow, kind) => addSession(branchRow, kind);
   const addBrowser  = (branchRow) => addSession(branchRow, 'browser');
 
   // ===== Add workspace (the + on the section header) =====
@@ -3829,7 +3851,7 @@
       if (open.dataset.type === 'browser') {
         const owner = ownerOf(open);
         if (owner) push({ icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
-        else claudesOf(open.parentElement).forEach((c) => push({ icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
+        else claudesOf(open.parentElement).forEach((c) => push({ icon: agentIcon(c.getAttribute('data-agent')), label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
       }
       push({ icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
       upBranch(); upWorkspace();
@@ -3837,7 +3859,7 @@
       const name = brName(br);
       const push = (a) => items.push({ grp: 'Branch', unit: name, ...a });
       push({ icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
-      push({ icon: ICON_AI, label: 'New Claude Code', enter: () => runAndClose(() => addClaude(br)) });
+      AGENTS.forEach((k) => push({ icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
       push({ icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
       push({ icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
       push({ icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
@@ -3959,7 +3981,7 @@
         if (br) {
           const bn = brName(br);
           items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addTerminal(br)) });
-          items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addClaude(br)) });
+          AGENTS.forEach((k) => items.push({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: bn, enter: () => runAndClose(() => addAgent(br, k)) }));
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
         items.push(
@@ -3981,7 +4003,7 @@
       build() {
         const items = [
           { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    enter: () => runAndClose(() => addTerminal(row)) },
-          { sec: 'act', icon: ICON_AI,       label: 'New Claude Code', enter: () => runAndClose(() => addClaude(row)) },
+          ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
           { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
           { sec: 'act', icon: ICON_MINUS,    label: 'Remove', enter: () => pushFrame(confirmFrame(row)) },
@@ -4002,7 +4024,7 @@
       build() {
         return [
           { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: name, enter: () => runAndClose(() => addTerminal(row)) },
-          { sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: name, enter: () => runAndClose(() => addClaude(row)) },
+          ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     ctx: name, enter: () => runAndClose(() => addBrowser(row)) },
         ];
       },
@@ -4024,14 +4046,14 @@
         if (br) {
           const bn = brName(br);
           items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addTerminal(br)) });
-          items.push({ sec: 'act', icon: ICON_AI,       label: 'New Claude Code', ctx: bn, enter: () => runAndClose(() => addClaude(br)) });
+          AGENTS.forEach((k) => items.push({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: bn, enter: () => runAndClose(() => addAgent(br, k)) }));
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
         items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(row)) });
         if (row.dataset.type === 'browser') {
           const owner = ownerOf(row);
           if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
-          else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: ICON_AI, label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
+          else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: agentIcon(c.getAttribute('data-agent')), label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
         }
         items.push({ sec: 'act', icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(row)) });
         return items;
@@ -4156,9 +4178,10 @@
   function renameFrame(row) {
     const noun = { repo: 'workspace', branch: 'branch', session: 'session' }[rowLevel(row)] || 'item';
     const cur = (nameElOf(row).textContent || '').trim();
-    // A Claude Code session's name is only ever an override on top of its AI-generated
-    // title — so offer to clear it back to the default once one's been set.
-    const claudeDefault = row.matches('.session[data-type="ai"]') ? SESSION_KINDS.claude.name : null;
+    // An agent session's name is only ever an override on top of its AI-generated title —
+    // so offer to clear it back to that agent's default once one's been set.
+    const agentKind = row.getAttribute('data-agent');
+    const agentDefault = agentKind && SESSION_KINDS[agentKind] ? SESSION_KINDS[agentKind].name : null;
     return {
       crumb: 'Rename ' + cur, mode: 'input', placeholder: 'New ' + noun + ' name…', seed: cur,
       build(q) {
@@ -4166,9 +4189,9 @@
         const changed = v && v !== cur;
         const items = [{ icon: ICON_RENAME, label: v ? 'Rename to “' + v + '”' : 'Type a new name…', disabled: !changed,
           enter: () => { if (changed) runAndClose(() => renameUnit(row, v)); } }];
-        if (claudeDefault && cur !== claudeDefault)
-          items.push({ icon: ICON_RESET, label: 'Reset to default name', ctx: claudeDefault,
-            enter: () => runAndClose(() => renameUnit(row, claudeDefault)) });
+        if (agentDefault && cur !== agentDefault)
+          items.push({ icon: ICON_RESET, label: 'Reset to default name', ctx: agentDefault,
+            enter: () => runAndClose(() => renameUnit(row, agentDefault)) });
         return items;
       },
     };
@@ -4344,20 +4367,25 @@
   // value is a raw flag string, so ANY claude flag works (now and future); the switches
   // are just shortcuts that add/remove their token. Global applies everywhere; a
   // a workspace's flags override the global outright (empty inherits) — flags don't compose.
-  let globalFlags = '--dangerously-skip-permissions';
-  const wsFlags = { synth: '--chrome' };
-  const flagsFor = (name) => wsFlags[name] != null ? wsFlags[name] : '';
+  // Flags are per agent: each runs a different binary and takes different tokens. opencode
+  // needs none by default — it auto-approves, and its needs-input signal rides the question
+  // tool rather than a permission flag.
+  const AGENT_BIN = { claude: 'claude', opencode: 'opencode' };
+  const AGENT_EG = { claude: '--dangerously-skip-permissions --model opus', opencode: '--model anthropic/claude-opus-4-5 --agent build' };
+  let globalFlags = { claude: '--dangerously-skip-permissions', opencode: '' };
+  const wsFlags = { synth: { claude: '--chrome' } };
+  const flagsFor = (name, agent) => (wsFlags[name] && wsFlags[name][agent] != null) ? wsFlags[name][agent] : '';
   const flagToks = (s) => s.trim().split(/\s+/).filter(Boolean);
-  const effectiveFlags = (isGlobal, name) => {
-    if (isGlobal) return globalFlags.trim();
-    const w = flagsFor(name).trim();
-    return w ? w : globalFlags.trim();   // workspace flags override global outright; empty inherits
+  const effectiveFlags = (isGlobal, name, agent) => {
+    if (isGlobal) return (globalFlags[agent] || '').trim();
+    const w = flagsFor(name, agent).trim();
+    return w ? w : (globalFlags[agent] || '').trim();   // workspace overrides global outright; empty inherits
   };
-  // preview line: `claude <flags>` with each flag tinted like a terminal command
-  function cmdPreview(flags) {
+  // preview line: `<binary> <flags>` with each flag tinted like a terminal command
+  function cmdPreview(agent, flags) {
     const toks = flagToks(flags);
     const rest = toks.length ? ' ' + toks.map((t) => `<span class="set-cmd__flag">${esc(t)}</span>`).join(' ') : '';
-    return `<div class="set-cmd"><span class="set-cmd__prompt">$ </span>claude${rest}</div>`;
+    return `<div class="set-cmd" data-agent="${agent}"><span class="set-cmd__prompt">$ </span>${esc(AGENT_BIN[agent])}${rest}</div>`;
   }
 
   const workspaceHeads = () => [...nav.querySelectorAll(':scope > [data-repo] > .repo__head')];
@@ -4440,21 +4468,26 @@
   // `claude …` preview. A workspace shows the read-only global flags (inherited when
   // empty) above its own field, which overrides global outright when set.
   function flagsSection(isGlobal, name) {
+    return AGENTS.map((k) => agentFlagsSection(isGlobal, name, k)).join('');
+  }
+
+  function agentFlagsSection(isGlobal, name, agent) {
+    const label = SESSION_KINDS[agent].name, bin = AGENT_BIN[agent];
     if (isGlobal) {
       return `<div class="set-section">
-        <div class="set-section__title">Claude Code flags</div>
-        <div class="set-section__sub">Passed to <code>claude</code> every time a Claude Code session starts — across all workspaces.</div>
+        <div class="set-section__title">${esc(label)} flags</div>
+        <div class="set-section__sub">Passed to <code>${esc(bin)}</code> every time a ${esc(label)} session starts — across all workspaces.</div>
         <div class="set-code-wrap">
           <div class="set-code-head"><span class="set-code-head__label">flags</span></div>
-          <textarea class="set-code set-code--flags" data-flags="global" spellcheck="false">${esc(globalFlags)}</textarea>
+          <textarea class="set-code set-code--flags" data-flags="global" data-agent="${agent}" spellcheck="false">${esc(globalFlags[agent] || '')}</textarea>
         </div>
-        ${cmdPreview(globalFlags)}
-        <div class="set-note">${ICON_INFO}<span>Any <code>claude</code> flag works here — type them as you would on the command line, like <code>--dangerously-skip-permissions --model opus</code>.</span></div>
+        ${cmdPreview(agent, globalFlags[agent] || '')}
+        <div class="set-note">${ICON_INFO}<span>Any <code>${esc(bin)}</code> flag works here — type them as you would on the command line, like <code>${esc(AGENT_EG[agent])}</code>.</span></div>
       </div>`;
     }
     return `<div class="set-section">
-      <div class="set-section__title">Claude Code flags</div>
-      <div class="set-section__sub">Flags for <b>${esc(name)}</b> Claude sessions — these override the global flags. Leave empty to inherit global.</div>
+      <div class="set-section__title">${esc(label)} flags</div>
+      <div class="set-section__sub">Flags for <b>${esc(name)}</b> ${esc(label)} sessions — these override the global flags. Leave empty to inherit global.</div>
       <div class="set-flow">
         <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
         <span class="set-flow__arrow">${ICON_CARET}</span>
@@ -4463,13 +4496,13 @@
       </div>
       <div class="set-code-wrap">
         <div class="set-code-head"><span class="set-code-head__label">Global — inherited when empty</span><button class="set-link" data-goto="global">Edit in Global</button></div>
-        <textarea class="set-code set-code--ro set-code--flags" readonly spellcheck="false">${esc(globalFlags)}</textarea>
+        <textarea class="set-code set-code--ro set-code--flags" readonly spellcheck="false">${esc(globalFlags[agent] || '')}</textarea>
       </div>
       <div class="set-code-wrap">
         <div class="set-code-head"><span class="set-code-head__label">${esc(name)} — overrides global</span></div>
-        <textarea class="set-code set-code--flags" data-flags="ws" spellcheck="false">${esc(flagsFor(name))}</textarea>
+        <textarea class="set-code set-code--flags" data-flags="ws" data-agent="${agent}" spellcheck="false">${esc(flagsFor(name, agent))}</textarea>
       </div>
-      ${cmdPreview(effectiveFlags(false, name))}
+      ${cmdPreview(agent, effectiveFlags(false, name, agent))}
     </div>`;
   }
 
@@ -4479,7 +4512,8 @@
   // session is the one that opens.
   const ICON_GRIP = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,60A12,12,0,1,1,92,48,12,12,0,0,1,104,60Zm60,12a12,12,0,1,0-12-12A12,12,0,0,0,164,72ZM92,116a12,12,0,1,0,12,12A12,12,0,0,0,92,116Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,116ZM92,184a12,12,0,1,0,12,12A12,12,0,0,0,92,184Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,184Z"/></svg>';
   const TPL_KINDS = {
-    claude:   { label: 'Claude Code', start: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_AI}</span>` },
+    claude:   { label: 'Claude Code', start: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_CLAWD}</span>` },
+    opencode: { label: 'OpenCode',    start: 'OpenCode',    icon: `<span class="session__icon">${ICON_OPENCODE}</span>` },
     terminal: { label: 'Terminal',    start: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>` },
     browser:  { label: 'Browser',     start: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>` },
   };
@@ -4628,14 +4662,16 @@
         else wsScripts[name] = ta.value;
       });
     });
-    // Claude flags: the field edits the raw string live, updating the preview in place so
+    // Agent flags: the field edits the raw string live, updating the preview in place so
     // the caret is never yanked mid-type.
     content.querySelectorAll('.set-code--flags[data-flags]').forEach((ta) => {
       ta.addEventListener('input', () => {
-        if (ta.dataset.flags === 'global') globalFlags = ta.value; else wsFlags[name] = ta.value;
+        const agent = ta.dataset.agent;
+        if (ta.dataset.flags === 'global') globalFlags[agent] = ta.value;
+        else (wsFlags[name] || (wsFlags[name] = {}))[agent] = ta.value;
         const sec = ta.closest('.set-section');
         const pv = sec.querySelector('.set-cmd');
-        if (pv) pv.outerHTML = cmdPreview(ta.dataset.flags === 'global' ? globalFlags : effectiveFlags(false, name));
+        if (pv) pv.outerHTML = cmdPreview(agent, ta.dataset.flags === 'global' ? (globalFlags[agent] || '') : effectiveFlags(false, name, agent));
       });
     });
     // Session template: renames edit the store in place (preview refreshes, caret never

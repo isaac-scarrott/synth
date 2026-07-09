@@ -94,9 +94,7 @@ enum GitService {
     /// Where the app materialises worktrees. Default location for now — will be
     /// user-configurable later.
     static func worktreeRoot(for repo: URL) -> URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support
-            .appendingPathComponent("Synth/worktrees", isDirectory: true)
+        return AppSupport.dir("worktrees")
             .appendingPathComponent("\(repo.lastPathComponent)-\(stableHash(repo.path))", isDirectory: true)
     }
 
@@ -157,8 +155,7 @@ enum GitService {
     /// worktree root (a detached delete that never finished its background rm).
     static func sweepDetachedWorktrees() {
         let fm = FileManager.default
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Synth/worktrees", isDirectory: true)
+        let root = AppSupport.dir("worktrees")
         guard let repos = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
         for repo in repos {
             guard let entries = try? fm.contentsOfDirectory(at: repo, includingPropertiesForKeys: nil) else { continue }

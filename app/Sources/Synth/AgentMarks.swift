@@ -20,7 +20,7 @@ enum AgentMark: Sendable {
 /// appearances. Wider than tall, so he fits the slot's width and centres on its height.
 struct ClawdMark: View {
     var size: CGFloat = 16
-    var color: Color = Theme.agent
+    var color: Color = Theme.copper
 
     /// Row-merged runs of the sprite: (x, y, width) in grid cells. Ten rects, not 54 cells.
     private static let runs: [(x: Int, y: Int, w: Int)] = [
@@ -107,11 +107,11 @@ struct SessionIcon: View {
     var body: some View {
         switch kind.agentID.flatMap({ AgentRegistry.descriptor($0)?.mark }) {
         case .clawd:
-            ClawdMark(size: size, color: tint ?? Theme.agent)
+            ClawdMark(size: size, color: tint ?? Theme.copper)
         case .openCode:
             OpenCodeMark(size: size, monochrome: tint)
         case .sparkle:
-            Phos(path: Phosphor.sparkle, size: size).foregroundStyle(tint ?? Theme.agent)
+            Phos(path: Phosphor.sparkle, size: size).foregroundStyle(tint ?? Theme.copper)
         case nil:
             // Not an agent (or an agent with no descriptor): the kind's own glyph.
             Phos(path: kind.iconPath, size: size).foregroundStyle(tint ?? kind.tint)

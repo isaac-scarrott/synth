@@ -159,8 +159,8 @@ click-to-comment. Decisions that turned out to be load-bearing:
 
 - **Stage two is a Synth-owned Node stdio MCP server, not bundled Playwright-MCP.** It uses
   `@modelcontextprotocol/sdk` + `playwright-core` `connectOverCDP` and adds Synth-specific tools
-  (`browser_list`/`create`/`focus` over the app's control socket) that off-the-shelf servers can't
-  express. Instance discovery: the app writes `~/Library/Application Support/Synth/instances/<pid>.json`
+  (`browser_list`/`create`/`close`/`focus` over the app's control socket) that off-the-shelf servers
+  can't express. Instance discovery: the app writes `~/Library/Application Support/Synth/instances/<pid>.json`
   ({pid, cdpPort, controlSocket, worktreePaths}); the server scopes to the instance whose worktreePaths
   contain `$CLAUDE_PROJECT_DIR`, resolving a nested `.worktree/<slice>` checkout to its deepest managed
   ancestor. Registration is a per-worktree `.mcp.json` the app writes (merge-preserving, never
@@ -211,6 +211,12 @@ lifecycle, and deterministic comment routing — not merely a stored routing hin
   confirm that names them; Detach is the escape hatch. Ownership keys off the Synth row UUID — it
   survives claude exits and `--resume`. *Rejected:* orphan-to-sibling (a child that outlives its
   parent's deletion is a pointer, not containment).
+- **Ownership is also the close permission (`browser_close`, added 2026-07-09).** An agent may close
+  the browsers it owns and no others — so the user's ⌘K browsers, and any browser they detached or
+  re-parented, are beyond reach, and an external claude owns nothing to close. Read stays shared;
+  lifecycle is owned. *Rejected:* any-claude-closes-any-browser (driving a browser is not destroying
+  it). A close is additionally refused while comment mode is engaged, which would delete the comment
+  the user is composing.
 - **Sidebar: one containment indent, same session dials.** Owned browsers render directly under their
   owner, one indent step deeper, reusing the session-tier visual language — always expanded, no caret,
   no new visual register. This amends the three-tier hierarchy decision to "three tiers + a

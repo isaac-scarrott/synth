@@ -752,7 +752,7 @@ extension SessionStatus {
         switch self {
         case .running:       return Theme.dyn(0x2EA043, 0x34C759)
         case .working:       return Theme.dyn(0xC8811A, 0xF5A623)
-        case .needsInput:    return Theme.dyn(0x0A6FD6, 0x0A84FF)
+        case .needsInput:    return Theme.input
         case .error:         return Theme.dyn(0xD13C2F, 0xFF453A)
         case .idle, .exited: return Theme.navLabel
         }
@@ -969,14 +969,14 @@ private struct PaletteItemRow: View {
             if let ctx = item.ctx, !ctx.isEmpty {
                 Text(ctx)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Color(hex: 0xB6B6BB))
+                    .foregroundStyle(Theme.inkMeta)
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: 210, alignment: .trailing)
             }
             if let meta = item.meta {
                 Text(meta)
                     .font(.system(size: 11)).kerning(0.1)
-                    .foregroundStyle(item.metaColor ?? Theme.inkMuted)
+                    .foregroundStyle(item.metaColor ?? Theme.inkMeta)
             }
             if let kbd = item.kbd {
                 KeyCaps(keys: kbd)
@@ -985,7 +985,7 @@ private struct PaletteItemRow: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(active ? (item.danger ? Theme.danger.opacity(0.1) : Color(hex: 0x0A84FF).opacity(0.1)) : .clear)
+                .fill(active ? (item.danger ? Theme.danger.opacity(0.1) : Theme.accent.opacity(0.1)) : .clear)
         )
         .opacity(item.disabled ? 0.45 : 1)
         .contentShape(Rectangle())

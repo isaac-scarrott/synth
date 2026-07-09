@@ -36,6 +36,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 
+/// True on the development channel (bundle id ends `.dev`, set by dev.sh). Gates the DEV tag.
+let isDevChannel = Bundle.main.bundleIdentifier?.hasSuffix(".dev") ?? false
+
+/// Development-build tag — the native mirror of working.html's `.dev-tag`. Sits at the
+/// window's top-right on the traffic-light axis, amber to match the Synth Dev icon; never
+/// shown on the stable "Synth" build.
+private struct DevTagBadge: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(Theme.working).frame(width: 5, height: 5)
+            Text("DEV")
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .tracking(1.4)
+                .foregroundStyle(Theme.working)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 3)
+        .background(Theme.working.opacity(0.13), in: RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.working.opacity(0.5), lineWidth: 1))
+        // Shares the pane header's 18pt trailing gutter; the caller centres it in the band.
+        .padding(.trailing, 18)
+        .allowsHitTesting(false)
+    }
+}
+
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -72,17 +97,24 @@ struct RootView: View {
             // float it at the top-left on the traffic-light axis. The session/settings
             // headers carry their own inline toggle.
             if store.sidebarCollapsed, store.openSession == nil, !store.settingsOpen {
-                IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
-                    store.sidebarCollapsed = false
-                }
-                .padding(.top, 2)
-                .padding(.leading, 76)
-                .transition(.opacity)
+                SidebarToggle()
+                    .padding(.top, (Theme.titlebarHeight - SidebarToggle.box) / 2)
+                    .padding(.leading, Theme.trafficLightsClearance)
+                    .transition(.opacity)
             }
         }
         .ignoresSafeArea()
+        .background(WindowChrome().frame(width: 0, height: 0))
         // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
         .preferredColorScheme(store.colorSchemeOverride)
+        // Band-height row rather than a top inset: the tag centres on the traffic-light axis
+        // whatever its intrinsic height turns out to be.
+        .overlay(alignment: .top) {
+            if isDevChannel {
+                HStack(spacing: 0) { Spacer(minLength: 0); DevTagBadge() }
+                    .frame(height: Theme.titlebarHeight)
+            }
+        }
         .overlay {
             if let ws = store.creatingWorktreeIn {
                 ModalBackdrop(onDismiss: { store.creatingWorktreeIn = nil }) {

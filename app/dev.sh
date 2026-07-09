@@ -13,6 +13,16 @@
 # The 200MB framework is symlinked, binaries copied — a rebuild refresh is instant.
 set -euo pipefail
 cd "$(dirname "$0")"
+source ./lib.sh
+
+# Development channel identity — distinct name + bundle id + Application Support sandbox
+# so a dev build installs and runs alongside the stable "Synth" without colliding.
+NAME="Synth Dev"
+BID="tech.holibob.synth.dev"
+ICON="icon/AppIcon-Dev.icns"
+SUPPORT="$HOME/Library/Application Support/$NAME"
+export SYNTH_SHORT_VERSION="0.1-dev"
+export SYNTH_BUILD_VERSION="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
 
 PIDFILE=".build/dev.pid"
 
@@ -42,47 +52,19 @@ fi
 swift build
 BIN="$(swift build --show-bin-path)"
 
-APP="$BIN/Synth.app"
+APP="$BIN/$NAME.app"
 mkdir -p "$APP/Contents/MacOS"
 # clonefile (APFS) makes the copy free; plain cp is the fallback.
 cp -cf "$BIN/Synth" "$APP/Contents/MacOS/Synth" 2>/dev/null || cp -f "$BIN/Synth" "$APP/Contents/MacOS/Synth"
 cp -cf "$BIN/synth-hook" "$APP/Contents/MacOS/synth-hook" 2>/dev/null || cp -f "$BIN/synth-hook" "$APP/Contents/MacOS/synth-hook"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key><string>Synth</string>
-  <key>CFBundleDisplayName</key><string>Synth</string>
-  <key>CFBundleIdentifier</key><string>tech.holibob.synth</string>
-  <key>CFBundleExecutable</key><string>Synth</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>NSPrincipalClass</key><string>NSApplication</string>
-</dict>
-</plist>
-PLIST
+write_info_plist "$APP" "$NAME" "$BID"
 
 if $HAS_CEF; then
   ./vendor/bundle-cef.sh "$APP" "$BIN" symlink
 fi
 
-# The browser MCP server sources: the app installs them from Contents/Resources/mcp
-# to ~/Library/Application Support/Synth/browser-mcp/ at launch (ADR-0011 stage two).
-mkdir -p "$APP/Contents/Resources"
-rm -rf "$APP/Contents/Resources/mcp"
-cp -R ../mcp "$APP/Contents/Resources/mcp"
-
-# SwiftPM resource bundle (CommentOverlay.js, ADR-0011 stage three): the app looks it
-# up under Contents/Resources when running from a bundle.
-if [ -d "$BIN/Synth_Synth.bundle" ]; then
-  rm -rf "$APP/Contents/Resources/Synth_Synth.bundle"
-  cp -R "$BIN/Synth_Synth.bundle" "$APP/Contents/Resources/Synth_Synth.bundle"
-fi
+stage_resources "$APP" "$BIN" "$ICON"
 
 if $CHECK; then
   exec env SYNTH_AUTOMATION=1 "$APP/Contents/MacOS/Synth" --browser-check
@@ -94,7 +76,7 @@ fi
 "$APP/Contents/MacOS/Synth" & NEW_PID=$!
 echo "$NEW_PID" > "$PIDFILE"
 
-INSTANCE_JSON="$HOME/Library/Application Support/Synth/instances/$NEW_PID.json"
+INSTANCE_JSON="$SUPPORT/instances/$NEW_PID.json"
 for _ in $(seq 1 100); do
   if ! kill -0 "$NEW_PID" 2>/dev/null; then
     echo "error: new Synth (pid $NEW_PID) exited during launch — old instance left running" >&2

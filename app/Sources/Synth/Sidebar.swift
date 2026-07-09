@@ -57,15 +57,12 @@ struct Sidebar: View {
     private var topStrip: some View {
         HStack {
             Spacer()
-            IconButton(path: Phosphor.sidebar, help: "Collapse sidebar") {
-                store.sidebarCollapsed = true
-            }
+            SidebarToggle()
         }
+        // 10pt trailing pad lands the 28pt toggle on the sidebar's control axis, 24pt in from
+        // the trailing edge — where the header's `+` and every row's status indicator sit too.
         .padding(.horizontal, 10)
-        // Toggle sits high in the strip so its center lines up with the window's
-        // traffic lights (top-left control zone).
-        .frame(height: 44, alignment: .top)
-        .padding(.top, 1)
+        .frame(height: Theme.titlebarHeight)
     }
 
     private var header: some View {
@@ -78,7 +75,8 @@ struct Sidebar: View {
                 store.promptAddWorkspace()
             }
         }
-        .padding(.horizontal, 14).padding(.bottom, 8)
+        // 11pt trailing pad puts the 26pt `+` on that same 24pt axis.
+        .padding(.leading, 14).padding(.trailing, 11).padding(.bottom, 8)
     }
 }
 
@@ -208,7 +206,7 @@ private struct ScopeRow: View {
     // outweighs `.scope--on`), so a selected scope reads as the cursor first.
     private var background: Color {
         if selected { return Theme.rowSelected }
-        if on { return Color(hex: 0x0A84FF).opacity(hovering ? 0.09 : 0.06) }
+        if on { return Theme.input.opacity(hovering ? 0.14 : 0.10) }
         return hovering ? Theme.rowHover : .clear
     }
 
@@ -507,17 +505,18 @@ private struct SessionRow: View {
                         .opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    // The open session's sticky tint (working.html .session--open).
+                    // The open session's sticky tint (working.html .session--open), deepening
+                    // on hover like every other accent wash.
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(hex: 0x0A84FF).opacity(isOpen ? 0.06 : 0))
+                            .fill(Theme.accent.opacity(isOpen ? (hovering ? 0.14 : 0.10) : 0))
                     )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(RowButtonStyle())
                 // Unread bullet lives in the gutter (blue), not inline — no layout shift.
                 .overlay(alignment: .leading) {
-                    Circle().fill(Theme.attention).frame(width: 4, height: 4)
+                    Circle().fill(Theme.input).frame(width: 4, height: 4)
                         .opacity(session.unread ? 1 : 0)
                         .offset(x: -3)
                 }
@@ -529,7 +528,7 @@ private struct SessionRow: View {
         }
         .rowChrome(hovering: hovering, selected: selected)
         // The pulse wash sits behind the row chrome (a soft one-shot sweep, not a standing tint).
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.attention.opacity(pulse ? 0.11 : 0)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.run.opacity(pulse ? 0.11 : 0)))
         // Containment (ADR-0011 stage four, revised): an owned browser is NOT nested — it
         // stays a plain sibling on the shared indent; the accent sparkle in its indicator
         // slot carries the tie instead (working.html `.ind--owned`, no `.session--owned` indent).
@@ -738,7 +737,7 @@ private struct AttentionGlyph: View {
         // Breathe lives on the glyph, not the slot, so it composes under the slot's
         // entry pop (working.html: attn-breathe on the svg inside .ind--input).
         let glyph = Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
-            .foregroundStyle(state == .input ? Theme.attention : Theme.danger)
+            .foregroundStyle(state == .input ? Theme.input : Theme.danger)
         if state == .input { glyph.attnBreathe() } else { glyph }
     }
 }
@@ -776,7 +775,7 @@ private struct Dot: View {
 /// row's gutter bullet, so it reads as ambient "something to read", not liveness.
 private struct UnreadDot: View {
     var body: some View {
-        Circle().fill(Theme.attention).frame(width: 6, height: 6)
+        Circle().fill(Theme.input).frame(width: 6, height: 6)
     }
 }
 
@@ -917,7 +916,7 @@ struct SidebarResizeHandle: View {
             .contentShape(Rectangle())
             .overlay {
                 Rectangle()
-                    .fill(Theme.attention)
+                    .fill(Theme.input)
                     .frame(width: 1.5)
                     .opacity(active ? 0.7 : (hovering ? 0.5 : 0))
                     .animation(.easeOut(duration: 0.12), value: hovering)
@@ -965,6 +964,8 @@ struct SidebarResizeHandle: View {
 struct IconButton: View {
     let path: String
     var size: CGFloat = 15
+    var box: CGFloat = 26
+    var corner: CGFloat = 7
     let help: String
     let action: () -> Void
     @State private var hovering = false
@@ -973,13 +974,30 @@ struct IconButton: View {
         Button(action: action) {
             Phos(path: path, size: size)
                 .foregroundStyle(hovering ? Theme.inkMuted : Theme.inkFaint)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : .clear))
+                .frame(width: box, height: box)
+                .background(RoundedRectangle(cornerRadius: corner).fill(hovering ? Theme.rowHover : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(IconPressStyle())
         .help(help)
         .onHover { hovering = $0 }
+    }
+}
+
+/// The sidebar collapse/expand toggle (working.html `.icon-btn`) — the one control that lives in
+/// the titlebar band, so it is the roomier 28pt box rather than the 26pt one the `+` in the
+/// workspace header uses. Every header hosts the same button, hence one view for all of them.
+struct SidebarToggle: View {
+    /// Callers centring the toggle in the band need its box size.
+    static let box: CGFloat = 28
+
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        IconButton(path: Phosphor.sidebar, size: 17, box: Self.box, corner: 8,
+                   help: store.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar") {
+            store.sidebarCollapsed.toggle()
+        }
     }
 }
 

@@ -5,8 +5,9 @@ import os.log
 /// every managed worktree.
 ///
 /// Install: the repo's mcp/ (copied into Contents/Resources/mcp by dev.sh /
-/// build-app.sh) is synced to ~/Library/Application Support/Synth/browser-mcp/ at
-/// launch, with `npm install --omit=dev` run there when node_modules is missing or
+/// dist.sh) is synced to the channel's Application Support sandbox (AppSupport.root)
+/// under browser-mcp/ at launch, with `npm install --omit=dev` run there when
+/// node_modules is missing or
 /// package.json changed — one shared install, stable path for every .mcp.json.
 ///
 /// Registration: each worktree root gets .mcp.json with the synth-browser server,
@@ -16,9 +17,7 @@ import os.log
 @MainActor enum MCPInstaller {
     private static let log = Logger(subsystem: "tech.holibob.synth", category: "mcp")
 
-    static let installDir = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Synth/browser-mcp", isDirectory: true)
+    static let installDir = AppSupport.dir("browser-mcp")
 
     /// Copy the bundled server into the shared install dir and (re)install its deps
     /// when needed. npm runs off-main — launch must not wait on the network.

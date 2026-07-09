@@ -3,7 +3,7 @@
 # four helper apps CEF requires on macOS (one stub binary under four names). CEF can't
 # run from a bare executable — the framework/helpers are resolved relative to the
 # bundle (Contents/Frameworks). Shared by dev.sh (symlink mode: no 200MB copy per
-# build) and build-app.sh (copy mode: self-contained artifact).
+# build) and dist.sh (copy mode: self-contained artifact).
 set -euo pipefail
 
 APP="$1"        # path to Synth.app

@@ -103,7 +103,7 @@ struct ShortcutsSheet: View {
                                 if let alt = row.alt {
                                     Text("or")
                                         .font(.system(size: 10.5))
-                                        .foregroundStyle(Color(hex: 0xB6B6BB))
+                                        .foregroundStyle(Theme.inkMeta)
                                         .padding(.horizontal, 3)
                                     KeyCaps(keys: alt)
                                 }

@@ -146,7 +146,7 @@ private struct Checkbox: View {
     let on: Bool
     var body: some View {
         RoundedRectangle(cornerRadius: 4.5)
-            .fill(on ? Theme.selRing : Theme.raised)
+            .fill(on ? Theme.input.opacity(0.9) : Theme.raised)
             .overlay(
                 RoundedRectangle(cornerRadius: 4.5)
                     .strokeBorder(on ? Color.clear : Theme.line, lineWidth: 1)
@@ -301,7 +301,7 @@ struct FeedbackSheet: View {
                     .background(Theme.raised)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10)
-                        .stroke(titleFocused ? Theme.attention : Theme.line, lineWidth: titleFocused ? 2 : 0.5))
+                        .stroke(titleFocused ? Theme.accent : Theme.line, lineWidth: titleFocused ? 2 : 0.5))
                     .focused($titleFocused)
                     .onSubmit { focused = true }
             }
@@ -313,7 +313,7 @@ struct FeedbackSheet: View {
                 .background(Theme.raised)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10)
-                    .stroke(focused ? Theme.attention : Theme.line, lineWidth: focused ? 2 : 0.5))
+                    .stroke(focused ? Theme.accent : Theme.line, lineWidth: focused ? 2 : 0.5))
                 .overlay(alignment: .topLeading) {
                     if store.feedbackDraft.isEmpty {
                         Text(isAuthor ? "Add detail (optional)" : "What's off?")

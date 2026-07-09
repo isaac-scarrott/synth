@@ -19,9 +19,7 @@ final class BrowserProcessSupervisor {
     /// Roots live per app instance (instance-<pid>) because Chromium's process
     /// singleton is per cache root: two Synth instances sharing one root would make
     /// the second CefInitialize defer to the first.
-    private static let profilesRoot = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Synth/BrowserProfiles", isDirectory: true)
+    private static let profilesRoot = AppSupport.dir("BrowserProfiles")
 
     private init() {}
 
@@ -32,7 +30,7 @@ final class BrowserProcessSupervisor {
             + "/Contents/Frameworks/Chromium Embedded Framework.framework"
         guard FileManager.default.fileExists(atPath: frameworkPath) else {
             throw BrowserEngineFactory.Unavailable(reason:
-                "CEF framework missing from the app bundle — launch a bundle assembled by app/dev.sh or app/build-app.sh")
+                "CEF framework missing from the app bundle — launch a bundle assembled by app/dev.sh or app/dist.sh")
         }
 
         let fm = FileManager.default

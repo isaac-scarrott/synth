@@ -17,15 +17,17 @@ enum TerminalTheme {
     // Light-mode legibility: every colour holds ≥4.5:1 contrast on the paper bg, and the
     // bright set (8–15) is *darker* than normal — TUIs lean on bright for emphasis, and on
     // a light background "brighter" must mean deeper ink, not lighter.
+    // The icon retint moved the surface, ink and dim mirrors onto the cool-slate charcoal; the
+    // 16-colour ANSI hue set (red/green/yellow/blue/magenta/cyan) is deliberately unchanged.
     private static let light = Palette(
-        bg: "f4f2ec", fg: "33333a", cursor: "33333a", selection: "d8e4f5",
-        ansi: ["33333a", "c03a30", "1e7f42", "8a660c", "2361c4", "8b40b5", "16717a", "6e6e78",
-               "6b6b74", "a52e25", "176b37", "75560a", "1c4fa8", "76349c", "115e66", "26262b"])
+        bg: "f3efe7", fg: "33353c", cursor: "33353c", selection: "dde3ec",
+        ansi: ["33353c", "c03a30", "1e7f42", "8a660c", "2361c4", "8b40b5", "16717a", "6e6e78",
+               "6b6e78", "a52e25", "176b37", "75560a", "1c4fa8", "76349c", "115e66", "26262b"])
 
     private static let dark = Palette(
-        bg: "131315", fg: "e3e3e7", cursor: "e3e3e7", selection: "333a48",
+        bg: "121317", fg: "e3e5ea", cursor: "e3e5ea", selection: "333a48",
         ansi: ["2a2a30", "ec6a5e", "6fcf8e", "e0b45f", "6fa2ee", "c398e8", "5fc9c1", "cfcfd4",
-               "7e7e88", "ff8a80", "8fe0a8", "f0c674", "8ab4f8", "d8b6fb", "86e3dc", "f6f6f8"])
+               "7e818c", "ff8a80", "8fe0a8", "f0c674", "8ab4f8", "d8b6fb", "86e3dc", "f6f6f8"])
 
     static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua

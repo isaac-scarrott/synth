@@ -92,7 +92,7 @@ private struct SessionPane: View {
     }
 }
 
-/// working.html `.pane__head`: 13/18 padding, hairline bottom border, 12 gap.
+/// working.html `.pane__head`: the titlebar band, 18pt side padding, hairline bottom border.
 private struct PaneHead: View {
     @Environment(AppStore.self) private var store
     let session: Session
@@ -105,10 +105,9 @@ private struct PaneHead: View {
         HStack(spacing: 10) {
             // Collapsed: the expand toggle binds into the header cluster right after the
             // traffic lights, so it's part of the toolbar rather than a floating orphan.
+            // The 2pt tops the HStack's 10 up to the mock's 12pt gap before the title.
             if collapsed {
-                IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
-                    store.sidebarCollapsed = false
-                }
+                SidebarToggle().padding(.trailing, 2)
             }
             SessionIcon(kind: session.kind, size: 15)
                 .frame(width: 15, height: 15)
@@ -127,11 +126,11 @@ private struct PaneHead: View {
             }
             Spacer(minLength: 0)
         }
-        // Collapsed: clear the window's traffic lights, then the cluster; a shorter fixed
-        // height centres the row on the traffic-light axis (no empty band, no low toggle).
-        .padding(.leading, collapsed ? 76 : 18)
+        // Collapsed, the header starts past the traffic lights; either way it is the same band
+        // as the sidebar strip, so the title sits on the traffic-light centre line.
+        .padding(.leading, collapsed ? Theme.trafficLightsClearance : 18)
         .padding(.trailing, 18)
-        .frame(height: collapsed ? 30 : 44)
+        .frame(height: Theme.titlebarHeight)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 0.5)
         }
@@ -190,9 +189,7 @@ private struct WorktreeSetupPane: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 if collapsed {
-                    IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
-                        store.sidebarCollapsed = false
-                    }
+                    SidebarToggle().padding(.trailing, 2)
                 }
                 Phos(path: Phosphor.branch, size: 15)
                     .foregroundStyle(Theme.inkFaint)
@@ -211,9 +208,9 @@ private struct WorktreeSetupPane: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.leading, collapsed ? 76 : 18)
+            .padding(.leading, collapsed ? Theme.trafficLightsClearance : 18)
             .padding(.trailing, 18)
-            .frame(height: collapsed ? 30 : 44)
+            .frame(height: Theme.titlebarHeight)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Theme.border).frame(height: 0.5)
             }
@@ -259,7 +256,7 @@ private struct Placeholder: View {
         VStack(spacing: 10) {
             Image(systemName: "sparkle")
                 .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.agent)
+                .foregroundStyle(Theme.copper)
             Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
             Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
         }

@@ -303,9 +303,71 @@ disclosure to dive deeper.
   group of jump rows that drill into their own frame where their actions live. Acting on a parent is a
   deliberate step up, not a careless-Enter neighbour. Also fixed a duplicate `const ICON_EXTERNAL`
   merge artifact whose top-level `SyntaxError` had been killing the whole palette script.
+- **Two build channels (Stable / Dev) + generated app icon** — `dist.sh` builds/installs the stable
+  "Synth" (`tech.holibob.synth`) to `/Applications`; `dev.sh` builds "Synth Dev"
+  (`tech.holibob.synth.dev`) for the live loop; a shared `lib.sh` keeps their bundles identical.
+  `AppSupport.root` keys the Application Support sandbox off `CFBundleName` so the two coexist without
+  colliding (state, worktrees, browser profiles, instances all isolated; `SYNTH_SUPPORT_DIR` /
+  `SYNTH_STATE_DIR` overrides preserved). Icon is a Higgsfield-generated "liquid swirl" gradient in
+  Synth's own accent hues (stable full-colour, dev amber), masked to a squircle and built to
+  `AppIcon.icns`. Icon art is a champagne-on-charcoal "synthesis of instruments" mark (equalizer pins
+  + violin-scroll curls); `app/icon/mockicon.swift` keys the mark, composites it at 74% on a clean
+  charcoal squircle (no rim), and retints it amber for the dev variant (deterministic, no AI redraw),
+  packed by `build-icons.sh`. The dev build also shows an amber "DEV" pill top-right
+  (`.dev-tag` / `is-dev` in both designs; `DevTagBadge` gated on the `.dev` bundle id natively), absent
+  on stable. Distribution to teammates via a private Homebrew cask (ad-hoc + quarantine strip,
+  notarization later) is decided but not yet built. Verified: both channels built, launched, and
+  running side by side; DEV tag confirmed in the design over CDP.
 
 ## [2026-07-09](docs/features/2026-07-09.md)
 
+- **An agent can close the browsers it opened (`browser_close`; ADR-0011 stage two + four,
+  extended)** — `browser_create` had no counterpart, so every browser an agent opened to check its
+  own work outlived the turn and silted up the sidebar. New MCP tool + `browser.close` control verb
+  (same path as deleting the row), with the norm written into the tool description: close what you
+  opened only to check your own work; leave open what you opened *for* the user to see or comment
+  in, and say so. Permission falls out of stage-four ownership rather than a new concept — a session
+  may close what it owns and nothing else, so ⌘K browsers (unowned = the user's), detached or
+  re-parented browsers, and external claudes (no Synth row) are all refused with their own message.
+  *Rejected:* any-claude-closes-any-browser — the shared surface means any claude may **drive** any
+  browser, but driving isn't destroying. One extra guard: a close is refused while comment mode is
+  `engaged` (covers the in-flight CDP attach), since the user is composing the very thing that would
+  be deleted. `sessionId` required, no implicit "close the focused one". Verified against a running
+  app with a live CEF engine, over both the control socket and the real MCP server on stdio.
+- **The storefront palette is derived from the app icon (both designs)** — sampled `AppIcon-source.png`
+  rather than eyeballing it: the mark is `#eedfcc` (`hsl(34,50%,87%)`, cream not gold) and the squircle
+  runs `#282b30 → #15181c` at a steady hue 223° / ~10% sat — the charcoal was never neutral. Surfaces
+  are now the squircle's own gradient (`--raised` is its top stop, `--canvas` one past its bottom).
+  All 19 iOS-system-blue call-sites are gone; champagne is the accent and stays scarce — selection,
+  focus, ⌘K active row, send, awaited reply — with `--accent-rgb` backing every alpha wash so hue flips
+  per theme without geometry moving. Light mode can't use the mark (fails contrast on white), so it
+  takes a copper `#a86038` plus a new `--on-accent`. `--work` amber sits 4° from champagne, so it stays
+  byte-identical, the copper clears it by 15°, and blue survives only as `--input` — a desaturated
+  sibling of the charcoal's 223° hue, meaning "needs you", never brand. Workspace avatar chips muted
+  onto the palette (34% sat, ≥15° from every reserved colour, ≥27° apart, ≥4.6:1 white letter) — identity
+  survives, the shouting doesn't. Eight near-identical faint greys (within 5% lightness, several at
+  ~2.4:1) collapsed into one `--ink-meta` at 4.63:1 — the only change that isn't a pure retint.
+  *Rejected:* champagne-only chips (workspaces stop being distinguishable at a glance) and champagne as
+  the needs-input state (collides with selection, drags back toward amber). Colour literals only: 117
+  lines, no shadow offset, radius, border width or easing moved.
+
+- **One 50pt titlebar band, and the traffic lights moved onto it** — the top strip was cramped and
+  its tenants disagreed on where the top of the window was: the lights sat inside the 14pt corner
+  radius, the collapse toggle centred 25pt from the sidebar's trailing edge while the `+` sat at 27
+  and row indicators at 24, and the sidebar strip and pane header were near-misses (44/44/30pt),
+  putting lights, pane title and DEV tag on three centre lines. Now one token (`--titlebar-h: 50px`
+  / `Theme.titlebarHeight`) sizes the sidebar strip and all three pane headers, the lights take the
+  macOS-standard 20pt inset centred at y=25, the toggle grows 26→28pt onto the sidebar's shared 24pt
+  control axis (the `+` moved 3pt to join it), and collapsed the expand toggle sits at 82 with the
+  title at 122. The lights are AppKit's: `.hiddenTitleBar` puts them at x=8/y=14 in a 28pt titlebar.
+  *Rejected:* an empty unified `NSToolbar` (AppKit re-centres them for free, but its `NSToolbarView`
+  swallows every click across the band, killing the toggle) and moving the buttons without growing
+  `NSTitlebarView` (they draw but stop hit-testing outside its bounds). `WindowChrome.swift` grows
+  the titlebar container and re-places the buttons inside it; the container is hit-transparent
+  except on its widgets, so our band keeps its clicks and still drags the window, and AppKit's
+  relayout reset is healed from the frame-change notification it posts. Fullscreen left to AppKit.
+  Verified on the real app: circles at x=20/40/60 ⌀12 centre y=25, toggle 24.0pt from the edge on
+  the same line, header hairline at y=49.5, and close/toggle hit-testing intact across a resize.
 - **Synth hosts more than one coding agent: OpenCode joins Claude Code (ADR-0012; both designs +
   native app)** — `SessionKind.claudeCode` becomes `.agent(AgentID)`, so which agent a row hosts is
   data, not a case: adding a third agent is one `AgentDescriptor` + one `AgentSupervisor` and nothing

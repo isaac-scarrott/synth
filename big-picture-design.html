@@ -6,38 +6,39 @@
 <title>Synth — Big Picture</title>
 <style>
   :root {
-    --canvas: #ebebed;
-    --panel: #ffffff;
-    --sidebar: #f4f4f5;
+    --canvas: #e9eaee;
+    --panel: #fafbfc;
+    --sidebar: #f0f1f4;
     --border: rgba(0, 0, 0, 0.07);
     --border-strong: rgba(0, 0, 0, 0.1);
-    --text: #1a1a1c;
-    --text-muted: #86868b;
-    --text-faint: #a8a8ad;
+    --text: #1a1b1f;
+    --text-muted: #7e808a;
+    --text-faint: #a6a8b0;
+    --ink-meta: #6b6e76;     /* one home for meta labels/icons/chevrons — tokenised so they finally flip in dark */
 
     /* themeable surfaces + ink tiers (dark values live in the theme block below) */
-    --ink: #1d1d1f;          /* primary label */
-    --ink-open: #2c2c30;     /* open/active label */
-    --ink-2: #46464c;        /* strong secondary */
-    --ink-3: #56565c;        /* secondary */
-    --ink-4: #6a6a70;        /* tertiary */
-    --ink-5: #737378;        /* branch/mono label */
-    --ink-unread: #35353a;   /* unread session name — emphasis */
+    --ink: #1c1e23;          /* primary label */
+    --ink-open: #2b2d34;     /* open/active label */
+    --ink-2: #44464e;        /* strong secondary */
+    --ink-3: #54565e;        /* secondary */
+    --ink-4: #666971;        /* tertiary */
+    --ink-5: #787b84;        /* branch/mono label */
+    --ink-unread: #34363d;   /* unread session name — emphasis */
     --raised: #ffffff;       /* raised fills: dialogs, menu items, pills, fields */
-    --glass: rgba(255,255,255,0.84);  /* blurred popovers (menu, ⌘K) */
-    --chrome: #f6f6f7;       /* browser toolbar */
-    --term-bg: #1b1b1e;      /* terminal / code surfaces */
-    --tui-bg: #f4f2ec;       /* terminal surface — light "paper" */
-    --tui-fg: #33333a;       /* terminal default text */
-    --tui-dim: #6b6b74;      /* terminal dim / comments */
+    --glass: rgba(250,251,253,0.84);  /* blurred popovers (menu, ⌘K) */
+    --chrome: #f2f3f6;       /* browser toolbar */
+    --term-bg: #191b1f;      /* terminal / code surfaces */
+    --tui-bg: #f3efe7;       /* terminal surface — light "paper", kept warm to echo the champagne mark */
+    --tui-fg: #33353c;       /* terminal default text */
+    --tui-dim: #6b6e78;      /* terminal dim / comments */
     --tui-red: #c03a30;      /* terminal red — errors */
     --tui-green: #1e7f42;    /* terminal green — success */
     --tui-yellow: #8a660c;   /* terminal yellow — warnings */
     --tui-blue: #2361c4;     /* terminal blue — commands / info */
     --tui-magenta: #8b40b5;  /* terminal magenta */
     --tui-cyan: #16717a;     /* terminal cyan */
-    --tui-cursor: #33333a;   /* terminal cursor */
-    --tui-sel: #d8e4f5;      /* terminal selection */
+    --tui-cursor: #33353c;   /* terminal cursor */
+    --tui-sel: #dde3ec;      /* terminal selection */
     --tui-hair: rgba(0,0,0,0.13);   /* terminal card inset hairline */
     --hover-soft: rgba(0,0,0,0.035);  /* faint row / control hover */
     --hover: rgba(0,0,0,0.05);        /* standard hover + selection fill */
@@ -45,7 +46,10 @@
     --line-soft: rgba(0,0,0,0.06);    /* hairline */
     --line: rgba(0,0,0,0.1);          /* control border */
     --line-2: rgba(0,0,0,0.16);       /* strong control border */
-    --accent: #1a1a1c;
+    --accent: #a86038;       /* structural brand accent — deep copper on light (clears 4.5:1 on white) */
+    --accent-rgb: 168,96,56; /* drives every rgba(var(--accent-rgb),A) ring/wash so hue flips per-theme in one edit */
+    --on-accent: #ffffff;    /* foreground on an --accent fill (never #fff on the dark champagne button) */
+    --titlebar-h: 50px;
     --radius-app: 14px;
     --radius-panel: 20px;
     --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
@@ -56,7 +60,10 @@
     /* state colors */
     --run: #34c759;
     --work: #f5a623;
-    --input: #0a84ff;
+    --input: #3a6db3;        /* needs-input STATE only — slate-blue sibling of the charcoal, not the old iOS blue */
+    --input-rgb: 58,109,179; /* drives every functional rgba(var(--input-rgb),A) ring/wash */
+    --copper: #a05633;       /* AI-owned/session warm mark — one token collapsing the terracottas, kept distinct from the pale accent */
+    --copper-rgb: 160,86,51; /* for the browser target chip's alpha bg */
     --error: #ff3b30;
 
     /* Emil's stronger custom curves */
@@ -149,12 +156,13 @@
   }
 
   .sidebar__top {
-    height: 42px;
+    height: var(--titlebar-h);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    padding: 0 12px 0 16px;
+    /* 10px right pad centers the 28px toggle on the 24px-from-edge indicator axis */
+    padding: 0 10px 0 20px;
     -webkit-app-region: drag;
   }
 
@@ -162,8 +170,8 @@
      is open or collapsed (the real app's traffic lights never disappear). */
   .traffic {
     position: absolute;
-    top: 15px;
-    left: 16px;
+    top: 19px;
+    left: 20px;
     z-index: 30;
     display: flex;
     gap: 8px;
@@ -178,22 +186,51 @@
   .traffic .y { background: #febc2e; }
   .traffic .g { background: #28c840; }
 
+  /* Development-build tag: mirrors the traffic lights at the top-right, amber to match
+     the Synth Dev icon. Shown only when the shell carries `is-dev` (the native app sets it
+     from the `.dev` bundle id); absent entirely on the stable build. */
+  .dev-tag {
+    position: absolute;
+    top: 16px;
+    right: 18px;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 7px;
+    font: 600 10.5px/1 var(--mono);
+    letter-spacing: 0.13em;
+    color: var(--work);
+    background: rgba(245, 166, 35, 0.13);
+    border: 1px solid rgba(245, 166, 35, 0.5);
+    -webkit-app-region: no-drag;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .dev-tag::before {
+    content: "";
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--work);
+  }
+  .app.is-dev .dev-tag { display: inline-flex; }
+
   /* ---- Icon buttons (collapse / expand) ---- */
   .icon-btn {
     -webkit-app-region: no-drag;
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
     border: 0;
-    border-radius: 7px;
+    border-radius: 8px;
     background: none;
     cursor: pointer;
-    color: #9a9aa0;
+    color: var(--ink-meta);
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
   }
-  .icon-btn svg { width: 16px; height: 16px; display: block; }
+  .icon-btn svg { width: 17px; height: 17px; display: block; }
   .icon-btn:active { transform: scale(0.94); }
   @media (hover: hover) and (pointer: fine) {
     .icon-btn:hover { background: var(--hover); color: var(--ink-3); }
@@ -202,8 +239,8 @@
   /* Expand button — appears at top-left once the sidebar is collapsed */
   .expand-btn {
     position: absolute;
-    top: 8px;
-    left: 74px;
+    top: 11px;
+    left: 82px;
     z-index: 20;
     opacity: 0;
     pointer-events: none;
@@ -211,7 +248,7 @@
   }
   .app.collapsed .expand-btn { opacity: 1; pointer-events: auto; }
   /* collapsed: the pane header clears the top-left control zone (traffic lights + toggle) */
-  .app.collapsed .pane__head { padding-left: 104px; }
+  .app.collapsed .pane__head { padding-left: 122px; }
 
   /* ---- Content pane (renders the open session) ---- */
   .content {
@@ -225,10 +262,10 @@
   }
 
   /* the open session gets a sticky "you are here" tint in the sidebar */
-  .session--open { background: rgba(10,132,255,0.06); }
+  .session--open { background: rgba(var(--accent-rgb),0.10); }
   .session--open .session__name { color: var(--ink-open); font-weight: 600; }
   @media (hover: hover) and (pointer: fine) {
-    .session--open:hover { background: rgba(10,132,255,0.09); }
+    .session--open:hover { background: rgba(var(--accent-rgb),0.14); }
   }
 
   /* empty state — nothing open */
@@ -279,7 +316,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 13px 18px;
+    padding: 0 18px;
+    height: var(--titlebar-h);
     border-bottom: 0.5px solid var(--border);
   }
   .pane__title {
@@ -324,7 +362,7 @@
   }
   .term:focus {
     outline: none;
-    box-shadow: inset 0 0 0 0.5px var(--tui-hair), 0 1px 2px rgba(0,0,0,0.05), 0 3px 10px rgba(0,0,0,0.05), 0 0 0 2.5px rgba(10,132,255,0.22);
+    box-shadow: inset 0 0 0 0.5px var(--tui-hair), 0 1px 2px rgba(0,0,0,0.05), 0 3px 10px rgba(0,0,0,0.05), 0 0 0 2.5px rgba(var(--accent-rgb),0.22);
   }
   .term__ln { white-space: pre-wrap; word-break: break-word; min-height: 1.55em; }
   .term__ln.dim { color: var(--tui-dim); }
@@ -360,19 +398,19 @@
     transition: border-color 160ms ease, box-shadow 160ms ease;
   }
   .chat__composer.awaiting {
-    border-color: rgba(10,132,255,0.55);
+    border-color: rgba(var(--input-rgb),0.55);
     animation: composer-breathe 2.6s var(--ease-in-out) infinite;
   }
   @keyframes composer-breathe {
-    0%, 100% { box-shadow: 0 0 0 3px rgba(10,132,255,0.13); }
-    50% { box-shadow: 0 0 0 3px rgba(10,132,255,0.04); }
+    0%, 100% { box-shadow: 0 0 0 3px rgba(var(--input-rgb),0.13); }
+    50% { box-shadow: 0 0 0 3px rgba(var(--input-rgb),0.04); }
   }
   .chat__ask { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; color: var(--input); margin-bottom: 9px; }
   .chat__ask svg { width: 13px; height: 13px; flex-shrink: 0; }
   .chat__inputrow { display: flex; align-items: center; gap: 8px; }
   .chat__input { flex: 1; font-family: inherit; font-size: 13px; color: var(--text); outline: none; min-width: 0; }
   .chat__input:empty::before { content: attr(data-ph); color: var(--text-faint); }
-  .chat__send { width: 27px; height: 27px; flex-shrink: 0; border-radius: 7px; background: var(--input); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 110ms var(--ease-out), opacity 120ms ease; }
+  .chat__send { width: 27px; height: 27px; flex-shrink: 0; border-radius: 7px; background: var(--accent); color: var(--on-accent); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 110ms var(--ease-out), opacity 120ms ease; }
   .chat__send svg { width: 15px; height: 15px; }
   .chat__send:active { transform: scale(0.9); }
 
@@ -389,7 +427,7 @@
   @keyframes browser-spin { to { transform: rotate(360deg); } }
   .browser__omni { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); background: var(--raised); border: 0.5px solid var(--border); border-radius: 8px; padding: 5px 11px; cursor: text; text-align: left; transition: border-color 120ms ease, box-shadow 120ms ease; }
   .browser__omni:hover { border-color: var(--border-strong); }
-  .browser__omni.is-editing { border-color: var(--input); box-shadow: 0 0 0 3px rgba(10,132,255,0.16); }
+  .browser__omni.is-editing { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
   .browser__lock { flex-shrink: 0; display: flex; color: var(--text-faint); }
   .browser__lock svg { width: 12px; height: 12px; }
   .browser__url { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -401,7 +439,7 @@
   .browser__glyph { display: block; margin: 0 auto 18px; color: var(--text-faint); }
   .browser__glyph svg { width: 34px; height: 34px; display: block; margin: 0 auto; }
   .browser__field { display: flex; align-items: center; gap: 9px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 11px; padding: 11px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: border-color 120ms ease, box-shadow 120ms ease; }
-  .browser__field:focus-within { border-color: var(--input); box-shadow: 0 0 0 3px rgba(10,132,255,0.16); }
+  .browser__field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
   .browser__field svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-faint); }
   .browser__field input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; color: var(--ink); background: transparent; border: 0; outline: 0; }
   .browser__field input::placeholder { color: var(--text-faint); }
@@ -420,7 +458,7 @@
 
   /* Comment mode (ADR-0011 stages three/four): the target chip names where a comment lands —
      the owning Claude session, or the fresh one an unowned browser's comment will spawn. */
-  .browser__target { padding: 3px 9px; border-radius: 999px; background: rgba(194,114,76,0.1); color: #b05f3c; font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; animation: browser-drop 150ms var(--ease-out); }
+  .browser__target { padding: 3px 9px; border-radius: 999px; background: rgba(var(--copper-rgb),0.12); color: var(--copper); font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; animation: browser-drop 150ms var(--ease-out); }
   .browser__view { position: relative; }
   .browser--commenting .browser__view { cursor: crosshair; }
   .browser__ccard { position: absolute; z-index: 20; width: 248px; padding: 8px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); border-radius: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.18); animation: browser-drop 150ms var(--ease-out); }
@@ -428,7 +466,7 @@
   .browser__ccard textarea:focus { border-color: var(--line-2); }
   .browser__ccard-row { display: flex; gap: 6px; margin-top: 7px; }
   .browser__ccard-target { font-size: 10.5px; color: var(--ink-4); padding: 0 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .browser__ccard .menu__btn--send { background: var(--accent); color: #fff; border-color: transparent; }
+  .browser__ccard .menu__btn--send { background: var(--accent); color: var(--on-accent); border-color: transparent; }
   .browser__notice { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; padding: 5px 12px; border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); box-shadow: var(--notif-shadow); font-size: 11.5px; font-weight: 500; color: var(--ink-3); white-space: nowrap; animation: browser-drop 160ms var(--ease-out); transition: opacity 240ms ease; }
   .browser__notice.out { opacity: 0; }
 
@@ -447,8 +485,8 @@
   .skel--card { height: 96px; }
 
   /* ----- Simulator ----- */
-  .sim { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; background: #f3f3f5; }
-  .sim__device { width: 232px; height: 476px; border-radius: 36px; background: #0c0c0d; padding: 9px; box-shadow: 0 10px 30px rgba(0,0,0,0.24), inset 0 0 0 0.5px rgba(255,255,255,0.1); }
+  .sim { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; background: #eef0f3; }
+  .sim__device { width: 232px; height: 476px; border-radius: 36px; background: #0b0c0e; padding: 9px; box-shadow: 0 10px 30px rgba(0,0,0,0.24), inset 0 0 0 0.5px rgba(255,255,255,0.1); }
   .sim__screen { width: 100%; height: 100%; border-radius: 28px; background: linear-gradient(160deg, #eef2ff, #fce7f3); overflow: hidden; }
   .sim__status { display: flex; justify-content: space-between; padding: 12px 20px 0; font-size: 11px; font-weight: 600; color: var(--ink); }
   .sim__hero { padding: 46px 22px 0; }
@@ -474,7 +512,7 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #a1a1a6;
+    color: var(--ink-meta);
     padding: 10px 8px 6px;
     white-space: nowrap;
   }
@@ -486,7 +524,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #b0b0b5;
+    color: var(--ink-meta);
     cursor: pointer;
     transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
   }
@@ -526,7 +564,7 @@
   body.kbd .settings-back.sel,
   body.kbd .scope.sel {
     background: var(--hover);
-    box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.5);
+    box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5);
   }
 
   /* Drag-to-reorder (change priority). Reorders within a list only; the moved
@@ -558,7 +596,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #b8b8bd;
+    color: var(--ink-meta);
     transition: transform 0.16s var(--ease-out);
   }
   .chev svg { width: 13px; height: 13px; display: block; }
@@ -594,7 +632,7 @@
   .repo__count {
     font-size: 11px;
     font-weight: 500;
-    color: #b8b8bd;
+    color: var(--ink-meta);
     font-variant-numeric: tabular-nums;
   }
   /* count hides once open (chevron already communicates state) */
@@ -641,13 +679,13 @@
   .branch__meta {
     font-size: 10.5px;
     font-weight: 450;
-    color: #bcbcc1;
+    color: var(--ink-meta);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
   }
 
   /* branch group (a checked-out branch holding live sessions) */
-  .branch--group .chev { color: #a9a9ae; }
+  .branch--group .chev { color: var(--ink-meta); }
   .branch__roll { display: flex; align-items: center; flex-shrink: 0; }
 
   .branch__dot {
@@ -721,7 +759,7 @@
      nested — it stays a plain sibling on the shared indent. The tie is carried by a small
      accent Claude mark in the row's indicator slot (right axis, like every other indicator),
      not by an indent. The mark fades in/out as the adopt/detach animation. */
-  .ind--owned { color: var(--session-ai, #c2724c); }
+  .ind--owned { color: var(--copper); }
   .ind--owned svg { width: 12px; height: 12px; opacity: 0.9; }
 
   /* unread gutter bullet */
@@ -744,10 +782,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #a1a1a6;
+    color: var(--ink-meta);
   }
   .session__icon svg { width: 14px; height: 14px; display: block; }
-  .session__icon--ai { color: #c2724c; }
+  .session__icon--ai { color: var(--copper); }
   /* OpenCode's official mark colours (light). The dark pair lives in the dark block. */
   :root { --oc-ring: #211e1e; --oc-inner: #cfcecd; }
 
@@ -756,7 +794,7 @@
     font-size: 11.5px;
     font-weight: 460;
     letter-spacing: -0.005em;
-    color: #8a8a8f;
+    color: var(--ink-meta);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -895,7 +933,7 @@
   .notifs.deck .notifs__more.show { opacity: 1; }
   .notifs.deck.spread .notifs__more { opacity: 0 !important; }
   /* ambient 'done' on an off-screen session: one soft wash sweeps the row once */
-  @keyframes row-pulse { 0% { background: color-mix(in srgb, var(--input) 11%, transparent); } 100% { background: transparent; } }
+  @keyframes row-pulse { 0% { background: color-mix(in srgb, var(--run) 11%, transparent); } 100% { background: transparent; } }
   .session--pulse { animation: row-pulse 900ms var(--ease-out); }
 
   /* ---- Row action kebab (hover-revealed at the row end) ---- */
@@ -908,7 +946,7 @@
     width: 20px;
     height: 20px;
     border-radius: 7px;
-    color: #8a8a90;
+    color: var(--ink-meta);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -979,7 +1017,7 @@
   .backdrop.open .dialog { opacity: 1; transform: scale(1); }
   .dialog__title { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 15px; }
   .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
-  .field label { font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #9a9aa0; }
+  .field label { font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-meta); }
   .field select, .field input {
     font-family: inherit;
     font-size: 13px;
@@ -993,8 +1031,8 @@
   }
   .field input { font-family: var(--mono); }
   .field select:focus, .field input:focus {
-    border-color: var(--input);
-    box-shadow: 0 0 0 3px rgba(10,132,255,0.15);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.15);
   }
   .dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
   .dialog__btn {
@@ -1010,7 +1048,7 @@
     transition: background-color 110ms ease, transform 110ms var(--ease-out), opacity 120ms ease;
   }
   .dialog__btn:active { transform: scale(0.97); }
-  .dialog__btn--primary { background: var(--input); color: #fff; border-color: transparent; }
+  .dialog__btn--primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
   .dialog__btn.is-disabled { opacity: 0.4; pointer-events: none; }
 
   /* ---- Feedback (⌘⇧F) — one textbox; author spawns a fix, everyone else emails ---- */
@@ -1023,7 +1061,7 @@
     transition: border-color 120ms ease, box-shadow 120ms ease;
   }
   .fb__text::placeholder { color: var(--text-faint); }
-  .fb__text:focus { border-color: var(--input); box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
+  .fb__text:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.15); }
 
   .fb__foot { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; }
   .fb__dismiss { font-size: 11px; color: var(--text-faint); }
@@ -1052,7 +1090,7 @@
   @media (hover: hover) and (pointer: fine) {
     .wtrow:hover { background: var(--hover-soft); }
   }
-  .wtrow.cur { background: var(--hover); box-shadow: 0 0 0 1.5px rgba(10,132,255,0.5); }
+  .wtrow.cur { background: var(--hover); box-shadow: 0 0 0 1.5px rgba(var(--accent-rgb),0.5); }
   .wtcheck {
     width: 16px;
     height: 16px;
@@ -1067,10 +1105,10 @@
     transition: background-color 120ms ease, border-color 120ms ease;
   }
   .wtcheck svg { width: 10px; height: 10px; display: block; opacity: 0; transition: opacity 120ms ease; }
-  .wtrow.on .wtcheck { background: rgba(10,132,255,0.9); border-color: transparent; }
+  .wtrow.on .wtcheck { background: rgba(var(--input-rgb),0.9); border-color: transparent; }
   .wtrow.on .wtcheck svg { opacity: 1; }
   .wtrow__name { flex: 1; font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wtrow__age { font-size: 10.5px; color: #bcbcc1; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .wtrow__age { font-size: 10.5px; color: var(--ink-meta); font-variant-numeric: tabular-nums; flex-shrink: 0; }
   .wtrow__tag { width: 74px; text-align: right; font-size: 10.5px; color: var(--text-faint); flex-shrink: 0; }
 
   /* segmented control (Create worktree: existing branch / new branch) */
@@ -1140,7 +1178,7 @@
     padding: 13px 16px;
     border-bottom: 0.5px solid var(--line-soft);
   }
-  .cmdk__search-ico { display: flex; color: #a1a1a6; }
+  .cmdk__search-ico { display: flex; color: var(--ink-meta); }
   .cmdk__search-ico svg { width: 17px; height: 17px; display: block; }
   .cmdk__input {
     flex: 1;
@@ -1182,7 +1220,7 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #a1a1a6;
+    color: var(--ink-meta);
     padding: 10px 8px 4px;
   }
   .cmdk__div { height: 0.5px; background: var(--press); margin: 5px 8px; }
@@ -1190,7 +1228,7 @@
     flex-shrink: 0;
     max-width: 210px;
     font-size: 11.5px;
-    color: #b6b6bb;
+    color: var(--ink-meta);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1198,14 +1236,14 @@
   .cmdk__meta {
     flex-shrink: 0;
     font-size: 11px;
-    color: #8e8e94;
+    color: var(--ink-meta);
     letter-spacing: 0.01em;
   }
   .cmdk__meta--run   { color: #2ea043; }
   .cmdk__meta--work  { color: #c8811a; }
-  .cmdk__meta--input { color: #0a6fd6; }
+  .cmdk__meta--input { color: var(--input); }
   .cmdk__meta--error { color: #d13c2f; }
-  .cmdk__meta--idle  { color: #a1a1a6; }
+  .cmdk__meta--idle  { color: var(--ink-meta); }
   .cmdk__item {
     display: flex;
     align-items: center;
@@ -1234,8 +1272,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .cmdk__item.is-active { background: rgba(10,132,255,0.1); }
-  .cmdk__item.is-active .cmdk__label { color: #0a5fd6; }
+  .cmdk__item.is-active { background: rgba(var(--accent-rgb),0.10); }
+  .cmdk__item.is-active .cmdk__label { color: var(--accent); }
   .cmdk__item--danger .cmdk__ico, .cmdk__item--danger .cmdk__label { color: var(--error); }
   .cmdk__item--danger.is-active { background: rgba(255,59,48,0.1); }
   .cmdk__item--danger.is-active .cmdk__label { color: var(--error); }
@@ -1258,7 +1296,7 @@
     padding: 24px 8px;
     text-align: center;
     font-size: 13px;
-    color: #a1a1a6;
+    color: var(--ink-meta);
   }
 
   /* ---- Keyboard shortcuts sheet (⌘?) ---- */
@@ -1270,7 +1308,7 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #a1a1a6;
+    color: var(--ink-meta);
     padding: 0 2px 5px;
   }
   .sc-row {
@@ -1282,7 +1320,7 @@
   }
   .sc-row__label { font-size: 12.5px; color: var(--ink-2); }
   .sc-row__keys { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
-  .sc-row__or { font-size: 10.5px; color: #b6b6bb; padding: 0 3px; }
+  .sc-row__or { font-size: 10.5px; color: var(--ink-meta); padding: 0 3px; }
   .sc-hint { margin-top: 8px; padding-top: 11px; border-top: 0.5px solid var(--line-soft); display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-muted); }
 
   /* ---- Sidebar footer: Settings entry (pinned to the bottom of the left panel) ---- */
@@ -1305,7 +1343,7 @@
     color: var(--ink-5);
     transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
   }
-  .foot-btn svg { width: 16px; height: 16px; flex-shrink: 0; color: #a1a1a6; transition: color 120ms ease; }
+  .foot-btn svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--ink-meta); transition: color 120ms ease; }
   .foot-btn span { font-size: 12.5px; font-weight: 500; letter-spacing: -0.006em; }
   .foot-btn:active { transform: scale(0.985); }
   @media (hover: hover) and (pointer: fine) {
@@ -1368,9 +1406,9 @@
   @media (hover: hover) and (pointer: fine) {
     .scope:hover { background: var(--hover-soft); }
   }
-  .scope--on { background: rgba(10,132,255,0.06); }
+  .scope--on { background: rgba(var(--input-rgb),0.10); }
   @media (hover: hover) and (pointer: fine) {
-    .scope--on:hover { background: rgba(10,132,255,0.09); }
+    .scope--on:hover { background: rgba(var(--input-rgb),0.14); }
   }
   .scope__icon {
     width: 20px;
@@ -1418,7 +1456,7 @@
   .set-flow__ico { display: flex; color: var(--text-muted); }
   .set-flow__ico svg { width: 15px; height: 15px; display: block; }
   .set-flow .repo__chip { width: 16px; height: 16px; font-size: 9.5px; border-radius: 5px; }
-  .set-flow__arrow { display: flex; color: #c2c2c7; }
+  .set-flow__arrow { display: flex; color: var(--ink-meta); }
   .set-flow__arrow svg { width: 15px; height: 15px; display: block; }
   .set-flow__note { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-muted); }
 
@@ -1429,7 +1467,7 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #9a9aa0;
+    color: var(--ink-meta);
   }
   .set-link {
     margin-left: auto;
@@ -1452,7 +1490,7 @@
     border: 0;
     border-radius: 10px;
     background: var(--term-bg);
-    color: #d4d4d8;
+    color: #d4d6dc;
     font-family: var(--mono);
     font-size: 12px;
     line-height: 1.55;
@@ -1462,7 +1500,7 @@
     box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18);
     -webkit-font-smoothing: auto;
   }
-  .set-code:focus { box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18), 0 0 0 2.5px rgba(10,132,255,0.22); }
+  .set-code:focus { box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18), 0 0 0 2.5px rgba(var(--accent-rgb),0.22); }
   .set-code--ro { min-height: 0; opacity: 0.62; resize: none; }
   .set-note {
     display: flex;
@@ -1472,7 +1510,7 @@
     line-height: 1.5;
     color: var(--text-muted);
   }
-  .set-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: #b0b0b5; }
+  .set-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: var(--ink-meta); }
   .set-note code, .set-section__sub code { font-family: var(--mono); font-size: 11px; background: var(--hover); padding: 0 4px; border-radius: 4px; }
 
   .set-code--flags { min-height: 0; height: 52px; resize: vertical; }
@@ -1517,7 +1555,7 @@
     outline: none;
   }
   input.tpl-name:hover { background: var(--hover-soft); }
-  input.tpl-name:focus { background: var(--hover-soft); box-shadow: inset 0 0 0 1.5px rgba(10, 132, 255, 0.5); }
+  input.tpl-name:focus { background: var(--hover-soft); box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5); }
   .tpl-kind { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; background: var(--hover); font-size: 10.5px; font-weight: 550; color: var(--text-muted); }
   .tpl-x {
     flex-shrink: 0;
@@ -1585,39 +1623,46 @@
   :root[data-theme="dark"] {
     --oc-ring: #f1ecec;
     --oc-inner: #4b4646;
-    --canvas: #0d0d0f;
-    --panel: #1b1b1d;
-    --sidebar: #202023;
+    --canvas: #0d0f13;
+    --panel: #191b1f;
+    --sidebar: #1d1f24;
     --border: rgba(255,255,255,0.09);
     --border-strong: rgba(255,255,255,0.13);
-    --text: #f3f3f5;
-    --text-muted: #9a9aa1;
-    --text-faint: #6d6d74;
-    --accent: #f3f3f5;
+    --text: #f3f4f6;
+    --text-muted: #8d9099;
+    --text-faint: #666a72;
+    --ink-meta: #8d9099;
+    --accent: #eee0cd;       /* the champagne mark itself */
+    --accent-rgb: 238,224,205;
+    --on-accent: #191b1f;    /* charcoal on the dark champagne button (13.3:1) */
+    --input: #7ea6dc;
+    --input-rgb: 126,166,220;
+    --copper: #c2724c;       /* keeps the copper here so it stays distinct from the pale champagne accent */
+    --copper-rgb: 194,114,76;
     --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.55);
     --notif-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4);
 
-    --ink: #f2f2f4;
-    --ink-open: #eaeaee;
-    --ink-2: #cdcdd3;
-    --ink-3: #b7b7bd;
-    --ink-4: #a1a1a8;
-    --ink-5: #909097;
-    --ink-unread: #e8e8ec;
-    --raised: #29292c;
-    --glass: rgba(38,38,42,0.82);
-    --chrome: #242427;
-    --term-bg: #131315;
-    --tui-bg: #131315;       /* terminal surface — dark card */
-    --tui-fg: #e3e3e7;
-    --tui-dim: #7e7e88;
+    --ink: #e6e8ed;
+    --ink-open: #dcdee4;
+    --ink-2: #c4c7cf;
+    --ink-3: #adb0b9;
+    --ink-4: #979aa3;
+    --ink-5: #83868f;
+    --ink-unread: #eceef2;
+    --raised: #282b30;
+    --glass: rgba(40,43,48,0.82);
+    --chrome: #22252b;
+    --term-bg: #121317;
+    --tui-bg: #121317;       /* terminal surface — dark card */
+    --tui-fg: #e3e5ea;
+    --tui-dim: #7e818c;
     --tui-red: #ff8a80;
     --tui-green: #8fe0a8;
     --tui-yellow: #f0c674;
     --tui-blue: #8ab4f8;
     --tui-magenta: #d8b6fb;
     --tui-cyan: #86e3dc;
-    --tui-cursor: #e3e3e7;
+    --tui-cursor: #e3e5ea;
     --tui-sel: #333a48;
     --tui-hair: rgba(255,255,255,0.06);
     --hover-soft: rgba(255,255,255,0.045);
@@ -1628,23 +1673,23 @@
     --line-2: rgba(255,255,255,0.17);
   }
   /* the window itself: matte black behind the app, hairline seam in dark */
-  :root[data-theme="dark"] body { background: #000; }
+  :root[data-theme="dark"] body { background: #0a0b0d; }
   :root[data-theme="dark"] .app { border-color: rgba(255,255,255,0.09); }
   /* the ⌘K glass reads as frosted dark, not a white sheet */
-  :root[data-theme="dark"] .cmdk__panel { background: rgba(30,30,34,0.86); }
+  :root[data-theme="dark"] .cmdk__panel { background: rgba(31,34,40,0.86); }
   /* settings appearance control sits on the standard segmented track */
   .set-seg { max-width: 300px; margin-top: 14px; }
   /* menu icons: brighter on the dark glass (danger keeps its red via its own rule) */
   :root[data-theme="dark"] .menu__item:not(.menu__item--danger) svg { color: var(--ink-4); }
   /* big-picture-only surfaces: the simulator stage + browser skeleton must go dark too */
-  :root[data-theme="dark"] .sim { background: #0d0d0f; }
+  :root[data-theme="dark"] .sim { background: #0d0f13; }
   :root[data-theme="dark"] .skel {
     background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.09), rgba(255,255,255,0.05));
     background-size: 200% 100%;
   }
   /* ⌘K palette: the active-row label + status meta were tuned for a white panel —
      lift them to bright, legible values on the dark frosted glass */
-  :root[data-theme="dark"] .cmdk__item.is-active .cmdk__label { color: #6ba9ff; }
+  :root[data-theme="dark"] .cmdk__item.is-active .cmdk__label { color: var(--accent); }
   :root[data-theme="dark"] .cmdk__item--danger.is-active .cmdk__label { color: var(--error); }
   :root[data-theme="dark"] .cmdk__meta--run   { color: var(--run); }
   :root[data-theme="dark"] .cmdk__meta--work  { color: var(--work); }
@@ -1665,7 +1710,7 @@
   </script>
 </head>
 <body>
-  <main class="app" id="app">
+  <main class="app is-dev" id="app">
     <div class="resize-handle" id="resizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize · double-click to reset"></div>
     <button class="icon-btn expand-btn" id="expandBtn" aria-label="Expand sidebar">
       <svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>
@@ -1674,6 +1719,7 @@
     <div class="traffic">
       <i class="r"></i><i class="y"></i><i class="g"></i>
     </div>
+    <div class="dev-tag" aria-label="Development build" title="Development build">DEV</div>
 
     <aside class="sidebar">
       <div class="sidebar__top">
@@ -1692,7 +1738,7 @@
         <div class="repo repo--open" data-repo>
           <button class="row repo__head" data-row data-toggle>
             <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
-            <span class="repo__chip" style="--c:#6366f1">S</span>
+            <span class="repo__chip" style="--c:#7569b5">S</span>
             <span class="repo__name">synth</span>
             <span class="repo__count">4</span>
           </button>
@@ -1822,7 +1868,7 @@
         <div class="repo" data-repo>
           <button class="row repo__head" data-row data-toggle>
             <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
-            <span class="repo__chip" style="--c:#0ea5e9">A</span>
+            <span class="repo__chip" style="--c:#477b90">A</span>
             <span class="repo__name">aviator-api</span>
             <span class="ind ind--input"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg></span>
             <span class="repo__count">6</span>
@@ -1857,7 +1903,7 @@
         <div class="repo" data-repo>
           <button class="row repo__head" data-row data-toggle>
             <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
-            <span class="repo__chip" style="--c:#f59e0b">W</span>
+            <span class="repo__chip" style="--c:#7b773d">W</span>
             <span class="repo__name">web-dashboard</span>
             <span class="ind ind--error"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg></span>
             <span class="repo__count">3</span>
@@ -3247,7 +3293,7 @@
   const addBrowser  = (branchRow) => addSession(branchRow, 'browser');
 
   // ===== Add workspace (the + on the section header) =====
-  const CHIP_COLORS = ['#6366f1', '#0ea5e9', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
+  const CHIP_COLORS = ['#7569b5', '#477b90', '#7b773d', '#3e7e74', '#ad587f', '#a158ad'];
   let workspaceSeq = nav.querySelectorAll(':scope > [data-repo]').length;
 
   // Every branch row maps to a real worktree folder (ADR-0007), so a workspace is

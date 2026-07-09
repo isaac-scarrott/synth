@@ -449,14 +449,14 @@ private struct OmniPill: View {
             .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(editing ? Theme.attention
+                    .strokeBorder(editing ? Theme.accent
                                           : (hovering ? Theme.borderStrong : Theme.border),
                                   lineWidth: 0.5)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
                     .inset(by: -2)
-                    .stroke(Theme.attention.opacity(0.16), lineWidth: 3)
+                    .stroke(Theme.accent.opacity(0.16), lineWidth: 3)
                     .opacity(editing ? 1 : 0)
             )
             .contentShape(Rectangle())
@@ -581,12 +581,12 @@ private struct GoToField: View {
         .background(RoundedRectangle(cornerRadius: 11).fill(Theme.panel))
         .overlay(
             RoundedRectangle(cornerRadius: 11)
-                .strokeBorder(focused ? Theme.attention : Theme.borderStrong, lineWidth: 0.5)
+                .strokeBorder(focused ? Theme.accent : Theme.borderStrong, lineWidth: 0.5)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 13)
                 .inset(by: -2)
-                .stroke(Theme.attention.opacity(0.16), lineWidth: 3)
+                .stroke(Theme.accent.opacity(0.16), lineWidth: 3)
                 .opacity(focused ? 1 : 0)
         )
         .shadow(color: .black.opacity(0.05), radius: 1.5, y: 1)

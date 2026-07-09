@@ -208,7 +208,7 @@ private struct ScopeRow: View {
     // outweighs `.scope--on`), so a selected scope reads as the cursor first.
     private var background: Color {
         if selected { return Theme.rowSelected }
-        if on { return Color(hex: 0x0A84FF).opacity(hovering ? 0.09 : 0.06) }
+        if on { return Theme.input.opacity(hovering ? 0.14 : 0.10) }
         return hovering ? Theme.rowHover : .clear
     }
 
@@ -502,17 +502,18 @@ private struct SessionRow: View {
                         .opacity(revealed ? 0 : 1)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    // The open session's sticky tint (working.html .session--open).
+                    // The open session's sticky tint (working.html .session--open), deepening
+                    // on hover like every other accent wash.
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(hex: 0x0A84FF).opacity(isOpen ? 0.06 : 0))
+                            .fill(Theme.accent.opacity(isOpen ? (hovering ? 0.14 : 0.10) : 0))
                     )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(RowButtonStyle())
                 // Unread bullet lives in the gutter (blue), not inline — no layout shift.
                 .overlay(alignment: .leading) {
-                    Circle().fill(Theme.attention).frame(width: 4, height: 4)
+                    Circle().fill(Theme.input).frame(width: 4, height: 4)
                         .opacity(session.unread ? 1 : 0)
                         .offset(x: -3)
                 }
@@ -524,7 +525,7 @@ private struct SessionRow: View {
         }
         .rowChrome(hovering: hovering, selected: selected)
         // The pulse wash sits behind the row chrome (a soft one-shot sweep, not a standing tint).
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.attention.opacity(pulse ? 0.11 : 0)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.run.opacity(pulse ? 0.11 : 0)))
         // Containment (ADR-0011 stage four, revised): an owned browser is NOT nested — it
         // stays a plain sibling on the shared indent; the accent sparkle in its indicator
         // slot carries the tie instead (working.html `.ind--owned`, no `.session--owned` indent).
@@ -688,7 +689,7 @@ private struct OwnedIndicator: View {
     var body: some View {
         Ind {
             Phos(path: Phosphor.sparkle, size: 12)
-                .foregroundStyle(Theme.claude)
+                .foregroundStyle(Theme.copper)
                 .opacity(0.9)
         }
     }
@@ -730,7 +731,7 @@ private struct AttentionGlyph: View {
         // Breathe lives on the glyph, not the slot, so it composes under the slot's
         // entry pop (working.html: attn-breathe on the svg inside .ind--input).
         let glyph = Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
-            .foregroundStyle(state == .input ? Theme.attention : Theme.danger)
+            .foregroundStyle(state == .input ? Theme.input : Theme.danger)
         if state == .input { glyph.attnBreathe() } else { glyph }
     }
 }
@@ -768,7 +769,7 @@ private struct Dot: View {
 /// row's gutter bullet, so it reads as ambient "something to read", not liveness.
 private struct UnreadDot: View {
     var body: some View {
-        Circle().fill(Theme.attention).frame(width: 6, height: 6)
+        Circle().fill(Theme.input).frame(width: 6, height: 6)
     }
 }
 
@@ -909,7 +910,7 @@ struct SidebarResizeHandle: View {
             .contentShape(Rectangle())
             .overlay {
                 Rectangle()
-                    .fill(Theme.attention)
+                    .fill(Theme.input)
                     .frame(width: 1.5)
                     .opacity(active ? 0.7 : (hovering ? 0.5 : 0))
                     .animation(.easeOut(duration: 0.12), value: hovering)

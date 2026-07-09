@@ -152,7 +152,7 @@ private struct NotifCard: View {
     private var glyphColor: Color {
         switch notif.kind {
         case .error: return Theme.danger
-        case .input: return Theme.attention
+        case .input: return Theme.input
         case .done:  return Theme.run
         }
     }

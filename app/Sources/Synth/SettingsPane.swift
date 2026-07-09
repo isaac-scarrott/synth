@@ -101,7 +101,7 @@ struct SettingsPane: View {
             Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.ink2)
             Spacer(minLength: 8)
             Toggle("", isOn: binding)
-                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.attention)
+                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
         }
         .padding(.vertical, 7)
     }
@@ -214,7 +214,7 @@ struct SettingsPane: View {
 
     private var claudeNote: some View {
         HStack(alignment: .top, spacing: 8) {
-            Phos(path: Phosphor.info, size: 14).foregroundStyle(Color(hex: 0xB0B0B5)).padding(.top, 1)
+            Phos(path: Phosphor.info, size: 14).foregroundStyle(Theme.inkMeta).padding(.top, 1)
             (Text("Any ") + Text("claude").font(.system(size: 11.5, design: .monospaced))
                 + Text(" flag works here — type them as you would on the command line, like ")
                 + Text("--dangerously-skip-permissions --model opus").font(.system(size: 11.5, design: .monospaced)) + Text("."))
@@ -230,7 +230,7 @@ struct SettingsPane: View {
                 Phos(path: Phosphor.globe, size: 15).foregroundStyle(Theme.inkMuted)
                 Text("Global").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.repoName)
             }
-            Phos(path: Phosphor.caret, size: 15).foregroundStyle(Color(hex: 0xC2C2C7))
+            Phos(path: Phosphor.caret, size: 15).foregroundStyle(Theme.inkMeta)
             HStack(spacing: 7) {
                 if let ws { WsChip(workspace: ws, size: 16) }
                 Text(name).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.repoName)
@@ -254,7 +254,7 @@ struct SettingsPane: View {
 
     private func note(_ s: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Phos(path: Phosphor.info, size: 14).foregroundStyle(Color(hex: 0xB0B0B5)).padding(.top, 1)
+            Phos(path: Phosphor.info, size: 14).foregroundStyle(Theme.inkMeta).padding(.top, 1)
             Text(s).font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted).lineSpacing(2)
         }
         .padding(.top, 12)
@@ -618,7 +618,7 @@ private struct TplPreview: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     // The open session's sticky tint on the first row (.session--open).
                     .background(RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(hex: 0x0A84FF).opacity(i == 0 ? 0.06 : 0)))
+                        .fill(Theme.accent.opacity(i == 0 ? 0.10 : 0)))
                 }
             }
             // The live sidebar's sessions block verbatim (rows 15 past the leading
@@ -699,7 +699,7 @@ private struct EditInGlobalLink: View {
         Button { store.settingsScope = .global } label: {
             Text("Edit in Global")
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(Theme.attention)
+                .foregroundStyle(Theme.input)
         }
         .buttonStyle(.plain)
     }
@@ -734,7 +734,7 @@ private struct CodeCard<Trailing: View>: View {
             if readOnly {
                 Text(text.wrappedValue)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color(hex: 0xD4D4D8))
+                    .foregroundStyle(Color(hex: 0xD4D6DC))
                     .lineSpacing(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
@@ -742,7 +742,7 @@ private struct CodeCard<Trailing: View>: View {
             } else {
                 TextEditor(text: text)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color(hex: 0xD4D4D8))
+                    .foregroundStyle(Color(hex: 0xD4D6DC))
                     .lineSpacing(3)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: minHeight)

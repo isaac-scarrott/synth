@@ -68,7 +68,7 @@ struct BranchCandidate: Identifiable {
 }
 
 /// The escalated sidebar indicator a background session raises as a toast: needs-input is
-/// the blue `?` (`Theme.attention`), error the terracotta `!` (`Theme.danger`), and — for
+/// the slate-blue `?` (`Theme.input`), error the terracotta `!` (`Theme.danger`), and — for
 /// any live session settling to idle — the green ✓ `done`, a transient toast that
 /// dismisses itself.
 enum NotifKind: Sendable {

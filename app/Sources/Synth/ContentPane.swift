@@ -259,7 +259,7 @@ private struct Placeholder: View {
         VStack(spacing: 10) {
             Image(systemName: "sparkle")
                 .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.claude)
+                .foregroundStyle(Theme.copper)
             Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
             Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
         }

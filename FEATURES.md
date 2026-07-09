@@ -350,3 +350,21 @@ disclosure to dive deeper.
   *Rejected:* champagne-only chips (workspaces stop being distinguishable at a glance) and champagne as
   the needs-input state (collides with selection, drags back toward amber). Colour literals only: 117
   lines, no shadow offset, radius, border width or easing moved.
+
+- **One 50pt titlebar band, and the traffic lights moved onto it** — the top strip was cramped and
+  its tenants disagreed on where the top of the window was: the lights sat inside the 14pt corner
+  radius, the collapse toggle centred 25pt from the sidebar's trailing edge while the `+` sat at 27
+  and row indicators at 24, and the sidebar strip and pane header were near-misses (44/44/30pt),
+  putting lights, pane title and DEV tag on three centre lines. Now one token (`--titlebar-h: 50px`
+  / `Theme.titlebarHeight`) sizes the sidebar strip and all three pane headers, the lights take the
+  macOS-standard 20pt inset centred at y=25, the toggle grows 26→28pt onto the sidebar's shared 24pt
+  control axis (the `+` moved 3pt to join it), and collapsed the expand toggle sits at 82 with the
+  title at 122. The lights are AppKit's: `.hiddenTitleBar` puts them at x=8/y=14 in a 28pt titlebar.
+  *Rejected:* an empty unified `NSToolbar` (AppKit re-centres them for free, but its `NSToolbarView`
+  swallows every click across the band, killing the toggle) and moving the buttons without growing
+  `NSTitlebarView` (they draw but stop hit-testing outside its bounds). `WindowChrome.swift` grows
+  the titlebar container and re-places the buttons inside it; the container is hit-transparent
+  except on its widgets, so our band keeps its clicks and still drags the window, and AppKit's
+  relayout reset is healed from the frame-change notification it posts. Fullscreen left to AppKit.
+  Verified on the real app: circles at x=20/40/60 ⌀12 centre y=25, toggle 24.0pt from the edge on
+  the same line, header hairline at y=49.5, and close/toggle hit-testing intact across a resize.

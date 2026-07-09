@@ -49,6 +49,7 @@
     --accent: #a86038;       /* structural brand accent — deep copper on light (clears 4.5:1 on white) */
     --accent-rgb: 168,96,56; /* drives every rgba(var(--accent-rgb),A) ring/wash so hue flips per-theme in one edit */
     --on-accent: #ffffff;    /* foreground on an --accent fill (never #fff on the dark champagne button) */
+    --titlebar-h: 50px;
     --radius-app: 14px;
     --radius-panel: 20px;
     --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
@@ -155,12 +156,13 @@
   }
 
   .sidebar__top {
-    height: 42px;
+    height: var(--titlebar-h);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    padding: 0 12px 0 16px;
+    /* 10px right pad centers the 28px toggle on the 24px-from-edge indicator axis */
+    padding: 0 10px 0 20px;
     -webkit-app-region: drag;
   }
 
@@ -168,8 +170,8 @@
      is open or collapsed (the real app's traffic lights never disappear). */
   .traffic {
     position: absolute;
-    top: 15px;
-    left: 16px;
+    top: 19px;
+    left: 20px;
     z-index: 30;
     display: flex;
     gap: 8px;
@@ -189,8 +191,8 @@
      from the `.dev` bundle id); absent entirely on the stable build. */
   .dev-tag {
     position: absolute;
-    top: 14px;
-    right: 16px;
+    top: 16px;
+    right: 18px;
     z-index: 30;
     display: none;
     align-items: center;
@@ -216,10 +218,10 @@
   /* ---- Icon buttons (collapse / expand) ---- */
   .icon-btn {
     -webkit-app-region: no-drag;
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
     border: 0;
-    border-radius: 7px;
+    border-radius: 8px;
     background: none;
     cursor: pointer;
     color: var(--ink-meta);
@@ -228,7 +230,7 @@
     justify-content: center;
     transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
   }
-  .icon-btn svg { width: 16px; height: 16px; display: block; }
+  .icon-btn svg { width: 17px; height: 17px; display: block; }
   .icon-btn:active { transform: scale(0.94); }
   @media (hover: hover) and (pointer: fine) {
     .icon-btn:hover { background: var(--hover); color: var(--ink-3); }
@@ -237,8 +239,8 @@
   /* Expand button — appears at top-left once the sidebar is collapsed */
   .expand-btn {
     position: absolute;
-    top: 8px;
-    left: 74px;
+    top: 11px;
+    left: 82px;
     z-index: 20;
     opacity: 0;
     pointer-events: none;
@@ -246,7 +248,7 @@
   }
   .app.collapsed .expand-btn { opacity: 1; pointer-events: auto; }
   /* collapsed: the pane header clears the top-left control zone (traffic lights + toggle) */
-  .app.collapsed .pane__head { padding-left: 104px; }
+  .app.collapsed .pane__head { padding-left: 122px; }
 
   /* ---- Content pane (renders the open session) ---- */
   .content {
@@ -314,7 +316,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 13px 18px;
+    padding: 0 18px;
+    height: var(--titlebar-h);
     border-bottom: 0.5px solid var(--border);
   }
   .pane__title {

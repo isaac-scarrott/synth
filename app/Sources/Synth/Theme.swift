@@ -81,7 +81,16 @@ enum Theme {
     static let sidebarWidth: CGFloat = 260
     static let sidebarMinWidth: CGFloat = 200
     static let sidebarMaxWidth: CGFloat = 460
-    static let titlebarInset: CGFloat = 28   // room for the traffic lights
+    /// The titlebar band — working.html's `--titlebar-h`. The sidebar's top strip and every
+    /// pane header are exactly this tall, so the traffic lights, the sidebar toggle, the pane
+    /// title and the DEV tag all share one centre line across the sidebar/content seam.
+    static let titlebarHeight: CGFloat = 50
+    /// Traffic lights (working.html `.traffic`): 12pt circles, 20pt from the leading edge,
+    /// 20pt pitch, centred in the band. WindowChrome puts AppKit's real buttons here.
+    static let trafficLightInset: CGFloat = 20
+    static let trafficLightPitch: CGFloat = 20
+    /// Where a collapsed pane header starts: the lights end at 72pt, then the mock's 10pt gap.
+    static let trafficLightsClearance: CGFloat = 82
     static let radiusApp: CGFloat = 14
     static let radiusPanel: CGFloat = 20
     static let cardInset: CGFloat = 12

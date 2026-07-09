@@ -55,8 +55,8 @@ private struct DevTagBadge: View {
         .padding(.vertical, 3)
         .background(Theme.working.opacity(0.13), in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.working.opacity(0.5), lineWidth: 1))
-        .padding(.top, 13)
-        .padding(.trailing, 14)
+        // Shares the pane header's 18pt trailing gutter; the caller centres it in the band.
+        .padding(.trailing, 18)
         .allowsHitTesting(false)
     }
 }
@@ -97,19 +97,23 @@ struct RootView: View {
             // float it at the top-left on the traffic-light axis. The session/settings
             // headers carry their own inline toggle.
             if store.sidebarCollapsed, store.openSession == nil, !store.settingsOpen {
-                IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
-                    store.sidebarCollapsed = false
-                }
-                .padding(.top, 2)
-                .padding(.leading, 76)
-                .transition(.opacity)
+                SidebarToggle()
+                    .padding(.top, (Theme.titlebarHeight - SidebarToggle.box) / 2)
+                    .padding(.leading, Theme.trafficLightsClearance)
+                    .transition(.opacity)
             }
         }
         .ignoresSafeArea()
+        .background(WindowChrome().frame(width: 0, height: 0))
         // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
         .preferredColorScheme(store.colorSchemeOverride)
-        .overlay(alignment: .topTrailing) {
-            if isDevChannel { DevTagBadge() }
+        // Band-height row rather than a top inset: the tag centres on the traffic-light axis
+        // whatever its intrinsic height turns out to be.
+        .overlay(alignment: .top) {
+            if isDevChannel {
+                HStack(spacing: 0) { Spacer(minLength: 0); DevTagBadge() }
+                    .frame(height: Theme.titlebarHeight)
+            }
         }
         .overlay {
             if let ws = store.creatingWorktreeIn {

@@ -35,9 +35,7 @@ struct SettingsPane: View {
     private var head: some View {
         HStack(spacing: 10) {
             if store.sidebarCollapsed {
-                IconButton(path: Phosphor.sidebar, help: "Expand sidebar") {
-                    store.sidebarCollapsed = false
-                }
+                SidebarToggle().padding(.trailing, 2)
             }
             if isGlobal {
                 Phos(path: Phosphor.globe, size: 16)
@@ -55,9 +53,9 @@ struct SettingsPane: View {
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .padding(.leading, store.sidebarCollapsed ? 76 : 18)
+        .padding(.leading, store.sidebarCollapsed ? Theme.trafficLightsClearance : 18)
         .padding(.trailing, 18)
-        .frame(height: store.sidebarCollapsed ? 30 : 44)
+        .frame(height: Theme.titlebarHeight)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 

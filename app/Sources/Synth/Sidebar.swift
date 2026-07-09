@@ -57,15 +57,12 @@ struct Sidebar: View {
     private var topStrip: some View {
         HStack {
             Spacer()
-            IconButton(path: Phosphor.sidebar, help: "Collapse sidebar") {
-                store.sidebarCollapsed = true
-            }
+            SidebarToggle()
         }
+        // 10pt trailing pad lands the 28pt toggle on the sidebar's control axis, 24pt in from
+        // the trailing edge — where the header's `+` and every row's status indicator sit too.
         .padding(.horizontal, 10)
-        // Toggle sits high in the strip so its center lines up with the window's
-        // traffic lights (top-left control zone).
-        .frame(height: 44, alignment: .top)
-        .padding(.top, 1)
+        .frame(height: Theme.titlebarHeight)
     }
 
     private var header: some View {
@@ -78,7 +75,8 @@ struct Sidebar: View {
                 store.promptAddWorkspace()
             }
         }
-        .padding(.horizontal, 14).padding(.bottom, 8)
+        // 11pt trailing pad puts the 26pt `+` on that same 24pt axis.
+        .padding(.leading, 14).padding(.trailing, 11).padding(.bottom, 8)
     }
 }
 
@@ -958,6 +956,8 @@ struct SidebarResizeHandle: View {
 struct IconButton: View {
     let path: String
     var size: CGFloat = 15
+    var box: CGFloat = 26
+    var corner: CGFloat = 7
     let help: String
     let action: () -> Void
     @State private var hovering = false
@@ -966,13 +966,30 @@ struct IconButton: View {
         Button(action: action) {
             Phos(path: path, size: size)
                 .foregroundStyle(hovering ? Theme.inkMuted : Theme.inkFaint)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : .clear))
+                .frame(width: box, height: box)
+                .background(RoundedRectangle(cornerRadius: corner).fill(hovering ? Theme.rowHover : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(IconPressStyle())
         .help(help)
         .onHover { hovering = $0 }
+    }
+}
+
+/// The sidebar collapse/expand toggle (working.html `.icon-btn`) — the one control that lives in
+/// the titlebar band, so it is the roomier 28pt box rather than the 26pt one the `+` in the
+/// workspace header uses. Every header hosts the same button, hence one view for all of them.
+struct SidebarToggle: View {
+    /// Callers centring the toggle in the band need its box size.
+    static let box: CGFloat = 28
+
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        IconButton(path: Phosphor.sidebar, size: 17, box: Self.box, corner: 8,
+                   help: store.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar") {
+            store.sidebarCollapsed.toggle()
+        }
     }
 }
 

@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Synth - run all your coding agents in one window</title>
+<meta name="description" content="A native macOS app for Claude Code and OpenCode. Every branch gets its own git worktree, its own terminals, and a browser your agent can use." />
+<link rel="icon" href="img/mark.png" />
+<script>
+  (function () {
+    try {
+      var p = localStorage.getItem('synth-site-theme') || 'system';
+      var dark = p === 'dark' || (p !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } catch (e) {}
+  })();
+</script>
+<style>
+  :root {
+    --canvas: #f6f6f8;
+    --raised: #fdfdfe;
+    --ink: #1c1e23;
+    --ink-2: #43454d;
+    --ink-meta: #6b6e76;
+    --line: rgba(0, 0, 0, 0.09);
+    --line-soft: rgba(0, 0, 0, 0.06);
+    --hover: rgba(0, 0, 0, 0.05);
+    --accent: #1e2126;
+    --accent-fill: linear-gradient(180deg, #282b30, #15181c);
+    --on-accent: #eee0cd;
+    --frame-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 24px 60px rgba(0,0,0,0.10);
+
+    --radius-surface: 16px;
+    --radius-control: 10px;
+    --radius-key: 6px;
+
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --gutter: clamp(20px, 5vw, 72px);
+  }
+
+  :root[data-theme="dark"] {
+    --canvas: #0d0f13;
+    --raised: #191b1f;
+    --ink: #e6e8ed;
+    --ink-2: #c4c7cf;
+    --ink-meta: #8d9099;
+    --line: rgba(255, 255, 255, 0.12);
+    --line-soft: rgba(255, 255, 255, 0.08);
+    --hover: rgba(255, 255, 255, 0.07);
+    --accent: #eee0cd;
+    --accent-fill: linear-gradient(180deg, #f3e8d9, #e6d5bd);
+    --on-accent: #1e2126;
+    --frame-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 30px 70px rgba(0,0,0,0.55);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font: 400 16px/1.5 var(--font);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  img { display: block; max-width: 100%; height: auto; }
+  a { color: inherit; text-decoration: none; }
+  svg { width: 1em; height: 1em; }
+
+  .wrap { max-width: 1360px; margin: 0 auto; padding-inline: var(--gutter); }
+
+  /* nav */
+  .nav {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--canvas) 82%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid transparent;
+    transition: border-color 200ms ease;
+  }
+  .nav.is-stuck { border-bottom-color: var(--line-soft); }
+  .nav .wrap { height: 72px; display: flex; align-items: center; gap: clamp(16px, 2.5vw, 26px); }
+  .nav__brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; margin-right: auto; }
+  .nav__brand img { width: 26px; height: 26px; border-radius: 7px; }
+  .nav__links { display: flex; gap: 26px; color: var(--ink-meta); font-size: 14.5px; }
+  .nav__links a { transition: color 140ms ease; }
+  .nav__links a:hover { color: var(--ink); }
+  @media (max-width: 860px) { .nav__links { display: none; } }
+
+  .icon-btn {
+    width: 34px; height: 34px; flex-shrink: 0;
+    display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: var(--radius-control);
+    background: transparent; color: var(--ink-2); cursor: pointer; font-size: 16px;
+    transition: background 140ms ease, transform 110ms var(--ease-out);
+  }
+  .icon-btn:hover { background: var(--hover); }
+  .icon-btn:active { transform: scale(0.94); }
+  :root[data-theme="light"] .icon-btn .moon { display: none; }
+  :root[data-theme="dark"] .icon-btn .sun { display: none; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px; white-space: nowrap;
+    height: 44px; padding: 0 18px;
+    border: 1px solid transparent; border-radius: var(--radius-control);
+    font: 500 15px var(--font); cursor: pointer;
+    transition: transform 110ms var(--ease-out), opacity 160ms ease, border-color 160ms ease;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn--primary { background: var(--accent-fill); color: var(--on-accent); }
+  .btn--primary:hover { opacity: 0.88; }
+  .btn--primary svg { font-size: 13px; opacity: 0.75; }
+  .nav .btn { height: 36px; padding: 0 14px; font-size: 14.5px; }
+
+  /* type */
+  h1 {
+    margin: 0;
+    font-size: clamp(2.25rem, 4.1vw, 3.5rem);
+    line-height: 1.06; letter-spacing: -0.035em; font-weight: 600;
+  }
+  h2 {
+    margin: 0; font-size: clamp(1.7rem, 2.7vw, 2.4rem);
+    line-height: 1.14; letter-spacing: -0.028em; font-weight: 600;
+  }
+  .lede { margin: 20px 0 0; max-width: 54ch; color: var(--ink-meta); line-height: 1.65; }
+  .hero__sub { margin: 24px 0 0; max-width: 32ch; color: var(--ink-meta); font-size: clamp(16px, 1.35vw, 18px); line-height: 1.6; }
+  code {
+    font: 500 0.92em/1 var(--mono); color: var(--ink-2);
+    padding: 3px 6px; border: 1px solid var(--line); border-radius: var(--radius-key);
+    background: var(--raised); white-space: nowrap;
+  }
+
+  /* frames */
+  .frame {
+    border: 1px solid var(--line); border-radius: var(--radius-surface);
+    overflow: hidden; background: var(--raised); box-shadow: var(--frame-shadow);
+  }
+  .frame img { width: 100%; }
+  [data-shot] { display: none; }
+  :root[data-theme="light"] [data-shot="light"] { display: block; }
+  :root[data-theme="dark"] [data-shot="dark"] { display: block; }
+
+  /* hero */
+  .hero {
+    display: grid; gap: clamp(48px, 6vw, 56px); align-items: center;
+    padding-block: clamp(56px, 8vw, 96px) clamp(64px, 8vw, 104px);
+  }
+  @media (min-width: 1024px) {
+    .hero { grid-template-columns: minmax(0, 50fr) minmax(0, 50fr); }
+    .hero__media { margin-right: calc(var(--gutter) * -1 - (100vw - min(100vw, 1360px)) / 2); }
+    .hero__media .frame { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
+    .hero__media .frame img { width: auto; height: clamp(460px, 46vw, 660px); max-width: none; }
+  }
+  .hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
+
+  /* agent strip: the marks each agent ships with */
+  .agents { border-block: 1px solid var(--line-soft); }
+  .agents .wrap {
+    display: flex; flex-wrap: wrap; align-items: center; gap: clamp(20px, 4vw, 56px);
+    padding-block: 26px;
+  }
+  .agents p { margin: 0; color: var(--ink-meta); font-size: 14.5px; }
+  .agent-marks { display: flex; align-items: center; gap: clamp(20px, 3vw, 40px); }
+  .agent { display: flex; align-items: center; gap: 10px; font-weight: 500; font-size: 15px; letter-spacing: -0.01em; }
+  .agent svg { flex-shrink: 0; }
+  .agent .clawd { width: 22px; height: 14px; color: #c96442; }
+  .agent .oc { width: 19px; height: 19px; }
+  :root { --oc-ring: #211e1e; --oc-inner: #cfcecd; }
+  :root[data-theme="dark"] { --oc-ring: #f1ecec; --oc-inner: #4b4646; }
+
+  /* sections */
+  .section { padding-block: clamp(72px, 9vw, 120px); }
+  .split { display: grid; gap: clamp(40px, 5vw, 72px); align-items: center; }
+  @media (min-width: 900px) {
+    .split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); }
+    .split--reverse .split__copy { order: 2; }
+    .split--narrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+  .split--narrow .split__media { max-width: 360px; margin-inline: auto; }
+  .split__media--tall { max-width: 430px; margin-inline: auto; }
+  .showcase__media { margin-top: clamp(40px, 5vw, 64px); }
+  .showcase__media .frame { max-width: 1120px; margin-inline: auto; }
+
+  /* keys, inside the speed section */
+  .keys { display: flex; flex-direction: column; gap: 14px; margin-top: 34px; }
+  .key-row { display: flex; align-items: baseline; gap: 18px; }
+  .key-row span { color: var(--ink-meta); font-size: 15px; }
+  kbd {
+    display: inline-block; min-width: 64px; text-align: center;
+    padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--radius-key);
+    background: var(--raised); color: var(--ink-2);
+    font: 500 13px/1 var(--mono);
+  }
+
+  /* closing band */
+  .cta { border-top: 1px solid var(--line-soft); text-align: center; }
+  .cta .wrap { padding-block: clamp(80px, 10vw, 140px); }
+  .cta h2 { max-width: 18ch; margin-inline: auto; }
+  .cta .btn { margin-top: 36px; }
+
+  footer { border-top: 1px solid var(--line-soft); }
+  .footer__inner {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 20px;
+    padding-block: 40px; color: var(--ink-meta); font-size: 14.5px;
+  }
+  .footer__brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 500; margin-right: auto; }
+  .footer__brand img { width: 22px; height: 22px; border-radius: 6px; }
+
+  /* motion */
+  .reveal { opacity: 0; transform: translateY(22px); }
+  .reveal.is-in { opacity: 1; transform: none; transition: opacity 620ms var(--ease-out), transform 620ms var(--ease-out); }
+  .reveal[data-delay="1"].is-in { transition-delay: 70ms; }
+  .reveal[data-delay="2"].is-in { transition-delay: 140ms; }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .btn:active, .icon-btn:active { transform: none; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .nav { background: var(--canvas); backdrop-filter: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="top" style="height:1px"></div>
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="nav__brand" href="#top">
+      <img src="img/mark.png" alt="" />
+      Synth
+    </a>
+    <nav class="nav__links">
+      <a href="#speed">Speed</a>
+      <a href="#command-menu">Command menu</a>
+      <a href="#branches">Branches</a>
+      <a href="#browser">Browser</a>
+    </nav>
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch theme">
+      <svg class="sun" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/></svg>
+      <svg class="moon" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></svg>
+    </button>
+    <!-- TODO: point Download at the real release URL once a build ships -->
+    <a class="btn btn--primary" href="#" data-download>Download for Mac</a>
+  </div>
+</header>
+
+<main>
+  <section class="wrap hero">
+    <div>
+      <h1 class="reveal">Run all your coding agents in one window.</h1>
+      <p class="hero__sub reveal" data-delay="1">
+        A native macOS app for Claude Code and OpenCode. It keeps your terminals, your agents,
+        and their browser in one place.
+      </p>
+      <div class="hero__cta reveal" data-delay="2">
+        <a class="btn btn--primary" href="#" data-download>
+          Download for Mac
+          <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>
+        </a>
+      </div>
+    </div>
+
+    <div class="hero__media reveal" data-delay="1">
+      <div class="frame">
+        <img data-shot="light" src="img/shell-light.png" width="2200" height="1384" alt="Synth with a Claude Code session open on a feature branch, three projects in the sidebar." />
+        <img data-shot="dark" src="img/shell-dark.png" width="2200" height="1384" alt="Synth with a Claude Code session open on a feature branch, three projects in the sidebar." />
+      </div>
+    </div>
+  </section>
+
+  <section class="agents">
+    <div class="wrap">
+      <p>Works with the agents you already use.</p>
+      <div class="agent-marks">
+        <div class="agent">
+          <svg class="clawd" viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg>
+          Claude Code
+        </div>
+        <div class="agent">
+          <svg class="oc" viewBox="128 96 256 320" fill="none" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="var(--oc-ring)"/><path d="M320 224V352H192V224H320Z" fill="var(--oc-inner)"/></svg>
+          OpenCode
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section split" id="speed">
+    <div class="split__copy">
+      <h2 class="reveal">A fast terminal, and fast to move around.</h2>
+      <p class="lede reveal" data-delay="1">
+        The terminal is libghostty, so it draws on the GPU. The app is native Swift, not Electron.
+        You can hit <code>⌘K</code>, then <code>⌘T</code>, then <code>⌘1</code> one after another
+        and it keeps up with you.
+      </p>
+      <div class="keys reveal" data-delay="2">
+        <div class="key-row"><kbd>⌘T</kbd><span>New terminal on this branch</span></div>
+        <div class="key-row"><kbd>⌘0 ⌘1</kbd><span>Move focus between sidebar and session</span></div>
+        <div class="key-row"><kbd>⌘⇧F</kbd><span>Send feedback, or open it as a branch</span></div>
+      </div>
+    </div>
+    <div class="split__media split__media--tall reveal" data-delay="1">
+      <div class="frame">
+        <img data-shot="light" src="img/sheet-light.png" width="1464" height="2673" alt="The keyboard shortcuts sheet, listing general, sidebar, browser, and command menu bindings." />
+        <img data-shot="dark" src="img/sheet-dark.png" width="1464" height="2673" alt="The keyboard shortcuts sheet, listing general, sidebar, browser, and command menu bindings." />
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section" id="command-menu">
+    <div>
+      <h2 class="reveal">One command menu for everything.</h2>
+      <p class="lede reveal" data-delay="1">
+        <code>⌘K</code> searches actions, projects, branches, and sessions. It opens on whatever
+        you have focused, so the first things you see are the ones you can do to that session. Make a
+        worktree, rename a session, or jump three repos over without touching the mouse.
+      </p>
+    </div>
+    <div class="showcase__media reveal" data-delay="2">
+      <div class="frame">
+        <img data-shot="light" src="img/menu-light.png" width="2200" height="1384" alt="The command menu open over a session, showing recent branches and actions scoped to the focused session." />
+        <img data-shot="dark" src="img/menu-dark.png" width="2200" height="1384" alt="The command menu open over a session, showing recent branches and actions scoped to the focused session." />
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section split split--reverse split--narrow" id="branches">
+    <div class="split__copy">
+      <h2 class="reveal">Keep every project open at once.</h2>
+      <p class="lede reveal" data-delay="1">
+        Projects hold branches, branches hold sessions. Each branch is a real git worktree checked
+        out on disk, so an agent working one never touches the folder another is building in.
+      </p>
+      <p class="lede reveal" data-delay="2">
+        Collapse a branch and its sessions roll up into one indicator, so you can still see whether
+        something needs you in a repo you are not looking at.
+      </p>
+    </div>
+    <div class="split__media reveal" data-delay="1">
+      <div class="frame">
+        <img data-shot="light" src="img/sidebar-light.png" width="780" height="1614" alt="The Synth sidebar: three projects, branches beneath them, and sessions inside each branch with status indicators." />
+        <img data-shot="dark" src="img/sidebar-dark.png" width="780" height="1614" alt="The Synth sidebar: three projects, branches beneath them, and sessions inside each branch with status indicators." />
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section" id="browser">
+    <div>
+      <h2 class="reveal">Your agent can use the browser, and so can you.</h2>
+      <p class="lede reveal" data-delay="1">
+        Give an agent a browser session and it can open your dev server, click around it, and take
+        screenshots. Click any element on the page to leave a comment, and the agent gets the
+        screenshot and knows which element you meant.
+      </p>
+    </div>
+    <div class="showcase__media reveal" data-delay="2">
+      <div class="frame">
+        <img data-shot="light" src="img/browser-light.png" width="2200" height="1003" alt="A browser session in comment mode, with a comment card addressed to the Claude Code session that owns it." />
+        <img data-shot="dark" src="img/browser-dark.png" width="2200" height="1003" alt="A browser session in comment mode, with a comment card addressed to the Claude Code session that owns it." />
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section split" id="notifications">
+    <div class="split__copy">
+      <h2 class="reveal">Synth tells you when a session needs you.</h2>
+      <p class="lede reveal" data-delay="1">
+        When a session you are not watching needs an answer, fails, or finishes, you get a notification, and
+        <code>⌘↩</code> takes you straight to it. If you are in another app, you get a Notification
+        Center banner instead.
+      </p>
+    </div>
+    <div class="split__media reveal" data-delay="1">
+      <div class="frame">
+        <img data-shot="light" src="img/notifs-light.png" width="1224" height="300" alt="A stacked deck of notifications, the front one reading api-tests exited with an error." />
+        <img data-shot="dark" src="img/notifs-dark.png" width="1224" height="300" alt="A stacked deck of notifications, the front one reading api-tests exited with an error." />
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="wrap">
+      <h2 class="reveal">Try it on your own repos.</h2>
+      <a class="btn btn--primary reveal" data-delay="1" href="#" data-download>
+        Download for Mac
+        <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer__inner">
+    <div class="footer__brand">
+      <img src="img/mark.png" alt="" />
+      Synth
+    </div>
+  </div>
+</footer>
+
+<script>
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('themeBtn');
+  const mql = matchMedia('(prefers-color-scheme: dark)');
+  const readPref = () => { try { return localStorage.getItem('synth-site-theme') || 'system'; } catch (e) { return 'system'; } };
+  const apply = () => {
+    const p = readPref();
+    const dark = p === 'dark' || (p !== 'light' && mql.matches);
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  };
+  themeBtn.addEventListener('click', () => {
+    const dark = root.getAttribute('data-theme') === 'dark';
+    try { localStorage.setItem('synth-site-theme', dark ? 'light' : 'dark'); } catch (e) {}
+    apply();
+  });
+  mql.addEventListener('change', apply);
+
+  const nav = document.getElementById('nav');
+  new IntersectionObserver(([e]) => nav.classList.toggle('is-stuck', !e.isIntersecting))
+    .observe(document.getElementById('top'));
+
+  const reveals = document.querySelectorAll('.reveal');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    reveals.forEach((el) => el.classList.add('is-in'));
+  } else {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-in');
+        io.unobserve(entry.target);
+      });
+    }, { threshold: 0.15 });
+    reveals.forEach((el) => io.observe(el));
+  }
+</script>
+</body>
+</html>

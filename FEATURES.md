@@ -410,3 +410,16 @@ disclosure to dive deeper.
   hue family, and warming the light selection loses contrast against every ANSI hue. The twelve
   chromatic ANSI slots do not follow the accent — they answer to the programs running inside the
   terminal, not to Synth's brand.
+
+## [2026-07-10](docs/features/2026-07-10.md)
+
+- **Worktree create trusts the outcome, not the exit code** — `git worktree add` runs the repo's own
+  `post-checkout` hook after the checkout has landed, so a failing hook (holibob's husky `pnpm
+  install` finds no pnpm on a GUI launch PATH, exits 127) failed the whole create while leaving a
+  fully materialised checkout behind: row dropped, error toast up, orphaned worktree + branch making
+  the retry fail with "branch already exists". Now a non-zero `worktree add` is only an error when
+  the worktree really isn't registered at the planned path on the requested branch — a hook's
+  complaint goes to the log, and a retry resolves to the orphan an older failure left. Synth's
+  contract is the checkout; the repo's hooks are the repo's business. Verified by driving the real
+  binary over the control socket against a repo with a failing hook, both with the fix (ready row,
+  no toast) and without (the reported failure, caught).

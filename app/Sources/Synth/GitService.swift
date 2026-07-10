@@ -105,21 +105,36 @@ enum GitService {
 
     /// `git worktree add` for an existing branch. Nil on success, else git's message.
     static func addWorktree(repo: URL, path: URL, branch: String) -> String? {
-        runWorktreeAdd(repo: repo, path: path, args: [path.path, branch])
+        runWorktreeAdd(repo: repo, path: path, branch: branch, args: [path.path, branch])
     }
 
     /// `git worktree add -b` for a new branch off `base` (repo HEAD when nil).
     static func addWorktree(repo: URL, path: URL, newBranch: String, base: String?) -> String? {
         var args = ["-b", newBranch, path.path]
         if let base { args.append(base) }
-        return runWorktreeAdd(repo: repo, path: path, args: args)
+        return runWorktreeAdd(repo: repo, path: path, branch: newBranch, args: args)
     }
 
-    private static func runWorktreeAdd(repo: URL, path: URL, args: [String]) -> String? {
+    /// A non-zero `worktree add` doesn't always mean no worktree: the checkout lands first
+    /// and the repo's own post-checkout hook runs after it, so a failing hook (husky's
+    /// `pnpm install` can't resolve pnpm on a GUI launch PATH) fails the command while
+    /// leaving a fully materialised checkout behind. Trust the outcome, not the exit code:
+    /// if the worktree is registered at `path` on `branch`, that's a success. This also
+    /// absorbs the orphan a previous hook-failed create left ("branch already exists" on
+    /// retry, but the worktree it wants is already there).
+    private static func runWorktreeAdd(repo: URL, path: URL, branch: String, args: [String]) -> String? {
         try? FileManager.default.createDirectory(at: path.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         let (status, out) = runChecked(["-C", repo.path, "worktree", "add"] + args)
-        return status == 0 ? nil : out.trimmingCharacters(in: .whitespacesAndNewlines)
+        if status == 0 { return nil }
+        let planned = path.resolvingSymlinksInPath().path
+        if worktrees(at: repo).contains(where: {
+            $0.branch == branch && $0.path.resolvingSymlinksInPath().path == planned
+        }) {
+            NSLog("Synth: worktree add exited \(status) but \(branch) materialised — treating as success. git said: \(out.trimmingCharacters(in: .whitespacesAndNewlines))")
+            return nil
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// `git worktree remove --force` — detaches the worktree from git and deletes its

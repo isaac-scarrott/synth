@@ -27,9 +27,15 @@ write_info_plist() {
   local app="$1" name="$2" bid="$3"
   local sparkle=""
   if [ -n "${SYNTH_FEED_URL:-}" ] && [ -n "${SYNTH_ED_PUBLIC_KEY:-}" ]; then
+    # SUEnableAutomaticChecks: check on our own, no first-run "do you want updates?" prompt.
+    # SUAutomaticallyUpdate: once a check finds a newer build, download it silently in the
+    # background and only then surface a "ready to install — relaunch now?" prompt. The user is
+    # never asked to start a download, only to accept a restart; ignore it and Sparkle installs
+    # on the next quit.
     sparkle="  <key>SUFeedURL</key><string>${SYNTH_FEED_URL}</string>
   <key>SUPublicEDKey</key><string>${SYNTH_ED_PUBLIC_KEY}</string>
-  <key>SUEnableAutomaticChecks</key><true/>"
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUAutomaticallyUpdate</key><true/>"
   fi
   cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

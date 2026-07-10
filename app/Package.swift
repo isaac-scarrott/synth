@@ -50,8 +50,13 @@ let cefLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(["-Xlinker", cefWrapper]),
 ]
 
-var synthDependencies: [Target.Dependency] = ["GhosttyKit"]
-var synthLinkerSettings = ghosttyLinkerSettings
+// Sparkle ships as a dynamic-framework binaryTarget. `swift build` copies Sparkle.framework
+// into the bin dir but sets no rpath, so the bundled executable has to be told where
+// lib.sh staged it (Contents/Frameworks).
+var synthDependencies: [Target.Dependency] = ["GhosttyKit", .product(name: "Sparkle", package: "Sparkle")]
+var synthLinkerSettings = ghosttyLinkerSettings + [
+    LinkerSetting.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
+]
 var targets: [Target] = [
     // Vends the `GhosttyKit` Clang module (ghostty.h) for `import GhosttyKit`. The
     // libghostty archive itself is linked via ghosttyLinkerSettings, not this target.
@@ -98,5 +103,8 @@ targets.append(
 let package = Package(
     name: "Synth",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
+    ],
     targets: targets
 )

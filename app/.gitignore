@@ -1,7 +1,8 @@
 .build/
 .swiftpm/
-Package.resolved
 build/
+releases/
 vendor/GhosttyKit.xcframework/
 vendor/cef/
+vendor/sparkle-tools/
 vendor/*.tar.gz

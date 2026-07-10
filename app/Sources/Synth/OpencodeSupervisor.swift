@@ -19,7 +19,7 @@ import OSLog
     let id = AgentID.opencode
 
     private weak var bus: EventBus?
-    private static let log = Logger(subsystem: "tech.holibob.synth", category: "opencode")
+    private static let log = Logger(subsystem: bundleIdentifier, category: "opencode")
 
     /// The HTTP port assigned to each session's opencode server, handed to the shim as
     /// `SYNTH_OPENCODE_PORT` so the TUI serves there and we know where to subscribe.

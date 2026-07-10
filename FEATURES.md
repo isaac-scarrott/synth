@@ -441,3 +441,15 @@ disclosure to dive deeper.
   without red (`danger=[False, False]`). `automation.palette` gains a `danger` array, because a rule
   nobody can observe is a rule nobody can keep. The 07-09 amber/champagne worry is measured and
   retired: 6.7° of hue apart but ΔE 65, and the busy dot clears 8.13:1 on the sidebar.
+- **Signed, notarized, self-updating releases (`dist.sh` + `release.sh`)** — Developer ID + hardened
+  runtime + notarization replace the `xattr -dr com.apple.quarantine` handshake; Sparkle 2.9.4 ships
+  the appcast, with binary deltas so an update is a few MB against a 144MB bundle. Three latent bugs
+  fell out: the bundle id claimed `tech.holibob.synth` for a personal project (now
+  `io.github.isaac-scarrott.synth`), `CFBundleVersion` was a git short hash Sparkle cannot order (now
+  a commit count), and `codesign --deep` cannot give CEF's renderer the `allow-jit` entitlement it
+  needs to survive the hardened runtime (now signed inside-out, per-binary). Dev channel gets no
+  `SUFeedURL`, so it never updates itself into a release build. Source stays private: artifacts go to
+  a public Tigris bucket on Fly.io, because Sparkle downloads anonymously and a private repo's assets
+  404 for it. Object storage over a second GitHub repo buys one flat prefix that serves every version
+  forever, so no appcast enclosure needs rewriting per release. `release.sh` uploads binaries, proves
+  an unauthenticated `curl` can read the new zip, and only then publishes the appcast naming it.

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Synth is not sandboxed: it drives git, npm and coding agents across the user's whole
+    filesystem, which no App Sandbox entitlement grants.
+
+    The three exceptions below are what the hardened runtime needs to host CEF's browser
+    process. Chromium maps writable-executable pages for V8 even outside the renderer, and
+    Synth dlopens the CEF framework and libghostty at runtime rather than linking them at
+    load time, which library validation reads as loading unsigned third-party code.
+  -->
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict>
+</plist>

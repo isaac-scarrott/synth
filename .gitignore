@@ -4,7 +4,6 @@
 # Swift / SwiftPM (app/)
 app/.build/
 app/.swiftpm/
-app/Package.resolved
 
 # Local scratch
 *.log

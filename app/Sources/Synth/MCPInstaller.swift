@@ -15,7 +15,7 @@ import os.log
 /// correct. Project scope is the point — the file must NOT be gitignored (any Claude
 /// session in the worktree should see the tools) — but Synth never commits it.
 @MainActor enum MCPInstaller {
-    private static let log = Logger(subsystem: "tech.holibob.synth", category: "mcp")
+    private static let log = Logger(subsystem: bundleIdentifier, category: "mcp")
 
     static let installDir = AppSupport.dir("browser-mcp")
 
@@ -73,16 +73,16 @@ import os.log
                 try task.run()
                 task.waitUntilExit()
                 if task.terminationStatus == 0 {
-                    Logger(subsystem: "tech.holibob.synth", category: "mcp")
+                    Logger(subsystem: bundleIdentifier, category: "mcp")
                         .info("browser MCP deps installed in \(dir.path)")
                 } else {
                     let text = String(data: out.fileHandleForReading.readDataToEndOfFile(),
                                       encoding: .utf8) ?? ""
-                    Logger(subsystem: "tech.holibob.synth", category: "mcp")
+                    Logger(subsystem: bundleIdentifier, category: "mcp")
                         .error("npm install failed (\(task.terminationStatus)): \(text.suffix(400))")
                 }
             } catch {
-                Logger(subsystem: "tech.holibob.synth", category: "mcp")
+                Logger(subsystem: bundleIdentifier, category: "mcp")
                     .error("npm launch failed: \(error.localizedDescription)")
             }
         }

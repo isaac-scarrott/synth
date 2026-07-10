@@ -14,6 +14,9 @@ struct SynthApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesButton()
+            }
             CommandGroup(after: .newItem) {
                 Button("New Terminal") { store.newTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
@@ -35,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
+
+/// Reverse-DNS identity behind both channels' bundle ids (dist.sh, dev.sh, bundle-cef.sh) and
+/// every os_log subsystem. The `.dev` suffix is what separates the channels; this is the stem.
+let bundleIdentifier = "io.github.isaac-scarrott.synth"
 
 /// True on the development channel (bundle id ends `.dev`, set by dev.sh). Gates the DEV tag.
 let isDevChannel = Bundle.main.bundleIdentifier?.hasSuffix(".dev") ?? false

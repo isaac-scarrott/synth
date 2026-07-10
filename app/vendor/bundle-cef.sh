@@ -10,6 +10,10 @@ APP="$1"        # path to Synth.app
 BIN="$2"        # swift build bin dir containing SynthBrowserHelper
 MODE="${3:-copy}"  # copy | symlink
 
+# Helpers hang off the host app's bundle id, so the two channels' helpers stay distinct in
+# Launch Services. CEFEngine finds them by path, never by id, so the suffix is free to vary.
+BID="${SYNTH_BUNDLE_ID:?bundle-cef: SYNTH_BUNDLE_ID must be set by dev.sh/dist.sh}"
+
 VENDOR="$(cd "$(dirname "$0")" && pwd)"
 FW_SRC="$VENDOR/cef/dist/Release/Chromium Embedded Framework.framework"
 [ -d "$FW_SRC" ] || { echo "bundle-cef: missing $FW_SRC — run vendor/fetch-cef.sh" >&2; exit 1; }
@@ -44,11 +48,11 @@ make_helper() {
 <dict>
   <key>CFBundleDisplayName</key><string>${name}</string>
   <key>CFBundleExecutable</key><string>${name}</string>
-  <key>CFBundleIdentifier</key><string>tech.holibob.synth.helper${id_suffix}</string>
+  <key>CFBundleIdentifier</key><string>${BID}.helper${id_suffix}</string>
   <key>CFBundleName</key><string>${name}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>${SYNTH_BUILD_VERSION:-1}</string>
+  <key>CFBundleShortVersionString</key><string>${SYNTH_SHORT_VERSION:-0.1}</string>
   <key>LSEnvironment</key>
   <dict>
     <key>MallocNanoZone</key><string>0</string>

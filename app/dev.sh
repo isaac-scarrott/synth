@@ -18,11 +18,12 @@ source ./lib.sh
 # Development channel identity — distinct name + bundle id + Application Support sandbox
 # so a dev build installs and runs alongside the stable "Synth" without colliding.
 NAME="Synth Dev"
-BID="tech.holibob.synth.dev"
+BID="io.github.isaac-scarrott.synth.dev"
 ICON="icon/AppIcon-Dev.icns"
 SUPPORT="$HOME/Library/Application Support/$NAME"
-export SYNTH_SHORT_VERSION="0.1-dev"
-export SYNTH_BUILD_VERSION="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
+export SYNTH_SHORT_VERSION="$(cat VERSION)-dev"
+export SYNTH_BUILD_VERSION="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+export SYNTH_BUNDLE_ID="$BID"
 
 PIDFILE=".build/dev.pid"
 
@@ -65,6 +66,7 @@ if $HAS_CEF; then
 fi
 
 stage_resources "$APP" "$BIN" "$ICON"
+stage_sparkle "$APP" "$BIN" symlink
 
 if $CHECK; then
   exec env SYNTH_AUTOMATION=1 "$APP/Contents/MacOS/Synth" --browser-check

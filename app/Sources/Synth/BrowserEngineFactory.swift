@@ -12,7 +12,7 @@ enum BrowserEngineFactory {
         var errorDescription: String? { reason }
     }
 
-    private static let log = Logger(subsystem: "tech.holibob.synth", category: "browser")
+    private static let log = Logger(subsystem: bundleIdentifier, category: "browser")
 
     static func make(sessionID: UUID) -> BrowserEngine {
         #if canImport(CEFShim)

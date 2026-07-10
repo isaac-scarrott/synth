@@ -174,7 +174,7 @@ struct PaletteFrame {
     /// ⌘K acts on where you are: the focused session, its branch, its workspace — the
     /// context row leads (focused sidebar row, else the open session), and branch and
     /// workspace resolve up/down from it, each falling back to the first one available so
-    /// ⌘K still offers "New terminal"/"New worktree…" when the anchor is a branch/workspace
+    /// ⌘K still offers "New terminal"/"New branch" when the anchor is a branch/workspace
     /// or nothing is focused (working.html contextBranch/contextWorkspaceHead). Session
     /// actions appear only when the anchor is a session leaf.
     private func contextActions() -> [PaletteItem] {
@@ -225,9 +225,9 @@ struct PaletteFrame {
                                      group: g, ctx: open.title,
                                      enter: { self.push(self.renameFrame(.session(open))) }))
             items += containmentItems(open, group: g)
-            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete",
-                                     group: g, ctx: open.title, danger: true,
-                                     enter: { self.push(self.confirmDeleteSession(open)) }))
+            items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close",
+                                     group: g, ctx: open.title, danger: open.status.isBusy,
+                                     enter: { self.closeOrConfirm(open) }))
         }
         if let branch {
             let g = "Branch · \(branch.name)"
@@ -245,13 +245,13 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
                                      group: g, ctx: branch.name,
                                      enter: { self.push(self.renameFrame(.branch(branch))) }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove",
-                                     group: g, ctx: branch.name, danger: true,
+            items.append(PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove",
+                                     group: g, ctx: branch.name,
                                      enter: { self.push(self.confirmRemoveBranch(branch)) }))
         }
         if let workspace {
-            items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…",
-                                     group: "Workspace · \(workspace.name)", ctx: workspace.name,
+            items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New branch",
+                                     group: "Project · \(workspace.name)", ctx: workspace.name,
                                      enter: { self.push(self.worktreeFrame(in: workspace)) }))
         }
         return items
@@ -317,7 +317,7 @@ struct PaletteFrame {
         return br.sessions.filter { $0.kind.isAgent }.map { agent in
             // The row shows the agent it would move the browser under, not a generic sparkle.
             PaletteItem(icon: .session(agent.kind),
-                        label: "Move under “\(agent.title)”",
+                        label: "Attach to “\(agent.title)”",
                         sec: sec, group: group, ctx: s.title,
                         enter: { self.runAndClose { self.store.adopt(s, by: agent) } })
         }
@@ -350,7 +350,7 @@ struct PaletteFrame {
                     var it = item; it.ctx = nil; return it
                 }
                 items += [
-                    PaletteItem(icon: .phosphor(Phosphor.folder), label: "Workspaces", sec: "nav",
+                    PaletteItem(icon: .phosphor(Phosphor.folder), label: "Projects", sec: "nav",
                                 enter: { self.push(self.workspacesFrame()) }),
                     PaletteItem(icon: .phosphor(Phosphor.branch), label: "Branches", sec: "nav",
                                 enter: { self.push(self.branchesFrame()) }),
@@ -375,7 +375,7 @@ struct PaletteFrame {
                 var it = item; it.group = "Actions"; return it
             }
             items += [
-                PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace…", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project", group: "Actions",
                             enter: { self.push(self.createWorkspaceFrame()) }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
                             kbd: ["⌘", "B"],
@@ -404,7 +404,7 @@ struct PaletteFrame {
                 }
             }
             for ws in store.workspaces {
-                items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, group: "Workspaces",
+                items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, group: "Projects",
                                          enter: { self.push(self.workspaceFrame(ws)) }))
             }
             return items
@@ -412,12 +412,12 @@ struct PaletteFrame {
     }
 
     func workspacesFrame() -> PaletteFrame {
-        PaletteFrame(crumb: "Workspaces", placeholder: "Search workspaces…") { [self] _ in
+        PaletteFrame(crumb: "Projects", placeholder: "Search projects…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.plus), label: "New workspace…", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project", sec: "act",
                             enter: { self.push(self.createWorkspaceFrame()) }),
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove workspace…", sec: "act",
-                            danger: true, enter: { self.push(self.removeWorkspacePicker()) }),
+                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove project…", sec: "act",
+                            enter: { self.push(self.removeWorkspacePicker()) }),
             ]
             for ws in store.workspaces {
                 items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, sec: "list",
@@ -430,8 +430,8 @@ struct PaletteFrame {
     func branchesFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Branches", placeholder: "Search branches…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove branch…", sec: "act",
-                            danger: true, enter: { self.push(self.removeBranchPicker()) }),
+                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove branch…", sec: "act",
+                            enter: { self.push(self.removeBranchPicker()) }),
             ]
             for ws in store.workspaces {
                 for br in ws.branches {
@@ -447,8 +447,8 @@ struct PaletteFrame {
     func sessionsFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Sessions", placeholder: "Search sessions…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete session…", sec: "act",
-                            danger: true, enter: { self.push(self.deleteSessionPicker()) }),
+                PaletteItem(icon: .phosphor(Phosphor.close), label: "Close session…", sec: "act",
+                            enter: { self.push(self.deleteSessionPicker()) }),
             ]
             for ws in store.workspaces {
                 for br in ws.branches {
@@ -462,7 +462,7 @@ struct PaletteFrame {
     func workspaceFrame(_ ws: Workspace) -> PaletteFrame {
         PaletteFrame(crumb: ws.name, placeholder: "Search \(ws.name)…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New worktree…", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.branch), label: "New branch", sec: "act",
                             enter: { self.push(self.worktreeFrame(in: ws)) }),
             ]
             // Session creates land on the workspace's first branch (contextActions' fallback);
@@ -471,12 +471,12 @@ struct PaletteFrame {
                 items += sessionCreates(in: br, ctx: br.name)
             }
             items += [
-                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Workspace settings…", sec: "act",
+                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Project settings…", sec: "act",
                             enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }),
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.workspace(ws))) }),
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(ws.name)", sec: "act",
-                            danger: true, enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
+                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(ws.name)", sec: "act",
+                            enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
             ]
             for br in ws.branches {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, sec: "list",
@@ -505,8 +505,8 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(s.title)…", sec: "act",
                                      enter: { self.push(self.renameFrame(.session(s))) }))
             items += containmentItems(s, sec: "act")
-            items.append(PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete \(s.title)", sec: "act",
-                                     danger: true, enter: { self.push(self.confirmDeleteSession(s)) }))
+            items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close \(s.title)", sec: "act",
+                                     danger: s.status.isBusy, enter: { self.closeOrConfirm(s) }))
             return items
         }
     }
@@ -543,8 +543,8 @@ struct PaletteFrame {
             items += [
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(branch.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.branch(branch))) }),
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Remove \(branch.name)", sec: "act",
-                            danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
+                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(branch.name)", sec: "act",
+                            enter: { self.push(self.confirmRemoveBranch(branch)) }),
             ]
             for s in branch.sessions { items.append(sessionItem(s, ctx: false, sec: "list")) }
             return items
@@ -554,9 +554,9 @@ struct PaletteFrame {
     // MARK: Remove/delete pickers → inline confirm
 
     func removeWorkspacePicker() -> PaletteFrame {
-        PaletteFrame(crumb: "Remove workspace", placeholder: "Select a workspace to remove…") { [self] _ in
+        PaletteFrame(crumb: "Remove project", placeholder: "Select a project to remove…") { [self] _ in
             store.workspaces.map { ws in
-                PaletteItem(icon: chipIcon(ws), label: ws.name, danger: true,
+                PaletteItem(icon: chipIcon(ws), label: ws.name,
                             enter: { self.push(self.confirmRemoveWorkspace(ws)) })
             }
         }
@@ -567,28 +567,35 @@ struct PaletteFrame {
             store.workspaces.flatMap { ws in
                 ws.branches.map { br in
                     PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, ctx: ws.name,
-                                danger: true, enter: { self.push(self.confirmRemoveBranch(br)) })
+                                enter: { self.push(self.confirmRemoveBranch(br)) })
                 }
             }
         }
     }
 
     func deleteSessionPicker() -> PaletteFrame {
-        PaletteFrame(crumb: "Delete session", placeholder: "Select a session to delete…") { [self] _ in
+        PaletteFrame(crumb: "Close session", placeholder: "Select a session to close…") { [self] _ in
             store.workspaces.flatMap(\.branches).flatMap(\.sessions).map { s in
                 PaletteItem(icon: .session(s.kind), label: s.title, ctx: ctxOf(s),
                             meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
-                            danger: true, enter: { self.push(self.confirmDeleteSession(s)) })
+                            danger: s.status.isBusy, enter: { self.closeOrConfirm(s) })
             }
         }
     }
 
-    private func confirmFrame(verb: String, name: String, hint: String,
+    private func confirmFrame(verb: String, name: String, hint: String, danger: Bool = true,
                               perform: @escaping () -> Void) -> PaletteFrame {
-        PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "\(hint)  ↵ confirm · esc cancel",
+        // The glyph carries the same grammar as the verb: trash destroys, minus drops a row,
+        // × ends a session. A confirm that says Close must not show a trash can.
+        let glyph = switch verb {
+        case "Delete": Phosphor.trash
+        case "Remove": Phosphor.minusCircle
+        default:       Phosphor.close
+        }
+        return PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "\(hint)  ↵ confirm · esc cancel",
                      mode: .confirm) { [self] _ in
             [
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "\(verb) \(name)", danger: true,
+                PaletteItem(icon: .phosphor(glyph), label: "\(verb) \(name)", danger: danger,
                             enter: { self.runAndClose(perform) }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
@@ -597,7 +604,7 @@ struct PaletteFrame {
 
     func confirmRemoveWorkspace(_ ws: Workspace) -> PaletteFrame {
         confirmFrame(verb: "Remove", name: ws.name,
-                     hint: "Remove this workspace? Nothing on disk is deleted.") { [store] in
+                     hint: "Remove this project from the sidebar? Nothing on disk is deleted.", danger: false) { [store] in
             store.removeWorkspace(ws)
         }
     }
@@ -620,17 +627,24 @@ struct PaletteFrame {
         }
     }
     func confirmDeleteSession(_ s: Session) -> PaletteFrame {
-        confirmFrame(verb: "Delete", name: s.title,
-                     hint: store.deleteSessionHint(s)) { [store] in store.closeSession(s) }
+        confirmFrame(verb: "Close", name: s.title, hint: store.deleteSessionHint(s),
+                     danger: s.status.isBusy) { [store] in store.closeSession(s) }
+    }
+
+    /// A session close only interrupts when there's something to lose — busy, or it would
+    /// cascade-close an owned browser (ADR-0013). Otherwise it just closes, no confirm frame.
+    private func closeOrConfirm(_ s: Session) {
+        if store.closeNeedsConfirm(s) { push(confirmDeleteSession(s)) }
+        else { runAndClose { self.store.closeSession(s) } }
     }
 
     // MARK: Create frames — the search input becomes the name field
 
     func createWorkspaceFrame() -> PaletteFrame {
-        PaletteFrame(crumb: "New workspace", placeholder: "Repository path…", mode: .input) { [self] q in
+        PaletteFrame(crumb: "Add project", placeholder: "Repository path…", mode: .input) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             return [PaletteItem(icon: .phosphor(Phosphor.plus),
-                                label: v.isEmpty ? "Type a repository path…" : "Add workspace “\(v)”",
+                                label: v.isEmpty ? "Type a repository path…" : "Add project “\(v)”",
                                 disabled: v.isEmpty,
                                 enter: { self.runAndClose {
                                     let path = (v as NSString).expandingTildeInPath
@@ -645,7 +659,7 @@ struct PaletteFrame {
     func renameFrame(_ ref: RowRef) -> PaletteFrame {
         let noun: String = {
             switch ref {
-            case .workspace: return "workspace"
+            case .workspace: return "project"
             case .branch:    return "branch"
             case .session:   return "session"
             }
@@ -686,7 +700,7 @@ struct PaletteFrame {
         }
     }
 
-    /// New worktree via ⌘K: empty until you type, then fuzzy-match every local and remote
+    /// New branch via ⌘K: empty until you type, then fuzzy-match every local and remote
     /// branch (top 5, already-checked-out hidden, local/remote dedup'd), or cut a new branch
     /// off the typed name. Each pick checks the branch out into its own worktree (ADR-0007).
     /// working.html fakes the remotes; here they come from real git (GitService.allBranches).
@@ -696,7 +710,7 @@ struct PaletteFrame {
         // stays allocation-only.
         if let ws = workspace { loadBranches(for: ws) }
         let shown = Set(workspace?.branches.map(\.name) ?? [])
-        return PaletteFrame(crumb: "New worktree", placeholder: "Search branches to check out…",
+        return PaletteFrame(crumb: "New branch", placeholder: "Search branches to check out…",
                             mode: .input, dashSpaces: true) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace else { return [] }
@@ -731,8 +745,8 @@ extension SessionStatus {
     // working.html's STATE_LABEL + .cmdk__meta--* colours.
     var paletteLabel: String {
         switch self {
-        case .running:       return "running"
-        case .working:       return "working"
+        case .running:       return "busy"
+        case .working:       return "busy"
         case .needsInput:    return "needs input"
         case .error:         return "error"
         case .idle, .exited: return "idle"
@@ -740,7 +754,7 @@ extension SessionStatus {
     }
     var paletteColor: Color {
         switch self {
-        case .running:       return Theme.dyn(0x2EA043, 0x34C759)
+        case .running:       return Theme.dyn(0xC8811A, 0xF5A623)
         case .working:       return Theme.dyn(0xC8811A, 0xF5A623)
         case .needsInput:    return Theme.input
         case .error:         return Theme.dyn(0xD13C2F, 0xFF453A)

@@ -68,6 +68,15 @@ enum SessionStatus: Equatable, Sendable {
         case .idle, .exited, .error: return false
         }
     }
+
+    /// Busy: an agent mid-turn or a process up (ADR-0013). Close wears red and confirms
+    /// only while this is true; needs-input is a request, not busy, and closes quietly.
+    var isBusy: Bool {
+        switch self {
+        case .running, .working: return true
+        case .idle, .exited, .error, .needsInput: return false
+        }
+    }
 }
 
 @Observable final class Session: Identifiable {

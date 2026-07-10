@@ -11,6 +11,12 @@ struct RowMenu: View {
     var onDelete: () -> Void
     /// Overrides the level's stock confirm copy (ActiveMenu.confirmText).
     var confirmText: String? = nil
+    /// Session close only: true while the session is busy — the sole loss signal a Close
+    /// wears red for (ADR-0013). Remove is never red, at any level.
+    var isDestructive: Bool = false
+    /// Session close only: an idle session with no owned browsers has nothing to lose, so
+    /// it closes on the first click — no confirm step at all (ADR-0013).
+    var skipsConfirm: Bool = false
     @Binding var isPresented: Bool
     /// Lifted to the store so the `d` shortcut can open straight into confirm and ↵ can commit.
     @Binding var confirming: Bool
@@ -18,18 +24,20 @@ struct RowMenu: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Workspaces and branches are *removed* — sidebar-only; worktrees and branches
-    /// stay on disk. Sessions are deleted for real (the process ends).
+    /// stay on disk. Sessions are closed for real (the process ends).
     private var deleteTitle: String {
-        level == .session ? "Delete" : "Remove"
+        level == .session ? "Close" : "Remove"
     }
     private var confirmLabel: String {
         if let confirmText { return confirmText }
         switch level {
-        case .workspace: return "Remove this workspace from the sidebar? Nothing on disk is deleted."
+        case .workspace: return "Remove this project from the sidebar? Nothing on disk is deleted."
         case .branch:    return "Remove this branch from the sidebar? Its worktree stays on disk."
-        case .session:   return "Delete this session?"
+        case .session:   return "Close this session?"
         }
     }
+    /// Remove never wears red; a session Close does only while busy (ADR-0013).
+    private var danger: Bool { level == .session && isDestructive }
 
     var body: some View {
         // The confirm step morphs in place: the container animates its height while
@@ -58,7 +66,7 @@ struct RowMenu: View {
                 .padding(.horizontal, 2).padding(.top, 2).padding(.bottom, 9)
             HStack(spacing: 6) {
                 ConfirmButton(title: "Cancel", danger: false) { confirming = false }
-                ConfirmButton(title: deleteTitle, danger: true) { onDelete(); isPresented = false }
+                ConfirmButton(title: deleteTitle, danger: danger) { onDelete(); isPresented = false }
             }
         }
         .padding(.horizontal, 8).padding(.top, 7).padding(.bottom, 8)
@@ -75,7 +83,9 @@ struct RowMenu: View {
             Rectangle().fill(Theme.border).frame(height: 0.5)
                 .padding(.horizontal, 6).padding(.vertical, 4)
         }
-        MenuItem(icon: Phosphor.trash, title: deleteTitle, danger: true) { confirming = true }
+        MenuItem(icon: Phosphor.trash, title: deleteTitle, danger: danger) {
+            if skipsConfirm { onDelete(); isPresented = false } else { confirming = true }
+        }
     }
 }
 

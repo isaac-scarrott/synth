@@ -67,11 +67,11 @@ struct Sidebar: View {
 
     private var header: some View {
         HStack {
-            Text("WORKSPACE")
+            Text("PROJECT")
                 .font(.system(size: 10.5, weight: .semibold)).kerning(0.6)
                 .foregroundStyle(Theme.navLabel)
             Spacer()
-            IconButton(path: Phosphor.plus, size: 14, help: "Add workspace") {
+            IconButton(path: Phosphor.plus, size: 14, help: "Add project") {
                 store.promptAddWorkspace()
             }
         }
@@ -83,7 +83,7 @@ struct Sidebar: View {
 private struct EmptySidebarHint: View {
     var body: some View {
         VStack(spacing: 6) {
-            Text("No workspaces yet")
+            Text("No projects yet")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.inkMuted)
             Text("Click + to add a git repository")
@@ -154,7 +154,7 @@ private struct SettingsNav: View {
                 ScopeRow(label: "Global", on: store.settingsIsGlobal, selected: selected(NavID.scopeGlobal)) {
                     store.selectScope(.global)
                 }
-                Text("Workspaces")
+                Text("Projects")
                     .font(.system(size: 10.5, weight: .semibold)).kerning(0.5).textCase(.uppercase)
                     .foregroundStyle(Theme.navLabel)
                     .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 6)
@@ -180,7 +180,7 @@ private struct BackButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Phos(path: Phosphor.back, size: 17).foregroundStyle(Theme.inkMuted).frame(width: 17)
-                Text("Workspaces").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.repoName)
+                Text("Projects").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.repoName)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8).padding(.vertical, 7)
@@ -672,12 +672,12 @@ private struct StatusIndicator: View {
     let status: SessionStatus
     var body: some View {
         switch status {
-        case .running: Ind { Dot(color: Theme.run) }
+        case .running: Ind { Dot(color: Theme.working) }
         // Idle and clean exit carry no liveness — a grey dot there is just noise, so
         // the slot stays empty (it still reserves its 16px so row height and the hover
         // swap hold steady). Unread still surfaces via the blue gutter bullet.
         case .idle, .exited: Ind { Color.clear }
-        case .working: Ind { Dot(color: Theme.working).sdotPulse() }
+        case .working: Ind { Dot(color: Theme.working) }
         case .needsInput: Ind { AttentionGlyph(state: .input) }
         case .error:      Ind { AttentionGlyph(state: .error) }
         }
@@ -712,8 +712,8 @@ private struct BranchRollup: View {
         switch branch.rollup {
         case .input where collapsed: Ind { AttentionGlyph(state: .input) }
         case .error where collapsed: Ind { AttentionGlyph(state: .error) }
-        case .work  where collapsed: Ind { Dot(color: Theme.working).sdotPulse() }
-        case .run   where collapsed: Ind { Dot(color: Theme.run) }
+        case .work  where collapsed: Ind { Dot(color: Theme.working) }
+        case .run   where collapsed: Ind { Dot(color: Theme.working) }
         // A live state while expanded: the sessions carry their own indicators,
         // so nothing rolls up to the header.
         case .input, .error, .work, .run: EmptyView()

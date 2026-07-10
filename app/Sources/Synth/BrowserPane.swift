@@ -491,7 +491,7 @@ private struct BrowserHome: View {
                     Text("Press")
                     KeyCap(text: "⌘")
                     KeyCap(text: "K")
-                    Text("for quick actions")
+                    Text("for the command menu")
                 }
                 .font(.system(size: 11.5))
                 .foregroundStyle(Theme.inkFaint)

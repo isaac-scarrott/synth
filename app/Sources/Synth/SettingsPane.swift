@@ -47,7 +47,7 @@ struct SettingsPane: View {
                 .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
                 .foregroundStyle(Theme.ink)
             (Text("Settings").fontWeight(.semibold)
-                + Text(" / \(isGlobal ? "All workspaces" : name)"))
+                + Text(" / \(isGlobal ? "All projects" : name)"))
                 .font(.system(size: 11, design: .monospaced)).kerning(-0.11)
                 .foregroundStyle(Theme.inkFaint)
                 .lineLimit(1).truncationMode(.tail)
@@ -82,7 +82,7 @@ struct SettingsPane: View {
             Text("Notification sounds")
                 .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
                 .foregroundStyle(Theme.repoName)
-            sub("Play a sound with Notification Center alerts when Synth isn't focused. In-app toasts stay silent.")
+            sub("Play a sound with Notification Center alerts when Synth isn't focused. In-app notifications stay silent.")
             VStack(spacing: 0) {
                 soundRow("Needs-input sound", soundInputBinding)
                 Rectangle().fill(Theme.border).frame(height: 0.5)
@@ -122,7 +122,7 @@ struct SettingsPane: View {
                 .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
                 .foregroundStyle(Theme.repoName)
             if isGlobal {
-                sub("Runs once inside every new worktree, right after it's created — across all workspaces.")
+                sub("Runs once inside every new worktree, right after it's created — across all projects.")
                 CodeCard(label: "setup.sh", text: globalBinding)
                     .padding(.top, 14)
                 note("Runs in the new worktree's root with $SYNTH_MAIN pointing at the primary checkout. Times out after 5 minutes; a non-zero exit is reported on the worktree but never blocks it.")
@@ -163,7 +163,7 @@ struct SettingsPane: View {
                     + Text(" worktrees — these replace the global set. Leave empty to inherit global."))
                     .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
                     .lineSpacing(3).padding(.top, 4)
-                flowStrip(note: "Workspace overrides global")
+                flowStrip(note: "Project overrides global")
                 VStack(alignment: .leading, spacing: 7) {
                     TplListHead(label: "Global — inherited when empty") { EditInGlobalLink() }
                     TplListRO(entries: store.globalSessionTemplate, emptyText: "No global sessions.")
@@ -199,7 +199,7 @@ struct SettingsPane: View {
                 .foregroundStyle(Theme.repoName)
             if isGlobal {
                 (Text("Passed to ") + Text(agent.binaryName).font(.system(size: 12, design: .monospaced))
-                    + Text(" every time a \(agent.displayName) session starts — across all workspaces."))
+                    + Text(" every time a \(agent.displayName) session starts — across all projects."))
                     .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
                     .lineSpacing(3).padding(.top, 4)
                 CodeCard(label: "flags", text: globalFlagsBinding(agent), minHeight: 44).padding(.top, 14)
@@ -207,10 +207,10 @@ struct SettingsPane: View {
                 agentNote(agent)
             } else {
                 (Text("Flags for ") + Text(name).fontWeight(.semibold)
-                    + Text(" \(agent.displayName) sessions. These override the global flags for this workspace — leave empty to inherit global."))
+                    + Text(" \(agent.displayName) sessions. These override the global flags for this project — leave empty to inherit global."))
                     .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
                     .lineSpacing(3).padding(.top, 4)
-                flowStrip(note: "Workspace overrides global").padding(.top, 14)
+                flowStrip(note: "Project overrides global").padding(.top, 14)
                 CodeCard(label: "Global — inherited when empty",
                          text: .constant(store.globalAgentFlags[agent.id] ?? ""),
                          readOnly: true, minHeight: 44, trailing: { EditInGlobalLink() }).padding(.top, 14)

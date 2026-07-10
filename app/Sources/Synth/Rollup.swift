@@ -11,10 +11,10 @@ extension SessionStatus {
     /// Human-readable label for tooltips.
     var label: String {
         switch self {
-        case .running:    return "Running"
+        case .running:    return "Busy"
         case .idle:       return "Idle"
         case .exited:     return "Exited"
-        case .working:    return "Working"
+        case .working:    return "Busy"
         case .needsInput: return "Needs input"
         case .error:      return "Error"
         }

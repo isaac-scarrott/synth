@@ -423,3 +423,15 @@ disclosure to dive deeper.
   contract is the checkout; the repo's hooks are the repo's business. Verified by driving the real
   binary over the control socket against a repo with a failing hook, both with the fix (ready row,
   no toast) and without (the reported failure, caught).
+- **The user-facing taxonomy is settled, and every surface speaks it (ADR-0013)** — one noun per
+  thing, one verb per consequence. Workspace becomes **Project** (it collided with *worktree*, one
+  level down); the ⌘K surface stops naming itself three ways and becomes the **Command menu**;
+  **Remove / Close / Delete** split by consequence and **red now means loss, not disk** (a busy Close
+  wears it, a Remove never does, the glyph follows the word: trash destroys, minus drops a row, ×
+  closes); `running` + `working` merge into one amber **Busy** dot, pulse deleted; toast becomes
+  **Notification**; "Move under" becomes **Attach to** (the indent it promised went away on 07-08);
+  you create a **New branch** and delete a **worktree**, and the asymmetry is load-bearing. **Agent**
+  is now sanctioned vocabulary, which surfaced a real lie: comment mode's chip said "New Claude
+  session" while the code spawns `AgentRegistry.default`. Internal symbols keep their old names.
+  Swept across both designs (invariant held), 14 Swift files, and the storefront (all twelve product
+  screenshots re-shot); every close path adversarially checked.

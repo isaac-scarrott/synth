@@ -121,7 +121,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         }
     }
     switch kind {
-    case .input: return "waiting for input"
+    case .input: return "needs input"
     // A browser session never changes status (it stays .idle for life, no indicator),
     // so these read as they would for any plain process.
     case .error: return "exited with an error"

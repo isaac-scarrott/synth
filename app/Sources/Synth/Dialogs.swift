@@ -191,7 +191,7 @@ struct CreateWorktreeSheet: View {
     }
 
     var body: some View {
-        DialogFrame(title: "Create worktree") {
+        DialogFrame(title: "New branch") {
             Picker("", selection: $mode) {
                 ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }

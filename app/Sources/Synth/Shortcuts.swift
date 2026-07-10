@@ -49,7 +49,7 @@ private struct ShortcutGroup {
 struct ShortcutsSheet: View {
     private static let groups: [ShortcutGroup] = [
         ShortcutGroup(name: "General", rows: [
-            Shortcut(keys: ["⌘", "K"], label: "Command palette"),
+            Shortcut(keys: ["⌘", "K"], label: "Command menu"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
             Shortcut(keys: ["⌘", "0"], label: "Focus sidebar"),
             Shortcut(keys: ["⌘", "1"], label: "Focus open session"),
@@ -73,7 +73,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "]"], label: "Forward"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "Toggle DevTools"),
         ]),
-        ShortcutGroup(name: "Command palette", rows: [
+        ShortcutGroup(name: "Command menu", rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),
             Shortcut(keys: ["↵"], label: "Open · drill in"),
             Shortcut(keys: ["⌫"], label: "Back (empty search)"),

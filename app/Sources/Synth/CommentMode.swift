@@ -53,7 +53,7 @@ import Observation
             return
         }
         self.store = store
-        targetTitle = prospectiveTarget()?.title ?? "New Claude session"
+        targetTitle = prospectiveTarget()?.title ?? "New agent session"
         attachNonce += 1
         let nonce = attachNonce
         attachTask = Task { [weak self] in

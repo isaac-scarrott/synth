@@ -933,7 +933,7 @@ enum FeedbackMode {
         return br.sessions.filter { $0.ownerSessionID == session.id }
     }
 
-    /// Nest `browser` under `agent` (creation stamping, the kebab's "Move under…", or a
+    /// Make `browser` belong to `agent` (creation stamping, the kebab's "Attach to…", or a
     /// comment-spawned agent adopting its browser). Ownership keys off the Synth row id,
     /// so it survives agent exits and resumes.
     func adopt(_ browser: Session, by agent: Session) {
@@ -969,13 +969,20 @@ enum FeedbackMode {
         br.sessions = rows.flatMap { [$0] + (ownedByOwner[$0.id] ?? []) }
     }
 
-    /// Delete-confirm copy for a session: deleting an owning claude row cascades, so the
+    /// Close-confirm copy for a session: closing an owning claude row cascades, so the
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
         let owned = ownedBrowsers(of: session)
-        guard !owned.isEmpty else { return "Delete this session?" }
+        guard !owned.isEmpty else { return "Close this session?" }
         let what = owned.count == 1 ? "browser" : "\(owned.count) browsers"
-        return "Delete this session? This also closes its \(what)."
+        return "Close this session? This also closes its \(what)."
+    }
+
+    /// Whether closing `session` needs to ask first at all (ADR-0013): busy, because a turn
+    /// would be lost, or it owns browsers, because closing cascades onto them too. An idle,
+    /// unowned session just closes.
+    func closeNeedsConfirm(_ session: Session) -> Bool {
+        session.status.isBusy || !ownedBrowsers(of: session).isEmpty
     }
 
     /// The comment ladder's spawn rung (CommentMode rung 3): an agent row created exactly

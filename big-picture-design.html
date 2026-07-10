@@ -386,7 +386,7 @@
   .msg__body li { margin: 3px 0; }
   .msg__body code { font-family: var(--mono); font-size: 12px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
   .msg--work .msg__body { color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
-  .work-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--work); box-shadow: 0 0 3px rgba(245,166,35,0.55), 0 0 8px 2px rgba(245,166,35,0.32); animation: sdot-pulse 1.5s var(--ease-in-out) infinite; flex-shrink: 0; }
+  .work-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--work); box-shadow: 0 0 3px rgba(245,166,35,0.55), 0 0 8px 2px rgba(245,166,35,0.32); flex-shrink: 0; }
 
   .chat__composer {
     flex-shrink: 0;
@@ -841,13 +841,12 @@
     border-radius: 50%;
   }
   .sdot--run {
-    background: var(--run);
-    box-shadow: 0 0 3px rgba(52, 199, 89, 0.55), 0 0 8px 2px rgba(52, 199, 89, 0.3);
+    background: var(--work);
+    box-shadow: 0 0 3px rgba(245, 166, 35, 0.55), 0 0 8px 2px rgba(245, 166, 35, 0.32);
   }
   .sdot--work {
     background: var(--work);
     box-shadow: 0 0 3px rgba(245, 166, 35, 0.55), 0 0 8px 2px rgba(245, 166, 35, 0.32);
-    animation: sdot-pulse 1.5s var(--ease-in-out) infinite;
   }
 
   /* attention glyphs: needs-input (?) and error (!) — bare marks, no border.
@@ -867,10 +866,6 @@
      drop it while expanded; it's the only signal when collapsed. Activity meta stays. */
   .repo--open > .branch--group .branch__roll .ind { display: none; }
 
-  @keyframes sdot-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
   @keyframes ind-in {
     from { opacity: 0; transform: scale(0.4); }
   }
@@ -1239,7 +1234,7 @@
     color: var(--ink-meta);
     letter-spacing: 0.01em;
   }
-  .cmdk__meta--run   { color: #2ea043; }
+  .cmdk__meta--run   { color: #c8811a; }
   .cmdk__meta--work  { color: #c8811a; }
   .cmdk__meta--input { color: var(--input); }
   .cmdk__meta--error { color: #d13c2f; }
@@ -1691,7 +1686,7 @@
      lift them to bright, legible values on the dark frosted glass */
   :root[data-theme="dark"] .cmdk__item.is-active .cmdk__label { color: var(--accent); }
   :root[data-theme="dark"] .cmdk__item--danger.is-active .cmdk__label { color: var(--error); }
-  :root[data-theme="dark"] .cmdk__meta--run   { color: var(--run); }
+  :root[data-theme="dark"] .cmdk__meta--run   { color: var(--work); }
   :root[data-theme="dark"] .cmdk__meta--work  { color: var(--work); }
   :root[data-theme="dark"] .cmdk__meta--input { color: var(--input); }
   :root[data-theme="dark"] .cmdk__meta--error { color: var(--error); }
@@ -1730,8 +1725,8 @@
 
       <nav class="nav" id="nav">
         <div class="nav__head">
-          <span class="nav__label">Workspace</span>
-          <span class="add-workspace" id="addWorkspace" role="button" aria-label="Add workspace"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg></span>
+          <span class="nav__label">Project</span>
+          <span class="add-workspace" id="addWorkspace" role="button" aria-label="Add project"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg></span>
         </div>
 
         <!-- synth (open) -->
@@ -1758,7 +1753,7 @@
             <div class="repo repo--open" data-repo>
               <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="2m">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
-                <span class="branch__name">feat/command-palette</span>
+                <span class="branch__name">feat/command-menu</span>
                 <span class="branch__roll"></span>
               </a>
               <div class="collapse"><div class="collapse__inner">
@@ -1963,6 +1958,10 @@
     if (s.querySelector('.sdot--run')) return 'run';
     return 'idle';
   }
+  // Busy: a live agent turn or process. Closing one is the only Close that loses something,
+  // so it's the only one that's red and the only one that stops to confirm on its own.
+  function sessionIsBusy(s) { const st = sessionState(s); return st === 'work' || st === 'run'; }
+  function sessionNeedsConfirm(s) { return sessionIsBusy(s) || ownedOf(s).length > 0; }
   const ROLL = {
     input: () => `<span class="ind ind--input">${MARK_INPUT}</span>`,
     error: () => `<span class="ind ind--error">${MARK_ERROR}</span>`,
@@ -1992,7 +1991,7 @@
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ICON_SEND = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z"/></svg>';
   const ICON_EMPTY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
-  const STATE_LABEL = { run: 'running', work: 'working', input: 'needs input', error: 'error', idle: 'idle' };
+  const STATE_LABEL = { run: 'busy', work: 'busy', input: 'needs input', error: 'error', idle: 'idle' };
   const IND_HTML = {
     input: `<span class="ind ind--input">${MARK_INPUT}</span>`,
     error: `<span class="ind ind--error">${MARK_ERROR}</span>`,
@@ -2014,7 +2013,7 @@
   function workspaceNameOf(el) {
     const repo = outerRepoOf(el);
     const n = repo && repo.querySelector(':scope > .repo__head .repo__name');
-    return n ? n.textContent.trim() : 'workspace';
+    return n ? n.textContent.trim() : 'project';
   }
   function branchGroupOf(el) {
     const group = el.closest('[data-repo]');
@@ -2148,7 +2147,7 @@
     const ai = el.dataset.type === 'ai';
     if (kind === 'error') return ai ? 'Claude hit an error' : 'exited with an error';
     if (kind === 'done') return ai ? 'Claude finished' : 'finished';
-    return ai ? 'Claude needs your input' : 'waiting for input';
+    return ai ? 'Claude needs your input' : 'needs input';
   }
   function buildNotif(el) {
     const kind = notifState.get(el).kind;
@@ -2255,7 +2254,7 @@
     const p = `~/${ws} (${br}) $ `;
     if (state === 'error' || /test/i.test(name)) {
       return [
-        ['cmd', p + 'npm test -- command-palette'], ['dim', ''],
+        ['cmd', p + 'npm test -- command-menu'], ['dim', ''],
         ['', ' RUN  v5.2.0'],
         ['ok',  ' ✓ src/palette/fuzzy.test.ts (8)'],
         ['err', ' ❯ src/palette/CommandPalette.test.tsx (5)'],
@@ -2305,7 +2304,7 @@
   // the branch's dev-server port and the session's own visited history.
   const BROWSER_RECENTS = [
     { url: 'localhost:8733',         name: 'Synth dev server' },
-    { url: 'localhost:8733/palette', name: 'Command palette' },
+    { url: 'localhost:8733/palette', name: 'Command menu' },
     { url: 'app.synth.dev/checkout', name: 'Checkout flow' },
     { url: 'github.com/synth/synth', name: 'Repository' },
     { url: 'linear.app/synth',       name: 'Linear' },
@@ -2375,7 +2374,7 @@
           <span class="browser__glyph">${ICON_BROWSER}</span>
           <div class="browser__field">${ICON_SEARCH}<input type="text" data-address placeholder="Go to…" autocomplete="off" spellcheck="false"></div>
           ${browserRecentsHTML()}
-          <div class="browser__cmdkhint">Press <kbd class="cmdk__key">⌘</kbd><kbd class="cmdk__key">K</kbd> for quick actions</div>
+          <div class="browser__cmdkhint">Press <kbd class="cmdk__key">⌘</kbd><kbd class="cmdk__key">K</kbd> for the command menu</div>
         </div></div>
       </div>`;
     }
@@ -2440,7 +2439,7 @@
       const chip = host.querySelector('[data-target]');
       if (chip) {
         chip.hidden = !commentOn;
-        if (commentOn) { const o = ownerOf(openEl); chip.textContent = '→ ' + (o ? sessionTitle(o) : 'New Claude session'); }
+        if (commentOn) { const o = ownerOf(openEl); chip.textContent = '→ ' + (o ? sessionTitle(o) : 'New agent session'); }
       }
     }
     function closeCard() { const c = host.querySelector('.browser__ccard'); if (c) c.remove(); }
@@ -2449,7 +2448,7 @@
       const o = ownerOf(openEl);
       const card = document.createElement('div');
       card.className = 'browser__ccard';
-      card.innerHTML = `<div class="browser__ccard-target">→ ${esc(o ? sessionTitle(o) : 'New Claude session')}</div>
+      card.innerHTML = `<div class="browser__ccard-target">→ ${esc(o ? sessionTitle(o) : 'New agent session')}</div>
         <textarea rows="2" placeholder="Leave a comment…"></textarea>
         <div class="browser__ccard-row"><span class="menu__btn" data-c="cancel">Cancel</span><span class="menu__btn menu__btn--send" data-c="send">Send</span></div>`;
       const r = view.getBoundingClientRect();
@@ -2555,7 +2554,7 @@
       </div></div></div></div>`;
   }
   function composerHTML(awaiting) {
-    const ask = awaiting ? `<div class="chat__ask">${MARK_INPUT}Should the palette also surface recent files, or just commands and sessions for now?</div>` : '';
+    const ask = awaiting ? `<div class="chat__ask">${MARK_INPUT}Should the menu also surface recent files, or just commands and sessions for now?</div>` : '';
     return `<div class="chat__composer ${awaiting ? 'awaiting' : ''}">${ask}
       <div class="chat__inputrow">
         <div class="chat__input" contenteditable="true" role="textbox" data-ph="Reply to Claude Code…"></div>
@@ -2565,10 +2564,10 @@
   function renderChat(state) {
     const transcript = `
       <div class="msg msg--user"><div class="msg__role">You</div>
-        <div class="msg__body">Add a ⌘K command palette to the sidebar, styled like Linear's.</div></div>
+        <div class="msg__body">Add a ⌘K command menu to the sidebar, styled like Linear's.</div></div>
       <div class="msg msg--assistant"><div class="msg__role">Claude Code</div>
         <div class="msg__body">
-          <p>Done — <code>CommandPalette</code> opens on <code>⌘K</code> with fuzzy search over commands, workspaces, branches, and sessions.</p>
+          <p>Done — <code>CommandPalette</code> opens on <code>⌘K</code> with fuzzy search over commands, projects, branches, and sessions.</p>
           <p>Wired up:</p>
           <ul><li>Focus-trapped input, <code>↑/↓</code> to move, <code>↵</code> to run, <code>Esc</code> to close</li>
           <li>Subsequence matcher with word-boundary + contiguity bonuses</li>
@@ -2891,7 +2890,8 @@
       e.preventDefault();
       addToRow(selEl);
     }
-    // r renames the selected row in place; d deletes it (through the ⌘K confirm frame)
+    // r renames the selected row in place; d closes/removes it (idle sessions go straight
+    // through; anything busy, owning browsers, branch, or repo drops into the ⌘K confirm frame)
     else if ((k === 'r' || k === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (!isTreeRow(selEl)) return;
       e.preventDefault();
@@ -3085,10 +3085,12 @@
     el.addEventListener('blur', onBlur);
   }
 
-  // Delete the selected row from the keyboard: drops into the ⌘K confirm frame so a single
-  // keystroke can't destroy a session — ↵ confirms, Esc cancels.
+  // Close/remove the selected row from the keyboard. An idle, unowned session ends right away —
+  // nothing is lost. Anything else drops into the ⌘K confirm frame so a single keystroke can't
+  // destroy work in progress — ↵ confirms, Esc cancels.
   function requestDelete(row) {
     if (!row) return;
+    if (rowLevel(row) === 'session' && !sessionNeedsConfirm(row)) { removeUnit(rowUnit(row)); return; }
     openPaletteAt(confirmFrame(row));
   }
 
@@ -3111,7 +3113,7 @@
   function removeUnit(unit) {
     if (!unit) return;
     // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
-    // live and die with it — the delete confirm names them before this runs.
+    // live and die with it — the close confirm names them before this runs.
     if (unit.matches && unit.matches('.session[data-sid]')) ownedOf(unit).forEach(removeUnit);
     // If the keyboard cursor is on (or inside) the removed unit it falls back up the
     // hierarchy — session → its branch row, branch → its workspace head — instead of
@@ -3400,8 +3402,8 @@
   function openWorkspaceDialog() {
     const backdrop = document.createElement('div');
     backdrop.className = 'backdrop';
-    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="Add workspace">
-      <div class="dialog__title">Add workspace</div>
+    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="Add project">
+      <div class="dialog__title">Add project</div>
       <div class="field"><label>Repository</label>
         <input id="wsPath" placeholder="~/code/my-repo" autocomplete="off" spellcheck="false"></div>
       <div class="dialog__actions">
@@ -3552,7 +3554,7 @@
   // [keys, label, altKeys?]
   const SHORTCUTS = [
     ['General', [
-      [['⌘', 'K'], 'Command palette'],
+      [['⌘', 'K'], 'Command menu'],
       [['⌘', 'T'], 'New terminal'],
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '0'], 'Focus sidebar'],
@@ -3567,7 +3569,7 @@
       [['⇥'], 'Toggle group'],
       [['↵'], 'Open session / toggle', ['Space']],
       [['R'], 'Rename selected'],
-      [['D'], 'Delete selected'],
+      [['D'], 'Close · remove selected'],
       [['⇧J', '⇧K'], 'Reorder down · up'],
     ]],
     ['Browser', [
@@ -3577,7 +3579,7 @@
       [['⌘', ']'], 'Forward'],
       [['⌥', '⌘', 'I'], 'Toggle DevTools'],
     ]],
-    ['Command palette', [
+    ['Command menu', [
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
       [['↵'], 'Open · drill in'],
       [['⌫'], 'Back (empty search)'],
@@ -3631,9 +3633,9 @@
     const rows = [];
     if (openEl) rows.push(['Here', (kindLabel[openEl.dataset.type] || 'session') + ' · ' + branchNameOf(openEl)]);
     const ws = document.querySelectorAll('.repo__head').length;
-    const working = document.querySelectorAll('.session .sdot--work').length;
+    const busy = document.querySelectorAll('.session .sdot--work, .session .sdot--run').length;
     const unread = document.querySelectorAll('.session--unread').length;
-    rows.push(['State', ws + (ws === 1 ? ' workspace' : ' workspaces') + ' · ' + working + ' working · ' + unread + ' unread']);
+    rows.push(['State', ws + (ws === 1 ? ' project' : ' projects') + ' · ' + busy + ' busy · ' + unread + ' unread']);
     rows.push(['Env', 'Synth 0.4 · macOS 15 · ' + (document.documentElement.dataset.theme || 'system') + ' theme']);
     return rows;
   }
@@ -3737,7 +3739,7 @@
   const ICON_SEARCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/></svg>';
   const ICON_SIDEBAR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>';
   const ICON_PLUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg>';
-  const CMDK_GROUPS = ['Actions', 'Workspaces', 'Branches', 'Sessions'];
+  const CMDK_GROUPS = ['Actions', 'Projects', 'Branches', 'Sessions'];
 
   let pal = null, palItems = [], palActive = 0;
 
@@ -3886,15 +3888,15 @@
     if (open && open.dataset.type === 'browser') {
       const owner = ownerOf(open);
       if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
-      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
+      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(open)) });
+    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(open), enter: () => sessionNeedsConfirm(open) ? pushFrame(confirmFrame(open)) : runAndClose(() => removeUnit(rowUnit(open))) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
-    if (head) items.push({ grp: 'Workspace', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
+    if (head) items.push({ grp: 'Project', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
     return { items };
   }
 
@@ -3935,7 +3937,7 @@
         if (!q) return [
           ...recentTargets(4).map(recentItem),
           ...here.items.map((it) => ({ ...it, g: it.grp + ' · ' + it.unit })),
-          { sec: 'nav', icon: ICON_FOLDER,  label: 'Workspaces', enter: () => pushFrame(workspacesFrame()) },
+          { sec: 'nav', icon: ICON_FOLDER,  label: 'Projects', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
           { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },
           { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
@@ -3945,16 +3947,16 @@
         ];
         const items = [
           ...here.items.map((it) => ({ ...it, g: 'Actions', ctx: it.unit })),
-          { g: 'Actions', icon: ICON_PLUS,     label: 'Add workspace', enter: () => pushFrame(createFrame('workspace')) },
+          { g: 'Actions', icon: ICON_PLUS,     label: 'Add project', enter: () => pushFrame(createFrame('workspace')) },
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
           { g: 'Actions', icon: ICON_CHAT,     label: 'Send feedback…', kbd: ['⌘', '⇧', 'F'], enter: () => runAndClose(openFeedback) },
         ];
-        // Search groups run most-local-first: Actions (above), then Sessions, Branches, Workspaces.
+        // Search groups run most-local-first: Actions (above), then Sessions, Branches, Projects.
         allRows('.session').forEach((s) => items.push({ g: 'Sessions', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }));
         allRows('.branch').forEach((b) => items.push({ g: 'Branches', icon: ICON_BRANCH, label: brName(b), ctx: wsOf(b), enter: () => pushFrame(branchFrame(b)) }));
-        allRows('.repo__head').forEach((h) => items.push({ g: 'Workspaces', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
+        allRows('.repo__head').forEach((h) => items.push({ g: 'Projects', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         return items;
       },
     };
@@ -3962,10 +3964,10 @@
 
   function workspacesFrame() {
     return {
-      crumb: 'Workspaces', placeholder: 'Search workspaces…',
+      crumb: 'Projects', placeholder: 'Search projects…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_PLUS, label: 'Add workspace', enter: () => pushFrame(createFrame('workspace')) },
+          { sec: 'act', icon: ICON_PLUS, label: 'Add project', enter: () => pushFrame(createFrame('workspace')) },
         ];
         allRows('.repo__head').forEach((h) => items.push({ sec: 'list', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         return items;
@@ -4053,9 +4055,9 @@
     };
   }
 
-  // A session leaf has no children — its own actions (rename / delete) plus sibling
+  // A session leaf has no children — its own actions (rename / close) plus sibling
   // creates on its branch (the ctx chip names the branch, as the crumb is the session),
-  // plus the containment verbs on browser rows (Move under a Claude session / Detach —
+  // plus the containment verbs on browser rows (Attach to a Claude session / Detach —
   // ADR-0011 stage four).
   function sessionFrame(row) {
     const name = seName(row);
@@ -4075,9 +4077,9 @@
         if (row.dataset.type === 'browser') {
           const owner = ownerOf(row);
           if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
-          else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: agentIcon(c.getAttribute('data-agent')), label: 'Move under “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
+          else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
         }
-        items.push({ sec: 'act', icon: ICON_TRASH, label: 'Delete', danger: true, enter: () => pushFrame(confirmFrame(row)) });
+        items.push({ sec: 'act', icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(row), enter: () => sessionNeedsConfirm(row) ? pushFrame(confirmFrame(row)) : runAndClose(() => removeUnit(rowUnit(row))) });
         return items;
       },
     };
@@ -4111,16 +4113,17 @@
     const level = rowLevel(row);
     if (level === 'branch') return removeWorktreeFrame(row);
     const name = level === 'repo' ? wsName(row) : seName(row);
-    const verb = level === 'session' ? 'Delete' : 'Remove';
+    const verb = level === 'session' ? 'Close' : 'Remove';
     const owned = level === 'session' ? ownedOf(row) : [];
-    const hint = level === 'repo' ? 'Removes it from the sidebar — the repo and everything on disk stay.'
+    const danger = level === 'session' && sessionIsBusy(row);
+    const hint = level === 'repo' ? 'Removes it from the sidebar. Nothing on disk is deleted.'
       : owned.length ? `Ends this session and its process, and closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
       : 'Ends this session and its process.';
     return {
       crumb: verb + ' ' + name + '?', mode: 'confirm', note: hint, placeholder: '↵ confirm · esc cancel',
       build() {
         return [
-          { icon: level === 'session' ? ICON_TRASH : ICON_MINUS, label: verb, danger: level === 'session', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: level === 'session' ? ICON_TRASH : ICON_MINUS, label: verb, danger, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },
@@ -4148,7 +4151,7 @@
   function createFrame(kind, ctx) {
     if (kind === 'worktree') return worktreeFrame(ctx);
     const cfg = {
-      workspace: { crumb: 'Add workspace', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add workspace “' + v + '”', go: (v) => openWorktreePicker(v) },
+      workspace: { crumb: 'Add project', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add project “' + v + '”', go: (v) => openWorktreePicker(v) },
     }[kind];
     return {
       crumb: cfg.crumb, mode: 'input', placeholder: cfg.ph,
@@ -4198,7 +4201,7 @@
 
   // Rename any unit inline — the field seeds with the current name and commits once it actually changes.
   function renameFrame(row) {
-    const noun = { repo: 'workspace', branch: 'branch', session: 'session' }[rowLevel(row)] || 'item';
+    const noun = { repo: 'project', branch: 'branch', session: 'session' }[rowLevel(row)] || 'item';
     const cur = (nameElOf(row).textContent || '').trim();
     // An agent session's name is only ever an override on top of its AI-generated title —
     // so offer to clear it back to that agent's default once one's been set.
@@ -4298,7 +4301,7 @@
     closeMenu();
     const backdrop = document.createElement('div');
     backdrop.className = 'cmdk';
-    backdrop.innerHTML = '<div class="cmdk__panel" role="dialog" aria-modal="true" aria-label="Command palette">'
+    backdrop.innerHTML = '<div class="cmdk__panel" role="dialog" aria-modal="true" aria-label="Command menu">'
       + '<div class="cmdk__search"><span class="cmdk__search-ico">' + ICON_SEARCH + '</span>'
       + '<span class="cmdk__crumbs"></span>'
       + '<input class="cmdk__input" autocomplete="off" spellcheck="false" /></div>'
@@ -4378,12 +4381,12 @@
 
   // Mock persistence — the setup scripts the effective config is assembled from. The native
   // app would read these from disk; here they just live in memory so edits survive scope hops.
-  let globalScript = '#!/usr/bin/env bash\nset -euo pipefail\n\n# Runs in every new worktree, across all workspaces.\n[ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env';
+  let globalScript = '#!/usr/bin/env bash\nset -euo pipefail\n\n# Runs in every new worktree, across all projects.\n[ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env';
   const wsScripts = {
     synth: '#!/usr/bin/env bash\nset -euo pipefail\n\npnpm install\npnpm run db:generate',
     'aviator-api': '#!/usr/bin/env bash\nset -euo pipefail\n\ngo mod download',
   };
-  const scriptFor = (name) => wsScripts[name] != null ? wsScripts[name] : '#!/usr/bin/env bash\n\n# No extra setup for this workspace yet.';
+  const scriptFor = (name) => wsScripts[name] != null ? wsScripts[name] : '#!/usr/bin/env bash\n\n# No extra setup for this project yet.';
 
   // Default flags passed to `claude` when a Claude Code session starts. The canonical
   // value is a raw flag string, so ANY claude flag works (now and future); the switches
@@ -4414,12 +4417,12 @@
 
   function buildScopeNav() {
     const heads = workspaceHeads();
-    settingsNav.innerHTML = `<button class="settings-back" id="settingsBack">${ICON_BACK}<span>Workspaces</span></button>
+    settingsNav.innerHTML = `<button class="settings-back" id="settingsBack">${ICON_BACK}<span>Projects</span></button>
       <button class="scope" data-scope="global">
         <span class="scope__icon">${ICON_GLOBE}</span>
         <span class="scope__name">Global</span>
       </button>
-      <div class="nav__label">Workspaces</div>
+      <div class="nav__label">Projects</div>
       ${heads.map(() => '').join('')}`;
     // append workspace scope rows, keeping a live handle back to each head element
     heads.forEach((h) => {
@@ -4458,7 +4461,7 @@
     if (isGlobal) {
       return appearanceSection() + `<div class="set-section">
         <div class="set-section__title">Worktree setup script</div>
-        <div class="set-section__sub">Runs once inside every new worktree, right after it's created — across all workspaces.</div>
+        <div class="set-section__sub">Runs once inside every new worktree, right after it's created — across all projects.</div>
         <div class="set-code-wrap">
           <div class="set-code-head"><span class="set-code-head__label">setup.sh</span></div>
           <textarea class="set-code" data-edit="global" spellcheck="false">${esc(globalScript)}</textarea>
@@ -4498,7 +4501,7 @@
     if (isGlobal) {
       return `<div class="set-section">
         <div class="set-section__title">${esc(label)} flags</div>
-        <div class="set-section__sub">Passed to <code>${esc(bin)}</code> every time a ${esc(label)} session starts — across all workspaces.</div>
+        <div class="set-section__sub">Passed to <code>${esc(bin)}</code> every time a ${esc(label)} session starts — across all projects.</div>
         <div class="set-code-wrap">
           <div class="set-code-head"><span class="set-code-head__label">flags</span></div>
           <textarea class="set-code set-code--flags" data-flags="global" data-agent="${agent}" spellcheck="false">${esc(globalFlags[agent] || '')}</textarea>
@@ -4514,7 +4517,7 @@
         <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
         <span class="set-flow__arrow">${ICON_CARET}</span>
         <span class="set-flow__step">${wsChip(contextHeadByName(name))}${esc(name)}</span>
-        <span class="set-flow__note">Workspace overrides global</span>
+        <span class="set-flow__note">Project overrides global</span>
       </div>
       <div class="set-code-wrap">
         <div class="set-code-head"><span class="set-code-head__label">Global — inherited when empty</span><button class="set-link" data-goto="global">Edit in Global</button></div>
@@ -4604,7 +4607,7 @@
         <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
         <span class="set-flow__arrow">${ICON_CARET}</span>
         <span class="set-flow__step">${wsChip(contextHeadByName(name))}${esc(name)}</span>
-        <span class="set-flow__note">Workspace overrides global</span>
+        <span class="set-flow__note">Project overrides global</span>
       </div>
       <div class="set-code-wrap">
         <div class="set-code-head"><span class="set-code-head__label">Global — inherited when empty</span><button class="set-link" data-goto="global">Edit in Global</button></div>
@@ -4666,7 +4669,7 @@
     content.innerHTML = `<div class="pane">
       <div class="pane__head">
         <div class="pane__title">${titleIcon}<span>${esc(name)}</span></div>
-        <div class="pane__crumb"><b>Settings</b> / ${esc(isGlobal ? 'All workspaces' : name)}</div>
+        <div class="pane__crumb"><b>Settings</b> / ${esc(isGlobal ? 'All projects' : name)}</div>
         <div class="pane__spacer"></div>
       </div>
       <div class="set-body"><div class="set-body__inner">${scriptSection(isGlobal, name)}${sessionsSection(isGlobal, name)}${flagsSection(isGlobal, name)}</div></div>

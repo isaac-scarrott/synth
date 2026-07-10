@@ -435,3 +435,9 @@ disclosure to dive deeper.
   session" while the code spawns `AgentRegistry.default`. Internal symbols keep their old names.
   Swept across both designs (invariant held), 14 Swift files, and the storefront (all twelve product
   screenshots re-shot); every close path adversarially checked.
+- **Gate-verified: ADR-0013's close semantics, driven against a real build (`app/harness/taxonomy/`)** —
+  17/17 against a real CEF build and real OpenCode agents: an idle session closes with no dialog, a
+  busy one confirms in red (`danger=[True, False]`), and an idle one owning a browser confirms
+  without red (`danger=[False, False]`). `automation.palette` gains a `danger` array, because a rule
+  nobody can observe is a rule nobody can keep. The 07-09 amber/champagne worry is measured and
+  retired: 6.7° of hue apart but ΔE 65, and the busy dot clears 8.13:1 on the sidebar.

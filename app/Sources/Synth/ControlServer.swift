@@ -354,6 +354,8 @@ final class ControlServer: @unchecked Sendable {
                     "crumb": frame?.crumb ?? "",
                     "items": pal.items.map(\.label),
                     "disabled": pal.items.map(\.disabled),
+                    // ADR-0013: red marks loss, so a harness must be able to see which rows wear it.
+                    "danger": pal.items.map(\.danger),
                     "activeIndex": pal.activeIndex,
                     "menuOpen": store.activeMenu != nil]
 

@@ -453,3 +453,11 @@ disclosure to dive deeper.
   404 for it. Object storage over a second GitHub repo buys one flat prefix that serves every version
   forever, so no appcast enclosure needs rewriting per release. `release.sh` uploads binaries, proves
   an unauthenticated `curl` can read the new zip, and only then publishes the appcast naming it.
+
+## [2026-07-11](docs/features/2026-07-11.md)
+
+- **The browser MCP server records video (`browser_record_start` / `browser_record_stop`)** — CDP
+  screencast frames (verified against CEF, surviving cross-page navigation) replayed onto a
+  constant-fps timeline and piped through ffmpeg: H.264 mp4 with a full build on PATH, else VP8
+  webm via Playwright's ~2MB bundled build, downloaded on demand. Zero new dependencies; the tool
+  returns a file path — video is for the user, the model screenshots instead.

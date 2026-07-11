@@ -17,7 +17,9 @@
 // fight over it. Every action tool therefore takes an optional sessionId that
 // targets a session directly; focus is only a single-agent convenience.
 
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -238,11 +240,11 @@ async function sessionPagesSeeking(inst, want) {
 
 let focusedSessionId = null;
 
-/** The page subsequent tools act on: the focused session's target, defaulting to
- *  the most recently created mapped target only when nothing was ever focused.
- *  A vanished focus is an ERROR, not a silent retarget — acting on whatever page
- *  happens to be newest is how an agent wrecks the wrong session. */
-async function focusedPage(inst) {
+/** The { page, sessionId } subsequent tools act on: the focused session's target,
+ *  defaulting to the most recently created mapped target only when nothing was
+ *  ever focused. A vanished focus is an ERROR, not a silent retarget — acting on
+ *  whatever page happens to be newest is how an agent wrecks the wrong session. */
+async function focusedEntry(inst) {
   const pages = await sessionPagesSeeking(inst,
     focusedSessionId ? (p) => p.sessionId === focusedSessionId : (p) => p.sessionId);
   const mapped = pages.filter((p) => p.sessionId);
@@ -251,7 +253,7 @@ async function focusedPage(inst) {
   }
   if (focusedSessionId) {
     const hit = mapped.find((p) => p.sessionId === focusedSessionId);
-    if (hit) return hit.page;
+    if (hit) return hit;
     const gone = focusedSessionId;
     focusedSessionId = null;
     throw new Error(
@@ -260,18 +262,22 @@ async function focusedPage(inst) {
   }
   const chosen = mapped[mapped.length - 1];
   focusedSessionId = chosen.sessionId;
-  return chosen.page;
+  return chosen;
 }
 
-/** The page a tool acts on: the explicitly named session, else the focused one.
- *  Explicit targeting does NOT move the focus — that's what keeps concurrent
- *  agents out of each other's sessions. */
-async function targetPage(inst, sessionId) {
-  if (!sessionId) return focusedPage(inst);
+/** The { page, sessionId } a tool acts on: the explicitly named session, else the
+ *  focused one. Explicit targeting does NOT move the focus — that's what keeps
+ *  concurrent agents out of each other's sessions. */
+async function targetEntry(inst, sessionId) {
+  if (!sessionId) return focusedEntry(inst);
   const pages = await sessionPagesSeeking(inst, (p) => p.sessionId === sessionId);
   const hit = pages.find((p) => p.sessionId === sessionId);
   if (!hit) throw new Error(`no live browser session ${sessionId} — see browser_list`);
-  return hit.page;
+  return hit;
+}
+
+async function targetPage(inst, sessionId) {
+  return (await targetEntry(inst, sessionId)).page;
 }
 
 const sessionIdParam = z.string().optional().describe(
@@ -504,6 +510,173 @@ tool("browser_screenshot",
     return {
       content: [{ type: "image", data: buf.toString("base64"), mimeType: "image/png" }],
     };
+  });
+
+// ---------------------------------------------------------------------------
+// Video recording — Page.startScreencast streams a JPEG per repaint (variable
+// rate); stop replays them onto a constant-fps timeline and pipes that through
+// ffmpeg (Playwright's own screencast-to-video strategy). Verified against CEF:
+// frames keep flowing across cross-page navigations.
+
+const recordings = new Map(); // synth sessionId -> { dir, frames, cdp, truncated, stoppedTs }
+const REC_MAX_FRAMES = 4500;  // ~3 min of continuous repaints; bounds disk and encode time
+
+/** ffmpeg to encode with: a full build from the usual places (mp4-capable), else
+ *  Playwright's VP8-only build from its cache, downloading it (~2 MB) on first use. */
+function findFfmpeg() {
+  for (const bin of ["ffmpeg", "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]) {
+    try { execFileSync(bin, ["-version"], { stdio: "ignore" }); return { bin, mp4: true }; }
+    catch { /* not there — keep looking */ }
+  }
+  const cached = playwrightFfmpeg();
+  if (cached) return { bin: cached, mp4: false };
+  const pkg = createRequire(import.meta.url).resolve("playwright-core/package.json");
+  try {
+    execFileSync(process.execPath, [path.join(path.dirname(pkg), "cli.js"), "install", "ffmpeg"],
+      { stdio: "ignore", timeout: 120000 });
+  } catch { /* offline or blocked — fall through to the error */ }
+  const installed = playwrightFfmpeg();
+  if (installed) return { bin: installed, mp4: false };
+  throw new Error(
+    "no ffmpeg available to encode the video — install one (brew install ffmpeg) and retry");
+}
+
+function playwrightFfmpeg() {
+  const cache = path.join(os.homedir(), "Library/Caches/ms-playwright");
+  let dirs;
+  try { dirs = fs.readdirSync(cache); } catch { return null; }
+  for (const d of dirs.filter((n) => n.startsWith("ffmpeg-")).sort().reverse()) {
+    const bin = path.join(cache, d, "ffmpeg-mac");
+    if (fs.existsSync(bin)) return bin;
+  }
+  return null;
+}
+
+/** Encode a recording's frames to `out`; returns the video's duration in seconds.
+ *  Walks a constant-fps timeline repeating the latest frame at or before each tick
+ *  (image2pipe is the one input method Playwright's minimal ffmpeg supports). */
+async function encodeVideo(rec, out, format, bin) {
+  const FPS = 25;
+  const frames = rec.frames;
+  const last = frames[frames.length - 1].ts;
+  // Hold the final state briefly so the video spans until the stop, not the last
+  // repaint — clamped, so a timestamp-base surprise can't yield an hour of stills.
+  const tEnd = last + Math.max(0, Math.min(2, (rec.stoppedTs ?? last) - last));
+  const args = [
+    "-y", "-f", "image2pipe", "-c:v", "mjpeg", "-r", String(FPS), "-i", "pipe:0",
+    "-an", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p",
+    ...(format === "mp4"
+      ? ["-c:v", "libx264", "-movflags", "+faststart"]
+      : ["-c:v", "vp8", "-qmin", "0", "-qmax", "50", "-crf", "8", "-b:v", "1M"]),
+    out,
+  ];
+  const ff = spawn(bin, args, { stdio: ["pipe", "ignore", "pipe"] });
+  let stderr = "";
+  ff.stderr.on("data", (d) => { stderr += d; });
+  ff.stdin.on("error", () => {}); // EPIPE when ffmpeg dies early — close reports it
+  const done = new Promise((resolve, reject) => {
+    ff.on("error", reject);
+    ff.on("close", (code) => code === 0 ? resolve()
+      : reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-400)}`)));
+  });
+  let i = 0, buf = null, bufFor = null;
+  for (let t = frames[0].ts; t <= tEnd; t += 1 / FPS) {
+    while (i + 1 < frames.length && frames[i + 1].ts <= t) i++;
+    if (frames[i].file !== bufFor) { bufFor = frames[i].file; buf = fs.readFileSync(bufFor); }
+    if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once("drain", r));
+  }
+  ff.stdin.end();
+  await done;
+  return tEnd - frames[0].ts;
+}
+
+tool("browser_record_start",
+  "Start recording the session's page as video. Captures a frame on every repaint " +
+  "until browser_record_stop, which encodes and returns the video file path. " +
+  "One recording per session; keep driving the page with the other tools meanwhile.",
+  { sessionId: sessionIdParam },
+  async ({ sessionId }) => {
+    const { page, sessionId: sid } = await targetEntry(requireInstance(), sessionId);
+    if (recordings.has(sid)) {
+      throw new Error(`session ${sid} is already recording — browser_record_stop first`);
+    }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "synth-rec-"));
+    const cdp = await page.context().newCDPSession(page);
+    const rec = { dir, frames: [], cdp, truncated: false, stoppedTs: null };
+    cdp.on("Page.screencastFrame", (e) => {
+      cdp.send("Page.screencastFrameAck", { sessionId: e.sessionId }).catch(() => {});
+      if (rec.frames.length >= REC_MAX_FRAMES) {
+        if (!rec.truncated) { rec.truncated = true; cdp.send("Page.stopScreencast").catch(() => {}); }
+        return;
+      }
+      const file = path.join(dir, `f${String(rec.frames.length).padStart(6, "0")}.jpg`);
+      fs.writeFileSync(file, Buffer.from(e.data, "base64"));
+      rec.frames.push({ file, ts: e.metadata.timestamp });
+    });
+    try {
+      await cdp.send("Page.startScreencast", {
+        format: "jpeg", quality: 80, maxWidth: 1600, maxHeight: 1600, everyNthFrame: 1,
+      });
+    } catch (e) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      await cdp.detach().catch(() => {});
+      throw e;
+    }
+    recordings.set(sid, rec);
+    return text(`recording session ${sid} — drive the page, then browser_record_stop`);
+  });
+
+tool("browser_record_stop",
+  "Stop recording and encode the video: mp4 (H.264) when a full ffmpeg is installed, " +
+  "else webm (VP8) via Playwright's bundled ffmpeg. Returns the file path plus " +
+  "duration/frame stats — the video is for the user or post-processing; you cannot " +
+  "watch it (screenshot the page instead to check state).",
+  {
+    path: z.string().optional().describe(
+      "where to write the video (relative to the worktree; a .mp4 or .webm extension " +
+      "picks the format). Default: a temp file, mp4 when ffmpeg allows"),
+    sessionId: sessionIdParam,
+  },
+  async ({ path: outPath, sessionId }) => {
+    let sid = sessionId ?? focusedSessionId;
+    if (!sid && recordings.size === 1) sid = recordings.keys().next().value;
+    const rec = sid ? recordings.get(sid) : null;
+    if (!rec) {
+      const active = [...recordings.keys()];
+      throw new Error(active.length > 0
+        ? `no recording on session ${sid} — recording now: ${active.join(", ")}`
+        : "no active recording — start one with browser_record_start");
+    }
+    recordings.delete(sid);
+    rec.stoppedTs = Date.now() / 1000;
+    await rec.cdp.send("Page.stopScreencast").catch(() => {});
+    await rec.cdp.detach().catch(() => {});
+    try {
+      if (rec.frames.length === 0) {
+        throw new Error("no frames captured — the page never repainted while recording");
+      }
+      const ff = findFfmpeg();
+      if (outPath?.endsWith(".mp4") && !ff.mp4) {
+        throw new Error(
+          "an mp4 needs a full ffmpeg (brew install ffmpeg) — only Playwright's VP8-only " +
+          "build is available here; pass a .webm path instead");
+      }
+      const format = outPath?.endsWith(".webm") || !ff.mp4 ? "webm" : "mp4";
+      const out = outPath ? path.resolve(projectDir, outPath)
+        : path.join(os.tmpdir(), `synth-recording-${Date.now()}.${format}`);
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      const seconds = await encodeVideo(rec, out, format, ff.bin);
+      return text(JSON.stringify({
+        path: out,
+        seconds: Number(seconds.toFixed(2)),
+        frames: rec.frames.length,
+        bytes: fs.statSync(out).size,
+        ...(rec.truncated &&
+            { truncated: `capture stopped at the ${REC_MAX_FRAMES}-frame cap` }),
+      }, null, 2));
+    } finally {
+      fs.rmSync(rec.dir, { recursive: true, force: true });
+    }
   });
 
 tool("browser_snapshot",

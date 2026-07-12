@@ -461,3 +461,9 @@ disclosure to dive deeper.
   constant-fps timeline and piped through ffmpeg: H.264 mp4 with a full build on PATH, else VP8
   webm via Playwright's ~2MB bundled build, downloaded on demand. Zero new dependencies; the tool
   returns a file path — video is for the user, the model screenshots instead.
+
+## [2026-07-12](docs/features/2026-07-12.md)
+
+- **⌘N opens the new-session picker** — the ⌘K "New session" frame (terminal / agents / browser)
+  for the branch you're in, resolved from context like ⌘T; natively it's `File > New Session…`,
+  replacing the stock one-window-app-useless "New Window" binding.

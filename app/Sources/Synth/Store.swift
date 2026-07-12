@@ -826,6 +826,26 @@ enum FeedbackMode {
         pal.push(frame)
     }
 
+    /// ⌘N — the new-session picker (terminal / agents / browser) for the branch you're in:
+    /// the focused sidebar row's branch when the keyboard owns the sidebar, else the open
+    /// session's, else the first available (working.html contextBranch → newSessionFrame).
+    func newSessionPicker() {
+        let contextual: Branch? = {
+            guard keyboardActive, let ref = cursorRef else { return nil }
+            switch ref {
+            case let .branch(b):    return b
+            case let .session(s):   return branch(of: s)
+            case let .workspace(w): return w.branches.first { !$0.isPending }
+            }
+        }()
+        guard let br = contextual ?? defaultBranch() else { return }
+        activeMenu = nil
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        pal.stack = [pal.rootFrame()]
+        pal.push(pal.newSessionFrame(branch: br))
+    }
+
     private func defaultBranch() -> Branch? {
         if let open = openSession, let br = branch(of: open) { return br }
         return workspaces.first?.branches.first { !$0.isPending }

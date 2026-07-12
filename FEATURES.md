@@ -472,3 +472,5 @@ disclosure to dive deeper.
   finally exercised: 610KB delta against a 130MB full download. Note that Sparkle reads its install
   policy from the *running* app, so 0.1.0 users get 0.1.0's prompt-first behaviour on the way to
   0.2.0 — background updates only start being felt on the release after this one.
+- **Sidebar tree drops its indent guide lines** — indentation alone carries the workspace → branch →
+  session hierarchy; the hairline vertical rules were double-encoding it. Spacing untouched.

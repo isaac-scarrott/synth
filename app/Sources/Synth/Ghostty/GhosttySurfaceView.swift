@@ -23,6 +23,11 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Retained C-side via `surface_config.userdata`; released in `close()`.
     private var contextPtr: UnsafeMutableRawPointer?
 
+    /// Observers registered while the view sits in a window (screen change, occlusion,
+    /// display wake), removed when it leaves — paired with their center so workspace
+    /// notifications unregister from the right one.
+    private var windowObservers: [(NotificationCenter, NSObjectProtocol)] = []
+
     /// Accumulates text produced by `interpretKeyEvents` during a keyDown so it can be
     /// attached to the ghostty key event (empty for control/navigation keys, which
     /// libghostty encodes itself from keycode+mods).
@@ -65,8 +70,66 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil, surface == nil { createSurface() }
+        removeWindowObservers()
+        guard let window else { return }
+        if surface == nil { createSurface() }
         updateDisplayID()
+        updateOcclusion()
+
+        // libghostty paces its renderer with a display link keyed to the display id, and
+        // the window server purges Metal drawables while a window is occluded or its
+        // display sleeps. Neither is observable from inside libghostty — the host must
+        // re-key the link when the display topology shifts and force a repaint when the
+        // window becomes visible again, or every surface stays blank after a display
+        // reconfiguration while the PTYs underneath keep running.
+        let nc = NotificationCenter.default
+        windowObservers.append((nc, nc.addObserver(
+            forName: NSWindow.didChangeScreenNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.displayReconfigured() }
+        }))
+        windowObservers.append((nc, nc.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateOcclusion() }
+        }))
+        windowObservers.append((nc, nc.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.displayReconfigured() }
+        }))
+        let wnc = NSWorkspace.shared.notificationCenter
+        windowObservers.append((wnc, wnc.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.displayReconfigured() }
+        }))
+    }
+
+    private func removeWindowObservers() {
+        for (center, token) in windowObservers { center.removeObserver(token) }
+        windowObservers = []
+    }
+
+    /// Display topology changed under the window (wake from display sleep, monitor
+    /// plug/unplug, the window landing on another screen): re-key the renderer's display
+    /// link and repaint — the old link may reference a display id that no longer exists,
+    /// which stops frame callbacks without any error surfacing.
+    private func displayReconfigured() {
+        guard let surface else { return }
+        updateDisplayID()
+        updateSurfaceSize()
+        ghostty_surface_refresh(surface)
+    }
+
+    /// Mirror the window's occlusion into the renderer, forcing a full repaint on the
+    /// occluded→visible edge: the window server may have purged the layer's drawables
+    /// while hidden, and an idle shell produces no damage to trigger a redraw.
+    private func updateOcclusion() {
+        guard let surface, let window else { return }
+        let visible = window.occlusionState.contains(.visible)
+        ghostty_surface_set_occlusion(surface, visible)
+        if visible { ghostty_surface_refresh(surface) }
     }
 
     private func createSurface() {
@@ -145,6 +208,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
 
     /// Free the surface + release its retained context. Called by TerminalManager.terminate.
     func close() {
+        removeWindowObservers()
         if let surface { ghostty_surface_free(surface); self.surface = nil }
         if let contextPtr { Unmanaged<GhosttySurfaceContext>.fromOpaque(contextPtr).release(); self.contextPtr = nil }
     }
@@ -152,7 +216,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     // MARK: Geometry
 
     override func layout() { super.layout(); updateSurfaceSize() }
-    override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); updateSurfaceSize() }
+    override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); updateDisplayID(); updateSurfaceSize() }
     override func viewDidEndLiveResize() { super.viewDidEndLiveResize(); updateSurfaceSize() }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyTheme() }
 

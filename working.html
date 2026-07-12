@@ -2807,6 +2807,13 @@
       if (br) { e.preventDefault(); addTerminal(br); }
       return;
     }
+    // Cmd/Ctrl+N opens the new-session picker (terminal / agents / browser) for the branch
+    // you're in — the same choice `a` offers on a sidebar row, context-resolved like ⌘T.
+    if ((e.metaKey || e.ctrlKey) && (k === 'n' || k === 'N') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
+      const br = contextBranch();
+      if (br) { e.preventDefault(); openPaletteAt(newSessionFrame(br)); }
+      return;
+    }
     // An open browser session claims the standard page verbs window-wide: ⌘L address,
     // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each drives the visible toolbar control,
     // so disabled states (home page, empty history) are respected for free.
@@ -3541,6 +3548,7 @@
   const SHORTCUTS = [
     ['General', [
       [['⌘', 'K'], 'Command menu'],
+      [['⌘', 'N'], 'New session'],
       [['⌘', 'T'], 'New terminal'],
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '0'], 'Focus sidebar'],

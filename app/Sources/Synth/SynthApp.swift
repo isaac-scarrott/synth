@@ -17,7 +17,11 @@ struct SynthApp: App {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesButton()
             }
-            CommandGroup(after: .newItem) {
+            // Replaces the stock "New Window" so ⌘N means "new session" app-wide: the
+            // picker working.html's `a` offers on a sidebar row, resolved from context.
+            CommandGroup(replacing: .newItem) {
+                Button("New Session…") { store.newSessionPicker() }
+                    .keyboardShortcut("n", modifiers: .command)
                 Button("New Terminal") { store.newTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
             }

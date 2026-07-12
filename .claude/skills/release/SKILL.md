@@ -1,9 +1,15 @@
 ---
 name: release
-description: Cut a signed, notarized, public release of Synth and publish the Sparkle appcast that updates installed copies. Bumps app/VERSION, runs app/release.sh, verifies the published artifacts the way a stranger's Mac would, and appends the features ledger. Use when the user wants to ship, cut, publish, or release a new version of Synth, or invokes /release.
+description: Cut a signed, notarized, public release of Synth and publish the Sparkle appcast that updates installed copies. Bumps app/VERSION, runs app/release.sh, verifies the published artifacts the way a stranger's Mac would, and appends the features ledger.
+argument-hint: "[version, e.g. 0.1.1]"
+disable-model-invocation: true
 ---
 
 # Cut a release
+
+Publishing is outward-facing and hard to walk back: it uploads to a public bucket, notarizes with
+Apple, and moves every installed copy onto the new build. So this skill is invoked by hand
+(`disable-model-invocation`) and never on inference. Reaching it means the user asked for it.
 
 `app/release.sh` does the work — build, sign, notarize, staple, upload, publish the appcast, tag.
 This skill is what surrounds it: choosing the version, proving the release actually landed, and

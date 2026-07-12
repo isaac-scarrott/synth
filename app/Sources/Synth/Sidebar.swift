@@ -420,15 +420,9 @@ private struct BranchRow: View {
                     }
                 }
                 .padding(.leading, 15)
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(Theme.border).frame(width: 1)
-                }
             }
         }
         .padding(.leading, 11)
-        .overlay(alignment: .leading) {
-            Rectangle().fill(Theme.border).frame(width: 1)
-        }
         .reorderLift(.branch(branch))
     }
 

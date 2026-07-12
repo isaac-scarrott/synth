@@ -467,3 +467,8 @@ disclosure to dive deeper.
 - **⌘N opens the new-session picker** — the ⌘K "New session" frame (terminal / agents / browser)
   for the branch you're in, resolved from context like ⌘T; natively it's `File > New Session…`,
   replacing the stock one-window-app-useless "New Window" binding.
+- **Synth 0.2.0 (build 181)** — ⌘N, browser video recording, background updates, and a renderer that
+  survives display changes. First release with a prior zip to diff against, so the delta path is
+  finally exercised: 610KB delta against a 130MB full download. Note that Sparkle reads its install
+  policy from the *running* app, so 0.1.0 users get 0.1.0's prompt-first behaviour on the way to
+  0.2.0 — background updates only start being felt on the release after this one.

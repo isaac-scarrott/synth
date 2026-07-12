@@ -474,3 +474,6 @@ disclosure to dive deeper.
   0.2.0 — background updates only start being felt on the release after this one.
 - **Sidebar tree drops its indent guide lines** — indentation alone carries the workspace → branch →
   session hierarchy; the hairline vertical rules were double-encoding it. Spacing untouched.
+- **Synth 0.2.1 (build 185)** — patch shipping the sidebar indent-guide removal. First release
+  updated *to* via 0.2.0's background-update policy, and first with deltas from two prior builds
+  (497KB/622KB against a 130MB full download).

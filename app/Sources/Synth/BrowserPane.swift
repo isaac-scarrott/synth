@@ -146,6 +146,49 @@ import AppKit
         devToolsOpen = !open
     }
 
+    // Device mode (working.html devframe): like devToolsOpen, controller state — it
+    // survives navigating away and back, and page navigations (like comment mode).
+    private(set) var deviceModeOn = false
+    private(set) var device: BrowserDevice = .initial
+    private(set) var deviceLandscape = false
+    /// The stage's fit scale, reported by the pane — folded into the CDP override so
+    /// the w×h viewport renders exactly into the (w·s)×(h·s) engine view.
+    @ObservationIgnored private var deviceFitScale: Double = 1
+    @ObservationIgnored private var deviceEmulator: DeviceEmulator?
+
+    func toggleDeviceMode() {
+        deviceModeOn.toggle()
+        if deviceModeOn { applyDeviceEmulation() } else { deviceEmulator?.clear() }
+    }
+
+    func setDevice(_ d: BrowserDevice) {
+        guard d != device else { return }
+        device = d
+        applyDeviceEmulation()
+    }
+
+    func rotateDevice() {
+        deviceLandscape.toggle()
+        applyDeviceEmulation()
+    }
+
+    func reportDeviceFitScale(_ s: Double) {
+        guard abs(s - deviceFitScale) > 0.0005 else { return }
+        deviceFitScale = s
+        if deviceModeOn { applyDeviceEmulation() }
+    }
+
+    private func applyDeviceEmulation() {
+        guard deviceModeOn else { return }
+        let emulator = deviceEmulator
+            ?? DeviceEmulator(sessionID: sessionID, cdpPort: engine.cdpPort)
+        deviceEmulator = emulator
+        emulator.apply(width: Int(deviceLandscape ? device.height : device.width),
+                       height: Int(deviceLandscape ? device.width : device.height),
+                       deviceScaleFactor: device.deviceScaleFactor,
+                       scale: deviceFitScale, urlHint: address)
+    }
+
     /// Comment mode (ADR-0011 stage three), lazily created on first toggle — it holds
     /// a CDP attachment to this session's page target while on. The bar button reads
     /// `commentMode?.active` (also flipped off by the page's own exitMode binding call).
@@ -165,6 +208,7 @@ import AppKit
 
     func shutdown() {
         commentMode?.teardown()
+        deviceEmulator?.teardown()
         engine.shutdown()
     }
 }
@@ -216,9 +260,14 @@ struct BrowserPane: View {
     private func pane(_ ctrl: BrowserSessionController) -> some View {
         VStack(spacing: 0) {
             BrowserBar(ctrl: ctrl, dropOpen: $dropOpen, homeFocusNonce: $homeFocusNonce)
+            if ctrl.deviceModeOn && !ctrl.isHome {
+                DeviceBar(ctrl: ctrl)
+            }
             ZStack(alignment: .top) {
                 if ctrl.isHome {
                     BrowserHome(recents: recents, focusNonce: homeFocusNonce) { ctrl.go($0) }
+                } else if ctrl.deviceModeOn {
+                    DeviceStage(ctrl: ctrl)
                 } else {
                     EngineHost(engineView: ctrl.engine.view)
                 }
@@ -277,6 +326,179 @@ private struct EngineHost: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+// MARK: - Device mode
+
+/// working.html `.browser__devicebar`: the fleet chips, the live W × H readout
+/// (swaps on rotate), and the rotate button, on a second chrome strip below the bar.
+private struct DeviceBar: View {
+    let ctrl: BrowserSessionController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 3) {
+                    ForEach(BrowserDevice.fleet) { d in
+                        DeviceChip(name: d.name, active: d == ctrl.device) {
+                            ctrl.setDevice(d)
+                        }
+                    }
+                }
+            }
+            let land = ctrl.deviceLandscape
+            let w = Int(land ? ctrl.device.height : ctrl.device.width)
+            let h = Int(land ? ctrl.device.width : ctrl.device.height)
+            // verbatim: Text's Int interpolation adds locale grouping ("1,032") —
+            // the readout is a CSS pixel count, not a quantity.
+            Text(verbatim: "\(w) × \(h)")
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(Theme.inkFaint)
+                .lineLimit(1).fixedSize()
+            BarButton(icon: Phosphor.arrowClockwise, help: "Rotate device") {
+                ctrl.rotateDevice()
+            }
+        }
+        .padding(.vertical, 6).padding(.horizontal, 10)
+        .background(Theme.chrome)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.border).frame(height: 0.5)
+        }
+    }
+}
+
+/// `.devicebar__chip`: capsule device names; the active one holds the hover look.
+private struct DeviceChip: View {
+    let name: String
+    let active: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(name)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(active ? Theme.ink : Theme.inkMuted)
+                .lineLimit(1).fixedSize()
+                .padding(.vertical, 4).padding(.horizontal, 10)
+                .background(Capsule().fill(active || hovering ? Theme.rowHover : .clear))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// working.html `.devstage`: the chrome-grey stage centering the hardware frame. The
+/// frame lays out at true device points and scales DOWN to fit within a 24pt margin —
+/// never up, so small devices stay life-size. The fit scale is reported back to the
+/// controller: the engine view sits at (w·s)×(h·s) and the CDP override's `scale: s`
+/// renders the full w×h viewport into it.
+private struct DeviceStage: View {
+    let ctrl: BrowserSessionController
+
+    var body: some View {
+        GeometryReader { geo in
+            let d = ctrl.device
+            let land = ctrl.deviceLandscape
+            let w = land ? d.height : d.width
+            let h = land ? d.width : d.height
+            let pad = d.chrome.padding
+            let s = max(0.05, min(1, (geo.size.width - 48) / (w + 2 * pad.h),
+                                     (geo.size.height - 48) / (h + 2 * pad.v)))
+            DeviceFrame(device: d, landscape: land,
+                        screen: CGSize(width: w * s, height: h * s), s: s,
+                        engineView: ctrl.engine.view)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .onAppear { ctrl.reportDeviceFitScale(s) }
+                .onChange(of: s) { _, new in ctrl.reportDeviceFitScale(new) }
+        }
+        .background(Theme.chrome)
+    }
+}
+
+/// working.html `.devframe`: the hardware around the screen — fixed near-black bezel in
+/// both themes, island / punch / bezel / pad chrome per device, home indicator on
+/// phones. All metrics are device points multiplied by the fit scale, so the chrome
+/// draws crisp at any fit instead of rasterizing through scaleEffect.
+private struct DeviceFrame: View {
+    let device: BrowserDevice
+    let landscape: Bool
+    let screen: CGSize
+    let s: CGFloat
+    let engineView: NSView
+
+    private static let bezel = Color(hex: 0x0B0C0E)
+
+    var body: some View {
+        let pad = device.chrome.padding
+        DeviceScreenHost(engineView: engineView, radius: device.chrome.screenRadius * s)
+            .frame(width: screen.width, height: screen.height)
+            .background(RoundedRectangle(cornerRadius: device.chrome.screenRadius * s)
+                .fill(Theme.raised))
+            .overlay(alignment: landscape ? .leading : .top) { camera }
+            .overlay(alignment: .bottom) { homeIndicator }
+            .padding(.horizontal, pad.h * s)
+            .padding(.vertical, pad.v * s)
+            .background(RoundedRectangle(cornerRadius: device.chrome.frameRadius * s)
+                .fill(Self.bezel))
+            .overlay(RoundedRectangle(cornerRadius: device.chrome.frameRadius * s)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.26), radius: 17 * s, y: 12 * s)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Dynamic island / punch-hole camera: top edge in portrait, left in landscape.
+    @ViewBuilder private var camera: some View {
+        switch device.chrome {
+        case .island:
+            Capsule().fill(Self.bezel)
+                .frame(width: (landscape ? 26 : 96) * s, height: (landscape ? 96 : 26) * s)
+                .padding(landscape ? .leading : .top, 10 * s)
+        case .punch:
+            Circle().fill(Self.bezel)
+                .frame(width: 13 * s, height: 13 * s)
+                .padding(landscape ? .leading : .top, 12 * s)
+        case .bezel, .pad:
+            EmptyView()
+        }
+    }
+
+    /// The phone home indicator — bottom edge in both orientations.
+    @ViewBuilder private var homeIndicator: some View {
+        if device.chrome == .island || device.chrome == .punch {
+            Capsule().fill(Color(white: 0.5).opacity(0.55))
+                .frame(width: 108 * s, height: 4 * s)
+                .padding(.bottom, 8 * s)
+        }
+    }
+}
+
+/// EngineHost with the screen's rounded clip applied on the AppKit side — SwiftUI's
+/// clipShape cannot reliably mask a hosted engine NSView's own layer tree.
+private struct DeviceScreenHost: NSViewRepresentable {
+    let engineView: NSView
+    let radius: CGFloat
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.masksToBounds = true
+        container.layer?.cornerCurve = .continuous
+        engineView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(engineView)
+        NSLayoutConstraint.activate([
+            engineView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            engineView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            engineView.topAnchor.constraint(equalTo: container.topAnchor),
+            engineView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.layer?.cornerRadius = radius
+    }
+}
+
 // MARK: - Bar
 
 /// working.html `.browser__bar`: nav cluster · omnibox pill · comment-mode toggle ·
@@ -311,6 +533,8 @@ private struct BrowserBar: View {
             }
             BarButton(icon: Phosphor.commentMode, help: commentHelp,
                       disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
+            BarButton(icon: Phosphor.deviceMobile, help: "Device mode",
+                      disabled: ctrl.isHome, on: ctrl.deviceModeOn) { ctrl.toggleDeviceMode() }
             BarButton(icon: Phosphor.devtools, help: "DevTools",
                       disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
             BarButton(icon: Phosphor.external, help: "Open in default browser",

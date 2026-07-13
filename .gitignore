@@ -5,6 +5,10 @@
 app/.build/
 app/.swiftpm/
 
+# Python (app/harness/)
+__pycache__/
+*.pyc
+
 # Local scratch
 *.log
 

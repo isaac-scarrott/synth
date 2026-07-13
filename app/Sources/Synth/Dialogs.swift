@@ -271,52 +271,6 @@ struct CreateWorktreeSheet: View {
     }
 }
 
-/// The synth-app MCP server's approval gate: an agent asked Synth to create a worktree,
-/// and nothing happens until the user answers here. Enter creates, Esc (and the
-/// backdrop) declines — a declined agent is told to carry on where it is.
-struct AgentWorktreeSheet: View {
-    @Environment(AppStore.self) private var store
-    let prompt: AgentWorktreePrompt
-    @State private var submitted = false
-
-    var body: some View {
-        DialogFrame(title: "Agent requests a worktree") {
-            Text("\(prompt.requesterTitle ?? "A coding agent") wants a new worktree" +
-                 (prompt.handoff != nil ? " and will hand the work off to a fresh Claude Code session there." : "."))
-                .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-            Field(label: "Workspace") {
-                HStack(spacing: 7) {
-                    WsChip(workspace: prompt.workspace, size: 16)
-                    Text(prompt.workspace.name)
-                        .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.repoName)
-                }
-            }
-            Field(label: "Branch") {
-                Text(prompt.branchName)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Theme.branchName)
-                    .lineLimit(1).truncationMode(.middle)
-            }
-            Field(label: "Base") {
-                Text(prompt.base ?? "default branch (repo HEAD)")
-                    .font(.system(size: 12, design: prompt.base == nil ? .default : .monospaced))
-                    .foregroundStyle(prompt.base == nil ? Theme.inkFaint : Theme.branchName)
-            }
-        } actions: {
-            Button("Not now") { resolve(false) }.keyboardShortcut(.cancelAction)
-            Button("Create") { resolve(true) }.keyboardShortcut(.defaultAction)
-        }
-    }
-
-    private func resolve(_ approved: Bool) {
-        guard !submitted else { return }
-        submitted = true
-        store.resolveAgentPrompt(prompt, approved: approved)
-    }
-}
-
 /// Feedback (⌘⇧F). Send routes on `store.feedbackMode`: the author names a fix (title, required)
 /// and optionally details it, spawning a `feedback/<slug>` worktree; everyone else gets a
 /// pre-filled email from the one box. Enter is a newline, ⌘↵ sends, Esc dismisses (handled

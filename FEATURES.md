@@ -496,6 +496,11 @@ disclosure to dive deeper.
   first release where an agent can drive the app itself, so it ships with the app server OFF and an
   explicit Settings opt-in. Six deltas / 3.9MB against a 132MB download; also untracked a committed
   `.pyc` that had been silently dirtying the tree against `release.sh`'s clean-tree guard.
+- **synth-app MCP approval moves into ⌘K (supersedes the 0.3.0 modal)** — the agent-worktree
+  approval prompt was the one action in the app that popped a modal sheet instead of the ⌘K confirm
+  frame every other create/delete/confirm uses; now it's `PaletteModel.confirmAgentWorktree`, with
+  `presentedAgentPromptID` preserving the old rule that closing it (Esc/⌘K/backdrop) declines, and
+  queued prompts chaining automatically. `AgentWorktreeSheet` is deleted.
 - **Fix: a hidden, stationary pointer could steal keyboard nav (native app)** — `AppStore.pointerStale`
   gates the ⌘K row hover, the sidebar's ring-dismiss-on-hover, and the notification deck's
   hover-to-fan, so a layout change scrolling a view under the pointer's last real position (hidden

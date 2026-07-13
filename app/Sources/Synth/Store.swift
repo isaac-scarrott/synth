@@ -72,6 +72,27 @@ struct BranchCandidate: Identifiable {
     let existingWorktree: URL?   // nil → a worktree will be created on Add
 }
 
+/// An agent-requested worktree create awaiting the user's yes/no — the synth-app MCP
+/// server's approval gate. Nothing happens unless the user clicks Create; `respond`
+/// answers the control-socket connection blocked on the answer (called exactly once,
+/// always on the main actor).
+struct AgentWorktreePrompt: Identifiable {
+    let id = UUID()
+    let workspace: Workspace
+    let branchName: String
+    let base: String?           // nil → the repo's HEAD; meaningful only for a new branch
+    let handoff: String?        // a brief for a fresh Claude session in the new worktree
+    let requesterTitle: String? // the asking agent row's title — the prompt's "who"
+    let respond: ([String: Any]) -> Void
+}
+
+/// How an agent's worktree request started: answered on the spot (error, or the branch
+/// is already a row), or pending as a prompt the user must answer (the id cancels it).
+enum AgentPromptStart {
+    case immediate([String: Any])
+    case pending(UUID)
+}
+
 /// The escalated sidebar indicator a background session raises as a toast: needs-input is
 /// the slate-blue `?` (`Theme.input`), error the terracotta `!` (`Theme.danger`), and — for
 /// any live session settling to idle — the green ✓ `done`, a transient toast that
@@ -191,13 +212,13 @@ enum FeedbackMode {
     /// Per-type Notification-Center sound toggles (working.html's per-type sound setting).
     /// Persisted to UserDefaults like `themePref`; defaults needs-input ON, error ON, done OFF.
     /// In-app toasts are always silent — this only gates the unfocused NC path.
-    var soundNeedsInput = AppStore.loadSoundPref(AppStore.soundInputKey, default: true) {
+    var soundNeedsInput = AppStore.loadBoolPref(AppStore.soundInputKey, default: true) {
         didSet { UserDefaults.standard.set(soundNeedsInput, forKey: AppStore.soundInputKey) }
     }
-    var soundError = AppStore.loadSoundPref(AppStore.soundErrorKey, default: true) {
+    var soundError = AppStore.loadBoolPref(AppStore.soundErrorKey, default: true) {
         didSet { UserDefaults.standard.set(soundError, forKey: AppStore.soundErrorKey) }
     }
-    var soundDone = AppStore.loadSoundPref(AppStore.soundDoneKey, default: false) {
+    var soundDone = AppStore.loadBoolPref(AppStore.soundDoneKey, default: false) {
         didSet { UserDefaults.standard.set(soundDone, forKey: AppStore.soundDoneKey) }
     }
     static let soundInputKey = "synth-sound-input"
@@ -205,9 +226,29 @@ enum FeedbackMode {
     static let soundDoneKey  = "synth-sound-done"
     /// UserDefaults' `bool(forKey:)` can't tell "unset" from `false`, so read the object and
     /// fall back to the type's default only when it's genuinely absent.
-    static func loadSoundPref(_ key: String, default def: Bool) -> Bool {
+    static func loadBoolPref(_ key: String, default def: Bool) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? def
     }
+
+    /// Per-machine MCP server toggles (Settings → MCP servers): which bundled servers are
+    /// registered in every managed worktree's agent config. The browser server ships on;
+    /// the app-control server (worktree creation behind a user prompt) is opt-in. A flip
+    /// re-syncs every worktree's config immediately — disabled means the entry is REMOVED,
+    /// so agents don't even see the tools.
+    var mcpBrowserEnabled = AppStore.loadBoolPref(AppStore.mcpBrowserKey, default: true) {
+        didSet {
+            UserDefaults.standard.set(mcpBrowserEnabled, forKey: AppStore.mcpBrowserKey)
+            syncAgentBridge()
+        }
+    }
+    var mcpAppEnabled = AppStore.loadBoolPref(AppStore.mcpAppKey, default: false) {
+        didSet {
+            UserDefaults.standard.set(mcpAppEnabled, forKey: AppStore.mcpAppKey)
+            syncAgentBridge()
+        }
+    }
+    static let mcpBrowserKey = "synth-mcp-browser"
+    static let mcpAppKey = "synth-mcp-app"
 
     /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
     var sidebarWidth: CGFloat = {
@@ -233,6 +274,11 @@ enum FeedbackMode {
     /// Sheet drivers.
     var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?
+
+    /// Agent-requested worktree prompts (synth-app MCP), oldest first — the modal shows
+    /// the head; resolving or cancelling it reveals the next.
+    var agentPrompts: [AgentWorktreePrompt] = []
+    var agentPrompt: AgentWorktreePrompt? { agentPrompts.first }
 
     /// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
     /// like working.html. `feedbackTitle` is the author-only name that becomes the
@@ -388,12 +434,16 @@ enum FeedbackMode {
     }
 
     /// Keep the instance file's worktreePaths and every worktree's .mcp.json current.
-    /// Runs at init and on the autosave cadence (both skip unchanged sets), so no
-    /// workspace/branch mutation site can forget it — the autosave model.
+    /// Runs at init, on the autosave cadence, and when an MCP toggle flips (all skip
+    /// unchanged inputs), so no workspace/branch mutation site can forget it — the
+    /// autosave model.
     private func syncAgentBridge() {
         let paths = workspaces.flatMap { $0.branches.map(\.worktreeURL.path) }
         InstanceRegistry.shared.update(worktreePaths: paths)
-        MCPInstaller.syncWorktreeConfigs(paths)
+        MCPInstaller.syncWorktreeConfigs(paths, servers: [
+            "synth-browser": mcpBrowserEnabled,
+            "synth-app": mcpAppEnabled,
+        ])
     }
 
     // MARK: Bus → store
@@ -1056,7 +1106,7 @@ enum FeedbackMode {
         let seed = gripe + "\n\n" + captureFeedbackContext()
         let row = addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
         materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
-            self?.seedFeedbackAgent(in: branch, seed: seed)
+            self?.seedAgent(in: branch, seed: seed)
         }) {
             GitService.addWorktree(repo: repo, path: planned, newBranch: branchName, base: nil)
                 .map { .failed($0) } ?? .ready(planned)
@@ -1080,10 +1130,11 @@ enum FeedbackMode {
         }
     }
 
-    /// Spawn a quiet agent in the freshly-materialized branch, mount it for a beat so its PTY
+    /// Spawn a quiet agent in a freshly-materialized branch, mount it for a beat so its PTY
     /// boots (GhosttySurfaceView spawns on window attach), bounce focus back, then boot-and-wait
     /// for the supervisor's liveness signal and hand it the seed — mirroring CommentMode rung 3.
-    private func seedFeedbackAgent(in branch: Branch, seed: String) {
+    /// Serves both seeded-worktree flows: the feedback fix and the synth-app handoff.
+    private func seedAgent(in branch: Branch, seed: String) {
         guard let agent = AgentRegistry.default?.id,
               let session = spawnAgent(agent, in: branch) else { return }
         let previous = openSessionID
@@ -1105,7 +1156,7 @@ enum FeedbackMode {
                       let supervisor = self.liveSupervisor(for: session) else { continue }
                 if supervisor.deliver(seed, to: session.id) { return }
             }
-            NSLog("Synth: feedback seed never delivered (agent didn't report in)")
+            NSLog("Synth: seed never delivered (agent didn't report in)")
         }
     }
 
@@ -1361,6 +1412,107 @@ enum FeedbackMode {
             GitService.addWorktree(repo: repo, path: planned, newBranch: newBranch, base: base)
                 .map { .failed($0) } ?? .ready(planned)
         }
+    }
+
+    // MARK: Agent-requested worktrees (the synth-app MCP server's one verb so far)
+
+    /// Validate an agent's worktree request and, when it needs the user, queue the
+    /// approval prompt. Runs on the control connection's main-sync hop, so nothing here
+    /// may block: existing-vs-new branch is decided later, inside the background git op.
+    func beginAgentWorktreePrompt(_ request: [String: Any],
+                                  respond: @escaping ([String: Any]) -> Void) -> AgentPromptStart {
+        guard mcpAppEnabled else {
+            return .immediate(["ok": false, "error":
+                "the Synth app MCP server is turned off — enable it in Synth Settings → MCP servers"])
+        }
+        guard let worktreePath = request["worktreePath"] as? String,
+              let callerBranch = branch(forWorktreePath: worktreePath),
+              let ws = workspace(of: callerBranch) else {
+            return .immediate(["ok": false, "error":
+                "no Synth branch manages worktree \(request["worktreePath"] ?? "<missing>")"])
+        }
+        guard let name = (request["branch"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return .immediate(["ok": false, "error": "need branch"])
+        }
+        // Idempotence: a branch that's already a row needs no prompt and no git — hand
+        // back its checkout and let the agent proceed.
+        if let row = ws.branches.first(where: { $0.name == name }) {
+            return .immediate(["ok": true, "decision": "exists",
+                               "worktreePath": row.worktreeURL.path])
+        }
+        if agentPrompts.contains(where: { $0.workspace === ws && $0.branchName == name }) {
+            return .immediate(["ok": false, "error":
+                "a prompt for \(name) is already awaiting the user's answer"])
+        }
+        let requester = (request["ownerSessionId"] as? String)
+            .flatMap(UUID.init(uuidString:))
+            .flatMap { id in callerBranch.sessions.first { $0.id == id && $0.kind.isAgent } }
+        let prompt = AgentWorktreePrompt(
+            workspace: ws,
+            branchName: name,
+            base: (request["base"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            handoff: (request["handoff"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            requesterTitle: requester?.title,
+            respond: respond)
+        agentPrompts.append(prompt)
+        return .pending(prompt.id)
+    }
+
+    /// The prompt sheet's two buttons. Approve cuts the worktree exactly like ⌘K
+    /// "Create worktree" (pending row, background checkout, pane onto the setup
+    /// skeleton — the jump rides the user's Create click) and answers the blocked MCP
+    /// call; decline just answers it.
+    func resolveAgentPrompt(_ prompt: AgentWorktreePrompt, approved: Bool) {
+        guard let i = agentPrompts.firstIndex(where: { $0.id == prompt.id }) else { return }
+        agentPrompts.remove(at: i)
+        guard approved else {
+            prompt.respond(["ok": true, "decision": "declined"])
+            return
+        }
+        let planned = agentCreateWorktree(prompt)
+        prompt.respond(["ok": true, "decision": "created",
+                        "branch": prompt.branchName, "worktreePath": planned.path])
+    }
+
+    /// The MCP server gave up waiting — drop the prompt so a stale question isn't
+    /// answered into a dead socket. False when it was already resolved (that race is
+    /// the caller's to read).
+    @discardableResult
+    func cancelAgentPrompt(_ id: UUID) -> Bool {
+        guard let i = agentPrompts.firstIndex(where: { $0.id == id }) else { return false }
+        agentPrompts.remove(at: i)
+        return true
+    }
+
+    /// The approved create. Existing-vs-new is decided inside the background op (a git
+    /// scan mustn't run on the approval click's main hop): a branch with a worktree
+    /// reuses it, an existing local/remote branch checks out (`worktree add` DWIMs
+    /// remote-tracking names), anything else is cut off `base`. A handoff swaps the
+    /// session template for one seeded Claude — the feedback loop's delivery path.
+    private func agentCreateWorktree(_ prompt: AgentWorktreePrompt) -> URL {
+        let ws = prompt.workspace
+        let repo = ws.url
+        let name = prompt.branchName
+        let base = prompt.base
+        let planned = GitService.plannedWorktreePath(repo: repo, branch: name)
+        let row = addBranchRow(in: ws, name: name, worktreeURL: planned, pending: true)
+        openWorktreeSetup(row)
+        let onReady: ((Branch) -> Void)? = prompt.handoff.map { seed in
+            { [weak self] branch in self?.seedAgent(in: branch, seed: seed) }
+        }
+        materialize(row, in: ws, spawningTemplate: prompt.handoff == nil, onReady: onReady) {
+            if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == name }) {
+                return .ready(wt.path)
+            }
+            if GitService.allBranches(at: repo).contains(where: { $0.name == name }) {
+                return GitService.addWorktree(repo: repo, path: planned, branch: name)
+                    .map { .failed($0) } ?? .ready(planned)
+            }
+            return GitService.addWorktree(repo: repo, path: planned, newBranch: name, base: base)
+                .map { .failed($0) } ?? .ready(planned)
+        }
+        return planned
     }
 
     /// The fast delete path (features 2026-07-06): the row is already gone; the folder is

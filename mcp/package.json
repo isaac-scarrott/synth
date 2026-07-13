@@ -1,9 +1,9 @@
 {
-  "name": "synth-browser-mcp",
+  "name": "synth-mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Synth's bundled MCP server: Claude Code drives the embedded browser over CDP (ADR-0011 stage two).",
+  "description": "Synth's bundled MCP servers: synth-browser drives the embedded browser over CDP (ADR-0011 stage two); synth-app drives Synth itself (approval-gated worktree creation + handoff).",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "playwright-core": "1.61.1",

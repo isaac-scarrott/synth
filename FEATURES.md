@@ -477,3 +477,12 @@ disclosure to dive deeper.
 - **Synth 0.2.1 (build 185)** — patch shipping the sidebar indent-guide removal. First release
   updated *to* via 0.2.0's background-update policy, and first with deltas from two prior builds
   (497KB/622KB against a 130MB full download).
+
+## [2026-07-13](docs/features/2026-07-13.md)
+
+- **synth-app MCP server: approval-gated worktree creation + handoff** — a second bundled MCP
+  server that lets agents drive Synth itself: `worktree_create(branch, base?, handoff?)` blocks on
+  a native yes/no prompt (Enter creates, Esc declines; decline tells the agent to carry on where it
+  is), an optional handoff brief seeds one Claude session in the new checkout via the feedback
+  loop's delivery path, and Settings gains an "MCP servers" section — browser server on by default,
+  app server off, with disabled servers reconciled OUT of every worktree's agent configs.

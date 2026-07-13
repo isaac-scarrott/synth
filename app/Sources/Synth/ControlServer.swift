@@ -18,6 +18,8 @@ import Foundation
 ///   {"verb":"browser.close","worktreePath":"…","sessionId":"…","ownerSessionId":"…"?}
 ///     → {"ok":true}   (agent cleanup: closes a browser the calling claude OWNS,
 ///        exactly as deleting its row would; anything it doesn't own is refused)
+///   {"verb":"app.worktreeCreate", …} — the synth-app server's approval-gated create;
+///     documented on `worktreePrompt` below (it blocks on the user, unlike everything here).
 final class ControlServer: @unchecked Sendable {
     let socketPath = InstanceRegistry.controlSocketPath
     private weak var store: AppStore?
@@ -62,12 +64,14 @@ final class ControlServer: @unchecked Sendable {
         }
     }
 
-    /// Read one line (request), answer one line (response), close.
+    /// Read one line (request), answer one line (response), close. The request line is
+    /// capped at 256 KB — app.worktreeCreate carries a whole handoff brief, and a giant
+    /// paste shouldn't silently truncate to unparseable JSON.
     private func handle(_ conn: Int32) {
         defer { close(conn) }
         var acc = Data()
         var buf = [UInt8](repeating: 0, count: 4096)
-        while !acc.contains(0x0A), acc.count < 64 * 1024 {
+        while !acc.contains(0x0A), acc.count < 256 * 1024 {
             let n = read(conn, &buf, buf.count)
             if n <= 0 { break }
             acc.append(contentsOf: buf[0..<n])
@@ -79,9 +83,14 @@ final class ControlServer: @unchecked Sendable {
         // per-connection thread, so blocking it is free.
         var response: [String: Any] = ["ok": false, "error": "Synth is shutting down"]
         let store = self.store
-        DispatchQueue.main.sync {
-            MainActor.assumeIsolated {
-                response = Self.process(request, store: store)
+        if request["verb"] as? String == "app.worktreeCreate" {
+            // The one verb that waits on the user — it parks THIS thread, never main.
+            response = Self.worktreePrompt(request, store: store)
+        } else {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    response = Self.process(request, store: store)
+                }
             }
         }
         if let data = try? JSONSerialization.data(withJSONObject: response) {
@@ -89,6 +98,56 @@ final class ControlServer: @unchecked Sendable {
             out.append(0x0A)
             out.withUnsafeBytes { _ = write(conn, $0.baseAddress, $0.count) }
         }
+    }
+
+    /// synth-app's worktree_create (ADR-0011's control-socket infra, new server):
+    ///   {"verb":"app.worktreeCreate","worktreePath":"…","branch":"…",
+    ///    "base":"…"?,"handoff":"…"?,"ownerSessionId":"…"?}
+    ///     → {"ok":true,"decision":"created","branch":"…","worktreePath":"…"}
+    ///     | {"ok":true,"decision":"declined"}
+    ///     | {"ok":true,"decision":"exists","worktreePath":"…"}   (already a row — no prompt)
+    ///     | {"ok":false,"error":"…"}
+    /// The store queues the user prompt and this connection's thread parks on the
+    /// semaphore until the sheet answers (or 4 minutes pass — just under the MCP
+    /// server's own socket timeout, so the agent reads a real answer, not a dead pipe).
+    private static func worktreePrompt(_ request: [String: Any], store: AppStore?) -> [String: Any] {
+        final class Box: @unchecked Sendable {
+            let sem = DispatchSemaphore(value: 0)
+            var response: [String: Any]?   // written on main before signal; read after wait
+        }
+        let box = Box()
+        var immediate: [String: Any]?
+        var promptID: UUID?
+        DispatchQueue.main.sync {
+            MainActor.assumeIsolated {
+                guard let store else { immediate = ["ok": false, "error": "store gone"]; return }
+                switch store.beginAgentWorktreePrompt(request, respond: { resp in
+                    box.response = resp
+                    box.sem.signal()
+                }) {
+                case .immediate(let resp): immediate = resp
+                case .pending(let id):     promptID = id
+                }
+            }
+        }
+        if let immediate { return immediate }
+        if box.sem.wait(timeout: .now() + 240) == .timedOut {
+            var response: [String: Any] = ["ok": false, "error":
+                "the user didn't answer the worktree prompt within 4 minutes — " +
+                "ask them directly, then retry if they want it"]
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    // If the user answered in the race window the prompt is already gone —
+                    // return their real answer instead of the timeout.
+                    if let id = promptID, store?.cancelAgentPrompt(id) == false,
+                       let answered = box.response {
+                        response = answered
+                    }
+                }
+            }
+            return response
+        }
+        return box.response ?? ["ok": false, "error": "internal: prompt resolved without a response"]
     }
 
     @MainActor private static func process(_ request: [String: Any], store: AppStore?) -> [String: Any] {
@@ -203,6 +262,27 @@ final class ControlServer: @unchecked Sendable {
             let planned = GitService.plannedWorktreePath(repo: ws.url, branch: newBranch)
             store.createWorktree(in: ws, newBranch: newBranch, base: request["base"] as? String)
             return ["ok": true, "worktreePath": planned.path]
+
+        // The synth-app approval prompt, drivable headless: list what's pending and
+        // answer it — resolve is the sheet button's exact call.
+        case "automation.agentPrompts" where automation:
+            return ["ok": true, "prompts": store.agentPrompts.map { p -> [String: Any] in
+                ["promptId": p.id.uuidString,
+                 "workspace": p.workspace.name,
+                 "branch": p.branchName,
+                 "base": p.base ?? "",
+                 "hasHandoff": p.handoff != nil,
+                 "requester": p.requesterTitle ?? ""]
+            }]
+
+        case "automation.agentPromptResolve" where automation:
+            guard let id = (request["promptId"] as? String).flatMap(UUID.init(uuidString:)),
+                  let prompt = store.agentPrompts.first(where: { $0.id == id }),
+                  let approved = request["approved"] as? Bool else {
+                return ["ok": false, "error": "need promptId + approved"]
+            }
+            store.resolveAgentPrompt(prompt, approved: approved)
+            return ["ok": true]
 
         // Hand text to a live agent exactly as a browser comment does (CommentMode rung 1),
         // so exercising the verb exercises the product path.

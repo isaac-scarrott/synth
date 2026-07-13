@@ -3,7 +3,9 @@ import json, socket, subprocess, time, os, pathlib, uuid, signal
 import tempfile
 # Scratch: repos, seeded state and logs for a run. Never the user's real Synth state.
 H = os.environ.get("SYNTH_HARNESS_DIR") or tempfile.mkdtemp(prefix="synth-agent-gate-")
-APP = open("/tmp/synth-app-path.txt").read().strip()
+# SYNTH_APP overrides the shared pointer file, so a worktree's build can be gated
+# without redirecting other checkouts' harness runs.
+APP = os.environ.get("SYNTH_APP") or open("/tmp/synth-app-path.txt").read().strip()
 OPENCODE_PATH = os.environ.get("SYNTH_OPENCODE_BIN_DIR", os.path.expanduser("~/.npm-global/bin"))
 
 FAILS = []
@@ -80,7 +82,7 @@ def sweep_dead_sockets():
             try: os.unlink(path)
             except FileNotFoundError: pass
 
-def launch(state_dir, log, theme=None):
+def launch(state_dir, log, theme=None, extra_args=()):
     sweep_dead_sockets()
     env = dict(os.environ)
     env["PATH"] = OPENCODE_PATH + ":" + env["PATH"]
@@ -89,8 +91,9 @@ def launch(state_dir, log, theme=None):
     for k in ["CLAUDECODE","CLAUDE_CODE_SESSION_ID","CLAUDE_CODE_CHILD_SESSION","CLAUDE_CODE_ENTRYPOINT","CLAUDE_CODE_EXECPATH"]:
         env.pop(k, None)
     f = open(log, "w")
-    # NSArgumentDomain pins the theme for this process only — the developer's Synth is untouched.
-    argv = [f"{APP}/Contents/MacOS/Synth"] + (["-synth-theme", theme] if theme else [])
+    # NSArgumentDomain pins the theme (and any extra_args defaults, e.g. the MCP toggles)
+    # for this process only — the developer's Synth is untouched.
+    argv = [f"{APP}/Contents/MacOS/Synth"] + (["-synth-theme", theme] if theme else []) + list(extra_args)
     p = subprocess.Popen(argv, stdout=f, stderr=f, env=env)
     sock = f"/tmp/synth-ctl-{p.pid}.sock"
     # Ready means "answers a request", not "the socket file exists".

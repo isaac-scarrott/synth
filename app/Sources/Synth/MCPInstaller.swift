@@ -1,42 +1,54 @@
 import Foundation
 import os.log
 
-/// Installs the bundled browser MCP server (ADR-0011 stage two) and registers it in
-/// every managed worktree.
+/// Installs the bundled MCP servers — synth-browser (ADR-0011 stage two) and
+/// synth-app (approval-gated app control) — and registers them in every managed
+/// worktree.
 ///
 /// Install: the repo's mcp/ (copied into Contents/Resources/mcp by dev.sh /
 /// dist.sh) is synced to the channel's Application Support sandbox (AppSupport.root)
 /// under browser-mcp/ at launch, with `npm install --omit=dev` run there when
 /// node_modules is missing or
 /// package.json changed — one shared install, stable path for every .mcp.json.
+/// (The dir name predates the second server; renaming it would orphan nothing but
+/// churn every config, so it stays.)
 ///
-/// Registration: each worktree root gets .mcp.json with the synth-browser server,
-/// MERGED into any existing file (other servers preserved), skipped when already
-/// correct. Project scope is the point — the file must NOT be gitignored (any Claude
-/// session in the worktree should see the tools) — but Synth never commits it.
+/// Registration: each worktree root gets .mcp.json with the ENABLED servers (the
+/// Settings → MCP servers toggles: browser on by default, app off), MERGED into any
+/// existing file (other servers preserved), skipped when already correct; a disabled
+/// server's entry is removed, so its tools never even appear to agents. Project scope
+/// is the point — the file must NOT be gitignored (any Claude session in the worktree
+/// should see the tools) — but Synth never commits it.
 @MainActor enum MCPInstaller {
     private static let log = Logger(subsystem: bundleIdentifier, category: "mcp")
 
     static let installDir = AppSupport.dir("browser-mcp")
 
-    /// Copy the bundled server into the shared install dir and (re)install its deps
+    /// The bundled servers: registry name → entry script (shared.mjs serves both).
+    private static let serverScripts = [
+        "synth-browser": "server.mjs",
+        "synth-app": "app-server.mjs",
+    ]
+
+    /// Copy the bundled servers into the shared install dir and (re)install their deps
     /// when needed. npm runs off-main — launch must not wait on the network.
     static func refreshServerInstall() {
         let fm = FileManager.default
         guard let source = Bundle.main.resourceURL?.appendingPathComponent("mcp", isDirectory: true),
               fm.fileExists(atPath: source.appendingPathComponent("server.mjs").path) else {
-            log.error("bundled mcp/ missing from app resources — browser MCP server not installed (bare-binary run?)")
+            log.error("bundled mcp/ missing from app resources — MCP servers not installed (bare-binary run?)")
             return
         }
         do {
             try fm.createDirectory(at: installDir, withIntermediateDirectories: true)
             let packageChanged = try syncFile(from: source, name: "package.json")
-            _ = try syncFile(from: source, name: "server.mjs")
+            _ = try syncFile(from: source, name: "shared.mjs")
+            for script in serverScripts.values { _ = try syncFile(from: source, name: script) }
             let needsInstall = packageChanged
                 || !fm.fileExists(atPath: installDir.appendingPathComponent("node_modules").path)
             if needsInstall { runNpmInstall() }
         } catch {
-            log.error("browser MCP install failed: \(error.localizedDescription)")
+            log.error("MCP server install failed: \(error.localizedDescription)")
         }
     }
 
@@ -107,50 +119,60 @@ import os.log
     // MARK: Per-worktree agent config
 
     /// In-memory skip: the sync runs on the autosave cadence, so an unchanged
-    /// worktree set costs nothing.
-    private static var lastSyncedPaths: [String]?
+    /// worktree set (with unchanged toggles) costs nothing.
+    private static var lastSynced: (paths: [String], servers: [String: Bool])?
 
     /// Each agent discovers project MCP servers from its own file, with its own schema. Both
-    /// are written into every worktree: whichever agent runs there finds the browser server
-    /// already registered, and the other's file is inert.
-    static func syncWorktreeConfigs(_ worktreePaths: [String]) {
-        guard worktreePaths != lastSyncedPaths else { return }
-        lastSyncedPaths = worktreePaths
+    /// are written into every worktree: whichever agent runs there finds the enabled servers
+    /// already registered, and the other's file is inert. `servers` is the Settings toggle
+    /// state — a false entry actively REMOVES that server from the configs.
+    static func syncWorktreeConfigs(_ worktreePaths: [String], servers: [String: Bool]) {
+        guard lastSynced == nil || lastSynced! != (worktreePaths, servers) else { return }
+        lastSynced = (worktreePaths, servers)
         for path in worktreePaths {
-            writeClaudeConfig(atWorktree: path)
-            writeOpencodeConfig(atWorktree: path)
+            writeClaudeConfig(atWorktree: path, servers: servers)
+            writeOpencodeConfig(atWorktree: path, servers: servers)
         }
     }
 
-    private static var serverPath: String {
-        installDir.appendingPathComponent("server.mjs").path
+    private static func serverPath(_ name: String) -> String {
+        installDir.appendingPathComponent(serverScripts[name] ?? "server.mjs").path
     }
 
     /// Claude Code: `.mcp.json` → `mcpServers.<name>.{command,args}`.
-    private static func writeClaudeConfig(atWorktree path: String) {
-        let entry: [String: Any] = ["command": "node", "args": [serverPath]]
-        merge(atWorktree: path, file: ".mcp.json", container: "mcpServers", entry: entry)
+    private static func writeClaudeConfig(atWorktree path: String, servers: [String: Bool]) {
+        var built: [String: [String: Any]?] = [:]
+        for (name, enabled) in servers {
+            built.updateValue(enabled ? ["command": "node", "args": [serverPath(name)]] : nil,
+                              forKey: name)
+        }
+        merge(atWorktree: path, file: ".mcp.json", container: "mcpServers", entries: built)
     }
 
     /// opencode: `opencode.json` → `mcp.<name>.{type,command,enabled,environment}`. A single
     /// `command` array rather than command+args, and the worktree travels in the env because
     /// the server can no longer read Claude's `CLAUDE_PROJECT_DIR`.
-    private static func writeOpencodeConfig(atWorktree path: String) {
-        let entry: [String: Any] = [
-            "type": "local",
-            "command": ["node", serverPath],
-            "enabled": true,
-            "environment": ["SYNTH_WORKTREE": path],
-        ]
-        merge(atWorktree: path, file: "opencode.json", container: "mcp", entry: entry,
+    private static func writeOpencodeConfig(atWorktree path: String, servers: [String: Bool]) {
+        var built: [String: [String: Any]?] = [:]
+        for (name, enabled) in servers {
+            let entry: [String: Any] = [
+                "type": "local",
+                "command": ["node", serverPath(name)],
+                "enabled": true,
+                "environment": ["SYNTH_WORKTREE": path],
+            ]
+            built.updateValue(enabled ? entry : nil, forKey: name)
+        }
+        merge(atWorktree: path, file: "opencode.json", container: "mcp", entries: built,
               extra: ["$schema": "https://opencode.ai/config.json"])
     }
 
-    /// Register `synth-browser` under `container` in `file`, preserving whatever else the user
-    /// keeps there. A no-op when the entry is already correct — the worktree is the user's
-    /// working tree, and a needless rewrite shows up as a dirty file in their `git status`.
+    /// Reconcile Synth's servers under `container` in `file` — set enabled entries, drop
+    /// disabled ones (an inner nil) — preserving whatever else the user keeps there. A
+    /// no-op when everything is already correct: the worktree is the user's working tree,
+    /// and a needless rewrite shows up as a dirty file in their `git status`.
     private static func merge(atWorktree path: String, file name: String, container: String,
-                              entry: [String: Any], extra: [String: Any] = [:]) {
+                              entries: [String: [String: Any]?], extra: [String: Any] = [:]) {
         guard FileManager.default.fileExists(atPath: path) else { return }
         let file = URL(fileURLWithPath: path).appendingPathComponent(name)
 
@@ -164,11 +186,19 @@ import os.log
             root = existing
         }
         var servers = root[container] as? [String: Any] ?? [:]
-        if let current = servers["synth-browser"] as? [String: Any],
-           NSDictionary(dictionary: current).isEqual(to: entry) {
-            return   // already correct — never dirty the worktree needlessly
+        var changed = false
+        for (key, entry) in entries {
+            if let entry {
+                if let current = servers[key] as? [String: Any],
+                   NSDictionary(dictionary: current).isEqual(to: entry) { continue }
+                servers[key] = entry
+                changed = true
+            } else if servers[key] != nil {
+                servers.removeValue(forKey: key)
+                changed = true
+            }
         }
-        servers["synth-browser"] = entry
+        guard changed else { return }
         root[container] = servers
         for (k, v) in extra where root[k] == nil { root[k] = v }
         guard let data = try? JSONSerialization.data(

@@ -19,6 +19,7 @@ struct SettingsPane: View {
                 VStack(alignment: .leading, spacing: 30) {
                     if isGlobal { appearanceSection }
                     if isGlobal { soundsSection }
+                    if isGlobal { mcpSection }
                     scriptSection
                     templateSection
                     flagsSection
@@ -112,6 +113,50 @@ struct SettingsPane: View {
     }
     private var soundDoneBinding: Binding<Bool> {
         Binding(get: { store.soundDone }, set: { store.soundDone = $0 })
+    }
+
+    // MARK: MCP servers — global, per-machine. Which bundled tool servers agents find in
+    // every managed worktree; a change re-registers/removes them in each worktree's config.
+
+    @ViewBuilder private var mcpSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("MCP servers")
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.repoName)
+            sub("Tools Synth offers to coding agents in every managed worktree. Changes apply to newly started agent sessions.")
+            VStack(spacing: 0) {
+                mcpRow("Synth browser",
+                       "Agents can open and drive in-app browser sessions — navigate, click, screenshot, record.",
+                       mcpBrowserBinding)
+                Rectangle().fill(Theme.border).frame(height: 0.5)
+                mcpRow("Synth app",
+                       "Agents can ask Synth to create worktrees and hand work off to them. Every request needs your approval.",
+                       mcpAppBinding)
+            }
+            .padding(.top, 14)
+        }
+    }
+
+    private func mcpRow(_ label: String, _ detail: String, _ binding: Binding<Bool>) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.ink2)
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: binding)
+                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
+        }
+        .padding(.vertical, 7)
+    }
+
+    private var mcpBrowserBinding: Binding<Bool> {
+        Binding(get: { store.mcpBrowserEnabled }, set: { store.mcpBrowserEnabled = $0 })
+    }
+    private var mcpAppBinding: Binding<Bool> {
+        Binding(get: { store.mcpAppEnabled }, set: { store.mcpAppEnabled = $0 })
     }
 
     // MARK: The one setting so far — the worktree setup script.

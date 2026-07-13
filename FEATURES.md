@@ -514,3 +514,8 @@ disclosure to dive deeper.
   device viewport, with a strip spanning the fleet smallest→biggest (iPhone SE 375×667 → iPad
   Pro 13″ 1032×1376), live CSS-point dims readout, rotate; frame scales down to fit, never up;
   composes with comment mode + DevTools, survives navigation; ⌘K Page group + ⌘? row.
+- **Native port: browser device mode (⌘⇧M), CDP-emulated viewport** — the SwiftUI frame/strip
+  port plus a real emulated viewport: `DeviceEmulator` drives CDP `setDeviceMetricsOverride`
+  (mobile + per-device DPR + fit scale) on the session's page target, proven live (393×852@3,
+  1px-exact clicks, survives navigation); clears on exit, frame-only on the no-CDP hedge; no
+  mock "9:41" row — the full screen is the truthful live viewport.

@@ -1,0 +1,10 @@
+{
+  "name": "synth-trigger-gateway",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Synth plugin (spike): Teams / Datadog / cron triggers enqueued over the control socket (ADR-0014)",
+  "scripts": {
+    "start": "node gateway.mjs"
+  }
+}

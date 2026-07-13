@@ -95,6 +95,14 @@ A session has stopped and cannot continue until you answer it. The one status th
 rather than a report, which is why it outranks every other in a roll-up and wears a glyph, not a dot.
 _Avoid_: Waiting for input, blocked, paused, stalled.
 
+**Trigger**:
+Work that arrived from outside the app — a Teams thread, a Datadog alert, a schedule — delivered by
+a plugin and waiting for a yes. A pending trigger is an ask, not work: it surfaces as a notification
+card and in the ⌘K Triggers frame, never as a sidebar row (the tree shows work that is, the deck
+shows asks). Accepting cuts a worktree and seeds one agent session with the brief; dismissing tells
+the source.
+_Avoid_: Task, job, request, webhook (the transport, not the thing), inbox item.
+
 **Navigation cursor**:
 The transient keyboard-nav ring that can rest on any row (project, branch, or session). Visible
 only during keyboard use and dismissed the moment the mouse moves. A pure visual affordance for
@@ -119,6 +127,13 @@ A note you leave on an element of a live page in a browser session. Synth delive
 the browser belongs to, together with a screenshot and enough context to locate the element. If the
 browser belongs to nobody, Synth starts an agent and hands the browser to it.
 _Avoid_: Annotation, feedback (reserved for ⌘⇧F, which is feedback about Synth itself), pin.
+
+**Plugin**:
+A separate process the user installs that talks to Synth only over the control-socket API, holding
+its own credentials and configuration — removable without the app changing shape (ADR-0014). Every
+mutating ask a plugin makes is approval-gated in the app, never in the plugin. The trigger gateway
+is the first one; the bundled MCP servers are retroactively the same seam.
+_Avoid_: Extension, integration (what a plugin wires up, not the noun), add-on, bot.
 
 **Supervisor**:
 The per-session watcher that consumes a session's raw event firehose locally and emits only the

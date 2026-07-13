@@ -909,6 +909,7 @@
   .notif--input .notif__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
   .notif--error .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
   .notif--done .notif__glyph { color: var(--run); background: color-mix(in srgb, var(--run) 13%, transparent); }
+  .notif--trigger .notif__glyph { color: var(--accent); background: rgba(var(--accent-rgb),0.13); }
   .notif__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .notif__who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .notif__who .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
@@ -2094,7 +2095,7 @@
   const notifState = new Map();   // sessionEl -> { kind, order }
   const notifCards = new Map();   // sessionEl -> card element
   const NOTIF_OP = [1, 0.7, 0.45];   // front, then two peeking; deeper cards hide behind "+N"
-  const NOTIF_KBD = '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>jump</span>';
+  const notifKbd = (verb) => '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>' + verb + '</span>';
   let notifSeq = 0;
 
   const notifLive = (s) => s === 'work' || s === 'run' || s === 'input' || s === 'error';
@@ -2111,7 +2112,7 @@
   }
 
   function notify(el, kind) {
-    el.classList.add('session--unread');
+    if (el.classList) el.classList.add('session--unread');   // a trigger has no row to mark
     const prev = notifState.get(el);
     if (prev && prev.timer) clearTimeout(prev.timer);
     if (prev && prev.kind !== kind) {   // kind changed → rebuild the card, don't restyle a stale one
@@ -2129,10 +2130,12 @@
     if (notifState.delete(el)) renderNotifs();
   }
 
-  // background notifications, most-urgent first: error before input before done, newest first
-  const NOTIF_RANK = { error: 0, input: 1, done: 2 };
+  // background notifications, most-urgent first: error before input before a plugin's
+  // trigger before done, newest first
+  const NOTIF_RANK = { error: 0, input: 1, trigger: 2, done: 3 };
   function notifOrder() {
-    return [...notifState.keys()].filter((el) => el !== openEl && document.contains(el)).sort((a, b) => {
+    return [...notifState.keys()].filter((el) => el !== openEl &&
+      (el.source ? !el.resolved : document.contains(el))).sort((a, b) => {
       const A = notifState.get(a), B = notifState.get(b);
       if (NOTIF_RANK[A.kind] !== NOTIF_RANK[B.kind]) return NOTIF_RANK[A.kind] - NOTIF_RANK[B.kind];
       return B.order - A.order;
@@ -2148,20 +2151,29 @@
   }
   function buildNotif(el) {
     const kind = notifState.get(el).kind;
+    const c = document.createElement('div');
+    c.className = 'notif notif--' + kind;
+    notifCards.set(el, c);
+    if (kind === 'trigger') {   // an ask from outside — no session row to point at yet
+      const src = TRIGGER_SOURCE[el.source];
+      c.addEventListener('click', () => openPaletteAt(triggerFrame(el)));
+      c.innerHTML = '<div class="notif__glyph">' + ICON_TRAY + '</div>'
+        + '<div class="notif__text"><div class="notif__who">'
+        + '<span class="k">' + src.icon + '</span>' + esc(src.name + ' · ' + el.from)
+        + '</div><div class="notif__what">' + esc(el.title) + '</div></div>' + notifKbd('review');
+      return c;
+    }
     const name = el.querySelector('.session__name').textContent.trim();
     const icon = el.querySelector('.session__icon').innerHTML;
     const repo = outerRepoOf(el);
     const chip = repo && repo.querySelector('.repo__chip');
     const color = (chip && chip.style.getPropertyValue('--c').trim()) || 'var(--text-faint)';
-    const c = document.createElement('div');
-    c.className = 'notif notif--' + kind;
     c.addEventListener('click', () => jumpTo(el));
     c.innerHTML = '<div class="notif__glyph">' + (kind === 'error' ? MARK_ERROR : kind === 'done' ? MARK_DONE : MARK_INPUT) + '</div>'
       + '<div class="notif__text"><div class="notif__who">'
       + '<span class="dot" style="background:' + color + '"></span>'
       + '<span class="k">' + icon + '</span>' + esc(name)
-      + '</div><div class="notif__what">' + notifWhat(el, kind) + '</div></div>' + NOTIF_KBD;
-    notifCards.set(el, c);
+      + '</div><div class="notif__what">' + notifWhat(el, kind) + '</div></div>' + notifKbd('jump');
     return c;
   }
 
@@ -2228,7 +2240,14 @@
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       const el = notifTop();
-      if (el) { e.preventDefault(); jumpTo(el); }
+      if (!el) return;
+      e.preventDefault();
+      if (el.source) {
+        // opening the review must consume the chord — otherwise the palette's own
+        // keydown sees the same Enter and runs the confirm's default in one keystroke
+        e.stopImmediatePropagation();
+        openPaletteAt(triggerFrame(el));
+      } else jumpTo(el);
     }
   });
 
@@ -3194,7 +3213,7 @@
     return wrapper;
   }
 
-  function addBranch(repo, name) {
+  function addBranch(repo, name, opts = {}) {
     repo.classList.add('repo--open');
     const branches = repo.querySelector('.branches');
     const wrapper = branchGroupShell(name, 'now');
@@ -3220,7 +3239,8 @@
       groupRow.classList.remove('branch--pending');
       groupRow.querySelector('.branch__roll').innerHTML = '';
       const watching = setupEl === groupRow;
-      const tpl = effectiveTpl(false, wsName);
+      // A trigger handoff skips the template: one Claude session, seeded with the brief.
+      const tpl = opts.handoff ? [{ kind: 'claude' }] : effectiveTpl(false, wsName);
       if (watching && tpl.length === 0) { setupEl = null; renderEmpty(); return; }  // start bare
       tpl.forEach((s, i) => addSession(groupRow, s.kind, { name: s.name, open: watching && i === 0 }));
       if (!watching) {
@@ -3940,6 +3960,86 @@
     [se('dev server'), se('dev server'), se('dev server'), be('main'), be('main'), se('migrate')].forEach(recordVisit);
   })();
 
+  // ── Triggers: plugin asks ───────────────────────────────────────────────
+  // A trigger is work that arrived from OUTSIDE the app, delivered by a plugin
+  // over the control-socket API — a Teams thread, a Datadog alert, a schedule —
+  // normalised into one shape and waiting for a yes. Nothing runs until the
+  // user accepts: accept cuts a worktree off the source repo's head and seeds
+  // one Claude session with the brief (safe auto mode — sandboxed, non-
+  // interactive, replies flow back to the source thread); dismiss clears it
+  // and tells the thread. Pending triggers surface through two existing idioms
+  // — a card in the notification deck and a Triggers frame in ⌘K — never a
+  // modal, and never a sidebar row: the tree shows work that is, the deck
+  // shows asks.
+  const ICON_TRAY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,16v96H179.31a15.86,15.86,0,0,0-11.31,4.69L145.37,171.31a8,8,0,0,1-5.66,2.34H116.29a8,8,0,0,1-5.66-2.34L88,148.69A15.86,15.86,0,0,0,76.69,144H48V48ZM48,208V160H76.69l22.62,22.63a23.85,23.85,0,0,0,17,7h23.38a23.85,23.85,0,0,0,17-7L179.31,160H208v48Z"/></svg>';
+  const ICON_PULSE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M240,128a8,8,0,0,1-8,8H204.94l-37.78,75.58A8,8,0,0,1,160,216h-.4a8,8,0,0,1-7.08-5.14L95.35,60.76,63.28,131.31A8,8,0,0,1,56,136H24a8,8,0,0,1,0-16H50.85L88.72,36.69a8,8,0,0,1,14.76.46l57.51,151,31.85-63.71A8,8,0,0,1,200,120h32A8,8,0,0,1,240,128Z"/></svg>';
+  const ICON_SCHEDULE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z"/></svg>';
+  const TRIGGER_SOURCE = {
+    teams:   { name: 'Teams',    icon: ICON_CHAT },
+    datadog: { name: 'Datadog',  icon: ICON_PULSE },
+    cron:    { name: 'Schedule', icon: ICON_SCHEDULE },
+  };
+  // Demo data — in the app these arrive over the plugin API's trigger verb.
+  const TRIGGERS = [
+    { source: 'teams', from: 'Priya Nair', origin: '#synth-feedback',
+      title: 'Dark-mode toggle doesn’t persist across restarts', detail: '2 images',
+      age: '2m', repo: 'synth', branch: 'trigger/dark-mode-persist' },
+    { source: 'datadog', from: 'p95 latency monitor', origin: 'checkout-api',
+      title: 'p95 above 800 ms on /v1/checkout for 15 min', detail: 'alert payload',
+      age: '18m', repo: 'aviator-api', branch: 'trigger/checkout-p95' },
+  ];
+  const pendingTriggers = () => TRIGGERS.filter((t) => !t.resolved);
+  function acceptTrigger(t) {
+    t.resolved = true; clearNotif(t);
+    const head = allRows('.repo__head').find((h) => wsName(h) === t.repo) || nav.querySelector('.repo__head');
+    addBranch(head.closest('[data-repo]'), t.branch, { handoff: t });
+  }
+  function dismissTrigger(t) { t.resolved = true; clearNotif(t); }
+
+  function triggersFrame() {
+    return {
+      crumb: 'Triggers', placeholder: 'Search triggers…',
+      build() {
+        const pending = pendingTriggers();
+        if (!pending.length) return [{ icon: ICON_TRAY, label: 'No pending triggers', ctx: 'plugin asks — Teams, Datadog, schedules — land here', disabled: true }];
+        return pending.map((t) => ({
+          sec: 'list', icon: TRIGGER_SOURCE[t.source].icon, label: t.title,
+          ctx: TRIGGER_SOURCE[t.source].name + ' · ' + t.from, meta: t.age + ' ago',
+          enter: () => pushFrame(triggerFrame(t)),
+        }));
+      },
+    };
+  }
+  // The accept step reads like every other confirm: what will happen, stated plainly.
+  // Start is the default; Esc keeps the trigger pending rather than deciding for you.
+  function triggerFrame(t) {
+    const src = TRIGGER_SOURCE[t.source];
+    const short = t.title.length > 44 ? t.title.slice(0, 43).trimEnd() + '…' : t.title;
+    return {
+      crumb: 'Start “' + short + '”?', mode: 'confirm',
+      note: src.name + ' · ' + t.from + ' · ' + t.origin + (t.detail ? ' · ' + t.detail : '')
+        + ' — cuts ' + t.branch + ' off ' + t.repo + '’s head and seeds one Claude session with the brief, in safe auto mode. Replies land back on the ' + src.name + ' thread.',
+      placeholder: '↵ start · esc keep pending',
+      build() {
+        return [
+          { icon: ICON_PLUS, label: 'Start in a new worktree', ctx: t.branch, enter: () => runAndClose(() => acceptTrigger(t)) },
+          { icon: ICON_MINUS, label: 'Dismiss', ctx: 'nothing runs; the thread is told', enter: () => runAndClose(() => dismissTrigger(t)) },
+          { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
+        ];
+      },
+    };
+  }
+
+  // Design demo: ⌥T lands the next pending trigger's card in the deck. In the app the
+  // plugin's control-socket delivery raises this the moment the verb is accepted.
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.code !== 'KeyT') return;
+    const a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    const t = pendingTriggers().find((x) => !notifState.has(x));
+    if (t) { e.preventDefault(); notify(t, 'trigger'); }
+  });
+
   function rootFrame() {
     return {
       placeholder: 'Search or jump to anything…',
@@ -3951,6 +4051,7 @@
           { sec: 'nav', icon: ICON_FOLDER,  label: 'Projects', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
           { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },
+          { sec: 'nav', icon: ICON_TRAY,    label: 'Triggers',   meta: pendingTriggers().length ? pendingTriggers().length + ' waiting' : '', enter: () => pushFrame(triggersFrame()) },
           { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { sec: 'act', icon: ICON_GEAR,    label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { sec: 'act', icon: ICON_KEYS,    label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
@@ -3966,6 +4067,7 @@
         ];
         // Search groups run most-local-first: Actions (above), then Sessions, Branches, Projects.
         allRows('.session').forEach((s) => items.push({ g: 'Sessions', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }));
+        pendingTriggers().forEach((t) => items.push({ g: 'Triggers', icon: TRIGGER_SOURCE[t.source].icon, label: t.title, ctx: TRIGGER_SOURCE[t.source].name + ' · ' + t.from, meta: t.age + ' ago', enter: () => pushFrame(triggerFrame(t)) }));
         allRows('.branch').forEach((b) => items.push({ g: 'Branches', icon: ICON_BRANCH, label: brName(b), ctx: wsOf(b), enter: () => pushFrame(branchFrame(b)) }));
         allRows('.repo__head').forEach((h) => items.push({ g: 'Projects', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         return items;

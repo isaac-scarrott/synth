@@ -1,0 +1,11 @@
+{
+  "port": 8787,
+  "repo": "/Users/isaac/git/synth",
+  "sources": {
+    "datadog": { "enabled": true, "secret": "change-me" },
+    "teams": { "enabled": false },
+    "cron": [
+      { "everyMinutes": 10080, "title": "Weekly dependency audit", "prompt": "Run the dependency audit: npm outdated + npm audit in every package, summarise anything actionable." }
+    ]
+  }
+}

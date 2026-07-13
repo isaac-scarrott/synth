@@ -509,3 +509,9 @@ disclosure to dive deeper.
   gates the ⌘K row hover, the sidebar's ring-dismiss-on-hover, and the notification deck's
   hover-to-fan, so a layout change scrolling a view under the pointer's last real position (hidden
   via `NSCursor.setHiddenUntilMouseMoves`) can no longer masquerade as a genuine hover.
+- **Triggers: outside work arrives through plugins (both designs + ADR-0014 + gateway spike)** — a
+  *trigger* (Teams post, Datadog alert, cron) is an ask from outside, delivered by a *plugin* over
+  the control-socket API and approval-gated in ⌘K; accept cuts a worktree and seeds one Claude
+  session in safe auto mode. ADR-0014 makes plugins external processes (the app grows one seam,
+  not integrations); `plugins/trigger-gateway/` is the first, proven end-to-end against the live
+  app.

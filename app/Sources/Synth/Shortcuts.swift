@@ -52,6 +52,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "K"], label: "Command menu"),
             Shortcut(keys: ["⌘", "N"], label: "New session"),
             Shortcut(keys: ["⌘", "T"], label: "New terminal"),
+            Shortcut(keys: ["⌘", "D"], label: "Close current session"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
             Shortcut(keys: ["⌘", "0"], label: "Focus sidebar"),
             Shortcut(keys: ["⌘", "1"], label: "Focus open session"),

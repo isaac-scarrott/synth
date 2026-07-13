@@ -408,4 +408,14 @@ extension AppStore {
         pal.stack = [pal.rootFrame()]
         pal.push(frame)
     }
+
+    /// ⌘D — close the current context through the same flow as `d` on a sidebar row:
+    /// the focused sidebar row when the keyboard owns the sidebar, else the open session
+    /// (working.html contextRow → requestDelete). Inert in Settings, where an idle open
+    /// session would otherwise close invisibly behind the settings surface.
+    func closeContext() {
+        guard !settingsOpen else { return }
+        if keyboardActive, let ref = cursorRef { requestDelete(ref); return }
+        if let s = openSession { requestDelete(.session(s)) }
+    }
 }

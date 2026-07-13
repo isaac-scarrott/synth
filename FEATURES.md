@@ -477,3 +477,10 @@ disclosure to dive deeper.
 - **Synth 0.2.1 (build 185)** — patch shipping the sidebar indent-guide removal. First release
   updated *to* via 0.2.0's background-update policy, and first with deltas from two prior builds
   (497KB/622KB against a 130MB full download).
+
+## [2026-07-13](docs/features/2026-07-13.md)
+
+- **⌘D closes the current context (both designs + native app)** — one keystroke into the existing
+  `d` close flow, resolved from context like ⌘T/⌘N: the ring's sidebar row when the sidebar owns the
+  keyboard, else the open session; idle sessions close straight through, anything else confirms in
+  ⌘K. Listed in ⌘? and as the key hint on ⌘K's Session Close; natively it's File > Close Session.

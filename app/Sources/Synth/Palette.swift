@@ -226,7 +226,8 @@ struct PaletteFrame {
                                      enter: { self.push(self.renameFrame(.session(open))) }))
             items += containmentItems(open, group: g)
             items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close",
-                                     group: g, ctx: open.title, danger: open.status.isBusy,
+                                     group: g, ctx: open.title, kbd: ["⌘", "D"],
+                                     danger: open.status.isBusy,
                                      enter: { self.closeOrConfirm(open) }))
         }
         if let branch {

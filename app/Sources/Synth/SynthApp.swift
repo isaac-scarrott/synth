@@ -24,6 +24,11 @@ struct SynthApp: App {
                     .keyboardShortcut("n", modifiers: .command)
                 Button("New Terminal") { store.newTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
+                Divider()
+                // ⌘D closes the current context — the focused sidebar row when the keyboard
+                // owns the sidebar, else the open session — through the same flow as `d`.
+                Button("Close Session") { store.closeContext() }
+                    .keyboardShortcut("d", modifiers: .command)
             }
             CommandGroup(after: .sidebar) {
                 Button("Toggle Sidebar") { store.sidebarCollapsed.toggle() }

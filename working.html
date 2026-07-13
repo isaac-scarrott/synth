@@ -2812,6 +2812,13 @@
       if (br) { e.preventDefault(); openPaletteAt(newSessionFrame(br)); }
       return;
     }
+    // Cmd/Ctrl+D closes the current context — the focused sidebar row when its ring is
+    // showing, else the open session — through the same flow as `d` on a sidebar row.
+    if ((e.metaKey || e.ctrlKey) && (k === 'd' || k === 'D') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
+      const row = contextRow();
+      if (row) { e.preventDefault(); requestDelete(row); }
+      return;
+    }
     // An open browser session claims the standard page verbs window-wide: ⌘L address,
     // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each drives the visible toolbar control,
     // so disabled states (home page, empty history) are respected for free.
@@ -3548,6 +3555,7 @@
       [['⌘', 'K'], 'Command menu'],
       [['⌘', 'N'], 'New session'],
       [['⌘', 'T'], 'New terminal'],
+      [['⌘', 'D'], 'Close current session'],
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '0'], 'Focus sidebar'],
       [['⌘', '1'], 'Focus open session'],
@@ -3882,7 +3890,7 @@
       if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
       else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(open), enter: () => sessionNeedsConfirm(open) ? pushFrame(confirmFrame(open)) : runAndClose(() => removeUnit(rowUnit(open))) });
+    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: sessionIsBusy(open), enter: () => sessionNeedsConfirm(open) ? pushFrame(confirmFrame(open)) : runAndClose(() => removeUnit(rowUnit(open))) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });

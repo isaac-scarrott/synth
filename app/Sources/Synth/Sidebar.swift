@@ -21,7 +21,7 @@ struct Sidebar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .onContinuousHover { phase in
-            if case .active = phase { store.keyboardActive = false }
+            if case .active = phase, !store.pointerStale { store.keyboardActive = false }
         }
     }
 

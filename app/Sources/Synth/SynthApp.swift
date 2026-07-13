@@ -197,6 +197,7 @@ struct RootView: View {
         NSApp.windows.forEach { $0.acceptsMouseMovedEvents = true }
         NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
             if store.keyboardActive { store.keyboardActive = false }
+            store.pointerStale = false
             return event
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -205,6 +206,7 @@ struct RootView: View {
             // (terminal keystrokes route through this local monitor too). Bare modifiers fire
             // flagsChanged, not keyDown, so a lone ⌘/⇧ never hides it.
             NSCursor.setHiddenUntilMouseMoves(true)
+            store.pointerStale = true
 
             // Modal Esc must win even while its text field is first responder.
             if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil || store.feedbackOpen

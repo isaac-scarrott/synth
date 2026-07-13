@@ -496,3 +496,7 @@ disclosure to dive deeper.
   first release where an agent can drive the app itself, so it ships with the app server OFF and an
   explicit Settings opt-in. Six deltas / 3.9MB against a 132MB download; also untracked a committed
   `.pyc` that had been silently dirtying the tree against `release.sh`'s clean-tree guard.
+- **Fix: a hidden, stationary pointer could steal keyboard nav (native app)** — `AppStore.pointerStale`
+  gates the ⌘K row hover, the sidebar's ring-dismiss-on-hover, and the notification deck's
+  hover-to-fan, so a layout change scrolling a view under the pointer's last real position (hidden
+  via `NSCursor.setHiddenUntilMouseMoves`) can no longer masquerade as a genuine hover.

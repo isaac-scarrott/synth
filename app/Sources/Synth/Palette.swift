@@ -907,7 +907,8 @@ struct PaletteOverlay: View {
                                     model.activeIndex = i
                                     model.runActive()
                                 } onHover: {
-                                    if model.activeIndex != i { model.activeIndex = i }
+                                    guard !store.pointerStale, model.activeIndex != i else { return }
+                                    model.activeIndex = i
                                 }
                                 .id(i)
                             }

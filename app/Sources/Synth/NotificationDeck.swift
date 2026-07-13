@@ -54,7 +54,7 @@ struct NotificationDeck: View {
             .frame(height: spread ? fannedH : collapsedH, alignment: .bottomLeading)
             .animation(.easeOut(duration: 0.24), value: spread)
             .animation(.easeOut(duration: 0.24), value: order.map(\.id))
-            .onHover { hovering = $0 }
+            .onHover { if !store.pointerStale { hovering = $0 } }
             .padding(22)
         }
     }

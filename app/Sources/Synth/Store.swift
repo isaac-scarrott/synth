@@ -263,6 +263,14 @@ enum FeedbackMode {
     /// (mousemove clears it), mirroring working.html's `.kbd` class.
     var keyboardActive = false
 
+    /// True from the moment a keystroke hides the pointer (`NSCursor.setHiddenUntilMouseMoves`)
+    /// until it next genuinely moves. SwiftUI's `onHover`/`onContinuousHover` re-fire from mere
+    /// hit-testing whenever a view is laid out under the pointer's last known position — scrolling
+    /// the palette list or the sidebar tree during keyboard nav counts, even though the pointer,
+    /// hidden and stationary, never moved. Hover-driven state changes must check this first so a
+    /// stale, invisible pointer position can't relocate the selection out from under the keyboard.
+    var pointerStale = false
+
     /// Drag-to-reorder (F2): the row being dragged (nil = none) and its live vertical
     /// offset within its slot, so the lifted row tracks the pointer while its siblings
     /// shift. `reorderScrollNonce` is bumped on every reorder step (drag + ⇧J/⇧K) so the

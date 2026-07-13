@@ -18,7 +18,7 @@ if ! SYNTH_AUTOMATION=1 "$APP/Contents/MacOS/Synth" --browser-check 2>&1 | grep 
 fi
 
 P=0; F=0
-for t in t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t5_comment t6_abort t7_regression; do
+for t in t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t5_comment t6_abort t7_regression t8_appmcp; do
   if python3 "$t.py" > "/tmp/$t.out" 2>&1; then
     echo "PASS $t ($(grep -c '  PASS' "/tmp/$t.out") checks)"; P=$((P+1))
   else

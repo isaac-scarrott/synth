@@ -484,3 +484,10 @@ disclosure to dive deeper.
   `d` close flow, resolved from context like ⌘T/⌘N: the ring's sidebar row when the sidebar owns the
   keyboard, else the open session; idle sessions close straight through, anything else confirms in
   ⌘K. Listed in ⌘? and as the key hint on ⌘K's Session Close; natively it's File > Close Session.
+
+- **synth-app MCP server: approval-gated worktree creation + handoff** — a second bundled MCP
+  server that lets agents drive Synth itself: `worktree_create(branch, base?, handoff?)` blocks on
+  a native yes/no prompt (Enter creates, Esc declines; decline tells the agent to carry on where it
+  is), an optional handoff brief seeds one Claude session in the new checkout via the feedback
+  loop's delivery path, and Settings gains an "MCP servers" section — browser server on by default,
+  app server off, with disabled servers reconciled OUT of every worktree's agent configs.

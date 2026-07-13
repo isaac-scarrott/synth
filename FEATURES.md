@@ -491,3 +491,8 @@ disclosure to dive deeper.
   is), an optional handoff brief seeds one Claude session in the new checkout via the feedback
   loop's delivery path, and Settings gains an "MCP servers" section — browser server on by default,
   app server off, with disabled servers reconciled OUT of every worktree's agent configs.
+
+- **Synth 0.3.0 (build 191)** — minor carrying ⌘D close-context and the `synth-app` MCP server: the
+  first release where an agent can drive the app itself, so it ships with the app server OFF and an
+  explicit Settings opt-in. Six deltas / 3.9MB against a 132MB download; also untracked a committed
+  `.pyc` that had been silently dirtying the tree against `release.sh`'s clean-tree guard.

@@ -275,10 +275,14 @@ enum FeedbackMode {
     var creatingWorktreeIn: Workspace?
     var pendingWorkspace: PendingWorkspace?
 
-    /// Agent-requested worktree prompts (synth-app MCP), oldest first — the modal shows
-    /// the head; resolving or cancelling it reveals the next.
+    /// Agent-requested worktree prompts (synth-app MCP), oldest first — the ⌘K confirm
+    /// frame shows the head; resolving or cancelling it reveals the next.
     var agentPrompts: [AgentWorktreePrompt] = []
-    var agentPrompt: AgentWorktreePrompt? { agentPrompts.first }
+
+    /// The agent prompt (if any) currently driving the palette's confirm frame — set by
+    /// `presentAgentPrompt`, cleared the moment it's resolved. Closing the palette while
+    /// this is non-nil (Esc, ⌘K, backdrop click) declines that prompt, same as before.
+    var presentedAgentPromptID: UUID?
 
     /// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
     /// like working.html. `feedbackTitle` is the author-only name that becomes the
@@ -847,7 +851,17 @@ enum FeedbackMode {
         palette = PaletteModel(store: self)
     }
 
-    func closePalette() { palette = nil }
+    /// Closing while an agent prompt owns the confirm frame IS its "Not now" answer — it
+    /// can't just vanish on a blocked MCP call (Esc / ⌘K / backdrop click all funnel here).
+    func closePalette() {
+        palette = nil
+        guard let id = presentedAgentPromptID,
+              let prompt = agentPrompts.first(where: { $0.id == id }) else {
+            presentedAgentPromptID = nil
+            return
+        }
+        resolveAgentPrompt(prompt, approved: false)
+    }
 
     /// A row's ⋯ kebab opens the palette drilled to that row (working.html openRowActions),
     /// rather than the hover popover. Re-drills if the palette is already open.
@@ -1456,16 +1470,39 @@ enum FeedbackMode {
             requesterTitle: requester?.title,
             respond: respond)
         agentPrompts.append(prompt)
+        presentAgentPrompt(prompt)
         return .pending(prompt.id)
     }
 
-    /// The prompt sheet's two buttons. Approve cuts the worktree exactly like ⌘K
+    /// Surfaces an agent prompt as the ⌘K confirm frame (was a modal sheet) — interrupts
+    /// whatever the palette was showing, same as the sheet interrupted the app.
+    private func presentAgentPrompt(_ prompt: AgentWorktreePrompt) {
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        presentedAgentPromptID = prompt.id
+        pal.stack = [pal.rootFrame(), pal.confirmAgentWorktree(prompt)]
+        pal.query = ""
+        pal.activeIndex = 0
+    }
+
+    /// After a prompt leaves the queue (resolved or cancelled), keep the palette in sync:
+    /// chain to the next pending prompt, or close if none remain — only when the palette's
+    /// confirm frame actually belonged to the prompt that just left.
+    private func advanceAgentPromptPresentation(from id: UUID) {
+        guard presentedAgentPromptID == id else { return }
+        presentedAgentPromptID = nil
+        if let next = agentPrompts.first { presentAgentPrompt(next) }
+        else { closePalette() }
+    }
+
+    /// The confirm frame's two items. Approve cuts the worktree exactly like ⌘K
     /// "Create worktree" (pending row, background checkout, pane onto the setup
     /// skeleton — the jump rides the user's Create click) and answers the blocked MCP
     /// call; decline just answers it.
     func resolveAgentPrompt(_ prompt: AgentWorktreePrompt, approved: Bool) {
         guard let i = agentPrompts.firstIndex(where: { $0.id == prompt.id }) else { return }
         agentPrompts.remove(at: i)
+        advanceAgentPromptPresentation(from: prompt.id)
         guard approved else {
             prompt.respond(["ok": true, "decision": "declined"])
             return
@@ -1482,6 +1519,7 @@ enum FeedbackMode {
     func cancelAgentPrompt(_ id: UUID) -> Bool {
         guard let i = agentPrompts.firstIndex(where: { $0.id == id }) else { return false }
         agentPrompts.remove(at: i)
+        advanceAgentPromptPresentation(from: id)
         return true
     }
 

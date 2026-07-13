@@ -264,7 +264,7 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true, "worktreePath": planned.path]
 
         // The synth-app approval prompt, drivable headless: list what's pending and
-        // answer it — resolve is the sheet button's exact call.
+        // answer it — resolve is the ⌘K confirm frame's exact call.
         case "automation.agentPrompts" where automation:
             return ["ok": true, "prompts": store.agentPrompts.map { p -> [String: Any] in
                 ["promptId": p.id.uuidString,

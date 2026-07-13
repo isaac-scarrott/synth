@@ -147,13 +147,6 @@ struct RootView: View {
                 }
             }
         }
-        .overlay {
-            if let prompt = store.agentPrompt {
-                ModalBackdrop(onDismiss: { store.resolveAgentPrompt(prompt, approved: false) }) {
-                    AgentWorktreeSheet(prompt: prompt).environment(store)
-                }
-            }
-        }
         .overlayPreferenceValue(MenuAnchorKey.self) { anchors in
             GeometryReader { proxy in
                 if let m = store.activeMenu, let anchor = anchors[m.rowID] {
@@ -207,14 +200,11 @@ struct RootView: View {
             NSCursor.setHiddenUntilMouseMoves(true)
 
             // Modal Esc must win even while its text field is first responder.
-            if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil || store.feedbackOpen
-                || store.agentPrompt != nil {
+            if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil || store.feedbackOpen {
                 if event.keyCode == 53 {   // Esc closes the modal
                     store.creatingWorktreeIn = nil
                     store.pendingWorkspace = nil
                     store.feedbackOpen = false
-                    // An agent prompt can't just vanish — Esc IS the "Not now" answer.
-                    if let prompt = store.agentPrompt { store.resolveAgentPrompt(prompt, approved: false) }
                     return nil
                 }
                 return event   // ⌘↵ Send + typing pass through to the sheet

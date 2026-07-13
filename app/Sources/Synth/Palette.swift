@@ -632,6 +632,29 @@ struct PaletteFrame {
                      danger: s.status.isBusy) { [store] in store.closeSession(s) }
     }
 
+    /// The synth-app MCP server's approval gate (was a modal sheet) — an agent asked Synth
+    /// for a worktree, and nothing happens until this frame is answered. Store owns presenting
+    /// and chaining it (`presentAgentPrompt`); resolving always routes back through
+    /// `store.resolveAgentPrompt`, the same call the automation verb and Esc-decline use.
+    func confirmAgentWorktree(_ prompt: AgentWorktreePrompt) -> PaletteFrame {
+        let who = prompt.requesterTitle ?? "A coding agent"
+        let onto = prompt.base.map { "off \($0)" } ?? "off the default branch"
+        let handoffNote = prompt.handoff != nil
+            ? " and hand the work off to a fresh Claude Code session there" : ""
+        let hint = "\(who) wants a new worktree \(onto)\(handoffNote)."
+        return PaletteFrame(crumb: "Create \(prompt.branchName)?",
+                            placeholder: "\(hint)  ↵ create · esc decline",
+                            mode: .confirm) { [self] _ in
+            [
+                PaletteItem(icon: .phosphor(Phosphor.branch), label: "Create \(prompt.branchName)",
+                            ctx: prompt.workspace.name,
+                            enter: { self.store.resolveAgentPrompt(prompt, approved: true) }),
+                PaletteItem(icon: .phosphor(Phosphor.close), label: "Not now",
+                            enter: { self.store.resolveAgentPrompt(prompt, approved: false) }),
+            ]
+        }
+    }
+
     /// A session close only interrupts when there's something to lose — busy, or it would
     /// cascade-close an owned browser (ADR-0013). Otherwise it just closes, no confirm frame.
     private func closeOrConfirm(_ s: Session) {

@@ -301,6 +301,10 @@ struct PaletteFrame {
                         label: live?.devToolsOpen == true ? "Hide DevTools" : "Show DevTools",
                         kbd: ["⌥", "⌘", "I"], disabled: home,
                         enter: drive { if !$0.isHome { $0.toggleDevTools() } }),
+            PaletteItem(icon: .phosphor(Phosphor.deviceMobile),
+                        label: live?.deviceModeOn == true ? "Exit device mode" : "Enter device mode",
+                        kbd: ["⌘", "⇧", "M"], disabled: home,
+                        enter: drive { if !$0.isHome { $0.toggleDeviceMode() } }),
         ]
     }
 

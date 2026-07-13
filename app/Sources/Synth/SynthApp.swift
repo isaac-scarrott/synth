@@ -360,6 +360,8 @@ struct RootView: View {
                     if ctrl.canGoForward { ctrl.goForward() }; return nil
                 case "i" where event.modifierFlags.contains(.option):
                     if !ctrl.isHome { ctrl.toggleDevTools() }; return nil
+                case "m" where event.modifierFlags.contains(.shift):
+                    if !ctrl.isHome { ctrl.toggleDeviceMode() }; return nil
                 default: break
                 }
             }

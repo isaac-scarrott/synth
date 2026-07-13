@@ -75,6 +75,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "["], label: "Back"),
             Shortcut(keys: ["⌘", "]"], label: "Forward"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "Toggle DevTools"),
+            Shortcut(keys: ["⌘", "⇧", "M"], label: "Toggle device mode"),
         ]),
         ShortcutGroup(name: "Command menu", rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),

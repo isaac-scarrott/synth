@@ -655,11 +655,10 @@ struct PaletteFrame {
         }
     }
 
-    /// A session close only interrupts when there's something to lose — busy, or it would
-    /// cascade-close an owned browser (ADR-0013). Otherwise it just closes, no confirm frame.
+    /// A session close always confirms first, so a single click or keystroke can't destroy
+    /// a session outright.
     private func closeOrConfirm(_ s: Session) {
-        if store.closeNeedsConfirm(s) { push(confirmDeleteSession(s)) }
-        else { runAndClose { self.store.closeSession(s) } }
+        push(confirmDeleteSession(s))
     }
 
     // MARK: Create frames — the search input becomes the name field

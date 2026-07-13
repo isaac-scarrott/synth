@@ -1942,10 +1942,9 @@
     if (s.querySelector('.sdot--run')) return 'run';
     return 'idle';
   }
-  // Busy: a live agent turn or process. Closing one is the only Close that loses something,
-  // so it's the only one that's red and the only one that stops to confirm on its own.
+  // Busy: a live agent turn or process. Closing one loses that turn, so it's the only
+  // Close that's red — every Close still confirms, busy or not.
   function sessionIsBusy(s) { const st = sessionState(s); return st === 'work' || st === 'run'; }
-  function sessionNeedsConfirm(s) { return sessionIsBusy(s) || ownedOf(s).length > 0; }
   const ROLL = {
     input: () => `<span class="ind ind--input">${MARK_INPUT}</span>`,
     error: () => `<span class="ind ind--error">${MARK_ERROR}</span>`,
@@ -3083,12 +3082,10 @@
     el.addEventListener('blur', onBlur);
   }
 
-  // Close/remove the selected row from the keyboard. An idle, unowned session ends right away —
-  // nothing is lost. Anything else drops into the ⌘K confirm frame so a single keystroke can't
-  // destroy work in progress — ↵ confirms, Esc cancels.
+  // Close/remove the selected row from the keyboard — always through the ⌘K confirm frame,
+  // so a single keystroke can't destroy anything — ↵ confirms, Esc cancels.
   function requestDelete(row) {
     if (!row) return;
-    if (rowLevel(row) === 'session' && !sessionNeedsConfirm(row)) { removeUnit(rowUnit(row)); return; }
     openPaletteAt(confirmFrame(row));
   }
 
@@ -3890,7 +3887,7 @@
       if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
       else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: sessionIsBusy(open), enter: () => sessionNeedsConfirm(open) ? pushFrame(confirmFrame(open)) : runAndClose(() => removeUnit(rowUnit(open))) });
+    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: sessionIsBusy(open), enter: () => pushFrame(confirmFrame(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
@@ -4079,7 +4076,7 @@
           if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
           else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
         }
-        items.push({ sec: 'act', icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(row), enter: () => sessionNeedsConfirm(row) ? pushFrame(confirmFrame(row)) : runAndClose(() => removeUnit(rowUnit(row))) });
+        items.push({ sec: 'act', icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(row), enter: () => pushFrame(confirmFrame(row)) });
         return items;
       },
     };

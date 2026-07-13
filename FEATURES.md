@@ -485,6 +485,10 @@ disclosure to dive deeper.
   keyboard, else the open session; idle sessions close straight through, anything else confirms in
   ⌘K. Listed in ⌘? and as the key hint on ⌘K's Session Close; natively it's File > Close Session.
 
+- **Session Close always confirms — the idle skip is gone** — an idle Claude Code session held a
+  conversation worth losing, so the "idle and unowned closes with no prompt" carve-out above is
+  removed: `d`, ⌘D, the ⌘K item, and the kebab menu all now confirm before every Close.
+
 - **synth-app MCP server: approval-gated worktree creation + handoff** — a second bundled MCP
   server that lets agents drive Synth itself: `worktree_create(branch, base?, handoff?)` blocks on
   a native yes/no prompt (Enter creates, Esc declines; decline tells the agent to carry on where it

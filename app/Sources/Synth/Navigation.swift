@@ -383,20 +383,14 @@ extension AppStore {
             return ActiveMenu(rowID: s.id, level: .session, creates: [],
                               onDelete: { [weak self] in self?.closeSession(s) },
                               confirmText: deleteSessionHint(s),
-                              isDestructive: s.status.isBusy,
-                              skipsConfirm: !closeNeedsConfirm(s))
+                              isDestructive: s.status.isBusy)
         }
     }
 
-    /// `d` on the selected row — drop into the ⌘K palette's confirm frame so a single
-    /// keystroke can't delete (working.html requestDelete → openPaletteAt(confirmFrame)). An
-    /// idle, unowned session has nothing to lose, so it closes straight away instead (ADR-0013).
+    /// `d` on the selected row — always drops into the ⌘K palette's confirm frame so a
+    /// single keystroke can't delete (working.html requestDelete → openPaletteAt(confirmFrame)).
     func requestDelete(_ ref: RowRef) {
         activeMenu = nil
-        if case let .session(s) = ref, !closeNeedsConfirm(s) {
-            closeSession(s)
-            return
-        }
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         let frame: PaletteFrame

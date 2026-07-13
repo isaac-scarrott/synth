@@ -1070,13 +1070,6 @@ enum FeedbackMode {
         return "Close this session? This also closes its \(what)."
     }
 
-    /// Whether closing `session` needs to ask first at all (ADR-0013): busy, because a turn
-    /// would be lost, or it owns browsers, because closing cascades onto them too. An idle,
-    /// unowned session just closes.
-    func closeNeedsConfirm(_ session: Session) -> Bool {
-        session.status.isBusy || !ownedBrowsers(of: session).isEmpty
-    }
-
     /// The comment ladder's spawn rung (CommentMode rung 3): an agent row created exactly
     /// like `newAgent` but WITHOUT `open()` — the spawn is silent, focus stays on the
     /// browser pane. The caller mounts the row for a beat so its PTY boots

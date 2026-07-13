@@ -14,9 +14,6 @@ struct RowMenu: View {
     /// Session close only: true while the session is busy — the sole loss signal a Close
     /// wears red for (ADR-0013). Remove is never red, at any level.
     var isDestructive: Bool = false
-    /// Session close only: an idle session with no owned browsers has nothing to lose, so
-    /// it closes on the first click — no confirm step at all (ADR-0013).
-    var skipsConfirm: Bool = false
     @Binding var isPresented: Bool
     /// Lifted to the store so the `d` shortcut can open straight into confirm and ↵ can commit.
     @Binding var confirming: Bool
@@ -84,7 +81,7 @@ struct RowMenu: View {
                 .padding(.horizontal, 6).padding(.vertical, 4)
         }
         MenuItem(icon: Phosphor.trash, title: deleteTitle, danger: danger) {
-            if skipsConfirm { onDelete(); isPresented = false } else { confirming = true }
+            confirming = true
         }
     }
 }

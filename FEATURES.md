@@ -509,3 +509,8 @@ disclosure to dive deeper.
   gates the ⌘K row hover, the sidebar's ring-dismiss-on-hover, and the notification deck's
   hover-to-fan, so a layout change scrolling a view under the pointer's last real position (hidden
   via `NSCursor.setHiddenUntilMouseMoves`) can no longer masquerade as a genuine hover.
+- **Browser device mode (⌘⇧M): the page in a device frame (both designs)** — a fourth toolbar
+  mode beside comment/DevTools/external: the page renders inside a hardware frame at a real
+  device viewport, with a strip spanning the fleet smallest→biggest (iPhone SE 375×667 → iPad
+  Pro 13″ 1032×1376), live CSS-point dims readout, rotate; frame scales down to fit, never up;
+  composes with comment mode + DevTools, survives navigation; ⌘K Page group + ⌘? row.

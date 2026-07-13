@@ -484,6 +484,36 @@
   .skel--cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 26px; }
   .skel--card { height: 96px; }
 
+  /* Device mode: the page previewed at a real device viewport inside a hardware frame.
+     The frame renders at true CSS-viewport size and scales down to fit the pane, never up. */
+  .browser__devicebar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--chrome); border-bottom: 0.5px solid var(--border); }
+  .devicebar__chips { flex: 1; min-width: 0; display: flex; gap: 3px; overflow-x: auto; scrollbar-width: none; }
+  .devicebar__chips::-webkit-scrollbar { display: none; }
+  .devicebar__chip { flex-shrink: 0; padding: 4px 10px; border: 0; border-radius: 999px; background: transparent; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: background 110ms ease, color 110ms ease; }
+  .devicebar__chip:hover { background: var(--hover); }
+  .devicebar__chip.is-active { background: var(--hover); color: var(--ink); }
+  .devicebar__dims { flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); white-space: nowrap; }
+  .browser--device .browser__view { padding: 0; overflow: hidden; }
+  .devstage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--chrome); }
+  .devframe__box { position: relative; flex-shrink: 0; }
+  .devframe { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: content-box; background: #0b0c0e; border-radius: 44px; padding: 14px; box-shadow: 0 12px 34px rgba(0,0,0,0.26), inset 0 0 0 0.5px rgba(255,255,255,0.12); }
+  .devframe__screen { position: relative; width: 100%; height: 100%; border-radius: 32px; background: var(--raised); overflow: hidden; display: flex; flex-direction: column; }
+  .devframe__status { flex-shrink: 0; display: flex; justify-content: space-between; padding: 16px 26px 0; font-size: 12px; font-weight: 600; color: var(--ink); }
+  .devframe__page { flex: 1; overflow: hidden; padding: 30px 22px 0; }
+  .devframe__page .skel--cards { grid-template-columns: 1fr 1fr; }
+  .devframe--bezel { border-radius: 40px; padding: 52px 16px; }
+  .devframe--bezel .devframe__screen { border-radius: 3px; }
+  .devframe--pad { border-radius: 34px; padding: 22px; }
+  .devframe--pad .devframe__screen { border-radius: 14px; }
+  .devframe--pad .devframe__page { padding: 34px 40px 0; }
+  .devframe--pad .devframe__page .skel--cards { grid-template-columns: repeat(3, 1fr); }
+  /* phone hardware: dynamic island / punch-hole camera up top, home indicator below */
+  .devframe--island .devframe__screen::before { content: ""; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 96px; height: 26px; border-radius: 999px; background: #0b0c0e; }
+  .devframe--punch .devframe__screen::before { content: ""; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 13px; height: 13px; border-radius: 50%; background: #0b0c0e; }
+  .devframe--island .devframe__screen::after, .devframe--punch .devframe__screen::after { content: ""; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 108px; height: 4px; border-radius: 999px; background: rgba(128,128,128,0.55); }
+  .devframe--island.devframe--land .devframe__screen::before { top: 50%; left: 10px; transform: translateY(-50%); width: 26px; height: 96px; }
+  .devframe--punch.devframe--land .devframe__screen::before { top: 50%; left: 12px; transform: translateY(-50%); }
+
   /* ----- Simulator ----- */
   .sim { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; background: #eef0f3; }
   .sim__device { width: 232px; height: 476px; border-radius: 36px; background: #0b0c0e; padding: 9px; box-shadow: 0 10px 30px rgba(0,0,0,0.24), inset 0 0 0 0.5px rgba(255,255,255,0.1); }
@@ -2282,6 +2312,8 @@
   const ICON_DEVTOOLS   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></svg>';
   const ICON_COMMENT    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm-40-76a12,12,0,1,1,12-12A12,12,0,0,1,88,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,128,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,168,140Z"/></svg>';
   const ICON_EXTERNAL   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>';
+  const ICON_DEVICE     = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M176,16H80A24,24,0,0,0,56,40V216a24,24,0,0,0,24,24h96a24,24,0,0,0,24-24V40A24,24,0,0,0,176,16ZM72,64H184V192H72Zm8-32h96a8,8,0,0,1,8,8v8H72V40A8,8,0,0,1,80,32Zm96,192H80a8,8,0,0,1-8-8v-8H184v8A8,8,0,0,1,176,224Z"/></svg>';
+  const ICON_ROTATE     = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16H211.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,1,1,16,0Z"/></svg>';
 
   // Recent destinations the "Go to…" surface offers. Static demo data; a real build seeds this from
   // the branch's dev-server port and the session's own visited history.
@@ -2295,6 +2327,35 @@
   const browserIsHome = (name) => !/[./:]/.test(name || '');
   const browserHost = (s) => (s || '').replace(/^https?:\/\//, '');
   const browserNorm = (s) => (s.includes('://') ? s : 'https://' + s);
+
+  // Device mode's fleet: the popular current devices, smallest viewport to biggest, so a page
+  // is checked at both extremes. Dimensions are CSS-viewport points, not hardware pixels.
+  const DEVICES = [
+    { id: 'iphone-se',    name: 'iPhone SE',         w: 375,  h: 667,  chrome: 'bezel'  },
+    { id: 'iphone-16',    name: 'iPhone 16',         w: 393,  h: 852,  chrome: 'island' },
+    { id: 'iphone-16-pm', name: 'iPhone 16 Pro Max', w: 440,  h: 956,  chrome: 'island' },
+    { id: 'galaxy-s25u',  name: 'Galaxy S25 Ultra',  w: 412,  h: 952,  chrome: 'punch'  },
+    { id: 'ipad-mini',    name: 'iPad mini',         w: 744,  h: 1133, chrome: 'pad'    },
+    { id: 'ipad-pro-13',  name: 'iPad Pro 13″',      w: 1032, h: 1376, chrome: 'pad'    },
+  ];
+  function devicebarHTML(deviceId, landscape) {
+    const d = DEVICES.find((x) => x.id === deviceId);
+    const w = landscape ? d.h : d.w, h = landscape ? d.w : d.h;
+    return `<div class="browser__devicebar" data-devicebar>
+      <div class="devicebar__chips">${DEVICES.map((x) => `<button class="devicebar__chip ${x.id === deviceId ? 'is-active' : ''}" data-device="${x.id}">${esc(x.name)}</button>`).join('')}</div>
+      <span class="devicebar__dims">${w} × ${h}</span>
+      <button class="browser__btn" data-rotate aria-label="Rotate device">${ICON_ROTATE}</button>
+    </div>`;
+  }
+  function deviceFrameHTML(deviceId, landscape) {
+    const d = DEVICES.find((x) => x.id === deviceId);
+    const w = landscape ? d.h : d.w, h = landscape ? d.w : d.h;
+    return `<div class="devstage" data-stage><div class="devframe__box" data-framebox>
+      <div class="devframe devframe--${d.chrome}${landscape ? ' devframe--land' : ''}" data-frame style="width:${w}px;height:${h}px">
+        <div class="devframe__screen"><div class="devframe__status"><span>9:41</span></div><div class="devframe__page">${browserPageHTML()}</div></div>
+      </div>
+    </div></div>`;
+  }
 
   function browserRecentsHTML() {
     return `<div class="browser__reclabel">Recent</div><div class="browser__rec">` +
@@ -2335,6 +2396,7 @@
       <button class="browser__omni" data-omni><span class="browser__lock">${ICON_NAV_LOCK}</span><span class="browser__url">${esc(url)}</span></button>
       <span class="browser__target" data-target hidden></span>
       <button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button>
+      <button class="browser__btn" data-nav="device" aria-label="Device mode">${ICON_DEVICE}</button>
       <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
       <button class="browser__btn" data-nav="external" aria-label="Open in default browser">${ICON_EXTERNAL}</button>
     </div>`;
@@ -2350,6 +2412,7 @@
           </div>
           <button class="browser__omni" data-omni><span class="browser__url browser__url--ph">Search or enter address</span></button>
           <button class="browser__btn" data-nav="comment" disabled aria-label="Comment mode">${ICON_COMMENT}</button>
+          <button class="browser__btn" data-nav="device" disabled aria-label="Device mode">${ICON_DEVICE}</button>
           <button class="browser__btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
           <button class="browser__btn" data-nav="external" disabled aria-label="Open in default browser">${ICON_EXTERNAL}</button>
         </div>
@@ -2374,6 +2437,7 @@
     const hist = []; let idx = -1;
     let devOpen = false, devTab = 'Elements';
     let commentOn = false;
+    let deviceOn = false, deviceId = DEVICES[1].id, deviceLand = false, deviceRO = null;
 
     function spin() {
       const r = host.querySelector('[data-nav="reload"]'); if (!r || reduceMotion) return;
@@ -2401,10 +2465,13 @@
       if (dev) { dev.disabled = idx < 0; dev.classList.toggle('is-on', devOpen); dev.onclick = toggleDev; }
       const com = host.querySelector('[data-nav="comment"]');
       if (com) { com.disabled = idx < 0; com.onclick = toggleComment; }
+      const dvc = host.querySelector('[data-nav="device"]');
+      if (dvc) { dvc.disabled = idx < 0; dvc.onclick = toggleDevice; }
       const ext = host.querySelector('[data-nav="external"]');
       if (ext) { ext.disabled = idx < 0; ext.onclick = () => { if (idx >= 0) window.open(hist[idx], '_blank', 'noopener'); }; }
       if (omni) omni.onclick = openOmni;
       updateCommentUI();
+      updateDeviceUI();
     }
     // Comment mode (ADR-0011 stages three/four). The chip names the delivery target up front:
     // the owning Claude session, or the fresh one this comment will spawn (which then adopts
@@ -2424,6 +2491,48 @@
         chip.hidden = !commentOn;
         if (commentOn) { const o = ownerOf(openEl); chip.textContent = '→ ' + (o ? sessionTitle(o) : 'New agent session'); }
       }
+    }
+    // Device mode: the page reflowed at a real device viewport inside a hardware frame, with a
+    // strip to hop across the fleet and rotate. Survives navigation, exactly like comment mode.
+    function toggleDevice() {
+      if (idx < 0) return;                       // the "go to" home has no page to frame
+      deviceOn = !deviceOn;
+      updateDeviceUI();
+    }
+    function updateDeviceUI() {
+      host.classList.toggle('browser--device', deviceOn);
+      const btn = host.querySelector('[data-nav="device"]');
+      if (btn) btn.classList.toggle('is-on', deviceOn);
+      const bar = host.querySelector('[data-devicebar]');
+      const view = host.querySelector('.browser__view');
+      if (!deviceOn || !view) {
+        if (bar) bar.remove();
+        if (deviceRO) { deviceRO.disconnect(); deviceRO = null; }
+        if (view && view.querySelector('[data-stage]')) view.innerHTML = browserPageHTML();
+        return;
+      }
+      const strip = devicebarHTML(deviceId, deviceLand);
+      if (bar) bar.outerHTML = strip; else view.insertAdjacentHTML('beforebegin', strip);
+      view.innerHTML = deviceFrameHTML(deviceId, deviceLand);
+      const nb = host.querySelector('[data-devicebar]');
+      nb.querySelectorAll('[data-device]').forEach((b) => b.onclick = () => { deviceId = b.dataset.device; updateDeviceUI(); });
+      nb.querySelector('[data-rotate]').onclick = () => { deviceLand = !deviceLand; updateDeviceUI(); };
+      if (deviceRO) deviceRO.disconnect();
+      deviceRO = new ResizeObserver(fitDeviceFrame);
+      deviceRO.observe(view.querySelector('[data-stage]'));
+      fitDeviceFrame();
+    }
+    // The frame lays out at true viewport size, then scales down to fit the stage (never up,
+    // so small devices stay life-size). The box carries the scaled footprint for flex centering.
+    function fitDeviceFrame() {
+      const stage = host.querySelector('[data-stage]');
+      const box = host.querySelector('[data-framebox]');
+      const frame = host.querySelector('[data-frame]');
+      if (!stage || !box || !frame) return;
+      const s = Math.min(1, (stage.clientWidth - 48) / frame.offsetWidth, (stage.clientHeight - 48) / frame.offsetHeight);
+      frame.style.transform = s < 1 ? `scale(${s})` : 'none';
+      box.style.width = Math.round(frame.offsetWidth * s) + 'px';
+      box.style.height = Math.round(frame.offsetHeight * s) + 'px';
     }
     function closeCard() { const c = host.querySelector('.browser__ccard'); if (c) c.remove(); }
     function openCard(e, view) {
@@ -2513,6 +2622,8 @@
       if (!commentOn) return;
       const view = e.target.closest('.browser__view');
       if (!view || e.target.closest('.browser__ccard') || e.target.closest('.browser__notice')) return;
+      // in device mode a comment lands on the device's screen, not the stage backdrop
+      if (view.querySelector('[data-stage]') && !e.target.closest('.devframe__screen')) return;
       openCard(e, view);
     });
     browserCommentAPI = { isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI };
@@ -2819,8 +2930,8 @@
       return;
     }
     // An open browser session claims the standard page verbs window-wide: ⌘L address,
-    // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each drives the visible toolbar control,
-    // so disabled states (home page, empty history) are respected for free.
+    // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools, ⌘⇧M device mode — each drives the visible
+    // toolbar control, so disabled states (home page, empty history) are respected for free.
     const bhost = openEl && openEl.dataset.type === 'browser' ? content.querySelector('.browser') : null;
     if (bhost && (e.metaKey || e.ctrlKey)) {
       const bpress = (sel) => { const b = bhost.querySelector(sel); if (b && !b.disabled) b.click(); };
@@ -2829,6 +2940,7 @@
       if (k === '[') { e.preventDefault(); bpress('[data-nav="back"]'); return; }
       if (k === ']') { e.preventDefault(); bpress('[data-nav="fwd"]'); return; }
       if (e.altKey && e.code === 'KeyI') { e.preventDefault(); bpress('[data-nav="devtools"]'); return; }
+      if (e.shiftKey && e.code === 'KeyM') { e.preventDefault(); bpress('[data-nav="device"]'); return; }
     }
     // while focus lives in the content pane (composer, terminal), nav keys stay there
     if (e.target instanceof Element && e.target.closest('.content')) return;
@@ -3575,6 +3687,7 @@
       [['⌘', '['], 'Back'],
       [['⌘', ']'], 'Forward'],
       [['⌥', '⌘', 'I'], 'Toggle DevTools'],
+      [['⌘', '⇧', 'M'], 'Toggle device mode'],
     ]],
     ['Command menu', [
       [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
@@ -3871,6 +3984,7 @@
       { icon: ICON_COPY,       label: 'Copy URL', disabled: home, enter: () => runAndClose(() => { if (url && navigator.clipboard) navigator.clipboard.writeText(browserNorm(url)); }) },
       { icon: ICON_EXTERNAL,   label: 'Open in default browser', disabled: home, enter: () => runAndClose(() => { if (url) window.open(browserNorm(url), '_blank'); }) },
       { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-devtools]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
+      { icon: ICON_DEVICE,     label: (live && live.querySelector('[data-nav="device"].is-on')) ? 'Exit device mode' : 'Enter device mode', kbd: ['⌘', '⇧', 'M'], disabled: home, enter: () => press('[data-nav="device"]') },
     ];
   }
   function contextActions() {

@@ -66,7 +66,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⇥"], label: "Toggle group"),
             Shortcut(keys: ["↵"], label: "Open session / toggle", alt: ["Space"]),
             Shortcut(keys: ["R"], label: "Rename selected"),
-            Shortcut(keys: ["D"], label: "Delete selected"),
+            Shortcut(keys: ["D"], label: "Close · remove selected"),
             Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder down · up"),
         ]),
         ShortcutGroup(name: "Browser", rows: [

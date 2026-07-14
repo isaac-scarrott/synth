@@ -54,8 +54,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         content.body = body
         content.interruptionLevel = .active
         if store?.soundError ?? true { content.sound = .default }
-        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req)
+        add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
     /// done → a transient banner (same `.active` interruption; the sound is opt-in and off by default).
@@ -73,8 +72,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         content.threadIdentifier = br?.id.uuidString ?? "synth"   // group by branch
         content.userInfo = ["session": s.id.uuidString]
         if sound { content.sound = .default }
-        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req)
+        add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    /// NC accepts or refuses asynchronously; a dropped error here is a notification that
+    /// vanishes with no trace, so both outcomes leave a log line.
+    private func add(_ req: UNNotificationRequest) {
+        let title = req.content.title
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { NSLog("Synth: notification refused (\(title)): \(err.localizedDescription)") }
+            else { NSLog("Synth: notification posted (\(title))") }
+        }
     }
 
     /// "title · branch · workspace" — the session's place in the tree, for the body line.

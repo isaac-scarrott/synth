@@ -615,8 +615,10 @@ enum FeedbackMode {
 
     /// A background session's status transition, turned into a notification — the single seam
     /// terminals and Claude both reach (`term-*` and Claude signals alike flow through `apply`).
-    /// The open session never notifies. Focus picks the surface: frontmost → the in-app deck,
-    /// unfocused → Notification Center. `force` overrides the focus rule for the DEBUG trigger.
+    /// Focus picks the surface: frontmost → the in-app deck, unfocused → Notification Center.
+    /// The open session never notifies in-app (the user is looking at it), but open ≠ seen
+    /// when Synth isn't frontmost — unfocused, it goes to Notification Center like any other.
+    /// `force` overrides the focus rule for the DEBUG trigger.
     /// `closing` marks the exit-close transition: the caller removes the row right after,
     /// so the raised done toast must outlive its session.
     /// Harness seam (`SYNTH_AUTOMATION`, ControlServer `automation.notifRoute`): pin the surface
@@ -625,20 +627,20 @@ enum FeedbackMode {
     @ObservationIgnored var automationNotifRoute: NotifRoute?
 
     func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil, closing: Bool = false) {
-        if openSessionID == id { clearNotif(id); return }
         let route = force ?? automationNotifRoute
         let toNC = route.map { $0 == .notificationCenter } ?? !NSApp.isActive
+        if openSessionID == id, !toNC { clearNotif(id); return }
         switch next.rollup {
         case .input, .error:
             let kind: NotifKind = next.rollup == .error ? .error : .input
-            session(id)?.unread = true   // working.html notify() marks the row unread too
+            if openSessionID != id { session(id)?.unread = true }   // working.html notify() marks the row unread too
             if toNC { NotificationService.shared.postAttention(store: self, id: id, kind: kind) }
             else { raiseInApp(id, kind) }
         case .idle where prev.rollup != .idle:
             // A live session settling to idle off-screen → "done": the unread bullet, one
             // soft row sweep, and a transient toast that dismisses itself (a finished session
             // should be seen, but asks for nothing). Unfocused → a transient banner.
-            session(id)?.unread = true   // working.html done also marks the row unread
+            if openSessionID != id { session(id)?.unread = true }   // working.html done also marks the row unread
             if toNC {
                 clearNotif(id)
                 NotificationService.shared.postDone(store: self, id: id)

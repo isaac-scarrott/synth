@@ -172,6 +172,18 @@ import AppKit
         applyDeviceEmulation()
     }
 
+    // Absolute setters for the control-socket verb (browser.deviceMode) — an agent
+    // states the mode it wants; toggles would race a user flipping the same switch.
+    func setDeviceMode(on: Bool) {
+        guard on != deviceModeOn else { return }
+        toggleDeviceMode()
+    }
+
+    func setDeviceLandscape(_ landscape: Bool) {
+        guard landscape != deviceLandscape else { return }
+        rotateDevice()
+    }
+
     func reportDeviceFitScale(_ s: Double) {
         guard abs(s - deviceFitScale) > 0.0005 else { return }
         deviceFitScale = s
@@ -353,7 +365,10 @@ private struct DeviceBar: View {
                 .font(.system(size: 10.5, design: .monospaced))
                 .foregroundStyle(Theme.inkFaint)
                 .lineLimit(1).fixedSize()
-            BarButton(icon: Phosphor.arrowClockwise, help: "Rotate device") {
+            // The device glyph turned to the orientation a press would give — a
+            // circular arrow here reads as reload next to the toolbar's real one.
+            BarButton(icon: Phosphor.deviceMobile, help: "Rotate device",
+                      rotation: ctrl.deviceLandscape ? 0 : 90) {
                 ctrl.rotateDevice()
             }
         }

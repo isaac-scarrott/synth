@@ -220,6 +220,48 @@ final class ControlServer: @unchecked Sendable {
             store.closeSession(session)
             return ["ok": true]
 
+        // Device mode (working.html devframe): read or set a browser session's device
+        // frame, so an agent can check the page it is working on at a phone or tablet
+        // viewport. Any agent may drive any browser (stage four: driving isn't
+        // destroying), so unlike browser.close there is no ownership gate.
+        case "browser.deviceMode":
+            guard let session = requestedSession(request, in: branch), session.kind == .browser,
+                  let ctrl = BrowserManager.shared.controller(for: session) else {
+                return ["ok": false, "error": "no browser session for sessionId"]
+            }
+            let wantsChange = request["on"] != nil || request["device"] != nil
+                           || request["landscape"] != nil
+            if wantsChange {
+                var picked: BrowserDevice?
+                if let id = request["device"] as? String {
+                    guard let d = BrowserDevice.fleet.first(where: { $0.id == id }) else {
+                        return ["ok": false,
+                                "error": "unknown device '\(id)' — one of: " +
+                                         BrowserDevice.fleet.map(\.id).joined(separator: ", ")]
+                    }
+                    picked = d
+                }
+                guard !ctrl.isHome else {
+                    return ["ok": false,
+                            "error": "the session shows the \"go to\" home — device mode needs a page; navigate first"]
+                }
+                if let d = picked { ctrl.setDevice(d) }
+                if let land = request["landscape"] as? Bool { ctrl.setDeviceLandscape(land) }
+                // Naming a device or orientation is asking for the mode; only an
+                // explicit on:false turns it off.
+                ctrl.setDeviceMode(on: request["on"] as? Bool ?? true)
+            }
+            return ["ok": true,
+                    "on": ctrl.deviceModeOn,
+                    "device": ctrl.device.id,
+                    "landscape": ctrl.deviceLandscape,
+                    "viewport": ["width": Int(ctrl.deviceLandscape ? ctrl.device.height : ctrl.device.width),
+                                 "height": Int(ctrl.deviceLandscape ? ctrl.device.width : ctrl.device.height)],
+                    "devices": BrowserDevice.fleet.map {
+                        ["id": $0.id, "name": $0.name,
+                         "width": Int($0.width), "height": Int($0.height)]
+                    }]
+
         // Automation verbs (SYNTH_AUTOMATION=1 only): the self-verify harness's
         // stand-in for driving the real UI on machines whose TCC denies synthetic
         // input. Each maps 1:1 onto the exact call the UI performs — no separate

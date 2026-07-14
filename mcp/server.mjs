@@ -333,6 +333,35 @@ tool("browser_reload", "Reload the session's page.",
     return text(`reloaded ${page.url()}`);
   });
 
+tool("browser_device_mode",
+  "Read or set the session's device mode — the page inside a hardware device frame at a " +
+  "real device viewport (Chrome device-toolbar emulation: true innerWidth/innerHeight, " +
+  "devicePixelRatio, mobile layout), visible to the user in the pane. Use it to check a " +
+  "page at phone/tablet sizes; screenshots and clicks see the emulated viewport too. " +
+  "With no arguments it reports the current state plus the device fleet (smallest → " +
+  "biggest). Naming a device or orientation switches the mode on; it persists across " +
+  "navigations until turned off with on:false.",
+  {
+    sessionId: sessionIdParam,
+    on: z.boolean().optional().describe(
+      "false exits device mode (default true when any other setting is passed)"),
+    device: z.string().optional().describe(
+      "fleet device id, e.g. iphone-se, iphone-16, ipad-pro-13 (full list in the no-arg reply)"),
+    landscape: z.boolean().optional().describe("true = landscape, false = portrait"),
+  },
+  async ({ sessionId, on, device, landscape }) => {
+    const scope = requireScope();
+    // targetEntry resolves the focused-session fallback and errors on a dead target.
+    const { sessionId: sid } = await targetEntry(requireInstance(), sessionId);
+    const { ok, ...state } = await controlCall(scope.inst, {
+      verb: "browser.deviceMode", worktreePath: scope.path, sessionId: sid,
+      ...(on !== undefined && { on }),
+      ...(device !== undefined && { device }),
+      ...(landscape !== undefined && { landscape }),
+    });
+    return text(JSON.stringify(state, null, 2));
+  });
+
 tool("browser_click",
   "Click in the session's page: a CSS selector, or viewport coordinates.",
   {

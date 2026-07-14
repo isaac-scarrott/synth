@@ -519,3 +519,12 @@ disclosure to dive deeper.
   (mobile + per-device DPR + fit scale) on the session's page target, proven live (393×852@3,
   1px-exact clicks, survives navigation); clears on exit, frame-only on the no-CDP hedge; no
   mock "9:41" row — the full screen is the truthful live viewport.
+
+## [2026-07-14](docs/features/2026-07-14.md)
+
+- **Device mode: agents drive it too, and rotate stops dressing as reload** — new
+  `browser_device_mode` MCP tool over a `browser.deviceMode` control verb (read/set on · device ·
+  landscape; naming a device implies on, only `on:false` exits; no ownership gate — driving isn't
+  destroying; absolute setters so agents can't race the user); and the strip's rotate control
+  becomes the device glyph turned to the orientation a press would give — the circular arrow read
+  as a second reload. Both designs + native + MCP server; verified through the full stack.

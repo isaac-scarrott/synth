@@ -844,7 +844,9 @@ private struct ReorderGesture: ViewModifier {
     }
 
     private var drag: some Gesture {
-        DragGesture(minimumDistance: 5)
+        // .global: the gesture view moves with the drag (ReorderLift's offset + slot hops),
+        // so local-space translation would lag the pointer and double-count each hop.
+        DragGesture(minimumDistance: 5, coordinateSpace: .global)
             .onChanged { v in
                 if !dragging {
                     dragging = true
@@ -921,7 +923,9 @@ struct SidebarResizeHandle: View {
                 if h { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
             }
             .highPriorityGesture(
-                DragGesture(minimumDistance: 2)
+                // .global: the handle rides the sidebar edge it resizes, so local-space
+                // translation would feed back and track the cursor at half speed.
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
                     .onChanged { v in
                         let base = startWidth ?? store.sidebarWidth
                         if startWidth == nil { startWidth = base }

@@ -818,14 +818,14 @@
     .branch--active:hover { background: var(--raised); }
   }
   .branch--active .branch__name { color: var(--ink); font-weight: 600; }
-  /* An expanded branch group already highlights its open session inside — the white header pill
-     would double-encode and read oddly, so drop it while expanded (the pill stays when collapsed,
-     framing the row as "you are here"). */
-  .repo--open > .branch--active.branch--group { background: none; box-shadow: none; }
+  /* Whenever the open session is itself visible — expanded (every child shown) or collapsed with
+     the focus-peek revealing just that one row — the session already carries the highlight, so the
+     white header pill double-encodes and reads as a stuck hover. Drop it in both cases; only a
+     collapsed group with nothing to peek (a pending setup) keeps the pill as its sole "you are
+     here" cue. The peeked label is de-bolded for the same reason: weight would double-encode too. */
+  .repo--open > .branch--active.branch--group,
+  .repo:not(.repo--open):has(> .collapse .session--open) > .branch--active.branch--group { background: none; box-shadow: none; }
   .repo--open > .branch--active.branch--group .branch__name { color: var(--ink-3); font-weight: 500; }
-  /* Collapsed, the group peeks that same open session just below (focus-peek) and the peeked row is
-     already bold — bolding the label too would double-encode the focus. Keep the pill, drop the
-     weight; only a group with nothing to peek (a pending setup) keeps bold as its sole cue. */
   .repo:not(.repo--open):has(> .collapse .session--open) > .branch--active.branch--group .branch__name { font-weight: 500; }
 
   /* A worktree still materialising: the row is present but grayed and inert, a small arc

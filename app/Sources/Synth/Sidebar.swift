@@ -364,10 +364,9 @@ private struct BranchRow: View {
         // Its own setup skeleton is what the content pane is showing — highlight the row
         // so the still-grayed pending pill still reads as "this is the one you're on".
         if store.openSetupBranchID == branch.id { return true }
-        // The branch containing the open session — but an *expanded* group already
-        // highlights the open session inside; the white header pill would
-        // double-encode, so it shows only while collapsed (working.html
-        // `.repo--open > .branch--active.branch--group`).
+        // The branch containing the open session carries the active-name colour whenever
+        // it's collapsed; the white header pill on top of that is gated separately (see
+        // activePillBackground) so a peeked session doesn't double-encode.
         guard let open = store.openSession, store.branch(of: open)?.id == branch.id else { return false }
         return !(branch.isLive && isOpen)
     }
@@ -459,8 +458,13 @@ private struct BranchRow: View {
         .reorderLift(.branch(branch))
     }
 
+    // The pill shows only when the active group's open session isn't visible below it: an
+    // expanded group (isActivePill already false) and a collapsed group peeking that one
+    // session both let the session carry the focus, so the pill would double-encode and read
+    // as a stuck hover. Only a group with nothing to peek (a pending setup) keeps it. Mirrors
+    // working.html dropping the pill for `.repo--open` and `.repo:not(.repo--open):has(.session--open)`.
     @ViewBuilder private var activePillBackground: some View {
-        if isActivePill {
+        if isActivePill && !peeking {
             RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.05), radius: 1, y: 1)

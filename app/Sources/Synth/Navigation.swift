@@ -258,11 +258,7 @@ extension AppStore {
             navCursor = i > 0 ? workspaces[i - 1].id
                 : workspaces.count > 1 ? workspaces[i + 1].id : nil
         }
-        for session in workspace.branches.flatMap(\.sessions) {
-            TerminalManager.shared.terminate(session.id)
-            BrowserManager.shared.terminate(session.id)
-            if openSessionID == session.id { openSessionID = nil }
-        }
+        for session in workspace.branches.flatMap(\.sessions) { teardownSession(session) }
         workspaces.removeAll { $0.id == workspace.id }
         expanded.remove(workspace.id)
     }
@@ -278,11 +274,7 @@ extension AppStore {
         if cursorInside(.branch(branch)) { navCursor = workspace(of: branch)?.id }
         // A failed/cancelled create whose setup skeleton was on screen falls back to empty.
         if openSetupBranchID == branch.id { openSetupBranchID = nil }
-        for session in branch.sessions {
-            TerminalManager.shared.terminate(session.id)
-            BrowserManager.shared.terminate(session.id)
-            if openSessionID == session.id { openSessionID = nil }
-        }
+        for session in branch.sessions { teardownSession(session) }
         let ws = workspaces.first { $0.branches.contains { $0.id == branch.id } }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)

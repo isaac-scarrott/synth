@@ -314,8 +314,13 @@ enum FeedbackMode {
     var renamingRowID: UUID?
     var renameText = ""
 
-    /// The ⌘K palette (nil = closed).
-    var palette: PaletteModel?
+    /// The ⌘K palette (nil = closed). Every frame builder captures the model strongly
+    /// (model → stack → PaletteFrame.build → model), so dropping the reference can't free
+    /// it — break that cycle on every close/replace here, or each ⌘K, kebab, delete and
+    /// ⌘N leaks a whole PaletteModel plus its branch cache and captured session graphs.
+    var palette: PaletteModel? {
+        didSet { if oldValue !== palette { oldValue?.stack = [] } }
+    }
 
     /// The ⌘? keyboard-shortcuts sheet (working.html's shortcutsEl).
     var shortcutsOpen = false
@@ -996,16 +1001,28 @@ enum FeedbackMode {
         for browser in ownedBrowsers(of: session) { closeSession(browser) }
         // Cursor falls up the hierarchy to the branch row (working.html removeUnit fallback).
         if navCursor == session.id { navCursor = branch(of: session)?.id }
-        TerminalManager.shared.terminate(session.id)
-        BrowserManager.shared.terminate(session.id)
+        teardownSession(session)
         for br in workspaces.flatMap(\.branches) {
             br.sessions.removeAll { $0.id == session.id }
         }
+    }
+
+    /// Release everything a session holds *outside* the tree: its terminal + browser
+    /// engines, its agent supervisor (the only path that stops an opencode event stream's
+    /// 250ms reconnect-probe loop), and its entries in the per-session maps and the
+    /// notification deck. The tree removal itself is the caller's job. Extracted so bulk
+    /// removal (removeBranch/removeWorkspace) tears sessions down as fully as closeSession
+    /// — terminating the engines while leaking the supervisor, maps and toast is what left
+    /// a removed opencode row probing a dead port forever.
+    func teardownSession(_ session: Session) {
+        TerminalManager.shared.terminate(session.id)
+        BrowserManager.shared.terminate(session.id)
         if openSessionID == session.id { openSessionID = nil }
         liveAgentIDs.remove(session.id)
         detachSupervisor(session.kind.agentID ?? session.spawnedKind.agentID, session.id)
         pulseTokens.removeValue(forKey: session.id)
         reportedExitCodes.removeValue(forKey: session.id)
+        clearNotif(session.id)
         // Drop this row's link-browser mapping whether it's the source terminal or the
         // browser itself that just closed.
         linkBrowsers[session.id] = nil
@@ -1749,6 +1766,10 @@ enum FeedbackMode {
                 // Engines must not outlive the app: a surviving instance owns the profile
                 // singleton and silently absorbs the next launch (BrowserEngine.shutdown docs).
                 BrowserManager.shared.shutdownAll()
+                // Neither must session process trees: quitting doesn't route through
+                // closeSession, so without this every open login → agent → MCP-server tree
+                // orphans to launchd on quit.
+                TerminalManager.shared.shutdownAll()
             }
         }
     }

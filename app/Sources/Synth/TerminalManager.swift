@@ -78,4 +78,14 @@ enum TerminalLauncher {
         views[id]?.close()
         views[id] = nil
     }
+
+    /// Tear down every live terminal on app quit — free each surface and reap its PTY
+    /// process tree (login → shell → agent → MCP servers). App quit doesn't route through
+    /// closeSession/removeBranch, and nothing else frees these, so without this every open
+    /// session's whole process tree is orphaned to launchd when Synth exits. Mirror of
+    /// BrowserManager.shutdownAll; both are driven off the willTerminate observer.
+    func shutdownAll() {
+        for view in views.values { view.close() }
+        views.removeAll()
+    }
 }

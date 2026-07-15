@@ -27,8 +27,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { chromium } from "playwright-core";
 import { z } from "zod";
-import { controlCall, makeTool, projectDir, requireInstance, requireScope,
-         text } from "./shared.mjs";
+import { controlCall, exitWithParent, makeTool, projectDir, requireInstance,
+         requireScope, text } from "./shared.mjs";
 
 // ---------------------------------------------------------------------------
 // CDP connection — lazy, reconnect on drop or port change.
@@ -637,4 +637,19 @@ tool("browser_evaluate",
     return text(rendered);
   });
 
+// Release every persistent handle on parent death: any un-stopped recording (stop its
+// screencast, detach its CDP session, drop its frame dir — otherwise it strands a temp
+// dir of up to REC_MAX_FRAMES JPEGs) and the cached CDP browser (the open websocket that
+// would otherwise keep us alive indefinitely).
+async function shutdownCleanup() {
+  for (const rec of recordings.values()) {
+    try { await rec.cdp.send("Page.stopScreencast"); } catch { /* already gone */ }
+    try { await rec.cdp.detach(); } catch { /* already gone */ }
+    try { fs.rmSync(rec.dir, { recursive: true, force: true }); } catch { /* already gone */ }
+  }
+  recordings.clear();
+  if (cdp) { try { await cdp.browser.close(); } catch { /* already gone */ } cdp = null; }
+}
+
 await server.connect(new StdioServerTransport());
+exitWithParent(shutdownCleanup);

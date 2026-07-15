@@ -209,8 +209,35 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Free the surface + release its retained context. Called by TerminalManager.terminate.
     func close() {
         removeWindowObservers()
-        if let surface { ghostty_surface_free(surface); self.surface = nil }
+        if let surface {
+            // Capture the shell's process group BEFORE freeing the surface, then hard-kill
+            // the whole tree. ghostty_surface_free closes the PTY master, which only HUPs the
+            // foreground process group — a descendant that survives HUP or sits in its own
+            // handle-holding event loop (a killed claude's MCP node servers, an spawned
+            // daemon) outlives that and orphans to launchd. The login leader setsid'd this
+            // PTY into its own private session, so the whole tree (login → shell → agent →
+            // MCP servers) shares one process group that is ours to reap and contains nothing
+            // else. See reapProcessTree for the safety guards.
+            let leafPID = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
+            ghostty_surface_free(surface)
+            self.surface = nil
+            Self.reapProcessTree(leafPID: leafPID)
+        }
         if let contextPtr { Unmanaged<GhosttySurfaceContext>.fromOpaque(contextPtr).release(); self.contextPtr = nil }
+    }
+
+    /// SIGTERM then (after a grace period) SIGKILL the PTY session's whole process group,
+    /// identified from any live process in it (`leafPID`, the surface's foreground pid).
+    /// Guarded so it can only ever hit that private, setsid'd group: never pid ≤ 1, never
+    /// our own group, never the process-group-less case. A no-op if the shell already exited
+    /// cleanly (killpg → ESRCH). Static so it survives this view's own deinit during quit.
+    static func reapProcessTree(leafPID: pid_t) {
+        guard leafPID > 1 else { return }
+        let pgid = getpgid(leafPID)
+        guard pgid > 1, pgid != getpgrp() else { return }
+        killpg(pgid, SIGTERM)
+        // Escalate to SIGKILL for anything that ignored TERM (a wedged node event loop).
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { killpg(pgid, SIGKILL) }
     }
 
     // MARK: Geometry

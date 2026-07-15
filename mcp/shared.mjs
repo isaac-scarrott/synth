@@ -122,6 +122,36 @@ export function controlCall(inst, request, { timeoutMs = 10000 } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Process lifetime — tie the server to its parent.
+
+/** Exit when the parent goes away. A stdio MCP server's only tie to its parent is
+ *  stdin: the client closes our stdin when it dies, so `end`/`close` there is the
+ *  parent-death signal. Without this, a server holding a long-lived handle (an open
+ *  CDP websocket) keeps node's event loop alive and orphans — surviving its claude
+ *  session for days, one leaked ~150MB process per browser-using session. `cleanup`
+ *  runs first (bounded, best-effort), then we exit unconditionally so a stuck handle
+ *  can never keep us alive. Signals are covered too, for a killpg/SIGTERM from Synth. */
+export function exitWithParent(cleanup) {
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await Promise.race([
+        Promise.resolve(cleanup?.()),
+        new Promise((r) => { setTimeout(r, 2000).unref?.(); }),
+      ]);
+    } catch { /* best-effort teardown — exit regardless */ }
+    process.exit(0);
+  };
+  // The transport puts stdin in flowing mode, so EOF surfaces as `end` (clean close)
+  // or `close` (hangup); guard makes the double-fire idempotent.
+  process.stdin.on("end", shutdown);
+  process.stdin.on("close", shutdown);
+  for (const sig of ["SIGTERM", "SIGHUP", "SIGINT"]) process.on(sig, shutdown);
+}
+
+// ---------------------------------------------------------------------------
 // Tool plumbing.
 
 /** One heavy result must not blow a Claude session's context: a 30k-element page

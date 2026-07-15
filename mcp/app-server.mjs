@@ -11,7 +11,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { controlCall, makeTool, requireScope, text } from "./shared.mjs";
+import { controlCall, exitWithParent, makeTool, requireScope, text } from "./shared.mjs";
 
 const server = new McpServer({ name: "synth-app", version: "0.1.0" });
 const tool = makeTool(server);
@@ -81,3 +81,6 @@ tool("worktree_create",
   });
 
 await server.connect(new StdioServerTransport());
+// No persistent handles to release, but exit promptly on parent death rather than
+// lingering on an in-flight approval's 250s socket wait.
+exitWithParent();

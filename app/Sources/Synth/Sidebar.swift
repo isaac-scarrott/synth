@@ -250,6 +250,13 @@ private struct WorkspaceRow: View {
     private var menuOpen: Bool { store.activeMenu?.rowID == workspace.id }
     private var revealed: Bool { hovering || menuOpen }
     private var renaming: Bool { store.renamingRowID == workspace.id }
+    /// Focus peek: while collapsed, the branch holding the open session still shows —
+    /// just that branch, nothing else (working.html `.collapse:has(.session--open)`).
+    private var peekBranchID: UUID? {
+        guard !isOpen, let open = store.openSession, let br = store.branch(of: open),
+              store.workspace(of: br)?.id == workspace.id else { return nil }
+        return br.id
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -295,15 +302,18 @@ private struct WorkspaceRow: View {
             .id(workspace.id)
             .reorderGesture(.workspace(workspace))
 
-            Reveal(open: isOpen) {
+            Reveal(open: isOpen || peekBranchID != nil) {
                 VStack(alignment: .leading, spacing: 1) {
                     if workspace.branches.isEmpty {
                         EmptyGroupHint(text: "No worktrees yet")
                     } else {
+                        // Peeking a collapsed workspace shows only the branch that holds the
+                        // open session; expanded, every branch shows.
                         // `selected` computed here, passed as a plain value: a cursor move
                         // then re-evaluates only the two rows whose value flipped, not every
                         // row body in the tree (hundreds, at scale).
-                        ForEach(workspace.branches) {
+                        ForEach(peekBranchID.map { id in workspace.branches.filter { $0.id == id } }
+                                ?? workspace.branches) {
                             BranchRow(branch: $0, workspace: workspace,
                                       selected: store.keyboardActive && store.navCursor == $0.id)
                         }
@@ -342,6 +352,11 @@ private struct BranchRow: View {
     private var isOpen: Bool { store.expanded.contains(branch.id) }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
     private var renaming: Bool { store.renamingRowID == branch.id }
+    /// Focus peek: while collapsed, the open session it holds still shows — just that one
+    /// session, nothing else (working.html `.collapse:has(.session--open)`).
+    private var peeking: Bool {
+        !isOpen && store.openSession.map { store.branch(of: $0)?.id == branch.id } == true
+    }
     private var isActivePill: Bool {
         // Its own setup skeleton is what the content pane is showing — highlight the row
         // so the still-grayed pending pill still reads as "this is the one you're on".
@@ -408,12 +423,15 @@ private struct BranchRow: View {
             .id(branch.id)
             .reorderGesture(.branch(branch))
 
-            Reveal(open: isOpen) {
+            Reveal(open: isOpen || peeking) {
                 VStack(alignment: .leading, spacing: 1) {
                     if branch.sessions.isEmpty {
                         EmptyGroupHint(text: "No sessions yet")
                     } else {
-                        ForEach(branch.sessions) {
+                        // Peeking a collapsed group shows only the open session; expanded,
+                        // every session shows.
+                        ForEach(peeking ? branch.sessions.filter { $0.id == store.openSessionID }
+                                        : branch.sessions) {
                             SessionRow(session: $0,
                                        selected: store.keyboardActive && store.navCursor == $0.id)
                         }

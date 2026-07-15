@@ -686,6 +686,19 @@
   }
   .repo--open > .collapse > .collapse__inner { opacity: 1; }
 
+  /* ---- Focus peek: collapsing never hides the session you're in ----
+     A branch group or whole project can be folded while the open session lives inside
+     it. Rather than swallow the focused session, the closed accordion reveals just the
+     path to it — the branch row and that one session — keeping every other child folded
+     away. Collapse the group: only the open session peeks out. Collapse the project: its
+     branch row and the open session peek out; sibling branches stay folded. */
+  .repo:not(.repo--open) > .collapse:has(.session--open) { grid-template-rows: 1fr; }
+  .repo:not(.repo--open) > .collapse:has(.session--open) > .collapse__inner { opacity: 1; }
+  /* keep only the open session's row... */
+  .repo:not(.repo--open) > .collapse:has(.session--open) .session:not(.session--open) { display: none; }
+  /* ...and, at project level, only the branch group that holds it */
+  .repo:not(.repo--open) > .collapse:has(.session--open) .branches > .repo:not(:has(.session--open)) { display: none; }
+
   .branches {
     margin: 1px 0 5px 18px;
     padding-left: 11px;
@@ -2800,12 +2813,16 @@
   let selEl = null;
 
   function treeRows() {
-    // A tree row is navigable only if none of its ancestors are collapsed.
+    // A tree row is navigable only if it's actually on screen. A collapsed accordion
+    // hides its rows — except a focus peek, where the closed accordion still reveals the
+    // open session's path (the folded-away rows go display:none, caught by offsetParent).
     return [...nav.querySelectorAll('[data-row]')].filter((row) => {
+      if (row.offsetParent === null) return false; // folded away inside a peek
       let p = row.parentElement;
       while (p && p !== nav) {
         if (p.classList.contains('collapse') &&
-            !p.closest('[data-repo]').classList.contains('repo--open')) {
+            !p.closest('[data-repo]').classList.contains('repo--open') &&
+            !p.querySelector('.session--open')) {
           return false;
         }
         p = p.parentElement;

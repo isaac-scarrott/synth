@@ -34,13 +34,25 @@ extension AppStore {
     /// Keyboard movement only ever visits these (FEATURES: "visible rows only").
     var visibleRows: [RowRef] {
         var rows: [RowRef] = []
+        // Focus peek: collapsing an ancestor never hides the open session. A collapsed
+        // group still surfaces its open session; a collapsed workspace still surfaces the
+        // branch row plus that session (working.html `.collapse:has(.session--open)`).
+        let open = openSession
+        let openBranchID = open.flatMap { branch(of: $0)?.id }
         for ws in workspaces {
             rows.append(.workspace(ws))
-            guard expanded.contains(ws.id) else { continue }
-            for br in ws.branches {
-                rows.append(.branch(br))
-                guard expanded.contains(br.id) else { continue }
-                for s in br.sessions { rows.append(.session(s)) }
+            if expanded.contains(ws.id) {
+                for br in ws.branches {
+                    rows.append(.branch(br))
+                    if expanded.contains(br.id) {
+                        for s in br.sessions { rows.append(.session(s)) }
+                    } else if let open, br.id == openBranchID {
+                        rows.append(.session(open))   // collapsed group peeks its open session
+                    }
+                }
+            } else if let open, let br = branch(of: open), workspace(of: br)?.id == ws.id {
+                rows.append(.branch(br))              // collapsed workspace peeks the branch...
+                rows.append(.session(open))           // ...and the open session inside it
             }
         }
         return rows

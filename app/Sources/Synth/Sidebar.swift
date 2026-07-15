@@ -371,6 +371,12 @@ private struct BranchRow: View {
         guard let open = store.openSession, store.branch(of: open)?.id == branch.id else { return false }
         return !(branch.isLive && isOpen)
     }
+    /// The active-group label goes bold only when it is the *sole* focus cue. Once its open
+    /// session shows below — expanded (all sessions) or peeking while collapsed (that one) —
+    /// the bold session carries the focus, so bolding the label too would double-encode. Only a
+    /// group with nothing to peek (a pending setup) keeps the bold (working.html
+    /// `.repo:not(.repo--open):has(> .collapse .session--open) > .branch--active`).
+    private var boldName: Bool { isActivePill && !peeking }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -393,7 +399,7 @@ private struct BranchRow: View {
                             Chevron(open: isOpen)
                             Text(branch.name)
                                 .font(.system(size: 12, design: .monospaced))
-                                .fontWeight(isActivePill ? .semibold : .medium)
+                                .fontWeight(boldName ? .semibold : .medium)
                                 .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
                                 .lineLimit(1).truncationMode(.middle)
                             // The branch's PR rides beside the name — identity, not status, so it
@@ -504,13 +510,22 @@ private struct SessionRow: View {
                 Button { store.open(session); focusContent(store) } label: {
                     HStack(spacing: 8) {
                         SessionIcon(kind: session.kind, size: 14).frame(width: 14)
+                        // The box always reserves the semibold width (hidden ghost), so the
+                        // focus weight flip renders in place without nudging the row — the
+                        // native mirror of working.html's flex:1 name box (.session--open).
                         Text(session.title)
-                            .font(.system(size: 11.5))
-                            // Only the focused session goes bold; unread surfaces via colour
-                            // + the gutter bullet, not weight (working.html .session--open).
-                            .fontWeight(isOpen ? .semibold : .medium)
-                            .foregroundStyle(nameColor)
+                            .font(.system(size: 11.5, weight: .semibold))
                             .lineLimit(1)
+                            .hidden()
+                            .overlay(alignment: .leading) {
+                                Text(session.title)
+                                    .font(.system(size: 11.5))
+                                    // Only the focused session goes bold; unread surfaces via
+                                    // colour + the gutter bullet, not weight.
+                                    .fontWeight(isOpen ? .semibold : .medium)
+                                    .foregroundStyle(nameColor)
+                                    .lineLimit(1)
+                            }
                         Spacer(minLength: 4)
                         Group {
                             // The mark mirrors the OWNER's icon, so the tie names which agent.

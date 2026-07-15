@@ -224,6 +224,9 @@ extension URL {
     /// already in the tree (grayed, spinner, inert) but has no checkout to act on yet.
     /// Never persisted — a quit mid-create must not restore a half-made row.
     var isPending: Bool
+    /// This branch's GitHub pull request, if any (PRService). Derived like session status,
+    /// not persisted: nil until the first `gh` read fills it, refreshed on activation.
+    var pr: PRInfo?
 
     init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", browserRecents: [BrowserRecent] = [], isPending: Bool = false) {
         self.id = id

@@ -448,6 +448,7 @@ enum FeedbackMode {
         MCPInstaller.refreshServerInstall()
         syncAgentBridge()
         startAutosave()
+        refreshPullRequests()
     }
 
     /// Keep the instance file's worktreePaths and every worktree's .mcp.json current.
@@ -1372,6 +1373,33 @@ enum FeedbackMode {
             colorIndex: workspaces.count % Theme.chipColors.count
         )
         workspaces.append(ws)   // collapsed by default
+        refreshPullRequests(in: ws)
+    }
+
+    // MARK: Pull requests (PRService)
+
+    /// Refresh every workspace's PR state from `gh`. Called at launch and on app activation;
+    /// cheap to repeat — a missing `gh` or a non-GitHub repo simply yields no PRs.
+    func refreshPullRequests() {
+        guard PRService.ghPath != nil else { return }
+        for ws in workspaces { refreshPullRequests(in: ws) }
+    }
+
+    /// One workspace's read: the blocking `gh pr list` (a cold call hits the network) runs
+    /// off the main thread; the result is folded back onto the branches on the main actor.
+    private func refreshPullRequests(in workspace: Workspace) {
+        guard PRService.ghPath != nil else { return }
+        let repo = workspace.url
+        let id = workspace.id
+        Task { [weak self] in
+            let prs = await Task.detached(priority: .utility) {
+                PRService.pullRequests(at: repo)
+            }.value
+            guard let self, let ws = self.workspaces.first(where: { $0.id == id }) else { return }
+            for branch in ws.branches where branch.pr != prs[branch.name] {
+                branch.pr = prs[branch.name]
+            }
+        }
     }
 
     // MARK: Worktrees (ADR-0007: every branch row is a real folder)

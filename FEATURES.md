@@ -528,3 +528,18 @@ disclosure to dive deeper.
   destroying; absolute setters so agents can't race the user); and the strip's rotate control
   becomes the device glyph turned to the orientation a press would give — the circular arrow read
   as a second reload. Both designs + native + MCP server; verified through the full stack.
+
+## [2026-07-15](docs/features/2026-07-15.md)
+
+- **PR indicators: a branch's pull request, in the sidebar and the header** — every branch row
+  carries a state-coloured glyph beside its name (green open, purple merged, red closed; merged
+  wears git-merge, the rest git-pull-request), and the open session's header carries a clickable
+  `#<number>` chip that opens the PR in the user's default browser. State comes from `gh pr list`
+  read per repo off the main thread (strongest PR per head branch), derived not persisted, and
+  refreshed on launch / add-workspace / app activation; a missing `gh` or non-GitHub repo just
+  shows nothing. Both designs (subset invariant held) + native; verified in the running app
+  against real GitHub PRs (`cli/cli`), including the `Text(verbatim:)` fix for `#13,874` digit
+  grouping.
+- **Copy the branch name from the pane header** — a hover-revealed copy button after the
+  `workspace / branch` crumb; one click copies the branch name and flashes a green check
+  (`navigator.clipboard` in the mock, `NSPasteboard` native). Both designs + native.

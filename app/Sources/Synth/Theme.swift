@@ -22,7 +22,7 @@ enum Theme {
     static let selRing     = accent.opacity(0.5)
 
     // Text tiers
-    static let ink          = dyn(0x1A1B1F, 0xF3F4F6)   // tier-1 text
+    static let ink          = dyn(0x1C1E23, 0xE6E8ED)   // tier-1 text (unified with repoName primary)
     static let inkMuted     = dyn(0x7E808A, 0x8D9099)
     static let inkFaint     = dyn(0xA6A8B0, 0x666A72)
 
@@ -52,7 +52,7 @@ enum Theme {
     static let repoCount    = inkMeta
     static let navLabel     = inkMeta
     static let chevron      = inkMeta
-    static let branchName   = ink5                      // inactive branch
+    static let branchName   = ink3                      // inactive branch (parent tier above sessions)
     static let branchMeta   = inkMeta
     static let sessionName  = inkMeta
     static let sessionNameUnread = dyn(0x34363D, 0xECEEF2)

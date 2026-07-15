@@ -543,3 +543,8 @@ disclosure to dive deeper.
 - **Copy the branch name from the pane header** — a hover-revealed copy button after the
   `workspace / branch` crumb; one click copies the branch name and flashes a green check
   (`navigator.clipboard` in the mock, `NSPasteboard` native). Both designs + native.
+- **Synth 0.4.0 shipped (build 212)** — minor release rolling up everything since 0.3.0 (device
+  mode + `browser_device_mode`, PR indicators, copy-branch-name, native notifications from the open
+  session, sidebar restyle, ⌘K worktree approval) plus the process-lifecycle/memory hardening.
+  Notarized, stapled, 9 deltas (6.9MB) against a 136MB download; verified credential-less and
+  installed to `/Applications`.

@@ -489,7 +489,10 @@ enum FeedbackMode {
             // the new conversation generates its own title (arriving as .titleChanged).
             if let s = session(id), !s.titleIsCustom { s.title = s.spawnedKind.tplStart }
         case let .exitCodeReported(id, code):
-            reportedExitCodes[id] = code
+            // Late socket events can arrive after the row closed (closeSession already ran);
+            // don't repopulate a map nothing will drain — .exited's removeValue is unreachable
+            // once session(id) is gone.
+            if session(id) != nil { reportedExitCodes[id] = code }
         case let .exited(id, code):
             guard let s = session(id) else { break }
             let prev = s.status
@@ -543,9 +546,11 @@ enum FeedbackMode {
             }
         case let .markUnread(id): if openSessionID != id { session(id)?.unread = true }
         case let .agentReady(id):
-            liveAgentIDs.insert(id)
+            // A readiness signal racing a row close must not re-add a UUID nothing removes.
+            if session(id) != nil { liveAgentIDs.insert(id) }
         case let .agentSessionCaptured(id, agentSessionID):
-            if let s = session(id), s.agentSessionID != agentSessionID { s.agentSessionID = agentSessionID }
+            guard let s = session(id) else { break }
+            if s.agentSessionID != agentSessionID { s.agentSessionID = agentSessionID }
             liveAgentIDs.insert(id)
         case let .browserNavigated(id, url):
             guard let s = session(id) else { return }
@@ -1019,7 +1024,11 @@ enum FeedbackMode {
         BrowserManager.shared.terminate(session.id)
         if openSessionID == session.id { openSessionID = nil }
         liveAgentIDs.remove(session.id)
-        detachSupervisor(session.kind.agentID ?? session.spawnedKind.agentID, session.id)
+        // Detach EVERY installed agent's supervisor, not just this row's kind: opencode's
+        // decorate mints a port for every spawned session (any terminal may become opencode)
+        // and only its own detach releases it, so a closed terminal/claude row would otherwise
+        // strand that port entry for the app's life. detach is a no-op for a never-attached one.
+        for agent in AgentRegistry.installed { detachSupervisor(agent.id, session.id) }
         pulseTokens.removeValue(forKey: session.id)
         reportedExitCodes.removeValue(forKey: session.id)
         clearNotif(session.id)
@@ -1378,6 +1387,9 @@ enum FeedbackMode {
     /// different repos run independently. Ops run detached so a full checkout or a
     /// multi-GB delete never touches the main thread.
     @ObservationIgnored private var gitTails: [URL: Task<Void, Never>] = [:]
+    /// Per-repo generation, so a self-clearing tail only removes its own entry (a newer op
+    /// may already have chained on behind it).
+    @ObservationIgnored private var gitTailSeq: [URL: Int] = [:]
 
     /// Run `op` off the main thread, behind any in-flight op on `repo`, returning its
     /// result on the main actor.
@@ -1387,7 +1399,16 @@ enum FeedbackMode {
             await prev?.value
             return await Task.detached(priority: .userInitiated) { op() }.value
         }
-        gitTails[repo] = Task { _ = await task.value }
+        let seq = (gitTailSeq[repo] ?? 0) + 1
+        gitTailSeq[repo] = seq
+        // Self-clear once idle so the map holds only in-flight chains, not one dead Task per
+        // repo ever touched. The seq guard leaves a newer op's tail in place.
+        gitTails[repo] = Task { [weak self] in
+            _ = await task.value
+            guard let self, self.gitTailSeq[repo] == seq else { return }
+            self.gitTails[repo] = nil
+            self.gitTailSeq[repo] = nil
+        }
         return await task.value
     }
 

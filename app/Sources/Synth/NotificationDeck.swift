@@ -54,6 +54,12 @@ struct NotificationDeck: View {
             .frame(height: spread ? fannedH : collapsedH, alignment: .bottomLeading)
             .animation(.easeOut(duration: 0.24), value: spread)
             .animation(.easeOut(duration: 0.24), value: order.map(\.id))
+            // Drop measured heights for toasts that have left the deck — NotifCard only ever
+            // writes into cardHeights, so without this it grows one entry per notified session.
+            .onChange(of: order.map(\.id)) { _, ids in
+                let live = Set(ids)
+                cardHeights = cardHeights.filter { live.contains($0.key) }
+            }
             .onHover { if !store.pointerStale { hovering = $0 } }
             .padding(22)
         }

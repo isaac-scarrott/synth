@@ -518,6 +518,15 @@ tool("browser_record_start",
       await cdp.detach().catch(() => {});
       throw e;
     }
+    // If the recorded page closes (browser_close, user navigation-away, target crash) before
+    // browser_record_stop, nothing else would detach the CDP session or delete the frame dir —
+    // the temp dir would then outlive the process. Clean up on that edge too.
+    page.once("close", () => {
+      if (recordings.get(sid) !== rec) return;
+      recordings.delete(sid);
+      rec.cdp.detach().catch(() => {});
+      fs.rmSync(rec.dir, { recursive: true, force: true });
+    });
     recordings.set(sid, rec);
     return text(`recording session ${sid} — drive the page, then browser_record_stop`);
   });

@@ -60,6 +60,11 @@ final class ControlServer: @unchecked Sendable {
             // process could take the app down by probing the socket. Fail the write instead.
             var on: Int32 = 1
             setsockopt(conn, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+            // A silent peer that connects but never sends a newline would otherwise park its
+            // handler thread + fd in read() for the app's lifetime. Time the read out so the
+            // n <= 0 break fires and the defer close(conn) releases both.
+            var rcvto = timeval(tv_sec: 30, tv_usec: 0)
+            setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &rcvto, socklen_t(MemoryLayout<timeval>.size))
             Thread.detachNewThread { [weak self] in self?.handle(conn) }
         }
     }

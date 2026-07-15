@@ -30,6 +30,7 @@ import Foundation
         started = true
         try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
         sweepDeadInstances()
+        Self.reapOrphanedSessionTrees()
         write()
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
@@ -83,6 +84,47 @@ import Foundation
 
     private func removeFile() {
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Reap session process trees orphaned by a previous Synth that crashed or was
+    /// force-quit: its `login` children reparent to launchd (ppid 1) but keep running —
+    /// the in-process quit teardown (TerminalManager.shutdownAll → killpg) never got to run,
+    /// so the whole login → shell → agent → MCP-server tree leaks until reboot. Each Synth
+    /// login tree is marked by its `synth-login-<pid>.sh` launch script in the login argv;
+    /// ppid == 1 is unambiguous proof its Synth is gone (a live instance's own login children
+    /// have ppid == that instance, never 1), which also sidesteps the pid-reuse hole in the
+    /// instance-file sweep. Runs off the main thread — one `ps` at launch, then killpg per
+    /// orphaned group. Multi-instance safe: a live sibling's sessions are never ppid 1.
+    private static func reapOrphanedSessionTrees() {
+        DispatchQueue.global(qos: .utility).async {
+            let ps = Process()
+            ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+            ps.arguments = ["-axo", "pid=,ppid=,pgid=,command="]
+            let pipe = Pipe()
+            ps.standardOutput = pipe
+            ps.standardError = FileHandle.nullDevice
+            guard (try? ps.run()) != nil else { return }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            ps.waitUntilExit()
+            guard let out = String(data: data, encoding: .utf8) else { return }
+
+            var groups = Set<pid_t>()
+            for line in out.split(separator: "\n") {
+                // Specifically a Synth session-tree leader: `/usr/bin/login` running one of our
+                // `synth-login-<pid>.sh` scripts — not merely any command that mentions the
+                // path (a claude shell can carry it in an arg). The first three space-separated
+                // fields are pid, ppid, pgid (from `-o …=`); the rest is the command line.
+                guard line.contains("/usr/bin/login"), line.contains("synth-login-") else { continue }
+                let f = line.split(separator: " ", omittingEmptySubsequences: true)
+                guard f.count >= 3, let ppid = pid_t(f[1]), ppid == 1,
+                      let pgid = pid_t(f[2]), pgid > 1 else { continue }
+                groups.insert(pgid)
+            }
+            for pgid in groups {
+                killpg(pgid, SIGTERM)
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2) { killpg(pgid, SIGKILL) }
+            }
+        }
     }
 
     /// Instance files whose owning pid is gone — crashed / SIGKILLed instances

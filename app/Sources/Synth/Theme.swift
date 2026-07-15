@@ -71,6 +71,12 @@ enum Theme {
     static let danger      = Color(hex: 0xFF3B30)   // error (!)
     static let copper      = dyn(0xA05633, 0xC2724C)   // the AI mark (session__icon--ai, ind--owned)
 
+    /// PR states — GitHub's own hues, tuned per theme (working.html `--pr-*`). Identity, not
+    /// brand: they only ever colour a branch's pull-request glyph and header chip.
+    static let prOpen      = dyn(0x1A7F37, 0x57AB5A)
+    static let prMerged    = dyn(0x8250DF, 0xB083F0)
+    static let prClosed    = dyn(0xCF222E, 0xE5534B)
+
     /// Identity, not brand: six hues at 34% saturation, each ≥15° from every reserved colour and
     /// ≥27° from each other, all clearing 4.6:1 for their white letter.
     static let chipColors: [Color] = [
@@ -132,6 +138,20 @@ extension NSColor {
             alpha: 1
         )
     }
+}
+
+extension PRState {
+    /// The state's colour (working.html `.pr--open/merged/closed`).
+    var tint: Color {
+        switch self {
+        case .open: return Theme.prOpen
+        case .merged: return Theme.prMerged
+        case .closed: return Theme.prClosed
+        }
+    }
+    /// A merged PR wears the merge glyph; open and closed both wear pull-request (the colour
+    /// tells them apart), matching working.html.
+    var glyph: String { self == .merged ? Phosphor.gitMerge : Phosphor.gitPullRequest }
 }
 
 extension SessionKind {

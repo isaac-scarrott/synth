@@ -396,6 +396,13 @@ private struct BranchRow: View {
                                 .fontWeight(isActivePill ? .semibold : .medium)
                                 .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
                                 .lineLimit(1).truncationMode(.middle)
+                            // The branch's PR rides beside the name — identity, not status, so it
+                            // stays clear of the roll-up's reserved right axis. Colour is the state.
+                            if let pr = branch.pr {
+                                Phos(path: pr.state.glyph, size: 11)
+                                    .foregroundStyle(pr.state.tint)
+                                    .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased())"))
+                            }
                             Spacer(minLength: 4)
                             if branch.isPending {
                                 Ind { PendingSpinner() }

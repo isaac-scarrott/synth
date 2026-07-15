@@ -179,6 +179,11 @@ struct RootView: View {
         }
         .onAppear(perform: installKeyMonitor)
         .onAppear { NotificationService.shared.bootstrap(store: store) }
+        // Refetch PR state whenever Synth comes forward — a branch merged or a PR opened
+        // while the user was away shows up on their return (PRService reads are idempotent).
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            store.refreshPullRequests()
+        }
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
 

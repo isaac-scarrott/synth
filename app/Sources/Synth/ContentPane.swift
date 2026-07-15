@@ -98,6 +98,7 @@ private struct PaneHead: View {
     let session: Session
     let workspace: Workspace?
     let branch: Branch?
+    @State private var hovering = false
 
     private var collapsed: Bool { store.sidebarCollapsed }
 
@@ -123,17 +124,95 @@ private struct PaneHead: View {
                     .kerning(-0.11)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                // Copy the branch name — hover-revealed on the header, like the sidebar kebab.
+                CrumbCopyButton(text: br.name, revealed: hovering)
             }
             Spacer(minLength: 0)
+            // The open branch's PR, clickable through to GitHub in the default browser.
+            if let pr = branch?.pr {
+                PRChip(pr: pr)
+            }
         }
         // Collapsed, the header starts past the traffic lights; either way it is the same band
         // as the sidebar strip, so the title sits on the traffic-light centre line.
         .padding(.leading, collapsed ? Theme.trafficLightsClearance : 18)
         .padding(.trailing, 18)
         .frame(height: Theme.titlebarHeight)
+        .onHover { hovering = $0 }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 0.5)
         }
+    }
+}
+
+/// working.html `.crumb-copy`: copies the branch name to the clipboard, flashing a green
+/// check. Hover-revealed on the header (the sidebar-kebab idiom), so it stays out of the way.
+private struct CrumbCopyButton: View {
+    let text: String
+    let revealed: Bool
+    @State private var hovering = false
+    @State private var copied = false
+
+    var body: some View {
+        Button(action: copy) {
+            Phos(path: copied ? Phosphor.check : Phosphor.copy, size: 12)
+                .frame(width: 19, height: 19)
+                .foregroundStyle(copied ? Theme.run : (hovering ? Theme.ink2 : Theme.inkMeta))
+                .background(hovering && !copied ? Theme.rowSelected : .clear,
+                            in: RoundedRectangle(cornerRadius: 5))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .opacity(copied || revealed ? 1 : 0)
+        .help("Copy branch name")
+    }
+
+    private func copy() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { copied = false }
+    }
+}
+
+/// working.html `.prchip`: the open branch's pull request as a raised button (like every
+/// other control) so it reads as clickable — the state colour lives only in the git glyph
+/// + number, not a full fill, so it's a control, not a status lamp. Opens the PR in the
+/// user's default browser. Dev builds float a DEV badge in this same corner, so the button
+/// clears it (`.app.is-dev`).
+private struct PRChip: View {
+    let pr: PRInfo
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            if let url = URL(string: pr.url) { NSWorkspace.shared.open(url) }
+        } label: {
+            HStack(spacing: 5) {
+                Phos(path: pr.state.glyph, size: 13)   // the state glyph carries the colour
+                // verbatim: a plain Text("#\(Int)") is a LocalizedStringKey and would
+                // group the digits (#13,874) — a PR number is an identifier, not a quantity.
+                Text(verbatim: "#\(pr.number)")
+                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .kerning(-0.11)
+                    .monospacedDigit()
+            }
+            .foregroundStyle(pr.state.tint)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line, lineWidth: 0.5))
+            .shadow(color: .black.opacity(hovering ? 0.07 : 0.04),
+                    radius: hovering ? 1.5 : 0.5, y: hovering ? 1 : 0.5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased()) — open in browser"))
+        // Dev builds float a 54pt DEV badge whose left edge sits 72pt from the header's
+        // right; clear it with a comfortable gap (button right edge → ~82pt from the edge).
+        .padding(.trailing, isDevChannel ? 64 : 0)
     }
 }
 

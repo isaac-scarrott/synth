@@ -540,6 +540,10 @@ disclosure to dive deeper.
   shows nothing. Both designs (subset invariant held) + native; verified in the running app
   against real GitHub PRs (`cli/cli`), including the `Text(verbatim:)` fix for `#13,874` digit
   grouping.
+- **PR indicators gain the queued (merge-queue) state** — a fourth PR state beside open/merged/closed:
+  a branch waiting in the merge queue shows the git-pull-request glyph in queued blue (`#0969da` light /
+  `#4493f8` dark), in the sidebar and the header chip alike. State stays colour-only, so the header chip
+  (which reads state generically) picked it up with no logic change. Both designs (subset invariant held).
 - **Copy the branch name from the pane header** — a hover-revealed copy button after the
   `workspace / branch` crumb; one click copies the branch name and flashes a green check
   (`navigator.clipboard` in the mock, `NSPasteboard` native). Both designs + native.

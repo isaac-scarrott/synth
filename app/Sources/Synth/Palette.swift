@@ -104,7 +104,11 @@ struct PaletteFrame {
         stack = [rootFrame()]
     }
 
-    var frame: PaletteFrame { stack[stack.count - 1] }
+    /// `stack.last`, not `stack[count - 1]`: on close, `AppStore.palette` empties this model's
+    /// stack to break its retain cycle, but SwiftUI can render the outgoing overlay one more
+    /// time before tearing it down — subscripting the emptied stack there traps. The detached
+    /// model is about to vanish, so a placeholder frame is harmless.
+    var frame: PaletteFrame { stack.last ?? PaletteFrame(placeholder: "", build: { _ in [] }) }
 
     /// The frame's items, fuzzy-filtered for `list` frames — section order preserved,
     /// fuzzy-ranked within each section (working.html's renderFrame).

@@ -426,6 +426,11 @@ enum FeedbackMode {
     /// (ADR-0010). @ObservationIgnored: a bookkeeping field, not UI state.
     @ObservationIgnored private var lastSavedBytes: Data?
 
+    /// The single live store. `AppDelegate.applicationShouldTerminate` reaches it here to gate
+    /// quit on busy work — it runs outside SwiftUI's environment and can't `@Environment` it in.
+    /// Weak: the store's lifetime is the app's; this only borrows it.
+    @ObservationIgnored static weak var shared: AppStore?
+
     init() {
         feedbackMode = FeedbackMode.resolve()
         hookServer = HookServer(bus: bus)
@@ -449,6 +454,7 @@ enum FeedbackMode {
         syncAgentBridge()
         startAutosave()
         refreshPullRequests()
+        AppStore.shared = self
     }
 
     /// Keep the instance file's worktreePaths and every worktree's .mcp.json current.
@@ -1088,6 +1094,13 @@ enum FeedbackMode {
             return true
         }
         br.sessions = rows.flatMap { [$0] + (ownedByOwner[$0.id] ?? []) }
+    }
+
+    /// Sessions a quit would kill mid-flight — an agent taking a turn or a live process
+    /// (ADR-0013 `isBusy`). Quitting Synth is a Close over every session at once, so it wears
+    /// the same rule: confirm only while there's work to lose, and name how much.
+    var busySessions: [Session] {
+        workspaces.flatMap(\.branches).flatMap(\.sessions).filter { $0.status.isBusy }
     }
 
     /// Close-confirm copy for a session: closing an owning claude row cascades, so the

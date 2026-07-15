@@ -46,6 +46,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached(priority: .background) { GitService.sweepDetachedWorktrees() }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Every quit confirms — ⌘Q, the Quit menu, and logout all route here. One dialog, the
+    /// same shape every time: "Quit Synth?" with **Quit Synth** (default, Return) and **Cancel**
+    /// (Esc). Only the informative line changes, to name any busy sessions the quit would end.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let busy = AppStore.shared?.busySessions.count ?? 0
+
+        let alert = NSAlert()
+        alert.messageText = "Quit Synth?"
+        alert.informativeText = switch busy {
+        case 0:  "This closes every session."
+        case 1:  "A session is still busy — quitting ends it and its work in progress is lost."
+        default: "\(busy) sessions are still busy — quitting ends them and their work in progress is lost."
+        }
+        alert.addButton(withTitle: "Quit Synth")   // default: Return quits
+        alert.addButton(withTitle: "Cancel")        // Esc cancels
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
 }
 
 /// Reverse-DNS identity behind both channels' bundle ids (dist.sh, dev.sh, bundle-cef.sh) and

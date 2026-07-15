@@ -555,3 +555,8 @@ disclosure to dive deeper.
 - **Synth 0.4.1 shipped (build 215)** — no code change over 0.4.0 (only the 0.4.0 ledger doc sat
   between the tags); reissued on request. Notarized, stapled, 367KB delta from 212; verified
   credential-less and installed to `/Applications`.
+- **Quit always confirms** — every quit (⌘Q / Quit menu / logout) shows one native "Quit Synth?"
+  alert via `applicationShouldTerminate`, the same shape every time: **Quit Synth** (default, Return)
+  and **Cancel** (Esc). Only the informative line changes, naming any `busySessions` (agent `working`
+  / process `running`) the quit would end. App-only (no in-window surface); reaches the store via a
+  new `AppStore.shared` weak ref.

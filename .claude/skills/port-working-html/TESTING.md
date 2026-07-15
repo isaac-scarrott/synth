@@ -3,21 +3,40 @@
 The only proof a change works is a screenshot / captured output of the **running** app. Tests and
 `swift build` are necessary but not sufficient — drive the actual flow.
 
-## Screenshot your own instance (occlusion-proof, contested-machine-safe)
+## Screenshot your own instance
 
-The machine runs several Synth instances at once. Never `pkill Synth` — it kills other agents' apps.
-Capture *your* window by its CGWindowID so it works even when occluded:
+Two ways to capture. Reach for the in-process one first — it's the only one that survives this
+machine's realities: several Synth instances at once, a tiling window manager (aerospace) that parks
+each window on its own Space, and permission popups that won't be granted. Never `pkill Synth`; kill
+only your own PID.
+
+### Preferred: let the app screenshot itself (WM-agnostic, no permission prompt)
+
+`automation.screenshot` renders the visible window's `contentView` via `cacheDisplay` from *inside*
+the app process, so it captures the exact SwiftUI hierarchy regardless of Space, occlusion, or
+display — and raises no screen-recording prompt. Launch with automation on, then ask over the socket:
 
 ```bash
-APP_DIR=/Users/isaac/git/synth/app  # or .worktree/<slice>/app inside a slice worktree
-"$APP_DIR/../.claude/skills/port-working-html/scripts/capture.sh"  # from repo; prints PID= and SHOT=
+SYNTH_AUTOMATION=1 nohup .build/debug/Synth >/tmp/s.log 2>&1 & disown; MYPID=$!; sleep 4
+# EVERY automation verb needs a worktreePath that maps to a live branch. Grab one from the
+# worktreeURL in Application Support/Synth/state.json (or your SYNTH_STATE_DIR seed).
+printf '%s' '{"verb":"automation.screenshot","worktreePath":"<a branch worktree>","path":"/tmp/shot.png"}' \
+  | nc -U /tmp/synth-ctl-$MYPID.sock   # → {"ok":true,...}; read /tmp/shot.png
 ```
 
-`capture.sh` builds, launches your instance, screenshots it, and **leaves it running** so you can
-drive it and re-capture. Read the printed `SHOT=` path. When finished, `kill <PID>` — only that PID.
+Hover / selection / open-session chrome can't be produced by a real mouse on an inactive window —
+drive the store first, then screenshot: `automation.jump` opens a session so its full-width tint
+shows; `automation.nav` reports the tree so you know what to jump to. Kill your PID when done.
 
-To re-capture after driving: `screencapture -x -o -l<WINID> <out.png>` (WINID from
-`swift scripts/findwin.swift <PID>`).
+### Fallback: capture the window buffer by ID
+
+`scripts/capture.sh` (set `APP_DIR`) builds, launches your instance, screenshots its CGWindowID, and
+leaves it running; re-capture with `screencapture -x -o -l<WINID> <out.png>` (WINID from
+`swift scripts/findwin.swift <PID>`). This only works when the window is on the **active** Space —
+under a tiling WM it usually isn't, so you get `could not create image from window` (and a full-display
+`screencapture` shows only the desktop). ScreenCaptureKit from an ad-hoc script hits a TCC prompt, and
+activating the app can't pull the window across Spaces (the debug binary has no bundle id). If by-ID
+capture fails, don't fight it — use the in-process path above.
 
 ## Drive it by keyboard (no focus, no lock-screen dependency)
 
@@ -37,10 +56,12 @@ palette, sheets) by keys. The hover-reveal kebab is `pointer-events:none` until 
 osascript/clicks can't do; to verify a hover/menu-only state, set the store state in code
 (e.g. `activeMenu = …`), screenshot, then revert.
 
-## Headless driving when TCC blocks keys AND capture
+## Headless driving over the control socket
 
-On machines where CGEvent posting *and* `screencapture -l` are both TCC-denied, drive and
-observe entirely over the control socket (`/tmp/synth-ctl-<pid>.sock`, one JSON line in/out):
+The socket is the reliable way to drive *and* observe here — it doesn't care about Spaces, focus, or
+TCC, so it's the natural pair to the in-process screenshot above (and the only option when CGEvent
+posting and `screencapture -l` are both blocked). Talk to `/tmp/synth-ctl-<pid>.sock`, one JSON line
+in/out. Seed an isolated state so you never touch the user's real data:
 
 ```bash
 # isolated instance — never touches the user's real state
@@ -69,6 +90,11 @@ echo '{"verb":"automation.nav","worktreePath":"…"}' | nc -U /tmp/synth-ctl-<pi
 ## Gotchas
 - **Trust only `swift build`.** SourceKit reports phantom "Cannot find type/module 'X'" across files
   and a false `@main` error — ignore them. Grep the build for `error:` / `Build complete`.
+- **A fresh worktree won't link.** `git worktree add` doesn't carry gitignored artifacts, so the
+  vendored `app/vendor/GhosttyKit.xcframework` (~538MB, fetched by `vendor/fetch-ghostty.sh`) is
+  missing: the code compiles but the link fails with `library '…/ghostty-internal.a' not found`.
+  Symlink it from a sibling worktree that already has it (same pinned SHA) rather than re-fetching:
+  `ln -s <other-worktree>/app/vendor/GhosttyKit.xcframework app/vendor/`.
 - **NSOpenPanel** (the add-workspace folder picker) is an out-of-process XPC window: the PID→window
   screenshot can't see it, and it can't be driven while the screen is locked. Verify it with a
   full-screen `screencapture` when the screen is unlocked, or note it as visually unverified.

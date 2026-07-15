@@ -11,7 +11,7 @@
     --sidebar: #f0f1f4;
     --border: rgba(0, 0, 0, 0.07);
     --border-strong: rgba(0, 0, 0, 0.1);
-    --text: #1a1b1f;
+    --text: #1c1e23;
     --text-muted: #7e808a;
     --text-faint: #a6a8b0;
     --ink-meta: #6b6e76;     /* one home for meta labels/icons/chevrons — tokenised so they finally flip in dark */
@@ -54,8 +54,8 @@
     --radius-panel: 20px;
     --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
     --notif-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 12px 30px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.06);
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
 
     /* state colors */
     --run: #34c759;
@@ -530,15 +530,19 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 4px 8px 16px;
+    /* 10px side gutter (macOS source-list standard) floats the row pills off the sidebar
+       edge; row side-pad drops to 6px to compensate, so text still sits 16px from the edge
+       and the 24px indicator axis (10 gutter + 6 row + 8 half-slot) is unchanged. */
+    padding: 6px 10px 14px;
   }
 
   .nav__head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    /* 5px pad centers the 22px + button on the indicator axis (8px row pad + 16px slot) */
-    padding-right: 5px;
+    /* 3px pad centers the 22px + button on the 24px indicator axis (14px from nav's own
+       10px gutter edge, minus the button's 11px half-width) */
+    padding-right: 3px;
   }
   .nav__label {
     font-size: 10.5px;
@@ -546,7 +550,9 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--ink-meta);
-    padding: 10px 8px 6px;
+    /* asymmetric rhythm: roomy above, tight below binds the header to its group. 6px side
+       pad keeps the label flush with row content at the new 16px-from-edge column. */
+    padding: 10px 6px 4px;
     white-space: nowrap;
   }
   .add-workspace {
@@ -620,7 +626,7 @@
 
   .repo { margin-bottom: 1px; }
 
-  .repo__head { padding: 6px 8px; }
+  .repo__head { padding: 6px 6px; }
 
   .chev {
     width: 12px;
@@ -654,7 +660,7 @@
   .repo__name {
     flex: 1;
     font-size: 13px;
-    font-weight: 590;
+    font-weight: 600;
     letter-spacing: -0.006em;
     color: var(--ink);
     white-space: nowrap;
@@ -700,22 +706,23 @@
   .repo:not(.repo--open) > .collapse:has(.session--open) .branches > .repo:not(:has(.session--open)) { display: none; }
 
   .branches {
-    margin: 1px 0 5px 18px;
-    padding-left: 11px;
+    /* no container indent: depth lives in each row's padding-left (see the .nav full-width
+       block below) so a nested row's hover/hit band spans the whole sidebar */
+    margin: 2px 0 6px 0;
     display: flex;
     flex-direction: column;
     gap: 1px;
   }
 
-  .branch { padding: 5px 8px 5px 10px; text-decoration: none; }
+  .branch { padding: 7px 6px 7px 8px; text-decoration: none; }
 
   .branch__name {
     flex: 1;
     font-family: var(--mono);
     font-size: 12px;
-    font-weight: 450;
+    font-weight: 500;
     letter-spacing: -0.01em;
-    color: var(--ink-5);
+    color: var(--ink-3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -723,7 +730,7 @@
 
   .branch__meta {
     font-size: 10.5px;
-    font-weight: 450;
+    font-weight: 500;
     color: var(--ink-meta);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
@@ -759,12 +766,12 @@
   @media (hover: hover) and (pointer: fine) {
     .branch--active:hover { background: var(--raised); }
   }
-  .branch--active .branch__name { color: var(--ink); font-weight: 550; }
+  .branch--active .branch__name { color: var(--ink); font-weight: 600; }
   /* An expanded branch group already highlights its open session inside — the white header pill
      would double-encode and read oddly, so drop it while expanded (kept when collapsed, where it's
      the only "you are here" cue). */
   .repo--open > .branch--active.branch--group { background: none; box-shadow: none; }
-  .repo--open > .branch--active.branch--group .branch__name { color: var(--ink-5); font-weight: 450; }
+  .repo--open > .branch--active.branch--group .branch__name { color: var(--ink-3); font-weight: 500; }
 
   /* A worktree still materialising: the row is present but grayed and inert, a small arc
      spinning where its roll-up will land, while the pane carries the setup skeleton. */
@@ -777,7 +784,7 @@
 
   /* ---- Sessions inside a branch ---- */
   .sessions {
-    margin: 2px 0 4px 15px;
+    margin: 2px 0 6px 15px;
     padding-left: 11px;
     display: flex;
     flex-direction: column;
@@ -789,7 +796,7 @@
   .sessions:empty::after,
   .branches:empty::after {
     display: block;
-    padding: 4px 8px;
+    padding: 6px 6px;
     font-size: 11.5px;
     letter-spacing: -0.005em;
     color: var(--text-faint);
@@ -797,7 +804,7 @@
   .sessions:empty::after { content: "No sessions yet"; }
   .branches:empty::after { content: "No worktrees yet"; }
 
-  .session { padding: 4px 8px; text-decoration: none; }
+  .session { padding: 6px 6px; text-decoration: none; }
 
   /* Containment (ADR-0011 stage four, revised): a browser owned by a Claude session is NOT
      nested — it stays a plain sibling on the shared indent. The tie is carried by a small
@@ -819,6 +826,17 @@
   }
   .session--unread .session__bullet { opacity: 1; }
 
+  /* ---- Full-width rows: the hover / selection band spans the whole sidebar while content
+     stays indented. Depth moves from the container margins onto the row's own padding-left,
+     so the empty indent space to the left of a nested row is part of that row's hit area.
+     Scoped to .nav so the Settings worktree-preview keeps its compact container indent. ---- */
+  .nav .sessions { margin-left: 0; padding-left: 0; }
+  .nav .branch { padding-left: 37px; }    /* 29px former container indent + 8px row pad */
+  .nav .session { padding-left: 61px; }   /* 55px former container indent + 6px row pad */
+  .nav .session__bullet { left: 54.5px; } /* sit by the icon gutter, not the full-width row edge */
+  .nav .sessions:empty::after { padding-left: 61px; }
+  .nav .branches:empty::after { padding-left: 37px; }
+
   .session__icon {
     width: 14px;
     height: 14px;
@@ -836,7 +854,7 @@
   .session__name {
     flex: 1;
     font-size: 11.5px;
-    font-weight: 460;
+    font-weight: 500;
     letter-spacing: -0.005em;
     color: var(--ink-meta);
     white-space: nowrap;
@@ -978,8 +996,9 @@
   /* ---- Row action kebab (hover-revealed at the row end) ---- */
   .kebab {
     position: absolute;
-    /* 20px box centered on the shared indicator axis (8px row pad + 16px .ind slot) */
-    right: 6px;
+    /* 20px box centered on the shared 24px indicator axis (14px from the row's own right
+       edge at the 10px nav gutter, minus the box's 10px half-width) */
+    right: 4px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
@@ -1365,7 +1384,8 @@
   /* ---- Sidebar footer: Settings entry (pinned to the bottom of the left panel) ---- */
   .sidebar__foot {
     flex-shrink: 0;
-    padding: 6px 8px 10px;
+    /* 10px gutter tracks .nav so the Settings pill shares a left edge with tree row pills */
+    padding: 6px 10px 10px;
     border-top: 0.5px solid var(--border);
   }
   .foot-btn {
@@ -1373,13 +1393,13 @@
     align-items: center;
     gap: 9px;
     width: 100%;
-    padding: 7px 10px;
+    padding: 6px 6px;
     border: 0;
     background: none;
     border-radius: 8px;
     cursor: pointer;
     font-family: inherit;
-    color: var(--ink-5);
+    color: var(--ink-3);
     transition: background-color 120ms ease, color 120ms ease, transform 110ms var(--ease-out);
   }
   .foot-btn svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--ink-meta); transition: color 120ms ease; }
@@ -1397,7 +1417,8 @@
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 8px 8px 16px;
+    /* mirrors .nav's 10px gutter so pills don't shift when toggling Settings */
+    padding: 8px 10px 14px;
   }
   .app.settings .nav { display: none; }
   .app.settings .sidebar__foot { display: none; }
@@ -1408,7 +1429,7 @@
     align-items: center;
     gap: 6px;
     width: 100%;
-    padding: 7px 8px;
+    padding: 6px 6px;
     margin-bottom: 6px;
     border: 0;
     background: none;
@@ -1416,7 +1437,7 @@
     cursor: pointer;
     font-family: inherit;
     font-size: 12.5px;
-    font-weight: 560;
+    font-weight: 600;
     letter-spacing: -0.006em;
     color: var(--ink);
     transition: background-color 120ms ease, transform 110ms var(--ease-out);
@@ -1432,7 +1453,7 @@
     align-items: center;
     gap: 9px;
     width: 100%;
-    padding: 6px 8px;
+    padding: 6px 6px;
     border: 0;
     background: none;
     border-radius: 8px;
@@ -1667,7 +1688,7 @@
     --sidebar: #1d1f24;
     --border: rgba(255,255,255,0.09);
     --border-strong: rgba(255,255,255,0.13);
-    --text: #f3f4f6;
+    --text: #e6e8ed;
     --text-muted: #8d9099;
     --text-faint: #666a72;
     --ink-meta: #8d9099;

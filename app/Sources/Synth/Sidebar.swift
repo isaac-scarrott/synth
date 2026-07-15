@@ -34,8 +34,11 @@ struct Sidebar: View {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 16)
+                    // 10pt side gutter floats the row pills off the edge; rows are full-width so
+                    // the hover band spans the sidebar, with depth as per-row leading padding.
+                    .padding(.horizontal, 10)
+                    .padding(.top, 6)
+                    .padding(.bottom, 14)
                 }
                 // nil anchor = working.html's scrollIntoView({block:'nearest'}): no scroll at
                 // all while the cursor moves within view — also what keeps arrow-key nav cheap
@@ -75,8 +78,9 @@ struct Sidebar: View {
                 store.promptAddWorkspace()
             }
         }
-        // 11pt trailing pad puts the 26pt `+` on that same 24pt axis.
-        .padding(.leading, 14).padding(.trailing, 11).padding(.bottom, 8)
+        // 11pt trailing pad puts the 26pt `+` on that same 24pt axis; 16pt leading aligns the
+        // label with the workspace row content column (10pt gutter + 6pt row pad).
+        .padding(.leading, 16).padding(.trailing, 11).padding(.bottom, 6)
     }
 }
 
@@ -107,7 +111,7 @@ private struct SidebarFoot: View {
     private var selected: Bool { store.keyboardActive && store.navCursor == NavID.settingsFoot }
     var body: some View {
         FootButton(icon: Phosphor.gear, title: "Settings", selected: selected) { store.enterSettings() }
-            .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 10)
+            .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
             .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 }
@@ -129,7 +133,7 @@ private struct FootButton: View {
                     .foregroundStyle(hovering ? Theme.repoName : Theme.branchName)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10).padding(.vertical, 7)
+            .padding(.horizontal, 6).padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
@@ -157,7 +161,7 @@ private struct SettingsNav: View {
                 Text("Projects")
                     .font(.system(size: 10.5, weight: .semibold)).kerning(0.5).textCase(.uppercase)
                     .foregroundStyle(Theme.navLabel)
-                    .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 6)
+                    .padding(.horizontal, 6).padding(.top, 10).padding(.bottom, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ForEach(store.workspaces) { ws in
                     ScopeRow(label: ws.name, workspace: ws,
@@ -166,7 +170,7 @@ private struct SettingsNav: View {
                     }
                 }
             }
-            .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 16)
+            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 14)
         }
         .frame(maxHeight: .infinity)
     }
@@ -183,7 +187,7 @@ private struct BackButton: View {
                 Text("Projects").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.repoName)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8).padding(.vertical, 7)
+            .padding(.horizontal, 6).padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
@@ -224,7 +228,7 @@ private struct ScopeRow: View {
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8).padding(.vertical, 6)
+            .padding(.horizontal, 6).padding(.vertical, 6)
             .background(RoundedRectangle(cornerRadius: 8).fill(background))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -269,7 +273,7 @@ private struct WorkspaceRow: View {
                         RenameField(font: .system(size: 13, weight: .semibold))
                         Spacer(minLength: 4)
                     }
-                    .padding(.horizontal, 8).padding(.vertical, 6)
+                    .padding(.horizontal, 6).padding(.vertical, 6)
                 } else {
                     Button {
                         focusSidebar()
@@ -286,7 +290,7 @@ private struct WorkspaceRow: View {
                             Spacer(minLength: 4)
                             trailing.opacity(revealed ? 0 : 1)
                         }
-                        .padding(.horizontal, 8).padding(.vertical, 6)
+                        .padding(.horizontal, 6).padding(.vertical, 6)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(RowButtonStyle())
@@ -305,7 +309,7 @@ private struct WorkspaceRow: View {
             Reveal(open: isOpen || peekBranchID != nil) {
                 VStack(alignment: .leading, spacing: 1) {
                     if workspace.branches.isEmpty {
-                        EmptyGroupHint(text: "No worktrees yet")
+                        EmptyGroupHint(text: "No worktrees yet", leading: 37)
                     } else {
                         // Peeking a collapsed workspace shows only the branch that holds the
                         // open session; expanded, every branch shows.
@@ -319,7 +323,6 @@ private struct WorkspaceRow: View {
                         }
                     }
                 }
-                .padding(.leading, 18)
             }
         }
         .reorderLift(.workspace(workspace))
@@ -378,7 +381,7 @@ private struct BranchRow: View {
                         RenameField(font: .system(size: 12, design: .monospaced))
                         Spacer(minLength: 4)
                     }
-                    .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
+                    .padding(.leading, 37).padding(.trailing, 6).padding(.vertical, 7)
                 } else {
                     Button {
                         guard !branch.isPending else { return }   // nothing to expand or open yet
@@ -390,7 +393,7 @@ private struct BranchRow: View {
                             Chevron(open: isOpen)
                             Text(branch.name)
                                 .font(.system(size: 12, design: .monospaced))
-                                .fontWeight(isActivePill ? .medium : .regular)
+                                .fontWeight(isActivePill ? .semibold : .medium)
                                 .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
                                 .lineLimit(1).truncationMode(.middle)
                             Spacer(minLength: 4)
@@ -400,9 +403,10 @@ private struct BranchRow: View {
                                 BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
                             }
                         }
-                        // Right pad 10→8 so the branch indicator shares one vertical axis
-                        // with the workspace count and session dots (working.html .branch).
-                        .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 5)
+                        // Full-width row: 37pt leading holds the branch content at its indent
+                        // while the hover band spans the sidebar; 6pt trailing keeps the branch
+                        // indicator on the shared 24pt axis (working.html .nav .branch).
+                        .padding(.leading, 37).padding(.trailing, 6).padding(.vertical, 7)
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
                         .opacity(branch.isPending ? 0.5 : 1)
@@ -426,7 +430,7 @@ private struct BranchRow: View {
             Reveal(open: isOpen || peeking) {
                 VStack(alignment: .leading, spacing: 1) {
                     if branch.sessions.isEmpty {
-                        EmptyGroupHint(text: "No sessions yet")
+                        EmptyGroupHint(text: "No sessions yet", leading: 61)
                     } else {
                         // Peeking a collapsed group shows only the open session; expanded,
                         // every session shows.
@@ -437,10 +441,8 @@ private struct BranchRow: View {
                         }
                     }
                 }
-                .padding(.leading, 15)
             }
         }
-        .padding(.leading, 11)
         .reorderLift(.branch(branch))
     }
 
@@ -490,7 +492,7 @@ private struct SessionRow: View {
                     RenameField(font: .system(size: 11.5))
                     Spacer(minLength: 4)
                 }
-                .padding(.horizontal, 8).padding(.vertical, 4)
+                .padding(.leading, 61).padding(.trailing, 6).padding(.vertical, 6)
             } else {
                 Button { store.open(session); focusContent(store) } label: {
                     HStack(spacing: 8) {
@@ -499,7 +501,7 @@ private struct SessionRow: View {
                             .font(.system(size: 11.5))
                             // Only the focused session goes bold; unread surfaces via colour
                             // + the gutter bullet, not weight (working.html .session--open).
-                            .fontWeight(isOpen ? .semibold : .regular)
+                            .fontWeight(isOpen ? .semibold : .medium)
                             .foregroundStyle(nameColor)
                             .lineLimit(1)
                         Spacer(minLength: 4)
@@ -516,7 +518,7 @@ private struct SessionRow: View {
                         }
                         .opacity(revealed ? 0 : 1)
                     }
-                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .padding(.leading, 61).padding(.trailing, 6).padding(.vertical, 6)
                     // The open session's sticky tint (working.html .session--open), deepening
                     // on hover like every other accent wash.
                     .background(
@@ -530,7 +532,9 @@ private struct SessionRow: View {
                 .overlay(alignment: .leading) {
                     Circle().fill(Theme.input).frame(width: 4, height: 4)
                         .opacity(session.unread ? 1 : 0)
-                        .offset(x: -3)
+                        // Row is full-width; sit the bullet in the icon gutter (just left of the
+                        // 61pt-indented session icon), not at the row's leading edge.
+                        .offset(x: 54.5)
                 }
 
                 KebabButton(ref: .session(session))
@@ -564,11 +568,14 @@ private struct SessionRow: View {
 /// left indent as a child row would, since it's rendered inside the group's Reveal.
 private struct EmptyGroupHint: View {
     let text: String
+    /// Leading indent so the hint aligns with the child rows it stands in for
+    /// (37pt under a branch header, 61pt under a session group).
+    var leading: CGFloat = 8
     var body: some View {
         Text(text)
             .font(.system(size: 11.5))
             .foregroundStyle(Theme.inkFaint)
-            .padding(.horizontal, 8).padding(.vertical, 4)
+            .padding(.leading, leading).padding(.trailing, 6).padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -737,7 +744,7 @@ private struct BranchRollup: View {
                 Ind { UnreadDot() }
             } else if !branch.lastActivity.isEmpty {
                 Text(branch.lastActivity)
-                    .font(.system(size: 10.5)).foregroundStyle(Theme.branchMeta).monospacedDigit()
+                    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.branchMeta).monospacedDigit()
             }
         }
     }

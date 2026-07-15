@@ -548,3 +548,6 @@ disclosure to dive deeper.
   session, sidebar restyle, ⌘K worktree approval) plus the process-lifecycle/memory hardening.
   Notarized, stapled, 9 deltas (6.9MB) against a 136MB download; verified credential-less and
   installed to `/Applications`.
+- **Synth 0.4.1 shipped (build 215)** — no code change over 0.4.0 (only the 0.4.0 ledger doc sat
+  between the tags); reissued on request. Notarized, stapled, 367KB delta from 212; verified
+  credential-less and installed to `/Applications`.

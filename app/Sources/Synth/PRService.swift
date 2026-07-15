@@ -6,14 +6,18 @@ enum PRState: String, Sendable {
     case open = "OPEN"
     case merged = "MERGED"
     case closed = "CLOSED"
+    /// Not a `gh` state — an open PR sitting in GitHub's merge queue, promoted from `.open`
+    /// when the GraphQL `mergeQueueEntry` is present (see `pullRequests`).
+    case queued = "QUEUED"
 
-    /// Rank for picking one PR per branch when several share a head ref: a live open PR
-    /// wins over a merged one, which wins over a plain closed one.
+    /// Rank for picking one PR per branch when several share a head ref: a queued PR (already
+    /// on its way in) wins over a plain open one, which wins over merged, which wins over closed.
     var precedence: Int {
         switch self {
-        case .open: return 0
-        case .merged: return 1
-        case .closed: return 2
+        case .queued: return 0
+        case .open: return 1
+        case .merged: return 2
+        case .closed: return 3
         }
     }
 }
@@ -48,6 +52,22 @@ enum PRService {
     /// or the CLI isn't authenticated.
     static func pullRequests(at repo: URL) -> [String: PRInfo] {
         guard let ghPath else { return [:] }
+        var best = list(at: repo, ghPath: ghPath)
+        // Promote any open PR that's sitting in the merge queue to `.queued`. This is a second,
+        // GraphQL read (`mergeQueueEntry`) because `gh pr list` only ever reports OPEN/MERGED/
+        // CLOSED — the queue is a sub-state of open. Skipped when there are no PRs to promote,
+        // and degrades to "nothing queued" on any error (repo without a merge queue, older gh).
+        guard let sample = best.values.first else { return best }
+        let queued = mergeQueued(at: repo, ghPath: ghPath, sample: sample)
+        for (branch, pr) in best where pr.state == .open && queued.contains(pr.number) {
+            best[branch] = PRInfo(number: pr.number, state: .queued, url: pr.url)
+        }
+        return best
+    }
+
+    /// The raw `gh pr list` read — one PR per head branch (strongest, then most recent),
+    /// before any merge-queue promotion.
+    private static func list(at repo: URL, ghPath: String) -> [String: PRInfo] {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ghPath)
         process.arguments = ["pr", "list", "--state", "all", "--limit", "100",
@@ -65,6 +85,50 @@ enum PRService {
         } catch {
             return [:]
         }
+    }
+
+    /// Numbers of the repo's open PRs that are currently in the merge queue, via GraphQL
+    /// (`pullRequests.mergeQueueEntry`). Owner/name are lifted from a PR url we already hold,
+    /// so no extra `repo view`. Empty on any failure — merge queue absent, field unavailable,
+    /// or the CLI unauthenticated — matching the rest of the service's fail-quiet contract.
+    private static func mergeQueued(at repo: URL, ghPath: String, sample: PRInfo) -> Set<Int> {
+        guard let url = URL(string: sample.url), url.pathComponents.count >= 3 else { return [] }
+        let owner = url.pathComponents[1]
+        let name = url.pathComponents[2]
+        let query = "query($owner:String!,$name:String!){repository(owner:$owner,name:$name)"
+            + "{pullRequests(states:OPEN,first:100){nodes{number mergeQueueEntry{position}}}}}"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ghPath)
+        process.arguments = ["api", "graphql", "-f", "query=\(query)",
+                             "-F", "owner=\(owner)", "-F", "name=\(name)"]
+        process.currentDirectoryURL = repo
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return [] }
+            return parseQueued(data)
+        } catch {
+            return []
+        }
+    }
+
+    /// PR numbers whose `mergeQueueEntry` came back non-null.
+    private static func parseQueued(_ data: Data) -> Set<Int> {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dataObj = root["data"] as? [String: Any],
+              let repo = dataObj["repository"] as? [String: Any],
+              let prs = repo["pullRequests"] as? [String: Any],
+              let nodes = prs["nodes"] as? [[String: Any]]
+        else { return [] }
+        var out: Set<Int> = []
+        for node in nodes where node["mergeQueueEntry"] is [String: Any] {
+            if let number = node["number"] as? Int { out.insert(number) }
+        }
+        return out
     }
 
     /// Fold `gh`'s JSON array into one PR per head branch, keeping the strongest.

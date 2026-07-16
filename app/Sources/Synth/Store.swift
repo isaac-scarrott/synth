@@ -250,6 +250,17 @@ enum FeedbackMode {
     static let mcpBrowserKey = "synth-mcp-browser"
     static let mcpAppKey = "synth-mcp-app"
 
+    /// Anonymous usage analytics (Settings → Privacy). On by default, opt-out: flipping it off
+    /// tells PostHog to stop sending straight away and stays off across launches. Read at launch
+    /// by `Analytics.bootstrap` too, so the very first event already respects the choice.
+    var analyticsEnabled = AppStore.loadBoolPref(AppStore.analyticsKey, default: true) {
+        didSet {
+            UserDefaults.standard.set(analyticsEnabled, forKey: AppStore.analyticsKey)
+            Analytics.setOptOut(!analyticsEnabled)
+        }
+    }
+    static let analyticsKey = "synth-analytics-enabled"
+
     /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
     var sidebarWidth: CGFloat = {
         let w = UserDefaults.standard.double(forKey: AppStore.sidebarWidthKey)
@@ -992,6 +1003,8 @@ enum FeedbackMode {
         // A pending branch has no checkout to run in yet — sessions wait for the worktree.
         guard let br = branch ?? defaultBranch(), !br.isPending else { return nil }
         let session = Session(kind: kind, title: title, status: status)
+        // Feature-usage signal: which session type, and whether an agent spun it up vs the user.
+        Analytics.capture("session_created", ["kind": kind.rawValue, "agent_initiated": !focus])
         br.sessions.append(session)
         if let owner { adopt(session, by: owner) }
         br.lastActivity = "now"
@@ -1140,6 +1153,14 @@ enum FeedbackMode {
         feedbackDraft = ""
         feedbackTitle = ""
         feedbackOpen = false
+        // The event records that feedback happened and roughly how much — never the text itself,
+        // which stays non-PII on the wire. The actual content still reaches the author via the
+        // email / fix-agent paths below.
+        Analytics.capture("feedback_submitted", [
+            "mode": String(describing: feedbackMode),
+            "has_body": !body.isEmpty,
+            "length": body.count,
+        ])
         switch feedbackMode {
         case .author:
             guard !title.isEmpty else { return }
@@ -1470,6 +1491,7 @@ enum FeedbackMode {
                 row.worktreeURL = url
                 row.isPending = false
                 row.lastActivity = "now"
+                Analytics.capture("worktree_created", ["from_template": spawningTemplate])
                 if spawningTemplate { applySessionTemplate(to: row, in: ws) }
                 onReady?(row)
                 saveNow()

@@ -42,6 +42,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Anonymous usage analytics — off on the dev channel and honouring the saved opt-out
+        // (read straight from defaults so it doesn't wait on the store). No-ops until a key is set.
+        Analytics.bootstrap(optedOut: !AppStore.loadBoolPref(AppStore.analyticsKey, default: true))
+        // Crash capture: install the handlers, then report any marker the previous run left behind
+        // (after bootstrap, so an `app_crashed` event has somewhere to go).
+        CrashReporter.install()
+        CrashReporter.reportPending()
         // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd).
         Task.detached(priority: .background) { GitService.sweepDetachedWorktrees() }
     }

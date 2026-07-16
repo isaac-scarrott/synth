@@ -53,7 +53,11 @@ let cefLinkerSettings: [LinkerSetting] = [
 // Sparkle ships as a dynamic-framework binaryTarget. `swift build` copies Sparkle.framework
 // into the bin dir but sets no rpath, so the bundled executable has to be told where
 // lib.sh staged it (Contents/Frameworks).
-var synthDependencies: [Target.Dependency] = ["GhosttyKit", .product(name: "Sparkle", package: "Sparkle")]
+var synthDependencies: [Target.Dependency] = [
+    "GhosttyKit",
+    .product(name: "Sparkle", package: "Sparkle"),
+    .product(name: "PostHog", package: "posthog-ios"),
+]
 var synthLinkerSettings = ghosttyLinkerSettings + [
     LinkerSetting.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
 ]
@@ -105,6 +109,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
+        // Anonymous, opt-out product analytics (Analytics.swift). Client SDK only — the
+        // project token it carries is publishable, not a secret.
+        .package(url: "https://github.com/PostHog/posthog-ios", from: "3.59.3"),
     ],
     targets: targets
 )

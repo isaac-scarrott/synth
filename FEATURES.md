@@ -560,3 +560,18 @@ disclosure to dive deeper.
   and **Cancel** (Esc). Only the informative line changes, naming any `busySessions` (agent `working`
   / process `running`) the quit would end. App-only (no in-window surface); reaches the store via a
   new `AppStore.shared` weak ref.
+
+## [2026-07-16](docs/features/2026-07-16.md)
+
+- **Anonymous product analytics (PostHog)** — opt-out, anonymous usage analytics via `posthog-ios`
+  (SPM). One seam, `Analytics.swift`, is the only importer of `PostHog`; the app calls
+  `Analytics.capture/error/isEnabled/setOptOut`. No `identify()` ever (random per-install id),
+  `personProfiles = .identifiedOnly`, lifecycle events on for retention, screen-views off, no
+  session replay / surveys (iOS-only). Three gates keep it inert: dev channel never reports, an
+  unset placeholder `projectKey` stays silent, and the **Settings → Privacy** toggle
+  (`analyticsEnabled`, default on) opts out immediately and from the first launch event. First
+  events: `session_created {kind, agent_initiated}`, `worktree_created {from_template}`,
+  `feedback_submitted {mode, has_body, length}` (never the text), plus app open/close. EU region.
+  App-only toggle (no `working.html` Settings mock; subset invariant untouched). Follow-ups: native
+  crash capture (only caught errors covered today) and pasting the real project key once the Synth
+  PostHog project exists.

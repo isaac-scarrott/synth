@@ -20,6 +20,7 @@ struct SettingsPane: View {
                     if isGlobal { appearanceSection }
                     if isGlobal { soundsSection }
                     if isGlobal { mcpSection }
+                    if isGlobal { privacySection }
                     scriptSection
                     templateSection
                     flagsSection
@@ -157,6 +158,28 @@ struct SettingsPane: View {
     }
     private var mcpAppBinding: Binding<Bool> {
         Binding(get: { store.mcpAppEnabled }, set: { store.mcpAppEnabled = $0 })
+    }
+
+    // MARK: Privacy — anonymous, opt-out usage analytics. Off tells PostHog to stop sending at
+    // once; nothing here identifies you, and the dev channel never reports regardless.
+
+    @ViewBuilder private var privacySection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Privacy")
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.repoName)
+            sub("Help improve Synth by sharing anonymous usage — which features you use and how often. No account, no code, no file names or contents, nothing that identifies you. You can turn it off any time.")
+            VStack(spacing: 0) {
+                mcpRow("Share anonymous usage analytics",
+                       "Sends a small set of events (sessions opened, worktrees created, feedback sent) and app open/close, tied to a random per-install id. Off stops it immediately.",
+                       analyticsBinding)
+            }
+            .padding(.top, 14)
+        }
+    }
+
+    private var analyticsBinding: Binding<Bool> {
+        Binding(get: { store.analyticsEnabled }, set: { store.analyticsEnabled = $0 })
     }
 
     // MARK: The one setting so far — the worktree setup script.

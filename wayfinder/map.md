@@ -44,6 +44,11 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
 - [Split topology & nesting model](tickets/001-split-topology-and-nesting.md) — arbitrary nested tree,
   no cap; edge-drop splits the hovered pane (+ one outer-rim zone for whole-surface splits); a
   min-pane pixel floor (~360×240) is the guardrail — drops/resizes below it are refused.
+- [Selection & focus model with a split open](tickets/002-click-and-focus-model.md) — always exactly
+  one active pane; sidebar click = "take me to it" (focus the pane if the session's up, else collapse
+  to full-screen); drag-split focuses the newly-dropped pane; `⌘0`→sidebar / `⌘1`→active pane; the
+  sidebar **always mirrors** the layout (split members side-by-side, existing `.session--open` accent
+  on the active one — so the sidebar-grouping gesture is just a second route to the same split).
 
 ## Not yet specified
 

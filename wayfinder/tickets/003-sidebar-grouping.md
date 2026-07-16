@@ -24,4 +24,14 @@ how durable it is.
 Prototype directly in a throwaway or a scratch copy of the sidebar markup; the output is the visual
 + behaviour **decision**. Feeds the build's sidebar changes.
 
+**Constraint from [ticket 002](002-click-and-focus-model.md) (closed):** the pairing is a
+**transient echo** — the sidebar *always mirrors* the on-screen layout automatically, so it never
+shows a pairing that isn't currently split on screen (bullet 2 above is largely settled: **not**
+durable/independent). Consequences: the "drag onto another session in the sidebar" gesture is just a
+**second route to create the same split**; breaking a pair in the sidebar is really un-splitting the
+layout (bullet 3); and the active member carries the **existing `.session--open` accent unchanged**,
+with no separate visible-but-inactive treatment. This ticket still owns the *visual* — how the
+side-by-side (and deeper nested trees, per 001) actually reads at the current row metrics — and the
+un-split gesture's feel.
+
 ## Resolution

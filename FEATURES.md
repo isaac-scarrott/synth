@@ -575,3 +575,8 @@ disclosure to dive deeper.
   App-only toggle (no `working.html` Settings mock; subset invariant untouched). Follow-ups: native
   crash capture (only caught errors covered today) and pasting the real project key once the Synth
   PostHog project exists.
+- **Synth 0.5.0 shipped (build 224)** — first release carrying product analytics + the native crash
+  reporter, so real usage data starts here (dashboards filter `channel=stable`, excluding earlier
+  dev/verification runs). Notarized, stapled, 15 deltas (~18MB) against a 130MB download; verified
+  credential-less from the public bucket (spctl accepted / Notarized Developer ID, staple valid,
+  appcast newest enclosure `Synth-0.5.0.zip` at `sparkle:version` 224 with `edSignature`).

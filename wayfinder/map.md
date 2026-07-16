@@ -19,9 +19,12 @@ into a splittable **layout** of several sessions at once.
   or the browser. The browser is **not** special; it's just a session that can't be rendered by a
   terminal.
 - **Pane** — a tile in the content surface hosting exactly one session.
-- **Layout** — the current arrangement of panes. **Live and transient**: no branch or workspace
-  *owns* a layout; the user splits and un-splits at will. Driving example: browser + dev logs side
-  by side while testing, then separated again.
+- **Layout** — the arrangement of panes **owned by a branch**: one remembered layout per branch,
+  persisted to disk and restored on relaunch (see [005]). The branch is the **sole scope unit** —
+  workspace owns no layout. The split is **sticky**: full-screening a single session is a transient,
+  tmux-window-style view that leaves the branch's split remembered underneath. The user still splits
+  and un-splits at will. Driving example: browser + dev logs side by side while testing, switch to
+  another branch and back, and it's still there.
 - **Split gesture (mouse, primary)** — drag a session from the sidebar over the content area;
   edge drop-zones (left / right / top / bottom) highlight; dropping subdivides. VS Code / tmux feel.
 - **Sidebar grouping (mouse, secondary)** — drag a session onto another *in the sidebar* to pair
@@ -58,6 +61,14 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   (`openRowActions → sessionFrame`), where **Unsplit** is a flat command beside Rename/Close (Synth
   has no per-row popovers). **Drag a tile out** is the fast alternative; creating a split stays the
   drag gesture (001), a ⌘K/keyboard create command left to 007.
+- [Layout persistence & navigation behaviour](tickets/005-persistence-and-navigation.md) — layout is
+  **owned by the branch** (one per branch, persisted to disk, restored on relaunch); workspace owns
+  none, so **workspace-switch = branch-switch**. The split is **sticky / tmux-style**: full-screening a
+  single session is a transient view (falls out of 002 — member click focuses, non-member click
+  full-screens, member click returns), split stays remembered; keyboard toggle deferred to 007.
+  Session deleted/closed → pane collapses & siblings reflow (per 001), **no guard**; a missing session
+  on relaunch collapses the same way. `working.html` simulates persistence (localStorage); real on-disk
+  serialization is a **handoff-brief (008)** spec point.
 - [Per-pane chrome, drop-zones & empty states](tickets/004-pane-chrome-and-states.md) — **every pane
   keeps its full header** (name + crumb + PR + kebab), degrading **by width** not focus (crumb drops
   first, then PR label→icon); **no empty-pane state** (a pane always hosts exactly one session — splits
@@ -74,11 +85,10 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   slices into ≤ one-session chunks, once the decision tickets land.
 - Session-type-specific behaviour inside a *narrow* pane: browser device-mode chrome, terminal
   reflow, the per-pane header (branch crumb, PR chip, copy, kebab) degrading at small widths.
-- Whether any "recent layouts" / quick-swap affordance is wanted — only if it emerges from use.
+- Whether any *cross-branch* "recent layouts" / quick-swap affordance is wanted, beyond the per-branch
+  restore 005 already gives (branch-switch is the quick-swap) — only if it emerges from use.
 
 ## Out of scope
 
 - The native SwiftUI implementation itself — that's what the handoff hands *off*; a separate effort.
 - Tearing a pane into a separate OS window / multi-monitor spread.
-- Persisting layouts to disk or across app restart — layout is transient by decision (unless the
-  persistence-and-navigation ticket rules otherwise).

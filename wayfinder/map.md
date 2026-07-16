@@ -69,6 +69,15 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   Session deleted/closed → pane collapses & siblings reflow (per 001), **no guard**; a missing session
   on relaunch collapses the same way. `working.html` simulates persistence (localStorage); real on-disk
   serialization is a **handoff-brief (008)** spec point.
+- [Layout model & multi-pane render (the spine)](tickets/009-layout-model-and-multipane-render.md) —
+  single-pane `openEl`/`renderOpen` replaced by a **binary pane tree** (`layout` + `activePane` leaf)
+  rendered as nested `.split` containers with a static seam; single pane is the degenerate one-leaf
+  case, kept identical to today. `openEl` stays as the active pane's session-mirror so every
+  single-session subsystem is untouched. Per-pane surfaces wired to their own element (no cross-steal);
+  click-a-pane-body activates in place (copper ring, only shown inside a split); sidebar-click focuses
+  an up session / collapses a not-up one (002); delete collapses the split & reflows the sibling (001/005,
+  no guard). Split **creation** is still gesture-less — [010]/[012] drive the `splitPane` op built here;
+  meanwhile `window.SynthLayout` is the spine's test handle. Landed in both HTML files.
 - [Per-pane chrome, drop-zones & empty states](tickets/004-pane-chrome-and-states.md) — **every pane
   keeps its full header** (name + crumb + PR + kebab), degrading **by width** not focus (crumb drops
   first, then PR label→icon); **no empty-pane state** (a pane always hosts exactly one session — splits

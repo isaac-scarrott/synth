@@ -308,12 +308,28 @@
 
   .pane {
     flex: 1;
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
     animation: pane-in 220ms var(--ease-out);
   }
   @keyframes pane-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ---- Pane tree (spine — 009) ---- */
+  /* Nested split containers lay the tree out in .content; a static 1px seam divides
+     siblings (drag-resize is 011). dir 'row' = side by side, 'col' = stacked. */
+  .split { flex: 1 1 0; display: flex; min-width: 0; min-height: 0; }
+  .split--row { flex-direction: row; }
+  .split--col { flex-direction: column; }
+  .split > .pane, .split > .split { min-width: 0; min-height: 0; }
+  .pane-seam { flex: 0 0 1px; background: var(--border); }
+  /* Active pane — the copper ring (004 §4). Only meaningful with a split open, so a
+     single pane (today's degenerate case) stays ringless; the overlay never eats clicks. */
+  .split .pane--active::after {
+    content: ''; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+    box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.85);
+  }
 
   .pane__head {
     flex-shrink: 0;
@@ -2125,6 +2141,10 @@
   // The header PR chip opens the pull request in the user's default browser (the native app
   // hands the URL to NSWorkspace). In the mock there's nothing to open, so just swallow the nav.
   content.addEventListener('click', (e) => {
+    // clicking a pane's body makes it the active pane (002) — in place, so the click also
+    // reaches whatever control it landed on. Settings renders a bare .pane (no _node) — skip.
+    const pane = e.target.closest('.pane');
+    if (pane && pane._node && pane._node !== activePane) setActivePane(pane._node);
     const chip = e.target.closest('[data-prchip]');
     if (chip) { e.preventDefault(); return; }
     const copy = e.target.closest('[data-copy]');
@@ -2148,7 +2168,16 @@
     run:   `<span class="ind"><span class="sdot sdot--run"></span></span>`,
     idle:  `<span class="ind"></span>`,
   };
-  let openEl = null, streamTimer = null;
+  let openEl = null;
+  // ===== Layout: the pane tree (the spine — 009) =====
+  // A leaf binds exactly one session (no empty pane, 004 §2): { leaf:true, session, setup, el }
+  // — a setup skeleton counts as bound. A split is binary: { leaf:false, dir:'row'|'col', a, b,
+  // split } — dir 'row' = side by side, 'col' = stacked; `split` is child a's fraction. The
+  // single-pane case is a one-leaf tree, so today's behaviour is the degenerate case. `openEl`
+  // mirrors the active pane's session (kept in sync by syncActive) so all the single-session
+  // machinery — notifications, ⌘K, browser verbs — keeps reading one "you are here".
+  let layout = null, activePane = null;
+  const streamTimers = new Set();   // one running-terminal ticker per pane
   // The still-creating branch whose setup skeleton the pane is showing (null = none). Set
   // the instant a create is requested and cleared the moment anything else opens — so a
   // finished checkout resolves in place only while this still points at it (last-intent-wins).
@@ -2183,26 +2212,98 @@
     return `<a class="prchip pr--${state}" href="#" data-prchip="${pr.dataset.pr}" title="PR #${pr.dataset.pr} · ${state} — open in browser">${pr.querySelector('svg').outerHTML}<span>#${pr.dataset.pr}</span></a>`;
   }
 
-  // exactly one active pill across the whole tree — the open session's branch group
+  // exactly one active pill across the whole tree — the active pane's branch group
   function derivePill(el) {
     nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
-    const g = branchGroupOf(el);
+    const g = el && branchGroupOf(el);
     if (g) g.classList.add('branch--active');
   }
 
-  function stopStream() { if (streamTimer) { clearInterval(streamTimer); streamTimer = null; } }
+  function stopStream() { streamTimers.forEach((id) => clearInterval(id)); streamTimers.clear(); }
+
+  // ---- Pane-tree helpers ----
+  let paneSeq = 0;
+  const leafNode  = (session) => ({ leaf: true, id: ++paneSeq, session, setup: null, el: null });
+  const setupLeaf = (groupRow) => ({ leaf: true, id: ++paneSeq, session: null, setup: groupRow, el: null });
+  function eachLeaf(node, fn) { if (!node) return; if (node.leaf) fn(node); else { eachLeaf(node.a, fn); eachLeaf(node.b, fn); } }
+  function leafBySession(session) { let hit = null; eachLeaf(layout, (l) => { if (l.session === session) hit = l; }); return hit; }
+  const firstLeaf = (node) => (node.leaf ? node : firstLeaf(node.a));
+  const activePaneEl = () => (activePane && activePane.el) || null;
+
+  // Drop dead leaves (session / setup detached from the DOM) and collapse the split above each
+  // — the surviving sibling reflows into the freed space (001). Returns true if it changed.
+  function pruneLayout() {
+    let changed = false;
+    function walk(node) {
+      if (!node) return null;
+      if (node.leaf) {
+        const alive = node.setup ? document.contains(node.setup) : (node.session && document.contains(node.session));
+        if (!alive) { changed = true; return null; }
+        return node;
+      }
+      const a = walk(node.a), b = walk(node.b);
+      if (a && b) { node.a = a; node.b = b; return node; }
+      return a || b;   // collapse: the survivor takes the split's place
+    }
+    layout = walk(layout);
+    if (!layout) { activePane = null; return changed; }
+    let ok = false; eachLeaf(layout, (l) => { if (l === activePane) ok = true; });
+    if (!ok) activePane = firstLeaf(layout);
+    return changed;
+  }
+
+  // Mirror the active pane into the sidebar (the sticky "you are here" tint) + the derived
+  // pill, and keep openEl pointing at its session — the DOM-cheap half of activation, no
+  // content re-render, so clicking between panes never tears down a live surface.
+  function syncActive() {
+    nav.querySelectorAll('.session--open').forEach((x) => x.classList.remove('session--open'));
+    const leaf = activePane, s = leaf && leaf.session;
+    openEl = s || null;
+    if (s) {
+      s.classList.add('session--open');
+      s.classList.remove('session--unread');
+      clearNotif(s);
+      derivePill(s);
+    } else if (leaf && leaf.setup) {
+      nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
+      leaf.setup.classList.add('branch--active');   // the grayed pending row reads as "you are here"
+    } else {
+      derivePill(null);
+    }
+  }
+  function applyActiveRing() {
+    content.querySelectorAll('.pane').forEach((p) => p.classList.toggle('pane--active', p._node === activePane));
+  }
+  // Click / keyboard activation — move the ring and the sidebar echo to `leaf`, in place.
+  function setActivePane(leaf) { activePane = leaf; syncActive(); applyActiveRing(); }
+
+  // Subdivide a leaf: it becomes a binary split of itself + a new pane bound to `session`,
+  // which lands active. Mutated in place so parent links survive. This is the model op the
+  // gesture layer drives — 010 (content drag-to-split), 012 (sidebar-create) — and the only
+  // way a split is born; 009 exercises it through SynthLayout (below) to prove the spine.
+  function splitPane(targetLeaf, session, dir, before) {
+    if (!targetLeaf || !session) return;
+    const incoming = leafNode(session);
+    const kept = leafNode(targetLeaf.session);
+    kept.setup = targetLeaf.setup;
+    targetLeaf.leaf = false;
+    targetLeaf.dir = dir === 'col' ? 'col' : 'row';
+    targetLeaf.split = 0.5;
+    targetLeaf.a = before ? incoming : kept;
+    targetLeaf.b = before ? kept : incoming;
+    targetLeaf.session = null; targetLeaf.setup = null; targetLeaf.el = null;
+    activePane = incoming;
+    renderLayout();
+  }
 
   function openSession(el) {
     if (!el) return;
     app.classList.remove('settings');   // jumping to a session leaves settings mode
     setupEl = null;                     // opening a real session revokes any armed setup-resolve
-    if (openEl) openEl.classList.remove('session--open');
-    openEl = el;
-    el.classList.add('session--open');
-    el.classList.remove('session--unread');   // opening marks it read
-    clearNotif(el);                            // …and dismisses any toast for it
-    derivePill(el);
-    renderOpen();
+    const existing = leafBySession(el);
+    if (existing) activePane = existing;                  // already up → take me to it (002)
+    else { layout = leafNode(el); activePane = layout; }  // else it becomes the (single) pane
+    renderLayout();
   }
 
   // Optimistic switch: move the pane onto a still-creating worktree's "setting up…"
@@ -2211,26 +2312,21 @@
   // finished checkout only resolves in place while this still points here.
   function openWorktreeSetup(groupRow) {
     app.classList.remove('settings');
-    if (openEl) openEl.classList.remove('session--open');
-    openEl = null;
     setupEl = groupRow;
-    nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
-    groupRow.classList.add('branch--active');   // the grayed pending row still reads as "you are here"
-    renderSetup(groupRow);
+    layout = setupLeaf(groupRow);
+    activePane = layout;
+    renderLayout();
   }
 
-  function renderSetup(groupRow) {
-    stopStream();
+  function setupPaneHTML(groupRow) {
     const name = groupRow.querySelector('.branch__name').textContent.trim();
     const ws = workspaceNameOf(groupRow);
-    content.innerHTML = `<div class="pane">
-      <div class="pane__head">
+    return `<div class="pane__head">
         <div class="pane__title"><span class="session__icon">${ICON_BRANCH}</span><span>${esc(name)}</span></div>
         <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(name)}</div>
         <div class="pane__spacer"></div>
       </div>
-      <div class="pane__body"><div class="pane-setup"><span class="pane-setup__spin"></span><span>Setting up worktree…</span></div></div>
-    </div>`;
+      <div class="pane__body"><div class="pane-setup"><span class="pane-setup__spin"></span><span>Setting up worktree…</span></div></div>`;
   }
 
   // A session moves to a new derived status: swap its sidebar indicator, re-roll, and
@@ -2574,9 +2670,9 @@
   // and the omnibox reopens the same "go to" surface floated over a loaded page.
   // The open browser pane's comment-mode controls, for ⌘K ("Enter/Exit comment mode").
   let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {} };
-  function wireBrowser(openEl) {
-    const host = content.querySelector('.browser'); if (!host) return;
-    const titleEl = content.querySelector('.pane__title span:last-child');
+  function wireBrowser(openEl, scope) {
+    const host = scope.querySelector('.browser'); if (!host) return;
+    const titleEl = scope.querySelector('.pane__title span:last-child');
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
     let devOpen = false, devTab = 'Elements';
@@ -2822,44 +2918,96 @@
 
   function renderEmpty() {
     stopStream();
+    layout = null; activePane = null; openEl = null;
+    derivePill(null);
     content.innerHTML = `<div class="pane-empty"><span class="pane-empty__mark">${ICON_EMPTY}</span><span>No session open</span></div>`;
   }
 
-  function renderOpen() {
-    stopStream();
-    if (!openEl || !document.contains(openEl)) { renderEmpty(); return; }
-    const type = openEl.dataset.type || 'terminal';
-    const name = openEl.querySelector('.session__name').textContent.trim();
-    const state = sessionState(openEl);
-    const ws = workspaceNameOf(openEl), br = branchNameOf(openEl);
-    const iconHTML = openEl.querySelector('.session__icon').outerHTML;
+  // The header + body a session pane carries (004 §1 — every pane keeps its full header);
+  // per-width degradation of that header is 015.
+  function sessionPaneHTML(el) {
+    const type = el.dataset.type || 'terminal';
+    const name = el.querySelector('.session__name').textContent.trim();
+    const state = sessionState(el);
+    const ws = workspaceNameOf(el), br = branchNameOf(el);
+    const iconHTML = el.querySelector('.session__icon').outerHTML;
     let body;
     if (type === 'ai') body = renderChat(state);
     else if (type === 'browser') body = renderBrowser(name);
     else if (type === 'simulator') body = renderSim(name);
     else body = renderTerminal(name, state, ws, br);
-    content.innerHTML = `<div class="pane">
-      <div class="pane__head">
+    return `<div class="pane__head">
         <div class="pane__title">${iconHTML}<span>${esc(name)}</span></div>
         <div class="pane__crumb"><b>${esc(ws)}</b> / ${esc(br)}</div>
         ${crumbCopyHTML(br)}
         <div class="pane__spacer"></div>
-        ${branchPRChipHTML(openEl)}
+        ${branchPRChipHTML(el)}
       </div>
-      <div class="pane__body">${body}</div>
-    </div>`;
-    if (type === 'ai') wireComposer(openEl);
-    else if (type === 'browser') wireBrowser(openEl);
-    else if (type === 'terminal' && state === 'run' && !reduceMotion) startStream();
+      <div class="pane__body">${body}</div>`;
   }
 
-  // running terminals feel alive: a fresh log line trickles in every couple seconds
-  function startStream() {
-    const term = content.querySelector('[data-term]');
+  function renderPane(leaf) {
+    const pane = document.createElement('div');
+    pane.className = 'pane';
+    pane._node = leaf;
+    leaf.el = pane;
+    pane.innerHTML = leaf.setup ? setupPaneHTML(leaf.setup) : sessionPaneHTML(leaf.session);
+    return pane;
+  }
+
+  // Walk the tree into nested split containers; leaves render as panes, siblings divided by
+  // a static seam. Child sizes ride on inline flex so 011 can later drive them by drag.
+  function renderNode(node) {
+    if (node.leaf) return renderPane(node);
+    const box = document.createElement('div');
+    box.className = 'split split--' + node.dir;
+    const a = renderNode(node.a), b = renderNode(node.b);
+    const fa = Math.round((node.split == null ? 0.5 : node.split) * 10000) / 100;
+    a.style.flex = '1 1 ' + fa + '%';
+    b.style.flex = '1 1 ' + (100 - fa) + '%';
+    const seam = document.createElement('div');
+    seam.className = 'pane-seam pane-seam--' + node.dir;
+    box.append(a, seam, b);
+    return box;
+  }
+
+  // Wire each leaf's live surface, scoped to its own pane element (never content-wide — a
+  // second browser/composer must not steal the first's controls). Active pane wired last so
+  // the shared singletons (browserCommentAPI) reflect it.
+  function wirePanes() {
+    const leaves = []; eachLeaf(layout, (l) => leaves.push(l));
+    leaves.sort((x, y) => (x === activePane ? 1 : 0) - (y === activePane ? 1 : 0));
+    leaves.forEach((leaf) => {
+      if (leaf.setup || !leaf.el || !leaf.session) return;
+      const el = leaf.session, type = el.dataset.type || 'terminal', state = sessionState(el);
+      if (type === 'ai') wireComposer(el, leaf.el);
+      else if (type === 'browser') wireBrowser(el, leaf.el);
+      else if (type === 'terminal' && state === 'run' && !reduceMotion) startStream(leaf.el);
+    });
+  }
+
+  // Render the whole pane tree into .content. The single-pane case is one leaf → identical
+  // to the old renderOpen output. Callers mutate layout/activePane, then call this.
+  function renderLayout() {
+    stopStream();
+    if (!layout) { renderEmpty(); return; }
+    pruneLayout();
+    if (!layout) { renderEmpty(); return; }
+    content.innerHTML = '';
+    content.appendChild(renderNode(layout));
+    syncActive();
+    applyActiveRing();
+    wirePanes();
+  }
+
+  // running terminals feel alive: a fresh log line trickles into each running pane every
+  // couple seconds — its own ticker, scoped to that pane so several can stream at once.
+  function startStream(scope) {
+    const term = scope.querySelector('[data-term]');
     if (!term) return;
     let i = 0;
-    streamTimer = setInterval(() => {
-      if (!document.contains(term)) return stopStream();
+    const id = setInterval(() => {
+      if (!document.contains(term)) { clearInterval(id); streamTimers.delete(id); return; }
       const div = document.createElement('div');
       div.className = 'term__ln dim';
       div.textContent = `  12:0${5 + (i % 4)}:${(12 + i * 7) % 60} [vite] ${STREAM_MSGS[i % STREAM_MSGS.length]}`;
@@ -2868,15 +3016,16 @@
       term.scrollTop = term.scrollHeight;
       i++;
     }, 2600);
+    streamTimers.add(id);
   }
 
   // Replying to the agent: append the message, flip it to working, then settle back to running.
-  function wireComposer(sessionEl) {
-    const composerEl = content.querySelector('.chat__composer');
+  function wireComposer(sessionEl, scope) {
+    const composerEl = scope.querySelector('.chat__composer');
     if (!composerEl) return;
     const input = composerEl.querySelector('.chat__input');
     const send = composerEl.querySelector('.chat__send');
-    const scroll = content.querySelector('.chat__scroll');
+    const scroll = scope.querySelector('.chat__scroll');
     const submit = () => {
       const text = (input.textContent || '').trim() || 'Just commands and sessions for now.';
       const u = document.createElement('div');
@@ -3015,7 +3164,8 @@
   }
   function focusContent() {
     document.body.classList.remove('kbd');
-    const el = content.querySelector('.chat__input') || content.querySelector('[data-term]');
+    const scope = activePaneEl() || content;   // ⌘1 hands the keyboard to the active pane (002)
+    const el = scope.querySelector('.chat__input') || scope.querySelector('[data-term]');
     if (el) el.focus();
   }
 
@@ -3082,7 +3232,7 @@
     // An open browser session claims the standard page verbs window-wide: ⌘L address,
     // ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools, ⌘⇧M device mode — each drives the visible
     // toolbar control, so disabled states (home page, empty history) are respected for free.
-    const bhost = openEl && openEl.dataset.type === 'browser' ? content.querySelector('.browser') : null;
+    const bhost = openEl && openEl.dataset.type === 'browser' && activePaneEl() ? activePaneEl().querySelector('.browser') : null;
     if (bhost && (e.metaKey || e.ctrlKey)) {
       const bpress = (sel) => { const b = bhost.querySelector(sel); if (b && !b.disabled) b.click(); };
       if (k === 'l' || k === 'L') { e.preventDefault(); bpress('[data-omni]'); return; }
@@ -3302,8 +3452,9 @@
     const el = nameElOf(row);
     if (!el) return;
     el.textContent = name;
-    if (row.matches('.session') && openEl === row) {
-      const t = document.querySelector('.pane__title span');
+    const leaf = row.matches('.session') ? leafBySession(row) : null;
+    if (leaf && leaf.el) {
+      const t = leaf.el.querySelector('.pane__title span:last-child');
       if (t) t.textContent = name;
     }
   }
@@ -3384,8 +3535,9 @@
     unit.classList.add('row-exit');
     const done = () => {
       unit.remove(); rollUpGroups();
-      if (setupEl && !document.contains(setupEl)) { setupEl = null; renderEmpty(); }
-      if (openEl && !document.contains(openEl)) { openEl = null; renderEmpty(); }
+      if (setupEl && !document.contains(setupEl)) setupEl = null;
+      // a deleted session's pane collapses; its sibling reflows (001) — no guard (005)
+      if (pruneLayout()) renderLayout();
       if (fallback && document.contains(fallback)) select(fallback, true);
     };
     unit.addEventListener('animationend', done, { once: true });
@@ -4115,12 +4267,12 @@
   // navigation path. When the row isn't the open session there is no live page yet, so
   // everything but "Go to address…" (which opens the session first) reads disabled.
   function browserActions(row) {
-    const live = row === openEl ? content.querySelector('.browser') : null;
+    const live = row === openEl && activePaneEl() ? activePaneEl().querySelector('.browser') : null;
     const home = !live || live.hasAttribute('data-home');
     const url = home ? '' : live.querySelector('.browser__url').textContent;
     const drive = (fn) => runAndClose(() => {
       if (row !== openEl) jumpTo(row);
-      const host = content.querySelector('.browser');
+      const host = activePaneEl() && activePaneEl().querySelector('.browser');
       if (host) fn(host);
     });
     const press = (sel) => drive((host) => { const b = host.querySelector(sel); if (b && !b.disabled) b.click(); });
@@ -5008,7 +5160,7 @@
   function exitSettings() {
     if (!app.classList.contains('settings')) return;
     app.classList.remove('settings');
-    renderOpen();   // restore the session that was open before
+    renderLayout();   // restore the layout that was open before
     // cursor returns to the tree — the open session, else the Settings button we came from
     select(openEl && treeRows().includes(openEl) ? openEl : document.getElementById('openSettings'));
   }
@@ -5033,6 +5185,20 @@
 
   // Open a session by default so the workspace feels live on load (the Claude Code hero).
   openSession(nav.querySelector('.session[data-type="ai"]') || nav.querySelector('.session'));
+
+  // Spine inspection handle. Until the split gestures land (010 drag, 012 sidebar-create),
+  // this is the only way to build a multi-pane tree — it drives the same splitPane the
+  // gestures will. `split(sel, dir, before)` binds the new pane to the sidebar session
+  // matching `sel`. Verification/testing only; product code never reads it.
+  window.SynthLayout = {
+    get tree() { return layout; },
+    get active() { return activePane; },
+    leaves() { const a = []; eachLeaf(layout, (l) => a.push(l)); return a; },
+    split(sel, dir = 'row', before = false) {
+      const s = typeof sel === 'string' ? nav.querySelector(sel) : sel;
+      splitPane(activePane, s, dir, before);
+    },
+  };
 
   // Resizable sidebar — drag the seam to set the sidebar width (persists); ⌘B collapse still wins.
   (() => {

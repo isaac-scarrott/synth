@@ -81,12 +81,13 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
 
 ## Not yet specified
 
-- How the working.html build ([Build the mouse-only split layout in working.html](tickets/006-build-mouse-only-split-layout.md))
-  slices into ≤ one-session chunks, once the decision tickets land.
-- Session-type-specific behaviour inside a *narrow* pane: browser device-mode chrome, terminal
-  reflow, the per-pane header (branch crumb, PR chip, copy, kebab) degrading at small widths.
 - Whether any *cross-branch* "recent layouts" / quick-swap affordance is wanted, beyond the per-branch
   restore 005 already gives (branch-switch is the quick-swap) — only if it emerges from use.
+
+<!-- graduated: the working.html build has been sliced (by mechanism) into 009–015, wired behind
+     the build milestone [Build the mouse-only split layout](tickets/006-build-mouse-only-split-layout.md);
+     narrow-pane session-type behaviour + per-width header degradation are now
+     [Narrow-pane polish](tickets/015-narrow-pane-and-micro-interactions.md). -->
 
 ## Out of scope
 

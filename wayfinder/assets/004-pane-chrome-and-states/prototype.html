@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>004 · Pane chrome, drop-zones & empty states — prototype</title>
+<style>
+  /* Throwaway prototype for wayfinder ticket 004. Tokens lifted from working.html so the
+     surfaces read native. NOT wired into the real app — disposable evidence to react to. */
+  :root {
+    --canvas:#e9eaee; --panel:#fafbfc; --sidebar:#f0f1f4;
+    --border:rgba(0,0,0,0.07); --border-strong:rgba(0,0,0,0.1);
+    --text:#1c1e23; --text-muted:#7e808a; --text-faint:#a6a8b0; --ink-meta:#6b6e76;
+    --ink:#1c1e23; --ink-open:#2b2d34; --ink-2:#44464e; --ink-3:#54565e;
+    --raised:#ffffff; --chrome:#f2f3f6;
+    --tui-bg:#f3efe7; --tui-fg:#33353c; --tui-dim:#696c76; --tui-green:#1c7d40; --tui-blue:#2361c4;
+    --hover-soft:rgba(0,0,0,0.035); --hover:rgba(0,0,0,0.05); --press:rgba(0,0,0,0.08);
+    --line-soft:rgba(0,0,0,0.06); --line:rgba(0,0,0,0.1); --line-2:rgba(0,0,0,0.16); --input-tok:rgba(0,0,0,0.14);
+    --accent:#a86038; --accent-rgb:168,96,56; --on-accent:#fff;
+    --run:#34c759; --work:#f5a623; --input:#3a6db3; --input-rgb:58,109,179;
+    --pr-open:#1a7f37;
+    --titlebar-h:50px; --radius-app:14px;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --ease-out:cubic-bezier(0.23,1,0.32,1);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; font-family:var(--font); color:var(--text); background:var(--canvas); -webkit-font-smoothing:antialiased; }
+  body { display:flex; flex-direction:column; align-items:center; gap:16px; padding:22px; }
+
+  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  .toolbar h1 { font-size:13px; font-weight:600; color:var(--text-muted); margin-right:8px; letter-spacing:-0.01em; }
+  .tbtn {
+    font:inherit; font-size:12px; font-weight:500; letter-spacing:-0.01em;
+    padding:6px 11px; border-radius:8px; border:0.5px solid var(--line);
+    background:var(--raised); color:var(--ink-2); cursor:pointer;
+    box-shadow:0 0.5px 1px rgba(0,0,0,0.04); transition:background-color 110ms ease, box-shadow 110ms ease;
+  }
+  .tbtn:hover { background:var(--hover-soft); }
+  .tbtn.on { background:var(--accent); color:var(--on-accent); border-color:transparent; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+  .hint { font-size:11.5px; color:var(--text-faint); letter-spacing:-0.005em; }
+  .seg { display:inline-flex; gap:2px; padding:2px; background:var(--hover); border-radius:9px; }
+  .seg__b { padding:5px 12px; border:0; box-shadow:none; background:transparent; }
+  .seg__b:hover { background:var(--hover-soft); }
+  .seg__b.on { box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+
+  /* ---- Fake content surface: just the pane region, no sidebar ---- */
+  .surface {
+    position:relative;
+    width:100%; max-width:1100px; height:600px;
+    background:var(--panel);
+    border-radius:var(--radius-app);
+    box-shadow:0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+    overflow:hidden;
+    display:flex;
+  }
+
+  /* ---- Pane ---- */
+  .pane { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
+  .pane + .seam + .pane { }
+  .pane__head {
+    flex-shrink:0; display:flex; align-items:center; gap:12px;
+    padding:0 16px; height:var(--titlebar-h); border-bottom:0.5px solid var(--border);
+  }
+  .pane__title { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; letter-spacing:-0.01em; color:var(--text); min-width:0; }
+  .pane__title .ico { width:15px; height:15px; flex-shrink:0; display:block; color:var(--ink-2); }
+  .pane__title .ico svg { width:15px; height:15px; display:block; }
+  .pane__title .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pane__crumb {
+    font-family:var(--mono); font-size:11px; letter-spacing:-0.01em; color:var(--text-faint);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+  }
+  .pane__crumb b { color:var(--text-muted); font-weight:500; }
+  .pane__spacer { flex:1; min-width:6px; }
+
+  /* PR chip — same idiom as working.html */
+  .prchip {
+    display:flex; align-items:center; gap:5px; flex-shrink:0; padding:3px 8px; border-radius:7px;
+    font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:-0.01em; text-decoration:none;
+    color:var(--ink-2); background:var(--raised); border:0.5px solid var(--line); box-shadow:0 0.5px 1px rgba(0,0,0,0.04);
+  }
+  .prchip svg { width:13px; height:13px; display:block; color:var(--pr-open); }
+
+  /* copy-branch + kebab — hover revealed */
+  .ctl {
+    flex-shrink:0; display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; border:0; background:none; border-radius:6px; color:var(--ink-meta); cursor:pointer;
+    opacity:0; transition:opacity 120ms ease, background-color 110ms ease;
+  }
+  .ctl svg { width:14px; height:14px; display:block; }
+  .pane__head:hover .ctl { opacity:0.55; }
+  .ctl:hover { opacity:1; background:var(--press); }
+
+  /* active-pane indicator — variant-scoped so we can compare treatments live */
+  .pane { transition: box-shadow 140ms ease; }
+  .pane__body, .pane__head { transition: opacity 160ms ease; }
+  /* strip: a copper hairline along the top edge of the active pane's header */
+  .surface.act-strip .pane.is-active .pane__head { box-shadow: inset 0 2px 0 -0.5px var(--accent); }
+  /* ring: a copper ring around the whole active pane */
+  .surface.act-ring .pane.is-active { box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb),0.85); z-index:2; }
+  /* dim: inactive panes recede (header + body fade); active stays full-strength */
+  .surface.act-dim .pane:not(.is-active) .pane__head { opacity:0.55; }
+  .surface.act-dim .pane:not(.is-active) .pane__body { opacity:0.4; }
+  /* tint: active header gets a faint copper wash; inactive headers stay plain */
+  .surface.act-tint .pane.is-active .pane__head { background:rgba(var(--accent-rgb),0.06); box-shadow: inset 0 -0.5px 0 rgba(var(--accent-rgb),0.35); }
+
+  .pane__body { flex:1; min-height:0; overflow:hidden; position:relative; }
+
+  /* fake terminal body */
+  .term { position:absolute; inset:12px; border-radius:10px; background:var(--tui-bg);
+    box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.13), 0 1px 2px rgba(0,0,0,0.05);
+    padding:12px 14px; font-family:var(--mono); font-size:11.5px; line-height:1.55; color:var(--tui-fg); overflow:hidden; }
+  .term .g { color:var(--tui-green); } .term .b { color:var(--tui-blue); } .term .d { color:var(--tui-dim); }
+  /* fake browser body */
+  .brow { position:absolute; inset:0; display:flex; flex-direction:column; }
+  .brow__bar { height:34px; flex-shrink:0; background:var(--chrome); border-bottom:0.5px solid var(--border); display:flex; align-items:center; gap:8px; padding:0 12px; }
+  .brow__url { flex:1; height:20px; border-radius:6px; background:var(--raised); border:0.5px solid var(--line); font-family:var(--mono); font-size:10.5px; color:var(--text-muted); display:flex; align-items:center; padding:0 8px; overflow:hidden; }
+  .brow__view { flex:1; background:#fff; display:flex; align-items:center; justify-content:center; color:var(--text-faint); font-size:12px; }
+
+  /* ---- Inter-pane seam (extends the sidebar resize-handle idiom) ---- */
+  .seam { position:relative; flex:0 0 1px; background:var(--border); cursor:col-resize; z-index:5; }
+  .seam::after { content:""; position:absolute; top:0; bottom:0; left:50%; width:9px; transform:translateX(-50%); }
+  .seam::before { content:""; position:absolute; top:0; bottom:0; left:50%; width:1.5px; transform:translateX(-50%); background:var(--input-tok); opacity:0; transition:opacity 140ms ease; }
+  .seam:hover::before, .seam.dragging::before { opacity:0.6; }
+
+  /* ---- Empty pane ---- */
+  .empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--text-faint); }
+  .empty__ring { width:46px; height:46px; border-radius:12px; border:1.5px dashed var(--line-2); display:flex; align-items:center; justify-content:center; }
+  .empty__ring svg { width:20px; height:20px; color:var(--text-faint); }
+  .empty__msg { font-size:12.5px; letter-spacing:-0.005em; }
+  .empty__sub { font-size:11px; color:var(--text-faint); opacity:0.8; }
+
+  /* ---- Drop-zones (shown while a session is dragged over a pane) ---- */
+  .dz { position:absolute; inset:0; z-index:20; pointer-events:none; display:none; }
+  .surface.dragging .dz { display:block; }
+  .dz__zone {
+    position:absolute; display:flex; align-items:center; justify-content:center;
+    background:rgba(var(--accent-rgb),0.10); border:1.5px solid rgba(var(--accent-rgb),0.35);
+    border-radius:8px; transition:background-color 120ms ease, border-color 120ms ease;
+  }
+  .dz__zone.left   { left:6px;  top:6px; bottom:6px; width:26%; }
+  .dz__zone.right  { right:6px; top:6px; bottom:6px; width:26%; }
+  .dz__zone.top    { top:6px;    left:calc(26% + 12px); right:calc(26% + 12px); height:30%; }
+  .dz__zone.bottom { bottom:6px; left:calc(26% + 12px); right:calc(26% + 12px); height:30%; }
+  /* center = replace: distinct slate/input tint so it never reads as a split */
+  .dz__zone.center {
+    top:calc(30% + 12px); bottom:calc(30% + 12px); left:calc(26% + 12px); right:calc(26% + 12px);
+    background:rgba(var(--input-rgb),0.12); border:1.5px dashed rgba(var(--input-rgb),0.55);
+  }
+  /* the zone under the cursor gets the strong state */
+  .dz__zone.hot { background:rgba(var(--accent-rgb),0.22); border-color:rgba(var(--accent-rgb),0.95); border-style:solid; }
+  .dz__zone.center.hot { background:rgba(var(--input-rgb),0.22); border-color:rgba(var(--input-rgb),0.95); }
+
+  /* icon + label inside each zone; visibility driven by the style variant on .surface */
+  .dz__icon  { font-size:20px; line-height:1; color:var(--accent); }
+  .dz__zone.center .dz__icon { color:var(--input); }
+  .dz__label {
+    font-size:11px; font-weight:500; color:var(--accent);
+    background:var(--raised); padding:3px 9px; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.1);
+  }
+  .dz__zone.center .dz__label { color:var(--input); }
+  /* variants */
+  .surface .dz__icon, .surface .dz__label { display:none; }
+  .surface.style-icon  .dz__icon  { display:block; }
+  .surface.style-label .dz__label { display:block; }
+  /* bare = neither shown */
+
+  /* outer-rim zone for whole-surface splits (from ticket 001) */
+  .rim { position:absolute; z-index:19; pointer-events:none; display:none; }
+  .surface.dragging .rim { display:block; }
+  .rim__zone { position:absolute; background:rgba(var(--input-rgb),0.08); border:1.5px dashed rgba(var(--input-rgb),0.5); }
+  .rim__zone.r { right:0; top:0; bottom:0; width:12px; }
+
+  /* floating drag ghost */
+  .ghost { position:fixed; z-index:100; pointer-events:none; padding:6px 11px; border-radius:8px; background:var(--raised); box-shadow:0 4px 16px rgba(0,0,0,0.18); border:0.5px solid var(--line); font-size:12px; font-weight:500; color:var(--ink-2); display:none; align-items:center; gap:7px; }
+  .ghost .ico { width:14px; height:14px; color:var(--ink-2); }
+
+  .note { max-width:1100px; font-size:12px; line-height:1.55; color:var(--text-muted); letter-spacing:-0.005em; }
+  .note b { color:var(--ink-2); font-weight:600; }
+  .widthtag { position:absolute; top:8px; right:10px; font-family:var(--mono); font-size:10px; color:var(--text-faint); background:var(--raised); padding:2px 6px; border-radius:5px; border:0.5px solid var(--line-soft); z-index:8; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>004 · pane chrome</h1>
+    <button class="tbtn" id="tDrag">Show drop-zones</button>
+    <span class="seg" id="styleSeg" hidden>
+      <button class="tbtn seg__b" data-style="icon">Icon</button>
+      <button class="tbtn seg__b" data-style="label">Label</button>
+      <button class="tbtn seg__b on" data-style="bare">Bare</button>
+    </span>
+    <button class="tbtn" id="tActive">Flip active pane</button>
+    <span class="seg" id="actSeg">
+      <button class="tbtn seg__b" data-act="strip">Strip</button>
+      <button class="tbtn seg__b on" data-act="ring">Ring</button>
+      <button class="tbtn seg__b" data-act="dim">Dim rest</button>
+      <button class="tbtn seg__b" data-act="tint">Tint</button>
+    </span>
+    <span class="hint">· drag the seam to narrow a pane · left pane is active</span>
+  </div>
+
+  <div class="surface" id="surface">
+    <!-- LEFT pane: Claude Code, wide -->
+    <section class="pane is-active" id="paneL" style="flex:1 1 58%;">
+      <span class="widthtag" data-w></span>
+      <div class="pane__head">
+        <div class="pane__title">
+          <span class="ico"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.13,104.13,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Z"/><circle cx="128" cy="128" r="40"/></svg></span>
+          <span class="nm">Claude Code</span>
+        </div>
+        <div class="pane__crumb"><b>synth</b> / session-layout-management</div>
+        <button class="ctl" title="Copy branch name"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg></button>
+        <div class="pane__spacer"></div>
+        <a class="prchip" href="#" onclick="return false"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,64A32,32,0,1,0,64,95v66a32,32,0,1,0,16,0V95A32.06,32.06,0,0,0,104,64ZM72,48A16,16,0,1,1,56,64,16,16,0,0,1,72,48Zm0,160a16,16,0,1,1,16-16A16,16,0,0,1,72,208Zm136-47V110.63a23.85,23.85,0,0,0-7-17L163.31,56H192a8,8,0,0,0,0-16H144a8,8,0,0,0-8,8V96a8,8,0,0,0,16,0V67.31L189.66,105a8,8,0,0,1,2.34,5.66V161a32,32,0,1,0,16,0Zm-8,47a16,16,0,1,1,16-16A16,16,0,0,1,200,208Z"/></svg><span>#482</span></a>
+        <button class="ctl" title="More (⌘K)"><svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="64" r="16"/><circle cx="128" cy="128" r="16"/><circle cx="128" cy="192" r="16"/></svg></button>
+      </div>
+      <div class="pane__body">
+        <div class="term">
+          <div><span class="b">$</span> git status</div>
+          <div class="d">On branch session-layout-management</div>
+          <div class="d">Changes not staged for commit:</div>
+          <div class="g">  modified: working.html</div>
+          <div class="g">  modified: big-picture-design.html</div>
+          <div>&nbsp;</div>
+          <div><span class="b">›</span> I'll land the pane chrome in both files…</div>
+        </div>
+        <div class="empty" style="display:none;">
+          <div class="empty__ring"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z"/></svg></div>
+          <div class="empty__msg">Empty pane</div>
+          <div class="empty__sub">Drag a session here, or ⌘K to open one</div>
+        </div>
+        <!-- per-pane drop-zones: all five lit so the whole map reads; center is 'replace' -->
+        <div class="dz">
+          <div class="dz__zone left"><span class="dz__icon">◂</span><span class="dz__label">Split left</span></div>
+          <div class="dz__zone right"><span class="dz__icon">▸</span><span class="dz__label">Split right</span></div>
+          <div class="dz__zone top"><span class="dz__icon">▴</span><span class="dz__label">Split up</span></div>
+          <div class="dz__zone bottom"><span class="dz__icon">▾</span><span class="dz__label">Split down</span></div>
+          <div class="dz__zone center hot"><span class="dz__icon">⇄</span><span class="dz__label">Replace</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="seam" id="seam"></div>
+
+    <!-- RIGHT pane: browser, narrower -->
+    <section class="pane" id="paneR" style="flex:1 1 42%;">
+      <span class="widthtag" data-w></span>
+      <div class="pane__head">
+        <div class="pane__title">
+          <span class="ico"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Z"/></svg></span>
+          <span class="nm">localhost:8733</span>
+        </div>
+        <div class="pane__crumb"><b>synth</b> / session-layout-management</div>
+        <div class="pane__spacer"></div>
+        <button class="ctl" title="More (⌘K)"><svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="64" r="16"/><circle cx="128" cy="128" r="16"/><circle cx="128" cy="192" r="16"/></svg></button>
+      </div>
+      <div class="pane__body">
+        <div class="brow">
+          <div class="brow__bar"><div class="brow__url">localhost:8733/dashboard</div></div>
+          <div class="brow__view">preview</div>
+        </div>
+        <div class="empty" style="display:none;">
+          <div class="empty__ring"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z"/></svg></div>
+          <div class="empty__msg">Empty pane</div>
+          <div class="empty__sub">Drag a session here, or ⌘K to open one</div>
+        </div>
+        <div class="dz">
+          <div class="dz__zone left"><span class="dz__icon">◂</span><span class="dz__label">Split left</span></div>
+          <div class="dz__zone right"><span class="dz__icon">▸</span><span class="dz__label">Split right</span></div>
+          <div class="dz__zone top"><span class="dz__icon">▴</span><span class="dz__label">Split up</span></div>
+          <div class="dz__zone bottom"><span class="dz__icon">▾</span><span class="dz__label">Split down</span></div>
+          <div class="dz__zone center"><span class="dz__icon">⇄</span><span class="dz__label">Replace</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- outer-rim whole-surface split zone (ticket 001) -->
+    <div class="rim"><div class="rim__zone r"></div></div>
+  </div>
+
+  <div class="ghost" id="ghost"><span class="ico"><svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-width="16"/></svg></span>dev-server logs</div>
+
+  <p class="note">
+    Provocations baked in so there's something concrete to push against: <b>every pane keeps its full
+    header</b> (crumb + PR + kebab), collapsing controls only as width shrinks; the <b>active pane</b>
+    carries a hairline copper strip along the top of its header; there's <b>no dedicated close/unsplit
+    button</b> — that lives in the kebab → ⌘K (per ticket 003); drop-zones are a <b>copper wash + 5th
+    center "replace" zone</b>, with a slate outer-rim zone for whole-surface splits; the empty pane
+    prompts <b>"drag a session here, or ⌘K"</b>. Drag the seam narrow to see the header degrade.
+  </p>
+
+<script>
+  const surface = document.getElementById('surface');
+  const paneL = document.getElementById('paneL');
+  const paneR = document.getElementById('paneR');
+  const seam = document.getElementById('seam');
+
+  // width tags + responsive chrome collapse
+  function reflow() {
+    [paneL, paneR].forEach(p => {
+      const w = Math.round(p.getBoundingClientRect().width);
+      p.querySelector('[data-w]').textContent = w + 'px';
+      // collapse rules: crumb goes first, then PR chip label→icon, then title crumb entirely
+      p.classList.toggle('w-sm', w < 460);
+      p.classList.toggle('w-xs', w < 340);
+    });
+  }
+  window.addEventListener('resize', reflow);
+
+  // seam drag
+  let dragging = false, startX = 0, startL = 0, total = 0;
+  seam.addEventListener('mousedown', e => {
+    dragging = true; seam.classList.add('dragging');
+    startX = e.clientX; startL = paneL.getBoundingClientRect().width;
+    total = paneL.getBoundingClientRect().width + paneR.getBoundingClientRect().width;
+    document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    let nl = startL + (e.clientX - startX);
+    const MIN = 260; // ~ min-pane floor proxy (real floor 360 from ticket 001)
+    nl = Math.max(MIN, Math.min(total - MIN, nl));
+    paneL.style.flex = '0 0 ' + nl + 'px';
+    paneR.style.flex = '1 1 auto';
+    reflow();
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return; dragging = false; seam.classList.remove('dragging');
+    document.body.style.cursor = ''; document.body.style.userSelect = '';
+  });
+
+  // toggles
+  const tDrag = document.getElementById('tDrag');
+  const tActive = document.getElementById('tActive');
+  const ghost = document.getElementById('ghost');
+  const styleSeg = document.getElementById('styleSeg');
+
+  surface.classList.add('style-bare');   // LOCKED drop-zone treatment (bare: colour + shape only)
+  surface.classList.add('act-ring');     // LOCKED active-pane indicator (ring)
+  const actSeg = document.getElementById('actSeg');
+  actSeg.querySelectorAll('.seg__b').forEach(b => b.addEventListener('click', () => {
+    actSeg.querySelectorAll('.seg__b').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    surface.classList.remove('act-strip', 'act-ring', 'act-dim', 'act-tint');
+    surface.classList.add('act-' + b.dataset.act);
+  }));
+  tDrag.addEventListener('click', () => {
+    const on = surface.classList.toggle('dragging');
+    tDrag.classList.toggle('on', on);
+    tDrag.textContent = on ? 'Hide drop-zones' : 'Show drop-zones';
+    ghost.style.display = on ? 'flex' : 'none';
+    styleSeg.hidden = !on;
+  });
+  styleSeg.querySelectorAll('.seg__b').forEach(b => b.addEventListener('click', () => {
+    styleSeg.querySelectorAll('.seg__b').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    surface.classList.remove('style-icon', 'style-label', 'style-bare');
+    surface.classList.add('style-' + b.dataset.style);
+  }));
+  window.addEventListener('mousemove', e => {
+    if (ghost.style.display === 'flex') { ghost.style.left = (e.clientX + 14) + 'px'; ghost.style.top = (e.clientY + 10) + 'px'; }
+  });
+  tActive.addEventListener('click', () => {
+    paneL.classList.toggle('is-active');
+    paneR.classList.toggle('is-active');
+    tActive.classList.toggle('on', paneR.classList.contains('is-active'));
+  });
+
+  reflow();
+</script>
+
+<style>
+  /* width-responsive header degradation — the crux of the "narrow pane" question */
+  .pane.w-sm .pane__crumb { display:none; }              /* crumb drops first */
+  .pane.w-sm .prchip span { display:none; }              /* PR label → icon only */
+  .pane.w-sm .prchip { padding:3px 6px; }
+  .pane.w-xs .pane__title .nm { font-size:12px; }
+  .pane.w-xs .ctl { width:22px; }
+</style>
+</body>
+</html>

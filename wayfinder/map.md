@@ -58,13 +58,20 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   (`openRowActions → sessionFrame`), where **Unsplit** is a flat command beside Rename/Close (Synth
   has no per-row popovers). **Drag a tile out** is the fast alternative; creating a split stays the
   drag gesture (001), a ⌘K/keyboard create command left to 007.
+- [Per-pane chrome, drop-zones & empty states](tickets/004-pane-chrome-and-states.md) — **every pane
+  keeps its full header** (name + crumb + PR + kebab), degrading **by width** not focus (crumb drops
+  first, then PR label→icon); **no empty-pane state** (a pane always hosts exactly one session — splits
+  born filled, unsplit collapses, loading still counts as bound; any ⌘K "pick a session" is a transient
+  overlay left to 007); a **5th center "replace" drop-zone** swaps a pane's session in place (displaced
+  one returns to sidebar) atop 001's edge-splits + outer rim; drop-zones are **bare** (colour+shape
+  only) — split=copper, replace=slate-blue dashed; **active pane = a copper ring** around the whole
+  pane; the **inter-pane seam** reuses the sidebar handle idiom (min-pane floor honoured), drag-only,
+  **no double-click reset**; **no dedicated close/unsplit control** (kebab→⌘K, per 003).
 
 ## Not yet specified
 
 - How the working.html build ([Build the mouse-only split layout in working.html](tickets/006-build-mouse-only-split-layout.md))
   slices into ≤ one-session chunks, once the decision tickets land.
-- Empty-pane / drag-target / resize-seam visuals and micro-interactions (may graduate out of the
-  pane-chrome ticket).
 - Session-type-specific behaviour inside a *narrow* pane: browser device-mode chrome, terminal
   reflow, the per-pane header (branch crumb, PR chip, copy, kebab) degrading at small widths.
 - Whether any "recent layouts" / quick-swap affordance is wanted — only if it emerges from use.

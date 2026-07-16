@@ -1,0 +1,48 @@
+SPLIT TOPOLOGY — three candidate shapes for the content surface
+(sidebar on the left is unchanged; only the content area to its right splits)
+
+Legend:  [ S# ] = a pane hosting session #.   │ ─ = split seams.
+
+────────────────────────────────────────────────────────────────────────
+A) ARBITRARY NESTED BINARY TREE   (tmux / VS Code)
+   Any pane splits H or V, any depth. Drop on a pane's edge splits THAT pane.
+
+   ┌──────┬───────────────────────┐      A layout is a tree:
+   │      │        [ S2 ]         │             split(V)
+   │      ├───────────┬───────────┤            /        \
+   │ [S1] │   [ S3 ]  │           │          S1         split(H)
+   │      ├───────────┤   [ S5 ]  │                     /   \
+   │      │   [ S4 ]  │           │                   S2   split(V)
+   └──────┴───────────┴───────────┘                        /  \
+   Powerful. On a laptop, 5+ deep gets unusable fast.    S3H..  S5
+                                                        (S3/S4 stack, S5)
+
+────────────────────────────────────────────────────────────────────────
+B) SINGLE-LEVEL GRID w/ PRESETS   (2-up, 3-up, 2x2)
+   No nesting. Drop picks a slot in a bounded preset. Max 4 panes.
+
+   2-up            3-up               2x2
+   ┌──────┬──────┐ ┌────┬────┬────┐  ┌──────┬──────┐
+   │      │      │ │    │    │    │  │ [S1] │ [S2] │
+   │ [S1] │ [S2] │ │[S1]│[S2]│[S3]│  ├──────┼──────┤
+   │      │      │ │    │    │    │  │ [S3] │ [S4] │
+   └──────┴──────┘ └────┴────┴────┘  └──────┴──────┘
+   Simple, bounded, predictable. No "S2 beside S3 stacked" freedom.
+
+────────────────────────────────────────────────────────────────────────
+C) CAPPED TREE   (nested, but max depth 2 and/or max 4 panes)
+   Edge-drop splits a pane, BUT the surface refuses past the cap.
+   Covers the real 2–4 pane cases; blocks the unusable deep nest.
+
+   ┌──────┬───────────────┐        ┌──────┬───────┬──────┐
+   │ [S1] │     [S2]      │        │ [S1] │ [S2]  │ [S3] │
+   │      ├───────────────┤   or   │      ├───────┤      │
+   │      │     [S3]      │        │      │ [S4]  │      │
+   └──────┴───────────────┘        └──────┴───────┴──────┘
+   depth-2 reachable ───┘          split-then-split, but a 5th drop is rejected
+
+────────────────────────────────────────────────────────────────────────
+OPEN SUB-QUESTIONS these shapes force:
+  1. Edge-drop target: does dropping on a pane's edge split THAT pane, or the whole surface?
+  2. Smallest usable pane: what min width/height before a drop is refused?
+  3. Cap (if any): max pane count / max nesting depth.

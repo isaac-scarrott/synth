@@ -41,6 +41,10 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
 
 <!-- one line per closed ticket; follow the link for the detail -->
 
+- [Split topology & nesting model](tickets/001-split-topology-and-nesting.md) — arbitrary nested tree,
+  no cap; edge-drop splits the hovered pane (+ one outer-rim zone for whole-surface splits); a
+  min-pane pixel floor (~360×240) is the guardrail — drops/resizes below it are refused.
+
 ## Not yet specified
 
 - How the working.html build ([Build the mouse-only split layout in working.html](tickets/006-build-mouse-only-split-layout.md))

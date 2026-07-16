@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sidebar · split representation — treatments</title>
+<style>
+  :root {
+    --canvas: #e9eaee; --sidebar: #f0f1f4; --raised: #ffffff;
+    --ink: #1c1e23; --ink-open: #2b2d34; --ink-3: #54565e; --ink-meta: #6b6e76;
+    --ink-unread: #34363d; --text-faint: #a6a8b0;
+    --hover-soft: rgba(0,0,0,0.035); --hover: rgba(0,0,0,0.05); --press: rgba(0,0,0,0.08);
+    --line-soft: rgba(0,0,0,0.06); --line: rgba(0,0,0,0.1);
+    --accent: #a86038; --accent-rgb: 168,96,56; --on-accent:#fff;
+    --copper:#a05633; --input:#3a6db3; --pr-open:#1a7f37;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --ease-out: cubic-bezier(0.23,1,0.32,1);
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--canvas); font-family:var(--font); color:var(--ink); padding:28px 30px 60px; }
+  h1 { font-size:15px; font-weight:600; margin:0 0 4px; }
+  .lede { font-size:12.5px; color:var(--ink-3); max-width:760px; line-height:1.5; margin:0 0 26px; }
+  .lede code { font-family:var(--mono); font-size:11.5px; background:var(--press); padding:1px 4px; border-radius:4px; }
+  .grid { display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; }
+  .col { width:270px; }
+  .cap { font-size:12px; font-weight:600; margin:0 0 3px; }
+  .cap b { color:var(--accent); }
+  .sub { font-size:11px; color:var(--ink-meta); line-height:1.45; margin:0 0 10px; min-height:46px; }
+
+  /* --- real sidebar chrome (trimmed to what the rows need) --- */
+  .nav { background:var(--sidebar); border-radius:14px; padding:8px 8px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06); }
+  .branch { display:flex; align-items:center; gap:8px; border-radius:8px; padding:7px 6px 7px 8px; padding-left:37px; position:relative; }
+  .chev { width:12px; height:12px; flex-shrink:0; color:var(--ink-meta); position:absolute; left:12px; }
+  .chev svg { width:13px; height:13px; transform:rotate(90deg); }
+  .branch__name { font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:-0.01em; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .branch:has(.branch__pr) .branch__name { flex:initial; }
+  .branch__pr { flex:1; display:flex; align-items:center; color:var(--pr-open); }
+  .branch__pr svg { width:11px; height:11px; }
+  .branch--active { background:var(--raised); box-shadow:0 0 0 0.5px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.05); }
+  .branch--active .branch__name { color:var(--ink); font-weight:600; }
+
+  .sessions { display:flex; flex-direction:column; gap:1px; margin:2px 0 6px; }
+  .session { display:flex; align-items:center; gap:8px; border-radius:8px; padding:6px 6px 6px 61px; position:relative; text-decoration:none; }
+  .session:hover { background:var(--hover-soft); }
+  .session__icon { width:14px; height:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--ink-meta); }
+  .session__icon svg { width:14px; height:14px; display:block; }
+  .session__icon--ai { color:var(--copper); }
+  .session__name { flex:1; font-size:11.5px; font-weight:500; letter-spacing:-0.005em; color:var(--ink-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .session--unread .session__name { color:var(--ink-unread); }
+  .session--open { background:rgba(var(--accent-rgb),0.10); }
+  .session--open .session__name { color:var(--ink-open); font-weight:600; }
+
+  /* ============ Treatment A — literal side-by-side tiles ============ */
+  .a-split { display:flex; gap:3px; margin:1px 0; padding-left:55px; }
+  .a-split.-h { flex-direction:column; padding-left:55px; }
+  .a-tile { flex:1; min-width:0; display:flex; align-items:center; gap:6px; padding:6px 7px; border-radius:8px; background:var(--hover-soft); box-shadow:inset 0 0 0 1px var(--line-soft); }
+  .a-tile.-active { background:rgba(var(--accent-rgb),0.10); box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),0.30); }
+  .a-tile .session__name { font-size:11px; }
+  .a-tile .session__icon { width:13px; height:13px; }
+  .a-tile.-active .session__name { color:var(--ink-open); font-weight:600; }
+
+  /* ============ Treatment B — tied spine / bracket ============ */
+  .b-tie { position:relative; }
+  .b-tie::before { content:""; position:absolute; left:48px; top:5px; bottom:5px; width:2px; border-radius:2px; background:rgba(var(--accent-rgb),0.55); }
+  .b-tie .session { padding-left:61px; }
+  .b-badge { display:inline-flex; align-items:center; gap:3px; margin-left:6px; padding:1px 5px 1px 4px; border-radius:5px; background:rgba(var(--accent-rgb),0.12); color:var(--accent); font-size:9.5px; font-weight:600; font-family:var(--mono); vertical-align:middle; }
+  .b-badge svg { width:9px; height:9px; }
+  /* nested: a second, shorter inner spine for the sub-split members */
+  .b-tie.-nested::after { content:""; position:absolute; left:56px; width:2px; border-radius:2px; background:rgba(var(--accent-rgb),0.35); }
+
+  /* ============ Treatment C — split card ============ */
+  .c-card { margin:2px 0 2px 43px; border-radius:10px; background:var(--raised); box-shadow:0 0 0 1px rgba(var(--accent-rgb),0.22), 0 1px 2px rgba(0,0,0,0.05); overflow:hidden; }
+  .c-card__head { display:flex; align-items:center; gap:6px; padding:5px 8px; background:rgba(var(--accent-rgb),0.07); }
+  .c-glyph { flex-shrink:0; display:grid; gap:1.5px; width:15px; height:12px; }
+  .c-glyph i { background:rgba(var(--accent-rgb),0.5); border-radius:1px; display:block; }
+  .c-glyph.-v { grid-template-columns:1fr 1fr; }
+  .c-glyph.-v i { height:100%; }
+  .c-glyph.-h { grid-template-rows:1fr 1fr; }
+  .c-glyph.-tri { grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; }
+  .c-glyph.-tri i:first-child { grid-row:1/3; }
+  .c-label { font-size:10px; font-weight:600; color:var(--accent); font-family:var(--mono); letter-spacing:0.01em; }
+  .c-card .session { padding-left:14px; border-radius:0; }
+  .c-card .session--open { background:rgba(var(--accent-rgb),0.10); }
+
+  .note { font-size:11px; color:var(--ink-meta); margin:9px 2px 0; line-height:1.45; }
+  .legend { margin-top:30px; font-size:11.5px; color:var(--ink-3); max-width:760px; line-height:1.6; }
+  .legend b { color:var(--ink); }
+</style>
+</head>
+<body>
+  <h1>Sidebar · how a live split shows up in the list</h1>
+  <p class="lede">
+    Scene: on <code>feat/command-menu</code> the user has split the content area — <b>localhost:5173</b> (browser)
+    beside <b>dev server</b> (logs), the browser pane active. Per ticket&nbsp;002 the sidebar <i>always mirrors</i>
+    the layout (transient echo, no durable pairing). Question this ticket owns: <b>what does that echo look like at
+    real row metrics, and does it survive 001's "arbitrary nested tree"?</b> Three candidate treatments, same scene.
+    Bottom row stress-tests a nested 3-way (browser | dev server / api-tests stacked).
+  </p>
+
+  <div class="grid">
+
+    <!-- ============= A ============= -->
+    <div class="col">
+      <p class="cap">A · <b>Literal side-by-side tiles</b></p>
+      <p class="sub">The split members leave the vertical list and share one band as mini tiles, mirroring the pane geometry 1:1.</p>
+      <div class="nav">
+        <div class="branch branch--active">
+          <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+          <span class="branch__name">feat/command-menu</span>
+          <span class="branch__pr"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,64A32,32,0,1,0,64,95v66a32,32,0,1,0,16,0V95A32.06,32.06,0,0,0,104,64ZM56,64A16,16,0,1,1,72,80,16,16,0,0,1,56,64ZM88,192a16,16,0,1,1-16-16A16,16,0,0,1,88,192Zm120-31V110.63a23.85,23.85,0,0,0-7-17L163.31,56H192a8,8,0,0,0,0-16H144a8,8,0,0,0-8,8V96a8,8,0,0,0,16,0V67.31L189.66,105a8,8,0,0,1,2.34,5.66V161a32,32,0,1,0,16,0Zm-8,47a16,16,0,1,1,16-16A16,16,0,0,1,200,208Z"/></svg></span>
+        </div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="a-split">
+            <span class="a-tile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg></span><span class="session__name">localhost:5173</span></span>
+            <span class="a-tile"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span><span class="session__name">dev server</span></span>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div>
+      <p class="note">Nested 3-way (browser | logs / tests):</p>
+      <div class="nav" style="margin-top:6px;">
+        <div class="sessions">
+          <div class="a-split">
+            <span class="a-tile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128Z"/></svg></span><span class="session__name">localhost</span></span>
+            <span class="a-split -h" style="flex:1; padding:0;">
+              <span class="a-tile"><span class="session__name">dev server</span></span>
+              <span class="a-tile"><span class="session__name">api-tests</span></span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============= B ============= -->
+    <div class="col">
+      <p class="cap">B · <b>Tied spine</b> (rows stay put)</p>
+      <p class="sub">Rows keep their normal full-width slot and reading order; an accent spine in the indent gutter binds the split members, a badge marks the orientation.</p>
+      <div class="nav">
+        <div class="branch branch--active">
+          <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+          <span class="branch__name">feat/command-menu</span>
+          <span class="b-badge"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><line x1="8" y1="2.5" x2="8" y2="13.5"/></svg>2</span>
+        </div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="b-tie">
+            <a class="session session--open"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128Z"/></svg></span><span class="session__name">localhost:5173</span></a>
+            <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span><span class="session__name">dev server</span></a>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div>
+      <p class="note">Nested 3-way — spine just spans the three rows:</p>
+      <div class="nav" style="margin-top:6px;">
+        <div class="sessions">
+          <div class="b-tie">
+            <a class="session session--open"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128Z"/></svg></span><span class="session__name">localhost:5173</span></a>
+            <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Z"/></svg></span><span class="session__name">dev server</span></a>
+            <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Z"/></svg></span><span class="session__name">api-tests</span></a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============= C ============= -->
+    <div class="col">
+      <p class="cap">C · <b>Split card</b></p>
+      <p class="sub">The split members are boxed into one inset card with a mini-geometry glyph showing the actual arrangement; the card sits inline where the members live.</p>
+      <div class="nav">
+        <div class="branch branch--active">
+          <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
+          <span class="branch__name">feat/command-menu</span>
+        </div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="c-card">
+            <div class="c-card__head"><span class="c-glyph -v"><i></i><i></i></span><span class="c-label">SPLIT</span></div>
+            <a class="session session--open"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128Z"/></svg></span><span class="session__name">localhost:5173</span></a>
+            <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span><span class="session__name">dev server</span></a>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div>
+      <p class="note">Nested 3-way — glyph carries the shape, list stays readable:</p>
+      <div class="nav" style="margin-top:6px;">
+        <div class="sessions">
+          <div class="c-card">
+            <div class="c-card__head"><span class="c-glyph -tri"><i></i><i></i><i></i></span><span class="c-label">SPLIT · 3</span></div>
+            <a class="session session--open"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128Z"/></svg></span><span class="session__name">localhost:5173</span></a>
+            <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Z"/></svg></span><span class="session__name">dev server</span></a>
+            <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Z"/></svg></span><span class="session__name">api-tests</span></a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="legend">
+    <b>Reading the trade:</b> <b>A</b> mirrors the pane geometry most literally but pays for it — names truncate hard,
+    and a nested split becomes a mini-treemap that stops reading at a glance by ~3 panes. <b>B</b> keeps the list a
+    scannable vertical column (order, hit-target, hover band all unchanged) and spends only a 2px gutter + a badge to
+    say "these belong to one split"; orientation lives in the badge glyph, not the layout. <b>C</b> is the middle —
+    an explicit boxed object that names the split and carries a true geometry glyph, at the cost of a heavier container
+    and an indent shift. All three keep the active pane on the existing <code>.session--open</code> accent (002).
+  </p>
+</body>
+</html>

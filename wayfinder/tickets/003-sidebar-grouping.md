@@ -2,8 +2,8 @@
 id: 003
 title: Sidebar representation of grouped / side-by-side sessions
 type: prototype
-status: open
-claimed_by:
+status: closed
+claimed_by: isaac
 blocked_by: []
 ---
 
@@ -35,3 +35,40 @@ side-by-side (and deeper nested trees, per 001) actually reads at the current ro
 un-split gesture's feel.
 
 ## Resolution
+
+Prototyped content↔sidebar side-by-side across 7 scenarios (single, vertical, horizontal, 3-way,
+nested, 4-way, tile-menu) at real row metrics:
+[content-and-sidebar-scenarios.html](../assets/003-sidebar-grouping/content-and-sidebar-scenarios.html)
+(earlier treatment comparison: [sidebar-split-treatments.html](../assets/003-sidebar-grouping/sidebar-split-treatments.html)).
+
+**The echo carries membership + reading order only — never geometry.** The sidebar does not mirror
+the split's shape (vertical / horizontal / nested all read the same); it only says *these sessions
+are one split, in this order*.
+
+- **Form.** A group renders as a **horizontal band of tiles** in place of its members' full-width
+  rows, sitting where those rows already lived in the branch's session list. **Always horizontal**,
+  whatever the on-screen orientation. Tiles are raised fills; **bare — no enclosing container**
+  (adjacency against the flat full-width rows carries the grouping). Scenarios 2 and 3 (same echo,
+  different geometry) are the proof.
+- **Order.** Tile order = content **reading order**, top-to-bottom then left-to-right, flattened.
+  A nested tree collapses to a flat ordered band (scenario 5 == scenario 4).
+- **Active member** keeps the existing `.session--open` accent unchanged (per 002); no separate
+  visible-but-inactive treatment.
+- **Legibility floor.** Names stay legible to ~3 members. Past that, non-active tiles collapse to
+  **icon-only** (active tile keeps its name); the band stays a single fixed row, never overflows.
+  Since many sessions share the terminal icon, **hover-expands a collapsed tile** to restore its
+  name (and its kebab).
+- **Scope: a split is always within one branch** (cross-branch ruled out). So the band always sits
+  inline under its branch row — no hoisting, no cross-tree group. (Fact for 005: switching branch
+  can't strand a split across the tree.)
+- **Gestures.** Each tile carries the standard sidebar **kebab**; its menu holds **Add split ▸
+  (Existing session… / New session)** and **Unsplit this pane**. Unsplit drops the member back to a
+  full-width row; a 2-way collapsing to 1 dissolves the band. **Drag a tile out** is the fast
+  alternative, mirroring the drag-onto-another create gesture. On an icon-only tile the kebab rides
+  the same hover-expand as the name. (The pane's *own* close/un-split control stays 004's to place;
+  keep it consistent with this.)
+
+This is a **transient echo** (per 002): the sidebar always mirrors the live layout automatically and
+never shows a split that isn't on screen; the drag-onto-another-session gesture is simply a second
+route to create the same split. Feeds the build's sidebar work (006) and should be kept consistent
+with pane chrome (004).

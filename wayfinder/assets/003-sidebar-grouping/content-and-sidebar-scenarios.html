@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Split · content ↔ sidebar echo — scenarios</title>
+<style>
+  :root {
+    --canvas:#e9eaee; --panel:#fafbfc; --sidebar:#f0f1f4; --raised:#ffffff;
+    --ink:#1c1e23; --ink-open:#2b2d34; --ink-3:#54565e; --ink-meta:#6b6e76; --ink-unread:#34363d; --text-faint:#a6a8b0;
+    --hover-soft:rgba(0,0,0,0.035); --hover:rgba(0,0,0,0.05); --press:rgba(0,0,0,0.08);
+    --line-soft:rgba(0,0,0,0.06); --line:rgba(0,0,0,0.1);
+    --accent:#a86038; --accent-rgb:168,96,56; --on-accent:#fff;
+    --copper:#a05633; --input:#3a6db3; --pr-open:#1a7f37;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--canvas); font-family:var(--font); color:var(--ink); padding:26px 30px 70px; }
+  h1 { font-size:15px; font-weight:600; margin:0 0 4px; }
+  .lede { font-size:12.5px; color:var(--ink-3); max-width:900px; line-height:1.5; margin:0 0 8px; }
+  .lede b { color:var(--ink); }
+  .rules { font-size:12px; color:var(--ink-3); max-width:900px; margin:0 0 24px; padding-left:18px; line-height:1.55; }
+  .rules code { font-family:var(--mono); font-size:11px; background:var(--press); padding:1px 4px; border-radius:4px; }
+
+  .scene { margin:0 0 30px; }
+  .scene__label { font-size:12.5px; font-weight:600; margin:0 0 8px; }
+  .scene__label span { color:var(--ink-meta); font-weight:500; }
+  .scene__row { display:flex; align-items:center; gap:16px; }
+  .arrow { font-size:11px; color:var(--ink-meta); white-space:nowrap; flex-shrink:0; text-align:center; width:70px; }
+  .scene__note { font-size:11px; color:var(--ink-meta); margin:8px 2px 0; max-width:820px; line-height:1.45; }
+  .scene__note b { color:var(--accent); font-weight:600; }
+
+  /* ---------- content area (real geometry) ---------- */
+  .content { width:430px; height:150px; flex-shrink:0; background:var(--canvas); border-radius:12px; box-shadow:inset 0 0 0 1px var(--line-soft); padding:6px; display:flex; gap:6px; }
+  .content.-col { flex-direction:column; }
+  .stack { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .pane { flex:1; min-width:0; min-height:0; background:var(--panel); border-radius:8px; box-shadow:inset 0 0 0 1px var(--line-soft); display:flex; flex-direction:column; overflow:hidden; }
+  .pane.-active { box-shadow:inset 0 0 0 2px rgba(var(--accent-rgb),0.60); }
+  .pane__h { display:flex; align-items:center; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line-soft); }
+  .pane__h .i { width:13px; height:13px; color:var(--ink-meta); flex-shrink:0; }
+  .pane__h .i svg { width:13px; height:13px; display:block; }
+  .pane__h .n { font-size:10.5px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pane.-active .pane__h .n { color:var(--ink); font-weight:600; }
+  .pane.-active .pane__h .i { color:var(--copper); }
+  .pane__b { flex:1; background:linear-gradient(var(--hover-soft),transparent); }
+
+  /* ---------- sidebar ---------- */
+  .side { width:262px; flex-shrink:0; }
+  .nav { background:var(--sidebar); border-radius:14px; padding:8px 8px 12px; box-shadow:0 1px 2px rgba(0,0,0,0.04),0 8px 24px rgba(0,0,0,0.06); }
+  .branch { display:flex; align-items:center; gap:8px; border-radius:8px; padding:7px 6px 7px 37px; position:relative; }
+  .chev { position:absolute; left:12px; width:12px; height:12px; color:var(--ink-meta); }
+  .chev svg { width:13px; height:13px; transform:rotate(90deg); display:block; }
+  .branch__name { font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:-0.01em; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .branch--active { background:var(--raised); box-shadow:0 0 0 0.5px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.05); }
+  .sessions { display:flex; flex-direction:column; gap:1px; margin:2px 0 6px; }
+
+  .session { display:flex; align-items:center; gap:8px; border-radius:8px; padding:6px 6px 6px 61px; position:relative; text-decoration:none; }
+  .session__icon { width:14px; height:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--ink-meta); }
+  .session__icon svg { width:14px; height:14px; display:block; }
+  .session__icon--ai { color:var(--copper); }
+  .session__name { flex:1; font-size:11.5px; font-weight:500; letter-spacing:-0.005em; color:var(--ink-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .session--unread .session__name { color:var(--ink-unread); }
+  .session--open { background:rgba(var(--accent-rgb),0.10); }
+  .session--open .session__name { color:var(--ink-open); font-weight:600; }
+
+  /* ---------- the group echo: a horizontal band of member tiles ---------- */
+  /* bare tiles — no enclosing container; adjacency alone carries the grouping (decided) */
+  .group { display:flex; flex-wrap:wrap; gap:3px; margin:1px 0; padding:2px 0; margin-left:55px; }
+  .gtile { flex:1 1 0; min-width:0; display:flex; align-items:center; gap:5px; padding:6px 7px; border-radius:7px; background:var(--raised); box-shadow:inset 0 0 0 1px var(--line-soft); position:relative; }
+  .gtile.-active { background:rgba(var(--accent-rgb),0.12); box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),0.34); }
+  .gtile .session__icon { width:13px; height:13px; }
+  .gtile .session__name { font-size:10.5px; }
+  .gtile.-active .session__name { color:var(--ink-open); font-weight:600; }
+  .gtile--min .session__name { display:none; }
+  /* per-tile kebab — matches the sidebar row kebab idiom (hover-revealed) */
+  .gkebab { flex-shrink:0; width:16px; height:16px; border-radius:5px; display:flex; align-items:center; justify-content:center; color:var(--ink-meta); }
+  .gkebab svg { width:12px; height:12px; display:block; }
+  .gtile.-open .gkebab { background:var(--press); color:var(--ink-2); }
+
+  /* tile action menu (representative — the build may route through the ⌘K palette instead) */
+  .tmenu { position:absolute; z-index:30; width:206px; background:var(--raised); border-radius:11px; box-shadow:0 0 0 0.5px var(--line),0 10px 30px rgba(0,0,0,0.18); padding:5px; }
+  .tmenu__item { display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:7px; font-size:12px; color:var(--ink); cursor:pointer; white-space:nowrap; }
+  .tmenu__item:hover, .tmenu__item.-hot { background:var(--hover); }
+  .tmenu__item .mi { width:15px; height:15px; flex-shrink:0; color:var(--ink-meta); }
+  .tmenu__item .mi svg { width:15px; height:15px; display:block; }
+  .tmenu__item .cr { margin-left:auto; color:var(--ink-meta); display:flex; }
+  .tmenu__item .cr svg { width:13px; height:13px; }
+  .tmenu__item--danger { color:#b23b2e; }
+  .tmenu__item--danger .mi { color:#b23b2e; }
+  .tmenu__sep { height:1px; background:var(--line-soft); margin:4px 7px; }
+  .tmenu__head { font-size:10px; font-weight:600; letter-spacing:0.03em; text-transform:uppercase; color:var(--text-faint); padding:5px 9px 3px; }
+
+  .legend { margin-top:6px; font-size:11.5px; color:var(--ink-3); max-width:900px; line-height:1.6; padding:14px 16px; background:var(--raised); border-radius:12px; box-shadow:0 0 0 1px var(--line-soft); }
+  .legend b { color:var(--ink); }
+  .q { color:var(--accent); font-weight:600; }
+</style>
+</head>
+<body>
+  <h1>Split · content geometry ↔ sidebar echo</h1>
+  <p class="lede">Left = the real content layout (any tree 001 allows). Right = the sidebar echo. Confirming the model: the sidebar shows <b>membership + reading order only</b>, never the geometry.</p>
+  <ul class="rules">
+    <li>Grouped members render as a <b>horizontal band of tiles</b> — always horizontal, whatever the on-screen orientation.</li>
+    <li>Tile order = content <b>reading order</b>: top-to-bottom, left-to-right, flattened.</li>
+    <li>The active pane keeps the existing <code>.session--open</code> accent (ticket 002).</li>
+    <li>The band sits <b>in place</b> in the branch's list, where those sessions already lived.</li>
+  </ul>
+
+  <!-- ===== SVG defs reused ===== -->
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <g id="ic-globe"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Z"/></g>
+    <g id="ic-term"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></g>
+    <g id="ic-ai"><path d="M40,80H216V72H40Zm0,56H216V120H40Zm0,48H216v-8H40Z"/></g>
+  </defs></svg>
+
+  <!-- ============ 1 · baseline ============ -->
+  <div class="scene">
+    <div class="scene__label">1 · No split <span>— single session open (baseline for contrast)</span></div>
+    <div class="scene__row">
+      <div class="content">
+        <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost:5173</span></div><div class="pane__b"></div></div>
+      </div>
+      <div class="arrow">echoes as →</div>
+      <div class="side"><div class="nav">
+        <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="session__name">Claude Code</span></a>
+          <a class="session session--open"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost:5173</span></a>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev server</span></a>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ============ 2 · vertical split ============ -->
+  <div class="scene">
+    <div class="scene__label">2 · Vertical split <span>— browser │ logs, side by side, browser active</span></div>
+    <div class="scene__row">
+      <div class="content">
+        <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost:5173</span></div><div class="pane__b"></div></div>
+        <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">dev server</span></div><div class="pane__b"></div></div>
+      </div>
+      <div class="arrow">echoes as →</div>
+      <div class="side"><div class="nav">
+        <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="group">
+            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost:5173</span></span>
+            <span class="gtile"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev server</span></span>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div></div>
+    </div>
+    <div class="scene__note">Two full-width rows become one horizontal pair, in place. Group order = left-to-right on screen.</div>
+  </div>
+
+  <!-- ============ 3 · horizontal split — SAME echo ============ -->
+  <div class="scene">
+    <div class="scene__label">3 · Horizontal split <span>— browser ▔ logs, stacked. Sidebar echo is IDENTICAL to #2</span></div>
+    <div class="scene__row">
+      <div class="content -col">
+        <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost:5173</span></div><div class="pane__b"></div></div>
+        <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">dev server</span></div><div class="pane__b"></div></div>
+      </div>
+      <div class="arrow">echoes as →</div>
+      <div class="side"><div class="nav">
+        <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="group">
+            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost:5173</span></span>
+            <span class="gtile"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev server</span></span>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div></div>
+    </div>
+    <div class="scene__note"><b>The point:</b> #2 and #3 are different on screen but the sidebar reads the same — membership, not geometry. Reading order (top pane first) still sets tile order left-to-right.</div>
+  </div>
+
+  <!-- ============ 4 · three-way ============ -->
+  <div class="scene">
+    <div class="scene__label">4 · Three-way split <span>— browser │ logs │ tests</span></div>
+    <div class="scene__row">
+      <div class="content">
+        <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost</span></div><div class="pane__b"></div></div>
+        <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">dev server</span></div><div class="pane__b"></div></div>
+        <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">api-tests</span></div><div class="pane__b"></div></div>
+      </div>
+      <div class="arrow">echoes as →</div>
+      <div class="side"><div class="nav">
+        <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="group">
+            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost</span></span>
+            <span class="gtile"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev server</span></span>
+            <span class="gtile"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">api-tests</span></span>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div></div>
+    </div>
+    <div class="scene__note">At 3, names get tight but stay legible. <b class="q">Q:</b> beyond 3–4 members, tiles drop to icon-only (hover/active reveals the name)? See #6.</div>
+  </div>
+
+  <!-- ============ 5 · nested ============ -->
+  <div class="scene">
+    <div class="scene__label">5 · Nested split <span>— browser │ ( logs ▔ tests ). Sidebar flattens to a flat ordered trio.</span></div>
+    <div class="scene__row">
+      <div class="content">
+        <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost</span></div><div class="pane__b"></div></div>
+        <div class="stack">
+          <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">dev server</span></div><div class="pane__b"></div></div>
+          <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">api-tests</span></div><div class="pane__b"></div></div>
+        </div>
+      </div>
+      <div class="arrow">echoes as →</div>
+      <div class="side"><div class="nav">
+        <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="group">
+            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost</span></span>
+            <span class="gtile"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev server</span></span>
+            <span class="gtile"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">api-tests</span></span>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div></div>
+    </div>
+    <div class="scene__note">Nested on screen, flat in the sidebar — same three tiles as #4. Reading order (browser, then the stacked pair top-to-bottom) sets left-to-right. The geometry is simply not represented.</div>
+  </div>
+
+  <!-- ============ 6 · four-way, tight ============ -->
+  <div class="scene">
+    <div class="scene__label">6 · Four-way <span>— tiles shrink to icon-only past the legible-name floor</span></div>
+    <div class="scene__row">
+      <div class="content">
+        <div class="stack">
+          <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost</span></div><div class="pane__b"></div></div>
+          <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">dev server</span></div><div class="pane__b"></div></div>
+        </div>
+        <div class="stack">
+          <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">api-tests</span></div><div class="pane__b"></div></div>
+          <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">build</span></div><div class="pane__b"></div></div>
+        </div>
+      </div>
+      <div class="arrow">echoes as →</div>
+      <div class="side"><div class="nav">
+        <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
+        <div class="sessions">
+          <div class="group">
+            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost</span></span>
+            <span class="gtile gtile--min"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev server</span></span>
+            <span class="gtile gtile--min"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">api-tests</span></span>
+            <span class="gtile gtile--min"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">build</span></span>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+      </div></div>
+    </div>
+    <div class="scene__note">Active tile keeps its name; the rest collapse to icons so the band never overflows. <b class="q">Q:</b> is icon-only the right degrade, or should tiles wrap to a second line keeping names?</div>
+  </div>
+
+  <!-- ============ 7 · tile kebab + menu ============ -->
+  <div class="scene">
+    <div class="scene__label">7 · Tile menu <span>— each tile carries the sidebar kebab; its menu adds to or breaks the split. (Or drag a tile out.)</span></div>
+    <div class="scene__row" style="align-items:flex-start;">
+      <div class="content">
+        <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost:5173</span></div><div class="pane__b"></div></div>
+        <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">dev server</span></div><div class="pane__b"></div></div>
+      </div>
+      <div class="arrow" style="margin-top:60px;">echoes as →</div>
+      <div class="side" style="position:relative; padding-bottom:150px;"><div class="nav">
+        <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
+        <div class="sessions">
+          <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="session__name">Claude Code</span></a>
+          <div class="group">
+            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost</span><span class="gkebab"><svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="64" r="15"/><circle cx="128" cy="128" r="15"/><circle cx="128" cy="192" r="15"/></svg></span></span>
+            <span class="gtile -open"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev</span><span class="gkebab"><svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="64" r="15"/><circle cx="128" cy="128" r="15"/><circle cx="128" cy="192" r="15"/></svg></span></span>
+          </div>
+          <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
+        </div>
+        </div>
+        <!-- primary menu, opened off the dev tile's kebab -->
+        <div class="tmenu" style="top:96px; left:120px;">
+          <div class="tmenu__item -hot"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg></span>Add split<span class="cr"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span></div>
+          <div class="tmenu__sep"></div>
+          <div class="tmenu__item tmenu__item--danger"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg></span>Unsplit this pane</div>
+        </div>
+        <!-- Add split submenu -->
+        <div class="tmenu" style="top:96px; left:320px; width:196px;">
+          <div class="tmenu__head">Add to this split</div>
+          <div class="tmenu__item"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span>Existing session…</div>
+          <div class="tmenu__item"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg></span>New session<span class="cr"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="scene__note">Kebab per tile → <b>Add split</b> (existing session, or spawn a new one) and <b>Unsplit this pane</b>. On an icon-only tile (#6) the kebab lives behind hover-expand — hovering restores name + kebab. <b>Unsplit</b> drops the member back to a full-width row; a 2-way collapsing to 1 dissolves the band. Drag-out stays as the fast alternative, mirroring the drag-in create gesture.</div>
+  </div>
+
+  <p class="legend">
+    <b>Settled —</b>
+    the echo shows <b>membership + reading order only</b>, never geometry;
+    a group is a horizontal band of tiles, always horizontal, ordered top-to-bottom / left-to-right;
+    active member keeps the <code>.session--open</code> accent;
+    past 3 members non-active tiles go <b>icon-only</b> (hover-expand restores name + kebab);
+    splits are <b>always within one branch</b>, so the band always sits inline under its branch row;
+    break via each tile's <b>kebab → Unsplit</b> (kebab also carries <b>Add split ▸ existing / new session</b>), or <b>drag a tile out</b>.
+    <br><br>
+    <b>Still open —</b>
+    <span class="q">(d)</span> does the faint group container (bg + hairline) earn its keep, or do bare adjacent tiles already read as "one group"?
+  </p>
+</body>
+</html>

@@ -49,6 +49,13 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   to full-screen); drag-split focuses the newly-dropped pane; `⌘0`→sidebar / `⌘1`→active pane; the
   sidebar **always mirrors** the layout (split members side-by-side, existing `.session--open` accent
   on the active one — so the sidebar-grouping gesture is just a second route to the same split).
+- [Sidebar representation of grouped sessions](tickets/003-sidebar-grouping.md) — the echo shows
+  **membership + reading order only, never geometry**: a split renders as a **bare horizontal band of
+  tiles** in place, always horizontal, ordered top-to-bottom/left-to-right (a nested tree flattens);
+  active member keeps `.session--open`; past ~3 members non-active tiles go icon-only (hover-expands
+  to restore name+kebab). **A split is always within one branch**, so the band sits inline under its
+  branch row. Break via each tile's **kebab → Unsplit** (kebab also carries **Add split ▸ existing /
+  new session**) or **drag a tile out**.
 
 ## Not yet specified
 

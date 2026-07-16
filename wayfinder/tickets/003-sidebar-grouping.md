@@ -57,16 +57,24 @@ are one split, in this order*.
 - **Legibility floor.** Names stay legible to ~3 members. Past that, non-active tiles collapse to
   **icon-only** (active tile keeps its name); the band stays a single fixed row, never overflows.
   Since many sessions share the terminal icon, **hover-expands a collapsed tile** to restore its
-  name (and its kebab).
+  name (and its ⋮).
 - **Scope: a split is always within one branch** (cross-branch ruled out). So the band always sits
   inline under its branch row — no hoisting, no cross-tree group. (Fact for 005: switching branch
   can't strand a split across the tree.)
-- **Gestures.** Each tile carries the standard sidebar **kebab**; its menu holds **Add split ▸
-  (Existing session… / New session)** and **Unsplit this pane**. Unsplit drops the member back to a
-  full-width row; a 2-way collapsing to 1 dissolves the band. **Drag a tile out** is the fast
-  alternative, mirroring the drag-onto-another create gesture. On an icon-only tile the kebab rides
-  the same hover-expand as the name. (The pane's *own* close/un-split control stays 004's to place;
-  keep it consistent with this.)
+- **Gestures — no bespoke UI; everything routes through existing patterns.** A tile *is* a session
+  row: it carries the same hover **kebab (⋮)** every row has, and — like every row — that ⋮ **opens
+  ⌘K drilled to the session's frame** (`openRowActions → sessionFrame`), never a popover ("no
+  separate popover to maintain" is the codebase's own rule). **Unsplit** is one more **flat command**
+  in that frame, beside `Rename` / `Close`; it also surfaces in root-⌘K search and in the active
+  pane's context-actions. Unsplit drops the member back to a full-width row; a 2-way collapsing to 1
+  dissolves the band. **Drag a tile out** is the fast alternative. On an icon-only tile the ⋮ rides
+  the same hover-expand as the name.
+- **Creating** a split stays the **drag gesture** (drag a session onto the content area / onto
+  another sidebar session, per 001 / charting). A keyboard-/⌘K-driven *create* command is left to
+  **007** (keybindings); this ticket only fixes that break/unsplit lives in ⌘K, not a tile menu.
+  (An earlier pass mocked a bespoke tile popover with an `Add split ▸ existing/new` submenu — wrong
+  on two counts: Synth has no per-row popovers, and no nested command menus. Corrected to the ⌘K
+  command route above.)
 
 This is a **transient echo** (per 002): the sidebar always mirrors the live layout automatically and
 never shows a split that isn't on screen; the drag-onto-another-session gesture is simply a second

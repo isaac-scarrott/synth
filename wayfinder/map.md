@@ -53,9 +53,11 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   **membership + reading order only, never geometry**: a split renders as a **bare horizontal band of
   tiles** in place, always horizontal, ordered top-to-bottom/left-to-right (a nested tree flattens);
   active member keeps `.session--open`; past ~3 members non-active tiles go icon-only (hover-expands
-  to restore name+kebab). **A split is always within one branch**, so the band sits inline under its
-  branch row. Break via each tile's **kebab → Unsplit** (kebab also carries **Add split ▸ existing /
-  new session**) or **drag a tile out**.
+  to restore name+⋮). **A split is always within one branch**, so the band sits inline under its
+  branch row. **No bespoke UI:** a tile is a session row — its **⋮ opens ⌘K** drilled to that session
+  (`openRowActions → sessionFrame`), where **Unsplit** is a flat command beside Rename/Close (Synth
+  has no per-row popovers). **Drag a tile out** is the fast alternative; creating a split stays the
+  drag gesture (001), a ⌘K/keyboard create command left to 007.
 
 ## Not yet specified
 

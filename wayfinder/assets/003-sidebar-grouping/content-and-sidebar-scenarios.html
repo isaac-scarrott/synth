@@ -8,7 +8,7 @@
   :root {
     --canvas:#e9eaee; --panel:#fafbfc; --sidebar:#f0f1f4; --raised:#ffffff;
     --ink:#1c1e23; --ink-open:#2b2d34; --ink-3:#54565e; --ink-meta:#6b6e76; --ink-unread:#34363d; --text-faint:#a6a8b0;
-    --hover-soft:rgba(0,0,0,0.035); --hover:rgba(0,0,0,0.05); --press:rgba(0,0,0,0.08);
+    --hover-soft:rgba(0,0,0,0.035); --hover:rgba(0,0,0,0.05); --press:rgba(0,0,0,0.08); --glass:rgba(250,251,253,0.84); --ink-2:#44464e; --ink-4:#666971; --error:#ff3b30;
     --line-soft:rgba(0,0,0,0.06); --line:rgba(0,0,0,0.1);
     --accent:#a86038; --accent-rgb:168,96,56; --on-accent:#fff;
     --copper:#a05633; --input:#3a6db3; --pr-open:#1a7f37;
@@ -73,23 +73,31 @@
   .gtile .session__name { font-size:10.5px; }
   .gtile.-active .session__name { color:var(--ink-open); font-weight:600; }
   .gtile--min .session__name { display:none; }
-  /* per-tile kebab — matches the sidebar row kebab idiom (hover-revealed) */
+  /* the tile carries the SAME hover kebab as every sidebar row — three dots that open ⌘K
+     drilled to this session's frame. No popover of its own (not a Synth pattern). */
   .gkebab { flex-shrink:0; width:16px; height:16px; border-radius:5px; display:flex; align-items:center; justify-content:center; color:var(--ink-meta); }
   .gkebab svg { width:12px; height:12px; display:block; }
   .gtile.-open .gkebab { background:var(--press); color:var(--ink-2); }
 
-  /* tile action menu (representative — the build may route through the ⌘K palette instead) */
-  .tmenu { position:absolute; z-index:30; width:206px; background:var(--raised); border-radius:11px; box-shadow:0 0 0 0.5px var(--line),0 10px 30px rgba(0,0,0,0.18); padding:5px; }
-  .tmenu__item { display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:7px; font-size:12px; color:var(--ink); cursor:pointer; white-space:nowrap; }
-  .tmenu__item:hover, .tmenu__item.-hot { background:var(--hover); }
-  .tmenu__item .mi { width:15px; height:15px; flex-shrink:0; color:var(--ink-meta); }
-  .tmenu__item .mi svg { width:15px; height:15px; display:block; }
-  .tmenu__item .cr { margin-left:auto; color:var(--ink-meta); display:flex; }
-  .tmenu__item .cr svg { width:13px; height:13px; }
-  .tmenu__item--danger { color:#b23b2e; }
-  .tmenu__item--danger .mi { color:#b23b2e; }
-  .tmenu__sep { height:1px; background:var(--line-soft); margin:4px 7px; }
-  .tmenu__head { font-size:10px; font-weight:600; letter-spacing:0.03em; text-transform:uppercase; color:var(--text-faint); padding:5px 9px 3px; }
+  /* ---------- real ⌘K palette (copied styling) — where Unsplit lives, as a flat command ---------- */
+  .cmdk__panel { width:460px; background:var(--glass); -webkit-backdrop-filter:saturate(180%) blur(30px); backdrop-filter:saturate(180%) blur(30px); border:0.5px solid var(--line); border-radius:14px; box-shadow:0 1px 3px rgba(0,0,0,0.1),0 24px 60px rgba(0,0,0,0.28); overflow:hidden; }
+  .cmdk__search { display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:0.5px solid var(--line-soft); }
+  .cmdk__search-ico { display:flex; color:var(--ink-meta); }
+  .cmdk__search-ico svg { width:17px; height:17px; display:block; }
+  .cmdk__crumbs { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+  .cmdk__crumb { font-size:12.5px; font-weight:500; color:var(--ink-2); background:var(--hover); border:0.5px solid var(--line-soft); border-radius:6px; padding:3px 8px; white-space:nowrap; }
+  .cmdk__input { flex:1; font-size:15px; color:var(--text-faint); }
+  .cmdk__list { padding:6px; }
+  .cmdk__group { font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:var(--ink-meta); padding:10px 8px 4px; }
+  .cmdk__item { display:flex; align-items:center; gap:10px; padding:8px; border-radius:8px; }
+  .cmdk__ico { width:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--ink-4); }
+  .cmdk__ico svg { width:16px; height:16px; display:block; }
+  .cmdk__label { flex:1; font-size:13.5px; font-weight:450; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cmdk__ctx { flex-shrink:0; font-size:11.5px; color:var(--ink-meta); }
+  .cmdk__item.is-active { background:rgba(var(--accent-rgb),0.10); }
+  .cmdk__item.is-active .cmdk__label { color:var(--accent); }
+  .cmdk__item.is-active .cmdk__ico { color:var(--accent); }
+  .cmdk__item--danger .cmdk__ico, .cmdk__item--danger .cmdk__label { color:var(--error); }
 
   .legend { margin-top:6px; font-size:11.5px; color:var(--ink-3); max-width:900px; line-height:1.6; padding:14px 16px; background:var(--raised); border-radius:12px; box-shadow:0 0 0 1px var(--line-soft); }
   .legend b { color:var(--ink); }
@@ -266,54 +274,59 @@
     <div class="scene__note">Active tile keeps its name; the rest collapse to icons so the band never overflows. <b class="q">Q:</b> is icon-only the right degrade, or should tiles wrap to a second line keeping names?</div>
   </div>
 
-  <!-- ============ 7 · tile kebab + menu ============ -->
+  <!-- ============ 7 · unsplit is a ⌘K command ============ -->
   <div class="scene">
-    <div class="scene__label">7 · Tile menu <span>— each tile carries the sidebar kebab; its menu adds to or breaks the split. (Or drag a tile out.)</span></div>
+    <div class="scene__label">7 · Unsplit is a ⌘K command <span>— a tile's ⋮ opens ⌘K drilled to that session (the Synth pattern); no popover of its own</span></div>
     <div class="scene__row" style="align-items:flex-start;">
       <div class="content">
         <div class="pane -active"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="n">localhost:5173</span></div><div class="pane__b"></div></div>
         <div class="pane"><div class="pane__h"><span class="i"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="n">dev server</span></div><div class="pane__b"></div></div>
       </div>
-      <div class="arrow" style="margin-top:60px;">echoes as →</div>
-      <div class="side" style="position:relative; padding-bottom:150px;"><div class="nav">
+      <div class="arrow" style="margin-top:38px;">echoes as →</div>
+      <div class="side"><div class="nav">
         <div class="branch branch--active"><span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span><span class="branch__name">feat/command-menu</span></div>
         <div class="sessions">
           <a class="session session--unread"><span class="session__icon session__icon--ai"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="session__name">Claude Code</span></a>
           <div class="group">
-            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost</span><span class="gkebab"><svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="64" r="15"/><circle cx="128" cy="128" r="15"/><circle cx="128" cy="192" r="15"/></svg></span></span>
+            <span class="gtile -active"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="session__name">localhost</span></span>
             <span class="gtile -open"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">dev</span><span class="gkebab"><svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="64" r="15"/><circle cx="128" cy="128" r="15"/><circle cx="128" cy="192" r="15"/></svg></span></span>
           </div>
           <a class="session"><span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="session__name">shell</span></a>
         </div>
+      </div></div>
+    </div>
+    <div style="display:flex; align-items:flex-start; gap:18px; margin-top:14px;">
+      <div style="width:430px; font-size:11.5px; color:var(--ink-meta); line-height:1.5;">The <b style="color:var(--ink-3)">dev</b> tile's <b style="color:var(--ink-3)">⋮</b> is the same hover kebab every sidebar row has — it opens ⌘K drilled to that session's frame (<code style="font-family:var(--mono);font-size:10.5px">openRowActions → sessionFrame</code>). <b style="color:var(--ink-3)">Unsplit</b> is one more flat command there, beside Rename / Close. No bespoke surface.</div>
+      <div class="arrow" style="margin-top:0;">⋮ opens →</div>
+      <div class="cmdk__panel">
+        <div class="cmdk__search">
+          <span class="cmdk__search-ico"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/></svg></span>
+          <span class="cmdk__crumbs"><span class="cmdk__crumb">dev server</span></span>
+          <span class="cmdk__input">Search dev server…</span>
         </div>
-        <!-- primary menu, opened off the dev tile's kebab -->
-        <div class="tmenu" style="top:96px; left:120px;">
-          <div class="tmenu__item -hot"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg></span>Add split<span class="cr"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span></div>
-          <div class="tmenu__sep"></div>
-          <div class="tmenu__item tmenu__item--danger"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg></span>Unsplit this pane</div>
-        </div>
-        <!-- Add split submenu -->
-        <div class="tmenu" style="top:96px; left:320px; width:196px;">
-          <div class="tmenu__head">Add to this split</div>
-          <div class="tmenu__item"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span>Existing session…</div>
-          <div class="tmenu__item"><span class="mi"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg></span>New session<span class="cr"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span></div>
+        <div class="cmdk__list">
+          <div class="cmdk__item"><span class="cmdk__ico"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-term"/></svg></span><span class="cmdk__label">New terminal</span><span class="cmdk__ctx">feat/command-menu</span></div>
+          <div class="cmdk__item"><span class="cmdk__ico"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-ai"/></svg></span><span class="cmdk__label">New Claude Code</span><span class="cmdk__ctx">feat/command-menu</span></div>
+          <div class="cmdk__item"><span class="cmdk__ico"><svg viewBox="0 0 256 256" fill="currentColor"><use href="#ic-globe"/></svg></span><span class="cmdk__label">New browser</span><span class="cmdk__ctx">feat/command-menu</span></div>
+          <div class="cmdk__item"><span class="cmdk__ico"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96A16,16,0,0,0,227.31,73.37ZM51.31,160,136,75.31,152.69,92,68,176.69ZM48,208V179.31l20,20H48Zm48-3.31L79.31,188,164,103.31,180.69,120Z"/></svg></span><span class="cmdk__label">Rename</span></div>
+          <div class="cmdk__item is-active"><span class="cmdk__ico"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M80,64a8,8,0,0,1,8-8H208a8,8,0,0,1,0,16H88A8,8,0,0,1,80,64Zm128,56H88a8,8,0,0,0,0,16H208a8,8,0,0,0,0-16Zm0,64H88a8,8,0,0,0,0,16H208a8,8,0,0,0,0-16ZM44.28,53.29a8,8,0,0,0-8.56,1.05l-24,20a8,8,0,0,0,10.24,12.29L32,79.09V128a8,8,0,0,0,16,0V64A8,8,0,0,0,44.28,53.29ZM52,164a20,20,0,0,0-20,20,8,8,0,0,0,16,0,4,4,0,1,1,5.66,3.63l-22,22A8,8,0,0,0,32,220H56a8,8,0,0,0,0-16H51.31l8-8A20,20,0,0,0,52,164Z"/></svg></span><span class="cmdk__label">Unsplit</span></div>
+          <div class="cmdk__item cmdk__item--danger"><span class="cmdk__ico"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg></span><span class="cmdk__label">Close</span></div>
         </div>
       </div>
     </div>
-    <div class="scene__note">Kebab per tile → <b>Add split</b> (existing session, or spawn a new one) and <b>Unsplit this pane</b>. On an icon-only tile (#6) the kebab lives behind hover-expand — hovering restores name + kebab. <b>Unsplit</b> drops the member back to a full-width row; a 2-way collapsing to 1 dissolves the band. Drag-out stays as the fast alternative, mirroring the drag-in create gesture.</div>
+    <div class="scene__note"><b>Unsplit</b> drops the member back to a full-width row; a 2-way collapsing to 1 dissolves the band. It's also reachable straight from ⌘K search and on the active pane (root ⌘K context actions). <b>Creating</b> a split stays the drag gesture (001) — a keyboard/⌘K create command is 007's to design. Icon-only tiles (#6) hover-expand to surface the ⋮, same as the name.</div>
   </div>
 
   <p class="legend">
     <b>Settled —</b>
     the echo shows <b>membership + reading order only</b>, never geometry;
-    a group is a horizontal band of tiles, always horizontal, ordered top-to-bottom / left-to-right;
+    a group is a <b>bare horizontal band of tiles</b> (no enclosing container), always horizontal, ordered top-to-bottom / left-to-right;
     active member keeps the <code>.session--open</code> accent;
-    past 3 members non-active tiles go <b>icon-only</b> (hover-expand restores name + kebab);
+    past ~3 members non-active tiles go <b>icon-only</b> (hover-expand restores name + ⋮);
     splits are <b>always within one branch</b>, so the band always sits inline under its branch row;
-    break via each tile's <b>kebab → Unsplit</b> (kebab also carries <b>Add split ▸ existing / new session</b>), or <b>drag a tile out</b>.
-    <br><br>
-    <b>Still open —</b>
-    <span class="q">(d)</span> does the faint group container (bg + hairline) earn its keep, or do bare adjacent tiles already read as "one group"?
+    a tile behaves like any session row — its <b>⋮ opens ⌘K</b> drilled to that session, where <b>Unsplit</b> is a flat command beside Rename / Close (no popover — not a Synth pattern);
+    <b>drag a tile out</b> is the fast alternative;
+    creating a split stays the <b>drag gesture</b> (001), with a ⌘K/keyboard create command left to 007.
   </p>
 </body>
 </html>

@@ -87,6 +87,14 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   only) — split=copper, replace=slate-blue dashed; **active pane = a copper ring** around the whole
   pane; the **inter-pane seam** reuses the sidebar handle idiom (min-pane floor honoured), drag-only,
   **no double-click reset**; **no dedicated close/unsplit control** (kebab→⌘K, per 003).
+- [Content drag-to-split & drop-zones](tickets/010-content-drag-to-split.md) — the primary split
+  gesture, built into `enableReorder`: a dragged sidebar session crossing into `.content` flips to
+  drop-zone mode; `computeDrop` resolves pointer → **rim** (whole-surface split, `splitRoot`) / **edge**
+  (split the hovered pane, `splitPane`) / **center** (swap session in place). A single `.dz` highlight
+  paints **the region the new pane will occupy** — bare copper (split) / slate-blue dashed (replace) /
+  slate dashed (rim) / greyed (`.dz--refuse`) when a child or halved pane would breach the 360×240 floor
+  (no-op). An already-open session **moves** (new `removeLeaf` collapse-reflow) instead of duplicating;
+  focus follows the drop. Landed in both HTML files, diff invariant green.
 
 ## Not yet specified
 

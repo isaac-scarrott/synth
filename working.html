@@ -331,6 +331,20 @@
     box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.85);
   }
 
+  /* ---- Drop-zones (content drag-to-split — 010) ---- */
+  /* One reusable highlight painted over the region the dropped session will occupy as it's
+     dragged in. Bare — colour + shape only, no icon/label (004 §3): split = copper wash +
+     solid border, replace = slate-blue dashed, rim = slate dashed, refused = greyed (a drop
+     below the min-pane floor won't accept). Only geometry animates so the kind never morphs. */
+  .dz {
+    position: fixed; z-index: 40; pointer-events: none; border-radius: 8px; box-sizing: border-box;
+    transition: left 80ms var(--ease-out), top 80ms var(--ease-out), width 80ms var(--ease-out), height 80ms var(--ease-out);
+  }
+  .dz--split   { background: rgba(var(--accent-rgb),0.16); border: 2px solid rgba(var(--accent-rgb),0.9); }
+  .dz--replace { background: rgba(var(--input-rgb),0.14);  border: 2px dashed rgba(var(--input-rgb),0.95); }
+  .dz--rim     { background: rgba(var(--input-rgb),0.09);  border: 2px dashed var(--text-muted); }
+  .dz--refuse  { background: rgba(128,128,128,0.13);       border: 2px solid var(--text-faint); }
+
   .pane__head {
     flex-shrink: 0;
     display: flex;
@@ -2282,6 +2296,31 @@
     renderLayout();
   }
 
+  // Split the whole surface: the entire current tree becomes one child of a fresh root split,
+  // the incoming session the other. Rim-drop (010) drives this; splitPane handles per-pane edges.
+  function splitRoot(session, dir, before) {
+    if (!session || !layout) return;
+    const incoming = leafNode(session);
+    const kept = layout;
+    layout = { leaf: false, dir: dir === 'col' ? 'col' : 'row', split: 0.5,
+               a: before ? incoming : kept, b: before ? kept : incoming };
+    activePane = incoming;
+    renderLayout();
+  }
+
+  // Detach one leaf and collapse the split above it — the surviving sibling reflows into the
+  // freed space (001). Used to MOVE a session between panes on drop (010); unsplit/close is 013.
+  function removeLeaf(target) {
+    function walk(node) {
+      if (!node) return null;
+      if (node.leaf) return node === target ? null : node;
+      const a = walk(node.a), b = walk(node.b);
+      if (a && b) { node.a = a; node.b = b; return node; }
+      return a || b;
+    }
+    layout = walk(layout);
+  }
+
   function openSession(el) {
     if (!el) return;
     app.classList.remove('settings');   // jumping to a session leaves settings mode
@@ -3829,6 +3868,12 @@
   (function enableReorder() {
     const THRESH = 5;               // px of travel before a press becomes a drag
     let start = null, clone = null, active = false, suppress = false, scrollRAF = 0;
+    // Content drag-to-split (010): once a dragged sidebar session crosses into .content the
+    // reorder hands off to drop-zone mode — the sidebar row freezes and a single highlight
+    // tracks the resulting region until the drop lands the split/replace/rim op.
+    const MIN_W = 360, MIN_H = 240;   // min-pane floor (001) — drops below it are refused
+    const RIM = 16, EDGE = 0.3;       // outer-rim band (px) · edge-zone reach (fraction)
+    let dzEl = null, dzMode = false, dzRes = null;
 
     // The unit a row drags as, and the CSS selector its siblings share.
     function dragUnit(row) {
@@ -3851,6 +3896,7 @@
       if (!info) return;
       const r = row.getBoundingClientRect();
       start = { row, unit: info.unit, sel: info.sel, container: info.unit.parentNode,
+                origNext: info.unit.nextElementSibling,
                 x: e.clientX, y: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, w: r.width };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp, { once: true });
@@ -3877,6 +3923,14 @@
         begin();
       }
       moveClone(e.clientX, e.clientY);
+      // A dragged session over the content area splits panes instead of reordering (010).
+      if (start.sel.startsWith('.session') && overContent(e.clientX, e.clientY)) {
+        dzMode = true;
+        dzRes = computeDrop(e.clientX, e.clientY);
+        if (dzRes) paintDZ(dzRes); else hideDZ();
+        return;
+      }
+      if (dzMode) { dzMode = false; dzRes = null; hideDZ(); }
       // insert before the first sibling whose vertical midpoint is below the pointer
       let ref = null;
       for (const el of sibs(start.container, start.sel)) {
@@ -3898,11 +3952,113 @@
         if (clone) { clone.remove(); clone = null; }
         start.unit.classList.remove('drag-src');
         document.body.classList.remove('dragging');
-        if (start.sel.startsWith('.session')) snapOwned(start.container);   // reunite owner blocks
+        if (dzMode) {
+          const res = dzRes;
+          dzMode = false; dzRes = null; hideDZ();
+          if (res && !res.refuse) {
+            start.container.insertBefore(start.unit, start.origNext);   // undo any mid-drag reshuffle
+            performDrop(res);
+          }
+        } else if (start.sel.startsWith('.session')) {
+          snapOwned(start.container);          // reunite owner blocks
+        }
         select(start.row);                     // keep selection on the row you moved
         active = false;
       }
       start = null;
+    }
+
+    // ---- Drop-zone geometry & painting (010) ----
+    const overContent = (x, y) => {
+      const r = content.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+    const paneUnder = (x, y) => { const h = document.elementFromPoint(x, y); return h ? h.closest('.pane') : null; };
+
+    function paintDZ(res) {
+      if (!dzEl) { dzEl = document.createElement('div'); document.body.appendChild(dzEl); }
+      dzEl.className = 'dz dz--' + (res.refuse ? 'refuse' : res.kind);
+      const b = res.rect;
+      dzEl.style.left = b.left + 'px'; dzEl.style.top = b.top + 'px';
+      dzEl.style.width = b.w + 'px'; dzEl.style.height = b.h + 'px';
+    }
+    const hideDZ = () => { if (dzEl) { dzEl.remove(); dzEl = null; } };
+
+    // Would a root-level split on `dir` push the incoming pane or any existing pane below the
+    // floor? (Rim splits the whole surface, so every pane on that axis halves — 001.)
+    function rimRefused(dir) {
+      const cr = content.getBoundingClientRect();
+      const panes = [...content.querySelectorAll('.pane')];
+      if (dir === 'row') return cr.width / 2 < MIN_W || panes.some((p) => p.getBoundingClientRect().width / 2 < MIN_W);
+      return cr.height / 2 < MIN_H || panes.some((p) => p.getBoundingClientRect().height / 2 < MIN_H);
+    }
+
+    // Resolve pointer → the drop the release would perform: a per-pane edge split, a center
+    // replace, an outer-rim whole-surface split, or (empty/settings) a plain full-surface open.
+    function computeDrop(x, y) {
+      const cr = content.getBoundingClientRect();
+      const dragged = start.row;
+      if (!layout || app.classList.contains('settings')) {
+        return { kind: 'split', open: true, refuse: false, rect: { left: cr.left, top: cr.top, w: cr.width, h: cr.height } };
+      }
+      // Outer rim first — within RIM px of a content border → whole-surface split.
+      const dl = x - cr.left, dr = cr.right - x, dt = y - cr.top, db = cr.bottom - y;
+      const rim = Math.min(dl, dr, dt, db);
+      if (rim <= RIM) {
+        let dir, before, rect;
+        if (rim === dl)      { dir = 'row'; before = true;  rect = { left: cr.left, top: cr.top, w: cr.width / 2, h: cr.height }; }
+        else if (rim === dr) { dir = 'row'; before = false; rect = { left: cr.left + cr.width / 2, top: cr.top, w: cr.width / 2, h: cr.height }; }
+        else if (rim === dt) { dir = 'col'; before = true;  rect = { left: cr.left, top: cr.top, w: cr.width, h: cr.height / 2 }; }
+        else                 { dir = 'col'; before = false; rect = { left: cr.left, top: cr.top + cr.height / 2, w: cr.width, h: cr.height / 2 }; }
+        return { kind: 'rim', dir, before, refuse: rimRefused(dir), rect };
+      }
+      const paneEl = paneUnder(x, y);
+      if (!paneEl || !paneEl._node) return null;
+      const leaf = paneEl._node, pr = paneEl.getBoundingClientRect();
+      const nx = (x - pr.left) / pr.width, ny = (y - pr.top) / pr.height;
+      const near = Math.min(nx, 1 - nx, ny, 1 - ny);
+      if (near > EDGE) {   // center → replace the pane's session in place
+        return { kind: 'replace', leaf, refuse: leaf.session === dragged,
+                 rect: { left: pr.left + pr.width * 0.14, top: pr.top + pr.height * 0.14, w: pr.width * 0.72, h: pr.height * 0.72 } };
+      }
+      let dir, before, rect;
+      if (near === nx)          { dir = 'row'; before = true;  rect = { left: pr.left, top: pr.top, w: pr.width / 2, h: pr.height }; }
+      else if (near === 1 - nx) { dir = 'row'; before = false; rect = { left: pr.left + pr.width / 2, top: pr.top, w: pr.width / 2, h: pr.height }; }
+      else if (near === ny)     { dir = 'col'; before = true;  rect = { left: pr.left, top: pr.top, w: pr.width, h: pr.height / 2 }; }
+      else                      { dir = 'col'; before = false; rect = { left: pr.left, top: pr.top + pr.height / 2, w: pr.width, h: pr.height / 2 }; }
+      const childW = dir === 'row' ? pr.width / 2 : pr.width;
+      const childH = dir === 'col' ? pr.height / 2 : pr.height;
+      const refuse = leaf.session === dragged || childW < MIN_W || childH < MIN_H;
+      return { kind: 'split', leaf, dir, before, refuse, rect };
+    }
+
+    // Land the resolved drop. A session already living in a pane MOVES (its old leaf collapses,
+    // siblings reflow) rather than duplicating; focus follows the newly-placed pane (002).
+    function performDrop(res) {
+      const session = start.row;
+      if (res.open) { openSession(session); return; }
+      if (res.kind === 'replace') {
+        if (res.leaf.session === session) return;
+        const cur = leafBySession(session);
+        if (cur && cur !== res.leaf) removeLeaf(cur);
+        res.leaf.session = session; res.leaf.setup = null; res.leaf.el = null;
+        activePane = res.leaf;
+        renderLayout();
+        return;
+      }
+      if (res.kind === 'split') {
+        if (res.leaf.session === session) return;
+        const cur = leafBySession(session);
+        if (cur && cur !== res.leaf) removeLeaf(cur);
+        splitPane(res.leaf, session, res.dir, res.before);
+        return;
+      }
+      if (res.kind === 'rim') {
+        if (layout && layout.leaf && layout.session === session) return;   // nothing to split against
+        const cur = leafBySession(session);
+        if (cur) removeLeaf(cur);
+        splitRoot(session, res.dir, res.before);
+      }
     }
 
     // Eat the click that trails a drag so it doesn't toggle/open the row.

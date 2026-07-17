@@ -33,12 +33,10 @@ struct ContentPane: View {
         Group {
             if store.settingsOpen {
                 SettingsPane()
-            } else if let session = store.openSession {
-                SessionPane(session: session)
-                    .id(session.id)
-            } else if let branch = store.openSetupBranch {
-                WorktreeSetupPane(branch: branch)
-                    .id(branch.id)
+            } else if let root = store.layout {
+                // The layout spine (009): render the pane tree. A lone leaf is byte-for-byte
+                // today's single session; ≥2 leaves lay out as nested splits.
+                PaneTreeView(node: root)
             } else {
                 PaneEmpty()
             }
@@ -49,6 +47,95 @@ struct ContentPane: View {
         // (working.html `.app.settings .notifs { display: none }`).
         .overlay(alignment: .bottomLeading) {
             if !store.settingsOpen { NotificationDeck() }
+        }
+    }
+}
+
+/// The layout spine render (009). Walks the pane tree into nested split containers; leaves render
+/// as panes, siblings divided by a static 1px seam (drag-resize is 011). The single-pane case is
+/// one leaf → identical to the old single-session output. working.html `renderNode`.
+private struct PaneTreeView: View {
+    @Environment(AppStore.self) private var store
+    let node: PaneNode
+
+    var body: some View {
+        if node.isLeaf {
+            // The ring is meaningful only inside a split, so a lone pane stays ringless (004 §4).
+            LeafPane(node: node, inSplit: store.isSplit)
+        } else {
+            SplitContainer(node: node)
+        }
+    }
+}
+
+/// working.html `.split--row` / `.split--col`: two children sized by the node's fraction, a static
+/// hairline seam between them. `dir` row = side by side, col = stacked. Child sizes are laid from
+/// the container's measured length so nested splits divide their own space (min-0 flex in the mock).
+private struct SplitContainer: View {
+    let node: PaneNode
+    private static let seam: CGFloat = 1
+
+    var body: some View {
+        GeometryReader { geo in
+            let isRow = node.dir == .row
+            let total = max(0, (isRow ? geo.size.width : geo.size.height) - Self.seam)
+            let aLen = total * node.split
+            let bLen = total - aLen
+            if isRow {
+                HStack(spacing: 0) {
+                    PaneTreeView(node: node.a!).frame(width: aLen)
+                    Rectangle().fill(Theme.border).frame(width: Self.seam)
+                    PaneTreeView(node: node.b!).frame(width: bLen)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    PaneTreeView(node: node.a!).frame(height: aLen)
+                    Rectangle().fill(Theme.border).frame(height: Self.seam)
+                    PaneTreeView(node: node.b!).frame(height: bLen)
+                }
+            }
+        }
+    }
+}
+
+/// working.html `.pane`: one leaf hosting exactly one session (or a setup skeleton). Inside a
+/// split it carries the active copper ring — living at zero alpha on every split pane and only
+/// the active one lighting it, so a focus change cross-fades the copper (150ms) rather than
+/// snapping (`.split .pane--active::after`). Clicking a pane body activates it in place, without
+/// tearing down the live surface (working.html:2230 setActivePane).
+private struct LeafPane: View {
+    @Environment(AppStore.self) private var store
+    let node: PaneNode
+    let inSplit: Bool
+
+    private var isActive: Bool { store.activePane === node }
+
+    var body: some View {
+        leafBody
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .contentShape(Rectangle())
+            // Activate on click without consuming the event, so the terminal/browser/composer
+            // still receives it (the mock's non-preventDefault content click).
+            .simultaneousGesture(inSplit ? TapGesture().onEnded { store.setActivePane(node) } : nil)
+            .overlay {
+                if inSplit {
+                    Rectangle()
+                        .strokeBorder(Theme.copper, lineWidth: 2)
+                        .opacity(isActive ? 0.85 : 0)
+                        .animation(.easeOut(duration: 0.15), value: isActive)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    @ViewBuilder private var leafBody: some View {
+        if let sid = node.sessionID, let s = store.session(sid) {
+            SessionPane(session: s).id(s.id)
+        } else if let bid = node.setupBranchID, let br = store.branch(id: bid) {
+            WorktreeSetupPane(branch: br).id(br.id)
+        } else {
+            PaneEmpty()
         }
     }
 }

@@ -186,6 +186,17 @@ enum FeedbackMode {
     var openSetupBranchID: UUID?
     var sidebarCollapsed = false
 
+    /// The layout spine (009): the pane tree filling the content surface. A lone leaf is today's
+    /// single-session case; ≥2 leaves is a split. `openSessionID` / `openSetupBranchID` above are
+    /// kept mirroring `activePane` (Layout.swift syncActive), so single-session code is untouched.
+    var layout: PaneNode?
+    /// The one active leaf — the copper ring and the sidebar "you are here" follow it. Never nil
+    /// while `layout` is non-nil.
+    var activePane: PaneNode?
+    /// The durable split held behind a *transient* full-screen (014). Split-creating ops null it,
+    /// committing the current view as the new durable. Wired fully by the persistence slice.
+    var stashedSplit: PaneNode?
+
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).
     var themePref: ThemePref = (ThemePref(rawValue: UserDefaults.standard.string(forKey: AppStore.themeKey) ?? "") ?? .system) {
@@ -793,11 +804,18 @@ enum FeedbackMode {
 
     func open(_ session: Session) {
         settingsOpen = false   // jumping to a session leaves settings mode
-        openSetupBranchID = nil   // opening a real session revokes any armed setup-resolve
-        openSessionID = session.id
+        // Layout spine (009): "take me to it". A member of the on-screen split activates in place;
+        // anything else becomes the single pane (the degenerate one-leaf tree = today's behaviour).
+        // Branch-aware sticky full-screen over a remembered split is the persistence slice (014).
+        if let leaf = leaf(of: session.id) {
+            setActivePane(leaf)
+        } else {
+            stashedSplit = nil
+            layout = PaneNode(leafSession: session.id)
+            activePane = layout
+            syncActive()   // mirrors openSessionID / clears openSetupBranchID + this row's unread/notif
+        }
         navCursor = session.id
-        session.unread = false
-        clearNotif(session.id)   // opening a notified session dismisses its standing toast
     }
 
     /// Optimistically move the content pane onto a still-materialising worktree's
@@ -807,8 +825,12 @@ enum FeedbackMode {
     /// checkout then lands as a quiet unread row instead (applySessionTemplate).
     func openWorktreeSetup(_ branch: Branch) {
         settingsOpen = false
-        openSessionID = nil
-        openSetupBranchID = branch.id
+        // The setup skeleton is a transient, branchless single pane (Layout.swift); syncActive
+        // mirrors it into openSetupBranchID and clears openSessionID.
+        stashedSplit = nil
+        layout = PaneNode(leafSetup: branch.id)
+        activePane = layout
+        syncActive()
         navCursor = branch.id
     }
 
@@ -1017,6 +1039,10 @@ enum FeedbackMode {
         for br in workspaces.flatMap(\.branches) {
             br.sessions.removeAll { $0.id == session.id }
         }
+        // Layout spine (009): closing a live session collapses its pane and reflows the sibling —
+        // the existing removeUnit → prune path, no new guard (004 §6).
+        pruneLayout()
+        syncActive()
     }
 
     /// Release everything a session holds *outside* the tree: its terminal + browser

@@ -388,6 +388,40 @@ final class ControlServer: @unchecked Sendable {
             store.jump(to: session)
             return ["ok": true]
 
+        // The layout spine's test handle (009) — the native equivalent of window.SynthLayout.
+        // Report the on-screen pane tree so a harness can assert multi-pane render without pixels.
+        case "automation.layout" where automation:
+            func describe(_ n: PaneNode?) -> Any {
+                guard let n else { return NSNull() }
+                if n.isLeaf {
+                    return ["leaf": true,
+                            "session": n.sessionID?.uuidString ?? "",
+                            "setup": n.setupBranchID?.uuidString ?? "",
+                            "active": n === store.activePane]
+                }
+                return ["leaf": false, "dir": n.dir?.rawValue ?? "row", "split": n.split,
+                        "a": describe(n.a), "b": describe(n.b)]
+            }
+            return ["ok": true, "panes": store.paneLeaves.count, "tree": describe(store.layout)]
+
+        // Drive a split: subdivide the active pane with `sessionId` (an already-open session moves
+        // rather than duplicating — 010's rule). The keyboard/mouse create routes funnel through the
+        // same splitPane op; this is the headless driver that proves the spine renders ≥2 panes.
+        case "automation.split" where automation:
+            guard let session = requestedSession(request, in: branch) else {
+                return ["ok": false, "error": "no session for sessionId"]
+            }
+            guard let target = store.activePane, target.isLeaf else {
+                return ["ok": false, "error": "no single-leaf active pane to split"]
+            }
+            let dir: SplitDir = (request["dir"] as? String == "col") ? .col : .row
+            let before = request["before"] as? Bool ?? false
+            if let existing = store.leaf(of: session.id), existing !== target {
+                store.removeLeaf(existing)   // move, don't duplicate
+            }
+            store.splitPane(target, session: session.id, dir: dir, before: before)
+            return ["ok": true, "panes": store.paneLeaves.count]
+
         // Navigate a browser session — the home "Go to…" field's exact onSubmit call.
         case "automation.browserGo" where automation:
             guard let session = requestedSession(request, in: branch), session.kind == .browser,

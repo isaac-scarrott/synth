@@ -323,7 +323,24 @@
   .split--row { flex-direction: row; }
   .split--col { flex-direction: column; }
   .split > .pane, .split > .split { min-width: 0; min-height: 0; }
-  .pane-seam { flex: 0 0 1px; background: var(--border); }
+  /* Draggable inter-pane seam (011) — reuses the sidebar .resize-handle idiom: a 1px hairline
+     divider with a widened invisible grab band, revealing a brighter 1.5px line on hover / while
+     dragging. Drag-only (no double-click reset, 004 §5); the drag honours the min-pane floor. */
+  .pane-seam { position: relative; flex: 0 0 1px; background: var(--border); z-index: 6; }
+  .pane-seam::before { content: ""; position: absolute; }
+  .pane-seam--row::before { top: 0; bottom: 0; left: 50%; width: 9px; transform: translateX(-50%); cursor: col-resize; }
+  .pane-seam--col::before { left: 0; right: 0; top: 50%; height: 9px; transform: translateY(-50%); cursor: row-resize; }
+  .pane-seam::after { content: ""; position: absolute; background: var(--input); opacity: 0; transition: opacity 140ms ease; }
+  .pane-seam--row::after { top: 0; bottom: 0; left: 50%; width: 1.5px; transform: translateX(-50%); }
+  .pane-seam--col::after { left: 0; right: 0; top: 50%; height: 1.5px; transform: translateY(-50%); }
+  @media (hover: hover) and (pointer: fine) {
+    .pane-seam:hover::after { opacity: 0.5; }
+  }
+  .content.pane-resizing { -webkit-user-select: none; user-select: none; }
+  .content.pane-resizing .pane { pointer-events: none; }
+  .content.pane-resizing--row { cursor: col-resize; }
+  .content.pane-resizing--col { cursor: row-resize; }
+  .pane-seam--active::after { opacity: 0.7 !important; }
   /* Active pane — the copper ring (004 §4). Only meaningful with a split open, so a
      single pane (today's degenerate case) stays ringless; the overlay never eats clicks. */
   .split .pane--active::after {
@@ -2992,6 +3009,7 @@
     b.style.flex = '1 1 ' + (100 - fa) + '%';
     const seam = document.createElement('div');
     seam.className = 'pane-seam pane-seam--' + node.dir;
+    seam._node = node;   // 011: the seam drags this split node's fraction
     box.append(a, seam, b);
     return box;
   }
@@ -5371,6 +5389,56 @@
     });
     // double-click the seam → reset to the default width
     handle.addEventListener('dblclick', () => { app.style.removeProperty('--sidebar-w'); try { localStorage.removeItem('synth-sidebar-w'); } catch (e) {} });
+  })();
+
+  // Inter-pane seam resize (011) — drag a seam to repartition its two neighbours, extending the
+  // sidebar-handle idiom. Updates the split node's fraction and re-flexes the two child elements
+  // in place (no re-render, so live surfaces survive). The min-pane floor (001 / 004 §5) is a hard
+  // stop: the drag clamps so neither neighbour subtree pushes any pane below 360×240. Drag-only —
+  // deliberately no double-click reset (004 §5).
+  (() => {
+    const MIN_W = 360, MIN_H = 240;
+    // Smallest size a subtree can occupy along `axis` before some pane hits the floor: panes split
+    // along the axis add up; panes split across it overlap, so take the larger.
+    function minAlong(node, axis) {
+      if (node.leaf) return axis === 'row' ? MIN_W : MIN_H;
+      const a = minAlong(node.a, axis), b = minAlong(node.b, axis);
+      return node.dir === axis ? a + b : Math.max(a, b);
+    }
+    content.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const seam = e.target.closest('.pane-seam');
+      if (!seam || !seam._node) return;
+      const node = seam._node, axis = node.dir;
+      const box = seam.parentNode;
+      const childA = seam.previousElementSibling, childB = seam.nextElementSibling;
+      if (!childA || !childB) return;
+      e.preventDefault();
+      const rect = box.getBoundingClientRect();
+      const total = axis === 'row' ? rect.width : rect.height;
+      let lo = minAlong(node.a, axis) / total, hi = 1 - minAlong(node.b, axis) / total;
+      if (lo > hi) lo = hi = (lo + hi) / 2;   // container already at the floor — pin, no give
+      seam.classList.add('pane-seam--active');
+      content.classList.add('pane-resizing', 'pane-resizing--' + axis);
+      try { seam.setPointerCapture(e.pointerId); } catch (err) {}
+      const onMove = (ev) => {
+        const pos = axis === 'row' ? (ev.clientX - rect.left) : (ev.clientY - rect.top);
+        const frac = Math.min(hi, Math.max(lo, pos / total));
+        node.split = frac;
+        const pct = Math.round(frac * 10000) / 100;
+        childA.style.flex = '1 1 ' + pct + '%';
+        childB.style.flex = '1 1 ' + (100 - pct) + '%';
+      };
+      const onUp = () => {
+        seam.classList.remove('pane-seam--active');
+        content.classList.remove('pane-resizing', 'pane-resizing--' + axis);
+        seam.removeEventListener('pointermove', onMove);
+        seam.removeEventListener('pointerup', onUp);
+        try { seam.releasePointerCapture(e.pointerId); } catch (err) {}
+      };
+      seam.addEventListener('pointermove', onMove);
+      seam.addEventListener('pointerup', onUp);
+    });
   })();
 })();
 </script>

@@ -95,6 +95,15 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   slate dashed (rim) / greyed (`.dz--refuse`) when a child or halved pane would breach the 360×240 floor
   (no-op). An already-open session **moves** (new `removeLeaf` collapse-reflow) instead of duplicating;
   focus follows the drop. Landed in both HTML files, diff invariant green.
+- [Inter-pane resize seams](tickets/011-inter-pane-resize-seams.md) — the static `.pane-seam` becomes
+  draggable, reusing the sidebar `.resize-handle` idiom (1px hairline + 9px invisible grab band +
+  a 1.5px hover/active highlight, `col-`/`row-resize` by axis). A delegated `pointerdown` on `.content`
+  grabs the seam (`seam._node` → the split node), `setPointerCapture` carries the drag across
+  iframes, and it rewrites `node.split` + the two children's inline `flex` **in place** (no re-render,
+  live surfaces preserved). The 360×240 floor is a **hard stop**: `minAlong` (sum along axis, max
+  across) clamps the fraction; an over-subscribed split pins with no give. **Drag-only — no
+  double-click reset.** Verified in a real browser (extremes hard-stop at 240, mid-drag proportional,
+  dblclick no-op); landed in both files, diff invariant green.
 
 ## Not yet specified
 

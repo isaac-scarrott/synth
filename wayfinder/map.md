@@ -145,6 +145,15 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   at zero-alpha on every split pane so focus changes **cross-fade** it (`transition: box-shadow 150ms`);
   drop-zones **fade in** on appear (`dz-in` 110ms) while geometry still morphs them; the 011 seam reveal
   (140ms) was already within language. Verified 995/497/248/124px, both files, diff invariant green.
+- [Build the mouse-only split layout](tickets/006-build-mouse-only-split-layout.md) — **the build
+  milestone, closed.** Final integration + invariant pass: drove `working.html` in a real browser and
+  confirmed the seven slices cohere as one build — split→two-pane render + copper active ring + per-pane
+  live surfaces (009/010), sidebar echo band with tracking accent (012/003), persistence round-trip
+  **restoring intact across a full reload** (014), container-query header degradation (015), ⌘K
+  **Unsplit** collapsing 2→1 and returning the detached session to the sidebar unclosed (013), seam drag
+  hard-stopping at the 360px floor (011). Console clean throughout; `diff working.html
+  big-picture-design.html` green (only `<title>` + demo session rows). Mouse-only design is built and
+  settled; **[007] keybindings now unblocked**, the 006 → 007 → 008 handoff spine intact.
 
 ## Not yet specified
 

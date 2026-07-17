@@ -154,6 +154,16 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   hard-stopping at the 360px floor (011). Console clean throughout; `diff working.html
   big-picture-design.html` green (only `<title>` + demo session rows). Mouse-only design is built and
   settled; **[007] keybindings now unblocked**, the 006 → 007 → 008 handoff spine intact.
+- [Keybinding scheme for split operations](tickets/007-keybinding-scheme.md) — **pure Mac-native
+  chords, no leader** (the tmux user is served by dual-binding arrows + `hjkl`, not a mode). Create
+  `⌘⇧`+arrow / `⌘⇧\`·`⌘⇧-`; focus `⌘⌥`+arrow·`hjkl` / `⌘1`–`9` / `` ⌘` `` cycle; resize `⌘⌥⇧`+arrow;
+  zoom `⌘⇧⏎` (`⌘⏎` notif-jump unmoved); unsplit `⌘⇧U`; close stays `⌘D`. A keyboard-created pane is
+  filled by a **pick-a-session `⌘K` frame** (the fork 004 deferred here — the keyboard mirror of the
+  mouse drag-in, reusing 003's drilled frames). Split block sits before the browser page-verbs so
+  `⌘⌥L` (focus) beats `⌘L` (omnibox) yet bare `⌘L` still reaches it. Wired to the real 009–015 ops +
+  a **Split layout** group in the `⌘?` sheet; landed in both files, diff invariant green, verified in
+  a real browser (create/focus/cycle/zoom/resize-floor/unsplit/persistence, console clean). **[008]
+  handoff brief unblocked — the destination.**
 
 ## Not yet specified
 

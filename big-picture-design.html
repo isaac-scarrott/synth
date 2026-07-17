@@ -2489,6 +2489,167 @@
     renderLayout();
   }
 
+  // ===== Keyboard split layer (007) — the chord scheme over the mouse split model =====
+  // Pure Mac-native chords, no leader/mode: create (⌘⇧+arrow / ⌘| ⌘—), focus (⌘⌥+arrow / hjkl,
+  // ⌘1…9, ⌘`), resize (⌘⌥⇧+arrow), zoom (⌘⇧⏎), unsplit (⌘⇧U). Each drives the same tree ops the
+  // mouse gestures do (splitPane / removeLeaf / stashedSplit), so both routes stay one behaviour.
+  const paneLeaves = () => { const a = []; eachLeaf(layout, (l) => { if (l.session) a.push(l); }); return a; };
+
+  // ⌘1…⌘9 teleport to the Nth session pane in reading order (the tree flattened a-before-b);
+  // ⌘1 on a single pane is the old "focus the open session". Hand the keyboard to the pane.
+  function focusPane(n) {
+    const leaf = paneLeaves()[n - 1];
+    if (!leaf) { if (n === 1) focusContent(); return; }
+    setActivePane(leaf);
+    focusContent();
+  }
+  // ⌘` / ⌘⇧` step to the next / previous pane, wrapping — direction-free "just move me on".
+  function cyclePane(step) {
+    const ls = paneLeaves();
+    if (ls.length < 2) return;
+    let i = ls.indexOf(activePane); if (i < 0) i = 0;
+    setActivePane(ls[(i + step + ls.length) % ls.length]);
+    focusContent();
+  }
+  // ⌘⌥+arrow / hjkl move focus spatially: the nearest pane whose edge lies past the active pane's
+  // edge in that direction, tie-broken by cross-axis centre distance. Geometry, so it reads the
+  // real split however it's nested.
+  function focusDir(dirWord) {
+    if (!activePane || !activePane.el) return;
+    const cur = activePane.el.getBoundingClientRect();
+    const cx = cur.left + cur.width / 2, cy = cur.top + cur.height / 2;
+    let best = null, bestScore = Infinity;
+    eachLeaf(layout, (l) => {
+      if (l === activePane || !l.el || !l.session) return;
+      const r = l.el.getBoundingClientRect();
+      let ok, primary;
+      if (dirWord === 'right')     { ok = r.left  >= cur.right  - 1; primary = r.left - cur.right; }
+      else if (dirWord === 'left') { ok = r.right <= cur.left   + 1; primary = cur.left - r.right; }
+      else if (dirWord === 'down') { ok = r.top   >= cur.bottom - 1; primary = r.top - cur.bottom; }
+      else                         { ok = r.bottom <= cur.top   + 1; primary = cur.top - r.bottom; }
+      if (!ok) return;
+      const rx = r.left + r.width / 2, ry = r.top + r.height / 2;
+      const cross = (dirWord === 'left' || dirWord === 'right') ? Math.abs(ry - cy) : Math.abs(rx - cx);
+      const score = Math.max(0, primary) + cross * 2;
+      if (score < bestScore) { bestScore = score; best = l; }
+    });
+    if (best) { setActivePane(best); focusContent(); }
+  }
+
+  // The smallest fraction a subtree can hold along an axis before some pane hits the 360×240 floor
+  // (001) — the same rule 011's seam drag clamps against, so keyboard resize honours it identically.
+  const PANE_MIN_W = 360, PANE_MIN_H = 240;
+  function paneMinAlong(node, axis) {
+    if (node.leaf) return axis === 'row' ? PANE_MIN_W : PANE_MIN_H;
+    const a = paneMinAlong(node.a, axis), b = paneMinAlong(node.b, axis);
+    return node.dir === axis ? a + b : Math.max(a, b);
+  }
+  // Path from the root to `target`, each hop tagged with the side taken — lets resize find the
+  // nearest ancestor split on the wanted axis and know which child the active pane sits in.
+  function pathToLeaf(target) {
+    let hit = null;
+    (function walk(node, trail) {
+      if (!node) return;
+      if (node.leaf) { if (node === target) hit = trail; return; }
+      walk(node.a, trail.concat([{ node, side: 'a' }]));
+      walk(node.b, trail.concat([{ node, side: 'b' }]));
+    })(layout, []);
+    return hit;
+  }
+  // ⌘⌥⇧+arrow nudges the seam bordering the active pane along that axis — →/↓ grow it, ←/↑ shrink
+  // it. Rewrites the split fraction + the two children's flex in place (like the 011 drag), so live
+  // surfaces survive; the floor is a hard stop, an over-subscribed split pins with no give.
+  function resizeActive(dirWord) {
+    if (!activePane || !isSplit(layout)) return;
+    const axis = (dirWord === 'left' || dirWord === 'right') ? 'row' : 'col';
+    const trail = pathToLeaf(activePane);
+    if (!trail) return;
+    let hit = null;
+    for (let i = trail.length - 1; i >= 0; i--) if (trail[i].node.dir === axis) { hit = trail[i]; break; }
+    if (!hit) return;
+    const node = hit.node;
+    let box = null; content.querySelectorAll('.split--' + axis).forEach((el) => { if (el._node === node) box = el; });
+    if (!box) return;
+    const seam = box.querySelector(':scope > .pane-seam');
+    const childA = seam.previousElementSibling, childB = seam.nextElementSibling;
+    if (!childA || !childB) return;
+    const rect = box.getBoundingClientRect();
+    const total = axis === 'row' ? rect.width : rect.height;
+    let lo = paneMinAlong(node.a, axis) / total, hi = 1 - paneMinAlong(node.b, axis) / total;
+    if (lo > hi) lo = hi = (lo + hi) / 2;
+    const grow = (dirWord === 'right' || dirWord === 'down');
+    const sign = (hit.side === 'a') ? (grow ? 1 : -1) : (grow ? -1 : 1);
+    const frac = Math.min(hi, Math.max(lo, (node.split == null ? 0.5 : node.split) + sign * 0.06));
+    node.split = frac;
+    const pct = Math.round(frac * 10000) / 100;
+    childA.style.flex = '1 1 ' + pct + '%';
+    childB.style.flex = '1 1 ' + (100 - pct) + '%';
+    persist();
+  }
+
+  // ⌘⇧⏎ zoom: a transient, tmux-style full-screen of the active pane over the remembered split
+  // (the same stashedSplit mechanism openSession uses, 014) — the band stays echoed in the sidebar,
+  // the split isn't persisted away, and toggling restores it with the zoomed pane still focused.
+  function toggleZoom() {
+    if (!layout) return;
+    if (stashedSplit) {
+      const back = activePane && activePane.session;
+      layout = stashedSplit; stashedSplit = null;
+      const leaf = back && leafInTree(layout, back);
+      activePane = leaf || firstLeaf(layout);
+      renderLayout();
+    } else if (isSplit(layout) && activePane && activePane.session) {
+      stashedSplit = layout;
+      layout = leafNode(activePane.session);
+      activePane = layout;
+      renderLayout();
+    }
+  }
+
+  // Subdivide the active pane, binding `session` into the fresh half (dir/before pick the side).
+  // An already-open session moves rather than duplicating (drop its old leaf first, 010's rule).
+  function splitActiveWith(session, dir, before, target) {
+    target = target || activePane;
+    if (!session || !target || !target.leaf) return;
+    const existing = leafBySession(session);
+    if (existing && existing !== target) removeLeaf(existing);
+    splitPane(target, session, dir, before);
+  }
+  // "New …" in the split frame: spawn the session unopened, then bind it into the new pane.
+  function splitNew(branchRow, kind, dir, before, target) {
+    const el = addSession(branchRow, kind, { open: false });
+    splitActiveWith(el, dir, before, target || activePane);
+  }
+  // The pick-a-session ⌘K frame that fills a keyboard-created pane (007) — the keyboard mirror of
+  // dragging a session into a split (010). New sessions up top, then every existing session not
+  // already a pane here. A split stays within one branch (003), so creates land on that branch.
+  function splitFrame(dir, before) {
+    const target = activePane;
+    const anchor = target && target.session;
+    const br = anchor ? branchGroupOf(anchor) : contextBranch();
+    const dword = dir === 'row' ? (before ? 'left' : 'right') : (before ? 'up' : 'down');
+    return {
+      crumb: 'Split ' + dword, placeholder: 'Split — pick a session…',
+      build() {
+        const items = [];
+        if (br) {
+          items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal', kbd: ['⌘', 'T'], enter: () => runAndClose(() => splitNew(br, 'terminal', dir, before, target)) });
+          AGENTS.forEach((kk) => items.push({ sec: 'act', icon: AGENT_ICON[kk], label: 'New ' + SESSION_KINDS[kk].name, enter: () => runAndClose(() => splitNew(br, kk, dir, before, target)) }));
+          items.push({ sec: 'act', icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => splitNew(br, 'browser', dir, before, target)) });
+        }
+        allRows('.session').forEach((s) => {
+          if (leafBySession(s)) return;   // already a pane in this layout — nothing to pull in
+          items.push({ sec: 'list', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => splitActiveWith(s, dir, before, target)) });
+        });
+        return items;
+      },
+    };
+  }
+  function openSplitPicker(dir, before) {
+    if (!activePane || !activePane.session) return;   // no split from a bare setup skeleton
+    openPaletteAt(splitFrame(dir, before));
+  }
+
   // Take-me-to-it (002), now branch-aware and sticky (005/014):
   //  • Different branch → stash the branch you leave, restore the target's remembered layout, then
   //    apply the rules below within it (workspace-switch reduces to this — the workspace owns none).
@@ -3182,6 +3343,7 @@
     if (node.leaf) return renderPane(node);
     const box = document.createElement('div');
     box.className = 'split split--' + node.dir;
+    box._node = node;   // 007: keyboard resize finds the split box to measure the floor against
     const a = renderNode(node.a), b = renderNode(node.b);
     const fa = Math.round((node.split == null ? 0.5 : node.split) * 10000) / 100;
     a.style.flex = '1 1 ' + fa + '%';
@@ -3508,9 +3670,35 @@
       if (app.classList.toggle('collapsed')) focusContent();
       return;
     }
-    // Cmd/Ctrl+0 focuses the sidebar; Cmd/Ctrl+1 focuses the open session's surface
-    if ((e.metaKey || e.ctrlKey) && k === '0') { e.preventDefault(); focusSidebar(); return; }
-    if ((e.metaKey || e.ctrlKey) && k === '1') { e.preventDefault(); focusContent(); return; }
+    // Cmd/Ctrl+0 focuses the sidebar; Cmd/Ctrl+1…9 focus the Nth session pane in reading order
+    // (⌘1 on a single pane is the old "focus the open session"). 007's numeric teleport.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && k === '0') { e.preventDefault(); focusSidebar(); return; }
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && k >= '1' && k <= '9') { e.preventDefault(); focusPane(+k); return; }
+    // ===== Split layer (007): pure ⌘-chords over the mouse split model. Placed before the browser
+    // page-verbs so ⌘⌥L (focus-right alias) beats ⌘L (address), while a bare ⌘L still reaches it. =====
+    if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !document.querySelector('.backdrop')) {
+      // Create: ⌘⇧+arrow splits toward the arrow; ⌘⇧\ (⌘|) side-by-side, ⌘⇧- (⌘—) stacked — fixed
+      // side. Zoom ⌘⇧⏎, unsplit ⌘⇧U, cycle-prev ⌘⇧` all ride the shift row too.
+      if (e.shiftKey && !e.altKey) {
+        if (k === 'ArrowRight') { e.preventDefault(); openSplitPicker('row', false); return; }
+        if (k === 'ArrowLeft')  { e.preventDefault(); openSplitPicker('row', true);  return; }
+        if (k === 'ArrowDown')  { e.preventDefault(); openSplitPicker('col', false); return; }
+        if (k === 'ArrowUp')    { e.preventDefault(); openSplitPicker('col', true);  return; }
+        if (k === '|' || k === '\\') { e.preventDefault(); openSplitPicker('row', false); return; }
+        if (k === '_' || k === '-')  { e.preventDefault(); openSplitPicker('col', false); return; }
+        if (k === 'Enter')      { e.preventDefault(); toggleZoom(); return; }
+        if (k === 'U' || k === 'u') { e.preventDefault(); if (activePane && activePane.session) unsplitSession(activePane.session); return; }
+        if (k === '~' || k === '`') { e.preventDefault(); cyclePane(-1); return; }
+      }
+      // Focus move: ⌘⌥+arrow / hjkl. Add ⇧ (⌘⌥⇧) to resize the active pane instead.
+      if (e.altKey) {
+        const ax = { ArrowRight: 'right', ArrowLeft: 'left', ArrowDown: 'down', ArrowUp: 'up',
+                     l: 'right', h: 'left', j: 'down', k: 'up', L: 'right', H: 'left', J: 'down', K: 'up' }[k];
+        if (ax) { e.preventDefault(); if (e.shiftKey) resizeActive(ax); else focusDir(ax); return; }
+      }
+      // Cycle-next: ⌘`
+      if (k === '`' && !e.shiftKey && !e.altKey) { e.preventDefault(); cyclePane(1); return; }
+    }
     // Cmd/Ctrl+T spawns a terminal in the branch you're on (matches the native app)
     if ((e.metaKey || e.ctrlKey) && (k === 't' || k === 'T') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
       const br = contextBranch();
@@ -3995,6 +4183,7 @@
     a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
     rollUpGroups();
     if (opts.open !== false) openSession(a); // a freshly spawned session opens straight into the content pane
+    return a;   // 007: the split-create frame keeps the new row to bind it into a fresh pane
   }
   const addTerminal = (branchRow) => addSession(branchRow, 'terminal');
   // Every coding agent Synth can host, in creation order (Agents.swift AgentRegistry).
@@ -4455,6 +4644,16 @@
       [['⌘', ','], 'Settings'],
       [['⌘', '?'], 'Keyboard shortcuts'],
       [['⌘', '⇧', 'F'], 'Send feedback'],
+    ]],
+    ['Split layout', [
+      [['⌘', '⇧', '→ ↑ ↓ ←'], 'Split (new pane toward arrow)'],
+      [['⌘', '⇧', '\\'], 'Split side-by-side · stacked', ['⌘', '⇧', '-']],
+      [['⌘', '⌥', '→ ↑ ↓ ←'], 'Move focus between panes', ['⌘', '⌥', 'H J K L']],
+      [['⌘', '1…9'], 'Focus pane by number'],
+      [['⌘', '`'], 'Cycle panes', ['⌘', '⇧', '`']],
+      [['⌘', '⌥', '⇧', '→ ↑ ↓ ←'], 'Resize active pane'],
+      [['⌘', '⇧', '↵'], 'Zoom · unzoom pane'],
+      [['⌘', '⇧', 'U'], 'Unsplit active pane'],
     ]],
     ['Sidebar', [
       [['↑', '↓'], 'Move selection', ['J', 'K']],

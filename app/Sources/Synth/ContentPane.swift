@@ -26,7 +26,17 @@ struct TerminalHost: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// Collects every pane / split node's frame in the content coordinate space, so the keyboard's
+/// spatial focus and resize can read real geometry (the native getBoundingClientRect).
+struct PaneFramesKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] { [:] }
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
 struct ContentPane: View {
+    static let contentSpace = "synthContent"
     @Environment(AppStore.self) private var store
 
     var body: some View {
@@ -37,6 +47,10 @@ struct ContentPane: View {
                 // The layout spine (009): render the pane tree. A lone leaf is byte-for-byte
                 // today's single session; ≥2 leaves lay out as nested splits.
                 PaneTreeView(node: root)
+                    .coordinateSpace(name: Self.contentSpace)
+                    // Each node reports its frame here; the keyboard's spatial focus + resize
+                    // (Layout.swift) read real geometry from the store.
+                    .onPreferenceChange(PaneFramesKey.self) { store.paneFrames = $0 }
             } else {
                 PaneEmpty()
             }
@@ -95,6 +109,11 @@ private struct SplitContainer: View {
                 }
             }
         }
+        // Report this split box's frame so resizeActive can measure the axis it clamps against.
+        .background(GeometryReader { g in
+            Color.clear.preference(key: PaneFramesKey.self,
+                                   value: [node.id: g.frame(in: .named(ContentPane.contentSpace))])
+        })
     }
 }
 
@@ -127,6 +146,26 @@ private struct LeafPane: View {
                         .allowsHitTesting(false)
                 }
             }
+            // Report the pane's frame for the keyboard's spatial focus / resize.
+            .background(GeometryReader { g in
+                Color.clear.preference(key: PaneFramesKey.self,
+                                       value: [node.id: g.frame(in: .named(ContentPane.contentSpace))])
+            })
+            // Keyboard focus follows the ring: when this pane becomes active, hand it first
+            // responder so the next keystroke reaches its surface, not the pane you left.
+            .onChange(of: isActive) { _, active in
+                if active, let sid = node.sessionID { focusSurface(sid) }
+            }
+    }
+
+    /// Make the active leaf's live surface (terminal / browser) first responder — the keyboard
+    /// half of activation, so ⌘⌥+arrow moves both the ring and the caret.
+    private func focusSurface(_ sessionID: UUID) {
+        DispatchQueue.main.async {
+            if let v = TerminalManager.shared.existingView(sessionID) {
+                v.window?.makeFirstResponder(v)
+            }
+        }
     }
 
     @ViewBuilder private var leafBody: some View {

@@ -196,6 +196,10 @@ enum FeedbackMode {
     /// The durable split held behind a *transient* full-screen (014). Split-creating ops null it,
     /// committing the current view as the new durable. Wired fully by the persistence slice.
     var stashedSplit: PaneNode?
+    /// On-screen frame of every pane / split node in the content coordinate space, reported by the
+    /// views each layout pass (ContentPane). The keyboard's spatial focus (focusDir) and resize
+    /// (resizeActive) read real geometry from here — the native stand-in for getBoundingClientRect.
+    @ObservationIgnored var paneFrames: [UUID: CGRect] = [:]
 
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).
@@ -1005,6 +1009,22 @@ enum FeedbackMode {
             DispatchQueue.main.async { _ = BrowserManager.shared.controller(for: session) }
         }
         return session
+    }
+
+    /// Spawn a session for a split *without* opening it (focus:false), so the pending create
+    /// doesn't clobber the layout before it's bound into the new pane (007's keyboard create /
+    /// 010's "New …" drag-in). The caller then `splitActiveWith`s the returned session.
+    @discardableResult
+    func newForSplit(_ kind: SessionKind, in branch: Branch) -> Session? {
+        switch kind {
+        case .terminal:
+            return addSession(kind: .terminal, title: "shell", status: .idle, in: branch, focus: false)
+        case let .agent(id):
+            return addSession(kind: .agent(id), title: SessionKind.agent(id).tplStart, status: .working,
+                              in: branch, focus: false)
+        case .browser:
+            return newBrowser(in: branch, focus: false)
+        }
     }
 
     @discardableResult

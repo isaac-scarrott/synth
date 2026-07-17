@@ -5,6 +5,14 @@ import Observation
 /// A split's axis: `row` lays children side by side, `col` stacks them (working.html dir).
 enum SplitDir: String, Codable, Sendable { case row, col }
 
+/// A directional arrow chord — the shared vocabulary for keyboard focus / resize / create.
+/// `axis` is the split axis the arrow acts along (left/right = row, up/down = col).
+enum ArrowDir { case left, right, up, down
+    var axis: SplitDir { (self == .left || self == .right) ? .row : .col }
+    /// The side a create-toward-arrow puts the new pane on: left/up = before (slot a).
+    var before: Bool { self == .left || self == .up }
+}
+
 /// The layout spine (009): a branch's content surface is a **binary pane tree**. A node is either
 /// a LEAF binding exactly one session — or a still-materialising branch's setup skeleton, which
 /// counts as bound, so there is never an empty pane (ADR §2) — or a SPLIT of two children divided
@@ -204,6 +212,146 @@ extension AppStore {
         pruneLayout()
         syncActive()
     }
+
+    // MARK: Keyboard split layer (007) — chords over the same tree ops the mouse drives
+
+    /// The leaf binding `sessionID` anywhere in `tree` (used to re-find a pane after a zoom stash).
+    func leafInTree(_ tree: PaneNode?, session sessionID: UUID) -> PaneNode? {
+        var hit: PaneNode?
+        eachLeaf(tree) { if $0.sessionID == sessionID { hit = $0 } }
+        return hit
+    }
+
+    /// ⌘1…⌘9 teleport to the Nth session pane in reading order (the tree flattened a-before-b).
+    func focusPane(_ n: Int) {
+        let ls = paneLeaves
+        guard n >= 1, n <= ls.count else { return }
+        setActivePane(ls[n - 1])
+    }
+
+    /// ⌘` / ⌘⇧` step to the next / previous pane, wrapping — direction-free "just move me on".
+    func cyclePane(_ step: Int) {
+        let ls = paneLeaves
+        guard ls.count >= 2 else { return }
+        let i = ls.firstIndex(where: { $0 === activePane }) ?? 0
+        let n = ls.count
+        setActivePane(ls[((i + step) % n + n) % n])
+    }
+
+    /// ⌘⌥+arrow / hjkl move focus spatially: the nearest pane whose edge lies past the active
+    /// pane's edge in that direction, tie-broken by cross-axis centre distance. Reads the real
+    /// on-screen geometry (paneFrames), so it follows the split however it's nested.
+    func focusDir(_ d: ArrowDir) {
+        guard let ap = activePane, let cur = paneFrames[ap.id] else { return }
+        let cx = cur.midX, cy = cur.midY
+        var best: PaneNode?
+        var bestScore = CGFloat.infinity
+        eachLeaf(layout) { l in
+            guard l !== ap, l.sessionID != nil, let r = paneFrames[l.id] else { return }
+            let ok: Bool
+            let primary: CGFloat
+            switch d {
+            case .right: ok = r.minX >= cur.maxX - 1; primary = r.minX - cur.maxX
+            case .left:  ok = r.maxX <= cur.minX + 1; primary = cur.minX - r.maxX
+            case .down:  ok = r.minY >= cur.maxY - 1; primary = r.minY - cur.maxY
+            case .up:    ok = r.maxY <= cur.minY + 1; primary = cur.minY - r.maxY
+            }
+            guard ok else { return }
+            let cross = (d == .left || d == .right) ? abs(r.midY - cy) : abs(r.midX - cx)
+            let score = max(0, primary) + cross * 2
+            if score < bestScore { bestScore = score; best = l }
+        }
+        if let best { setActivePane(best) }
+    }
+
+    /// Path from the root to `target`, each hop tagged with whether the child taken was `a`.
+    func pathToLeaf(_ target: PaneNode) -> [(node: PaneNode, isA: Bool)]? {
+        var hit: [(node: PaneNode, isA: Bool)]?
+        func walk(_ n: PaneNode?, _ trail: [(node: PaneNode, isA: Bool)]) {
+            guard let n else { return }
+            if n.isLeaf { if n === target { hit = trail }; return }
+            walk(n.a, trail + [(n, true)])
+            walk(n.b, trail + [(n, false)])
+        }
+        walk(layout, [])
+        return hit
+    }
+
+    /// ⌘⌥⇧+arrow nudges the seam bordering the active pane along that axis — →/↓ grow it, ←/↑
+    /// shrink it. Rewrites the nearest ancestor split's fraction in place (like the 011 drag), so
+    /// live surfaces survive; the 360×240 floor is a hard stop, an over-subscribed split pins.
+    func resizeActive(_ d: ArrowDir) {
+        guard activePane != nil, isSplit else { return }
+        let axis = d.axis
+        guard let ap = activePane, let trail = pathToLeaf(ap) else { return }
+        guard let hit = trail.last(where: { $0.node.dir == axis }) else { return }
+        let node = hit.node
+        guard let box = paneFrames[node.id] else { return }
+        let total = Double(axis == .row ? box.width : box.height)
+        guard total > 0 else { return }
+        var lo = Double(paneMinAlong(node.a!, axis: axis)) / total
+        var hi = 1 - Double(paneMinAlong(node.b!, axis: axis)) / total
+        if lo > hi { let m = (lo + hi) / 2; lo = m; hi = m }
+        let grow = (d == .right || d == .down)
+        let sign: Double = hit.isA ? (grow ? 1 : -1) : (grow ? -1 : 1)
+        node.split = min(hi, max(lo, node.split + sign * 0.06))
+        persistLayout()
+    }
+
+    /// ⌘⇧⏎ zoom: a transient, tmux-style full-screen of the active pane over the remembered split
+    /// (the same stashedSplit mechanism openSession uses, 014) — the split isn't destroyed and
+    /// toggling restores it with the zoomed pane still focused.
+    func toggleZoom() {
+        guard let root = layout else { return }
+        if let stash = stashedSplit {
+            let back = activePane?.sessionID
+            layout = stash
+            stashedSplit = nil
+            if let back, let leaf = leafInTree(layout, session: back) { activePane = leaf }
+            else if let l = layout { activePane = firstLeaf(l) }
+            renderLayout()
+        } else if isSplit, let sid = activePane?.sessionID {
+            stashedSplit = root
+            layout = PaneNode(leafSession: sid)
+            activePane = layout
+            renderLayout()
+        }
+    }
+
+    /// Every session across the tree — the split picker's "pull in an existing session" source.
+    var allSessions: [Session] { workspaces.flatMap { $0.branches.flatMap(\.sessions) } }
+
+    /// The branch a keyboard split lands on when the active pane is a bare setup skeleton (no
+    /// session to read a branch off): the open session's branch, else the first available.
+    func contextBranchForSplit() -> Branch? {
+        if let s = openSession, let b = branch(of: s) { return b }
+        return workspaces.first?.branches.first { !$0.isPending }
+    }
+
+    /// ⌘⇧+arrow / ⌘| / ⌘— open the pick-a-session frame that fills the new pane (007). No split
+    /// from a bare setup skeleton — there's no live pane to subdivide yet.
+    func openSplitPicker(dir: SplitDir, before: Bool) {
+        guard let ap = activePane, ap.sessionID != nil else { return }
+        activeMenu = nil
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        pal.stack = [pal.rootFrame()]
+        pal.push(pal.splitFrame(dir: dir, before: before))
+    }
+
+    /// Subdivide the active pane (or `target`) with `session`, moving it if it's already a pane
+    /// (010's rule). The keyboard create chord and the sidebar-pair gesture both land here.
+    func splitActiveWith(session sessionID: UUID, dir: SplitDir, before: Bool, target: PaneNode? = nil) {
+        let t = target ?? activePane
+        guard let t, t.isLeaf else { return }
+        if let existing = leaf(of: sessionID), existing !== t { removeLeaf(existing) }
+        splitPane(t, session: sessionID, dir: dir, before: before)
+    }
+
+    /// Persistence hook — every layout mutation that doesn't already end in renderLayout still
+    /// needs the branch registry kept in step + saved (014). A no-op until the persistence slice
+    /// wires it; centralised here so resize/drag call one name.
+    func persistLayout() {}
 
     // MARK: Min-pane floor geometry (resize/drop slices clamp against this)
 

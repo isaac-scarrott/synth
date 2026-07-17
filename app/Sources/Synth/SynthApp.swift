@@ -205,6 +205,23 @@ struct RootView: View {
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
 
+    /// ⌘2…⌘9 digit key codes → pane number (US layout number row); nil otherwise.
+    static func splitDigit(_ keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case 18: return 1; case 19: return 2; case 20: return 3; case 21: return 4
+        case 23: return 5; case 22: return 6; case 26: return 7; case 28: return 8; case 25: return 9
+        default: return nil
+        }
+    }
+
+    /// ⌘⌥ h/j/k/l spatial-focus aliases → arrow direction (left/down/up/right).
+    static func splitHJKL(_ key: String?) -> ArrowDir? {
+        switch key {
+        case "h": return .left; case "j": return .down; case "k": return .up; case "l": return .right
+        default:  return nil
+        }
+    }
+
     /// Global keyboard nav — mirrors working.html's document keydown, but defers to
     /// the terminal, text fields, and open sheets so they keep their own keys.
     private func installKeyMonitor() {
@@ -334,6 +351,7 @@ struct RootView: View {
                 return nil
             }
             if event.modifierFlags.contains(.command), key == "1" {
+                store.focusPane(1)   // pane 1 in reading order (a lone pane = the open session)
                 focusContent(store)
                 return nil
             }
@@ -364,6 +382,49 @@ struct RootView: View {
                 Task { await cm.exit() }
                 return nil
             }
+            // ===== Split layout layer (007) — three arrow-families read as one grammar:
+            // ⌘⌥ move · ⌘⌥⇧ resize · ⌘⇧ create; plus ⌘⇧⏎ zoom, ⌘⇧U unsplit, ⌘` cycle, ⌘2…9
+            // focus-pane. Placed before the browser page-verbs so ⌘⌥L (focus-right alias) wins
+            // while a bare ⌘L still reaches the omnibox. Arrow chords are scoped off a focused
+            // text field so native ⌘⇧←/→ caret selection survives (use ⌘| / ⌘— / ⌘K there).
+            if event.modifierFlags.contains(.command) {
+                let shift = event.modifierFlags.contains(.shift)
+                let opt = event.modifierFlags.contains(.option)
+                let inField: Bool = {
+                    guard let fr = event.window?.firstResponder else { return false }
+                    return fr is NSText || fr is NSTextView
+                }()
+                let arrow: ArrowDir? = {
+                    switch event.keyCode {
+                    case 123: return .left;  case 124: return .right
+                    case 125: return .down;  case 126: return .up
+                    default:  return nil
+                    }
+                }()
+                // Zoom ⌘⇧⏎ (⌘⏎ notification-jump stays unmoved, handled far above).
+                if shift, !opt, event.keyCode == 36 || event.keyCode == 76 { store.toggleZoom(); return nil }
+                // Unsplit ⌘⇧U — only when the active session is a member of a split.
+                if shift, !opt, key == "u", let sid = store.activePane?.sessionID, store.inSplit(sid) {
+                    store.unsplitSession(sid); return nil
+                }
+                // Cycle ⌘` next / ⌘⇧` previous (wraps).
+                if !opt, event.keyCode == 50 { store.cyclePane(shift ? -1 : 1); return nil }
+                // Focus pane N ⌘2…⌘9 by reading order (⌘0/⌘1 handled above).
+                if !opt, !shift, let n = Self.splitDigit(event.keyCode), n >= 2 {
+                    store.focusPane(n); focusContent(store); return nil
+                }
+                // Create aliases: ⌘| (⌘⇧\) side-by-side right · ⌘— (⌘⇧-) stacked below.
+                if shift, !opt, event.keyCode == 42 { store.openSplitPicker(dir: .row, before: false); return nil }
+                if shift, !opt, event.keyCode == 27 { store.openSplitPicker(dir: .col, before: false); return nil }
+                if let a = arrow, !inField {
+                    if opt, shift { store.resizeActive(a); return nil }                        // ⌘⌥⇧ resize
+                    if opt        { store.focusDir(a); return nil }                            // ⌘⌥ focus
+                    if shift      { store.openSplitPicker(dir: a.axis, before: a.before); return nil } // ⌘⇧ create
+                }
+                // ⌘⌥ h/j/k/l spatial focus (vim aliases; skip in a text field).
+                if opt, !shift, !inField, let a = Self.splitHJKL(key) { store.focusDir(a); return nil }
+            }
+
             // An open browser session claims the standard page verbs window-wide: ⌘L
             // address, ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each presses the
             // visible toolbar control, so disabled states (home page, empty history)

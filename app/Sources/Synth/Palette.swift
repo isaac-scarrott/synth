@@ -731,6 +731,46 @@ struct PaletteFrame {
         }
     }
 
+    /// The pick-a-session frame that fills a keyboard-created pane (007) — the keyboard mirror of
+    /// dragging a session into a split (010). New sessions up top, then every existing session not
+    /// already a pane in this layout; an already-open session *moves* rather than duplicating. A
+    /// split stays within one branch (003), so creates land on the active pane's branch. `target`
+    /// is captured now — the pane the split subdivides — so an async pick still lands in the right place.
+    func splitFrame(dir: SplitDir, before: Bool) -> PaletteFrame {
+        let target = store.activePane
+        let anchor = target?.sessionID.flatMap { store.session($0) }
+        let branch = anchor.flatMap { store.branch(of: $0) } ?? store.contextBranchForSplit()
+        let word = dir == .row ? (before ? "left" : "right") : (before ? "up" : "down")
+        return PaletteFrame(crumb: "Split \(word)", placeholder: "Split — pick a session…") { [self] _ in
+            var items: [PaletteItem] = []
+            if let br = branch {
+                items.append(PaletteItem(icon: .session(.terminal), label: "New terminal", sec: "act",
+                                         ctx: br.name, kbd: ["⌘", "T"],
+                                         enter: { self.runAndClose { self.splitNew(.terminal, in: br, dir: dir, before: before, target: target) } }))
+                for agent in AgentRegistry.installed {
+                    items.append(PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)",
+                                             sec: "act", ctx: br.name,
+                                             enter: { self.runAndClose { self.splitNew(.agent(agent.id), in: br, dir: dir, before: before, target: target) } }))
+                }
+                items.append(PaletteItem(icon: .session(.browser), label: "New browser", sec: "act", ctx: br.name,
+                                         enter: { self.runAndClose { self.splitNew(.browser, in: br, dir: dir, before: before, target: target) } }))
+            }
+            for s in store.allSessions where store.leaf(of: s.id) == nil {
+                let b = store.branch(of: s)
+                items.append(PaletteItem(icon: .session(s.kind), label: s.title, sec: "list",
+                                         ctx: b?.name, meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
+                                         enter: { self.runAndClose { self.store.splitActiveWith(session: s.id, dir: dir, before: before, target: target) } }))
+            }
+            return items
+        }
+    }
+
+    /// "New …" in the split frame: spawn the session unopened, then bind it into the fresh pane.
+    private func splitNew(_ kind: SessionKind, in branch: Branch, dir: SplitDir, before: Bool, target: PaneNode?) {
+        guard let s = store.newForSplit(kind, in: branch) else { return }
+        store.splitActiveWith(session: s.id, dir: dir, before: before, target: target)
+    }
+
     /// New branch via ⌘K: empty until you type, then fuzzy-match every local and remote
     /// branch (top 5, already-checked-out hidden, local/remote dedup'd), or cut a new branch
     /// off the typed name. Each pick checks the branch out into its own worktree (ADR-0007).

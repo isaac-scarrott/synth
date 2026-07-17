@@ -69,6 +69,15 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["D"], label: "Close · remove selected"),
             Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder down · up"),
         ]),
+        ShortcutGroup(name: "Split layout", rows: [
+            Shortcut(keys: ["⌘", "⇧", "→"], label: "Split toward arrow", alt: ["⌘", "|"]),
+            Shortcut(keys: ["⌘", "⌥", "→"], label: "Focus pane (spatial)", alt: ["⌘", "⌥", "L"]),
+            Shortcut(keys: ["⌘", "1"], label: "Focus pane N · sidebar", alt: ["⌘", "0"]),
+            Shortcut(keys: ["⌘", "`"], label: "Cycle panes"),
+            Shortcut(keys: ["⌘", "⌥", "⇧", "→"], label: "Resize active pane"),
+            Shortcut(keys: ["⌘", "⇧", "⏎"], label: "Zoom / unzoom pane"),
+            Shortcut(keys: ["⌘", "⇧", "U"], label: "Unsplit (keep running)"),
+        ]),
         ShortcutGroup(name: "Browser", rows: [
             Shortcut(keys: ["⌘", "L"], label: "Go to address"),
             Shortcut(keys: ["⌘", "R"], label: "Reload page"),

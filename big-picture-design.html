@@ -2243,6 +2243,19 @@
   // finished checkout resolves in place only while this still points at it (last-intent-wins).
   let setupEl = null;
 
+  // ===== Per-branch layout ownership, persistence & sticky nav (014 / 005) =====
+  // Each branch owns exactly one remembered layout. Switching branch stashes the one you leave and
+  // restores the target's (workspace-switch reduces to branch-switch — the workspace owns none).
+  // `stashedSplit` holds the durable split hidden behind a *transient* full-screen: full-screening a
+  // non-member session is a tmux-style view that leaves the split remembered underneath (002/005),
+  // and clicking any member returns to it. Persisted to localStorage so the arrangement survives
+  // reload; genuine on-disk serialization is a spec point the handoff brief (008) carries.
+  const branchLayouts = new Map();   // branchKey -> that branch's remembered layout tree
+  let currentBranchKey = null;       // the branch whose layout is on screen
+  let stashedSplit = null;           // the durable split held behind a transient full-screen
+  const LS_LAYOUTS = 'synth-branch-layouts';
+  const durableLayout = () => stashedSplit || layout;   // the remembered layout, ignoring full-screen
+
   function outerRepoOf(el) {
     let repo = el.closest('[data-repo]');
     while (repo) { const outer = repo.parentElement && repo.parentElement.closest('[data-repo]'); if (!outer) break; repo = outer; }
@@ -2262,6 +2275,9 @@
     const n = g && g.querySelector('.branch__name');
     return n ? n.textContent.trim() : 'main';
   }
+  // A branch's persistence identity — the sole scope unit (005). Workspace + branch name, so two
+  // branches sharing a name across workspaces stay distinct; NUL-joined to never collide on text.
+  function branchKeyOf(el) { return workspaceNameOf(el) + '\u0000' + branchNameOf(el); }
   // The header PR chip mirrors the open branch's sidebar PR span: same number, same state
   // colour, clickable through to GitHub in the default browser. Empty when the branch has none.
   function branchPRChipHTML(el) {
@@ -2287,6 +2303,8 @@
   const setupLeaf = (groupRow) => ({ leaf: true, id: ++paneSeq, session: null, setup: groupRow, el: null });
   function eachLeaf(node, fn) { if (!node) return; if (node.leaf) fn(node); else { eachLeaf(node.a, fn); eachLeaf(node.b, fn); } }
   function leafBySession(session) { let hit = null; eachLeaf(layout, (l) => { if (l.session === session) hit = l; }); return hit; }
+  function leafInTree(tree, session) { let hit = null; eachLeaf(tree, (l) => { if (l.session === session) hit = l; }); return hit; }
+  const isSplit = (tree) => !!(tree && !tree.leaf);
   const firstLeaf = (node) => (node.leaf ? node : firstLeaf(node.a));
   const activePaneEl = () => (activePane && activePane.el) || null;
 
@@ -2340,7 +2358,9 @@
   // The sidebar's live echo of an on-screen split (012 / 003): when the layout holds more than
   // one session pane, the member rows pull together into a bare horizontal band of tiles — in
   // reading order (the tree flattened a-before-b), membership only, never geometry. One pane
-  // (today's degenerate case) leaves every row full-width. Rebuilt from `layout` on every render.
+  // (today's degenerate case) leaves every row full-width. Rebuilt from the branch's *durable*
+  // layout on every render, so the band stays put behind a transient full-screen (014) — a visible
+  // "the split is still here", and any member tile clicks straight back into it.
   function renderSidebarEcho() {
     // tear down any prior band — return its tiles to full-width rows, in place
     nav.querySelectorAll('.session-group').forEach((g) => {
@@ -2352,7 +2372,7 @@
       g.remove();
     });
     const members = [];
-    eachLeaf(layout, (l) => { if (l.session) members.push(l.session); });
+    eachLeaf(durableLayout(), (l) => { if (l.session) members.push(l.session); });
     if (members.length < 2) return;
     const band = document.createElement('div');
     band.className = 'session-group';
@@ -2376,6 +2396,7 @@
   // way a split is born; 009 exercises it through SynthLayout (below) to prove the spine.
   function splitPane(targetLeaf, session, dir, before) {
     if (!targetLeaf || !session) return;
+    stashedSplit = null;   // deliberately building a split commits the current view as durable (014)
     const incoming = leafNode(session);
     const kept = leafNode(targetLeaf.session);
     kept.setup = targetLeaf.setup;
@@ -2393,6 +2414,7 @@
   // the incoming session the other. Rim-drop (010) drives this; splitPane handles per-pane edges.
   function splitRoot(session, dir, before) {
     if (!session || !layout) return;
+    stashedSplit = null;   // commits the current view as durable before wrapping it (014)
     const incoming = leafNode(session);
     const kept = layout;
     layout = { leaf: false, dir: dir === 'col' ? 'col' : 'row', split: 0.5,
@@ -2430,13 +2452,35 @@
     renderLayout();
   }
 
+  // Take-me-to-it (002), now branch-aware and sticky (005/014):
+  //  • Different branch → stash the branch you leave, restore the target's remembered layout, then
+  //    apply the rules below within it (workspace-switch reduces to this — the workspace owns none).
+  //  • Target branch has a split, session is a member → return to the split, focus that pane.
+  //  • Target branch has a split, session is NOT a member → transient full-screen over the split
+  //    (the split stays remembered underneath; a later member click returns to it).
+  //  • Target branch has no split → the session is the single pane (degenerate one-leaf case).
   function openSession(el) {
     if (!el) return;
     app.classList.remove('settings');   // jumping to a session leaves settings mode
     setupEl = null;                     // opening a real session revokes any armed setup-resolve
-    const existing = leafBySession(el);
-    if (existing) activePane = existing;                  // already up → take me to it (002)
-    else { layout = leafNode(el); activePane = layout; }  // else it becomes the (single) pane
+    const bk = branchKeyOf(el);
+    if (bk !== currentBranchKey) {       // branch switch: stash the one we leave, load the target's
+      if (currentBranchKey != null) branchLayouts.set(currentBranchKey, durableLayout());
+      currentBranchKey = bk;
+      stashedSplit = null;
+      layout = branchLayouts.get(bk) || null;
+    }
+    const durable = durableLayout();
+    if (isSplit(durable)) {
+      const member = leafInTree(durable, el);
+      if (member) { layout = durable; stashedSplit = null; activePane = member; }   // back to the split
+      else { if (!stashedSplit) stashedSplit = layout; layout = leafNode(el); activePane = layout; } // full-screen
+    } else {
+      stashedSplit = null;
+      const existing = leafInTree(layout, el);
+      if (existing) activePane = existing;                  // already the single pane → take me to it
+      else { layout = leafNode(el); activePane = layout; }  // else it becomes the (single) pane
+    }
     renderLayout();
   }
 
@@ -2446,6 +2490,11 @@
   // finished checkout only resolves in place while this still points here.
   function openWorktreeSetup(groupRow) {
     app.classList.remove('settings');
+    // the setup skeleton is a transient, branchless view — stash the branch we leave so its
+    // remembered layout survives, and don't let the skeleton clobber any branch's entry (014)
+    if (currentBranchKey != null) branchLayouts.set(currentBranchKey, durableLayout());
+    currentBranchKey = null;
+    stashedSplit = null;
     setupEl = groupRow;
     layout = setupLeaf(groupRow);
     activePane = layout;
@@ -3122,19 +3171,98 @@
     });
   }
 
+  // ---- Persistence (014) — simulate on-disk per-branch layouts via localStorage (005) ----
+  // A session's stable identity across reload: branch + name (+ occurrence for the rare name clash).
+  // The static sidebar rebuilds identically on reload, so this key resolves back to the same row;
+  // a session that's since vanished (runtime-spawned, closed, renamed) simply won't resolve, which
+  // is exactly the missing-session collapse path (005 / 004 §2).
+  function sessionKey(el) {
+    if (!el || !el.matches('[data-session]')) return null;
+    const repo = el.closest('[data-repo]');
+    if (!repo) return null;
+    const nameOf = (s) => { const n = s.querySelector('.session__name'); return n ? n.textContent.trim() : ''; };
+    const nm = nameOf(el);
+    const same = [...repo.querySelectorAll('[data-session]')].filter((s) => nameOf(s) === nm);
+    return branchKeyOf(el) + '\u0000' + nm + '#' + Math.max(0, same.indexOf(el));
+  }
+  const keyToEl = new Map();   // reverse index, built once on hydrate
+  function buildKeyIndex() {
+    keyToEl.clear();
+    nav.querySelectorAll('[data-session]').forEach((el) => { const k = sessionKey(el); if (k && !keyToEl.has(k)) keyToEl.set(k, el); });
+  }
+  // Tree ⇄ JSON. Leaves serialize to a session key; a setup skeleton or a now-detached session
+  // serializes to null and the split above it collapses — same reflow a live close takes (001).
+  function layoutToJSON(tree) {
+    if (!tree) return null;
+    if (tree.leaf) {
+      if (!tree.session || !document.contains(tree.session)) return null;
+      const k = sessionKey(tree.session);
+      return k ? { s: k } : null;
+    }
+    const a = layoutToJSON(tree.a), b = layoutToJSON(tree.b);
+    if (a && b) return { d: tree.dir, f: tree.split, a, b };
+    return a || b;   // a child dropped out → collapse to the survivor
+  }
+  function layoutFromJSON(j) {
+    if (!j) return null;
+    if (j.s != null) { const el = keyToEl.get(j.s); return el ? leafNode(el) : null; }   // missing → collapse
+    const a = layoutFromJSON(j.a), b = layoutFromJSON(j.b);
+    if (a && b) return { leaf: false, dir: j.d, split: j.f, a, b };
+    return a || b;
+  }
+  // Serialize every branch's durable layout (the current branch's is kept fresh by renderLayout).
+  function persist() {
+    try {
+      const branches = {};
+      branchLayouts.forEach((tree, bk) => { const j = layoutToJSON(tree); if (j) branches[bk] = j; });
+      localStorage.setItem(LS_LAYOUTS, JSON.stringify({ v: 1, cur: currentBranchKey, branches }));
+    } catch (e) {}
+  }
+  // Keep the branch registry in step with the on-screen layout, then persist — the one choke point
+  // every mutation flows through (all layout ops end in renderLayout). A lone setup skeleton is
+  // branchless and transient, so it never overwrites a real branch entry.
+  function syncBranchLayout() {
+    if (currentBranchKey == null) { persist(); return; }
+    const d = durableLayout();
+    if (d && d.leaf && d.setup) { persist(); return; }
+    if (d) branchLayouts.set(currentBranchKey, d);
+    else branchLayouts.delete(currentBranchKey);
+    persist();
+  }
+  // Rebuild the branch registry from localStorage and restore the branch that was on screen. Returns
+  // true if it painted a layout (so boot skips its default open). Missing sessions collapse (005).
+  function hydrateLayouts() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(LS_LAYOUTS) || 'null'); } catch (e) {}
+    if (!saved || !saved.branches) return false;
+    buildKeyIndex();
+    Object.keys(saved.branches).forEach((bk) => { const t = layoutFromJSON(saved.branches[bk]); if (t) branchLayouts.set(bk, t); });
+    const cur = saved.cur;
+    if (cur && branchLayouts.has(cur)) {
+      currentBranchKey = cur;
+      stashedSplit = null;
+      layout = branchLayouts.get(cur);
+      activePane = firstLeaf(layout);
+      renderLayout();
+      return true;
+    }
+    return false;
+  }
+
   // Render the whole pane tree into .content. The single-pane case is one leaf → identical
   // to the old renderOpen output. Callers mutate layout/activePane, then call this.
   function renderLayout() {
     stopStream();
-    if (!layout) { renderEmpty(); return; }
+    if (!layout) { renderEmpty(); syncBranchLayout(); return; }
     pruneLayout();
-    if (!layout) { renderEmpty(); return; }
+    if (!layout) { renderEmpty(); syncBranchLayout(); return; }
     content.innerHTML = '';
     content.appendChild(renderNode(layout));
     syncActive();
     applyActiveRing();
     renderSidebarEcho();
     wirePanes();
+    syncBranchLayout();   // 014: keep the branch's remembered layout in step + persist
   }
 
   // running terminals feel alive: a fresh log line trickles into each running pane every
@@ -5504,8 +5632,9 @@
     if (g && app.classList.contains('settings')) { settingsScope = 'global'; renderSettings(); }
   });
 
-  // Open a session by default so the workspace feels live on load (the Claude Code hero).
-  openSession(nav.querySelector('.session[data-type="ai"]') || nav.querySelector('.session'));
+  // Restore each branch's remembered layout from the last session (014); if nothing was saved,
+  // open a session by default so the workspace feels live on load (the Claude Code hero).
+  if (!hydrateLayouts()) openSession(nav.querySelector('.session[data-type="ai"]') || nav.querySelector('.session'));
 
   // Spine inspection handle. Until the split gestures land (010 drag, 012 sidebar-create),
   // this is the only way to build a multi-pane tree — it drives the same splitPane the
@@ -5514,6 +5643,11 @@
   window.SynthLayout = {
     get tree() { return layout; },
     get active() { return activePane; },
+    get branch() { return currentBranchKey; },        // which branch's layout is on screen (014)
+    get fullscreen() { return !!stashedSplit; },       // true while a split is stashed behind a full-screen
+    get durable() { return durableLayout(); },         // the branch's remembered layout, ignoring full-screen
+    branches() { return [...branchLayouts.keys()]; },
+    stored() { try { return JSON.parse(localStorage.getItem(LS_LAYOUTS) || 'null'); } catch (e) { return null; } },
     leaves() { const a = []; eachLeaf(layout, (l) => a.push(l)); return a; },
     split(sel, dir = 'row', before = false) {
       const s = typeof sel === 'string' ? nav.querySelector(sel) : sel;
@@ -5596,6 +5730,7 @@
         seam.removeEventListener('pointermove', onMove);
         seam.removeEventListener('pointerup', onUp);
         try { seam.releasePointerCapture(e.pointerId); } catch (err) {}
+        persist();   // 014: the new split fraction is part of the branch's remembered layout
       };
       seam.addEventListener('pointermove', onMove);
       seam.addEventListener('pointerup', onUp);

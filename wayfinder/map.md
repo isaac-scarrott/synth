@@ -123,6 +123,18 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   is the fast alternative: a member dragged to the plain sidebar (`start.wasMember` in `onUp`) leaves
   the split. **Closing a live session** already collapsed+reflowed via `removeUnit → pruneLayout`
   (009/005), no guard — left as-is. Verified in a real browser (both files, diff invariant green).
+- [Per-branch persistence & sticky navigation](tickets/014-branch-persistence-and-sticky-nav.md) — a
+  `branchLayouts` Map keys one remembered layout per branch by `workspace‹NUL›branch`, so
+  **workspace-switch reduces to branch-switch** for free. `openSession` is now branch-aware: switching
+  branch stashes the layout you leave and restores the target's; within a branch a **member click
+  returns to the split**, a **non-member click full-screens transiently** over it (`stashedSplit`
+  holds the durable split; split-creating ops commit the full-screen as the new durable). The sidebar
+  echo mirrors `durableLayout()` so the band stays put behind a full-screen. `renderLayout` is the
+  single persistence choke point (`syncBranchLayout` → `localStorage` key `synth-branch-layouts`), so
+  every split/drag/unsplit/resize saves; `hydrateLayouts()` restores at boot. A leaf whose key no
+  longer resolves on restore takes the **collapse-&-reflow** path (005/004 §2, no empty pane). Genuine
+  on-disk serialization stays an **008 handoff** spec point. Verified in a real browser (both files,
+  diff invariant green).
 
 ## Not yet specified
 

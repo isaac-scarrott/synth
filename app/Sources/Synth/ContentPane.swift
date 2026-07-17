@@ -98,13 +98,13 @@ private struct SplitContainer: View {
             if isRow {
                 HStack(spacing: 0) {
                     PaneTreeView(node: node.a!).frame(width: aLen)
-                    Rectangle().fill(Theme.border).frame(width: Self.seam)
+                    PaneSeam(node: node, total: total)
                     PaneTreeView(node: node.b!).frame(width: bLen)
                 }
             } else {
                 VStack(spacing: 0) {
                     PaneTreeView(node: node.a!).frame(height: aLen)
-                    Rectangle().fill(Theme.border).frame(height: Self.seam)
+                    PaneSeam(node: node, total: total)
                     PaneTreeView(node: node.b!).frame(height: bLen)
                 }
             }
@@ -114,6 +114,57 @@ private struct SplitContainer: View {
             Color.clear.preference(key: PaneFramesKey.self,
                                    value: [node.id: g.frame(in: .named(ContentPane.contentSpace))])
         })
+    }
+}
+
+/// working.html `.pane-seam` (011): the draggable inter-pane divider — reuses the sidebar
+/// resize-handle idiom (1px hairline + a widened invisible grab band + a brighter 1.5px line on
+/// hover / while dragging). Drag-only, no double-click reset. The drag rewrites `node.split` in
+/// place — SwiftUI just resizes the sibling views, never re-mounting them, so live surfaces
+/// survive — and clamps to the 360×240 floor (paneMinAlong); an over-subscribed split pins.
+private struct PaneSeam: View {
+    @Environment(AppStore.self) private var store
+    let node: PaneNode
+    let total: CGFloat
+    @State private var hovering = false
+    @State private var dragging = false
+    @State private var startSplit: Double?
+
+    private var isRow: Bool { node.dir == .row }
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Theme.border)
+            Rectangle().fill(Theme.input)
+                .frame(width: isRow ? 1.5 : nil, height: isRow ? nil : 1.5)
+                .opacity(dragging ? 0.7 : (hovering ? 0.5 : 0))
+                .animation(.easeInOut(duration: 0.14), value: hovering || dragging)
+        }
+        .frame(width: isRow ? 1 : nil, height: isRow ? nil : 1)
+        // A 9px invisible grab band centred on the 1px line (working.html's ::before).
+        .contentShape(Rectangle().inset(by: -4))
+        .onHover { h in
+            hovering = h
+            if h { (isRow ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() }
+            else if !dragging { NSCursor.pop() }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named(ContentPane.contentSpace))
+                .onChanged { v in
+                    if startSplit == nil { startSplit = node.split; dragging = true }
+                    guard total > 0, let start = startSplit, let a = node.a, let b = node.b,
+                          let axis = node.dir else { return }
+                    let moved = Double(isRow ? v.translation.width : v.translation.height) / Double(total)
+                    let lo = Double(store.paneMinAlong(a, axis: axis)) / Double(total)
+                    let hi = 1 - Double(store.paneMinAlong(b, axis: axis)) / Double(total)
+                    if lo <= hi { node.split = min(hi, max(lo, start + moved)) }
+                }
+                .onEnded { _ in
+                    startSplit = nil; dragging = false
+                    if !hovering { NSCursor.pop() }
+                    store.persistLayout()
+                }
+        )
     }
 }
 

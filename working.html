@@ -342,6 +342,7 @@
     flex-direction: column;
     min-height: 0;
     animation: pane-in 220ms var(--ease-out);
+    container-type: inline-size;   /* each pane queries its own width, not the viewport's (015) */
   }
   @keyframes pane-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
@@ -371,11 +372,15 @@
   .content.pane-resizing--col { cursor: row-resize; }
   .pane-seam--active::after { opacity: 0.7 !important; }
   /* Active pane — the copper ring (004 §4). Only meaningful with a split open, so a
-     single pane (today's degenerate case) stays ringless; the overlay never eats clicks. */
-  .split .pane--active::after {
+     single pane (today's degenerate case) stays ringless; the overlay never eats clicks.
+     The ring lives on every split pane at zero alpha and only the active one lights it, so a
+     focus change cross-fades the copper from the old pane to the new one instead of snapping (015). */
+  .split .pane::after {
     content: ''; position: absolute; inset: 0; z-index: 5; pointer-events: none;
-    box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.85);
+    box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0);
+    transition: box-shadow 150ms var(--ease-out);
   }
+  .split .pane--active::after { box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.85); }
 
   /* ---- Drop-zones (content drag-to-split — 010) ---- */
   /* One reusable highlight painted over the region the dropped session will occupy as it's
@@ -385,11 +390,39 @@
   .dz {
     position: fixed; z-index: 40; pointer-events: none; border-radius: 8px; box-sizing: border-box;
     transition: left 80ms var(--ease-out), top 80ms var(--ease-out), width 80ms var(--ease-out), height 80ms var(--ease-out);
+    animation: dz-in 110ms var(--ease-out);   /* fade in on appear so it never pops (015); geometry still animates as it moves */
   }
+  @keyframes dz-in { from { opacity: 0; } to { opacity: 1; } }
   .dz--split   { background: rgba(var(--accent-rgb),0.16); border: 2px solid rgba(var(--accent-rgb),0.9); }
   .dz--replace { background: rgba(var(--input-rgb),0.14);  border: 2px dashed rgba(var(--input-rgb),0.95); }
   .dz--rim     { background: rgba(var(--input-rgb),0.09);  border: 2px dashed var(--text-muted); }
   .dz--refuse  { background: rgba(128,128,128,0.13);       border: 2px solid var(--text-faint); }
+
+  /* ---- Narrow-pane degradation (015) ----
+     Each .pane is a query container, so its header and session surface tighten against its OWN
+     width as the split narrows toward the 360×240 floor — every pane independent of its siblings.
+     Header order (004 §1): the branch crumb drops first, then the PR chip sheds its number for the
+     bare state glyph, then the title tightens — the bar itself never collapses. */
+  @container (max-width: 520px) {
+    .pane__crumb, .crumb-copy { display: none; }
+  }
+  @container (max-width: 420px) {
+    .prchip { padding: 3px 7px; gap: 0; }
+    .prchip span { display: none; }               /* number label → bare state glyph */
+    /* session surfaces give back their generous padding so content stays legible at the floor.
+       The terminal already reflows (pre-wrap + word-break); this only reclaims the frame margins. */
+    .term { margin: 8px; padding: 10px 12px; }
+    .browser { margin: 8px; }
+    .browser__bar { gap: 5px; padding: 6px 7px; }
+    .browser__view { padding: 18px 16px; }
+    .browser__home { padding: 34px 18px 20px; }
+    .chat__scroll { padding: 14px 15px; }
+    .chat__composer { margin: 0 10px 10px; }
+  }
+  @container (max-width: 380px) {
+    .pane__head { padding: 0 12px; gap: 8px; }
+    .pane__title { gap: 6px; font-size: 12.5px; letter-spacing: -0.015em; }
+  }
 
   .pane__head {
     flex-shrink: 0;
@@ -404,13 +437,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;              /* shrink instead of forcing the bar wider */
+    overflow: hidden;
     font-size: 13px;
     font-weight: 600;
     letter-spacing: -0.01em;
     color: var(--text);
   }
-  .pane__title .session__icon { width: 15px; height: 15px; }
+  .pane__title .session__icon { flex-shrink: 0; width: 15px; height: 15px; }
   .pane__title .session__icon svg { width: 15px; height: 15px; }
+  /* the name truncates rather than wrapping, so the header stays a single bar at any width (015) */
+  .pane__title > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pane__crumb {
     font-family: var(--mono);
     font-size: 11px;

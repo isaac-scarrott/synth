@@ -135,6 +135,16 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   longer resolves on restore takes the **collapse-&-reflow** path (005/004 §2, no empty pane). Genuine
   on-disk serialization stays an **008 handoff** spec point. Verified in a real browser (both files,
   diff invariant green).
+- [Narrow-pane behaviour & micro-interaction polish](tickets/015-narrow-pane-and-micro-interactions.md) —
+  the finishing pass. Every `.pane` is a `container-type: inline-size` query container, so its header
+  degrades against its **own** width (004 §1 order): crumb+copy drop `≤520px`, PR chip → bare state
+  glyph `≤420px`, title tightens `≤380px` — the bar never collapses, the name ellipsis-truncates
+  instead of wrapping (a base fix, since a wrapped title *is* the bar growing). At `≤420px` the
+  terminal/browser/chat surfaces reclaim their frame padding so content stays legible at the 360×240
+  floor (terminal already reflows via `pre-wrap`). Micro-interactions: the active copper ring now lives
+  at zero-alpha on every split pane so focus changes **cross-fade** it (`transition: box-shadow 150ms`);
+  drop-zones **fade in** on appear (`dz-in` 110ms) while geometry still morphs them; the 011 seam reveal
+  (140ms) was already within language. Verified 995/497/248/124px, both files, diff invariant green.
 
 ## Not yet specified
 

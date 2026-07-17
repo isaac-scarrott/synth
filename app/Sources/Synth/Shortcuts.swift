@@ -74,6 +74,8 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "R"], label: "Reload page"),
             Shortcut(keys: ["⌘", "["], label: "Back"),
             Shortcut(keys: ["⌘", "]"], label: "Forward"),
+            Shortcut(keys: ["⌘", "+"], label: "Zoom in", alt: ["⌘", "="]),
+            Shortcut(keys: ["⌘", "−"], label: "Zoom out"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "Toggle DevTools"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Toggle device mode"),
         ]),

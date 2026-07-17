@@ -309,6 +309,15 @@ struct PaletteFrame {
                         label: live?.deviceModeOn == true ? "Exit device mode" : "Enter device mode",
                         kbd: ["⌘", "⇧", "M"], disabled: home,
                         enter: drive { if !$0.isHome { $0.toggleDeviceMode() } }),
+            PaletteItem(icon: .phosphor(Phosphor.plus), label: "Zoom in",
+                        kbd: ["⌘", "+"], disabled: home,
+                        enter: drive { if !$0.isHome { $0.zoomIn() } }),
+            PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Zoom out",
+                        kbd: ["⌘", "−"], disabled: home,
+                        enter: drive { if !$0.isHome { $0.zoomOut() } }),
+            PaletteItem(icon: .phosphor(Phosphor.search), label: "Reset zoom",
+                        disabled: home || !(live?.isZoomed ?? false),
+                        enter: drive { $0.resetZoom() }),
         ]
     }
 

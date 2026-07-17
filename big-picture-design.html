@@ -469,6 +469,9 @@
   .browser__omni { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); background: var(--raised); border: 0.5px solid var(--border); border-radius: 8px; padding: 5px 11px; cursor: text; text-align: left; transition: border-color 120ms ease, box-shadow 120ms ease; }
   .browser__omni:hover { border-color: var(--border-strong); }
   .browser__omni.is-editing { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
+  .browser__zoom { flex-shrink: 0; display: none; align-items: center; height: 26px; padding: 0 8px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--raised); color: var(--text-muted); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
+  .browser__zoom.is-shown { display: inline-flex; }
+  .browser__zoom:hover { background: var(--hover); color: var(--ink); border-color: var(--border-strong); }
   .browser__lock { flex-shrink: 0; display: flex; color: var(--text-faint); }
   .browser__lock svg { width: 12px; height: 12px; }
   .browser__url { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2539,6 +2542,7 @@
       </div>
       <button class="browser__omni" data-omni><span class="browser__lock">${ICON_NAV_LOCK}</span><span class="browser__url">${esc(url)}</span></button>
       <span class="browser__target" data-target hidden></span>
+      <button class="browser__zoom" data-zoom aria-label="Reset zoom">100%</button>
       <button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button>
       <button class="browser__btn" data-nav="device" aria-label="Device mode">${ICON_DEVICE}</button>
       <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
@@ -2574,6 +2578,9 @@
   // and the omnibox reopens the same "go to" surface floated over a loaded page.
   // The open browser pane's comment-mode controls, for ⌘K ("Enter/Exit comment mode").
   let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {} };
+  // The open browser pane's zoom controls, for ⌘+/⌘− and the ⌘K page verbs. Zoom steps a
+  // fixed ladder; the omnibox %-badge appears off 100% and clicks back to it.
+  let browserZoomAPI = { in: () => {}, out: () => {}, reset: () => {}, canReset: () => false };
   function wireBrowser(openEl) {
     const host = content.querySelector('.browser'); if (!host) return;
     const titleEl = content.querySelector('.pane__title span:last-child');
@@ -2582,6 +2589,8 @@
     let devOpen = false, devTab = 'Elements';
     let commentOn = false;
     let deviceOn = false, deviceId = DEVICES[1].id, deviceLand = false, deviceRO = null;
+    const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
+    let zoom = 100;
 
     function spin() {
       const r = host.querySelector('[data-nav="reload"]'); if (!r || reduceMotion) return;
@@ -2614,8 +2623,11 @@
       const ext = host.querySelector('[data-nav="external"]');
       if (ext) { ext.disabled = idx < 0; ext.onclick = () => { if (idx >= 0) window.open(hist[idx], '_blank', 'noopener'); }; }
       if (omni) omni.onclick = openOmni;
+      const zm = host.querySelector('[data-zoom]');
+      if (zm) zm.onclick = resetZoom;
       updateCommentUI();
       updateDeviceUI();
+      applyZoom();
     }
     // Comment mode (ADR-0011 stages three/four). The chip names the delivery target up front:
     // the owning Claude session, or the fresh one this comment will spawn (which then adopts
@@ -2678,6 +2690,21 @@
       box.style.width = Math.round(frame.offsetWidth * s) + 'px';
       box.style.height = Math.round(frame.offsetHeight * s) + 'px';
     }
+    // Page zoom (⌘+/⌘−): steps a fixed ladder, re-applied after every paint so it rides
+    // through navigation and reload — real per-tab zoom. The badge shows only off 100%.
+    function applyZoom() {
+      const view = host.querySelector('.browser__view');
+      if (view) view.style.zoom = zoom / 100;
+      const badge = host.querySelector('[data-zoom]');
+      if (badge) { badge.textContent = zoom + '%'; badge.classList.toggle('is-shown', zoom !== 100); }
+    }
+    function zoomStep(dir) {
+      if (idx < 0) return;                       // the "go to" home has no page to zoom
+      const i = Math.max(0, ZOOM_STEPS.indexOf(zoom));
+      zoom = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))];
+      applyZoom();
+    }
+    function resetZoom() { zoom = 100; applyZoom(); }
     function closeCard() { const c = host.querySelector('.browser__ccard'); if (c) c.remove(); }
     function openCard(e, view) {
       closeCard();
@@ -2771,6 +2798,7 @@
       openCard(e, view);
     });
     browserCommentAPI = { isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI };
+    browserZoomAPI = { in: () => zoomStep(1), out: () => zoomStep(-1), reset: resetZoom, canReset: () => zoom !== 100 };
 
     if (host.hasAttribute('data-home')) {
       bindBar();
@@ -3091,6 +3119,8 @@
       if (k === ']') { e.preventDefault(); bpress('[data-nav="fwd"]'); return; }
       if (e.altKey && e.code === 'KeyI') { e.preventDefault(); bpress('[data-nav="devtools"]'); return; }
       if (e.shiftKey && e.code === 'KeyM') { e.preventDefault(); bpress('[data-nav="device"]'); return; }
+      if (k === '=' || k === '+') { e.preventDefault(); browserZoomAPI.in(); return; }
+      if (k === '-' || k === '_') { e.preventDefault(); browserZoomAPI.out(); return; }
     }
     // while focus lives in the content pane (composer, terminal), nav keys stay there
     if (e.target instanceof Element && e.target.closest('.content')) return;
@@ -3836,6 +3866,8 @@
       [['⌘', 'R'], 'Reload page'],
       [['⌘', '['], 'Back'],
       [['⌘', ']'], 'Forward'],
+      [['⌘', '+'], 'Zoom in', ['⌘', '=']],
+      [['⌘', '−'], 'Zoom out'],
       [['⌥', '⌘', 'I'], 'Toggle DevTools'],
       [['⌘', '⇧', 'M'], 'Toggle device mode'],
     ]],
@@ -4135,6 +4167,9 @@
       { icon: ICON_EXTERNAL,   label: 'Open in default browser', disabled: home, enter: () => runAndClose(() => { if (url) window.open(browserNorm(url), '_blank'); }) },
       { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-devtools]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
       { icon: ICON_DEVICE,     label: (live && live.querySelector('[data-nav="device"].is-on')) ? 'Exit device mode' : 'Enter device mode', kbd: ['⌘', '⇧', 'M'], disabled: home, enter: () => press('[data-nav="device"]') },
+      { icon: ICON_PLUS,       label: 'Zoom in',  kbd: ['⌘', '+'], disabled: home, enter: () => drive(() => browserZoomAPI.in()) },
+      { icon: ICON_MINUS,      label: 'Zoom out', kbd: ['⌘', '−'], disabled: home, enter: () => drive(() => browserZoomAPI.out()) },
+      { icon: ICON_SEARCH,     label: 'Reset zoom', disabled: home || !(live && live.querySelector('[data-zoom].is-shown')), enter: () => drive(() => browserZoomAPI.reset()) },
     ];
   }
   function contextActions() {

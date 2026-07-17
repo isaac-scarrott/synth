@@ -23,6 +23,9 @@ protocol BrowserEngine: AnyObject {
     func goBack()
     func goForward()
     func reload()
+    /// Sets page zoom as a factor (1.0 = 100%); the engine maps it to its native scale
+    /// (CEF's logarithmic zoom level, WebKit's linear pageZoom).
+    func setZoom(_ factor: Double)
     func showDevTools()
     func closeDevTools()
     /// Read at toggle time, not cached — the user can close the native DevTools

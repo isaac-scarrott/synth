@@ -230,6 +230,8 @@ final class CEFEngine: NSObject, BrowserEngine {
     func goBack() { shim.goBack() }
     func goForward() { shim.goForward() }
     func reload() { shim.reload() }
+    // CEF zoom is logarithmic: factor = 1.2^level, so level = log₁.₂(factor).
+    func setZoom(_ factor: Double) { shim.setZoomLevel(factor > 0 ? log(factor) / log(1.2) : 0) }
     func showDevTools() { shim.showDevTools() }
     func closeDevTools() { shim.closeDevTools() }
     var devToolsOpen: Bool { shim.hasDevTools() }

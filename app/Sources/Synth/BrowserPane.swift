@@ -218,6 +218,30 @@ import AppKit
         cm.enter(store: store, urlHint: address)
     }
 
+    // Page zoom (⌘+/⌘−), controller state like devToolsOpen: it steps a fixed ladder and
+    // rides navigation (re-applied in the address delegate) — the native twin of the mock's
+    // re-apply-after-paint. `zoom` is a factor (1 = 100%); the engine maps it to its scale.
+    static let zoomSteps: [Double] = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
+    private(set) var zoom: Double = 1
+
+    var zoomPercent: Int { Int((zoom * 100).rounded()) }
+    var isZoomed: Bool { zoom != 1 }
+
+    func zoomIn()  { stepZoom(1) }
+    func zoomOut() { stepZoom(-1) }
+    func resetZoom() { applyZoom(1) }
+
+    private func stepZoom(_ dir: Int) {
+        let steps = Self.zoomSteps
+        let i = steps.firstIndex(of: zoom) ?? steps.firstIndex(of: 1)!
+        applyZoom(steps[min(steps.count - 1, max(0, i + dir))])
+    }
+
+    private func applyZoom(_ factor: Double) {
+        zoom = factor
+        engine.setZoom(factor)
+    }
+
     func shutdown() {
         commentMode?.teardown()
         deviceEmulator?.teardown()
@@ -231,6 +255,9 @@ extension BrowserSessionController: BrowserEngineDelegate {
         // creation); that's not a navigation — home stays until a real one.
         if address == nil && url.absoluteString == "about:blank" { return }
         address = url
+        // Zoom rides navigation (the mock re-applies after every paint). CEF stores zoom
+        // per-origin, so a cross-origin hop would otherwise snap back to 100%.
+        if zoom != 1 { engine.setZoom(zoom) }
         bus?.post(.browserNavigated(sessionID, url))
     }
     func engine(_ engine: BrowserEngine, titleDidChange title: String) {
@@ -546,6 +573,9 @@ private struct BrowserBar: View {
             if commentOn, let target = ctrl.commentMode?.targetTitle {
                 CommentTargetChip(title: target)
             }
+            if ctrl.isZoomed {
+                ZoomBadge(percent: ctrl.zoomPercent) { ctrl.resetZoom() }
+            }
             BarButton(icon: Phosphor.commentMode, help: commentHelp,
                       disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
             BarButton(icon: Phosphor.deviceMobile, help: "Device mode",
@@ -580,6 +610,34 @@ private struct CommentTargetChip: View {
             .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 0.5))
             .frame(maxWidth: 180, alignment: .trailing)
             .help("Comments go to \(title)")
+    }
+}
+
+/// working.html `.browser__zoom`: the compact %-pill at the right of the omnibox row. Shown
+/// only off 100% (the bar omits it otherwise); it's the live zoom readout and clicks back to
+/// 100% — the reset affordance, since ⌘0 stays Synth's focus-sidebar.
+private struct ZoomBadge: View {
+    let percent: Int
+    let reset: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: reset) {
+            // verbatim: the % is a zoom readout, not a quantity — no locale grouping.
+            Text(verbatim: "\(percent)%")
+                .font(.system(size: 11, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(hovering ? Theme.ink : Theme.inkMuted)
+                .padding(.horizontal, 8)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : Theme.raised))
+                .overlay(RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(hovering ? Theme.borderStrong : Theme.border, lineWidth: 0.5))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Reset zoom to 100%")
     }
 }
 

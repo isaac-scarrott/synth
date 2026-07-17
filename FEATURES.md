@@ -580,3 +580,13 @@ disclosure to dive deeper.
   dev/verification runs). Notarized, stapled, 15 deltas (~18MB) against a 130MB download; verified
   credential-less from the public bucket (spctl accepted / Notarized Developer ID, staple valid,
   appcast newest enclosure `Synth-0.5.0.zip` at `sparkle:version` 224 with `edSignature`).
+
+## [2026-07-17](docs/features/2026-07-17.md)
+
+- **Browser page zoom (⌘+ / ⌘−)** — keyboard zoom for the embedded browser, stepping a fixed ladder
+  (25→300%, clamped); ⌘= is the unshifted twin of ⌘+. ⌘-modified (not bare +/−, which a focused page
+  would eat); reset stays off ⌘0 (Synth's focus-sidebar) and lives on an omnibox **zoom badge** that
+  shows only off 100% and clicks home — doubling as the live readout. ⌘K page group gains Zoom
+  in/out/Reset; ⌘? Browser section lists it. Zoom re-applies across navigation (per-tab feel).
+  Design only so far (`working.html` + big-picture, subset invariant intact); native `app/` port via
+  `/port-working-html` is the follow-up.

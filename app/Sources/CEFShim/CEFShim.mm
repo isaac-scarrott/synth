@@ -566,6 +566,12 @@ class ShimClient : public CefClient,
   }
 }
 
+- (void)setZoomLevel:(double)level {
+  if (_browser) {
+    _browser->GetHost()->SetZoomLevel(level);
+  }
+}
+
 - (void)showDevTools {
   if (!_browser) {
     return;

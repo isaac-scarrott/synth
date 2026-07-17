@@ -560,3 +560,16 @@ disclosure to dive deeper.
   and **Cancel** (Esc). Only the informative line changes, naming any `busySessions` (agent `working`
   / process `running`) the quit would end. App-only (no in-window surface); reaches the store via a
   new `AppStore.shared` weak ref.
+
+## [2026-07-17](docs/features/2026-07-17.md)
+
+- **Session layout & pane splitting — design settled in `working.html`** — the content surface goes
+  from one open session to a splittable **layout** of panes: drag a session from the sidebar over the
+  content area (VS Code / tmux edge drop-zones) or split by chord; nested binary pane tree, one active
+  pane (copper ring), no empty panes, a 360×240 min-pane floor. Layout is **owned by the branch** (one
+  per branch, persisted, restored on relaunch); full-screening a pane is a transient tmux-style view
+  over a remembered split; the sidebar always mirrors the layout as a flat tile band. Full keyboard
+  layer: pure Mac-native chords (`⌘⇧`+arrow create, `⌘⌥` focus, `⌘⌥⇧` resize, `⌘⇧⏎` zoom, `⌘⇧U`
+  unsplit), no leader. Mouse-only design first, then bindings — both live in both designs (subset
+  invariant held). Packaged as a **handoff brief** for `port-working-html` to build natively (that
+  native effort is next, not this one).

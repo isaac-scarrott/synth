@@ -164,6 +164,18 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   a **Split layout** group in the `⌘?` sheet; landed in both files, diff invariant green, verified in
   a real browser (create/focus/cycle/zoom/resize-floor/unsplit/persistence, console clean). **[008]
   handoff brief unblocked — the destination.**
+- [Package the implementation handoff brief](tickets/008-handoff-brief.md) — **the destination,
+  reached; the map is complete.** The brief ([handoff.md](assets/008-handoff-brief/handoff.md)) is
+  framed for the **`port-working-html`** skill: `working.html` is source-of-truth (behaviours cited by
+  stable symbol + line), and it carries the settled behaviour in full (glossary, layout-tree spine +
+  invariants, chrome/drop-zones, mouse gestures, unsplit/reflow, sidebar echo, focus, per-branch
+  persistence & sticky full-screen, zoom/resize, full keybinding table), a **slice list** mapping 1:1
+  to the resolved tickets (spine/009 first — it blocks all — then B–H fan out, each naming its
+  `working.html` anchors + likely native files), and the **ADRs** the native work needs (extends 0010
+  persistence; touches 0009/0011/0003/0013; a recommended new ADR for the per-branch binary pane tree
+  + sticky full-screen). Design + bindings locked; `diff` invariant green. Feature appended to
+  `docs/features/2026-07-17.md` + `FEATURES.md`. **Native build is the next effort (out of scope);
+  no tickets remain — the way to the destination is clear.**
 
 ## Not yet specified
 

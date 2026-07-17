@@ -114,6 +114,15 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   another row's **centre** (30–70%) pairs (copper `.session--pair-to`), edges still reorder;
   `performPair` reuses `splitPane` (target already a pane) or builds a fresh side-by-side layout,
   dragged pane active. Verified in a real browser (both files, diff invariant green).
+- [Unsplit, close & reflow](tickets/013-unsplit-close-and-reflow.md) — every route out of a split is
+  one tree op (`removeLeaf` collapse + sibling reflow, 001). New `unsplitSession` (guarded by
+  `inSplit`) detaches a leaf and drops the session back to a plain sidebar row **without closing it**;
+  focus falls to the survivor, a 2→1 collapse dissolves the band. Surfaced as a **flat ⌘K `Unsplit`
+  command** beside Close in `sessionFrame` + the root Session group (new `ICON_UNSPLIT`), only when
+  the session is in an on-screen split — the pane kebab is that same entry (004 §6). **Drag-a-tile-out**
+  is the fast alternative: a member dragged to the plain sidebar (`start.wasMember` in `onUp`) leaves
+  the split. **Closing a live session** already collapsed+reflowed via `removeUnit → pruneLayout`
+  (009/005), no guard — left as-is. Verified in a real browser (both files, diff invariant green).
 
 ## Not yet specified
 

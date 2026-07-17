@@ -2400,6 +2400,22 @@
     layout = walk(layout);
   }
 
+  // Is this session a member of an on-screen split — i.e. is there something to unsplit it out
+  // of? A lone pane (layout is a single leaf) has no split, so Unsplit isn't offered there.
+  const inSplit = (session) => !!(layout && !layout.leaf && leafBySession(session));
+
+  // Unsplit (013): the flat route out of a split. Detach the session's leaf, collapse the split
+  // above it, and let the surviving sibling reflow (001) — the session drops back to a plain
+  // full-width sidebar row. A 2-pane split collapses to one full-screen pane, dissolving the
+  // band. Same tree op as a close, minus killing the session. Focus falls to the survivor.
+  function unsplitSession(session) {
+    if (!inSplit(session)) return;
+    removeLeaf(leafBySession(session));
+    if (!layout) activePane = null;
+    else { let ok = false; eachLeaf(layout, (l) => { if (l === activePane) ok = true; }); if (!ok) activePane = firstLeaf(layout); }
+    renderLayout();
+  }
+
   function openSession(el) {
     if (!el) return;
     app.classList.remove('settings');   // jumping to a session leaves settings mode
@@ -3987,6 +4003,9 @@
 
     function begin() {
       active = true;
+      // a session that starts the drag inside the on-screen split can be pulled OUT of it (013):
+      // a plain sidebar drop (not a content split, not a pair) unsplits it back to a lone row.
+      start.wasMember = start.sel.startsWith('.session') && inSplit(start.row);
       document.body.classList.add('dragging');
       clone = start.row.cloneNode(true);
       clone.classList.add('drag-clone');
@@ -4059,7 +4078,10 @@
           }
         } else if (start.sel.startsWith('.session')) {
           snapOwned(start.container);          // reunite owner blocks
-          renderSidebarEcho();                 // re-assert any open echo snapOwned may have disturbed
+          // a split tile dragged out into the plain sidebar leaves the split (013); otherwise
+          // just re-assert any open echo snapOwned may have disturbed.
+          if (start.wasMember && inSplit(start.row)) unsplitSession(start.row);
+          else renderSidebarEcho();
         }
         clearPair();                           // never leave a pair highlight behind
         select(start.row);                     // keep selection on the row you moved
@@ -4516,6 +4538,8 @@
   const ICON_RENAME = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"/></svg>';
   const ICON_RESET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16h27.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,0,1,16,0Z"/></svg>';
   const ICON_MINUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,128Z"/></svg>';
+  // arrows-in — two panes collapsing back to one (Unsplit)
+  const ICON_UNSPLIT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,104V56a8,8,0,0,1,16,0V84.69l34.34-34.35a8,8,0,0,1,11.32,11.32L171.31,96H200a8,8,0,0,1,0,16H152A8,8,0,0,1,144,104ZM104,144H56a8,8,0,0,0,0,16H84.69L50.34,194.34a8,8,0,0,0,11.32,11.32L96,171.31V200a8,8,0,0,0,16,0V152A8,8,0,0,0,104,144Z"/></svg>';
 
   // entity readers — the DOM tree is the source of truth
   const wsName = (h) => h.querySelector('.repo__name').textContent;
@@ -4585,6 +4609,7 @@
       else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
     }
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: sessionIsBusy(open), enter: () => pushFrame(confirmFrame(open)) });
+    if (open && inSplit(open)) items.push({ grp: 'Session', unit: seName(open), icon: ICON_UNSPLIT, label: 'Unsplit', enter: () => runAndClose(() => unsplitSession(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
@@ -4774,6 +4799,7 @@
           else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
         }
         items.push({ sec: 'act', icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(row), enter: () => pushFrame(confirmFrame(row)) });
+        if (inSplit(row)) items.push({ sec: 'act', icon: ICON_UNSPLIT, label: 'Unsplit', enter: () => runAndClose(() => unsplitSession(row)) });
         return items;
       },
     };

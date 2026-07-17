@@ -104,6 +104,16 @@ The terminal deliverable is a **handoff brief**, not the native implementation.
   across) clamps the fraction; an over-subscribed split pins with no give. **Drag-only — no
   double-click reset.** Verified in a real browser (extremes hard-stop at 240, mid-drag proportional,
   dblclick no-op); landed in both files, diff invariant green.
+- [Sidebar echo & sidebar-create route](tickets/012-sidebar-echo-and-create.md) — a live mirror
+  (`renderSidebarEcho`, rebuilt every `renderLayout`): ≥2 session leaves pull the **real** member rows
+  into a bare `.session-group` band placed where the first reading-order member lived, flattened
+  a-before-b so nested trees still read as one flat ordered band (membership only, never geometry). A
+  tile **is** the session row, so the `.session--open` accent + hover ⋮→⌘K come free; past 3 members
+  non-active tiles go icon-only (`.session--tile-min`, hover-expands), `refreshEchoActive` re-picks the
+  named tile on activation without a rebuild. Second create route in `enableReorder`: a drag onto
+  another row's **centre** (30–70%) pairs (copper `.session--pair-to`), edges still reorder;
+  `performPair` reuses `splitPane` (target already a pane) or builds a fresh side-by-side layout,
+  dragged pane active. Verified in a real browser (both files, diff invariant green).
 
 ## Not yet specified
 

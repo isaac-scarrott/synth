@@ -272,6 +272,35 @@
     .session--open:hover { background: rgba(var(--accent-rgb),0.14); }
   }
 
+  /* ---- Sidebar echo of an on-screen split (012 / 003): the member rows pull together into a
+     bare horizontal band of tiles — no enclosing container, adjacency alone carries the grouping.
+     Membership + reading order only, never geometry; always horizontal whatever the on-screen
+     orientation. A tile IS a session row, so its hover ⋮ → ⌘K and open accent come for free. ---- */
+  .session-group { display: flex; gap: 3px; margin: 1px 0; }
+  .nav .session-group { margin-left: 55px; }             /* start at the icon gutter, not the row edge */
+  .nav .session-group .session {
+    flex: 1 1 0; min-width: 0; width: auto;
+    padding: 6px 7px;                                     /* drop the 61px full-width indent */
+    gap: 5px; border-radius: 7px;
+    background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-soft);
+  }
+  .session-group .session .session__bullet,
+  .session-group .session .ind { display: none; }        /* a tile carries no gutter bullet / status slot */
+  .session-group .session .session__name { font-size: 10.5px; }
+  .session-group .session.session--open { background: rgba(var(--accent-rgb),0.12); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),0.34); }
+  .session-group .session .kebab { right: 2px; }
+  /* legibility floor: past ~3 members the non-active tiles collapse to icon-only; hover restores
+     the name (many sessions share the terminal icon), so the band never overflows its single row */
+  .session-group .session--tile-min { flex: 0 0 auto; }
+  .session-group .session--tile-min .session__name { display: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .session-group .session--tile-min:hover { flex: 1 1 0; }
+    .session-group .session--tile-min:hover .session__name { display: block; }
+  }
+
+  /* the row a dragged session is about to pair with — copper, echoing the content split zone (010) */
+  .session--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.7); background: rgba(var(--accent-rgb),0.08); }
+
   /* empty state — nothing open */
   .pane-empty {
     flex: 1;
@@ -2306,7 +2335,40 @@
     content.querySelectorAll('.pane').forEach((p) => p.classList.toggle('pane--active', p._node === activePane));
   }
   // Click / keyboard activation — move the ring and the sidebar echo to `leaf`, in place.
-  function setActivePane(leaf) { activePane = leaf; syncActive(); applyActiveRing(); }
+  function setActivePane(leaf) { activePane = leaf; syncActive(); applyActiveRing(); refreshEchoActive(); }
+
+  // The sidebar's live echo of an on-screen split (012 / 003): when the layout holds more than
+  // one session pane, the member rows pull together into a bare horizontal band of tiles — in
+  // reading order (the tree flattened a-before-b), membership only, never geometry. One pane
+  // (today's degenerate case) leaves every row full-width. Rebuilt from `layout` on every render.
+  function renderSidebarEcho() {
+    // tear down any prior band — return its tiles to full-width rows, in place
+    nav.querySelectorAll('.session-group').forEach((g) => {
+      while (g.firstElementChild) {
+        const row = g.firstElementChild;
+        row.classList.remove('session--tile-min');
+        g.parentNode.insertBefore(row, g);
+      }
+      g.remove();
+    });
+    const members = [];
+    eachLeaf(layout, (l) => { if (l.session) members.push(l.session); });
+    if (members.length < 2) return;
+    const band = document.createElement('div');
+    band.className = 'session-group';
+    members[0].parentNode.insertBefore(band, members[0]);   // sits where the first member lived
+    members.forEach((row) => band.appendChild(row));
+    refreshEchoActive();
+  }
+  // Past ~3 members the names stop fitting, so non-active tiles collapse to icon-only (003).
+  // Membership and order don't change on activation, so this is the cheap update setActivePane
+  // runs — no rebuild, just which tile keeps its name.
+  function refreshEchoActive() {
+    const band = nav.querySelector('.session-group');
+    if (!band) return;
+    const tiles = [...band.children], min = tiles.length > 3;
+    tiles.forEach((t) => t.classList.toggle('session--tile-min', min && !t.classList.contains('session--open')));
+  }
 
   // Subdivide a leaf: it becomes a binary split of itself + a new pane bound to `session`,
   // which lands active. Mutated in place so parent links survive. This is the model op the
@@ -2977,6 +3039,7 @@
     layout = null; activePane = null; openEl = null;
     derivePill(null);
     content.innerHTML = `<div class="pane-empty"><span class="pane-empty__mark">${ICON_EMPTY}</span><span>No session open</span></div>`;
+    renderSidebarEcho();   // no split on screen → dissolve any band, rows back to full-width
   }
 
   // The header + body a session pane carries (004 §1 — every pane keeps its full header);
@@ -3054,6 +3117,7 @@
     content.appendChild(renderNode(layout));
     syncActive();
     applyActiveRing();
+    renderSidebarEcho();
     wirePanes();
   }
 
@@ -3906,6 +3970,7 @@
     const MIN_W = 360, MIN_H = 240;   // min-pane floor (001) — drops below it are refused
     const RIM = 16, EDGE = 0.3;       // outer-rim band (px) · edge-zone reach (fraction)
     let dzEl = null, dzMode = false, dzRes = null;
+    let pairMode = false, pairTarget = null;   // dragging one session squarely onto another (012)
 
     // The unit a row drags as, and the CSS selector its siblings share.
     function dragUnit(row) {
@@ -3957,12 +4022,20 @@
       moveClone(e.clientX, e.clientY);
       // A dragged session over the content area splits panes instead of reordering (010).
       if (start.sel.startsWith('.session') && overContent(e.clientX, e.clientY)) {
+        if (pairMode) clearPair();
         dzMode = true;
         dzRes = computeDrop(e.clientX, e.clientY);
         if (dzRes) paintDZ(dzRes); else hideDZ();
         return;
       }
       if (dzMode) { dzMode = false; dzRes = null; hideDZ(); }
+      // Over the sidebar: dropping squarely onto another session pairs the two into a split — the
+      // second create route (012). A row's centre pairs; its top/bottom edges stay reorder territory.
+      if (start.sel.startsWith('.session')) {
+        const pt = pairTargetAt(e.clientX, e.clientY);
+        if (pt) { pairMode = true; markPair(pt); return; }
+        clearPair();
+      }
       // insert before the first sibling whose vertical midpoint is below the pointer
       let ref = null;
       for (const el of sibs(start.container, start.sel)) {
@@ -3991,9 +4064,18 @@
             start.container.insertBefore(start.unit, start.origNext);   // undo any mid-drag reshuffle
             performDrop(res);
           }
+        } else if (pairMode) {
+          const t = pairTarget;
+          clearPair();
+          if (t) {
+            start.container.insertBefore(start.unit, start.origNext);   // undo any mid-drag reshuffle
+            performPair(t);
+          }
         } else if (start.sel.startsWith('.session')) {
           snapOwned(start.container);          // reunite owner blocks
+          renderSidebarEcho();                 // re-assert any open echo snapOwned may have disturbed
         }
+        clearPair();                           // never leave a pair highlight behind
         select(start.row);                     // keep selection on the row you moved
         active = false;
       }
@@ -4090,6 +4172,45 @@
         const cur = leafBySession(session);
         if (cur) removeLeaf(cur);
         splitRoot(session, res.dir, res.before);
+      }
+    }
+
+    // ---- Sidebar pair-to-split (012) — the second create route ----
+    // The pointer over another sidebar row's centre reads as "onto"; its top/bottom edges stay
+    // reorder territory, so both gestures share the one list.
+    function pairTargetAt(x, y) {
+      const h = document.elementFromPoint(x, y);
+      const row = h && h.closest('.session[data-session]');
+      if (!row || row === start.row) return null;
+      const b = row.getBoundingClientRect();
+      const ry = (y - b.top) / b.height;
+      if (ry < 0.3 || ry > 0.7) return null;   // edges reorder, centre pairs
+      return row;
+    }
+    const markPair = (row) => {
+      if (pairTarget && pairTarget !== row) pairTarget.classList.remove('session--pair-to');
+      pairTarget = row; row.classList.add('session--pair-to');
+    };
+    const clearPair = () => {
+      if (pairTarget) pairTarget.classList.remove('session--pair-to');
+      pairTarget = null; pairMode = false;
+    };
+    // Land the pair: if the target is already a pane, the dragged session splits it in place
+    // (moving out of any pane it already held); otherwise the two become a fresh side-by-side
+    // layout. Focus follows the dragged session, matching splitPane / the content drop (002).
+    function performPair(target) {
+      const dragged = start.row;
+      if (dragged === target) return;
+      const tLeaf = leafBySession(target);
+      if (tLeaf) {
+        const dLeaf = leafBySession(dragged);
+        if (dLeaf === tLeaf) return;
+        if (dLeaf) removeLeaf(dLeaf);
+        splitPane(tLeaf, dragged, 'row', false);   // target | dragged, side by side
+      } else {
+        layout = { leaf: false, dir: 'row', split: 0.5, a: leafNode(target), b: leafNode(dragged) };
+        activePane = layout.b;
+        renderLayout();
       }
     }
 

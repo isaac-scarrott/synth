@@ -229,6 +229,13 @@ struct PaletteFrame {
                                      group: g, ctx: open.title,
                                      enter: { self.push(self.renameFrame(.session(open))) }))
             items += containmentItems(open, group: g)
+            // Unsplit (013): the flat route out of a split, beside Close — detach the pane and
+            // reflow the sibling, without killing the session. Offered only inside a split.
+            if store.inSplit(open.id) {
+                items.append(PaletteItem(icon: .phosphor(Phosphor.gitMerge), label: "Unsplit",
+                                         group: g, ctx: open.title, kbd: ["⌘", "⇧", "U"],
+                                         enter: { self.runAndClose { self.store.unsplitSession(open.id) } }))
+            }
             items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close",
                                      group: g, ctx: open.title, kbd: ["⌘", "D"],
                                      danger: open.status.isBusy,
@@ -514,6 +521,11 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(s.title)…", sec: "act",
                                      enter: { self.push(self.renameFrame(.session(s))) }))
             items += containmentItems(s, sec: "act")
+            if store.inSplit(s.id) {
+                items.append(PaletteItem(icon: .phosphor(Phosphor.gitMerge), label: "Unsplit \(s.title)",
+                                         sec: "act", kbd: ["⌘", "⇧", "U"],
+                                         enter: { self.runAndClose { self.store.unsplitSession(s.id) } }))
+            }
             items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close \(s.title)", sec: "act",
                                      danger: s.status.isBusy, enter: { self.closeOrConfirm(s) }))
             return items

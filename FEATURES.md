@@ -615,3 +615,10 @@ disclosure to dive deeper.
   root actions as ⌘K on the focused row, retiring the bespoke verbose per-row frame. Red widens from
   the loss signal to the negative-action signal: Close (always), every Remove, and Detach/Attach join
   Delete in red. Supersedes ADR-0013's colour rule in part.
+- **Synth 0.6.0 shipped (build 272)** — first release carrying native session layout / pane splitting
+  (the 07-17 design, ported across the 009–015 slices), plus browser page zoom, the ⌘K/kebab
+  unification + red negative actions, the agent-launch reliability fixes, default-branch/empty new
+  worktrees, and the in-app Changelog. Minor bump for the pane-splitting headline. Notarized, stapled,
+  15 deltas (19MB) against a 137MB download; verified credential-less (spctl accepted / Notarized
+  Developer ID, staple valid, appcast newest `Synth-0.6.0.zip` at `sparkle:version` 272 with
+  `edSignature`) and installed to `/Applications`.

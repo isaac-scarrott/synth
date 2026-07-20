@@ -81,7 +81,13 @@ final class BrowserProcessSupervisor {
         for sig in [SIGTERM, SIGINT] {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-            source.setEventHandler { NSApp.terminate(nil) }
+            source.setEventHandler {
+                // Mark this a non-interactive quit BEFORE terminating, so the first
+                // applicationShouldTerminate already sees it and skips the confirm dialog —
+                // otherwise a modal stacks against the signal-driven kill and the save is lost.
+                MainActor.assumeIsolated { AppTermination.forceQuit = true }
+                NSApp.terminate(nil)
+            }
             source.resume()
             signalSources.append(source)
         }

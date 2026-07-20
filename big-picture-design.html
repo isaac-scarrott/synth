@@ -2318,6 +2318,10 @@
   // A branch's persistence identity — the sole scope unit (005). Workspace + branch name, so two
   // branches sharing a name across workspaces stay distinct; NUL-joined to never collide on text.
   function branchKeyOf(el) { return workspaceNameOf(el) + '\u0000' + branchNameOf(el); }
+  // A split stays within one branch / worktree (003): a session may only join the on-screen layout
+  // when it belongs to the branch that owns the surface. The guard the three split routes share —
+  // drag-to-split, sidebar pair, and the ⌘⇧+arrow picker. A branchless setup skeleton owns nothing.
+  function canJoinLayout(el) { return currentBranchKey != null && branchKeyOf(el) === currentBranchKey; }
   // The header PR chip mirrors the open branch's sidebar PR span: same number, same state
   // colour, clickable through to GitHub in the default browser. Empty when the branch has none.
   function branchPRChipHTML(el) {
@@ -2642,6 +2646,7 @@
         }
         allRows('.session').forEach((s) => {
           if (leafBySession(s)) return;   // already a pane in this layout — nothing to pull in
+          if (!canJoinLayout(s)) return;  // a split stays within one branch / worktree (003)
           items.push({ sec: 'list', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => splitActiveWith(s, dir, before, target)) });
         });
         return items;
@@ -4521,6 +4526,9 @@
       if (!layout || app.classList.contains('settings')) {
         return { kind: 'split', open: true, refuse: false, rect: { left: cr.left, top: cr.top, w: cr.width, h: cr.height } };
       }
+      // A session from another branch / worktree never joins this surface (003) — refuse every zone
+      // so the preview reads red rather than silently building a cross-worktree split.
+      const foreign = !canJoinLayout(dragged);
       // Outer rim first — within RIM px of a content border → whole-surface split.
       const dl = x - cr.left, dr = cr.right - x, dt = y - cr.top, db = cr.bottom - y;
       const rim = Math.min(dl, dr, dt, db);
@@ -4530,7 +4538,7 @@
         else if (rim === dr) { dir = 'row'; before = false; rect = { left: cr.left + cr.width / 2, top: cr.top, w: cr.width / 2, h: cr.height }; }
         else if (rim === dt) { dir = 'col'; before = true;  rect = { left: cr.left, top: cr.top, w: cr.width, h: cr.height / 2 }; }
         else                 { dir = 'col'; before = false; rect = { left: cr.left, top: cr.top + cr.height / 2, w: cr.width, h: cr.height / 2 }; }
-        return { kind: 'rim', dir, before, refuse: rimRefused(dir), rect };
+        return { kind: 'rim', dir, before, refuse: rimRefused(dir) || foreign, rect };
       }
       const paneEl = paneUnder(x, y);
       if (!paneEl || !paneEl._node) return null;
@@ -4538,7 +4546,7 @@
       const nx = (x - pr.left) / pr.width, ny = (y - pr.top) / pr.height;
       const near = Math.min(nx, 1 - nx, ny, 1 - ny);
       if (near > EDGE) {   // center → replace the pane's session in place
-        return { kind: 'replace', leaf, refuse: leaf.session === dragged,
+        return { kind: 'replace', leaf, refuse: leaf.session === dragged || foreign,
                  rect: { left: pr.left + pr.width * 0.14, top: pr.top + pr.height * 0.14, w: pr.width * 0.72, h: pr.height * 0.72 } };
       }
       let dir, before, rect;
@@ -4548,7 +4556,7 @@
       else                      { dir = 'col'; before = false; rect = { left: pr.left, top: pr.top + pr.height / 2, w: pr.width, h: pr.height / 2 }; }
       const childW = dir === 'row' ? pr.width / 2 : pr.width;
       const childH = dir === 'col' ? pr.height / 2 : pr.height;
-      const refuse = leaf.session === dragged || childW < MIN_W || childH < MIN_H;
+      const refuse = leaf.session === dragged || foreign || childW < MIN_W || childH < MIN_H;
       return { kind: 'split', leaf, dir, before, refuse, rect };
     }
 
@@ -4588,6 +4596,7 @@
       const h = document.elementFromPoint(x, y);
       const row = h && h.closest('.session[data-session]');
       if (!row || row === start.row) return null;
+      if (branchKeyOf(row) !== branchKeyOf(start.row)) return null;   // a pair is a split — one branch (003)
       const b = row.getBoundingClientRect();
       const ry = (y - b.top) / b.height;
       if (ry < 0.3 || ry > 0.7) return null;   // edges reorder, centre pairs

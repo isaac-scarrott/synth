@@ -56,8 +56,6 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    private var metalLayer: CAMetalLayer? { layer as? CAMetalLayer }
-
     override func makeBackingLayer() -> CALayer {
         let l = CAMetalLayer()
         l.pixelFormat = .bgra8Unorm
@@ -251,12 +249,11 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         let pxW = max(1, Int((bounds.width * scale).rounded(.down)))
         let pxH = max(1, Int((bounds.height * scale).rounded(.down)))
 
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        metalLayer?.contentsScale = scale
-        metalLayer?.drawableSize = CGSize(width: pxW, height: pxH)
-        CATransaction.commit()
-
+        // libghostty's renderer owns this CAMetalLayer and sets its contentsScale and
+        // drawableSize itself, on its own thread, in response to the calls below. The host
+        // must not also write them: crossing to a display with a different backingScaleFactor
+        // otherwise makes the two writers race, compositing a frame at a mismatched scale
+        // (blurry / wrong-sized terminal) until the next repaint.
         ghostty_surface_set_content_scale(surface, scale, scale)
         ghostty_surface_set_size(surface, UInt32(pxW), UInt32(pxH))
         ghostty_surface_refresh(surface)

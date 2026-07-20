@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.6.0",
+    "date": "2026-07-20",
+    "changes": [
+      "Split the content area into panes — drag a session onto an edge, or split by keyboard (⌘⇧+arrows); each branch remembers its own layout, ⌘⇧⏎ zooms a pane full-screen, and ⌘⇧U unsplits.",
+      "Browser page zoom (⌘+ / ⌘−), with a click-to-reset zoom badge in the address bar.",
+      "One command menu — the ⋯ kebab and right-click now match ⌘K, and negative actions (Close, Remove, Delete, Detach) are red.",
+      "Agents launch reliably even when your shell stops to ask about its own updates.",
+      "New worktrees fork off the default branch and start with no sessions.",
+      "Read what changed from the new in-app Changelog, and a fuller ⌘? shortcuts sheet."
+    ]
+  },
+  {
     "version": "0.5.0",
     "date": "2026-07-16",
     "changes": [

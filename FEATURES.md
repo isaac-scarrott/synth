@@ -622,3 +622,8 @@ disclosure to dive deeper.
   15 deltas (19MB) against a 137MB download; verified credential-less (spctl accepted / Notarized
   Developer ID, staple valid, appcast newest `Synth-0.6.0.zip` at `sparkle:version` 272 with
   `edSignature`) and installed to `/Applications`.
+- **A split stays within one branch / worktree — enforced, not just documented** — feature 003's rule
+  is now a hard interaction-layer guard (`sessionCanJoinLayout`) shared by every split route: a
+  cross-branch drag reads red/refuse, a cross-branch pair never highlights, and the ⌘⇧+arrow split
+  picker lists only the anchor branch's sessions. Closes the gap where a foreign-worktree pane could
+  be built momentarily before the next save silently dropped it.

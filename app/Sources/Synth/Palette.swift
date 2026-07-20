@@ -768,7 +768,9 @@ struct PaletteFrame {
                 items.append(PaletteItem(icon: .session(.browser), label: "New browser", sec: "act", ctx: br.name,
                                          enter: { self.runAndClose { self.splitNew(.browser, in: br, dir: dir, before: before, target: target) } }))
             }
-            for s in store.allSessions where store.leaf(of: s.id) == nil {
+            // A split stays within one branch / worktree (003): only this branch's sessions can fill
+            // the new pane — pulling in a foreign one would build a cross-worktree split.
+            for s in store.allSessions where store.leaf(of: s.id) == nil && store.branch(of: s)?.id == branch?.id {
                 let b = store.branch(of: s)
                 items.append(PaletteItem(icon: .session(s.kind), label: s.title, sec: "list",
                                          ctx: b?.name, meta: s.status.paletteLabel, metaColor: s.status.paletteColor,

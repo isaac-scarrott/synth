@@ -422,6 +422,17 @@ extension AppStore {
 
     // MARK: Mouse drag-to-split (010) — pointer → drop zone → tree op
 
+    /// A split stays within one branch / worktree (003): every pane in the on-screen layout is a
+    /// session from the branch that owns the surface. Persistence already assumes this
+    /// (serializeLayout keeps only the branch's own sessions), so a cross-worktree pane can't even
+    /// survive a restart — the guard the split routes share to refuse one before it's built. A
+    /// branchless setup skeleton (currentBranchID nil) owns no worktree, so nothing may join it.
+    func sessionCanJoinLayout(_ sessionID: UUID) -> Bool {
+        guard let cur = currentBranchID,
+              let s = session(sessionID), let br = branch(of: s) else { return false }
+        return br.id == cur
+    }
+
     /// The region a drop will occupy + how it reads. `zone` is nil when refused (floor breach).
     /// Dragging a session into the content only ever *splits* — there is no replace/switch.
     struct DropResolution: Equatable {
@@ -442,6 +453,9 @@ extension AppStore {
     /// zone that would breach the 360×240 floor comes back `.refuse` (a no-op drop).
     func resolveDrop(at p: CGPoint, contentSize: CGSize, dragging sessionID: UUID) -> DropResolution {
         let full = CGRect(origin: .zero, size: contentSize)
+        // A session from another branch / worktree never joins this surface (003) — refuse every
+        // zone so the preview reads red rather than silently building a cross-worktree split.
+        let sameBranch = sessionCanJoinLayout(sessionID)
         // Rim: within the outer band of the whole surface → split the whole surface toward that edge.
         if let dir = rimDirection(p, full) {
             let axis = dir.axis
@@ -449,7 +463,7 @@ extension AppStore {
             let keptMin = layout.map { paneMinAlong($0, axis: axis) } ?? (axis == .row ? Self.paneMinW : Self.paneMinH)
             let incomingMin = axis == .row ? Self.paneMinW : Self.paneMinH
             let rect = halfRect(full, dir)
-            let ok = extent / 2 >= incomingMin && extent / 2 >= keptMin
+            let ok = sameBranch && extent / 2 >= incomingMin && extent / 2 >= keptMin
             return DropResolution(rect: rect, kind: ok ? .rim : .refuse, zone: ok ? .rim(dir) : nil)
         }
         // Otherwise the pane under the pointer — always a split, toward the nearest edge (the pane
@@ -464,8 +478,9 @@ extension AppStore {
                           : nearest == fy ? .up : .down
         let axis = dir.axis
         let extent = axis == .row ? r.width : r.height
-        // Refuse a drop onto the dragged session's own pane, or one that breaches the floor.
-        let ok = leaf.sessionID != sessionID && extent / 2 >= (axis == .row ? Self.paneMinW : Self.paneMinH)
+        // Refuse a cross-branch session, a drop onto the dragged session's own pane, or one that
+        // breaches the floor.
+        let ok = sameBranch && leaf.sessionID != sessionID && extent / 2 >= (axis == .row ? Self.paneMinW : Self.paneMinH)
         return DropResolution(rect: halfRect(r, dir), kind: ok ? .split : .refuse,
                               zone: ok ? .edge(leaf.id, dir) : nil)
     }
@@ -479,9 +494,12 @@ extension AppStore {
     }
 
     /// The session row a *global* pointer is squarely over (centre 30–70%, edges stay reorder
-    /// territory) — the pair-to-split target (012). Excludes the dragged session's own row.
+    /// territory) — the pair-to-split target (012). Excludes the dragged session's own row, and any
+    /// row in another branch / worktree — a pair is a split, which stays within one branch (003).
     func pairTarget(atGlobal p: CGPoint, dragging sessionID: UUID) -> UUID? {
+        let dragBranch = session(sessionID).flatMap { branch(of: $0)?.id }
         for (sid, frame) in sessionRowFrames where sid != sessionID {
+            guard session(sid).flatMap({ branch(of: $0)?.id }) == dragBranch else { continue }
             guard frame.contains(p) else { continue }
             let ry = (p.y - frame.minY) / max(1, frame.height)
             // The centre 60% of a row reads as "onto" (pair); its top/bottom 20% edges stay reorder
@@ -511,6 +529,10 @@ extension AppStore {
     /// dragged session active. Focus follows the dragged session, like every other create route.
     func performPair(dragged xid: UUID, onto yid: UUID) {
         guard xid != yid else { return }
+        // A pair is a split, so both sessions must share a branch / worktree (003) — pairing across
+        // branches would open Y then graft X's foreign pane into it.
+        guard let x = session(xid), let y = session(yid),
+              let bx = branch(of: x), let by = branch(of: y), bx.id == by.id else { return }
         if let yleaf = leaf(of: yid) {
             splitActiveWith(session: xid, dir: .row, before: false, target: yleaf)
         } else if let y = session(yid) {

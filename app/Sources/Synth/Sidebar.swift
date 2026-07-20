@@ -884,12 +884,14 @@ extension View {
     /// row's `.background` so left-clicks still reach the SwiftUI Button and the unhandled
     /// right-click falls through the responder chain to this catcher.
     func onSecondaryClick(_ action: @escaping () -> Void) -> some View {
-        background(SecondaryClickCatcher(action: action))
+        overlay(SecondaryClickCatcher(action: action))
     }
 }
 
-/// Transparent AppKit backing view that turns a right mouse-down into a closure — SwiftUI has
-/// no native secondary-click gesture, and `.contextMenu` would raise a native NSMenu, not our palette.
+/// Transparent AppKit view that turns a secondary click (right-click or ⌃-click) into a closure —
+/// SwiftUI has no secondary-click gesture, and `.contextMenu` would raise a native NSMenu, not our
+/// palette. It sits in an `.overlay` (above the row) but its `hitTest` claims ONLY secondary clicks,
+/// returning nil for everything else so left-clicks fall straight through to the SwiftUI Button below.
 private struct SecondaryClickCatcher: NSViewRepresentable {
     let action: () -> Void
 
@@ -903,7 +905,19 @@ private struct SecondaryClickCatcher: NSViewRepresentable {
             super.init(frame: .zero)
         }
         @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+        /// Only intercept the pointer for a secondary click; pass every other event (left-click,
+        /// drag, hover) through to the SwiftUI content beneath by declining the hit-test.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let e = NSApp.currentEvent else { return nil }
+            let secondary = e.type == .rightMouseDown || e.type == .rightMouseUp
+                || ((e.type == .leftMouseDown || e.type == .leftMouseUp) && e.modifierFlags.contains(.control))
+            return secondary ? self : nil
+        }
         override func rightMouseDown(with event: NSEvent) { action() }
+        override func mouseDown(with event: NSEvent) {
+            if event.modifierFlags.contains(.control) { action() } else { super.mouseDown(with: event) }
+        }
     }
 }
 

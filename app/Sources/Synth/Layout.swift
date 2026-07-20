@@ -211,6 +211,7 @@ extension AppStore {
     func renderLayout() {
         pruneLayout()
         syncActive()
+        syncBranchLayout()   // 014: keep the branch's remembered layout in step (autosave persists it)
     }
 
     // MARK: Keyboard split layer (007) — chords over the same tree ops the mouse drives
@@ -360,10 +361,57 @@ extension AppStore {
         splitPane(t, session: sessionID, dir: dir, before: before)
     }
 
-    /// Persistence hook — every layout mutation that doesn't already end in renderLayout still
-    /// needs the branch registry kept in step + saved (014). A no-op until the persistence slice
-    /// wires it; centralised here so resize/drag call one name.
-    func persistLayout() {}
+    // MARK: Per-branch persistence & sticky nav (014)
+
+    /// The branch whose layout is on screen — the sole persistence scope (005). nil for the
+    /// transient, branchless setup skeleton.
+    var currentBranch: Branch? { currentBranchID.flatMap { branch(id: $0) } }
+
+    /// Keep the current branch's remembered layout in step with the on-screen *durable* tree, so a
+    /// transient full-screen doesn't overwrite the split and the arrangement is there to serialize.
+    /// The single choke point renderLayout / persistLayout flow through.
+    func syncBranchLayout() {
+        guard let cur = currentBranch else { return }
+        let d = durableLayout
+        if let d, d.isLeaf, d.setupBranchID != nil { return }   // a lone setup skeleton is transient
+        cur.layout = d
+    }
+
+    /// Every layout mutation that rewrites geometry without a full renderLayout (seam drag, keyboard
+    /// resize) still keeps the branch's remembered layout current; the 4s autosave persists it.
+    func persistLayout() { syncBranchLayout() }
+
+    /// Serialize a branch's durable layout to its on-disk shape, dropping leaves whose session no
+    /// longer lives in the branch and collapsing the split above them (the missing-session reflow).
+    func serializeLayout(_ node: PaneNode?, valid: Set<UUID>) -> PersistedPaneNode? {
+        guard let node else { return nil }
+        if node.isLeaf {
+            guard let sid = node.sessionID, valid.contains(sid) else { return nil }
+            return .leaf(session: sid)
+        }
+        let a = serializeLayout(node.a, valid: valid)
+        let b = serializeLayout(node.b, valid: valid)
+        if let a, let b { return .split(dir: (node.dir ?? .row).rawValue, split: node.split, a: a, b: b) }
+        return a ?? b
+    }
+
+    /// Rebuild a branch's layout from disk, resolving each leaf's session against the branch's
+    /// restored sessions (ids are stable across restart, ADR-0010). A leaf that no longer resolves
+    /// collapses — e.g. a runtime browser session that didn't come back.
+    func deserializeLayout(_ p: PersistedPaneNode?, valid: Set<UUID>) -> PaneNode? {
+        guard let p else { return nil }
+        switch p {
+        case let .leaf(sid):
+            return valid.contains(sid) ? PaneNode(leafSession: sid) : nil
+        case let .split(dir, split, a, b):
+            let la = deserializeLayout(a, valid: valid)
+            let lb = deserializeLayout(b, valid: valid)
+            if let la, let lb {
+                return PaneNode(dir: SplitDir(rawValue: dir) ?? .row, split: split, a: la, b: lb)
+            }
+            return la ?? lb
+        }
+    }
 
     // MARK: Min-pane floor geometry (resize/drop slices clamp against this)
 

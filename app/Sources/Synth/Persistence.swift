@@ -49,6 +49,20 @@ struct PersistedBranch: Codable {
     /// The branch's browser "Recent" list (≤5). Optional/omitted when empty so pre-browser
     /// snapshots decode and an untouched branch adds no keys.
     var browserRecents: [BrowserRecent]?
+    /// The branch's remembered pane layout (ADR-0014 / slice 014): the durable split, serialized
+    /// as a tree of session identities. Optional/omitted when the branch is a single pane (no
+    /// split to remember) so a pre-layout snapshot decodes and a lone-session branch adds no keys.
+    /// On restore a leaf whose session no longer resolves collapses (the missing-session reflow).
+    var layout: PersistedPaneNode?
+}
+
+/// The on-disk shape of a pane tree (ADR-0014): a leaf carries a `session` id; a split carries
+/// `dir` / `split` and two children. A setup skeleton or a leaf whose session has vanished is not
+/// serialized — the split above it collapses, the same reflow a live close takes. An `indirect`
+/// enum so the recursive children don't give the value infinite size.
+indirect enum PersistedPaneNode: Codable {
+    case leaf(session: UUID)
+    case split(dir: String, split: Double, a: PersistedPaneNode, b: PersistedPaneNode)
 }
 
 struct PersistedSession: Codable {

@@ -194,8 +194,12 @@ enum FeedbackMode {
     /// while `layout` is non-nil.
     var activePane: PaneNode?
     /// The durable split held behind a *transient* full-screen (014). Split-creating ops null it,
-    /// committing the current view as the new durable. Wired fully by the persistence slice.
+    /// committing the current view as the new durable.
     var stashedSplit: PaneNode?
+    /// The branch whose layout is on screen — the sole persistence scope (014/005). A branch switch
+    /// stashes the one you leave (into its Branch.layout) and restores the target's. nil for the
+    /// transient, branchless setup skeleton.
+    var currentBranchID: UUID?
     /// On-screen frame of every pane / split node in the content coordinate space, reported by the
     /// views each layout pass (ContentPane). The keyboard's spatial focus (focusDir) and resize
     /// (resizeActive) read real geometry from here — the native stand-in for getBoundingClientRect.
@@ -808,17 +812,32 @@ enum FeedbackMode {
 
     func open(_ session: Session) {
         settingsOpen = false   // jumping to a session leaves settings mode
-        // Layout spine (009): "take me to it". A member of the on-screen split activates in place;
-        // anything else becomes the single pane (the degenerate one-leaf tree = today's behaviour).
-        // Branch-aware sticky full-screen over a remembered split is the persistence slice (014).
-        if let leaf = leaf(of: session.id) {
-            setActivePane(leaf)
+        // Take-me-to-it (002), branch-aware and sticky (014). A branch switch stashes the layout you
+        // leave into its Branch.layout and restores the target's remembered one; then, within it:
+        //  • the target's durable is a split and the session is a member → return to the split;
+        //  • the durable is a split and the session is NOT a member → transient full-screen over it
+        //    (the split stays remembered underneath, a later member click returns to it);
+        //  • no split → the session is the single pane (the degenerate one-leaf case).
+        if let br = branch(of: session), br.id != currentBranchID {
+            currentBranch?.layout = durableLayout   // stash the branch we leave
+            currentBranchID = br.id
+            stashedSplit = nil
+            layout = br.layout
+        }
+        let durable = durableLayout
+        if let durable, !durable.isLeaf {
+            if let member = leafInTree(durable, session: session.id) {
+                layout = durable; stashedSplit = nil; activePane = member          // back to the split
+            } else {
+                if stashedSplit == nil { stashedSplit = layout }
+                layout = PaneNode(leafSession: session.id); activePane = layout     // full-screen over it
+            }
         } else {
             stashedSplit = nil
-            layout = PaneNode(leafSession: session.id)
-            activePane = layout
-            syncActive()   // mirrors openSessionID / clears openSetupBranchID + this row's unread/notif
+            if let existing = leaf(of: session.id) { activePane = existing }        // already the single pane
+            else { layout = PaneNode(leafSession: session.id); activePane = layout }
         }
+        renderLayout()
         navCursor = session.id
     }
 
@@ -829,8 +848,10 @@ enum FeedbackMode {
     /// checkout then lands as a quiet unread row instead (applySessionTemplate).
     func openWorktreeSetup(_ branch: Branch) {
         settingsOpen = false
-        // The setup skeleton is a transient, branchless single pane (Layout.swift); syncActive
-        // mirrors it into openSetupBranchID and clears openSessionID.
+        // The setup skeleton is a transient, branchless single pane — stash the branch we leave so
+        // its remembered layout survives, and don't let the skeleton clobber any branch's entry (014).
+        currentBranch?.layout = durableLayout
+        currentBranchID = nil
         stashedSplit = nil
         layout = PaneNode(leafSetup: branch.id)
         activePane = layout
@@ -1773,7 +1794,10 @@ enum FeedbackMode {
                                                  browserURL: s.browserURL,
                                                  ownerSessionID: s.ownerSessionID)
                             },
-                            browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents)
+                            browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents,
+                            // The branch's remembered split, serialized to session identities;
+                            // nil for a single pane (014). Leaves whose session is gone collapse.
+                            layout: serializeLayout(br.layout, valid: Set(br.sessions.map(\.id))))
                     },
                     setupScript: wsScripts[ws.id],
                     agentFlags: wsAgentFlags[ws.id].map { flags in
@@ -1817,9 +1841,13 @@ enum FeedbackMode {
                 }
                 // Scrub hostless recents (about:blank) recorded before the filter existed.
                 let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }
-                return Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
-                              sessions: sessions, lastActivity: pb.lastActivity,
-                              browserRecents: recents)
+                let br = Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
+                                sessions: sessions, lastActivity: pb.lastActivity,
+                                browserRecents: recents)
+                // Restore the remembered split, resolving leaves against this branch's sessions;
+                // an unresolved leaf (e.g. a runtime browser that didn't come back) collapses (014).
+                br.layout = deserializeLayout(pb.layout, valid: Set(sessions.map(\.id)))
+                return br
             }
             restored.append(Workspace(id: pw.id, name: pw.name, url: pw.url,
                                       branches: branches, colorIndex: pw.colorIndex))

@@ -227,6 +227,10 @@ extension URL {
     /// This branch's GitHub pull request, if any (PRService). Derived like session status,
     /// not persisted: nil until the first `gh` read fills it, refreshed on activation.
     var pr: PRInfo?
+    /// This branch's remembered pane layout (ADR-0014): the durable split it owns, restored on
+    /// relaunch. nil = a single pane (no split to remember). Kept in step with the on-screen tree
+    /// by the store (syncBranchLayout) and serialized to disk (slice 014).
+    var layout: PaneNode?
 
     init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", browserRecents: [BrowserRecent] = [], isPending: Bool = false) {
         self.id = id

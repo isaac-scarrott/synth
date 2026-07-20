@@ -413,11 +413,18 @@ private struct TplListHead<Trailing: View>: View {
     }
 }
 
+/// An in-flight grip drag: the row's origin slot and the slot a release would land in.
+private struct TplDrop: Equatable {
+    var from: Int
+    var target: Int
+}
+
 /// The editable template list (working.html .tpl-list[data-tpl]): reorderable rows with
 /// an inline name field, kind pill and remove button.
 private struct TplList: View {
     @Binding var entries: [SessionTemplateEntry]
     let emptyText: String
+    @State private var drop: TplDrop?
 
     var body: some View {
         if entries.isEmpty {
@@ -426,10 +433,47 @@ private struct TplList: View {
             VStack(spacing: TplMetrics.gap) {
                 ForEach(entries) { entry in
                     TplRow(entries: $entries, entry: entry,
-                           index: entries.firstIndex(where: { $0.id == entry.id }) ?? 0)
+                           index: entries.firstIndex(where: { $0.id == entry.id }) ?? 0,
+                           drop: $drop)
+                }
+            }
+            // .drop-line — painted above the rows, hidden when the drop is a no-op.
+            .overlay(alignment: .top) {
+                if let d = drop, d.target != d.from {
+                    TplDropLine()
+                        .offset(y: dropLineY(d) - 1)
+                        .allowsHitTesting(false)
+                        .animation(.easeOut(duration: 0.08), value: d.target)
+                        .transition(.opacity.animation(.easeOut(duration: 0.11)))
                 }
             }
         }
+    }
+
+    /// Line centre against the un-reshuffled layout (the dragged row still holds its
+    /// origin slot, like the HTML's faded .drag-src): mid-gap above the row the drop
+    /// lands before, or under the last row for an append, clamped inside the list.
+    private func dropLineY(_ d: TplDrop) -> CGFloat {
+        let boundary = d.target < d.from ? d.target : d.target + 1
+        let y = CGFloat(boundary) * TplMetrics.step - TplMetrics.gap / 2
+        return min(max(y, 1), CGFloat(entries.count) * TplMetrics.step - TplMetrics.gap - 1)
+    }
+}
+
+/// The copper insertion line (working.html .drop-line): a 2px accent rule inset 4px from
+/// each side, with a round dot cap protruding past its left end.
+private struct TplDropLine: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(Theme.accent.opacity(0.9))
+            .frame(height: 2)
+            .overlay(alignment: .leading) {
+                Circle()
+                    .fill(Theme.accent.opacity(0.9))
+                    .frame(width: 6, height: 6)
+                    .offset(x: -3)
+            }
+            .padding(.horizontal, 4)
     }
 }
 
@@ -479,14 +523,17 @@ private struct TplEmpty: View {
 }
 
 /// One editable template row (working.html .tpl-row): grip · index · kind icon · name
-/// field · kind pill · ×. The grip's DragGesture reorders live — rows are fixed-height,
-/// so the target index is translation.height over the row step, moved as thresholds cross.
+/// field · kind pill · ×. The grip's DragGesture lifts the row to track the pointer while
+/// the rest of the list holds still (working.html startTplDrag) — rows are fixed-height,
+/// so the landing slot is translation.height over the row step, committed on release.
 private struct TplRow: View {
     @Binding var entries: [SessionTemplateEntry]
     let entry: SessionTemplateEntry
     let index: Int
+    @Binding var drop: TplDrop?
     @State private var dragging = false
     @State private var dragFrom = 0
+    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 8) {
@@ -504,6 +551,7 @@ private struct TplRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, lineWidth: 0.5))
                 .shadow(color: .black.opacity(dragging ? 0.12 : 0.04), radius: dragging ? 4 : 0.75, y: 1)
         )
+        .offset(y: dragOffset)
         .zIndex(dragging ? 1 : 0)
     }
 
@@ -514,8 +562,8 @@ private struct TplRow: View {
         )
     }
 
-    // .tpl-grip — global coordinates so the row moving under the pointer doesn't feed
-    // back into the translation.
+    // .tpl-grip — global coordinates so the lifted row moving with the pointer doesn't
+    // feed back into the translation.
     private var grip: some View {
         Phos(path: Phosphor.gripSix, size: 14)
             .foregroundStyle(Theme.inkFaint)
@@ -527,16 +575,22 @@ private struct TplRow: View {
                             dragging = true
                             dragFrom = entries.firstIndex(where: { $0.id == entry.id }) ?? 0
                         }
+                        dragOffset = v.translation.height
                         let delta = Int((v.translation.height / TplMetrics.step).rounded())
-                        let target = max(0, min(entries.count - 1, dragFrom + delta))
-                        guard let cur = entries.firstIndex(where: { $0.id == entry.id }),
-                              cur != target else { return }
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            entries.move(fromOffsets: IndexSet(integer: cur),
-                                         toOffset: target > cur ? target + 1 : target)
-                        }
+                        drop = TplDrop(from: dragFrom,
+                                       target: max(0, min(entries.count - 1, dragFrom + delta)))
                     }
-                    .onEnded { _ in dragging = false }
+                    .onEnded { _ in
+                        if let d = drop, d.target != d.from {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                entries.move(fromOffsets: IndexSet(integer: d.from),
+                                             toOffset: d.target > d.from ? d.target + 1 : d.target)
+                            }
+                        }
+                        drop = nil
+                        dragging = false
+                        dragOffset = 0
+                    }
             )
     }
 

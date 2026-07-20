@@ -60,25 +60,37 @@ extension AppStore {
 struct ShortcutsSheet: View {
     @Environment(AppStore.self) private var store
 
+    // Ordered by importance: the everyday app chords, then the two things you drive constantly
+    // (the ⌘K menu and the sidebar), then the power features, then contextual surfaces.
     fileprivate static let categories: [ShortcutCategory] = [
         ShortcutCategory(name: "General", icon: Phosphor.keys, rows: [
-            Shortcut(keys: ["⌘", "K"], label: "Command menu"),
+            Shortcut(keys: ["⌘", "K"], label: "Command menu", alt: ["⌃", "K"]),
             Shortcut(keys: ["⌘", "N"], label: "New session"),
             Shortcut(keys: ["⌘", "T"], label: "New terminal"),
             Shortcut(keys: ["⌘", "D"], label: "Close current session"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
+            Shortcut(keys: ["⌘", "⏎"], label: "Jump to latest notification"),
             Shortcut(keys: ["⌘", ","], label: "Settings"),
             Shortcut(keys: ["⌘", "?"], label: "Keyboard shortcuts"),
             Shortcut(keys: ["⌘", "⇧", "F"], label: "Send feedback"),
+            Shortcut(keys: ["⌘", "Q"], label: "Quit (confirms if busy)"),
+        ]),
+        ShortcutCategory(name: "Command menu", icon: Phosphor.search, rows: [
+            Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),
+            Shortcut(keys: ["↵"], label: "Open · drill in"),
+            Shortcut(keys: ["⌫"], label: "Back (empty search)"),
+            Shortcut(keys: ["⌘", "K"], label: "Close", alt: ["esc"]),
         ]),
         ShortcutCategory(name: "Sidebar", icon: Phosphor.sidebar, rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move selection", alt: ["J", "K"]),
             Shortcut(keys: ["→", "←"], label: "Expand · collapse", alt: ["L", "H"]),
             Shortcut(keys: ["⇥"], label: "Toggle group"),
-            Shortcut(keys: ["↵"], label: "Open session / toggle", alt: ["Space"]),
+            Shortcut(keys: ["↵"], label: "Open session · toggle", alt: ["Space"]),
+            Shortcut(keys: ["A"], label: "New session in row"),
             Shortcut(keys: ["R"], label: "Rename selected"),
             Shortcut(keys: ["D"], label: "Close · remove selected"),
             Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder down · up"),
+            Shortcut(keys: ["esc"], label: "Focus content"),
         ]),
         ShortcutCategory(name: "Split layout", icon: Phosphor.squares, rows: [
             Shortcut(keys: ["⌘", "⇧", "→"], label: "Split toward arrow", alt: ["⌘", "|"]),
@@ -86,7 +98,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "⌥", "→"], label: "Focus pane (spatial)", alt: ["⌘", "⌥", "L"]),
             Shortcut(keys: ["⌘", "1"], label: "Focus pane N", alt: ["⌘", "9"]),
             Shortcut(keys: ["⌘", "0"], label: "Focus sidebar"),
-            Shortcut(keys: ["⌘", "`"], label: "Cycle panes"),
+            Shortcut(keys: ["⌘", "`"], label: "Cycle next · previous", alt: ["⌘", "⇧", "`"]),
             Shortcut(keys: ["⌘", "⌥", "⇧", "→"], label: "Resize active pane"),
             Shortcut(keys: ["⌘", "⇧", "⏎"], label: "Zoom / unzoom pane"),
             Shortcut(keys: ["⌘", "⇧", "U"], label: "Unsplit (keep running)"),
@@ -98,12 +110,13 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "]"], label: "Forward"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "Toggle DevTools"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Toggle device mode"),
+            Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
-        ShortcutCategory(name: "Command menu", icon: Phosphor.search, rows: [
-            Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),
-            Shortcut(keys: ["↵"], label: "Open · drill in"),
-            Shortcut(keys: ["⌫"], label: "Back (empty search)"),
-            Shortcut(keys: ["esc"], label: "Close"),
+        ShortcutCategory(name: "Dialogs", icon: Phosphor.folder, rows: [
+            Shortcut(keys: ["↵"], label: "Confirm · create"),
+            Shortcut(keys: ["esc"], label: "Cancel · dismiss"),
+            Shortcut(keys: ["↑", "↓"], label: "Choose branches to add", alt: ["Space"]),
+            Shortcut(keys: ["⌘", "↵"], label: "Send feedback"),
         ]),
     ]
     static var categoryCount: Int { categories.count }

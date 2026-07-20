@@ -4833,11 +4833,7 @@
     terminal: { label: 'Terminal',    start: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>` },
     browser:  { label: 'Browser',     start: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>` },
   };
-  let globalTpl = [
-    { kind: 'claude',   name: 'Claude Code' },
-    { kind: 'terminal', name: 'dev server' },
-    { kind: 'terminal', name: 'shell' },
-  ];
+  let globalTpl = [];
   const wsTpls = { synth: [
     { kind: 'claude',   name: 'Claude Code' },
     { kind: 'terminal', name: 'pnpm dev' },

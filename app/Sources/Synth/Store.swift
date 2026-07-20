@@ -387,11 +387,7 @@ enum FeedbackMode {
 
     /// The ordered session set every new worktree starts with (working.html TPL_KINDS /
     /// globalTpl). Order is creation order — the first entry is the session that opens.
-    var globalSessionTemplate: [SessionTemplateEntry] = [
-        SessionTemplateEntry(kind: .agent(.claudeCode), name: "Claude Code"),
-        SessionTemplateEntry(kind: .terminal, name: "dev server"),
-        SessionTemplateEntry(kind: .terminal, name: "shell"),
-    ]
+    var globalSessionTemplate: [SessionTemplateEntry] = []
     var wsSessionTemplates: [UUID: [SessionTemplateEntry]] = [:]
 
     /// The effective template for a scope — same override model as the flags: a workspace

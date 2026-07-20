@@ -360,10 +360,20 @@ struct RootView: View {
                 }
                 return nil
             }
-            // The changelog owns the keyboard while open, same as the shortcuts sheet — Esc
-            // closes, everything else is swallowed.
+            // The changelog owns the keyboard while open, same as the shortcuts sheet: ↑/↓
+            // (and j/k) walk the version rail, Esc closes, everything else is swallowed.
             if store.changelogOpen {
-                if event.keyCode == 53 { store.closeChangelog() }
+                switch event.keyCode {
+                case 53: store.closeChangelog()
+                case 125: store.moveChangelogVersion(1)    // ↓
+                case 126: store.moveChangelogVersion(-1)   // ↑
+                default:
+                    switch key {
+                    case "j": store.moveChangelogVersion(1)
+                    case "k": store.moveChangelogVersion(-1)
+                    default: break
+                    }
+                }
                 return nil
             }
 

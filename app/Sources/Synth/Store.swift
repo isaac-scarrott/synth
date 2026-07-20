@@ -378,6 +378,9 @@ enum FeedbackMode {
     /// The in-app changelog (Synth → Changelog menu item). Read-only, Esc-dismissed like
     /// the shortcuts sheet; app-only, so no working.html twin.
     var changelogOpen = false
+    /// The selected release in the changelog's version rail — driven by ↑/↓ / j/k while open,
+    /// the same keyboard-first idiom as the shortcuts sheet's category sidebar.
+    var changelogVersion = 0
 
     /// Full-screen Settings page: a mode layered over the same shell (working.html's
     /// `.app.settings`). `settingsScope` picks which scope the right pane renders.
@@ -945,10 +948,18 @@ enum FeedbackMode {
         activeMenu = nil
         closePalette()
         shortcutsOpen = false
+        changelogVersion = 0   // land on the newest release
         changelogOpen = true
     }
 
     func closeChangelog() { changelogOpen = false }
+
+    /// Walk the changelog's version rail, clamped to its bounds.
+    func moveChangelogVersion(_ delta: Int) {
+        let n = ChangelogSheet.releaseCount
+        guard n > 0 else { return }
+        changelogVersion = max(0, min(n - 1, changelogVersion + delta))
+    }
 
     /// Palette jump: reveal the session (expand collapsed ancestors), open it, mark
     /// read — working.html's jumpTo, selection ring shown as if keyboard-driven.

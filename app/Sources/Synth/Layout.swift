@@ -413,6 +413,113 @@ extension AppStore {
         }
     }
 
+    // MARK: Mouse drag-to-split (010) — pointer → drop zone → tree op
+
+    /// The region a drop will occupy + how it reads. `zone` is nil when refused (floor breach).
+    struct DropResolution: Equatable {
+        enum Kind { case split, replace, rim, refuse }
+        var rect: CGRect
+        var kind: Kind
+        var zone: DropZone?
+    }
+    enum DropZone: Equatable {
+        case rim(ArrowDir)            // split the whole surface (outer rim)
+        case edge(UUID, ArrowDir)     // split the hovered pane on that edge
+        case replace(UUID)            // swap the hovered pane's session in place
+    }
+
+    private static let dropRimPx: CGFloat = 26      // outer band that reads as a whole-surface split
+    private static let dropEdgeFrac: CGFloat = 0.25 // inner band of a pane that reads as an edge split
+
+    /// Resolve a pointer in content coordinates to the zone a dropped session will land in
+    /// (working.html computeDrop): rim → splitRoot, pane edge → splitPane, centre → replace. Any
+    /// zone that would breach the 360×240 floor comes back `.refuse` (a no-op drop).
+    func resolveDrop(at p: CGPoint, contentSize: CGSize, dragging sessionID: UUID) -> DropResolution {
+        let full = CGRect(origin: .zero, size: contentSize)
+        // Rim: within the outer band of the whole surface → split the whole surface toward that edge.
+        if let dir = rimDirection(p, full) {
+            let axis = dir.axis
+            let extent = axis == .row ? contentSize.width : contentSize.height
+            let keptMin = layout.map { paneMinAlong($0, axis: axis) } ?? (axis == .row ? Self.paneMinW : Self.paneMinH)
+            let incomingMin = axis == .row ? Self.paneMinW : Self.paneMinH
+            let rect = halfRect(full, dir)
+            let ok = extent / 2 >= incomingMin && extent / 2 >= keptMin
+            return DropResolution(rect: rect, kind: ok ? .rim : .refuse, zone: ok ? .rim(dir) : nil)
+        }
+        // Otherwise the pane under the pointer.
+        guard let leaf = paneUnder(p), let r = paneFrames[leaf.id] else {
+            return DropResolution(rect: full, kind: .refuse, zone: nil)
+        }
+        let fx = (p.x - r.minX) / max(1, r.width)
+        let fy = (p.y - r.minY) / max(1, r.height)
+        let e = Self.dropEdgeFrac
+        // Nearest edge if the pointer is in that pane's outer band, else the centre = replace.
+        let dir: ArrowDir?
+        if fx < e { dir = .left } else if fx > 1 - e { dir = .right }
+        else if fy < e { dir = .up } else if fy > 1 - e { dir = .down }
+        else { dir = nil }
+        if let dir {
+            let axis = dir.axis
+            let extent = axis == .row ? r.width : r.height
+            let ok = extent / 2 >= (axis == .row ? Self.paneMinW : Self.paneMinH)
+            return DropResolution(rect: halfRect(r, dir), kind: ok ? .split : .refuse,
+                                  zone: ok ? .edge(leaf.id, dir) : nil)
+        }
+        // Centre → replace the pane's session in place (the displaced one returns to the sidebar).
+        return DropResolution(rect: r, kind: .replace, zone: .replace(leaf.id))
+    }
+
+    private func rimDirection(_ p: CGPoint, _ full: CGRect) -> ArrowDir? {
+        let m = Self.dropRimPx
+        let dl = p.x - full.minX, dr = full.maxX - p.x, dt = p.y - full.minY, db = full.maxY - p.y
+        let nearest = min(dl, dr, dt, db)
+        guard nearest <= m else { return nil }
+        if nearest == dl { return .left }
+        if nearest == dr { return .right }
+        if nearest == dt { return .up }
+        return .down
+    }
+
+    private func halfRect(_ r: CGRect, _ dir: ArrowDir) -> CGRect {
+        switch dir {
+        case .left:  return CGRect(x: r.minX, y: r.minY, width: r.width / 2, height: r.height)
+        case .right: return CGRect(x: r.midX, y: r.minY, width: r.width / 2, height: r.height)
+        case .up:    return CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height / 2)
+        case .down:  return CGRect(x: r.minX, y: r.midY, width: r.width, height: r.height / 2)
+        }
+    }
+
+    private func paneUnder(_ p: CGPoint) -> PaneNode? {
+        paneLeaves.first { paneFrames[$0.id]?.contains(p) ?? false }
+    }
+
+    /// Apply a resolved drop (010): the session lands in the zone. An already-open session *moves*
+    /// (its old pane collapses) rather than duplicating; focus follows the drop.
+    func performDrop(session sessionID: UUID, zone: DropZone) {
+        switch zone {
+        case let .rim(dir):
+            if let existing = leaf(of: sessionID) { removeLeaf(existing) }
+            splitRoot(session: sessionID, dir: dir.axis, before: dir.before)
+        case let .edge(leafID, dir):
+            guard let target = nodeByID(leafID), target.isLeaf else { return }
+            splitActiveWith(session: sessionID, dir: dir.axis, before: dir.before, target: target)
+        case let .replace(leafID):
+            guard let target = nodeByID(leafID), target.isLeaf else { return }
+            if let existing = leaf(of: sessionID), existing !== target { removeLeaf(existing) }
+            target.sessionID = sessionID   // the displaced session drops back to a sidebar row, still running
+            target.setupBranchID = nil
+            stashedSplit = nil
+            activePane = target
+            renderLayout()
+        }
+    }
+
+    private func nodeByID(_ id: UUID) -> PaneNode? {
+        var hit: PaneNode?
+        eachLeaf(layout) { if $0.id == id { hit = $0 } }
+        return hit
+    }
+
     // MARK: Min-pane floor geometry (resize/drop slices clamp against this)
 
     /// The smallest length a subtree can hold along `axis` before some pane hits the 360×240 floor

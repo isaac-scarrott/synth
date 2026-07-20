@@ -587,6 +587,10 @@ private struct SessionRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(RowButtonStyle())
+                // NB: the full row owns the reorder drag (reorderLift, a highPriorityGesture), so a
+                // system .onDrag here would be shadowed — drag-to-split from a plain row needs
+                // gesture arbitration with reorder (deferred). The echo-band tiles carry the drag
+                // source instead (no reorder there), over the same drop model.
                 // Unread bullet lives in the gutter (blue), not inline — no layout shift.
                 .overlay(alignment: .leading) {
                     Circle().fill(Theme.input).frame(width: 4, height: 4)
@@ -687,6 +691,7 @@ private struct SessionTile: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .onDrag { NSItemProvider(object: session.id.uuidString as NSString) }   // drag a member out → unsplit
         .help(session.title)
     }
 }

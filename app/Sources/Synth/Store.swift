@@ -204,6 +204,10 @@ enum FeedbackMode {
     /// views each layout pass (ContentPane). The keyboard's spatial focus (focusDir) and resize
     /// (resizeActive) read real geometry from here — the native stand-in for getBoundingClientRect.
     @ObservationIgnored var paneFrames: [UUID: CGRect] = [:]
+    /// The drop-zone highlight painted while a sidebar session is dragged over the content (010) —
+    /// the region the new pane will occupy, coloured by kind (split / replace / rim / refuse). nil
+    /// when no drag is in flight.
+    var dropPreview: DropResolution?
 
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).

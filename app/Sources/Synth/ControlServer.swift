@@ -422,6 +422,25 @@ final class ControlServer: @unchecked Sendable {
             store.splitPane(target, session: session.id, dir: dir, before: before)
             return ["ok": true, "panes": store.paneLeaves.count]
 
+        // Drive the mouse drag-to-split drop model (010) headlessly: resolve the pointer (x,y in
+        // content coordinates, with the content size) to a zone and apply it — the exact call the
+        // content DropDelegate makes on drop, minus the un-drivable system drag gesture.
+        case "automation.drop" where automation:
+            guard let session = requestedSession(request, in: branch),
+                  let x = request["x"] as? Double, let y = request["y"] as? Double,
+                  let w = request["w"] as? Double, let h = request["h"] as? Double else {
+                return ["ok": false, "error": "need sessionId, x, y, w, h"]
+            }
+            let dz = store.resolveDrop(at: CGPoint(x: x, y: y),
+                                       contentSize: CGSize(width: w, height: h), dragging: session.id)
+            let kind: String
+            switch dz.kind {
+            case .split: kind = "split"; case .replace: kind = "replace"
+            case .rim: kind = "rim"; case .refuse: kind = "refuse"
+            }
+            if let zone = dz.zone { store.performDrop(session: session.id, zone: zone) }
+            return ["ok": true, "kind": kind, "applied": dz.zone != nil, "panes": store.paneLeaves.count]
+
         // Navigate a browser session — the home "Go to…" field's exact onSubmit call.
         case "automation.browserGo" where automation:
             guard let session = requestedSession(request, in: branch), session.kind == .browser,

@@ -46,11 +46,18 @@ struct ContentPane: View {
             } else if let root = store.layout {
                 // The layout spine (009): render the pane tree. A lone leaf is byte-for-byte
                 // today's single session; ≥2 leaves lay out as nested splits.
-                PaneTreeView(node: root)
-                    .coordinateSpace(name: Self.contentSpace)
-                    // Each node reports its frame here; the keyboard's spatial focus + resize
-                    // (Layout.swift) read real geometry from the store.
-                    .onPreferenceChange(PaneFramesKey.self) { store.paneFrames = $0 }
+                GeometryReader { geo in
+                    PaneTreeView(node: root)
+                        .coordinateSpace(name: Self.contentSpace)
+                        // Each node reports its frame here; the keyboard's spatial focus + resize
+                        // (Layout.swift) read real geometry from the store.
+                        .onPreferenceChange(PaneFramesKey.self) { store.paneFrames = $0 }
+                        // Drop-zone highlight (010): the region the dropped pane will occupy, bare
+                        // colour + shape, fading in on appear.
+                        .overlay { DropZoneOverlay() }
+                        // Drag a sidebar session in → split / replace at the pointer (010).
+                        .onDrop(of: [.text], delegate: ContentDropDelegate(store: store, size: geo.size))
+                }
             } else {
                 PaneEmpty()
             }
@@ -523,6 +530,77 @@ private struct SetupSpinner: View {
             .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false),
                        value: spinning)
             .onAppear { spinning = true }
+    }
+}
+
+/// working.html `.dz` (010): a single reusable highlight painted over the region a dropped session
+/// will occupy — bare colour + shape, no icon/label. split = copper wash + solid border, replace =
+/// slate-blue dashed, rim = slate dashed, refuse = greyed. Geometry animates so the kind never morphs.
+private struct DropZoneOverlay: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        GeometryReader { _ in
+            if let dz = store.dropPreview {
+                let (fill, stroke, dashed) = style(dz.kind)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(fill)
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(stroke, style: StrokeStyle(lineWidth: 2, dash: dashed ? [6, 4] : [])))
+                    .frame(width: dz.rect.width, height: dz.rect.height)
+                    .position(x: dz.rect.midX, y: dz.rect.midY)
+                    .animation(.easeOut(duration: 0.08), value: dz.rect)
+                    .transition(.opacity)
+            }
+        }
+        .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.11), value: store.dropPreview == nil)
+    }
+
+    private func style(_ kind: AppStore.DropResolution.Kind) -> (Color, Color, Bool) {
+        switch kind {
+        case .split:   return (Theme.copper.opacity(0.16), Theme.copper.opacity(0.9), false)
+        case .replace: return (Theme.input.opacity(0.14), Theme.input.opacity(0.95), true)
+        case .rim:     return (Theme.input.opacity(0.09), Theme.inkMuted, true)
+        case .refuse:  return (Color.gray.opacity(0.13), Theme.inkFaint, false)
+        }
+    }
+}
+
+/// Resolves the pointer to a drop zone as a sidebar session is dragged over the content, keeps the
+/// highlight in step, and applies the tree op on drop (010). The session id rides the drag as text.
+private struct ContentDropDelegate: DropDelegate {
+    let store: AppStore
+    let size: CGSize
+
+    func dropEntered(info: DropInfo) { update(info) }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        update(info)
+        return DropProposal(operation: .move)
+    }
+    func dropExited(info: DropInfo) { store.dropPreview = nil }
+
+    private func update(_ info: DropInfo) {
+        // The dragged session id isn't readable synchronously here, so resolve against whichever
+        // session is in flight; the zone geometry doesn't depend on which session it is (only the
+        // floor check does, and every session is a leaf of the same min). Use the active pane's as
+        // a stand-in for the preview; the real id is loaded on drop.
+        let sid = store.activePane?.sessionID ?? store.openSessionID ?? UUID()
+        store.dropPreview = store.resolveDrop(at: info.location, contentSize: size, dragging: sid)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer { store.dropPreview = nil }
+        guard let provider = info.itemProviders(for: [.text]).first else { return false }
+        let location = info.location
+        provider.loadObject(ofClass: NSString.self) { obj, _ in
+            guard let s = obj as? String, let sid = UUID(uuidString: s) else { return }
+            DispatchQueue.main.async {
+                let dz = store.resolveDrop(at: location, contentSize: size, dragging: sid)
+                if let zone = dz.zone { store.performDrop(session: sid, zone: zone) }
+            }
+        }
+        return true
     }
 }
 

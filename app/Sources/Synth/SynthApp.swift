@@ -179,6 +179,9 @@ struct RootView: View {
         .ignoresSafeArea()
         // The free-floating session drag ghost, at the window root so it floats over both panes.
         .overlay(alignment: .topLeading) { DragGhost() }
+        // The reorder insertion line paints over everything, the ghost included (working.html
+        // z-index 301 over the clone's 300).
+        .overlay(alignment: .topLeading) { DropLine() }
         .background(WindowChrome().frame(width: 0, height: 0))
         // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
         .preferredColorScheme(store.colorSchemeOverride)

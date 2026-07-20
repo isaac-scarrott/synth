@@ -1003,12 +1003,11 @@ extension View {
 // MARK: - Drag-to-reorder (F2)
 
 extension View {
-    /// Hosts the reorder drag on a row's *header* (never its child rows), and measures the
-    /// header height that sizes each reorder step. A ~5px threshold keeps a plain click
-    /// opening/toggling the row (working.html's press-vs-drag threshold).
+    /// Hosts the reorder drag on a row's *header* (never its child rows). A ~5px threshold
+    /// keeps a plain click opening/toggling the row (working.html's press-vs-drag threshold).
     func reorderGesture(_ ref: RowRef) -> some View { modifier(ReorderGesture(ref: ref)) }
-    /// Lifts the whole row while it's the drag source: it tracks the pointer, elevates with
-    /// a shadow, and rises above its siblings, which shift underneath it.
+    /// Lifts the whole unit while it's the drag source: it tracks the pointer and elevates with
+    /// a shadow while its siblings hold still — the insertion line marks where it will land.
     func reorderLift(_ ref: RowRef) -> some View { modifier(ReorderLift(ref: ref)) }
 
     /// A right-click anywhere on a row opens the ⌘K palette drilled to that row — the same
@@ -1058,51 +1057,37 @@ private struct ReorderGesture: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let ref: RowRef
     @State private var dragging = false
-    @State private var consumed: CGFloat = 0   // translation already turned into steps
-    @State private var pitch: CGFloat = 30      // header height + inter-row gap
 
     func body(content: Content) -> some View {
-        content
-            .background(
-                GeometryReader { g in
-                    Color.clear
-                        .onAppear { pitch = g.size.height + 1 }
-                        .onChange(of: g.size.height) { _, h in if !dragging { pitch = h + 1 } }
-                }
-            )
-            .highPriorityGesture(drag)
+        content.highPriorityGesture(drag)
     }
 
     private var drag: some Gesture {
-        // .global: the gesture view moves with the drag (ReorderLift's offset + slot hops),
-        // so local-space translation would lag the pointer and double-count each hop.
+        // .global: the gesture view moves with the drag (ReorderLift's offset), so local-space
+        // translation would lag the pointer.
         DragGesture(minimumDistance: 5, coordinateSpace: .global)
             .onChanged { v in
                 if !dragging {
                     dragging = true
-                    consumed = 0
                     store.keyboardActive = false
                     store.navCursor = ref.id
                     store.draggingRowID = ref.id
                 }
-                let p = max(pitch, 1)
-                var net = v.translation.height - consumed
-                // Cross a sibling's midpoint → hop one slot; loop so a fast flick catches up,
-                // and stops on its own when moveWithinSiblings hits a list edge.
-                while net > p / 2, store.moveWithinSiblings(ref, by: 1, animated: !reduceMotion) {
-                    consumed += p; net -= p
-                }
-                while net < -p / 2, store.moveWithinSiblings(ref, by: -1, animated: !reduceMotion) {
-                    consumed -= p; net += p
-                }
-                store.dragOffset = v.translation.height - consumed
+                // The sibling list holds still under the drag (working.html): the lifted unit
+                // tracks the pointer 1:1 and the insertion line marks the landing slot.
+                store.dragOffset = v.translation.height
+                store.reorderDropLine = store.reorderDrop(ref, atGlobalY: v.location.y)?.line
             }
-            .onEnded { _ in
+            .onEnded { v in
                 dragging = false
-                consumed = 0
-                store.dragOffset = 0
-                store.draggingRowID = nil
-                store.saveNow()   // persist the dropped order
+                // Settle + commit in one animated turn, so the lifted unit glides from the
+                // pointer straight into the slot the line promised.
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                    store.dragOffset = 0
+                    store.draggingRowID = nil
+                }
+                store.commitReorderDrop(ref, atGlobalY: v.location.y, animated: !reduceMotion)
+                store.reorderDropLine = nil
             }
     }
 }
@@ -1114,6 +1099,14 @@ private struct ReorderLift: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // The whole unit's global frame (header + expanded children — the DOM unit the
+            // row drags as), feeding the drop-line computation at this level.
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { store.reorderUnitFrames[ref.id] = g.frame(in: .global) }
+                    .onChange(of: g.frame(in: .global)) { _, f in store.reorderUnitFrames[ref.id] = f }
+                    .onDisappear { store.reorderUnitFrames[ref.id] = nil }
+            })
             .offset(y: dragged ? store.dragOffset : 0)
             .scaleEffect(dragged ? 1.015 : 1)
             .shadow(color: .black.opacity(dragged ? 0.22 : 0),
@@ -1176,6 +1169,7 @@ private struct SessionRowDrag: ViewModifier {
                 if let dz = store.dropZone(atGlobal: p, dragging: session.id) {
                     mode = .content
                     store.dropPreview = dz; store.pairTargetID = nil
+                    store.reorderDropLine = nil
                     return
                 }
                 store.dropPreview = nil
@@ -1184,11 +1178,16 @@ private struct SessionRowDrag: ViewModifier {
                 if let target = store.pairTarget(atGlobal: p, dragging: session.id) {
                     mode = .pair
                     store.pairTargetID = target
+                    store.reorderDropLine = nil
                     return
                 }
-                // 3) Off the rows (gaps / ends) → a reorder, committed on release.
+                // 3) Off the rows (gaps / ends) → a reorder, committed on release; the insertion
+                //    line marks the landing slot. No line for a split member (release unsplits,
+                //    013) or an echo tile (reading order, not reorderable).
                 mode = .reorder
                 store.pairTargetID = nil
+                store.reorderDropLine = (reorderable && !wasMember)
+                    ? store.reorderDrop(.session(session), atGlobalY: p.y)?.line : nil
             }
             .onEnded { _ in
                 switch mode {
@@ -1207,6 +1206,7 @@ private struct SessionRowDrag: ViewModifier {
                 store.dragGhostSessionID = nil
                 store.dropPreview = nil
                 store.pairTargetID = nil
+                store.reorderDropLine = nil
             }
     }
 }
@@ -1243,6 +1243,40 @@ struct DragGhost: View {
             .allowsHitTesting(false)
             .transition(.opacity)
         }
+    }
+}
+
+/// The copper insertion line a reorder drag paints at its landing slot (working.html `.drop-line`):
+/// 2pt tall, accent at 0.9, a 6pt dot capping its left end. Mounted at the window root ABOVE the
+/// drag ghost (z-index 301 over the clone's 300); the list never reshuffles mid-drag, so this line
+/// is the whole drop preview.
+struct DropLine: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let r = store.reorderDropLine {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Theme.accent.opacity(0.9))
+                    .overlay(alignment: .leading) {
+                        Circle().fill(Theme.accent.opacity(0.9))
+                            .frame(width: 6, height: 6)
+                            .offset(x: -3)   // dot centred on the line's left tip
+                    }
+                    .frame(width: r.width, height: r.height)
+                    .offset(x: r.minX, y: r.minY)
+                    // The line glides between slots (working.html: 80ms ease-out transition).
+                    .animation(.easeOut(duration: 0.08), value: r)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Quick fade in/out on appear/disappear (working.html: dz-in, 110ms).
+        .animation(.easeOut(duration: 0.11), value: store.reorderDropLine != nil)
+        .allowsHitTesting(false)
+        // The window-root overlay re-insets by the titlebar safe area; the line's rect is in
+        // global (window) coords, so anchor at the true window origin or every slot sags by it.
+        .ignoresSafeArea()
     }
 }
 

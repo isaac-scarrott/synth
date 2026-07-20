@@ -214,6 +214,10 @@ enum FeedbackMode {
     /// Each session row / echo tile's global frame, so a drag can tell which row the pointer is over
     /// for the pair-to-split gesture (012). Reported by the sidebar rows + tiles.
     @ObservationIgnored var sessionRowFrames: [UUID: CGRect] = [:]
+    /// Each workspace / branch unit's global frame (header + expanded children — the DOM unit a
+    /// row drags as), reported by ReorderLift, so the reorder drop-line can be computed at those
+    /// levels the way sessionRowFrames serves the session level.
+    @ObservationIgnored var reorderUnitFrames: [UUID: CGRect] = [:]
     /// The session row a drag is squarely over (its centre) — pairs on release into a split (012).
     /// Drives the copper `.session--pair-to` highlight. nil when not pairing.
     var pairTargetID: UUID?
@@ -321,6 +325,11 @@ enum FeedbackMode {
     var draggingRowID: UUID?
     var dragOffset: CGFloat = 0
     var reorderScrollNonce = 0
+    /// The copper insertion line of a reorder drag, in global coords (working.html `.drop-line`):
+    /// the list never reshuffles mid-drag, so this line IS the drop preview — it marks the slot
+    /// the release will land in. nil = hidden: no drag in flight, or the pointer rests in the
+    /// dragged unit's own slot (the faded source row already marks that slot).
+    var reorderDropLine: CGRect?
     /// A free-floating drag ghost for a session drag (010/012) — the session tracks the cursor like
     /// a VS Code file drag while the source row dims in place. nil when no session drag is in flight;
     /// `dragGhostPoint` is the cursor in global (window) coordinates.

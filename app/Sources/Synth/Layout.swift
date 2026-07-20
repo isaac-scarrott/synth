@@ -509,19 +509,67 @@ extension AppStore {
         return nil
     }
 
-    /// Drop-reorder (010's reorder branch, committed on release): move `sid` into the sibling slot
-    /// the cursor rests in — the count of other siblings whose row sits above the pointer.
-    func reorderSession(_ sid: UUID, toGlobalY y: CGFloat) {
-        guard let s = session(sid), let br = branch(of: s),
-              let cur = br.sessions.firstIndex(where: { $0.id == sid }) else { return }
-        var target = 0
-        for sib in br.sessions where sib.id != sid {
-            if let f = sessionRowFrames[sib.id], f.midY < y { target += 1 }
+    /// The slot a reorder drag at global `y` points at (working.html updateDropLine): insert before
+    /// the first sibling — the dragged unit excluded — whose vertical midpoint sits below the
+    /// pointer, else append at the list end. Sessions compare *unowned block heads*: an owning
+    /// claude drags its owned browsers along as one block, so "the slot after the source" means
+    /// the next unowned head, not the next row. nil = the drop is a no-op (the pointer rests in
+    /// the dragged unit's own slot, which the faded source already marks) — the line hides and
+    /// the release moves nothing. One computation feeds both the line and the commit, so the
+    /// line can never promise a slot the release won't land in.
+    struct ReorderDrop {
+        var delta: Int      // sibling/block steps moveWithinSiblings takes on release
+        var line: CGRect    // the insertion line's global frame (row width, inset 4pt each side)
+    }
+
+    func reorderDrop(_ ref: RowRef, atGlobalY y: CGFloat) -> ReorderDrop? {
+        let ids: [UUID]
+        let frames: [UUID: CGRect]
+        switch ref {
+        case let .session(s):
+            guard s.ownerSessionID == nil, let br = branch(of: s) else { return nil }
+            ids = br.sessions.filter { $0.ownerSessionID == nil }.map(\.id)
+            frames = sessionRowFrames
+        case let .branch(b):
+            guard let ws = workspace(of: b) else { return nil }
+            ids = ws.branches.map(\.id)
+            frames = reorderUnitFrames
+        case .workspace:
+            ids = workspaces.map(\.id)
+            frames = reorderUnitFrames
         }
-        var delta = target - cur
-        while delta > 0, moveWithinSiblings(.session(s), by: 1, animated: false) { delta -= 1 }
-        while delta < 0, moveWithinSiblings(.session(s), by: -1, animated: false) { delta += 1 }
+        // Compute among the on-screen siblings only (the top-level LazyVStack drops frames for
+        // rows scrolled out of existence); the rendered range is contiguous, so positions within
+        // it translate 1:1 into moveWithinSiblings steps.
+        let present = ids.filter { $0 == ref.id || frames[$0] != nil }
+        guard let cur = present.firstIndex(of: ref.id) else { return nil }
+        let items = present.filter { $0 != ref.id }.compactMap { frames[$0] }
+        guard !items.isEmpty else { return nil }
+        let hit = items.firstIndex { y < $0.midY }
+        let target = hit ?? items.count
+        guard target != cur else { return nil }
+        let r = items[hit ?? items.count - 1]
+        let line = CGRect(x: r.minX + 4, y: (hit != nil ? r.minY : r.maxY) - 1,
+                          width: r.width - 8, height: 2)
+        return ReorderDrop(delta: target - cur, line: line)
+    }
+
+    /// Land the reorder the insertion line promised (the list never moved mid-drag): step the
+    /// unit into the drop slot — animated, working.html's flip — and persist once. A nil drop
+    /// (no-op slot, hidden line) moves nothing.
+    func commitReorderDrop(_ ref: RowRef, atGlobalY y: CGFloat, animated: Bool) {
+        guard let drop = reorderDrop(ref, atGlobalY: y) else { return }
+        var delta = drop.delta
+        while delta > 0, moveWithinSiblings(ref, by: 1, animated: animated) { delta -= 1 }
+        while delta < 0, moveWithinSiblings(ref, by: -1, animated: animated) { delta += 1 }
         saveNow()
+    }
+
+    /// Drop-reorder (010's reorder branch, committed on release): land `sid` in the slot the
+    /// insertion line pointed at.
+    func reorderSession(_ sid: UUID, toGlobalY y: CGFloat) {
+        guard let s = session(sid) else { return }
+        commitReorderDrop(.session(s), atGlobalY: y, animated: true)
     }
 
     /// Land a pair (012): if the target is already a pane the dragged session splits it in place

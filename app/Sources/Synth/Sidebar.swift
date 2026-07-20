@@ -611,21 +611,24 @@ private struct KebabButton: View {
     let ref: RowRef
 
     private var menuOpen: Bool { store.activeMenu?.rowID == ref.id }
+    @State private var hovering = false
 
     var body: some View {
+        let active = menuOpen || hovering
         Button {
             // The ⋯ kebab opens the ⌘K palette drilled to this row (working.html openRowActions),
             // not the hover popover. The popover stays for the `d` quick-delete keybinding.
             store.openRowActions(ref)
         } label: {
-            // 13px glyph in a 20px box; the open menu fills a rounded 7px hover box
+            // 13px glyph in a 20px box; hover / open menu fills a rounded 7px hover box
             // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
             Phos(path: Phosphor.dots, size: 13)
-                .foregroundStyle(menuOpen ? Theme.ink2 : Theme.inkFaint)
+                .foregroundStyle(active ? Theme.ink2 : Theme.inkMeta)
                 .frame(width: 20, height: 20)
-                .background(RoundedRectangle(cornerRadius: 7).fill(menuOpen ? Theme.rowSelected : .clear))
+                .background(RoundedRectangle(cornerRadius: 7).fill(active ? Theme.rowSelected : .clear))
                 .contentShape(Rectangle())
         }
+        .onHover { hovering = $0 }
         .buttonStyle(KebabPressStyle())
         .help("Actions")
         .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [id = ref.id] anchor in [id: anchor] }

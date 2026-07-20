@@ -80,7 +80,7 @@ struct AgentWorktreePrompt: Identifiable {
     let id = UUID()
     let workspace: Workspace
     let branchName: String
-    let base: String?           // nil → the repo's HEAD; meaningful only for a new branch
+    let base: String?           // nil → the repo's default branch; meaningful only for a new branch
     let handoff: String?        // a brief for a fresh Claude session in the new worktree
     let requesterTitle: String? // the asking agent row's title — the prompt's "who"
     let respond: ([String: Any]) -> Void
@@ -282,6 +282,17 @@ enum FeedbackMode {
     static let mcpBrowserKey = "synth-mcp-browser"
     static let mcpAppKey = "synth-mcp-app"
 
+    /// Anonymous usage analytics (Settings → Privacy). On by default, opt-out: flipping it off
+    /// tells PostHog to stop sending straight away and stays off across launches. Read at launch
+    /// by `Analytics.bootstrap` too, so the very first event already respects the choice.
+    var analyticsEnabled = AppStore.loadBoolPref(AppStore.analyticsKey, default: true) {
+        didSet {
+            UserDefaults.standard.set(analyticsEnabled, forKey: AppStore.analyticsKey)
+            Analytics.setOptOut(!analyticsEnabled)
+        }
+    }
+    static let analyticsKey = "synth-analytics-enabled"
+
     /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
     var sidebarWidth: CGFloat = {
         let w = UserDefaults.standard.double(forKey: AppStore.sidebarWidthKey)
@@ -364,6 +375,10 @@ enum FeedbackMode {
     /// The selected category in the shortcuts sheet's sidebar — driven by ↑/↓ / j/k while open.
     var shortcutsCategory = 0
 
+    /// The in-app changelog (Synth → Changelog menu item). Read-only, Esc-dismissed like
+    /// the shortcuts sheet; app-only, so no working.html twin.
+    var changelogOpen = false
+
     /// Full-screen Settings page: a mode layered over the same shell (working.html's
     /// `.app.settings`). `settingsScope` picks which scope the right pane renders.
     var settingsOpen = false
@@ -411,11 +426,7 @@ enum FeedbackMode {
 
     /// The ordered session set every new worktree starts with (working.html TPL_KINDS /
     /// globalTpl). Order is creation order — the first entry is the session that opens.
-    var globalSessionTemplate: [SessionTemplateEntry] = [
-        SessionTemplateEntry(kind: .agent(.claudeCode), name: "Claude Code"),
-        SessionTemplateEntry(kind: .terminal, name: "dev server"),
-        SessionTemplateEntry(kind: .terminal, name: "shell"),
-    ]
+    var globalSessionTemplate: [SessionTemplateEntry] = []
     var wsSessionTemplates: [UUID: [SessionTemplateEntry]] = [:]
 
     /// The effective template for a scope — same override model as the flags: a workspace
@@ -928,6 +939,17 @@ enum FeedbackMode {
 
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
 
+    /// Open the in-app changelog, clearing any surface that would sit under it (mirrors how
+    /// the shortcuts sheet is raised).
+    func openChangelog() {
+        activeMenu = nil
+        closePalette()
+        shortcutsOpen = false
+        changelogOpen = true
+    }
+
+    func closeChangelog() { changelogOpen = false }
+
     /// Palette jump: reveal the session (expand collapsed ancestors), open it, mark
     /// read — working.html's jumpTo, selection ring shown as if keyboard-driven.
     func jump(to session: Session) {
@@ -1075,6 +1097,8 @@ enum FeedbackMode {
         // A pending branch has no checkout to run in yet — sessions wait for the worktree.
         guard let br = branch ?? defaultBranch(), !br.isPending else { return nil }
         let session = Session(kind: kind, title: title, status: status)
+        // Feature-usage signal: which session type, and whether an agent spun it up vs the user.
+        Analytics.capture("session_created", ["kind": kind.rawValue, "agent_initiated": !focus])
         br.sessions.append(session)
         if let owner { adopt(session, by: owner) }
         br.lastActivity = "now"
@@ -1227,6 +1251,14 @@ enum FeedbackMode {
         feedbackDraft = ""
         feedbackTitle = ""
         feedbackOpen = false
+        // The event records that feedback happened and roughly how much — never the text itself,
+        // which stays non-PII on the wire. The actual content still reaches the author via the
+        // email / fix-agent paths below.
+        Analytics.capture("feedback_submitted", [
+            "mode": String(describing: feedbackMode),
+            "has_body": !body.isEmpty,
+            "length": body.count,
+        ])
         switch feedbackMode {
         case .author:
             guard !title.isEmpty else { return }
@@ -1557,6 +1589,7 @@ enum FeedbackMode {
                 row.worktreeURL = url
                 row.isPending = false
                 row.lastActivity = "now"
+                Analytics.capture("worktree_created", ["from_template": spawningTemplate])
                 if spawningTemplate { applySessionTemplate(to: row, in: ws) }
                 onReady?(row)
                 saveNow()
@@ -1584,8 +1617,8 @@ enum FeedbackMode {
         }
     }
 
-    /// Cut a new branch off `base` (repo HEAD when nil) into a fresh worktree — same
-    /// pending-row shape as the existing-branch path.
+    /// Cut a new branch off `base` (the repo's default branch when nil) into a fresh
+    /// worktree — same pending-row shape as the existing-branch path.
     func createWorktree(in ws: Workspace, newBranch: String, base: String?) {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: newBranch)

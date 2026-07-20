@@ -305,6 +305,7 @@ private struct WorkspaceRow: View {
             .help("\(workspace.name) · \(workspace.branches.count) branches")
             .id(workspace.id)
             .reorderGesture(.workspace(workspace))
+            .onSecondaryClick { store.openRowActions(.workspace(workspace)) }
 
             Reveal(open: isOpen || peekBranchID != nil) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -438,6 +439,7 @@ private struct BranchRow: View {
                                    : "\(branch.name) · \(branch.sessions.count) sessions")
             .id(branch.id)
             .reorderGesture(.branch(branch))
+            .onSecondaryClick { store.openRowActions(.branch(branch)) }
 
             Reveal(open: isOpen || peeking) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -627,7 +629,10 @@ private struct SessionRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Theme.accent.opacity(store.pairTargetID == session.id ? 0.7 : 0), lineWidth: 1.5))
         )
+        // The unified drag (reorder + drag-to-split + pair + drag-out-unsplit) replaces the
+        // plain reorderLift on session rows.
         .sessionRowDrag(session)
+        .onSecondaryClick { store.openRowActions(.session(session)) }
     }
 }
 
@@ -741,21 +746,24 @@ private struct KebabButton: View {
     let ref: RowRef
 
     private var menuOpen: Bool { store.activeMenu?.rowID == ref.id }
+    @State private var hovering = false
 
     var body: some View {
+        let active = menuOpen || hovering
         Button {
             // The ⋯ kebab opens the ⌘K palette drilled to this row (working.html openRowActions),
             // not the hover popover. The popover stays for the `d` quick-delete keybinding.
             store.openRowActions(ref)
         } label: {
-            // 13px glyph in a 20px box; the open menu fills a rounded 7px hover box
+            // 13px glyph in a 20px box; hover / open menu fills a rounded 7px hover box
             // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
             Phos(path: Phosphor.dots, size: 13)
-                .foregroundStyle(menuOpen ? Theme.ink2 : Theme.inkFaint)
+                .foregroundStyle(active ? Theme.ink2 : Theme.inkMeta)
                 .frame(width: 20, height: 20)
-                .background(RoundedRectangle(cornerRadius: 7).fill(menuOpen ? Theme.rowSelected : .clear))
+                .background(RoundedRectangle(cornerRadius: 7).fill(active ? Theme.rowSelected : .clear))
                 .contentShape(Rectangle())
         }
+        .onHover { hovering = $0 }
         .buttonStyle(KebabPressStyle())
         .help("Actions")
         .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [id = ref.id] anchor in [id: anchor] }
@@ -1002,6 +1010,47 @@ extension View {
     /// Lifts the whole row while it's the drag source: it tracks the pointer, elevates with
     /// a shadow, and rises above its siblings, which shift underneath it.
     func reorderLift(_ ref: RowRef) -> some View { modifier(ReorderLift(ref: ref)) }
+
+    /// A right-click anywhere on a row opens the ⌘K palette drilled to that row — the same
+    /// entry point as the ⋯ kebab (working.html `contextmenu` → openRowActions). Sits in the
+    /// row's `.background` so left-clicks still reach the SwiftUI Button and the unhandled
+    /// right-click falls through the responder chain to this catcher.
+    func onSecondaryClick(_ action: @escaping () -> Void) -> some View {
+        overlay(SecondaryClickCatcher(action: action))
+    }
+}
+
+/// Transparent AppKit view that turns a secondary click (right-click or ⌃-click) into a closure —
+/// SwiftUI has no secondary-click gesture, and `.contextMenu` would raise a native NSMenu, not our
+/// palette. It sits in an `.overlay` (above the row) but its `hitTest` claims ONLY secondary clicks,
+/// returning nil for everything else so left-clicks fall straight through to the SwiftUI Button below.
+private struct SecondaryClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> NSView { CatcherView(action: action) }
+    func updateNSView(_ view: NSView, context: Context) { (view as? CatcherView)?.action = action }
+
+    private final class CatcherView: NSView {
+        var action: () -> Void
+        init(action: @escaping () -> Void) {
+            self.action = action
+            super.init(frame: .zero)
+        }
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+        /// Only intercept the pointer for a secondary click; pass every other event (left-click,
+        /// drag, hover) through to the SwiftUI content beneath by declining the hit-test.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let e = NSApp.currentEvent else { return nil }
+            let secondary = e.type == .rightMouseDown || e.type == .rightMouseUp
+                || ((e.type == .leftMouseDown || e.type == .leftMouseUp) && e.modifierFlags.contains(.control))
+            return secondary ? self : nil
+        }
+        override func rightMouseDown(with event: NSEvent) { action() }
+        override func mouseDown(with event: NSEvent) {
+            if event.modifierFlags.contains(.control) { action() } else { super.mouseDown(with: event) }
+        }
+    }
 }
 
 private struct ReorderGesture: ViewModifier {

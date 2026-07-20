@@ -63,6 +63,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)goBack;
 - (void)goForward;
 - (void)reload;
+/// Sets the page zoom level (CEF's logarithmic scale: factor = 1.2^level, 0 = 100%).
+- (void)setZoomLevel:(double)level;
 /// Opens Chromium DevTools for this page in its own native window.
 - (void)showDevTools;
 /// Closes this page's DevTools window if one is open.

@@ -561,6 +561,26 @@ disclosure to dive deeper.
   / process `running`) the quit would end. App-only (no in-window surface); reaches the store via a
   new `AppStore.shared` weak ref.
 
+## [2026-07-16](docs/features/2026-07-16.md)
+
+- **Anonymous product analytics (PostHog)** — opt-out, anonymous usage analytics via `posthog-ios`
+  (SPM). One seam, `Analytics.swift`, is the only importer of `PostHog`; the app calls
+  `Analytics.capture/error/isEnabled/setOptOut`. No `identify()` ever (random per-install id),
+  `personProfiles = .identifiedOnly`, lifecycle events on for retention, screen-views off, no
+  session replay / surveys (iOS-only). Three gates keep it inert: dev channel never reports, an
+  unset placeholder `projectKey` stays silent, and the **Settings → Privacy** toggle
+  (`analyticsEnabled`, default on) opts out immediately and from the first launch event. First
+  events: `session_created {kind, agent_initiated}`, `worktree_created {from_template}`,
+  `feedback_submitted {mode, has_body, length}` (never the text), plus app open/close. EU region.
+  App-only toggle (no `working.html` Settings mock; subset invariant untouched). Follow-ups: native
+  crash capture (only caught errors covered today) and pasting the real project key once the Synth
+  PostHog project exists.
+- **Synth 0.5.0 shipped (build 224)** — first release carrying product analytics + the native crash
+  reporter, so real usage data starts here (dashboards filter `channel=stable`, excluding earlier
+  dev/verification runs). Notarized, stapled, 15 deltas (~18MB) against a 130MB download; verified
+  credential-less from the public bucket (spctl accepted / Notarized Developer ID, staple valid,
+  appcast newest enclosure `Synth-0.5.0.zip` at `sparkle:version` 224 with `edSignature`).
+
 ## [2026-07-17](docs/features/2026-07-17.md)
 
 - **Session layout & pane splitting — design settled in `working.html`** — the content surface goes
@@ -573,3 +593,25 @@ disclosure to dive deeper.
   unsplit), no leader. Mouse-only design first, then bindings — both live in both designs (subset
   invariant held). Packaged as a **handoff brief** for `port-working-html` to build natively (that
   native effort is next, not this one).
+- **Browser page zoom (⌘+ / ⌘−)** — keyboard zoom for the embedded browser, stepping a fixed ladder
+  (25→300%, clamped); ⌘= is the unshifted twin of ⌘+. ⌘-modified (not bare +/−, which a focused page
+  would eat); reset stays off ⌘0 (Synth's focus-sidebar) and lives on an omnibox **zoom badge** that
+  shows only off 100% and clicks home — doubling as the live readout. ⌘K page group gains Zoom
+  in/out/Reset; ⌘? Browser section lists it. Zoom re-applies across navigation (per-tab feel).
+  Design only so far (`working.html` + big-picture, subset invariant intact); native `app/` port via
+  `/port-working-html` is the follow-up.
+
+## [2026-07-20](docs/features/2026-07-20.md)
+
+- **Agent launch lines are arguments, not keystrokes** — the `exec claude …` line a new agent row
+  runs is passed to the login shell as `-c` (via `$SYNTH_LAUNCH_COMMAND`) instead of written into its
+  stdin. Queued tty input belongs to whoever reads it first: oh-my-zsh's update prompt takes one
+  keypress, ate the leading `e`, and the row died on `command not found: xec` with the handoff seed
+  undelivered. Shell-agnostic, still runs after the rc files (shim PATH intact).
+- **Synth's shells don't stop to ask about updates** — every PTY carries `DISABLE_AUTO_UPDATE=true`,
+  so an unattended session can't strand behind oh-my-zsh's update prompt. Synth's shells only.
+- **⌘K is one command menu — the kebab matches the main window, and negative actions are red** — the
+  ⋯ kebab / right-click now pins ⌘K's context to the clicked row and shows the same grouped, concise
+  root actions as ⌘K on the focused row, retiring the bespoke verbose per-row frame. Red widens from
+  the loss signal to the negative-action signal: Close (always), every Remove, and Detach/Attach join
+  Delete in red. Supersedes ADR-0013's colour rule in part.

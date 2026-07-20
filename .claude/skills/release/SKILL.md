@@ -31,11 +31,28 @@ and the `tigris` AWS profile. There is no CI path.
    `aws s3 sync s3://synth-releases/ app/releases/ --exclude "*" --include "Synth-*.zip" --endpoint-url https://fly.storage.tigris.dev --profile tigris`
 3. **The working tree must be clean.** `release.sh` refuses a dirty tree, so commit first.
 
+## Stamp the changelog
+
+`app/Sources/Synth/Resources/CHANGELOG.json` is the in-app changelog (Synth → Changelog), read
+from the bundle at runtime because the shipped `.app` carries no git repo. It must gain the new
+version **before** the build, since `dist.sh` bundles it and the clean-tree guard needs it
+committed. Prepend one object to the top of the array (the file is newest-first):
+
+```json
+{ "version": "0.1.1", "date": "<today, YYYY-MM-DD>", "changes": ["…", "…"] }
+```
+
+Draw the `changes` from the **FEATURES.md** one-line index entries added since the last released
+version — curated, user-facing prose, not raw commits or the deep `docs/features/` text. Keep each
+line short and outcome-first; omit internal/infra-only entries. This stamps the version boundary:
+everything in the ledger above the previous release's line belongs to this version.
+
 ## Run it
 
 ```bash
 # bump, commit, ship
 printf '0.1.1\n' > app/VERSION
+# …and prepend this version's entry to app/Sources/Synth/Resources/CHANGELOG.json (see above)
 git commit -am "Synth 0.1.1"          # or fold into the release's real commits
 cd app && ./release.sh
 ```

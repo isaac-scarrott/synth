@@ -81,7 +81,13 @@ final class BrowserProcessSupervisor {
         for sig in [SIGTERM, SIGINT] {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-            source.setEventHandler { NSApp.terminate(nil) }
+            source.setEventHandler {
+                // Mark this a non-interactive quit BEFORE terminating, so the first
+                // applicationShouldTerminate already sees it and skips the confirm dialog —
+                // otherwise a modal stacks against the signal-driven kill and the save is lost.
+                MainActor.assumeIsolated { AppTermination.forceQuit = true }
+                NSApp.terminate(nil)
+            }
             source.resume()
             signalSources.append(source)
         }
@@ -230,6 +236,8 @@ final class CEFEngine: NSObject, BrowserEngine {
     func goBack() { shim.goBack() }
     func goForward() { shim.goForward() }
     func reload() { shim.reload() }
+    // CEF zoom is logarithmic: factor = 1.2^level, so level = log₁.₂(factor).
+    func setZoom(_ factor: Double) { shim.setZoomLevel(factor > 0 ? log(factor) / log(1.2) : 0) }
     func showDevTools() { shim.showDevTools() }
     func closeDevTools() { shim.closeDevTools() }
     var devToolsOpen: Bool { shim.hasDevTools() }

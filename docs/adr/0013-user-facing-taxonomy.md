@@ -59,6 +59,19 @@ axis of the filesystem. The axis is recoverability, and the filesystem is only i
 dialog is what they click through. *Rejected:* **Close stays red always**, which trains people to
 dismiss the dialog and so disarms it exactly when it matters.
 
+**Superseded in part — 2026-07-20.** Feedback rejected the neutral Removes and the busy-only Close:
+a destructive verb rendered in the same colour as a neutral one reads as safe, and people clicked
+past it. Red is now the **negative-action** signal, not the recoverability signal. It marks anything
+that ends, removes, or re-parents ownership, unconditionally: **Close** (always, not only while
+busy), every **Remove** (branch, project, and the "Remove from sidebar" fork), and **Detach** /
+**Attach** (as a pair — the two verbs that make and break containment). **Delete** stays red as
+before. Only neutral, additive, and affirmative controls stay uncoloured — Cancel, "Not now", and a
+confirm frame's own affirmative button are never red. The recoverability table above no longer
+governs which verbs are red (a busy-only Close and a never-red Remove are both gone); the glyph
+grammar (trash destroys, minus drops a row, × ends a session) is unchanged, and the confirm-before-
+Close safety is unchanged. `CONTEXT.md`'s **Remove**, **Close**, and **Red** entries carry the new
+rule.
+
 ## Running and working merge into Busy
 
 A terminal with a live process was **running** (green). An agent mid-turn was **working** (amber).

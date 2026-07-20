@@ -68,6 +68,9 @@ struct PaletteFrame {
     var seed: String? = nil
     /// Input frames that name a new branch rewrite spaces to dashes as you type.
     var dashSpaces = false
+    /// A faint line above the results (working.html's `cmdk__note`) — e.g. the base a
+    /// new branch would fork off. Given the trimmed query; nil/empty renders nothing.
+    var note: ((String) -> String?)? = nil
     var build: (String) -> [PaletteItem]
 }
 
@@ -77,11 +80,20 @@ struct PaletteFrame {
     var query = "" { didSet { activeIndex = 0 } }
     var activeIndex = 0
 
+    /// The row the ⋯ kebab / right-click pinned this palette to (working.html `pal.pinned`).
+    /// While set it leads `contextRow`, so the grouped root actions target the CLICKED row
+    /// rather than the focused sidebar row / open session. Lives for the palette's lifetime —
+    /// a fresh model per open (see AppStore.openPalette) clears it.
+    private var pinnedContext: RowRef?
+
     /// Branch lists for the New-worktree search, read OFF the main thread so pressing
     /// `a` on a workspace never blocks the UI on git (a large/cold repo's `for-each-ref`
     /// can take a beat). Read once per palette lifetime — the branch set can't change
     /// while the palette is open — and the frame re-renders when results land.
     private var branchCache: [UUID: [GitService.BranchRef]] = [:]
+    /// The default base's display name per workspace, resolved alongside the branches so
+    /// the "New branch off …" note names it without a git call per keystroke.
+    private var baseCache: [UUID: String] = [:]
     private var loadingBranches: Set<UUID> = []
 
     private func loadBranches(for workspace: Workspace) {
@@ -90,11 +102,13 @@ struct PaletteFrame {
         loadingBranches.insert(id)
         let url = workspace.url
         Task { [weak self] in
-            let branches = await Task.detached(priority: .userInitiated) {
-                GitService.allBranches(at: url)
+            let (branches, base) = await Task.detached(priority: .userInitiated) {
+                (GitService.allBranches(at: url),
+                 GitService.baseDisplayName(GitService.defaultBase(at: url)))
             }.value
             guard let self else { return }
             branchCache[id] = branches
+            baseCache[id] = base
             loadingBranches.remove(id)
         }
     }
@@ -131,6 +145,12 @@ struct PaletteFrame {
         return order.flatMap { byKey[$0]!.sorted { $0.1 > $1.1 }.map(\.0) }
     }
 
+    /// The current frame's note text for the query (empty → nil), rendered faint above
+    /// the results — working.html's `cmdk__note`.
+    var noteText: String? {
+        frame.note?(query.trimmingCharacters(in: .whitespaces)).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? "" }
     func pop() { if stack.count > 1 { stack.removeLast(); query = "" } }
     func pop(to depth: Int) { stack.removeLast(stack.count - max(1, depth + 1)); query = "" }
@@ -165,11 +185,12 @@ struct PaletteFrame {
 
     // MARK: Store-derived helpers
 
-    /// The row ⌘K acts on. Mirrors working.html's contextRow: the focused sidebar row
-    /// leads when the keyboard owns the sidebar (`keyboardActive` is the `body.kbd` guard —
-    /// a live focus ring, not a stale cursor left behind after focus moved to the content
-    /// pane), else the open session in the content pane.
+    /// The row ⌘K acts on. Mirrors working.html's contextRow: a pinned row (set by the ⋯
+    /// kebab / right-click) leads; else the focused sidebar row when the keyboard owns the
+    /// sidebar (`keyboardActive` is the `body.kbd` guard — a live focus ring, not a stale
+    /// cursor left behind after focus moved to the content pane), else the open session.
     private func contextRow() -> RowRef? {
+        if let pinnedContext { return pinnedContext }
         if store.keyboardActive, let ref = store.cursorRef { return ref }
         if let s = store.openSession { return .session(s) }
         return nil
@@ -238,7 +259,7 @@ struct PaletteFrame {
             }
             items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close",
                                      group: g, ctx: open.title, kbd: ["⌘", "D"],
-                                     danger: open.status.isBusy,
+                                     danger: true,
                                      enter: { self.closeOrConfirm(open) }))
         }
         if let branch {
@@ -258,7 +279,7 @@ struct PaletteFrame {
                                      group: g, ctx: branch.name,
                                      enter: { self.push(self.renameFrame(.branch(branch))) }))
             items.append(PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove",
-                                     group: g, ctx: branch.name,
+                                     group: g, ctx: branch.name, danger: true,
                                      enter: { self.push(self.confirmRemoveBranch(branch)) }))
         }
         if let workspace {
@@ -316,6 +337,15 @@ struct PaletteFrame {
                         label: live?.deviceModeOn == true ? "Exit device mode" : "Enter device mode",
                         kbd: ["⌘", "⇧", "M"], disabled: home,
                         enter: drive { if !$0.isHome { $0.toggleDeviceMode() } }),
+            PaletteItem(icon: .phosphor(Phosphor.plus), label: "Zoom in",
+                        kbd: ["⌘", "+"], disabled: home,
+                        enter: drive { if !$0.isHome { $0.zoomIn() } }),
+            PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Zoom out",
+                        kbd: ["⌘", "−"], disabled: home,
+                        enter: drive { if !$0.isHome { $0.zoomOut() } }),
+            PaletteItem(icon: .phosphor(Phosphor.search), label: "Reset zoom",
+                        disabled: home || !(live?.isZoomed ?? false),
+                        enter: drive { $0.resetZoom() }),
         ]
     }
 
@@ -326,7 +356,7 @@ struct PaletteFrame {
         if let owner = store.owner(of: s) {
             return [PaletteItem(icon: .phosphor(Phosphor.minusCircle),
                                 label: "Detach from “\(owner.title)”",
-                                sec: sec, group: group, ctx: s.title,
+                                sec: sec, group: group, ctx: s.title, danger: true,
                                 enter: { self.runAndClose { self.store.detach(s) } })]
         }
         guard let br = store.branch(of: s) else { return [] }
@@ -334,7 +364,7 @@ struct PaletteFrame {
             // The row shows the agent it would move the browser under, not a generic sparkle.
             PaletteItem(icon: .session(agent.kind),
                         label: "Attach to “\(agent.title)”",
-                        sec: sec, group: group, ctx: s.title,
+                        sec: sec, group: group, ctx: s.title, danger: true,
                         enter: { self.runAndClose { self.store.adopt(s, by: agent) } })
         }
     }
@@ -492,42 +522,12 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.workspace(ws))) }),
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(ws.name)", sec: "act",
-                            enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
+                            danger: true, enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
             ]
             for br in ws.branches {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, sec: "list",
                                          enter: { self.push(self.branchFrame(br)) }))
             }
-            return items
-        }
-    }
-
-    /// A leaf session's own frame (working.html sessionFrame) — reached by its ⋯ kebab.
-    /// Its own actions (rename / delete) plus sibling creates on its branch (the ctx
-    /// chip names the branch, as the crumb is the session). Browser rows carry the
-    /// containment verbs between Rename and Delete (stage four).
-    func sessionFrame(_ s: Session) -> PaletteFrame {
-        PaletteFrame(crumb: s.title, placeholder: "Search \(s.title)…") { [self] _ in
-            var items: [PaletteItem] = []
-            // A browser row's frame leads with its Page verbs (working.html sessionFrame).
-            if s.kind == .browser {
-                items += browserActions(s).map { item -> PaletteItem in
-                    var it = item; it.sec = "page"; return it
-                }
-            }
-            if let br = store.branch(of: s) {
-                items += sessionCreates(in: br, ctx: br.name)
-            }
-            items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(s.title)…", sec: "act",
-                                     enter: { self.push(self.renameFrame(.session(s))) }))
-            items += containmentItems(s, sec: "act")
-            if store.inSplit(s.id) {
-                items.append(PaletteItem(icon: .phosphor(Phosphor.gitMerge), label: "Unsplit \(s.title)",
-                                         sec: "act", kbd: ["⌘", "⇧", "U"],
-                                         enter: { self.runAndClose { self.store.unsplitSession(s.id) } }))
-            }
-            items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close \(s.title)", sec: "act",
-                                     danger: s.status.isBusy, enter: { self.closeOrConfirm(s) }))
             return items
         }
     }
@@ -546,14 +546,14 @@ struct PaletteFrame {
                        ctx: ctx, enter: { self.runAndClose { self.store.newBrowser(in: branch) } })]
     }
 
-    /// Drill the palette straight to a row's frame — the row ⋯ kebab opens this instead of
-    /// the hover popover (working.html openRowActions). Root stays underneath for Back.
+    /// The ⋯ kebab / right-click opens ⌘K with its context pinned to the clicked row, so it
+    /// shows the exact grouped, concise actions ⌘K gives the focused row — one command menu,
+    /// one layout, no bespoke per-row frame (working.html openRowActions). A session leaf's own
+    /// verbs (rename / close, browser Page verbs + containment) come through the pinned root's
+    /// Session group; browsing a row's children lives in the root's search groups.
     func drill(to ref: RowRef) {
-        switch ref {
-        case let .workspace(w): stack = [rootFrame(), workspaceFrame(w)]
-        case let .branch(b):    stack = [rootFrame(), branchFrame(b)]
-        case let .session(s):   stack = [rootFrame(), sessionFrame(s)]
-        }
+        pinnedContext = ref
+        stack = [rootFrame()]
         query = ""
         activeIndex = 0
     }
@@ -565,7 +565,7 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(branch.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.branch(branch))) }),
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(branch.name)", sec: "act",
-                            enter: { self.push(self.confirmRemoveBranch(branch)) }),
+                            danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
             ]
             for s in branch.sessions { items.append(sessionItem(s, ctx: false, sec: "list")) }
             return items
@@ -599,7 +599,7 @@ struct PaletteFrame {
             store.workspaces.flatMap(\.branches).flatMap(\.sessions).map { s in
                 PaletteItem(icon: .session(s.kind), label: s.title, ctx: ctxOf(s),
                             meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
-                            danger: s.status.isBusy, enter: { self.closeOrConfirm(s) })
+                            danger: true, enter: { self.closeOrConfirm(s) })
             }
         }
     }
@@ -625,13 +625,14 @@ struct PaletteFrame {
 
     func confirmRemoveWorkspace(_ ws: Workspace) -> PaletteFrame {
         confirmFrame(verb: "Remove", name: ws.name,
-                     hint: "Remove this project from the sidebar? Nothing on disk is deleted.", danger: false) { [store] in
+                     hint: "Remove this project from the sidebar? Nothing on disk is deleted.") { [store] in
             store.removeWorkspace(ws)
         }
     }
     // Removing a worktree forks: delete it for real (git worktree remove + rm the folder),
-    // or just drop it from the sidebar and leave the checkout on disk to re-add later.
-    // The destructive path is danger-styled; the list-only path isn't — the colour is the tell.
+    // or just drop it from the sidebar and leave the checkout on disk to re-add later. Both are
+    // red — every Remove is now negative-coloured — so the label + ctx line, not the colour,
+    // is what tells the destructive path from the list-only one.
     func confirmRemoveBranch(_ br: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "Remove \(br.name)?",
                      placeholder: "Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel",
@@ -641,7 +642,7 @@ struct PaletteFrame {
                             ctx: "git worktree remove + delete its folder on disk", danger: true,
                             enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: true) } }),
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
-                            ctx: "stop tracking it here — the worktree stays on disk",
+                            ctx: "stop tracking it here — the worktree stays on disk", danger: true,
                             enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: false) } }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
@@ -649,7 +650,7 @@ struct PaletteFrame {
     }
     func confirmDeleteSession(_ s: Session) -> PaletteFrame {
         confirmFrame(verb: "Close", name: s.title, hint: store.deleteSessionHint(s),
-                     danger: s.status.isBusy) { [store] in store.closeSession(s) }
+                     danger: true) { [store] in store.closeSession(s) }
     }
 
     /// The synth-app MCP server's approval gate (was a modal sheet) — an agent asked Synth
@@ -793,8 +794,14 @@ struct PaletteFrame {
         // stays allocation-only.
         if let ws = workspace { loadBranches(for: ws) }
         let shown = Set(workspace?.branches.map(\.name) ?? [])
+        let note: ((String) -> String?)? = { [self] q in
+            let v = q.trimmingCharacters(in: .whitespaces)
+            guard !v.isEmpty, let ws = workspace,
+                  !(branchCache[ws.id] ?? []).contains(where: { $0.name == v }) else { return nil }
+            return "New branch off \(baseCache[ws.id] ?? "main")"
+        }
         return PaletteFrame(crumb: "New branch", placeholder: "Search branches to check out…",
-                            mode: .input, dashSpaces: true) { [self] q in
+                            mode: .input, dashSpaces: true, note: note) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace else { return [] }
             let all = branchCache[ws.id] ?? []
@@ -967,12 +974,21 @@ struct PaletteOverlay: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
+                    if let note = model.noteText {
+                        Text(note)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.inkFaint)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(EdgeInsets(top: 3, leading: 8, bottom: 5, trailing: 8))
+                    }
                     if model.items.isEmpty {
-                        Text("No results")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.navLabel)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 24)
+                        if model.noteText == nil {
+                            Text("No results")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.navLabel)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                        }
                     } else {
                         ForEach(rows) { row in
                             switch row {

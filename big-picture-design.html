@@ -582,6 +582,9 @@
   .browser__omni { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); background: var(--raised); border: 0.5px solid var(--border); border-radius: 8px; padding: 5px 11px; cursor: text; text-align: left; transition: border-color 120ms ease, box-shadow 120ms ease; }
   .browser__omni:hover { border-color: var(--border-strong); }
   .browser__omni.is-editing { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
+  .browser__zoom { flex-shrink: 0; display: none; align-items: center; height: 26px; padding: 0 8px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--raised); color: var(--text-muted); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
+  .browser__zoom.is-shown { display: inline-flex; }
+  .browser__zoom:hover { background: var(--hover); color: var(--ink); border-color: var(--border-strong); }
   .browser__lock { flex-shrink: 0; display: flex; color: var(--text-faint); }
   .browser__lock svg { width: 12px; height: 12px; }
   .browser__url { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3016,6 +3019,7 @@
       </div>
       <button class="browser__omni" data-omni><span class="browser__lock">${ICON_NAV_LOCK}</span><span class="browser__url">${esc(url)}</span></button>
       <span class="browser__target" data-target hidden></span>
+      <button class="browser__zoom" data-zoom aria-label="Reset zoom">100%</button>
       <button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button>
       <button class="browser__btn" data-nav="device" aria-label="Device mode">${ICON_DEVICE}</button>
       <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
@@ -3051,6 +3055,9 @@
   // and the omnibox reopens the same "go to" surface floated over a loaded page.
   // The open browser pane's comment-mode controls, for ⌘K ("Enter/Exit comment mode").
   let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {} };
+  // The open browser pane's zoom controls, for ⌘+/⌘− and the ⌘K page verbs. Zoom steps a
+  // fixed ladder; the omnibox %-badge appears off 100% and clicks back to it.
+  let browserZoomAPI = { in: () => {}, out: () => {}, reset: () => {}, canReset: () => false };
   function wireBrowser(openEl, scope) {
     const host = scope.querySelector('.browser'); if (!host) return;
     const titleEl = scope.querySelector('.pane__title span:last-child');
@@ -3059,6 +3066,8 @@
     let devOpen = false, devTab = 'Elements';
     let commentOn = false;
     let deviceOn = false, deviceId = DEVICES[1].id, deviceLand = false, deviceRO = null;
+    const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
+    let zoom = 100;
 
     function spin() {
       const r = host.querySelector('[data-nav="reload"]'); if (!r || reduceMotion) return;
@@ -3091,8 +3100,11 @@
       const ext = host.querySelector('[data-nav="external"]');
       if (ext) { ext.disabled = idx < 0; ext.onclick = () => { if (idx >= 0) window.open(hist[idx], '_blank', 'noopener'); }; }
       if (omni) omni.onclick = openOmni;
+      const zm = host.querySelector('[data-zoom]');
+      if (zm) zm.onclick = resetZoom;
       updateCommentUI();
       updateDeviceUI();
+      applyZoom();
     }
     // Comment mode (ADR-0011 stages three/four). The chip names the delivery target up front:
     // the owning Claude session, or the fresh one this comment will spawn (which then adopts
@@ -3155,6 +3167,21 @@
       box.style.width = Math.round(frame.offsetWidth * s) + 'px';
       box.style.height = Math.round(frame.offsetHeight * s) + 'px';
     }
+    // Page zoom (⌘+/⌘−): steps a fixed ladder, re-applied after every paint so it rides
+    // through navigation and reload — real per-tab zoom. The badge shows only off 100%.
+    function applyZoom() {
+      const view = host.querySelector('.browser__view');
+      if (view) view.style.zoom = zoom / 100;
+      const badge = host.querySelector('[data-zoom]');
+      if (badge) { badge.textContent = zoom + '%'; badge.classList.toggle('is-shown', zoom !== 100); }
+    }
+    function zoomStep(dir) {
+      if (idx < 0) return;                       // the "go to" home has no page to zoom
+      const i = Math.max(0, ZOOM_STEPS.indexOf(zoom));
+      zoom = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))];
+      applyZoom();
+    }
+    function resetZoom() { zoom = 100; applyZoom(); }
     function closeCard() { const c = host.querySelector('.browser__ccard'); if (c) c.remove(); }
     function openCard(e, view) {
       closeCard();
@@ -3248,6 +3275,7 @@
       openCard(e, view);
     });
     browserCommentAPI = { isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI };
+    browserZoomAPI = { in: () => zoomStep(1), out: () => zoomStep(-1), reset: resetZoom, canReset: () => zoom !== 100 };
 
     if (host.hasAttribute('data-home')) {
       bindBar();
@@ -3731,6 +3759,8 @@
       if (k === ']') { e.preventDefault(); bpress('[data-nav="fwd"]'); return; }
       if (e.altKey && e.code === 'KeyI') { e.preventDefault(); bpress('[data-nav="devtools"]'); return; }
       if (e.shiftKey && e.code === 'KeyM') { e.preventDefault(); bpress('[data-nav="device"]'); return; }
+      if (k === '=' || k === '+') { e.preventDefault(); browserZoomAPI.in(); return; }
+      if (k === '-' || k === '_') { e.preventDefault(); browserZoomAPI.out(); return; }
     }
     // while focus lives in the content pane (composer, terminal), nav keys stay there
     if (e.target instanceof Element && e.target.closest('.content')) return;
@@ -4629,6 +4659,15 @@
   // wire kebabs onto every existing row — each opens the ⌘K palette at that row's frame
   nav.querySelectorAll('[data-row]').forEach(addKebab);
 
+  // A right-click anywhere on a row opens that same ⌘K palette frame (no native browser menu) —
+  // the settings-mode scope rows aren't [data-row], so they fall through untouched.
+  nav.addEventListener('contextmenu', (e) => {
+    const row = e.target.closest('[data-row]');
+    if (!row) return;
+    e.preventDefault();
+    openRowActions(row);
+  });
+
   // ===== Keyboard shortcuts sheet (⌘?) — every binding above, one glanceable modal =====
   const ICON_KEYS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200Z"/><path d="M192,112H64a8,8,0,0,1,0-16H192a8,8,0,0,1,0,16Z"/><path d="M160,160H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z"/></svg>';
   // [keys, label, altKeys?]
@@ -4669,6 +4708,8 @@
       [['⌘', 'R'], 'Reload page'],
       [['⌘', '['], 'Back'],
       [['⌘', ']'], 'Forward'],
+      [['⌘', '+'], 'Zoom in', ['⌘', '=']],
+      [['⌘', '−'], 'Zoom out'],
       [['⌥', '⌘', 'I'], 'Toggle DevTools'],
       [['⌘', '⇧', 'M'], 'Toggle device mode'],
     ]],
@@ -4871,6 +4912,7 @@
   // sidebar owns it (its ring is showing on selEl), that focused row is the context; otherwise
   // the open session in the content pane is. Falls back to the first workspace downstream.
   function contextRow() {
+    if (paletteOpen && pal && pal.pinned && document.contains(pal.pinned) && isTreeRow(pal.pinned)) return pal.pinned;
     if (document.body.classList.contains('kbd') && selEl && document.contains(selEl) && isTreeRow(selEl)) return selEl;
     if (openEl && document.contains(openEl)) return openEl;
     return null;
@@ -4970,6 +5012,9 @@
       { icon: ICON_EXTERNAL,   label: 'Open in default browser', disabled: home, enter: () => runAndClose(() => { if (url) window.open(browserNorm(url), '_blank'); }) },
       { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-devtools]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
       { icon: ICON_DEVICE,     label: (live && live.querySelector('[data-nav="device"].is-on')) ? 'Exit device mode' : 'Enter device mode', kbd: ['⌘', '⇧', 'M'], disabled: home, enter: () => press('[data-nav="device"]') },
+      { icon: ICON_PLUS,       label: 'Zoom in',  kbd: ['⌘', '+'], disabled: home, enter: () => drive(() => browserZoomAPI.in()) },
+      { icon: ICON_MINUS,      label: 'Zoom out', kbd: ['⌘', '−'], disabled: home, enter: () => drive(() => browserZoomAPI.out()) },
+      { icon: ICON_SEARCH,     label: 'Reset zoom', disabled: home || !(live && live.querySelector('[data-zoom].is-shown')), enter: () => drive(() => browserZoomAPI.reset()) },
     ];
   }
   function contextActions() {
@@ -4983,16 +5028,16 @@
       items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
     if (open && open.dataset.type === 'browser') {
       const owner = ownerOf(open);
-      if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
-      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
+      if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', danger: true, enter: () => runAndClose(() => detach(open)) });
+      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', danger: true, enter: () => runAndClose(() => adopt(open, c)) }));
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: sessionIsBusy(open), enter: () => pushFrame(confirmFrame(open)) });
+    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: true, enter: () => pushFrame(confirmFrame(open)) });
     if (open && inSplit(open)) items.push({ grp: 'Session', unit: seName(open), icon: ICON_UNSPLIT, label: 'Unsplit', enter: () => runAndClose(() => unsplitSession(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(br)) });
     if (head) items.push({ grp: 'Project', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
     return { items };
   }
@@ -5108,7 +5153,7 @@
         items.push(
           { sec: 'act', icon: ICON_GEAR,   label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) },
           { sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) },
-          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', enter: () => pushFrame(confirmFrame(head)) },
+          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(head)) },
         );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -5127,7 +5172,7 @@
           ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
           { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
-          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', enter: () => pushFrame(confirmFrame(row)) },
+          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
           row.closest('[data-repo]').querySelectorAll('.sessions .session').forEach((s) =>
@@ -5152,50 +5197,25 @@
     };
   }
 
-  // A session leaf has no children — its own actions (rename / close) plus sibling
-  // creates on its branch (the ctx chip names the branch, as the crumb is the session),
-  // plus the containment verbs on browser rows (Attach to a Claude session / Detach —
-  // ADR-0011 stage four).
-  function sessionFrame(row) {
-    const name = seName(row);
-    return {
-      crumb: name, placeholder: 'Search ' + name + '…',
-      build() {
-        const items = [];
-        if (row.dataset.type === 'browser') browserActions(row).forEach((a) => items.push({ sec: 'page', ...a }));
-        const br = branchGroupOf(row);
-        if (br) {
-          const bn = brName(br);
-          items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addTerminal(br)) });
-          AGENTS.forEach((k) => items.push({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: bn, enter: () => runAndClose(() => addAgent(br, k)) }));
-          items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
-        }
-        items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(row)) });
-        if (row.dataset.type === 'browser') {
-          const owner = ownerOf(row);
-          if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
-          else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
-        }
-        items.push({ sec: 'act', icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(row), enter: () => pushFrame(confirmFrame(row)) });
-        if (inSplit(row)) items.push({ sec: 'act', icon: ICON_UNSPLIT, label: 'Unsplit', enter: () => runAndClose(() => unsplitSession(row)) });
-        return items;
-      },
-    };
-  }
-
-  // The row kebab drills the palette straight to that row's frame (workspace / branch /
-  // session) — same actions as anywhere else in ⌘K, no separate popover to maintain.
-  function frameForRow(row) {
-    const lvl = rowLevel(row);
-    return lvl === 'repo' ? workspaceFrame(row) : lvl === 'branch' ? branchFrame(row) : sessionFrame(row);
-  }
   function openPaletteAt(frame) {
     closeMenu();
     if (paletteOpen) { pal.stack = [rootFrame()]; pushFrame(frame); return; }
     openPalette();
     pushFrame(frame);
   }
-  function openRowActions(row) { openPaletteAt(frameForRow(row)); }
+
+  // The row ⋯ kebab / right-click opens ⌘K with its context pinned to that row, so it shows the
+  // exact grouped, concise actions ⌘K gives the focused row — one command menu, one layout, no
+  // bespoke per-row frame to keep in sync. A session leaf's own verbs (rename / close, and the
+  // browser Page verbs + containment) come through the pinned root's Session group; browsing a
+  // row's children lives in the root's Sessions / Branches / Projects search groups.
+  function openRowActions(row) {
+    closeMenu();
+    if (paletteOpen) { pal.pinned = row; pal.stack = [rootFrame()]; pal.input.value = ''; renderFrame(); return; }
+    openPalette();
+    pal.pinned = row;
+    renderFrame();
+  }
 
   // `a` = add the natural child: a worktree under a workspace, a session under a worktree.
   // On a session leaf it adds a sibling session to that leaf's worktree. Drops straight into
@@ -5213,7 +5233,7 @@
     const name = level === 'repo' ? wsName(row) : seName(row);
     const verb = level === 'session' ? 'Close' : 'Remove';
     const owned = level === 'session' ? ownedOf(row) : [];
-    const danger = level === 'session' && sessionIsBusy(row);
+    const danger = true;   // Close and Remove are both destructive/negative — always red
     const hint = level === 'repo' ? 'Removes it from the sidebar. Nothing on disk is deleted.'
       : owned.length ? `Ends this session and its process, and closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
       : 'Ends this session and its process.';
@@ -5238,7 +5258,7 @@
       note: 'Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way.', placeholder: '↵ select · esc cancel',
       build() {
         return [
-          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
@@ -5640,11 +5660,7 @@
     terminal: { label: 'Terminal',    start: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>` },
     browser:  { label: 'Browser',     start: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>` },
   };
-  let globalTpl = [
-    { kind: 'claude',   name: 'Claude Code' },
-    { kind: 'terminal', name: 'dev server' },
-    { kind: 'terminal', name: 'shell' },
-  ];
+  let globalTpl = [];
   const wsTpls = { synth: [
     { kind: 'claude',   name: 'Claude Code' },
     { kind: 'terminal', name: 'pnpm dev' },

@@ -53,7 +53,11 @@ let cefLinkerSettings: [LinkerSetting] = [
 // Sparkle ships as a dynamic-framework binaryTarget. `swift build` copies Sparkle.framework
 // into the bin dir but sets no rpath, so the bundled executable has to be told where
 // lib.sh staged it (Contents/Frameworks).
-var synthDependencies: [Target.Dependency] = ["GhosttyKit", .product(name: "Sparkle", package: "Sparkle")]
+var synthDependencies: [Target.Dependency] = [
+    "GhosttyKit",
+    .product(name: "Sparkle", package: "Sparkle"),
+    .product(name: "PostHog", package: "posthog-ios"),
+]
 var synthLinkerSettings = ghosttyLinkerSettings + [
     LinkerSetting.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
 ]
@@ -95,7 +99,12 @@ targets.append(
         // CommentOverlay.js (ADR-0011 stage three): the page overlay, injected over
         // CDP. .copy — it must land byte-identical (dev.sh/dist.sh copy the
         // resource bundle into Contents/Resources so the bundled app finds it).
-        resources: [.copy("Resources/CommentOverlay.js")],
+        // CHANGELOG.json (Synth → Changelog): the curated, version-grouped changelog,
+        // read at runtime (the shipped .app has no git repo); rides the same bundle copy.
+        resources: [
+            .copy("Resources/CommentOverlay.js"),
+            .copy("Resources/CHANGELOG.json"),
+        ],
         linkerSettings: synthLinkerSettings
     )
 )
@@ -105,6 +114,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
+        // Anonymous, opt-out product analytics (Analytics.swift). Client SDK only — the
+        // project token it carries is publishable, not a secret.
+        .package(url: "https://github.com/PostHog/posthog-ios", from: "3.59.3"),
     ],
     targets: targets
 )

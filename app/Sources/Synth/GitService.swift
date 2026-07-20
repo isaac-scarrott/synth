@@ -108,11 +108,49 @@ enum GitService {
         runWorktreeAdd(repo: repo, path: path, branch: branch, args: [path.path, branch])
     }
 
-    /// `git worktree add -b` for a new branch off `base` (repo HEAD when nil).
+    /// `git worktree add -b` for a new branch. With no explicit `base`, forks off the
+    /// repo's default branch (`defaultBase`) rather than whatever HEAD happens to be
+    /// checked out — the base a caller passing nil means. Nil on success, else git's message.
     static func addWorktree(repo: URL, path: URL, newBranch: String, base: String?) -> String? {
-        var args = ["-b", newBranch, path.path]
-        if let base { args.append(base) }
-        return runWorktreeAdd(repo: repo, path: path, branch: newBranch, args: args)
+        let from = base ?? defaultBase(at: repo)
+        return runWorktreeAdd(repo: repo, path: path, branch: newBranch,
+                              args: ["-b", newBranch, path.path, from])
+    }
+
+    // MARK: Default base
+
+    /// The ref a new branch forks off by default: the repo's default branch as its
+    /// locally-tracked remote ref (e.g. "origin/main"), so work starts from the shared
+    /// baseline rather than the current checkout. Resolution, cheapest first: origin/HEAD's
+    /// symref; if that's unset, ask the remote once (`set-head -a`) and re-read; then a local
+    /// main/master; finally the repo's own HEAD (local-only repo with no default). No fetch —
+    /// the tracked origin/<default> is fresh enough, and a network round-trip on the create
+    /// path would cost the speed that's the point.
+    static func defaultBase(at url: URL) -> String {
+        guard isRepository(url) else { return "HEAD" }
+        if let ref = originHead(at: url) { return ref }
+        _ = runChecked(["-C", url.path, "remote", "set-head", "origin", "-a"])
+        if let ref = originHead(at: url) { return ref }
+        for name in ["main", "master"] where localBranchExists(name, at: url) { return name }
+        return "HEAD"
+    }
+
+    /// origin/HEAD's target as a short remote ref ("origin/main"), or nil when it's unset.
+    private static func originHead(at url: URL) -> String? {
+        let out = run(["-C", url.path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return out.isEmpty ? nil : out
+    }
+
+    private static func localBranchExists(_ name: String, at url: URL) -> Bool {
+        runChecked(["-C", url.path, "rev-parse", "--verify", "--quiet", "refs/heads/\(name)"]).status == 0
+    }
+
+    /// The base's short display name for the "New branch off …" note — the remote prefix
+    /// dropped ("origin/main" → "main"), so the UI names the branch, not the tracking ref.
+    static func baseDisplayName(_ base: String) -> String {
+        guard let slash = base.firstIndex(of: "/") else { return base }
+        return String(base[base.index(after: slash)...])
     }
 
     /// A non-zero `worktree add` doesn't always mean no worktree: the checkout lands first

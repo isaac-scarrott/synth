@@ -38,9 +38,13 @@ struct WindowChrome: NSViewRepresentable {
     final class Coordinator {
         private weak var window: NSWindow?
         private var tokens: [NSObjectProtocol] = []
+        private let closeGuard = CloseGuard()
 
         func adopt(_ window: NSWindow?) {
-            guard let window, window !== self.window else { return }
+            guard let window else { return }
+            // Re-assert on every adopt (SwiftUI can reinstall its own delegate on an update).
+            guardClose(window)
+            guard window !== self.window else { return }
             release()
             self.window = window
 
@@ -66,9 +70,21 @@ struct WindowChrome: NSViewRepresentable {
             tokens.append(NotificationCenter.default.addObserver(
                 forName: name, object: object, queue: .main
             ) { [weak self] _ in
-                guard let window = self?.window else { return }
-                self?.place(in: window)
+                guard let self, let window = self.window else { return }
+                self.guardClose(window)
+                self.place(in: window)
             })
+        }
+
+        /// Route a window-close attempt (red traffic light, ⌘W) through the app's single quit
+        /// confirmation instead of letting the window close first — otherwise the window vanishes
+        /// before the "Quit Synth?" dialog and a cancelled quit strands the app with no window,
+        /// which re-triggers termination in a loop. Wrap SwiftUI's delegate so every other delegate
+        /// message still reaches it. `NSWindow.delegate` is weak, so SwiftUI keeps owning it.
+        private func guardClose(_ window: NSWindow) {
+            guard !(window.delegate is CloseGuard) else { return }
+            closeGuard.forward = window.delegate
+            window.delegate = closeGuard
         }
 
         private static func titlebarContainer(of window: NSWindow) -> NSView? {
@@ -103,4 +119,21 @@ struct WindowChrome: NSViewRepresentable {
             }
         }
     }
+}
+
+/// Delegate shim that turns a window-close attempt into an app-quit request routed through the
+/// "Quit Synth?" confirmation, keeping the window on screen until the app actually terminates.
+/// All other `NSWindowDelegate` messages forward to SwiftUI's own delegate untouched.
+private final class CloseGuard: NSObject, NSWindowDelegate {
+    weak var forward: NSWindowDelegate?
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        NSApp.terminate(nil)   // one confirmation path; the window stays if the quit is cancelled
+        return false
+    }
+
+    override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || (forward?.responds(to: aSelector) ?? false)
+    }
+    override func forwardingTarget(for aSelector: Selector!) -> Any? { forward }
 }

@@ -58,6 +58,7 @@ import WebKit
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
     func reload() { webView.reload() }
+    func setZoom(_ factor: Double) { webView.pageZoom = CGFloat(factor) }
 
     /// WebKit exposes no in-view DevTools surface — docked DevTools is the CEF engine's
     /// job (`ShowDevTools`). Deliberately empty rather than approximating with private API.

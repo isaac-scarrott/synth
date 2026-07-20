@@ -1242,6 +1242,9 @@ struct DragGhost: View {
             .offset(x: store.dragGhostPoint.x + 12, y: store.dragGhostPoint.y + 8)
             .allowsHitTesting(false)
             .transition(.opacity)
+            // The window-root overlay re-insets by the titlebar safe area; the ghost's point is
+            // in global (window) coords, so anchor at the true window origin like DropLine.
+            .ignoresSafeArea()
         }
     }
 }

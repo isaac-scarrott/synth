@@ -4065,6 +4065,7 @@
   // sidebar owns it (its ring is showing on selEl), that focused row is the context; otherwise
   // the open session in the content pane is. Falls back to the first workspace downstream.
   function contextRow() {
+    if (paletteOpen && pal && pal.pinned && document.contains(pal.pinned) && isTreeRow(pal.pinned)) return pal.pinned;
     if (document.body.classList.contains('kbd') && selEl && document.contains(selEl) && isTreeRow(selEl)) return selEl;
     if (openEl && document.contains(openEl)) return openEl;
     return null;
@@ -4178,15 +4179,15 @@
       items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
     if (open && open.dataset.type === 'browser') {
       const owner = ownerOf(open);
-      if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(open)) });
-      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(open, c)) }));
+      if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', danger: true, enter: () => runAndClose(() => detach(open)) });
+      else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', danger: true, enter: () => runAndClose(() => adopt(open, c)) }));
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: sessionIsBusy(open), enter: () => pushFrame(confirmFrame(open)) });
+    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: true, enter: () => pushFrame(confirmFrame(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', enter: () => pushFrame(confirmFrame(br)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(br)) });
     if (head) items.push({ grp: 'Project', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
     return { items };
   }
@@ -4302,7 +4303,7 @@
         items.push(
           { sec: 'act', icon: ICON_GEAR,   label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) },
           { sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) },
-          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', enter: () => pushFrame(confirmFrame(head)) },
+          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(head)) },
         );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -4321,7 +4322,7 @@
           ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
           { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
-          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', enter: () => pushFrame(confirmFrame(row)) },
+          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
           row.closest('[data-repo]').querySelectorAll('.sessions .session').forEach((s) =>
@@ -4346,49 +4347,25 @@
     };
   }
 
-  // A session leaf has no children — its own actions (rename / close) plus sibling
-  // creates on its branch (the ctx chip names the branch, as the crumb is the session),
-  // plus the containment verbs on browser rows (Attach to a Claude session / Detach —
-  // ADR-0011 stage four).
-  function sessionFrame(row) {
-    const name = seName(row);
-    return {
-      crumb: name, placeholder: 'Search ' + name + '…',
-      build() {
-        const items = [];
-        if (row.dataset.type === 'browser') browserActions(row).forEach((a) => items.push({ sec: 'page', ...a }));
-        const br = branchGroupOf(row);
-        if (br) {
-          const bn = brName(br);
-          items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addTerminal(br)) });
-          AGENTS.forEach((k) => items.push({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: bn, enter: () => runAndClose(() => addAgent(br, k)) }));
-          items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
-        }
-        items.push({ sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(row)) });
-        if (row.dataset.type === 'browser') {
-          const owner = ownerOf(row);
-          if (owner) items.push({ sec: 'act', icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', enter: () => runAndClose(() => detach(row)) });
-          else claudesOf(row.parentElement).forEach((c) => items.push({ sec: 'act', icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', enter: () => runAndClose(() => adopt(row, c)) }));
-        }
-        items.push({ sec: 'act', icon: ICON_CLOSE, label: 'Close', danger: sessionIsBusy(row), enter: () => pushFrame(confirmFrame(row)) });
-        return items;
-      },
-    };
-  }
-
-  // The row kebab drills the palette straight to that row's frame (workspace / branch /
-  // session) — same actions as anywhere else in ⌘K, no separate popover to maintain.
-  function frameForRow(row) {
-    const lvl = rowLevel(row);
-    return lvl === 'repo' ? workspaceFrame(row) : lvl === 'branch' ? branchFrame(row) : sessionFrame(row);
-  }
   function openPaletteAt(frame) {
     closeMenu();
     if (paletteOpen) { pal.stack = [rootFrame()]; pushFrame(frame); return; }
     openPalette();
     pushFrame(frame);
   }
-  function openRowActions(row) { openPaletteAt(frameForRow(row)); }
+
+  // The row ⋯ kebab / right-click opens ⌘K with its context pinned to that row, so it shows the
+  // exact grouped, concise actions ⌘K gives the focused row — one command menu, one layout, no
+  // bespoke per-row frame to keep in sync. A session leaf's own verbs (rename / close, and the
+  // browser Page verbs + containment) come through the pinned root's Session group; browsing a
+  // row's children lives in the root's Sessions / Branches / Projects search groups.
+  function openRowActions(row) {
+    closeMenu();
+    if (paletteOpen) { pal.pinned = row; pal.stack = [rootFrame()]; pal.input.value = ''; renderFrame(); return; }
+    openPalette();
+    pal.pinned = row;
+    renderFrame();
+  }
 
   // `a` = add the natural child: a worktree under a workspace, a session under a worktree.
   // On a session leaf it adds a sibling session to that leaf's worktree. Drops straight into
@@ -4406,7 +4383,7 @@
     const name = level === 'repo' ? wsName(row) : seName(row);
     const verb = level === 'session' ? 'Close' : 'Remove';
     const owned = level === 'session' ? ownedOf(row) : [];
-    const danger = level === 'session' && sessionIsBusy(row);
+    const danger = true;   // Close and Remove are both destructive/negative — always red
     const hint = level === 'repo' ? 'Removes it from the sidebar. Nothing on disk is deleted.'
       : owned.length ? `Ends this session and its process, and closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
       : 'Ends this session and its process.';
@@ -4431,7 +4408,7 @@
       note: 'Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way.', placeholder: '↵ select · esc cancel',
       build() {
         return [
-          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];

@@ -600,3 +600,8 @@ disclosure to dive deeper.
   undelivered. Shell-agnostic, still runs after the rc files (shim PATH intact).
 - **Synth's shells don't stop to ask about updates** — every PTY carries `DISABLE_AUTO_UPDATE=true`,
   so an unattended session can't strand behind oh-my-zsh's update prompt. Synth's shells only.
+- **⌘K is one command menu — the kebab matches the main window, and negative actions are red** — the
+  ⋯ kebab / right-click now pins ⌘K's context to the clicked row and shows the same grouped, concise
+  root actions as ⌘K on the focused row, retiring the bespoke verbose per-row frame. Red widens from
+  the loss signal to the negative-action signal: Close (always), every Remove, and Detach/Attach join
+  Delete in red. Supersedes ADR-0013's colour rule in part.

@@ -41,12 +41,13 @@ _Avoid_: Checkout, clone, working copy, branch folder.
 
 **Remove**:
 Drops a row from the sidebar. The thing it stood for survives: the repo stays cloned, the worktree
-folder stays on disk. Always reversible by adding it back. Never red.
+folder stays on disk. Always reversible by adding it back. Red all the same — every negative action
+is (see Red, below).
 _Avoid_: Delete, close, hide.
 
 **Close**:
-Ends a session. The row goes and the process dies; nothing leaves the filesystem. Red, and confirms,
-while the session is busy, because the agent's turn is lost. An idle session closes without a dialog.
+Ends a session. The row goes and the process dies; nothing leaves the filesystem. Always red. Confirms
+while the session is busy, because the agent's turn is lost; an idle session closes without a dialog.
 _Avoid_: Delete (a session is not a file), kill, stop, quit.
 
 **Delete**:
@@ -54,8 +55,10 @@ Destroys something on disk. Only the worktree folder qualifies. Always red, alwa
 states what survives (the git branch does).
 _Avoid_: Remove, close, trash.
 
-Red is the loss signal, not the disk signal: it marks any action whose result cannot be got back,
-which is why a live Close wears it and a Remove never does.
+Red is the negative-action signal: it marks anything that ends, removes, or re-parents ownership —
+every Close, every Remove, Delete, and Detach/Attach — regardless of recoverability or busy state.
+Neutral, additive, and affirmative controls (Cancel, "Not now", a confirm's own affirmative) stay
+uncoloured. This widened the older loss-only rule; see ADR-0013's 2026-07-20 note.
 
 **Branch group**:
 A branch that has become live — it has a worktree and one or more sessions, so it is expandable and

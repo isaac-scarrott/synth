@@ -80,7 +80,7 @@ struct AgentWorktreePrompt: Identifiable {
     let id = UUID()
     let workspace: Workspace
     let branchName: String
-    let base: String?           // nil → the repo's HEAD; meaningful only for a new branch
+    let base: String?           // nil → the repo's default branch; meaningful only for a new branch
     let handoff: String?        // a brief for a fresh Claude session in the new worktree
     let requesterTitle: String? // the asking agent row's title — the prompt's "who"
     let respond: ([String: Any]) -> Void
@@ -1534,8 +1534,8 @@ enum FeedbackMode {
         }
     }
 
-    /// Cut a new branch off `base` (repo HEAD when nil) into a fresh worktree — same
-    /// pending-row shape as the existing-branch path.
+    /// Cut a new branch off `base` (the repo's default branch when nil) into a fresh
+    /// worktree — same pending-row shape as the existing-branch path.
     func createWorktree(in ws: Workspace, newBranch: String, base: String?) {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: newBranch)

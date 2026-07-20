@@ -237,13 +237,14 @@ struct CreateWorktreeSheet: View {
             let repo = workspace.url
             let shown = Set(workspace.branches.map(\.name))
             Task {
-                let names = await Task.detached(priority: .userInitiated) {
-                    GitService.branches(at: repo).map(\.name)
+                let (names, def) = await Task.detached(priority: .userInitiated) {
+                    (GitService.branches(at: repo).map(\.name),
+                     GitService.baseDisplayName(GitService.defaultBase(at: repo)))
                 }.value
                 allBranches = names
                 available = names.filter { !shown.contains($0) }
                 existing = available.first ?? ""
-                base = names.first ?? ""
+                base = names.contains(def) ? def : (names.first ?? "")
                 if available.isEmpty { mode = .new }
             }
         }

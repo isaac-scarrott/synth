@@ -68,6 +68,9 @@ struct PaletteFrame {
     var seed: String? = nil
     /// Input frames that name a new branch rewrite spaces to dashes as you type.
     var dashSpaces = false
+    /// A faint line above the results (working.html's `cmdk__note`) — e.g. the base a
+    /// new branch would fork off. Given the trimmed query; nil/empty renders nothing.
+    var note: ((String) -> String?)? = nil
     var build: (String) -> [PaletteItem]
 }
 
@@ -82,6 +85,9 @@ struct PaletteFrame {
     /// can take a beat). Read once per palette lifetime — the branch set can't change
     /// while the palette is open — and the frame re-renders when results land.
     private var branchCache: [UUID: [GitService.BranchRef]] = [:]
+    /// The default base's display name per workspace, resolved alongside the branches so
+    /// the "New branch off …" note names it without a git call per keystroke.
+    private var baseCache: [UUID: String] = [:]
     private var loadingBranches: Set<UUID> = []
 
     private func loadBranches(for workspace: Workspace) {
@@ -90,11 +96,13 @@ struct PaletteFrame {
         loadingBranches.insert(id)
         let url = workspace.url
         Task { [weak self] in
-            let branches = await Task.detached(priority: .userInitiated) {
-                GitService.allBranches(at: url)
+            let (branches, base) = await Task.detached(priority: .userInitiated) {
+                (GitService.allBranches(at: url),
+                 GitService.baseDisplayName(GitService.defaultBase(at: url)))
             }.value
             guard let self else { return }
             branchCache[id] = branches
+            baseCache[id] = base
             loadingBranches.remove(id)
         }
     }
@@ -129,6 +137,12 @@ struct PaletteFrame {
             byKey[k]!.append((it, s))
         }
         return order.flatMap { byKey[$0]!.sorted { $0.1 > $1.1 }.map(\.0) }
+    }
+
+    /// The current frame's note text for the query (empty → nil), rendered faint above
+    /// the results — working.html's `cmdk__note`.
+    var noteText: String? {
+        frame.note?(query.trimmingCharacters(in: .whitespaces)).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? "" }
@@ -750,8 +764,14 @@ struct PaletteFrame {
         // stays allocation-only.
         if let ws = workspace { loadBranches(for: ws) }
         let shown = Set(workspace?.branches.map(\.name) ?? [])
+        let note: ((String) -> String?)? = { [self] q in
+            let v = q.trimmingCharacters(in: .whitespaces)
+            guard !v.isEmpty, let ws = workspace,
+                  !(branchCache[ws.id] ?? []).contains(where: { $0.name == v }) else { return nil }
+            return "New branch off \(baseCache[ws.id] ?? "main")"
+        }
         return PaletteFrame(crumb: "New branch", placeholder: "Search branches to check out…",
-                            mode: .input, dashSpaces: true) { [self] q in
+                            mode: .input, dashSpaces: true, note: note) { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace else { return [] }
             let all = branchCache[ws.id] ?? []
@@ -924,12 +944,21 @@ struct PaletteOverlay: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
+                    if let note = model.noteText {
+                        Text(note)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.inkFaint)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(EdgeInsets(top: 3, leading: 8, bottom: 5, trailing: 8))
+                    }
                     if model.items.isEmpty {
-                        Text("No results")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.navLabel)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 24)
+                        if model.noteText == nil {
+                            Text("No results")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.navLabel)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                        }
                     } else {
                         ForEach(rows) { row in
                             switch row {

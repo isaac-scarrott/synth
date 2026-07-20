@@ -27,7 +27,8 @@ tool("worktree_create",
   "doesn't belong on the current branch — a new feature while a fix is in flight, an " +
   "unrelated bug, an experiment. Synth asks the user to approve first; this call " +
   "blocks until they answer (up to a few minutes), and nothing is created unless they " +
-  "accept. An existing branch is checked out as-is; a new branch is cut off `base`. " +
+  "accept. An existing branch is checked out as-is; a new branch is cut off `base` " +
+  "(the repo's default branch when you omit it). " +
   "To also hand the work off, pass `handoff`: Synth then starts a fresh Claude " +
   "session in the new worktree and delivers it, instead of the worktree's default " +
   "sessions — write it like a brief for a colleague picking up cold (goal, current " +
@@ -38,8 +39,8 @@ tool("worktree_create",
       "branch for the worktree, e.g. feat/billing-retries (created off `base` when " +
       "new; an existing local or remote branch is checked out instead)"),
     base: z.string().optional().describe(
-      "base branch for a NEW branch (the repo's HEAD when omitted); ignored when " +
-      "`branch` already exists"),
+      "base branch for a NEW branch (the repo's default branch when omitted — its " +
+      "origin/HEAD, else local main/master); ignored when `branch` already exists"),
     handoff: z.string().optional().describe(
       "handoff brief (markdown) for a fresh Claude session in the new worktree — " +
       "include everything it needs to continue without this conversation's context"),

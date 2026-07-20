@@ -336,6 +336,10 @@ enum FeedbackMode {
     /// The ⌘? keyboard-shortcuts sheet (working.html's shortcutsEl).
     var shortcutsOpen = false
 
+    /// The in-app changelog (Synth → Changelog menu item). Read-only, Esc-dismissed like
+    /// the shortcuts sheet; app-only, so no working.html twin.
+    var changelogOpen = false
+
     /// Full-screen Settings page: a mode layered over the same shell (working.html's
     /// `.app.settings`). `settingsScope` picks which scope the right pane renders.
     var settingsOpen = false
@@ -871,6 +875,17 @@ enum FeedbackMode {
     }
 
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
+
+    /// Open the in-app changelog, clearing any surface that would sit under it (mirrors how
+    /// the shortcuts sheet is raised).
+    func openChangelog() {
+        activeMenu = nil
+        closePalette()
+        shortcutsOpen = false
+        changelogOpen = true
+    }
+
+    func closeChangelog() { changelogOpen = false }
 
     /// Palette jump: reveal the session (expand collapsed ancestors), open it, mark
     /// read — working.html's jumpTo, selection ring shown as if keyboard-driven.

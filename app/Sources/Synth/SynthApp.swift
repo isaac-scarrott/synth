@@ -16,6 +16,9 @@ struct SynthApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesButton()
+                Button("Settings…") { store.toggleSettings() }
+                    .keyboardShortcut(",", modifiers: .command)
+                Button("Changelog") { store.openChangelog() }
             }
             // Replaces the stock "New Window" so ⌘N means "new session" app-wide: the
             // picker working.html's `a` offers on a sidebar row, resolved from context.
@@ -225,6 +228,13 @@ struct RootView: View {
             }
         }
         .overlay {
+            if store.changelogOpen {
+                ModalBackdrop(onDismiss: { store.closeChangelog() }) {
+                    ChangelogSheet()
+                }
+            }
+        }
+        .overlay {
             if store.feedbackOpen {
                 ModalBackdrop(onDismiss: { store.feedbackOpen = false }) {
                     FeedbackSheet().environment(store)
@@ -319,6 +329,12 @@ struct RootView: View {
                 if event.keyCode == 53 { store.shortcutsOpen = false }
                 return nil
             }
+            // The changelog owns the keyboard while open, same as the shortcuts sheet — Esc
+            // closes, everything else is swallowed.
+            if store.changelogOpen {
+                if event.keyCode == 53 { store.closeChangelog() }
+                return nil
+            }
 
             // ⌘K toggles the palette from anywhere — even over the terminal.
             if key == "k", event.modifierFlags.contains(.command) {
@@ -349,11 +365,8 @@ struct RootView: View {
                 }
             }
 
-            // ⌘, toggles Settings (the Mac Preferences convention); Esc leaves it.
-            // Handled before the text/terminal passthrough so it wins over a focused editor.
-            if key == ",", event.modifierFlags.contains(.command) {
-                store.toggleSettings(); return nil
-            }
+            // ⌘, (Settings) is the menu item's keyboard shortcut now (Synth → Settings…),
+            // so AppKit fires it — Esc still leaves Settings from anywhere, incl. a focused editor.
             if event.keyCode == 53, store.settingsOpen {   // Esc leaves settings
                 store.exitSettings(); return nil
             }

@@ -1,0 +1,69 @@
+[
+  {
+    "version": "0.5.0",
+    "date": "2026-07-16",
+    "changes": [
+      "Anonymous, opt-out product usage analytics — no login, no content on the wire, off on dev builds; turn it off in Settings → Privacy.",
+      "Native crash reporter so a crash is reported on the next launch."
+    ]
+  },
+  {
+    "version": "0.4.2",
+    "date": "2026-07-15",
+    "changes": [
+      "Every quit now confirms with a single dialog, naming any busy sessions the quit would end."
+    ]
+  },
+  {
+    "version": "0.4.1",
+    "date": "2026-07-15",
+    "changes": [
+      "Reissue of 0.4.0 — no functional changes."
+    ]
+  },
+  {
+    "version": "0.4.0",
+    "date": "2026-07-15",
+    "changes": [
+      "Browser device mode (⌘⇧M) — render the page in a real device frame at true device viewports; agents can drive it too.",
+      "Pull-request indicators — each branch's PR state in the sidebar, and a clickable #number chip in the session header.",
+      "Copy the branch name from the pane header with one click.",
+      "Notifications now post from the open session, and the sidebar gets a restyle."
+    ]
+  },
+  {
+    "version": "0.3.0",
+    "date": "2026-07-13",
+    "changes": [
+      "⌘D closes the current session — the focused sidebar row, or the open session — and Close always confirms first.",
+      "synth-app MCP server — agents can create worktrees with your approval and hand off to a fresh session; off by default, opt in from Settings."
+    ]
+  },
+  {
+    "version": "0.2.1",
+    "date": "2026-07-12",
+    "changes": [
+      "Sidebar drops its indent guide lines — indentation alone carries the hierarchy."
+    ]
+  },
+  {
+    "version": "0.2.0",
+    "date": "2026-07-12",
+    "changes": [
+      "⌘N opens the new-session picker for the branch you're in.",
+      "Browser sessions record video (browser_record_start / browser_record_stop).",
+      "Background self-updates, and a renderer that survives display changes."
+    ]
+  },
+  {
+    "version": "0.1.0",
+    "date": "2026-07-10",
+    "changes": [
+      "First public release of Synth — an AI-first, Mac-native dev environment.",
+      "Sidebar of projects → branches → sessions with keyboard-first navigation and dark mode.",
+      "Embedded Ghostty terminals, Claude Code and OpenCode agents, and in-pane browser sessions.",
+      "Command palette (⌘K) for navigating and acting on anything, and a ⌘? shortcuts sheet.",
+      "Signed, notarized, self-updating builds."
+    ]
+  }
+]

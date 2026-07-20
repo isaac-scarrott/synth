@@ -37,6 +37,13 @@ git rev-parse "$TAG" >/dev/null 2>&1 && die "$TAG already exists — bump VERSIO
 command -v aws >/dev/null || die "aws CLI not found (brew install awscli)"
 [ -f signing/ed25519-public.txt ] || die "signing/ed25519-public.txt missing — see setup above"
 
+# The in-app changelog (Synth → Changelog) is read from the bundle, so a stale one ships
+# silently. Guard the boundary: this version must already be stamped into CHANGELOG.json
+# (see the release skill's "Stamp the changelog" step) before we build it in.
+CHANGELOG="Sources/Synth/Resources/CHANGELOG.json"
+grep -q "\"version\"[[:space:]]*:[[:space:]]*\"$VERSION\"" "$CHANGELOG" \
+  || die "$CHANGELOG has no entry for $VERSION — stamp the changelog before releasing (see the release skill)"
+
 aws s3api head-bucket --bucket "$RELEASE_BUCKET" \
   --endpoint-url "$TIGRIS_ENDPOINT" --profile "$AWS_PROFILE_NAME" >/dev/null 2>&1 \
   || die "cannot reach bucket $RELEASE_BUCKET as profile $AWS_PROFILE_NAME — see setup above"

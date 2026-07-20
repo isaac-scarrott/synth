@@ -99,7 +99,12 @@ targets.append(
         // CommentOverlay.js (ADR-0011 stage three): the page overlay, injected over
         // CDP. .copy — it must land byte-identical (dev.sh/dist.sh copy the
         // resource bundle into Contents/Resources so the bundled app finds it).
-        resources: [.copy("Resources/CommentOverlay.js")],
+        // CHANGELOG.json (Synth → Changelog): the curated, version-grouped changelog,
+        // read at runtime (the shipped .app has no git repo); rides the same bundle copy.
+        resources: [
+            .copy("Resources/CommentOverlay.js"),
+            .copy("Resources/CHANGELOG.json"),
+        ],
         linkerSettings: synthLinkerSettings
     )
 )

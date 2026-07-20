@@ -276,11 +276,19 @@ private struct PaneHead: View {
     let workspace: Workspace?
     let branch: Branch?
     @State private var hovering = false
+    // The pane degrades its header by its OWN width (015) — the native stand-in for the mock's
+    // `.pane` container query. Starts wide so a single (full-width) pane never flickers narrow.
+    @State private var width: CGFloat = 9999
 
     private var collapsed: Bool { store.sidebarCollapsed }
+    // Header order (004 §1): the crumb + copy drop first, then the PR chip sheds its number for
+    // the bare state glyph, then the title tightens — the bar itself never collapses.
+    private var showCrumb: Bool { width > 520 }
+    private var barePR: Bool { width <= 420 }
+    private var tightTitle: Bool { width <= 380 }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: tightTitle ? 8 : 10) {
             // Collapsed: the expand toggle binds into the header cluster right after the
             // traffic lights, so it's part of the toolbar rather than a floating orphan.
             // The 2pt tops the HStack's 10 up to the mock's 12pt gap before the title.
@@ -290,11 +298,14 @@ private struct PaneHead: View {
             SessionIcon(kind: session.kind, size: 15)
                 .frame(width: 15, height: 15)
             Text(session.title)
-                .font(.system(size: 13, weight: .semibold))
-                .kerning(-0.13)
+                .font(.system(size: tightTitle ? 12.5 : 13, weight: .semibold))
+                .kerning(tightTitle ? -0.19 : -0.13)
                 .foregroundStyle(Theme.ink)
+                .lineLimit(1)               // ellipsis-truncate, never wrap — a wrapped title is the bar growing
+                .truncationMode(.tail)
+                .layoutPriority(1)
             // Crumb: `<b>workspace</b> / branch` — mono 11, faint, workspace muted.
-            if let ws = workspace, let br = branch {
+            if showCrumb, let ws = workspace, let br = branch {
                 (Text(ws.name).foregroundColor(Theme.inkMuted).fontWeight(.medium)
                     + Text(" / \(br.name)").foregroundColor(Theme.inkFaint))
                     .font(.system(size: 11, design: .monospaced))
@@ -306,15 +317,21 @@ private struct PaneHead: View {
             }
             Spacer(minLength: 0)
             // The open branch's PR, clickable through to GitHub in the default browser.
+            // Narrow, it sheds its number for the bare state glyph.
             if let pr = branch?.pr {
-                PRChip(pr: pr)
+                PRChip(pr: pr, bare: barePR)
             }
         }
         // Collapsed, the header starts past the traffic lights; either way it is the same band
         // as the sidebar strip, so the title sits on the traffic-light centre line.
-        .padding(.leading, collapsed ? Theme.trafficLightsClearance : 18)
-        .padding(.trailing, 18)
+        .padding(.leading, collapsed ? Theme.trafficLightsClearance : (tightTitle ? 12 : 18))
+        .padding(.trailing, tightTitle ? 12 : 18)
         .frame(height: Theme.titlebarHeight)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { width = g.size.width }
+                .onChange(of: g.size.width) { _, w in width = w }
+        })
         .onHover { hovering = $0 }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 0.5)
@@ -361,23 +378,27 @@ private struct CrumbCopyButton: View {
 /// clears it (`.app.is-dev`).
 private struct PRChip: View {
     let pr: PRInfo
+    var bare: Bool = false
     @State private var hovering = false
 
     var body: some View {
         Button {
             if let url = URL(string: pr.url) { NSWorkspace.shared.open(url) }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: bare ? 0 : 5) {
                 Phos(path: pr.state.glyph, size: 13)   // the state glyph carries the colour
                 // verbatim: a plain Text("#\(Int)") is a LocalizedStringKey and would
                 // group the digits (#13,874) — a PR number is an identifier, not a quantity.
-                Text(verbatim: "#\(pr.number)")
-                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                    .kerning(-0.11)
-                    .monospacedDigit()
+                // Narrow, the number drops and only the state glyph remains (015).
+                if !bare {
+                    Text(verbatim: "#\(pr.number)")
+                        .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                        .kerning(-0.11)
+                        .monospacedDigit()
+                }
             }
             .foregroundStyle(pr.state.tint)
-            .padding(.horizontal, 8).padding(.vertical, 3)
+            .padding(.horizontal, bare ? 7 : 8).padding(.vertical, 3)
             .background(Theme.raised, in: RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line, lineWidth: 0.5))
             .shadow(color: .black.opacity(hovering ? 0.07 : 0.04),

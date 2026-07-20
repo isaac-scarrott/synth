@@ -112,12 +112,6 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Toggle device mode"),
             Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
-        ShortcutCategory(name: "Dialogs", icon: Phosphor.folder, rows: [
-            Shortcut(keys: ["↵"], label: "Confirm · create"),
-            Shortcut(keys: ["esc"], label: "Cancel · dismiss"),
-            Shortcut(keys: ["↑", "↓"], label: "Choose branches to add", alt: ["Space"]),
-            Shortcut(keys: ["⌘", "↵"], label: "Send feedback"),
-        ]),
     ]
     static var categoryCount: Int { categories.count }
 

@@ -58,8 +58,8 @@ import OSLog
 
     func launchCommand(resume: String?, flags: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags
-        if let resume { return "exec opencode --session \(shellQuoteAgentArg(resume))\(extra)\n" }
-        return "exec opencode\(extra)\n"
+        if let resume { return "exec opencode --session \(shellQuoteAgentArg(resume))\(extra)" }
+        return "exec opencode\(extra)"
     }
 
     // MARK: Supervision

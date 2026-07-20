@@ -7,6 +7,13 @@ import GhosttyKit
 /// — and neither config nor the env we pass can suppress it (the engine overwrites afterwards).
 /// So the shell is launched through this wrapper, which scrubs all of that before exec'ing the
 /// user's login shell: a Synth terminal looks like a plain shell, never revealing what renders it.
+///
+/// An agent row's launch line rides in on `$SYNTH_LAUNCH_COMMAND` and is handed to the shell as
+/// `-c`, never written into its stdin. Startup files routinely read the tty themselves — oh-my-zsh's
+/// update prompt takes a single keypress, nvm/asdf/fnm and bash-preexec installers ask questions —
+/// and anything already queued there is theirs to eat: one stolen byte turned `exec claude` into
+/// `xec claude`. As an argument the line cannot be consumed by whatever the user's rc files do,
+/// on any shell.
 enum TerminalLauncher {
     static let command: String = {
         let script = """
@@ -15,6 +22,8 @@ enum TerminalLauncher {
         PATH="$(strip "$PATH")"; MANPATH="$(strip "$MANPATH")"; XDG_DATA_DIRS="$(strip "$XDG_DATA_DIRS")"
         export PATH MANPATH XDG_DATA_DIRS
         unset GHOSTTY_RESOURCES_DIR GHOSTTY_BIN_DIR GHOSTTY_SHELL_FEATURES GHOSTTY_SURFACE_ID CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION __CFBundleIdentifier TERMINFO
+        launch="$SYNTH_LAUNCH_COMMAND"; unset SYNTH_LAUNCH_COMMAND
+        [ -n "$launch" ] && exec "${SHELL:-/bin/zsh}" -l -i -c "$launch"
         exec "${SHELL:-/bin/zsh}" -l -i
         """
         let path = NSTemporaryDirectory() + "synth-login-\(getpid()).sh"

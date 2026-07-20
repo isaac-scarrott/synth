@@ -590,3 +590,13 @@ disclosure to dive deeper.
   in/out/Reset; ⌘? Browser section lists it. Zoom re-applies across navigation (per-tab feel).
   Design only so far (`working.html` + big-picture, subset invariant intact); native `app/` port via
   `/port-working-html` is the follow-up.
+
+## [2026-07-20](docs/features/2026-07-20.md)
+
+- **Agent launch lines are arguments, not keystrokes** — the `exec claude …` line a new agent row
+  runs is passed to the login shell as `-c` (via `$SYNTH_LAUNCH_COMMAND`) instead of written into its
+  stdin. Queued tty input belongs to whoever reads it first: oh-my-zsh's update prompt takes one
+  keypress, ate the leading `e`, and the row died on `command not found: xec` with the handoff seed
+  undelivered. Shell-agnostic, still runs after the rc files (shim PATH intact).
+- **Synth's shells don't stop to ask about updates** — every PTY carries `DISABLE_AUTO_UPDATE=true`,
+  so an unattended session can't strand behind oh-my-zsh's update prompt. Synth's shells only.

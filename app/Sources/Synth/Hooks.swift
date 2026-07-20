@@ -213,7 +213,7 @@ final class HookServer: @unchecked Sendable {
             # thing it's running. An agent binary is left entirely to its own supervisor, whose
             # status is richer and mustn't fight the coarse per-command dot.
             _synth_preexec() {
-                local cmd="${1#exec }"          # spawned agent rows type `exec claude …`
+                local cmd="${1#exec }"          # an agent is launched as `exec claude …`
                 local word="${cmd%% *}"
                 [[ " $SYNTH_AGENT_BINS " == *" $word "* ]] && return
                 [[ -n "$_synth_run_timer" ]] && kill "$_synth_run_timer" 2>/dev/null
@@ -308,6 +308,13 @@ final class HookServer: @unchecked Sendable {
         // markers from the overlay too (setup()'s unsetenv is the real removal; this guards
         // callers that pass a base env other than our own environ).
         for key in inheritedAgentMarkers { env.removeValue(forKey: key) }
+        // A session Synth opens on the user's behalf — a handoff, a browser comment — has nobody
+        // at the keyboard when the shell starts, so a startup file that stops to ask a question
+        // strands it: the launch line waits behind a prompt the user never sees, and the seed
+        // times out undelivered. oh-my-zsh's periodic update prompt is the one that reaches
+        // nearly every mac; its own switch turns it off, for Synth's shells only (`omz update`
+        // still works, and the user's terminals elsewhere are untouched).
+        env["DISABLE_AUTO_UPDATE"] = "true"
         // Terminal per-command reporting needs only synth-hook + the socket + the injected
         // ZDOTDIR — not a real `claude` — so wire it up whenever the helper exists, so a plain
         // shell lights up even on a machine without Claude Code installed.

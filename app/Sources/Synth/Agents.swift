@@ -134,8 +134,9 @@ extension AgentDescriptor: Identifiable {}
     /// False when the agent isn't reachable, so the caller never falls back to a bare shell.
     func deliver(_ text: String, to session: UUID) -> Bool
 
-    /// The shell line a fresh PTY runs to become this agent. `exec`, so the agent's exit is
-    /// the PTY child's exit. `resume` restores a persisted conversation.
+    /// The shell line a fresh PTY runs to become this agent, passed to the login shell as `-c`.
+    /// `exec`, so the agent's exit is the PTY child's exit. `resume` restores a persisted
+    /// conversation.
     func launchCommand(resume: String?, flags: String) -> String
 }
 
@@ -178,7 +179,7 @@ func shellQuoteAgentArg(_ s: String) -> String {
 
     func launchCommand(resume: String?, flags: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags
-        if let resume { return "exec claude --resume \(shellQuoteAgentArg(resume))\(extra)\n" }
-        return "exec claude\(extra)\n"
+        if let resume { return "exec claude --resume \(shellQuoteAgentArg(resume))\(extra)" }
+        return "exec claude\(extra)"
     }
 }

@@ -146,20 +146,23 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         cfg.scale_factor = window.backingScaleFactor
         cfg.font_size = 0  // 0 → use the config default
 
-        // An agent session is a native login shell that immediately `exec`s the agent's binary
-        // (typed via initial_input, so the shim PATH intercepts it). exec, not run: the session
+        // An agent session is a native login shell that immediately `exec`s the agent's binary,
+        // run after the user's rc files so the shim PATH intercepts it. exec, not run: the session
         // exists to run the agent, so the agent's end is the PTY child exiting — the same
         // child-exited signal a terminal's `exit` raises (clean → the row closes itself,
         // features 2026-07-06). The exit *code* can't ride that signal (macOS `login`
         // zeroes it); the shim reports it over the hook socket instead. A plain terminal is
         // just the login shell; a browser session never hosts a PTY (BrowserPane owns it).
         // A restored agent row (resumeAgentID set) resumes its saved conversation instead —
-        // the id is typed into the shell, so the supervisor shell-quotes it rather than
-        // trusting its format. The workspace's default flags are appended raw: they're the
-        // user's own shell tokens (Settings → agent flags).
-        let initialInput: String? = kind.agentID
-            .flatMap { AgentRegistry.supervisor($0) }
-            .map { $0.launchCommand(resume: resumeAgentID, flags: agentFlags) }
+        // the id reaches a shell as a word of a command line, so the supervisor shell-quotes it
+        // rather than trusting its format. The workspace's default flags are appended raw:
+        // they're the user's own shell tokens (Settings → agent flags).
+        var env = env
+        if let launch = kind.agentID
+            .flatMap({ AgentRegistry.supervisor($0) })
+            .map({ $0.launchCommand(resume: resumeAgentID, flags: agentFlags) }) {
+            env["SYNTH_LAUNCH_COMMAND"] = launch
+        }
 
         // env_vars must outlive ghostty_surface_new; strdup then free after the call.
         var envVars: [ghostty_env_var_s] = []
@@ -174,17 +177,10 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
             cfg.command = cCmd
             cwd.path.withCString { cCwd in
                 cfg.working_directory = cCwd
-                let make: () -> Void = {
-                    envVars.withUnsafeMutableBufferPointer { buf in
-                        cfg.env_vars = buf.baseAddress
-                        cfg.env_var_count = buf.count
-                        self.surface = ghostty_surface_new(app, &cfg)
-                    }
-                }
-                if let initialInput {
-                    initialInput.withCString { cInput in cfg.initial_input = cInput; make() }
-                } else {
-                    make()
+                envVars.withUnsafeMutableBufferPointer { buf in
+                    cfg.env_vars = buf.baseAddress
+                    cfg.env_var_count = buf.count
+                    self.surface = ghostty_surface_new(app, &cfg)
                 }
             }
         }

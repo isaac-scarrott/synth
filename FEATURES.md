@@ -627,3 +627,8 @@ disclosure to dive deeper.
   cross-branch drag reads red/refuse, a cross-branch pair never highlights, and the ⌘⇧+arrow split
   picker lists only the anchor branch's sessions. Closes the gap where a foreign-worktree pane could
   be built momentarily before the next save silently dropped it.
+- **Reorder drags mark their drop slot with a copper insertion line** — no list reshuffle mid-drag
+  anywhere (sidebar tree + settings template list): the list holds still, a copper line above the
+  drag ghost marks the landing slot (hidden when the drop is a no-op), and the reorder commits on
+  release — restoring the placement feedback lost when the unified session drag moved to
+  commit-on-release.

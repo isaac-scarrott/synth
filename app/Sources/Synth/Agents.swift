@@ -30,14 +30,19 @@ struct AgentDescriptor: Sendable {
     /// Extra install locations to search when the launch PATH is bare (Dock / `open`).
     let installHints: [String]
 
-    /// Where this agent is really installed, resolved once on the original PATH (before the
-    /// shim dir is prepended). A candidate that resolves to `synth-hook` is one of our own
-    /// shims — exec'ing it would re-enter the launch role forever (E2BIG), so skip it.
+    /// Where this agent is really installed, resolved on the original PATH (before the shim dir
+    /// is prepended). Search order matters: the login-shell PATH first (what a launched agent
+    /// actually resolves, and the only place a Dock launch sees version-manager shims), then the
+    /// app process's PATH, then `installHints` as a last-ditch guess. A candidate that resolves
+    /// to `synth-hook` is one of our own shims — exec'ing it would re-enter the launch role
+    /// forever (E2BIG), so skip it.
     var resolvedBinary: String? {
         let home = NSHomeDirectory()
-        let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+        let processDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
             .split(separator: ":").map(String.init)
-        for dir in pathDirs + installHints.map({ $0.replacingOccurrences(of: "~", with: home) }) {
+        let searchDirs = (ShellEnvironment.loginPathDirs ?? []) + processDirs
+            + installHints.map { $0.replacingOccurrences(of: "~", with: home) }
+        for dir in searchDirs {
             let candidate = dir + "/" + binaryName
             guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
             let resolved = (try? FileManager.default.destinationOfSymbolicLink(atPath: candidate)) ?? candidate
@@ -88,8 +93,38 @@ extension AgentDescriptor: Identifiable {}
 
     static func descriptor(_ id: AgentID) -> AgentDescriptor? { all.first { $0.id == id } }
 
-    /// Resolved once: rescanning PATH per keystroke would stat the filesystem in ⌘K's ranking.
-    static let installed: [AgentDescriptor] = all.filter { $0.resolvedBinary != nil }
+    private static var installedCache: [AgentDescriptor]?
+
+    /// Posted on the main actor when `installed` changes because the login-shell PATH probe
+    /// landed — the seam for a surface that must react rather than re-read on demand.
+    static let installedDidChange = Notification.Name("AgentRegistry.installedDidChange")
+
+    /// Which agents are actually installed. Cached — rescanning PATH per ⌘K keystroke would stat
+    /// the filesystem inside the ranking loop. First access resolves against the process PATH and
+    /// kicks off the login-shell PATH probe (off-main, timed out, see `ShellEnvironment`); when
+    /// that lands, the cache is rebuilt so a version-manager install the bare Dock PATH couldn't
+    /// see appears in ⌘K / Settings and gets a hook shim. Surfaces that re-read on demand (⌘K,
+    /// Settings when opened) pick the change up for free; an already-onscreen one observes
+    /// `installedDidChange`.
+    static var installed: [AgentDescriptor] {
+        if let installedCache { return installedCache }
+        let snapshot = all.filter { $0.resolvedBinary != nil }
+        installedCache = snapshot
+        ShellEnvironment.prewarm { Task { @MainActor in refreshInstalled() } }
+        return snapshot
+    }
+
+    /// Recompute `installed` against the now-known login-shell PATH. When it surfaces an agent
+    /// the process PATH missed, (re)create hook shims — `HookEnvironment.setup` is idempotent, so
+    /// a terminal that later runs the newly-found binary still reports status — and fire the
+    /// change notification for live surfaces.
+    private static func refreshInstalled() {
+        let refreshed = all.filter { $0.resolvedBinary != nil }
+        guard refreshed.map(\.id) != installedCache?.map(\.id) else { return }
+        installedCache = refreshed
+        HookEnvironment.setup()
+        NotificationCenter.default.post(name: installedDidChange, object: nil)
+    }
 
     static func isInstalled(_ id: AgentID) -> Bool { installed.contains { $0.id == id } }
 

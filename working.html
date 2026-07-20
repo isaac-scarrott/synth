@@ -763,12 +763,26 @@
     box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5);
   }
 
-  /* Drag-to-reorder (change priority). Reorders within a list only; the moved
-     item leaves a faded slot while a lifted clone tracks the pointer. */
+  /* Drag-to-reorder (change priority). Reorders within a list only; the source row
+     stays put (faded) while a lifted clone tracks the pointer, and a copper insertion
+     line marks the slot the release will land in. The list itself never reshuffles
+     mid-drag — the line IS the drop preview, echoing the copper split zones (010). */
   body.dragging, body.dragging * { cursor: grabbing !important; }
   body.dragging { user-select: none; -webkit-user-select: none; }
   .drag-src { opacity: 0.4; }
   .drag-src .row:hover { background: none; }
+  .drop-line {
+    position: fixed; z-index: 301; pointer-events: none;
+    height: 2px; border-radius: 1px;
+    background: rgba(var(--accent-rgb),0.9);
+    transition: left 80ms var(--ease-out), top 80ms var(--ease-out), width 80ms var(--ease-out);
+    animation: dz-in 110ms var(--ease-out);
+  }
+  .drop-line::before {
+    content: ""; position: absolute; left: -3px; top: -2px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(var(--accent-rgb),0.9);
+  }
   .drag-clone {
     position: fixed;
     z-index: 300;
@@ -4362,6 +4376,13 @@
     const RIM = 16, EDGE = 0.3;       // outer-rim band (px) · edge-zone reach (fraction)
     let dzEl = null, dzMode = false, dzRes = null;
     let pairMode = false, pairTarget = null;   // dragging one session squarely onto another (012)
+    let lineEl = null;                         // the reorder insertion line
+
+    function paintLine(x, y, w) {
+      if (!lineEl) { lineEl = document.createElement('div'); lineEl.className = 'drop-line'; document.body.appendChild(lineEl); }
+      lineEl.style.left = x + 'px'; lineEl.style.top = y + 'px'; lineEl.style.width = w + 'px';
+    }
+    const hideLine = () => { if (lineEl) { lineEl.remove(); lineEl = null; } };
 
     // The unit a row drags as, and the CSS selector its siblings share.
     function dragUnit(row) {
@@ -4384,7 +4405,6 @@
       if (!info) return;
       const r = row.getBoundingClientRect();
       start = { row, unit: info.unit, sel: info.sel, container: info.unit.parentNode,
-                origNext: info.unit.nextElementSibling,
                 x: e.clientX, y: e.clientY, offX: e.clientX - r.left, offY: e.clientY - r.top, w: r.width };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp, { once: true });
@@ -4417,6 +4437,7 @@
       // A dragged session over the content area splits panes instead of reordering (010).
       if (start.sel.startsWith('.session') && overContent(e.clientX, e.clientY)) {
         if (pairMode) clearPair();
+        hideLine(); start.dropRef = undefined;
         dzMode = true;
         dzRes = computeDrop(e.clientX, e.clientY);
         if (dzRes) paintDZ(dzRes); else hideDZ();
@@ -4427,20 +4448,33 @@
       // second create route (012). A row's centre pairs; its top/bottom edges stay reorder territory.
       if (start.sel.startsWith('.session')) {
         const pt = pairTargetAt(e.clientX, e.clientY);
-        if (pt) { pairMode = true; markPair(pt); return; }
+        if (pt) { pairMode = true; markPair(pt); hideLine(); start.dropRef = undefined; return; }
         clearPair();
       }
-      // insert before the first sibling whose vertical midpoint is below the pointer
-      let ref = null;
-      for (const el of sibs(start.container, start.sel)) {
-        if (el === start.unit) continue;
-        const b = el.getBoundingClientRect();
-        if (e.clientY < b.top + b.height / 2) { ref = el; break; }
-      }
-      if (start.unit.nextElementSibling !== ref && start.unit !== ref) {
-        flip(() => start.container.insertBefore(start.unit, ref));
-      }
+      updateDropLine(e.clientY);
       autoscroll(e.clientY);
+    }
+
+    // The list holds still while dragging; a copper insertion line marks the slot the release
+    // will land in — before the first sibling whose vertical midpoint is below the pointer,
+    // or at the list's end. dropRef: undefined = no move (line hidden — the faded source row
+    // already marks that slot), an element = insert before it, null = append.
+    function updateDropLine(y) {
+      const items = sibs(start.container, start.sel).filter((el) => el !== start.unit);
+      let ref = null;
+      for (const el of items) {
+        const b = el.getBoundingClientRect();
+        if (y < b.top + b.height / 2) { ref = el; break; }
+      }
+      // the item currently following the source IN THE LIST (owned rows may sit between) —
+      // landing there is a no-op once snapOwned reunites owner blocks
+      const next = items.find((el) => start.unit.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) || null;
+      if (!items.length || ref === next) {
+        start.dropRef = undefined; hideLine(); return;
+      }
+      start.dropRef = ref;
+      const r = (ref || items[items.length - 1]).getBoundingClientRect();
+      paintLine(r.left + 4, (ref ? r.top : r.bottom) - 1, r.width - 8);
     }
 
     function onUp() {
@@ -4449,28 +4483,29 @@
       if (active) {
         suppress = true;                       // swallow the click this drag would otherwise fire
         if (clone) { clone.remove(); clone = null; }
+        hideLine();
         start.unit.classList.remove('drag-src');
         document.body.classList.remove('dragging');
         if (dzMode) {
           const res = dzRes;
           dzMode = false; dzRes = null; hideDZ();
-          if (res && !res.refuse) {
-            start.container.insertBefore(start.unit, start.origNext);   // undo any mid-drag reshuffle
-            performDrop(res);
-          }
+          if (res && !res.refuse) performDrop(res);
         } else if (pairMode) {
           const t = pairTarget;
           clearPair();
-          if (t) {
-            start.container.insertBefore(start.unit, start.origNext);   // undo any mid-drag reshuffle
-            performPair(t);
+          if (t) performPair(t);
+        } else {
+          // land the reorder the insertion line promised (the list never moved mid-drag)
+          if (start.dropRef !== undefined) {
+            flip(() => start.container.insertBefore(start.unit, start.dropRef));
           }
-        } else if (start.sel.startsWith('.session')) {
-          snapOwned(start.container);          // reunite owner blocks
-          // a split tile dragged out into the plain sidebar leaves the split (013); otherwise
-          // just re-assert any open echo snapOwned may have disturbed.
-          if (start.wasMember && inSplit(start.row)) unsplitSession(start.row);
-          else renderSidebarEcho();
+          if (start.sel.startsWith('.session')) {
+            snapOwned(start.container);          // reunite owner blocks
+            // a split tile dragged out into the plain sidebar leaves the split (013); otherwise
+            // just re-assert any open echo snapOwned may have disturbed.
+            if (start.wasMember && inSplit(start.row)) unsplitSession(start.row);
+            else renderSidebarEcho();
+          }
         }
         clearPair();                           // never leave a pair highlight behind
         select(start.row);                     // keep selection on the row you moved
@@ -4647,7 +4682,11 @@
       if (y < nr.top + M) dv = -Math.min(14, (nr.top + M - y) / 2);
       else if (y > nr.bottom - M) dv = Math.min(14, (y - (nr.bottom - M)) / 2);
       cancelAnimationFrame(scrollRAF);
-      if (dv) { nav.scrollTop += dv; scrollRAF = requestAnimationFrame(() => autoscroll(y)); }
+      if (dv) {
+        nav.scrollTop += dv;
+        updateDropLine(y);   // rows slide under the held pointer — keep the line aimed at the slot
+        scrollRAF = requestAnimationFrame(() => autoscroll(y));
+      }
     }
   })();
 
@@ -5731,8 +5770,8 @@
     </div>`;
   }
 
-  // drag-to-reorder within the template list: the grabbed row leaves a faded slot that
-  // live-reorders under the pointer while a lifted clone tracks it (same feel as the tree)
+  // drag-to-reorder within the template list: the grabbed row stays put (faded) while a lifted
+  // clone tracks the pointer and a copper insertion line marks the landing slot (same feel as the tree)
   function startTplDrag(e, listEl, list) {
     e.preventDefault();
     const row = e.target.closest('.tpl-row');
@@ -5744,17 +5783,26 @@
     row.classList.add('drag-src');
     document.body.classList.add('dragging');
     const offY = e.clientY - r.top;
+    let line = null, dropRef;   // undefined = no move, element = insert before it, null = append
+    const hideL = () => { if (line) { line.remove(); line = null; } };
     const onMove = (ev) => {
       clone.style.top = (ev.clientY - offY) + 'px';
       const others = [...listEl.querySelectorAll('.tpl-row')].filter((x) => x !== row);
       const before = others.find((x) => { const b = x.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; }) || null;
-      if (before !== row && before !== row.nextElementSibling) listEl.insertBefore(row, before);
+      if (!others.length || before === row.nextElementSibling) { dropRef = undefined; hideL(); return; }
+      dropRef = before;
+      if (!line) { line = document.createElement('div'); line.className = 'drop-line'; document.body.appendChild(line); }
+      const b = (before || others[others.length - 1]).getBoundingClientRect();
+      line.style.left = (b.left + 4) + 'px'; line.style.width = (b.width - 8) + 'px';
+      line.style.top = ((before ? b.top : b.bottom) - 1) + 'px';
     };
     const onUp = () => {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       clone.remove();
+      hideL();
       document.body.classList.remove('dragging');
+      if (dropRef !== undefined) listEl.insertBefore(row, dropRef);
       const next = [...listEl.querySelectorAll('.tpl-row')].map((x) => list[+x.dataset.i]);
       list.length = 0;
       list.push(...next);

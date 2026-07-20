@@ -321,6 +321,18 @@ extension AppStore {
     /// Every session across the tree — the split picker's "pull in an existing session" source.
     var allSessions: [Session] { workspaces.flatMap { $0.branches.flatMap(\.sessions) } }
 
+    /// The remembered layout ignoring any transient full-screen — what the sidebar echoes, so the
+    /// band stays put behind a zoom (014).
+    var durableLayout: PaneNode? { stashedSplit ?? layout }
+
+    /// The member sessions of an on-screen split, in reading order (the tree flattened a-before-b) —
+    /// the sidebar echo's source (012). Empty unless the durable layout binds ≥2 sessions.
+    var echoMemberIDs: [UUID] {
+        var ids: [UUID] = []
+        eachLeaf(durableLayout) { if let s = $0.sessionID { ids.append(s) } }
+        return ids.count >= 2 ? ids : []
+    }
+
     /// The branch a keyboard split lands on when the active pane is a bare setup skeleton (no
     /// session to read a branch off): the open session's branch, else the first available.
     func contextBranchForSplit() -> Branch? {

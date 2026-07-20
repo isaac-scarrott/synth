@@ -443,19 +443,52 @@ private struct BranchRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     if branch.sessions.isEmpty {
                         EmptyGroupHint(text: "No sessions yet", leading: 61)
-                    } else {
-                        // Peeking a collapsed group shows only the open session; expanded,
-                        // every session shows.
-                        ForEach(peeking ? branch.sessions.filter { $0.id == store.openSessionID }
-                                        : branch.sessions) {
+                    } else if peeking {
+                        // Peeking a collapsed group shows only the open session.
+                        ForEach(branch.sessions.filter { $0.id == store.openSessionID }) {
                             SessionRow(session: $0,
                                        selected: store.keyboardActive && store.navCursor == $0.id)
+                        }
+                    } else {
+                        // Expanded: an on-screen split (012) pulls its member rows into a bare
+                        // horizontal band of tiles — reading order, membership only — placed where
+                        // the first member lived; everything else stays a full-width row.
+                        ForEach(sessionItems) { item in
+                            switch item {
+                            case let .row(s):
+                                SessionRow(session: s,
+                                           selected: store.keyboardActive && store.navCursor == s.id)
+                            case let .band(members):
+                                SessionEchoBand(members: members)
+                            }
                         }
                     }
                 }
             }
         }
         .reorderLift(.branch(branch))
+    }
+
+    /// The expanded session list, with an on-screen split's members folded into one band placed
+    /// where the first member (in branch order) lived. A split is always within one branch (003),
+    /// so at most one band. No split → every session is a plain row (today's behaviour).
+    private var sessionItems: [SessionListItem] {
+        let echo = store.echoMemberIDs
+        let memberSet = Set(echo)
+        guard !echo.isEmpty, branch.sessions.contains(where: { memberSet.contains($0.id) }) else {
+            return branch.sessions.map { .row($0) }
+        }
+        let members = echo.compactMap { id in branch.sessions.first { $0.id == id } }
+        var out: [SessionListItem] = []
+        var placed = false
+        for s in branch.sessions {
+            if memberSet.contains(s.id) {
+                if !placed { out.append(.band(members)); placed = true }
+            } else {
+                out.append(.row(s))
+            }
+        }
+        return out
     }
 
     // The pill shows only when the active group's open session isn't visible below it: an
@@ -588,6 +621,75 @@ private struct SessionRow: View {
 }
 
 // MARK: - Shared bits
+
+/// One entry of a branch's expanded session list: a plain full-width row, or the echo band of an
+/// on-screen split's members (012).
+private enum SessionListItem: Identifiable {
+    case row(Session)
+    case band([Session])
+    var id: String {
+        switch self {
+        case let .row(s):  return "r-\(s.id)"
+        case let .band(m): return "band-\(m.first?.id.uuidString ?? "")"
+        }
+    }
+}
+
+/// working.html `.session-group` (012): the sidebar's live echo of an on-screen split — the member
+/// sessions as a bare horizontal band of tiles, in reading order, membership only (never geometry),
+/// always horizontal whatever the on-screen orientation. Sits at the icon gutter (55pt) where the
+/// first member lived. Past ~3 members the non-active tiles collapse to icon-only so the band never
+/// overflows its single row; hover restores the name.
+private struct SessionEchoBand: View {
+    let members: [Session]
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(members) { s in
+                SessionTile(session: s, minimizeWhenIdle: members.count > 3)
+            }
+        }
+        .padding(.leading, 55).padding(.trailing, 6).padding(.vertical, 1)
+    }
+}
+
+/// One tile of the echo band — the compact form of a session row, so its open accent and
+/// click-to-activate come along. Minimized (past 3 members, non-active) it shows the icon alone,
+/// expanding to the name on hover (many sessions share the terminal glyph).
+private struct SessionTile: View {
+    @Environment(AppStore.self) private var store
+    let session: Session
+    let minimizeWhenIdle: Bool
+    @State private var hovering = false
+
+    private var isOpen: Bool { store.openSessionID == session.id }
+    private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
+    private var showName: Bool { !minimizeWhenIdle || isOpen || hovering }
+
+    var body: some View {
+        Button { store.open(session); focusContent(store) } label: {
+            HStack(spacing: 5) {
+                SessionIcon(kind: session.kind, size: 13).frame(width: 13)
+                if showName {
+                    Text(session.title)
+                        .font(.system(size: 10.5, weight: isOpen ? .semibold : .medium))
+                        .foregroundStyle(isOpen ? Theme.inkOpen : Theme.sessionName)
+                        .lineLimit(1).truncationMode(.tail)
+                }
+            }
+            .padding(.horizontal, 7).padding(.vertical, 6)
+            .frame(maxWidth: showName ? .infinity : nil, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 7)
+                .fill(isOpen ? Theme.accent.opacity(0.12) : Theme.raised))
+            .overlay(RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(isOpen ? Theme.accent.opacity(0.34)
+                              : (selected ? Theme.accent.opacity(0.5) : Theme.line), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(session.title)
+    }
+}
 
 /// An expanded group with no children reads as a quiet hint instead of a bare indent
 /// (working.html `.sessions:empty::after` / `.branches:empty::after`). Sits at the same

@@ -305,6 +305,7 @@ private struct WorkspaceRow: View {
             .help("\(workspace.name) · \(workspace.branches.count) branches")
             .id(workspace.id)
             .reorderGesture(.workspace(workspace))
+            .onSecondaryClick { store.openRowActions(.workspace(workspace)) }
 
             Reveal(open: isOpen || peekBranchID != nil) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -438,6 +439,7 @@ private struct BranchRow: View {
                                    : "\(branch.name) · \(branch.sessions.count) sessions")
             .id(branch.id)
             .reorderGesture(.branch(branch))
+            .onSecondaryClick { store.openRowActions(.branch(branch)) }
 
             Reveal(open: isOpen || peeking) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -584,6 +586,7 @@ private struct SessionRow: View {
         }
         .reorderGesture(.session(session))
         .reorderLift(.session(session))
+        .onSecondaryClick { store.openRowActions(.session(session)) }
     }
 }
 
@@ -875,6 +878,33 @@ extension View {
     /// Lifts the whole row while it's the drag source: it tracks the pointer, elevates with
     /// a shadow, and rises above its siblings, which shift underneath it.
     func reorderLift(_ ref: RowRef) -> some View { modifier(ReorderLift(ref: ref)) }
+
+    /// A right-click anywhere on a row opens the ⌘K palette drilled to that row — the same
+    /// entry point as the ⋯ kebab (working.html `contextmenu` → openRowActions). Sits in the
+    /// row's `.background` so left-clicks still reach the SwiftUI Button and the unhandled
+    /// right-click falls through the responder chain to this catcher.
+    func onSecondaryClick(_ action: @escaping () -> Void) -> some View {
+        background(SecondaryClickCatcher(action: action))
+    }
+}
+
+/// Transparent AppKit backing view that turns a right mouse-down into a closure — SwiftUI has
+/// no native secondary-click gesture, and `.contextMenu` would raise a native NSMenu, not our palette.
+private struct SecondaryClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> NSView { CatcherView(action: action) }
+    func updateNSView(_ view: NSView, context: Context) { (view as? CatcherView)?.action = action }
+
+    private final class CatcherView: NSView {
+        var action: () -> Void
+        init(action: @escaping () -> Void) {
+            self.action = action
+            super.init(frame: .zero)
+        }
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+        override func rightMouseDown(with event: NSEvent) { action() }
+    }
 }
 
 private struct ReorderGesture: ViewModifier {

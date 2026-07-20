@@ -3822,6 +3822,15 @@
   // wire kebabs onto every existing row — each opens the ⌘K palette at that row's frame
   nav.querySelectorAll('[data-row]').forEach(addKebab);
 
+  // A right-click anywhere on a row opens that same ⌘K palette frame (no native browser menu) —
+  // the settings-mode scope rows aren't [data-row], so they fall through untouched.
+  nav.addEventListener('contextmenu', (e) => {
+    const row = e.target.closest('[data-row]');
+    if (!row) return;
+    e.preventDefault();
+    openRowActions(row);
+  });
+
   // ===== Keyboard shortcuts sheet (⌘?) — every binding above, one glanceable modal =====
   const ICON_KEYS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200Z"/><path d="M192,112H64a8,8,0,0,1,0-16H192a8,8,0,0,1,0,16Z"/><path d="M160,160H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z"/></svg>';
   // [keys, label, altKeys?]

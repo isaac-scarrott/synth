@@ -46,18 +46,21 @@ struct ContentPane: View {
             } else if let root = store.layout {
                 // The layout spine (009): render the pane tree. A lone leaf is byte-for-byte
                 // today's single session; ≥2 leaves lay out as nested splits.
-                GeometryReader { geo in
-                    PaneTreeView(node: root)
-                        .coordinateSpace(name: Self.contentSpace)
-                        // Each node reports its frame here; the keyboard's spatial focus + resize
-                        // (Layout.swift) read real geometry from the store.
-                        .onPreferenceChange(PaneFramesKey.self) { store.paneFrames = $0 }
-                        // Drop-zone highlight (010): the region the dropped pane will occupy, bare
-                        // colour + shape, fading in on appear.
-                        .overlay { DropZoneOverlay() }
-                        // Drag a sidebar session in → split / replace at the pointer (010).
-                        .onDrop(of: [.text], delegate: ContentDropDelegate(store: store, size: geo.size))
-                }
+                PaneTreeView(node: root)
+                    .coordinateSpace(name: Self.contentSpace)
+                    // Each node reports its frame here; the keyboard's spatial focus + resize
+                    // (Layout.swift) read real geometry from the store.
+                    .onPreferenceChange(PaneFramesKey.self) { store.paneFrames = $0 }
+                    // Drop-zone highlight (010): the region the dropped pane will occupy, bare
+                    // colour + shape, driven by the sidebar drag in flight.
+                    .overlay { DropZoneOverlay() }
+                    // Report the content area's global frame so a sidebar drag can map the global
+                    // pointer into content-local space (the coordinateSpace origin matches this).
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { store.contentGlobalFrame = g.frame(in: .global) }
+                            .onChange(of: g.frame(in: .global)) { _, f in store.contentGlobalFrame = f }
+                    })
             } else {
                 PaneEmpty()
             }
@@ -564,43 +567,6 @@ private struct DropZoneOverlay: View {
         case .rim:     return (Theme.input.opacity(0.09), Theme.inkMuted, true)
         case .refuse:  return (Color.gray.opacity(0.13), Theme.inkFaint, false)
         }
-    }
-}
-
-/// Resolves the pointer to a drop zone as a sidebar session is dragged over the content, keeps the
-/// highlight in step, and applies the tree op on drop (010). The session id rides the drag as text.
-private struct ContentDropDelegate: DropDelegate {
-    let store: AppStore
-    let size: CGSize
-
-    func dropEntered(info: DropInfo) { update(info) }
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        update(info)
-        return DropProposal(operation: .move)
-    }
-    func dropExited(info: DropInfo) { store.dropPreview = nil }
-
-    private func update(_ info: DropInfo) {
-        // The dragged session id isn't readable synchronously here, so resolve against whichever
-        // session is in flight; the zone geometry doesn't depend on which session it is (only the
-        // floor check does, and every session is a leaf of the same min). Use the active pane's as
-        // a stand-in for the preview; the real id is loaded on drop.
-        let sid = store.activePane?.sessionID ?? store.openSessionID ?? UUID()
-        store.dropPreview = store.resolveDrop(at: info.location, contentSize: size, dragging: sid)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        defer { store.dropPreview = nil }
-        guard let provider = info.itemProviders(for: [.text]).first else { return false }
-        let location = info.location
-        provider.loadObject(ofClass: NSString.self) { obj, _ in
-            guard let s = obj as? String, let sid = UUID(uuidString: s) else { return }
-            DispatchQueue.main.async {
-                let dz = store.resolveDrop(at: location, contentSize: size, dragging: sid)
-                if let zone = dz.zone { store.performDrop(session: sid, zone: zone) }
-            }
-        }
-        return true
     }
 }
 

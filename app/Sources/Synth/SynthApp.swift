@@ -301,8 +301,10 @@ struct RootView: View {
                 return nil
             }
 
-            // ⌘K toggles the palette from anywhere — even over the terminal.
-            if key == "k", event.modifierFlags.contains(.command) {
+            // ⌘K toggles the palette from anywhere — even over the terminal. Bare ⌘K only:
+            // ⌘⇧K is not a binding (and must not open the palette), so a Shift-held chord falls
+            // through to the split layer / passthrough below.
+            if key == "k", event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
                 if store.palette == nil { store.openPalette() } else { store.closePalette() }
                 return nil
             }

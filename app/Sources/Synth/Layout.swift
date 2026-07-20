@@ -461,12 +461,49 @@ extension AppStore {
         if let dir {
             let axis = dir.axis
             let extent = axis == .row ? r.width : r.height
-            let ok = extent / 2 >= (axis == .row ? Self.paneMinW : Self.paneMinH)
+            // Refuse a drop onto the dragged session's own pane, or one that breaches the floor.
+            let ok = leaf.sessionID != sessionID && extent / 2 >= (axis == .row ? Self.paneMinW : Self.paneMinH)
             return DropResolution(rect: halfRect(r, dir), kind: ok ? .split : .refuse,
                                   zone: ok ? .edge(leaf.id, dir) : nil)
         }
         // Centre → replace the pane's session in place (the displaced one returns to the sidebar).
-        return DropResolution(rect: r, kind: .replace, zone: .replace(leaf.id))
+        // Replacing a pane with the session it already holds is a no-op → refuse.
+        let ok = leaf.sessionID != sessionID
+        return DropResolution(rect: r, kind: ok ? .replace : .refuse, zone: ok ? .replace(leaf.id) : nil)
+    }
+
+    /// Resolve a *global* pointer (a sidebar drag in flight) to a content drop zone, or nil when the
+    /// pointer isn't over the content. Maps global → content-local against the reported frame.
+    func dropZone(atGlobal p: CGPoint, dragging sessionID: UUID) -> DropResolution? {
+        guard contentGlobalFrame.contains(p) else { return nil }
+        let local = CGPoint(x: p.x - contentGlobalFrame.minX, y: p.y - contentGlobalFrame.minY)
+        return resolveDrop(at: local, contentSize: contentGlobalFrame.size, dragging: sessionID)
+    }
+
+    /// The session row a *global* pointer is squarely over (centre 30–70%, edges stay reorder
+    /// territory) — the pair-to-split target (012). Excludes the dragged session's own row.
+    func pairTarget(atGlobal p: CGPoint, dragging sessionID: UUID) -> UUID? {
+        for (sid, frame) in sessionRowFrames where sid != sessionID {
+            guard frame.contains(p) else { continue }
+            let ry = (p.y - frame.minY) / max(1, frame.height)
+            return (ry < 0.3 || ry > 0.7) ? nil : sid
+        }
+        return nil
+    }
+
+    /// Land a pair (012): if the target is already a pane the dragged session splits it in place
+    /// (moving out of any pane it held); otherwise the two become a fresh side-by-side layout, the
+    /// dragged session active. Focus follows the dragged session, like every other create route.
+    func performPair(dragged xid: UUID, onto yid: UUID) {
+        guard xid != yid else { return }
+        if let yleaf = leaf(of: yid) {
+            splitActiveWith(session: xid, dir: .row, before: false, target: yleaf)
+        } else if let y = session(yid) {
+            open(y)                                   // Y becomes the single pane in its branch
+            if let yleaf = leaf(of: yid) {
+                splitActiveWith(session: xid, dir: .row, before: false, target: yleaf)
+            }
+        }
     }
 
     private func rimDirection(_ p: CGPoint, _ full: CGRect) -> ArrowDir? {

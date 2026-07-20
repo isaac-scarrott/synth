@@ -620,7 +620,14 @@ private struct SessionRow: View {
             DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.9)) { pulse = false } }
         }
         .reorderGesture(.session(session))
-        .reorderLift(.session(session))
+        // Copper pair-to highlight when a drag hovers this row's centre (012).
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.accent.opacity(store.pairTargetID == session.id ? 0.08 : 0))
+                .overlay(RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Theme.accent.opacity(store.pairTargetID == session.id ? 0.7 : 0), lineWidth: 1.5))
+        )
+        .sessionRowDrag(session)
     }
 }
 
@@ -685,15 +692,20 @@ private struct SessionTile: View {
             .background(RoundedRectangle(cornerRadius: 7)
                 .fill(isOpen ? Theme.accent.opacity(0.12) : Theme.raised))
             .overlay(RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(isOpen ? Theme.accent.opacity(0.34)
-                              : (selected ? Theme.accent.opacity(0.5) : Theme.line), lineWidth: 1))
+                .strokeBorder(pairTo ? Theme.accent.opacity(0.7)
+                              : (isOpen ? Theme.accent.opacity(0.34)
+                                 : (selected ? Theme.accent.opacity(0.5) : Theme.line)),
+                              lineWidth: pairTo ? 1.5 : 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .onDrag { NSItemProvider(object: session.id.uuidString as NSString) }   // drag a member out → unsplit
+        // Drag a member tile onto the content to re-split / onto a row to pair / out to unsplit (010/012/013).
+        .sessionRowDrag(session, reorderable: false)
         .help(session.title)
     }
+
+    private var pairTo: Bool { store.pairTargetID == session.id }
 }
 
 /// An expanded group with no children reads as a quiet hint instead of a bare indent
@@ -1050,6 +1062,125 @@ private struct ReorderLift: ViewModifier {
             // The lifted row tracks the pointer 1:1 — its own reorder-driven position change
             // must not animate, while its siblings still shift under the withAnimation reorder.
             .transaction { t in if dragged { t.animation = nil } }
+    }
+}
+
+/// The unified session drag (working.html enableReorder): ONE pointer drag whose mode is decided
+/// live by where the pointer is — over the content → drop-zone split/replace/rim (010); squarely
+/// over another session row's centre → pair the two into a split (012); a row edge in the sidebar →
+/// reorder; and a member dragged out to the plain sidebar leaves its split (013). Replaces the
+/// reorder-only lift on session rows so both create routes share the one gesture, exactly as the mock.
+private struct SessionRowDrag: ViewModifier {
+    @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let session: Session
+    /// Full rows reorder within their siblings; echo-band tiles don't (their order is reading order),
+    /// they only split / pair / unsplit.
+    let reorderable: Bool
+
+    @State private var pitch: CGFloat = 30
+    @State private var consumed: CGFloat = 0
+    @State private var steps = 0            // net reorder steps applied, so a switch to split/pair can undo them
+    @State private var wasMember = false
+    @State private var mode: Mode = .reorder
+    private enum Mode { case reorder, content, pair }
+
+    private var ref: RowRef { .session(session) }
+    private var dragging: Bool { store.draggingRowID == session.id }
+    private var lifted: Bool { dragging && reorderable && mode == .reorder }
+
+    func body(content: Content) -> some View {
+        content
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { pitch = g.size.height + 1; store.sessionRowFrames[session.id] = g.frame(in: .global) }
+                    .onChange(of: g.frame(in: .global)) { _, f in
+                        if !dragging { pitch = g.size.height + 1 }
+                        store.sessionRowFrames[session.id] = f
+                    }
+                    .onDisappear { store.sessionRowFrames[session.id] = nil }
+            })
+            // Reorder lift (only while genuinely reordering a full row).
+            .offset(y: lifted ? store.dragOffset : 0)
+            .scaleEffect(lifted ? 1.015 : 1)
+            .shadow(color: .black.opacity(lifted ? 0.22 : 0), radius: lifted ? 12 : 0, y: lifted ? 8 : 0)
+            .zIndex(dragging ? 1 : 0)
+            .transaction { t in if lifted { t.animation = nil } }
+            .highPriorityGesture(drag)
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 5, coordinateSpace: .global)
+            .onChanged { v in
+                if !dragging {
+                    consumed = 0; steps = 0
+                    wasMember = store.inSplit(session.id)
+                    store.keyboardActive = false
+                    store.navCursor = session.id
+                    store.draggingRowID = session.id
+                }
+                let p = v.location
+                // 1) Over the content → split / replace / rim at the pointer.
+                if let dz = store.dropZone(atGlobal: p, dragging: session.id) {
+                    freezeReorder(); mode = .content
+                    store.dropPreview = dz; store.pairTargetID = nil
+                    return
+                }
+                store.dropPreview = nil
+                // 2) Squarely over another row's centre → pair.
+                if let target = store.pairTarget(atGlobal: p, dragging: session.id) {
+                    freezeReorder(); mode = .pair
+                    store.pairTargetID = target
+                    return
+                }
+                store.pairTargetID = nil
+                // 3) Otherwise reorder (full rows only).
+                mode = .reorder
+                guard reorderable else { return }
+                let pp = max(pitch, 1)
+                var net = v.translation.height - consumed
+                while net > pp / 2, store.moveWithinSiblings(ref, by: 1, animated: !reduceMotion) {
+                    consumed += pp; steps += 1; net -= pp
+                }
+                while net < -pp / 2, store.moveWithinSiblings(ref, by: -1, animated: !reduceMotion) {
+                    consumed -= pp; steps -= 1; net += pp
+                }
+                store.dragOffset = v.translation.height - consumed
+            }
+            .onEnded { _ in
+                switch mode {
+                case .content:
+                    if let zone = store.dropPreview?.zone { store.performDrop(session: session.id, zone: zone) }
+                case .pair:
+                    if let target = store.pairTargetID { store.performPair(dragged: session.id, onto: target) }
+                case .reorder:
+                    // A member dragged out to the plain sidebar leaves its split (013); a plain
+                    // reorder just persists the new order.
+                    if wasMember, store.inSplit(session.id) { store.unsplitSession(session.id) }
+                    else { store.saveNow() }
+                }
+                consumed = 0; steps = 0; mode = .reorder
+                store.dragOffset = 0
+                store.draggingRowID = nil
+                store.dropPreview = nil
+                store.pairTargetID = nil
+            }
+    }
+
+    /// Entering split/pair mode: undo any reorder hops so the row is back in its start slot and sits
+    /// still (dragOffset 0) while the drop-zone / pair highlight leads. consumed resets to 0 so a
+    /// return to the reorder lane recomputes hops from the full translation.
+    private func freezeReorder() {
+        while steps > 0, store.moveWithinSiblings(ref, by: -1, animated: false) { steps -= 1 }
+        while steps < 0, store.moveWithinSiblings(ref, by: 1, animated: false) { steps += 1 }
+        consumed = 0
+        store.dragOffset = 0
+    }
+}
+
+extension View {
+    func sessionRowDrag(_ session: Session, reorderable: Bool = true) -> some View {
+        modifier(SessionRowDrag(session: session, reorderable: reorderable))
     }
 }
 

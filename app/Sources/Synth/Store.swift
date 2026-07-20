@@ -208,6 +208,15 @@ enum FeedbackMode {
     /// the region the new pane will occupy, coloured by kind (split / replace / rim / refuse). nil
     /// when no drag is in flight.
     var dropPreview: DropResolution?
+    /// The content area's frame in global (screen-window) coordinates, so a sidebar drag can map the
+    /// global pointer into content-local space for the drop-zone resolve. Reported by ContentPane.
+    @ObservationIgnored var contentGlobalFrame: CGRect = .zero
+    /// Each session row / echo tile's global frame, so a drag can tell which row the pointer is over
+    /// for the pair-to-split gesture (012). Reported by the sidebar rows + tiles.
+    @ObservationIgnored var sessionRowFrames: [UUID: CGRect] = [:]
+    /// The session row a drag is squarely over (its centre) — pairs on release into a split (012).
+    /// Drives the copper `.session--pair-to` highlight. nil when not pairing.
+    var pairTargetID: UUID?
 
     /// Appearance — System follows the OS, Light/Dark pin it (working.html's global-only
     /// theme setting). Persisted to UserDefaults (the native `localStorage`).

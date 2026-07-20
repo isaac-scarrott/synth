@@ -64,7 +64,7 @@ struct ShortcutsSheet: View {
     // (the ⌘K menu and the sidebar), then the power features, then contextual surfaces.
     fileprivate static let categories: [ShortcutCategory] = [
         ShortcutCategory(name: "General", icon: Phosphor.keys, rows: [
-            Shortcut(keys: ["⌘", "K"], label: "Command menu", alt: ["⌃", "K"]),
+            Shortcut(keys: ["⌘", "K"], label: "Command menu"),
             Shortcut(keys: ["⌘", "N"], label: "New session"),
             Shortcut(keys: ["⌘", "T"], label: "New terminal"),
             Shortcut(keys: ["⌘", "D"], label: "Close session"),

@@ -471,11 +471,6 @@ struct RootView: View {
                 // A focused browser page keeps its keys too (Space/Enter act in the page).
                 if BrowserManager.shared.ownsFirstResponder(fr) { return event }
             }
-            // Ctrl+K also opens the palette when closed (only outside text/terminal focus,
-            // so the shell keeps its own Ctrl+K).
-            if key == "k", event.modifierFlags.contains(.control) {
-                store.openPalette(); return nil
-            }
 
             switch event.keyCode {
             case 53:                                         // Esc: hand focus to the main window

@@ -40,27 +40,38 @@ private struct Shortcut {
     var alt: [String]? = nil
 }
 
-private struct ShortcutGroup {
+/// One tab of the shortcuts sheet — a named, icon'd category of bindings.
+private struct ShortcutCategory {
     let name: String
+    let icon: String          // Phosphor path
     let rows: [Shortcut]
 }
 
-/// Every binding, one glanceable modal — a straight port of working.html's SHORTCUTS.
+extension AppStore {
+    /// Walk the shortcuts sheet's category sidebar, clamped to its bounds.
+    func moveShortcutsCategory(_ delta: Int) {
+        let n = ShortcutsSheet.categoryCount
+        shortcutsCategory = max(0, min(n - 1, shortcutsCategory + delta))
+    }
+}
+
+/// Every binding, grouped into categories with a keyboard-navigable sidebar (↑/↓ or j/k) and a
+/// detail pane — so the set stays glanceable as it grows, and reads like the rest of the app.
 struct ShortcutsSheet: View {
-    private static let groups: [ShortcutGroup] = [
-        ShortcutGroup(name: "General", rows: [
+    @Environment(AppStore.self) private var store
+
+    fileprivate static let categories: [ShortcutCategory] = [
+        ShortcutCategory(name: "General", icon: Phosphor.keys, rows: [
             Shortcut(keys: ["⌘", "K"], label: "Command menu"),
             Shortcut(keys: ["⌘", "N"], label: "New session"),
             Shortcut(keys: ["⌘", "T"], label: "New terminal"),
             Shortcut(keys: ["⌘", "D"], label: "Close current session"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
-            Shortcut(keys: ["⌘", "0"], label: "Focus sidebar"),
-            Shortcut(keys: ["⌘", "1"], label: "Focus open session"),
             Shortcut(keys: ["⌘", ","], label: "Settings"),
             Shortcut(keys: ["⌘", "?"], label: "Keyboard shortcuts"),
             Shortcut(keys: ["⌘", "⇧", "F"], label: "Send feedback"),
         ]),
-        ShortcutGroup(name: "Sidebar", rows: [
+        ShortcutCategory(name: "Sidebar", icon: Phosphor.sidebar, rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move selection", alt: ["J", "K"]),
             Shortcut(keys: ["→", "←"], label: "Expand · collapse", alt: ["L", "H"]),
             Shortcut(keys: ["⇥"], label: "Toggle group"),
@@ -69,16 +80,18 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["D"], label: "Close · remove selected"),
             Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder down · up"),
         ]),
-        ShortcutGroup(name: "Split layout", rows: [
+        ShortcutCategory(name: "Split layout", icon: Phosphor.squares, rows: [
             Shortcut(keys: ["⌘", "⇧", "→"], label: "Split toward arrow", alt: ["⌘", "|"]),
+            Shortcut(keys: ["⌘", "⇧", "—"], label: "Split stacked (below)"),
             Shortcut(keys: ["⌘", "⌥", "→"], label: "Focus pane (spatial)", alt: ["⌘", "⌥", "L"]),
-            Shortcut(keys: ["⌘", "1"], label: "Focus pane N · sidebar", alt: ["⌘", "0"]),
+            Shortcut(keys: ["⌘", "1"], label: "Focus pane N", alt: ["⌘", "9"]),
+            Shortcut(keys: ["⌘", "0"], label: "Focus sidebar"),
             Shortcut(keys: ["⌘", "`"], label: "Cycle panes"),
             Shortcut(keys: ["⌘", "⌥", "⇧", "→"], label: "Resize active pane"),
             Shortcut(keys: ["⌘", "⇧", "⏎"], label: "Zoom / unzoom pane"),
             Shortcut(keys: ["⌘", "⇧", "U"], label: "Unsplit (keep running)"),
         ]),
-        ShortcutGroup(name: "Browser", rows: [
+        ShortcutCategory(name: "Browser", icon: Phosphor.globe, rows: [
             Shortcut(keys: ["⌘", "L"], label: "Go to address"),
             Shortcut(keys: ["⌘", "R"], label: "Reload page"),
             Shortcut(keys: ["⌘", "["], label: "Back"),
@@ -86,26 +99,70 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌥", "⌘", "I"], label: "Toggle DevTools"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Toggle device mode"),
         ]),
-        ShortcutGroup(name: "Command menu", rows: [
+        ShortcutCategory(name: "Command menu", icon: Phosphor.search, rows: [
             Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["⌃J", "⌃K"]),
             Shortcut(keys: ["↵"], label: "Open · drill in"),
             Shortcut(keys: ["⌫"], label: "Back (empty search)"),
             Shortcut(keys: ["esc"], label: "Close"),
         ]),
     ]
+    static var categoryCount: Int { categories.count }
+
+    private var selected: Int { min(max(0, store.shortcutsCategory), Self.categories.count - 1) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Keyboard shortcuts")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.ink)
-            ForEach(Array(Self.groups.enumerated()), id: \.offset) { _, group in
+        HStack(spacing: 0) {
+            sidebar
+            Rectangle().fill(Theme.border).frame(width: 0.5)
+            detail
+        }
+        .frame(width: 600, height: 428)
+        .background(Theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusPanel).strokeBorder(Theme.border, lineWidth: 0.5))
+    }
+
+    // The category rail — icon + name, the selected one wearing the app's copper accent pill.
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("SHORTCUTS")
+                .font(.system(size: 10, weight: .semibold)).kerning(0.6)
+                .foregroundStyle(Theme.navLabel)
+                .padding(.leading, 10).padding(.top, 4).padding(.bottom, 8)
+            ForEach(Array(Self.categories.enumerated()), id: \.offset) { i, cat in
+                CategoryRow(icon: cat.icon, name: cat.name, selected: i == selected) {
+                    store.shortcutsCategory = i
+                }
+            }
+            Spacer(minLength: 0)
+            // Keyboard-first affordance — this sheet is driven by the keyboard.
+            HStack(spacing: 6) {
+                KeyCaps(keys: ["↑", "↓"])
+                Text("navigate").font(.system(size: 10.5)).foregroundStyle(Theme.inkMeta)
+                Spacer(minLength: 0)
+                KeyCap(text: "esc")
+            }
+            .padding(.horizontal, 10).padding(.bottom, 4)
+        }
+        .padding(.vertical, 14).padding(.horizontal, 8)
+        .frame(width: 194)
+        .background(Theme.sidebar)
+    }
+
+    private var detail: some View {
+        let cat = Self.categories[selected]
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Phos(path: cat.icon, size: 15).foregroundStyle(Theme.copper).frame(width: 16)
+                Text(cat.name)
+                    .font(.system(size: 14, weight: .semibold)).kerning(-0.1)
+                    .foregroundStyle(Theme.ink)
+            }
+            .padding(.bottom, 14)
+            ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(group.name.uppercased())
-                        .font(.system(size: 10, weight: .semibold)).kerning(0.5)
-                        .foregroundStyle(Theme.navLabel)
-                        .padding(.horizontal, 2).padding(.bottom, 5)
-                    ForEach(Array(group.rows.enumerated()), id: \.offset) { _, row in
+                    ForEach(Array(cat.rows.enumerated()), id: \.offset) { idx, row in
+                        if idx > 0 { Rectangle().fill(Theme.border.opacity(0.6)).frame(height: 0.5) }
                         HStack(spacing: 12) {
                             Text(row.label)
                                 .font(.system(size: 12.5))
@@ -114,21 +171,48 @@ struct ShortcutsSheet: View {
                             HStack(spacing: 3) {
                                 KeyCaps(keys: row.keys)
                                 if let alt = row.alt {
-                                    Text("or")
-                                        .font(.system(size: 10.5))
-                                        .foregroundStyle(Theme.inkMeta)
-                                        .padding(.horizontal, 3)
+                                    Text("or").font(.system(size: 10.5))
+                                        .foregroundStyle(Theme.inkMeta).padding(.horizontal, 3)
                                     KeyCaps(keys: alt)
                                 }
                             }
                         }
-                        .padding(.horizontal, 2).padding(.vertical, 4)
+                        .padding(.vertical, 8)
                     }
                 }
             }
         }
         .padding(20)
-        .frame(width: 420)
-        .background(Theme.panel)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// One category row in the shortcuts sidebar — the sidebar-row idiom: icon + name, the selected
+/// one wearing the copper accent tint, hover deepening it, matching the session rows.
+private struct CategoryRow: View {
+    let icon: String
+    let name: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Phos(path: icon, size: 14)
+                    .foregroundStyle(selected ? Theme.copper : Theme.inkMuted)
+                    .frame(width: 15)
+                Text(name)
+                    .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(selected ? Theme.inkOpen : Theme.sessionName)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.accent.opacity(selected ? (hovering ? 0.16 : 0.11) : (hovering ? 0.06 : 0))))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }

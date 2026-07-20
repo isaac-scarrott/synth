@@ -188,18 +188,25 @@ extension AppStore {
         layout = walk(layout)
     }
 
-    /// Unsplit (013): the flat route out of a split. Detach the session's leaf, collapse the split
-    /// above it, and let the surviving sibling reflow (001). Focus falls to the survivor. Same tree
-    /// op as a close, minus killing the session.
+    /// Unsplit (013): the flat route out of a split, minus killing the session. **Focus carries
+    /// across** — unsplitting the pane you're on keeps you on it (it becomes the standalone pane and
+    /// the other members drop back to sidebar rows), rather than snapping focus to the survivor.
+    /// Unsplitting some *other* session just detaches it and leaves the active pane where it is.
     func unsplitSession(_ sessionID: UUID) {
-        guard inSplit(sessionID), let leaf = leaf(of: sessionID) else { return }
-        removeLeaf(leaf)
-        if let root = layout {
-            var ok = false
-            eachLeaf(root) { if $0 === activePane { ok = true } }
-            if !ok { activePane = firstLeaf(root) }
+        guard inSplit(sessionID), let target = leaf(of: sessionID) else { return }
+        if activePane === target {
+            // Solo the focused session — you keep viewing what you unsplit.
+            layout = PaneNode(leafSession: sessionID)
+            activePane = layout
         } else {
-            activePane = nil
+            removeLeaf(target)
+            if let root = layout {
+                var ok = false
+                eachLeaf(root) { if $0 === activePane { ok = true } }
+                if !ok { activePane = firstLeaf(root) }
+            } else {
+                activePane = nil
+            }
         }
         renderLayout()
     }
@@ -416,8 +423,9 @@ extension AppStore {
     // MARK: Mouse drag-to-split (010) — pointer → drop zone → tree op
 
     /// The region a drop will occupy + how it reads. `zone` is nil when refused (floor breach).
+    /// Dragging a session into the content only ever *splits* — there is no replace/switch.
     struct DropResolution: Equatable {
-        enum Kind { case split, replace, rim, refuse }
+        enum Kind { case split, rim, refuse }
         var rect: CGRect
         var kind: Kind
         var zone: DropZone?
@@ -425,11 +433,9 @@ extension AppStore {
     enum DropZone: Equatable {
         case rim(ArrowDir)            // split the whole surface (outer rim)
         case edge(UUID, ArrowDir)     // split the hovered pane on that edge
-        case replace(UUID)            // swap the hovered pane's session in place
     }
 
     private static let dropRimPx: CGFloat = 26      // outer band that reads as a whole-surface split
-    private static let dropEdgeFrac: CGFloat = 0.25 // inner band of a pane that reads as an edge split
 
     /// Resolve a pointer in content coordinates to the zone a dropped session will land in
     /// (working.html computeDrop): rim → splitRoot, pane edge → splitPane, centre → replace. Any
@@ -446,30 +452,22 @@ extension AppStore {
             let ok = extent / 2 >= incomingMin && extent / 2 >= keptMin
             return DropResolution(rect: rect, kind: ok ? .rim : .refuse, zone: ok ? .rim(dir) : nil)
         }
-        // Otherwise the pane under the pointer.
+        // Otherwise the pane under the pointer — always a split, toward the nearest edge (the pane
+        // divides into four diagonal regions, so there's no dead centre and no replace).
         guard let leaf = paneUnder(p), let r = paneFrames[leaf.id] else {
             return DropResolution(rect: full, kind: .refuse, zone: nil)
         }
         let fx = (p.x - r.minX) / max(1, r.width)
         let fy = (p.y - r.minY) / max(1, r.height)
-        let e = Self.dropEdgeFrac
-        // Nearest edge if the pointer is in that pane's outer band, else the centre = replace.
-        let dir: ArrowDir?
-        if fx < e { dir = .left } else if fx > 1 - e { dir = .right }
-        else if fy < e { dir = .up } else if fy > 1 - e { dir = .down }
-        else { dir = nil }
-        if let dir {
-            let axis = dir.axis
-            let extent = axis == .row ? r.width : r.height
-            // Refuse a drop onto the dragged session's own pane, or one that breaches the floor.
-            let ok = leaf.sessionID != sessionID && extent / 2 >= (axis == .row ? Self.paneMinW : Self.paneMinH)
-            return DropResolution(rect: halfRect(r, dir), kind: ok ? .split : .refuse,
-                                  zone: ok ? .edge(leaf.id, dir) : nil)
-        }
-        // Centre → replace the pane's session in place (the displaced one returns to the sidebar).
-        // Replacing a pane with the session it already holds is a no-op → refuse.
-        let ok = leaf.sessionID != sessionID
-        return DropResolution(rect: r, kind: ok ? .replace : .refuse, zone: ok ? .replace(leaf.id) : nil)
+        let nearest = min(fx, 1 - fx, fy, 1 - fy)
+        let dir: ArrowDir = nearest == fx ? .left : nearest == (1 - fx) ? .right
+                          : nearest == fy ? .up : .down
+        let axis = dir.axis
+        let extent = axis == .row ? r.width : r.height
+        // Refuse a drop onto the dragged session's own pane, or one that breaches the floor.
+        let ok = leaf.sessionID != sessionID && extent / 2 >= (axis == .row ? Self.paneMinW : Self.paneMinH)
+        return DropResolution(rect: halfRect(r, dir), kind: ok ? .split : .refuse,
+                              zone: ok ? .edge(leaf.id, dir) : nil)
     }
 
     /// Resolve a *global* pointer (a sidebar drag in flight) to a content drop zone, or nil when the
@@ -486,9 +484,26 @@ extension AppStore {
         for (sid, frame) in sessionRowFrames where sid != sessionID {
             guard frame.contains(p) else { continue }
             let ry = (p.y - frame.minY) / max(1, frame.height)
-            return (ry < 0.3 || ry > 0.7) ? nil : sid
+            // The centre 60% of a row reads as "onto" (pair); its top/bottom 20% edges stay reorder
+            // territory. Nothing reshuffles live, so a near-miss just pairs — never a jarring hop.
+            return (ry < 0.2 || ry > 0.8) ? nil : sid
         }
         return nil
+    }
+
+    /// Drop-reorder (010's reorder branch, committed on release): move `sid` into the sibling slot
+    /// the cursor rests in — the count of other siblings whose row sits above the pointer.
+    func reorderSession(_ sid: UUID, toGlobalY y: CGFloat) {
+        guard let s = session(sid), let br = branch(of: s),
+              let cur = br.sessions.firstIndex(where: { $0.id == sid }) else { return }
+        var target = 0
+        for sib in br.sessions where sib.id != sid {
+            if let f = sessionRowFrames[sib.id], f.midY < y { target += 1 }
+        }
+        var delta = target - cur
+        while delta > 0, moveWithinSiblings(.session(s), by: 1, animated: false) { delta -= 1 }
+        while delta < 0, moveWithinSiblings(.session(s), by: -1, animated: false) { delta += 1 }
+        saveNow()
     }
 
     /// Land a pair (012): if the target is already a pane the dragged session splits it in place
@@ -540,14 +555,6 @@ extension AppStore {
         case let .edge(leafID, dir):
             guard let target = nodeByID(leafID), target.isLeaf else { return }
             splitActiveWith(session: sessionID, dir: dir.axis, before: dir.before, target: target)
-        case let .replace(leafID):
-            guard let target = nodeByID(leafID), target.isLeaf else { return }
-            if let existing = leaf(of: sessionID), existing !== target { removeLeaf(existing) }
-            target.sessionID = sessionID   // the displaced session drops back to a sidebar row, still running
-            target.setupBranchID = nil
-            stashedSplit = nil
-            activePane = target
-            renderLayout()
         }
     }
 

@@ -138,6 +138,8 @@ struct RootView: View {
             }
         }
         .ignoresSafeArea()
+        // The free-floating session drag ghost, at the window root so it floats over both panes.
+        .overlay(alignment: .topLeading) { DragGhost() }
         .background(WindowChrome().frame(width: 0, height: 0))
         // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
         .preferredColorScheme(store.colorSchemeOverride)
@@ -292,19 +294,32 @@ struct RootView: View {
                 else {
                     if store.palette != nil { store.closePalette() }
                     store.activeMenu = nil
+                    store.shortcutsCategory = 0
                     store.shortcutsOpen = true
                 }
                 return nil
             }
             if store.shortcutsOpen {
-                if event.keyCode == 53 { store.shortcutsOpen = false }
+                // The sheet owns the keyboard: ↑/↓ (and j/k) walk the category sidebar, Esc closes.
+                switch event.keyCode {
+                case 53: store.shortcutsOpen = false
+                case 125: store.moveShortcutsCategory(1)    // ↓
+                case 126: store.moveShortcutsCategory(-1)   // ↑
+                default:
+                    switch key {
+                    case "j": store.moveShortcutsCategory(1)
+                    case "k": store.moveShortcutsCategory(-1)
+                    default: break
+                    }
+                }
                 return nil
             }
 
-            // ⌘K toggles the palette from anywhere — even over the terminal. Bare ⌘K only:
-            // ⌘⇧K is not a binding (and must not open the palette), so a Shift-held chord falls
-            // through to the split layer / passthrough below.
-            if key == "k", event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
+            // ⌘K toggles the palette from anywhere — even over the terminal. Bare ⌘K only (no
+            // Shift, no Option): ⌘⌥K is the split layer's focus-up (⌘⌥ h/j/k/l), and ⌘⇧K isn't a
+            // binding — both must fall through to the split block below rather than open the palette.
+            if key == "k", event.modifierFlags.contains(.command),
+               !event.modifierFlags.contains(.shift), !event.modifierFlags.contains(.option) {
                 if store.palette == nil { store.openPalette() } else { store.closePalette() }
                 return nil
             }

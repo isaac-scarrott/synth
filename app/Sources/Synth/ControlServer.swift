@@ -435,8 +435,7 @@ final class ControlServer: @unchecked Sendable {
                                        contentSize: CGSize(width: w, height: h), dragging: session.id)
             let kind: String
             switch dz.kind {
-            case .split: kind = "split"; case .replace: kind = "replace"
-            case .rim: kind = "rim"; case .refuse: kind = "refuse"
+            case .split: kind = "split"; case .rim: kind = "rim"; case .refuse: kind = "refuse"
             }
             if let zone = dz.zone { store.performDrop(session: session.id, zone: zone) }
             return ["ok": true, "kind": kind, "applied": dz.zone != nil, "panes": store.paneLeaves.count]

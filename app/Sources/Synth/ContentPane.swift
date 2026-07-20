@@ -563,7 +563,6 @@ private struct DropZoneOverlay: View {
     private func style(_ kind: AppStore.DropResolution.Kind) -> (Color, Color, Bool) {
         switch kind {
         case .split:   return (Theme.copper.opacity(0.16), Theme.copper.opacity(0.9), false)
-        case .replace: return (Theme.input.opacity(0.14), Theme.input.opacity(0.95), true)
         case .rim:     return (Theme.input.opacity(0.09), Theme.inkMuted, true)
         case .refuse:  return (Color.gray.opacity(0.13), Theme.inkFaint, false)
         }

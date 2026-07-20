@@ -674,31 +674,42 @@ private struct SessionTile: View {
 
     private var isOpen: Bool { store.openSessionID == session.id }
     private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
-    private var showName: Bool { !minimizeWhenIdle || isOpen || hovering }
+    // Show the kebab (and hence the name) whenever this tile is hovered or its menu is open.
+    private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
+    private var showName: Bool { !minimizeWhenIdle || isOpen || revealed }
 
     var body: some View {
-        Button { store.open(session); focusContent(store) } label: {
-            HStack(spacing: 5) {
-                SessionIcon(kind: session.kind, size: 13).frame(width: 13)
-                if showName {
-                    Text(session.title)
-                        .font(.system(size: 10.5, weight: isOpen ? .semibold : .medium))
-                        .foregroundStyle(isOpen ? Theme.inkOpen : Theme.sessionName)
-                        .lineLimit(1).truncationMode(.tail)
+        ZStack(alignment: .trailing) {
+            Button { store.open(session); focusContent(store) } label: {
+                HStack(spacing: 5) {
+                    SessionIcon(kind: session.kind, size: 13).frame(width: 13)
+                    if showName {
+                        Text(session.title)
+                            .font(.system(size: 10.5, weight: isOpen ? .semibold : .medium))
+                            .foregroundStyle(isOpen ? Theme.inkOpen : Theme.sessionName)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                    // Reserve room for the kebab so the name never sits under it.
+                    if revealed { Spacer(minLength: 20) }
                 }
+                .padding(.horizontal, 7).padding(.vertical, 6)
+                .frame(maxWidth: showName ? .infinity : nil, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 7)
+                    .fill(isOpen ? Theme.accent.opacity(0.12) : Theme.raised))
+                .overlay(RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(pairTo ? Theme.accent.opacity(0.7)
+                                  : (isOpen ? Theme.accent.opacity(0.34)
+                                     : (selected ? Theme.accent.opacity(0.5) : Theme.line)),
+                                  lineWidth: pairTo ? 1.5 : 1))
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 7).padding(.vertical, 6)
-            .frame(maxWidth: showName ? .infinity : nil, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 7)
-                .fill(isOpen ? Theme.accent.opacity(0.12) : Theme.raised))
-            .overlay(RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(pairTo ? Theme.accent.opacity(0.7)
-                              : (isOpen ? Theme.accent.opacity(0.34)
-                                 : (selected ? Theme.accent.opacity(0.5) : Theme.line)),
-                              lineWidth: pairTo ? 1.5 : 1))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            // The ⋮ kebab — hover-revealed like a session row's, opening the drilled ⌘K actions
+            // (Unsplit / Close …). A tile IS a session row, so the actions come along (012).
+            if revealed {
+                KebabButton(ref: .session(session)).padding(.trailing, 3)
+            }
         }
-        .buttonStyle(.plain)
         .onHover { hovering = $0 }
         // Drag a member tile onto the content to re-split / onto a row to pair / out to unsplit (010/012/013).
         .sessionRowDrag(session, reorderable: false)
@@ -1072,80 +1083,63 @@ private struct ReorderLift: ViewModifier {
 /// reorder-only lift on session rows so both create routes share the one gesture, exactly as the mock.
 private struct SessionRowDrag: ViewModifier {
     @Environment(AppStore.self) private var store
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: Session
     /// Full rows reorder within their siblings; echo-band tiles don't (their order is reading order),
     /// they only split / pair / unsplit.
     let reorderable: Bool
 
-    @State private var pitch: CGFloat = 30
-    @State private var consumed: CGFloat = 0
-    @State private var steps = 0            // net reorder steps applied, so a switch to split/pair can undo them
     @State private var wasMember = false
+    @State private var lastPoint: CGPoint = .zero
     @State private var mode: Mode = .reorder
     private enum Mode { case reorder, content, pair }
 
-    private var ref: RowRef { .session(session) }
-    private var dragging: Bool { store.draggingRowID == session.id }
-    private var lifted: Bool { dragging && reorderable && mode == .reorder }
+    // Dim the source row while its ghost floats at the cursor (VS Code file-drag idiom).
+    private var dragging: Bool { store.dragGhostSessionID == session.id }
 
     func body(content: Content) -> some View {
         content
             .background(GeometryReader { g in
                 Color.clear
-                    .onAppear { pitch = g.size.height + 1; store.sessionRowFrames[session.id] = g.frame(in: .global) }
-                    .onChange(of: g.frame(in: .global)) { _, f in
-                        if !dragging { pitch = g.size.height + 1 }
-                        store.sessionRowFrames[session.id] = f
-                    }
+                    .onAppear { store.sessionRowFrames[session.id] = g.frame(in: .global) }
+                    .onChange(of: g.frame(in: .global)) { _, f in store.sessionRowFrames[session.id] = f }
                     .onDisappear { store.sessionRowFrames[session.id] = nil }
             })
-            // Reorder lift (only while genuinely reordering a full row).
-            .offset(y: lifted ? store.dragOffset : 0)
-            .scaleEffect(lifted ? 1.015 : 1)
-            .shadow(color: .black.opacity(lifted ? 0.22 : 0), radius: lifted ? 12 : 0, y: lifted ? 8 : 0)
-            .zIndex(dragging ? 1 : 0)
-            .transaction { t in if lifted { t.animation = nil } }
+            .opacity(dragging ? 0.4 : 1)
             .highPriorityGesture(drag)
     }
 
     private var drag: some Gesture {
-        DragGesture(minimumDistance: 5, coordinateSpace: .global)
+        // The list never reshuffles under the cursor; the ghost floats freely and the drop commits
+        // on release — over the content it splits, onto another row it pairs, otherwise it reorders.
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .onChanged { v in
                 if !dragging {
-                    consumed = 0; steps = 0
                     wasMember = store.inSplit(session.id)
                     store.keyboardActive = false
                     store.navCursor = session.id
                     store.draggingRowID = session.id
+                    store.dragGhostSessionID = session.id
                 }
                 let p = v.location
+                lastPoint = p
+                store.dragGhostPoint = p
                 // 1) Over the content → split / replace / rim at the pointer.
                 if let dz = store.dropZone(atGlobal: p, dragging: session.id) {
-                    freezeReorder(); mode = .content
+                    mode = .content
                     store.dropPreview = dz; store.pairTargetID = nil
                     return
                 }
                 store.dropPreview = nil
-                // 2) Squarely over another row's centre → pair.
+                // 2) Over another session row → pair. The whole row reads as "onto", so it's easy
+                //    to land and never trips the reorder.
                 if let target = store.pairTarget(atGlobal: p, dragging: session.id) {
-                    freezeReorder(); mode = .pair
+                    mode = .pair
                     store.pairTargetID = target
                     return
                 }
-                store.pairTargetID = nil
-                // 3) Otherwise reorder (full rows only).
+                // 3) Off the rows (gaps / ends) → a reorder, committed on release.
                 mode = .reorder
-                guard reorderable else { return }
-                let pp = max(pitch, 1)
-                var net = v.translation.height - consumed
-                while net > pp / 2, store.moveWithinSiblings(ref, by: 1, animated: !reduceMotion) {
-                    consumed += pp; steps += 1; net -= pp
-                }
-                while net < -pp / 2, store.moveWithinSiblings(ref, by: -1, animated: !reduceMotion) {
-                    consumed -= pp; steps -= 1; net += pp
-                }
-                store.dragOffset = v.translation.height - consumed
+                store.pairTargetID = nil
             }
             .onEnded { _ in
                 switch mode {
@@ -1154,33 +1148,52 @@ private struct SessionRowDrag: ViewModifier {
                 case .pair:
                     if let target = store.pairTargetID { store.performPair(dragged: session.id, onto: target) }
                 case .reorder:
-                    // A member dragged out to the plain sidebar leaves its split (013); a plain
-                    // reorder just persists the new order.
+                    // A member dragged out to the plain sidebar leaves its split (013); otherwise
+                    // drop it into the sibling slot the cursor rests in.
                     if wasMember, store.inSplit(session.id) { store.unsplitSession(session.id) }
-                    else { store.saveNow() }
+                    else if reorderable { store.reorderSession(session.id, toGlobalY: lastPoint.y) }
                 }
-                consumed = 0; steps = 0; mode = .reorder
-                store.dragOffset = 0
+                mode = .reorder
                 store.draggingRowID = nil
+                store.dragGhostSessionID = nil
                 store.dropPreview = nil
                 store.pairTargetID = nil
             }
-    }
-
-    /// Entering split/pair mode: undo any reorder hops so the row is back in its start slot and sits
-    /// still (dragOffset 0) while the drop-zone / pair highlight leads. consumed resets to 0 so a
-    /// return to the reorder lane recomputes hops from the full translation.
-    private func freezeReorder() {
-        while steps > 0, store.moveWithinSiblings(ref, by: -1, animated: false) { steps -= 1 }
-        while steps < 0, store.moveWithinSiblings(ref, by: 1, animated: false) { steps += 1 }
-        consumed = 0
-        store.dragOffset = 0
     }
 }
 
 extension View {
     func sessionRowDrag(_ session: Session, reorderable: Bool = true) -> some View {
         modifier(SessionRowDrag(session: session, reorderable: reorderable))
+    }
+}
+
+/// The free-floating drag ghost that tracks the cursor during a session drag (010/012) — the mock's
+/// drag clone: a translucent pill of the session's icon + name, sitting just off the pointer, over
+/// the sidebar or the content alike. Rendered once at the window root so it isn't clipped.
+struct DragGhost: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        if let sid = store.dragGhostSessionID, let s = store.session(sid) {
+            HStack(spacing: 7) {
+                SessionIcon(kind: s.kind, size: 14).frame(width: 14)
+                Text(s.title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.3), radius: 16, y: 9)
+            .opacity(0.92)
+            .fixedSize()
+            // Sit the pill just below-right of the cursor, like a real file drag.
+            .offset(x: store.dragGhostPoint.x + 12, y: store.dragGhostPoint.y + 8)
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
     }
 }
 

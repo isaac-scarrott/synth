@@ -310,6 +310,11 @@ enum FeedbackMode {
     var draggingRowID: UUID?
     var dragOffset: CGFloat = 0
     var reorderScrollNonce = 0
+    /// A free-floating drag ghost for a session drag (010/012) — the session tracks the cursor like
+    /// a VS Code file drag while the source row dims in place. nil when no session drag is in flight;
+    /// `dragGhostPoint` is the cursor in global (window) coordinates.
+    var dragGhostSessionID: UUID?
+    var dragGhostPoint: CGPoint = .zero
 
     /// Sheet drivers.
     var creatingWorktreeIn: Workspace?
@@ -356,6 +361,8 @@ enum FeedbackMode {
 
     /// The ⌘? keyboard-shortcuts sheet (working.html's shortcutsEl).
     var shortcutsOpen = false
+    /// The selected category in the shortcuts sheet's sidebar — driven by ↑/↓ / j/k while open.
+    var shortcutsCategory = 0
 
     /// Full-screen Settings page: a mode layered over the same shell (working.html's
     /// `.app.settings`). `settingsScope` picks which scope the right pane renders.

@@ -857,12 +857,12 @@ private struct StatusIndicator: View {
     let status: SessionStatus
     var body: some View {
         switch status {
-        case .running: Ind { Dot(color: Theme.working) }
+        case .running: Ind { Beat() }
         // Idle and clean exit carry no liveness — a grey dot there is just noise, so
         // the slot stays empty (it still reserves its 16px so row height and the hover
         // swap hold steady). Unread still surfaces via the blue gutter bullet.
         case .idle, .exited: Ind { Color.clear }
-        case .working: Ind { Dot(color: Theme.working) }
+        case .working: Ind { Beat() }
         case .needsInput: Ind { AttentionGlyph(state: .input) }
         case .error:      Ind { AttentionGlyph(state: .error) }
         }
@@ -897,8 +897,8 @@ private struct BranchRollup: View {
         switch branch.rollup {
         case .input where collapsed: Ind { AttentionGlyph(state: .input) }
         case .error where collapsed: Ind { AttentionGlyph(state: .error) }
-        case .work  where collapsed: Ind { Dot(color: Theme.working) }
-        case .run   where collapsed: Ind { Dot(color: Theme.working) }
+        case .work  where collapsed: Ind { Beat() }
+        case .run   where collapsed: Ind { Beat() }
         // A live state while expanded: the sessions carry their own indicators,
         // so nothing rolls up to the header.
         case .input, .error, .work, .run: EmptyView()
@@ -944,18 +944,43 @@ private struct PendingSpinner: View {
     }
 }
 
-/// working.html `.sdot` — 6px liveness dot with a colour-matched soft round glow;
-/// the two blurred box-shadow layers map to two stacked SwiftUI shadows.
-private struct Dot: View {
-    let color: Color
+/// working.html `.beat` — a 5×5 lattice where the beat lights the center cell and radiates
+/// outward as a diamond wavefront: one clock, each cell delayed by its Manhattan distance
+/// from the middle. The dormant lattice stays visible (`rest`) so a slow session still reads
+/// as present between beats rather than blinking out of existence.
+private struct Beat: View {
+    private static let cell: CGFloat = 2
+    private static let gap: CGFloat = 1
+    private static let rest: Double = 0.28
+    private static let step: Double = 0.13     // per ring of Manhattan distance
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lit = false
+
     var body: some View {
-        Circle().fill(color).frame(width: 6, height: 6)
-            .shadow(color: color.opacity(0.55), radius: 1.5)
-            .shadow(color: color.opacity(0.3), radius: 4)
+        VStack(spacing: Self.gap) {
+            ForEach(0..<5, id: \.self) { row in
+                HStack(spacing: Self.gap) {
+                    ForEach(0..<5, id: \.self) { col in
+                        RoundedRectangle(cornerRadius: 0.5)
+                            .fill(Theme.live)
+                            .frame(width: Self.cell, height: Self.cell)
+                            .opacity(lit ? 1 : Self.rest)
+                            .scaleEffect(lit ? 1 : 0.72)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.575)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(abs(row - 2) + abs(col - 2)) * Self.step), value: lit)
+                    }
+                }
+            }
+        }
+        // Frozen at rest the lattice reads as switched off, so reduced motion holds it lit.
+        .opacity(reduceMotion ? 0.85 : 1)
+        .onAppear { lit = true }
     }
 }
 
-/// working.html `.udot` — a flat 6px blue dot, no glow (unlike the live `Dot`): the
+/// working.html `.udot` — a flat 6px blue dot, no glow (unlike the live `Beat`): the
 /// collapsed roll-up cue for a settled branch holding unread output. Same blue as the
 /// row's gutter bullet, so it reads as ambient "something to read", not liveness.
 private struct UnreadDot: View {
@@ -981,8 +1006,6 @@ private struct PulseModifier: ViewModifier {
 }
 
 extension View {
-    // sdot--work: 1.5s cycle, opacity 1↔0.4, no scale.
-    func sdotPulse() -> some View { modifier(PulseModifier(halfDuration: 0.75, minOpacity: 0.4, minScale: 1)) }
     // attn-breathe: 2s cycle, opacity 1↔0.55 + scale 1↔0.9.
     func attnBreathe() -> some View { modifier(PulseModifier(halfDuration: 1.0, minOpacity: 0.55, minScale: 0.9)) }
 

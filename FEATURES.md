@@ -674,3 +674,14 @@ disclosure to dive deeper.
   toast/countdown and split-focus surfaces. Notarized, stapled, 15 deltas (23MB) against a 137MB
   download; verified credential-less (spctl accepted / Notarized Developer ID, staple valid, appcast
   newest `Synth-0.7.0.zip` at `sparkle:version` 293 with `edSignature`) and installed to `/Applications`.
+- **Liveness is a five-bar wave, not an amber dot** — the running / working indicator (sidebar
+  rows, collapsed roll-up, the agent transcript's in-progress line) becomes an amber five-bar
+  level meter breathing on a 1s cycle; the level meter is the loading shape an app named for a
+  synth should use, and movement separates "live" from the flat unread dot by more than hue.
+  Landed in both design files and the native sidebar.
+
+- **Liveness becomes a cyan diamond beat** (supersedes the five-bar wave above) — the running /
+  working indicator is a 5×5 lattice beating from the center outward as a diamond wavefront, in a
+  new per-theme `--live` cyan (deep on light, bright on dark) that stops the indicator reading as
+  Claude's amber mark inside Synth's own chrome. The dormant lattice stays visible between beats —
+  an indicator that blinks out of existence makes a slow session look dead.

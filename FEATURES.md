@@ -668,3 +668,8 @@ disclosure to dive deeper.
   toast/countdown and split-focus surfaces. Notarized, stapled, 15 deltas (23MB) against a 137MB
   download; verified credential-less (spctl accepted / Notarized Developer ID, staple valid, appcast
   newest `Synth-0.7.0.zip` at `sparkle:version` 293 with `edSignature`) and installed to `/Applications`.
+- **Crash reporting actually reports** — libghostty statically links sentry-native, whose Breakpad
+  claimed the task's Mach exception ports and swallowed every crash (Mach preempts POSIX signals),
+  leaving `CrashReporter`'s handlers dead from first terminal use. `GhosttyApp.start()` now runs
+  before `Analytics.bootstrap` so PostHog's PLCrashReporter layers on top and chains back; the
+  signal-marker path stays as a backstop.

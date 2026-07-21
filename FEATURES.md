@@ -640,3 +640,9 @@ disclosure to dive deeper.
   member click restores, 014) instead of dissolving when another branch takes the surface; its
   tiles' Unsplit / drag-out-to-unsplit keep working from the background. App-only — the
   `working.html` echo (single band, current branch) is a follow-up.
+
+- **Split focus is a top-edge bar in the mark's colours** — the active pane's copper ring (004 §4)
+  is superseded by a 2px top-edge bar in a new `--focus` token (charcoal on light, champagne on
+  dark), ends inset by the app radius so it clears the shell's rounded corners; sweeps in from
+  the left while the old pane's bar fades. Design files done; app port rides with the
+  split-focus click fix.

@@ -69,8 +69,15 @@ extension AppStore {
     /// Is the whole layout an on-screen (≥2-pane) split? A lone leaf is the degenerate case.
     var isSplit: Bool { if let l = layout, !l.isLeaf { return true } else { return false } }
 
-    /// Is this session a member of an on-screen split — i.e. is there something to unsplit it out of?
-    func inSplit(_ sessionID: UUID) -> Bool { isSplit && leaf(of: sessionID) != nil }
+    /// Is this session a member of a split there is something to unsplit it out of — the on-screen
+    /// split for the current branch, or its branch's remembered layout otherwise (the sidebar band
+    /// survives branch switches, 014).
+    func inSplit(_ sessionID: UUID) -> Bool {
+        if isSplit && leaf(of: sessionID) != nil { return true }
+        guard let s = session(sessionID), let br = branch(of: s), br.id != currentBranchID,
+              let tree = br.layout, !tree.isLeaf else { return false }
+        return leafInTree(tree, session: sessionID) != nil
+    }
 
     /// The session-bound leaves in reading order (the tree flattened a-before-b) — what ⌘1…9 and
     /// cycle walk, and the sidebar echo mirrors.
@@ -178,14 +185,16 @@ extension AppStore {
     /// Detach one leaf and collapse the split above it — the surviving sibling reflows into the
     /// freed space (001). Used to MOVE a session between panes on drop (010); unsplit/close is 013.
     func removeLeaf(_ target: PaneNode) {
-        func walk(_ n: PaneNode?) -> PaneNode? {
-            guard let n else { return nil }
-            if n.isLeaf { return n === target ? nil : n }
-            let a = walk(n.a), b = walk(n.b)
-            if let a, let b { n.a = a; n.b = b; return n }
-            return a ?? b
-        }
-        layout = walk(layout)
+        layout = removing(target, from: layout)
+    }
+
+    /// `removeLeaf` over an arbitrary tree — returns what's left of `tree` without `target`.
+    func removing(_ target: PaneNode, from tree: PaneNode?) -> PaneNode? {
+        guard let tree else { return nil }
+        if tree.isLeaf { return tree === target ? nil : tree }
+        let a = removing(target, from: tree.a), b = removing(target, from: tree.b)
+        if let a, let b { tree.a = a; tree.b = b; return tree }
+        return a ?? b
     }
 
     /// Unsplit (013): the flat route out of a split, minus killing the session. **Focus carries
@@ -193,22 +202,31 @@ extension AppStore {
     /// the other members drop back to sidebar rows), rather than snapping focus to the survivor.
     /// Unsplitting some *other* session just detaches it and leaves the active pane where it is.
     func unsplitSession(_ sessionID: UUID) {
-        guard inSplit(sessionID), let target = leaf(of: sessionID) else { return }
-        if activePane === target {
-            // Solo the focused session — you keep viewing what you unsplit.
-            layout = PaneNode(leafSession: sessionID)
-            activePane = layout
-        } else {
-            removeLeaf(target)
-            if let root = layout {
-                var ok = false
-                eachLeaf(root) { if $0 === activePane { ok = true } }
-                if !ok { activePane = firstLeaf(root) }
+        if isSplit, let target = leaf(of: sessionID) {
+            if activePane === target {
+                // Solo the focused session — you keep viewing what you unsplit.
+                layout = PaneNode(leafSession: sessionID)
+                activePane = layout
             } else {
-                activePane = nil
+                removeLeaf(target)
+                if let root = layout {
+                    var ok = false
+                    eachLeaf(root) { if $0 === activePane { ok = true } }
+                    if !ok { activePane = firstLeaf(root) }
+                } else {
+                    activePane = nil
+                }
             }
+            renderLayout()
+            return
         }
-        renderLayout()
+        // A member of a background branch's remembered split (its sidebar band survives branch
+        // switches, 014): detach the leaf and collapse in place — the band updates without
+        // touching the on-screen surface; the autosave persists it.
+        guard let s = session(sessionID), let br = branch(of: s), br.id != currentBranchID,
+              let tree = br.layout, !tree.isLeaf,
+              let target = leafInTree(tree, session: sessionID) else { return }
+        br.layout = removing(target, from: tree)
     }
 
     /// The single choke point every mutation flows through (working.html renderLayout): prune dead
@@ -333,11 +351,14 @@ extension AppStore {
     /// band stays put behind a zoom (014).
     var durableLayout: PaneNode? { stashedSplit ?? layout }
 
-    /// The member sessions of an on-screen split, in reading order (the tree flattened a-before-b) —
-    /// the sidebar echo's source (012). Empty unless the durable layout binds ≥2 sessions.
-    var echoMemberIDs: [UUID] {
+    /// The member sessions of `branch`'s split, in reading order (the tree flattened a-before-b) —
+    /// the sidebar echo's source (012). The current branch reads the on-screen durable tree; any
+    /// other branch its remembered Branch.layout, so a band survives switching branches /
+    /// workspaces (014). Empty unless the tree binds ≥2 sessions.
+    func echoMemberIDs(for branch: Branch) -> [UUID] {
+        let tree = branch.id == currentBranchID ? durableLayout : branch.layout
         var ids: [UUID] = []
-        eachLeaf(durableLayout) { if let s = $0.sessionID { ids.append(s) } }
+        eachLeaf(tree) { if let s = $0.sessionID { ids.append(s) } }
         return ids.count >= 2 ? ids : []
     }
 

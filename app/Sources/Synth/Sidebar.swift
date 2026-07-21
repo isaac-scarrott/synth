@@ -452,7 +452,7 @@ private struct BranchRow: View {
                                        selected: store.keyboardActive && store.navCursor == $0.id)
                         }
                     } else {
-                        // Expanded: an on-screen split (012) pulls its member rows into a bare
+                        // Expanded: the branch's split (012) pulls its member rows into a bare
                         // horizontal band of tiles — reading order, membership only — placed where
                         // the first member lived; everything else stays a full-width row.
                         ForEach(sessionItems) { item in
@@ -471,11 +471,13 @@ private struct BranchRow: View {
         .reorderLift(.branch(branch))
     }
 
-    /// The expanded session list, with an on-screen split's members folded into one band placed
-    /// where the first member (in branch order) lived. A split is always within one branch (003),
-    /// so at most one band. No split → every session is a plain row (today's behaviour).
+    /// The expanded session list, with the branch's split members folded into one band placed
+    /// where the first member (in branch order) lived — the on-screen split for the current
+    /// branch, the remembered layout for any other, so the band survives switching branches /
+    /// workspaces (014). A split is always within one branch (003), so at most one band.
+    /// No split → every session is a plain row (today's behaviour).
     private var sessionItems: [SessionListItem] {
-        let echo = store.echoMemberIDs
+        let echo = store.echoMemberIDs(for: branch)
         let memberSet = Set(echo)
         guard !echo.isEmpty, branch.sessions.contains(where: { memberSet.contains($0.id) }) else {
             return branch.sessions.map { .row($0) }

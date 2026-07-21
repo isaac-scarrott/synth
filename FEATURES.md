@@ -632,3 +632,11 @@ disclosure to dive deeper.
   drag ghost marks the landing slot (hidden when the drop is a no-op), and the reorder commits on
   release — restoring the placement feedback lost when the unified session drag moved to
   commit-on-release.
+
+## [2026-07-21](docs/features/2026-07-21.md)
+
+- **The sidebar's split band survives switching branches / workspaces** — the split echo (012) is
+  per-branch: a background branch's band renders from its remembered `Branch.layout` (the tree a
+  member click restores, 014) instead of dissolving when another branch takes the surface; its
+  tiles' Unsplit / drag-out-to-unsplit keep working from the background. App-only — the
+  `working.html` echo (single band, current branch) is a follow-up.

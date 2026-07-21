@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.7.0",
+    "date": "2026-07-21",
+    "changes": [
+      "Toasts now anchor to the shell's corner and drain a countdown bar as they auto-dismiss — hover, or switching away from Synth, pauses the clock; input and error toasts stay until you act.",
+      "The active pane is marked with a top-edge bar in the mark's colour, and clicking anywhere in a pane focuses it.",
+      "A background branch keeps its split layout — switch away and back and the panes are still there.",
+      "Reorder drags mark the drop slot with a copper line instead of reshuffling the list under your cursor (sidebar and Settings templates).",
+      "Splits stay within one branch — a cross-branch drop now refuses instead of silently dropping the pane.",
+      "The in-app Changelog is a keyboard-driven two-pane sheet."
+    ]
+  },
+  {
     "version": "0.6.0",
     "date": "2026-07-20",
     "changes": [

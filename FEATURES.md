@@ -673,3 +673,7 @@ disclosure to dive deeper.
   leaving `CrashReporter`'s handlers dead from first terminal use. `GhosttyApp.start()` now runs
   before `Analytics.bootstrap` so PostHog's PLCrashReporter layers on top and chains back; the
   signal-marker path stays as a backstop.
+- **Synth 0.7.1 shipped (build 294)** — patch release, two crash fixes on 0.7.0. The now-working
+  crash reporting caught a Bluetooth `SIGABRT`: an embedded engine (CEF Web Bluetooth / libghostty)
+  probes the radio and TCC hard-aborts an app with no `NSBluetoothAlwaysUsageDescription`.
+  `write_info_plist` now emits the key. No user-facing surface change.

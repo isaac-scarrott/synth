@@ -53,6 +53,9 @@ write_info_plist() {
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <!-- Synth never asks for Bluetooth, but the embedded Chromium (Web Bluetooth) and libghostty
+       engines probe it; without this key TCC hard-aborts the whole app the first time they do. -->
+  <key>NSBluetoothAlwaysUsageDescription</key><string>Synth's embedded browser needs Bluetooth to run web pages that use it.</string>
 ${sparkle}
 </dict>
 </plist>

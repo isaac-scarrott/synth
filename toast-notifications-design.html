@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Synth — Toast notifications (standalone design)</title>
+<style>
+  /* Tokens lifted verbatim from working.html — only what the toast layer and mock shell read. */
+  :root {
+    --canvas: #e9eaee;
+    --panel: #fafbfc;
+    --sidebar: #f0f1f4;
+    --border: rgba(0, 0, 0, 0.07);
+    --border-strong: rgba(0, 0, 0, 0.1);
+    --text: #1c1e23;
+    --text-muted: #7e808a;
+    --text-faint: #a6a8b0;
+    --ink-2: #44464e;
+    --ink-3: #54565e;
+    --ink-4: #666971;
+    --ink-5: #787b84;
+    --ink-open: #2b2d34;
+    --raised: #ffffff;
+    --glass: rgba(250,251,253,0.84);
+    --hover-soft: rgba(0,0,0,0.035);
+    --line-soft: rgba(0,0,0,0.06);
+    --line: rgba(0,0,0,0.1);
+    --accent: #a86038;
+    --focus: #1e2126;        /* the mark's own pair — same token the split focus bar reads */
+    --input: #3a6db3;
+    --error: #ff3b30;
+    --run: #34c759;
+    --copper: #a05633;
+    --radius-app: 14px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+    --notif-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 12px 30px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.06);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+  :root[data-theme="dark"] {
+    --canvas: #0d0f13;
+    --panel: #191b1f;
+    --sidebar: #1d1f24;
+    --border: rgba(255,255,255,0.09);
+    --border-strong: rgba(255,255,255,0.13);
+    --text: #e6e8ed;
+    --text-muted: #8d9099;
+    --text-faint: #666a72;
+    --ink-2: #c4c7cf;
+    --ink-3: #adb0b9;
+    --ink-4: #979aa3;
+    --ink-5: #83868f;
+    --ink-open: #dcdee4;
+    --raised: #282b30;
+    --glass: rgba(40,43,48,0.82);
+    --hover-soft: rgba(255,255,255,0.045);
+    --line-soft: rgba(255,255,255,0.08);
+    --line: rgba(255,255,255,0.12);
+    --accent: #eee0cd;
+    --focus: #eee0cd;        /* champagne on dark — the split focus bar's flip */
+    --input: #7ea6dc;
+    --copper: #c2724c;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.55);
+    --notif-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4);
+  }
+  :root[data-theme="dark"] body { background: #0a0b0d; }
+  :root[data-theme="dark"] .app { border-color: rgba(255,255,255,0.09); }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: var(--font); color: var(--text); background: var(--canvas); -webkit-font-smoothing: antialiased; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 22px; }
+
+  /* ---- Prototype controls (not part of the design) ---- */
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .controls button {
+    font: 500 12px/1 var(--font); color: var(--ink-3); padding: 7px 12px; border-radius: 8px;
+    background: var(--raised); border: 0.5px solid var(--line); box-shadow: 0 0.5px 0 var(--line-soft); cursor: pointer;
+  }
+  .controls button:hover { background: color-mix(in srgb, var(--raised) 100%, var(--text) 4%); }
+  .controls .sep { width: 1px; height: 16px; background: var(--line); }
+
+  /* ---- Mock shell: just enough chrome to see the corner the toasts anchor to ---- */
+  .app {
+    position: relative; width: 100%; max-width: 1120px; height: min(640px, calc(100vh - 130px));
+    background: var(--panel); border-radius: var(--radius-app); box-shadow: var(--shadow);
+    border: 0.5px solid var(--border-strong); display: grid; grid-template-columns: 260px 1fr; overflow: hidden;
+  }
+  .traffic { position: absolute; top: 18px; left: 18px; display: flex; gap: 8px; z-index: 5; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; background: var(--hover-soft); border: 0.5px solid var(--line); }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); padding: 56px 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+  .srow { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; color: var(--ink-3); }
+  .srow svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--ink-5); }
+  .srow--label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin-top: 10px; }
+  .srow--open { background: var(--hover-soft); color: var(--ink-open); font-weight: 550; }
+  .content { display: grid; place-items: center; color: var(--text-faint); font-size: 13px; }
+
+  /* =====================================================================================
+     THE DESIGN — in-app toast notifications
+     1) The deck anchors at the bottom-left of the WHOLE shell (left: 22px), over the
+        sidebar — not at the content area's edge. One fixed home whatever the layout,
+        sidebar width, or collapse state; the 22px inset clears the shell's rounded corner.
+     2) A toast that will dismiss itself (kind 'done') carries a countdown bar along its
+        bottom edge — the split focus bar's grammar reused as a clock: same 2px weight,
+        same --focus token (charcoal on light, champagne on dark), ends inset by the card
+        radius with soft caps. It drains right-to-left (transform-origin left, the same
+        origin the focus bar sweeps from) over the toast's lifetime; when it's gone, so is
+        the toast. Hovering the deck pauses the drain — reading is not ignoring.
+        Sticky toasts (needs-input, error) ask for an answer, so they carry no bar.
+     ===================================================================================== */
+  .notifs { position: absolute; left: 22px; bottom: 22px; width: 320px; z-index: 60; pointer-events: none; }
+  .notif {
+    position: relative;   /* the countdown bar anchors to the card, deck-mode absolute or not */
+    pointer-events: auto; display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center;
+    padding: 11px 12px 11px 13px; background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.7); backdrop-filter: blur(24px) saturate(1.7);
+    border: 0.5px solid var(--border-strong); border-radius: 13px; box-shadow: var(--notif-shadow);
+    cursor: pointer; transform-origin: center bottom; opacity: 0; transform: translateY(12px) scale(0.975);
+    transition: transform 320ms var(--ease-out), opacity 220ms ease, box-shadow 200ms ease, background 130ms ease;
+  }
+  .notif.is-front { grid-template-columns: auto 1fr auto; }
+  .notif.in { opacity: 1; transform: translateY(0) scale(1); }
+  .notif:hover { background: color-mix(in srgb, var(--glass) 100%, var(--text) 4%); }
+  .notifs.deck .notif { position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z); }
+  .notifs.deck .notif.in { transform: translateY(calc(var(--i) * -10.5px)) scale(calc(1 - var(--i) * 0.045)); opacity: var(--op); }
+  .notifs.deck .notif.deep { pointer-events: none; }
+  .notifs.deck.spread .notif { pointer-events: auto; }
+  .notifs.deck.spread .notif.in { transform: translateY(calc(var(--i) * (var(--step, 58px) * -1))) scale(1); opacity: 1; }
+  .notif.leave { opacity: 0 !important; transform: translateY(8px) scale(0.985) !important; pointer-events: none; }
+  .notif__glyph { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; }
+  .notif__glyph svg { width: 17px; height: 17px; display: block; }
+  .notif--input .notif__glyph { color: var(--input); background: color-mix(in srgb, var(--input) 13%, transparent); }
+  .notif--input .notif__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
+  .notif--error .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
+  .notif--done .notif__glyph { color: var(--run); background: color-mix(in srgb, var(--run) 13%, transparent); }
+  .notif__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .notif__who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notif__who .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+  .notif__who .k { width: 12px; height: 12px; flex-shrink: 0; color: var(--ink-5); }
+  .notif__who .k svg { width: 12px; height: 12px; display: block; }
+  .notif__what { font-size: 12.5px; font-weight: 570; color: var(--ink-open); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notif__kbd { display: none; align-items: center; gap: 5px; align-self: center; font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+  .notif.is-front .notif__kbd { display: flex; }
+  .notif__kbd .keys { display: inline-flex; gap: 2px; }
+  .notif__kbd kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; min-width: 16px; height: 16px; padding: 0 3px; display: inline-grid; place-items: center; color: var(--ink-4); background: var(--raised); border: 0.5px solid var(--line); border-radius: 5px; box-shadow: 0 0.5px 0 var(--line-soft); }
+  @keyframes attn-breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.86); opacity: 0.75; } }
+
+  /* The countdown bar — the focus bar's grammar reused as a clock. It sits along the card's
+     bottom edge, ends inset by the card radius so it clears the rounded corners, and drains
+     from the right toward its left origin over the toast's lifetime. The card dismisses on
+     the bar's animationend, so what you see IS the timer — they can never disagree.
+     Hovering the deck pauses the animation (and therefore the dismissal). */
+  .notif__timer {
+    position: absolute; left: 13px; right: 13px; bottom: 0; height: 2px; pointer-events: none;
+    background: var(--focus); border-radius: 2px 2px 0 0; opacity: 0.85;
+    transform-origin: left; animation: notif-drain var(--life, 6000ms) linear forwards;
+  }
+  @keyframes notif-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  .notifs:hover .notif__timer { animation-play-state: paused; }
+
+  .notifs__more { position: absolute; left: 13px; z-index: 200; pointer-events: none; font-size: 10.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 2px 7px; background: var(--glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 0.5px solid var(--border-strong); border-radius: 20px; box-shadow: var(--shadow); opacity: 0; transition: opacity 200ms ease; }
+  .notifs.deck .notifs__more.show { opacity: 1; }
+  .notifs.deck.spread .notifs__more { opacity: 0 !important; }
+
+  /* ---- Design notes ---- */
+  .notes { max-width: 1120px; width: 100%; font-size: 12px; line-height: 1.6; color: var(--text-muted); display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .notes b { color: var(--ink-3); font-weight: 600; }
+</style>
+<script>
+  (function () {
+    try {
+      var p = localStorage.getItem('synth-theme') || 'system';
+      var dark = p === 'dark' || (p !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+  })();
+</script>
+</head>
+<body>
+  <div class="controls">
+    <button id="spawnDone">Claude finished (auto-dismiss)</button>
+    <button id="spawnInput">Needs input (sticky)</button>
+    <button id="spawnError">Error (sticky)</button>
+    <button id="spawnBurst">Burst ×4 (deck)</button>
+    <span class="sep"></span>
+    <button id="clearAll">Clear</button>
+    <button id="themeToggle">Toggle theme</button>
+  </div>
+
+  <main class="app">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <aside class="sidebar">
+      <div class="srow srow--label">Project</div>
+      <div class="srow"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72Z"/></svg>synth</div>
+      <div class="srow srow--open"><svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg>Claude Code</div>
+      <div class="srow"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>dev server</div>
+      <div class="srow"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>tests</div>
+    </aside>
+    <section class="content">session surface — toasts never anchor here</section>
+    <div class="notifs" id="notifs"></div>
+  </main>
+
+  <div class="notes">
+    <div><b>Anchor.</b> The deck lives at the bottom-left of the whole shell — <code>left: 22px</code>, over the sidebar — not at the content area's edge. One fixed home regardless of sidebar width, collapse, or split layout; the inset clears the shell's rounded corner, mirroring the focus bar's corner-clearing inset up top.</div>
+    <div><b>Countdown bar.</b> Only self-dismissing toasts (done) carry it: 2px, <code>--focus</code> (charcoal / champagne), ends inset by the card radius with soft caps — the split focus bar's exact grammar, reused as a clock. It drains toward its left origin; dismissal fires on the bar's <code>animationend</code>, so bar and timer can never disagree.</div>
+    <div><b>Hover pauses.</b> Hovering the deck pauses every bar (pure CSS <code>animation-play-state</code>) — reading is not ignoring. Sticky toasts (needs-input, error) ask for an answer, so they carry no bar and never self-dismiss. Deck, fan-on-hover, ⌘↩-jump behaviour is unchanged from the shipped design.</div>
+  </div>
+
+<script>
+  // Prototype-only driver: fake sessions exercising the shipped deck logic + the new timer bar.
+  const notifsEl = document.getElementById('notifs');
+  const MARK_INPUT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg>';
+  const MARK_ERROR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg>';
+  const MARK_DONE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
+  const ICON_AI = '<svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg>';
+  const ICON_TERM = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
+  const NOTIF_OP = [1, 0.7, 0.45];
+  const NOTIF_KBD = '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>jump</span>';
+  const NOTIF_RANK = { error: 0, input: 1, done: 2 };
+  const NOTIF_DONE_MS = 6000;
+  const FAKES = [
+    { name: 'api-refactor', icon: ICON_AI, color: 'var(--copper)' },
+    { name: 'Claude Code', icon: ICON_AI, color: 'var(--copper)' },
+    { name: 'tests', icon: ICON_TERM, color: '#5b8def' },
+    { name: 'dev server', icon: ICON_TERM, color: '#5b8def' },
+  ];
+  let seq = 0, fake = 0;
+  const toasts = new Map();   // id -> { kind, order, card }
+
+  const what = (kind, ai) => kind === 'error' ? (ai ? 'Claude hit an error' : 'exited with an error')
+    : kind === 'done' ? (ai ? 'Claude finished' : 'finished')
+    : (ai ? 'Claude needs your input' : 'needs input');
+
+  function spawn(kind) {
+    const f = FAKES[fake++ % FAKES.length];
+    const id = 't' + (++seq);
+    const c = document.createElement('div');
+    c.className = 'notif notif--' + kind;
+    c.innerHTML = '<div class="notif__glyph">' + (kind === 'error' ? MARK_ERROR : kind === 'done' ? MARK_DONE : MARK_INPUT) + '</div>'
+      + '<div class="notif__text"><div class="notif__who">'
+      + '<span class="dot" style="background:' + f.color + '"></span>'
+      + '<span class="k">' + f.icon + '</span>' + f.name
+      + '</div><div class="notif__what">' + what(kind, f.icon === ICON_AI) + '</div></div>' + NOTIF_KBD;
+    if (kind === 'done') {
+      const bar = document.createElement('div');
+      bar.className = 'notif__timer';
+      bar.style.setProperty('--life', NOTIF_DONE_MS + 'ms');
+      bar.addEventListener('animationend', () => dismiss(id));
+      c.appendChild(bar);
+    }
+    c.addEventListener('click', () => dismiss(id));   // stand-in for jumpTo(session)
+    toasts.set(id, { kind, order: seq, card: c });
+    notifsEl.appendChild(c);
+    requestAnimationFrame(() => requestAnimationFrame(() => c.classList.add('in')));
+    render();
+  }
+
+  function dismiss(id) {
+    const t = toasts.get(id);
+    if (!t) return;
+    toasts.delete(id);
+    t.card.classList.add('leave');
+    t.card.addEventListener('transitionend', () => t.card.remove(), { once: true });
+    render();
+  }
+
+  function order() {
+    return [...toasts.values()].sort((a, b) =>
+      NOTIF_RANK[a.kind] !== NOTIF_RANK[b.kind] ? NOTIF_RANK[a.kind] - NOTIF_RANK[b.kind] : b.order - a.order);
+  }
+
+  function more() {
+    let m = notifsEl.querySelector('.notifs__more');
+    if (!m) { m = document.createElement('div'); m.className = 'notifs__more'; notifsEl.appendChild(m); }
+    return m;
+  }
+
+  function render() {
+    const o = order();
+    notifsEl.classList.toggle('deck', o.length > 1);
+    if (o.length <= 1) { notifsEl.classList.remove('spread'); notifsEl.style.height = ''; notifsEl.style.pointerEvents = ''; }
+    if (!o.length) { notifsEl.classList.remove('deck'); more().classList.remove('show'); return; }
+    o.forEach((t, i) => {
+      t.card.style.setProperty('--i', i);
+      t.card.style.setProperty('--op', i < NOTIF_OP.length ? NOTIF_OP[i] : 0);
+      t.card.style.setProperty('--z', 100 - i);
+      t.card.classList.toggle('deep', i >= NOTIF_OP.length);
+      t.card.classList.toggle('is-front', i === 0);
+    });
+    const first = notifsEl.querySelector('.notif.in') || notifsEl.querySelector('.notif');
+    if (first) {
+      const step = first.offsetHeight + 9;
+      notifsEl.style.setProperty('--step', step + 'px');
+      notifsEl._fanH = (o.length - 1) * step + first.offsetHeight + 4;
+      if (notifsEl.classList.contains('spread')) notifsEl.style.height = notifsEl._fanH + 'px';
+      more().style.bottom = (first.offsetHeight + 26) + 'px';
+    }
+    const hidden = o.length - NOTIF_OP.length;
+    more().textContent = '+' + hidden;
+    more().classList.toggle('show', hidden > 0);
+  }
+
+  notifsEl.addEventListener('mouseover', () => {
+    if (!notifsEl.classList.contains('deck')) return;
+    notifsEl.classList.add('spread');
+    if (notifsEl._fanH) notifsEl.style.height = notifsEl._fanH + 'px';
+    notifsEl.style.pointerEvents = 'auto';
+  });
+  notifsEl.addEventListener('mouseout', (e) => {
+    if (notifsEl.contains(e.relatedTarget)) return;
+    notifsEl.classList.remove('spread'); notifsEl.style.height = ''; notifsEl.style.pointerEvents = '';
+  });
+
+  document.getElementById('spawnDone').addEventListener('click', () => spawn('done'));
+  document.getElementById('spawnInput').addEventListener('click', () => spawn('input'));
+  document.getElementById('spawnError').addEventListener('click', () => spawn('error'));
+  document.getElementById('spawnBurst').addEventListener('click', () => { spawn('done'); spawn('input'); spawn('done'); spawn('error'); });
+  document.getElementById('clearAll').addEventListener('click', () => [...toasts.keys()].forEach(dismiss));
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+    try { localStorage.setItem('synth-theme', dark ? 'light' : 'dark'); } catch (e) {}
+  });
+
+  spawn('done');   // something on screen at load
+</script>
+</body>
+</html>

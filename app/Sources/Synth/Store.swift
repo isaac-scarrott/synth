@@ -127,6 +127,21 @@ struct InAppNotif: Identifiable {
     /// both from the session. A system toast persists until clicked.
     var message: String? = nil
     var iconPath: String? = nil
+
+    /// A done toast's life, working.html `NOTIF_DONE_MS`. Sticky toasts (input / error)
+    /// never read these.
+    static let doneLife: TimeInterval = 6
+    /// The pausable countdown (working.html: the `.notif__timer` bar IS the timer, so the
+    /// drain and the dismissal share one clock). `remaining` banks the life left while
+    /// paused; `armedAt` is the start of the current draining stretch, nil while paused.
+    var remaining: TimeInterval = doneLife
+    var armedAt: Date? = nil
+
+    /// Life left → 1…0, linear — what the countdown bar shows at `now`.
+    func timerFraction(at now: Date) -> Double {
+        let left = armedAt.map { max(0, remaining - now.timeIntervalSince($0)) } ?? remaining
+        return min(1, max(0, left / Self.doneLife))
+    }
 }
 
 /// Which focus rule a notification follows: `.inApp` is the frontmost case (deck only),
@@ -517,6 +532,14 @@ enum FeedbackMode {
         syncAgentBridge()
         startAutosave()
         refreshPullRequests()
+        // The done-toast drain follows focus as well as hover: routeTransition raises the
+        // deck even unfocused, and the clock must not run while nobody can see it.
+        for (name, active) in [(NSApplication.didBecomeActiveNotification, true),
+                               (NSApplication.didResignActiveNotification, false)] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.noteAppActive(active) }
+            }
+        }
         AppStore.shared = self
     }
 
@@ -742,29 +765,88 @@ enum FeedbackMode {
     private func raiseInApp(_ id: UUID, _ kind: NotifKind, outlivesSession: Bool = false) {
         guard let s = session(id) else { return }
         notifSeq += 1
+        cancelDismiss(id)   // the replaced toast's clock must not outlive it
         notifs.removeAll { $0.id == id }
         notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq,
                                  sessionKind: s.kind, title: s.title,
                                  colorIndex: branch(of: s).flatMap { workspace(of: $0) }?.colorIndex,
                                  outlivesSession: outlivesSession))
-        if kind == .done {
-            let seq = notifSeq
-            Task { @MainActor [weak self] in
-                // The countdown only runs while Synth is frontmost — a done toast raised
-                // (or still up) unfocused waits in the deck, and gets its 6 seconds of
-                // being seen after focus returns before dismissing itself.
-                try? await Task.sleep(for: .seconds(6))
-                while !NSApp.isActive {
-                    for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) { break }
-                    try? await Task.sleep(for: .seconds(6))
-                }
-                self?.notifs.removeAll { $0.id == id && $0.seq == seq }
+        if kind == .done { armDoneToast(id) }   // re-raised done → the clock rewinds (fresh toast, full life)
+    }
+
+    /// True while the pointer rests on the deck: every done toast's drain (bar and dismissal
+    /// alike) holds still, single card or fanned (working.html `.notifs:hover .notif__timer
+    /// { animation-play-state: paused }`).
+    var notifDrainPaused = false
+    /// The drain's second brake: Synth not frontmost. A done toast raised (or still up)
+    /// unfocused waits in the deck fully banked — standing there for the return is the point
+    /// of raising it at all — and gets its seconds on screen once focus is back. Driven by
+    /// did{Become,Resign}Active (wired in `init`); starts unfocused, the first activation
+    /// releases it.
+    @ObservationIgnored private var notifDrainUnfocused = true
+    private var drainHeld: Bool { notifDrainPaused || notifDrainUnfocused }
+    /// One armed dismissal per toast, sleeping exactly what its bar shows.
+    @ObservationIgnored private var notifDismissTasks: [UUID: Task<Void, Never>] = [:]
+
+    private func cancelDismiss(_ id: UUID) {
+        notifDismissTasks[id]?.cancel()
+        notifDismissTasks[id] = nil
+    }
+
+    /// Start a done toast draining: stamp `armedAt` and sleep out its banked `remaining`.
+    /// Under a held drain (deck hovered, or Synth unfocused) the toast waits fully banked —
+    /// release arms it.
+    private func armDoneToast(_ id: UUID) {
+        cancelDismiss(id)
+        guard let i = notifs.firstIndex(where: { $0.id == id && $0.kind == .done }) else { return }
+        guard !drainHeld else { notifs[i].armedAt = nil; return }
+        notifs[i].armedAt = Date()
+        let remaining = notifs[i].remaining
+        let seq = notifs[i].seq
+        notifDismissTasks[id] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(remaining))
+            guard !Task.isCancelled else { return }
+            self?.notifs.removeAll { $0.id == id && $0.seq == seq }
+            self?.notifDismissTasks[id] = nil
+        }
+    }
+
+    func setNotifDrainPaused(_ paused: Bool) {
+        guard paused != notifDrainPaused else { return }
+        applyDrainBrake { notifDrainPaused = paused }
+    }
+
+    /// App (de)activation flips the focus brake through the same bank/arm transition as hover.
+    private func noteAppActive(_ active: Bool) {
+        guard notifDrainUnfocused == active else { return }
+        applyDrainBrake { notifDrainUnfocused = !active }
+    }
+
+    /// Flip one brake and settle the clocks: newly held → bank every armed toast's remaining
+    /// life; newly released → re-arm every done toast. A flip that doesn't change the combined
+    /// hold (e.g. unhover while still unfocused) touches nothing.
+    private func applyDrainBrake(_ flip: () -> Void) {
+        let wasHeld = drainHeld
+        flip()
+        guard drainHeld != wasHeld else { return }
+        if drainHeld {
+            let now = Date()
+            for i in notifs.indices {
+                guard let armed = notifs[i].armedAt else { continue }
+                notifs[i].remaining = max(0, notifs[i].remaining - now.timeIntervalSince(armed))
+                notifs[i].armedAt = nil
+                cancelDismiss(notifs[i].id)
             }
+        } else {
+            for n in notifs where n.kind == .done { armDoneToast(n.id) }
         }
     }
 
     /// Drop a session's toast (opening it, or a work/run/idle transition off it).
-    func clearNotif(_ id: UUID) { notifs.removeAll { $0.id == id } }
+    func clearNotif(_ id: UUID) {
+        cancelDismiss(id)
+        notifs.removeAll { $0.id == id }
+    }
 
     /// A background worktree op failed after its row already changed — raise a persistent
     /// system toast (no session behind it; it stays until clicked, never self-dismisses).
@@ -1180,7 +1262,12 @@ enum FeedbackMode {
         for agent in AgentRegistry.installed { detachSupervisor(agent.id, session.id) }
         pulseTokens.removeValue(forKey: session.id)
         reportedExitCodes.removeValue(forKey: session.id)
-        clearNotif(session.id)
+        // The exit-close "done" toast was raised moments before this teardown precisely to
+        // outlive its row (routeTransition `closing:`) — clearing unconditionally here is
+        // what silently killed it. Every other toast still dies with its session.
+        if let n = notifs.first(where: { $0.id == session.id }), !n.outlivesSession {
+            clearNotif(session.id)
+        }
         // Drop this row's link-browser mapping whether it's the source terminal or the
         // browser itself that just closed.
         linkBrowsers[session.id] = nil
@@ -1452,13 +1539,7 @@ enum FeedbackMode {
         notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq, sessionKind: .terminal,
                                  title: title, colorIndex: nil, outlivesSession: true,
                                  message: message, iconPath: Phosphor.commentMode))
-        if kind == .done {
-            let seq = notifSeq
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(6))
-                self?.notifs.removeAll { $0.id == id && $0.seq == seq }
-            }
-        }
+        if kind == .done { armDoneToast(id) }
     }
 
     /// Folder picker → branch picker. Panel runs modally, so state mutation happens after dismiss.

@@ -177,6 +177,12 @@ struct RootView: View {
             }
         }
         .ignoresSafeArea()
+        // In-app notification deck at the whole shell's corner, over the sidebar — hidden in
+        // settings (working.html `.notifs { left: 22px; bottom: 22px; z-index: 60 }` under the
+        // drag ghost's 300, `.app.settings .notifs { display: none }`).
+        .overlay(alignment: .bottomLeading) {
+            if !store.settingsOpen { NotificationDeck() }
+        }
         // The free-floating session drag ghost, at the window root so it floats over both panes.
         .overlay(alignment: .topLeading) { DragGhost() }
         // The reorder insertion line paints over everything, the ghost included (working.html

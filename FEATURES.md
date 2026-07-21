@@ -647,8 +647,15 @@ disclosure to dive deeper.
   the left while the old pane's bar fades. Design files done; app port rides with the
   split-focus click fix.
 
+- **Toasts anchor to the shell's corner and drain a countdown bar** — the notification deck moves
+  to the bottom-left of the whole shell (over the sidebar, one fixed home whatever the sidebar or
+  splits do), and a self-dismissing toast carries the focus bar's grammar as a clock: a 2px
+  `--focus` bar along its bottom edge draining left over its lifetime, dismissal riding the bar's
+  `animationend`; hover pauses it. Sticky toasts (input / error) carry no bar.
+
 - **Unfocused notifications raise the toast as well as the banner** — the deck toast is raised
   for every background transition regardless of focus; unfocused, Notification Center posts on
-  top of it, and the toast waits in the deck for focus to return. A done toast's 6s self-dismiss
-  only counts down while Synth is frontmost. `automation.notifRoute` now pins the focus rule
-  (deck-only vs deck + NC). App change; design files comment-only (the mock is always "focused").
+  top of it, and the toast waits in the deck for focus to return. Losing focus joins hover as a
+  brake on the done toast's drain clock — it only counts down while Synth is frontmost.
+  `automation.notifRoute` now pins the focus rule (deck-only vs deck + NC). App change; design
+  files comment-only (the mock is always "focused").

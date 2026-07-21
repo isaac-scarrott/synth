@@ -3,9 +3,10 @@ import SwiftUI
 /// The in-app notification layer (working.html's `.notifs`): background sessions escalated to
 /// quiet glass toasts, stacked bottom-left, hugging the sidebar. One toast reads plainly; two
 /// or more collapse into a deck — most-urgent in front, the two behind peeking, anything past
-/// three folded under a "+N" pill. Hovering the deck fans it into individually clickable cards;
-/// a click jumps to that session, ⌘↩ to the front. Mounted as an overlay on the content pane
-/// (hidden in settings) and driven purely by `AppStore.notifOrder`.
+/// three folded under a "+N" pill. Hovering the deck fans it into individually clickable cards
+/// and holds every done toast's countdown; a click jumps to that session, ⌘↩ to the front.
+/// Mounted at the window root so it sits at the whole shell's bottom-left corner, over the
+/// sidebar (hidden in settings), and driven purely by `AppStore.notifOrder`.
 struct NotificationDeck: View {
     @Environment(AppStore.self) private var store
     @State private var hovering = false
@@ -60,7 +61,14 @@ struct NotificationDeck: View {
                 let live = Set(ids)
                 cardHeights = cardHeights.filter { live.contains($0.key) }
             }
-            .onHover { if !store.pointerStale { hovering = $0 } }
+            .onHover { over in
+                guard !store.pointerStale else { return }
+                hovering = over
+                store.setNotifDrainPaused(over)
+            }
+            // The deck can vanish under the pointer (last card clicked away) with no
+            // exit hover event — don't leave the next raise's drain frozen.
+            .onDisappear { store.setNotifDrainPaused(false) }
             .padding(22)
         }
     }
@@ -134,6 +142,10 @@ private struct NotifCard: View {
             .padding(EdgeInsets(top: 11, leading: 13, bottom: 11, trailing: 12))
             .frame(width: NotificationDeck.cardWidth, alignment: .leading)
             .background(cardSurface)
+            // Done only — sticky toasts (input / error) carry no bar and never self-dismiss.
+            .overlay(alignment: .bottom) {
+                if notif.kind == .done { NotifTimerBar(notif: notif) }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 13))
         }
         .buttonStyle(.plain)
@@ -214,6 +226,27 @@ private struct NotifCard: View {
             .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
             .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
             .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+    }
+}
+
+/// working.html `.notif__timer` — a done toast's remaining life made visible: a 2px `--focus`
+/// bar along the card's bottom edge, inset to the card radius, draining left linearly. It renders
+/// the same store clock the dismissal task sleeps on, so bar and timer can never disagree; a
+/// paused deck shows it frozen at the banked fraction. Deliberately not gated on reduce-motion —
+/// the bar is the timer's display, not decoration.
+private struct NotifTimerBar: View {
+    let notif: InAppNotif
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: notif.armedAt == nil)) { ctx in
+            UnevenRoundedRectangle(topLeadingRadius: 2, topTrailingRadius: 2)
+                .fill(Theme.focus)
+                .frame(height: 2)
+                .scaleEffect(x: notif.timerFraction(at: ctx.date), anchor: .leading)
+                .opacity(0.85)
+        }
+        .padding(.horizontal, 13)
+        .allowsHitTesting(false)
     }
 }
 

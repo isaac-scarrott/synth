@@ -1127,20 +1127,22 @@
     50% { opacity: 0.55; transform: scale(0.9); }
   }
 
-  /* ---- In-app notifications: a stacked deck, bottom-left, hugging the sidebar ----
+  /* ---- In-app notifications: a stacked deck at the shell's bottom-left corner ----
      Background sessions only (never the open one). A session that moves to needs-input or
      error rises as a quiet glass toast — the sidebar indicator escalated: same glyphs, same
      state colours, plus the row's identity. 'done' (a live session settling to idle
-     off-screen) raises a transient green-check toast that dismisses itself — Claude and
-     terminal alike (browsers carry no state, so they never transition). 2+ collapse
-     into a deck (most-urgent in front) that fans on hover; ⌘↩ jumps to the front card, a
-     click to any. Driven by setSessionState → notifyOnTransition. When Synth is unfocused
-     the native app raises these through Notification Center instead — this is the
-     focused-window layer. */
-  .notifs { position: absolute; left: calc(var(--sidebar-w, 260px) + 22px); bottom: 22px; width: 320px; z-index: 60; pointer-events: none; }
-  .app.collapsed .notifs { left: 22px; }
+     off-screen) raises a transient green-check toast that drains a countdown bar and
+     dismisses itself — Claude and terminal alike (browsers carry no state, so they never
+     transition). 2+ collapse into a deck (most-urgent in front) that fans on hover; ⌘↩
+     jumps to the front card, a click to any. Driven by setSessionState → notifyOnTransition.
+     The deck anchors to the whole shell (over the sidebar) — one fixed home whatever the
+     sidebar or split layout does; the 22px inset clears the rounded corner. When Synth is
+     unfocused the native app raises these through Notification Center instead — this is
+     the focused-window layer. */
+  .notifs { position: absolute; left: 22px; bottom: 22px; width: 320px; z-index: 60; pointer-events: none; }
   .app.settings .notifs { display: none; }
   .notif {
+    position: relative;   /* the countdown bar anchors to the card, deck-mode absolute or not */
     pointer-events: auto; display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center;
     padding: 11px 12px 11px 13px; background: var(--glass);
     -webkit-backdrop-filter: blur(24px) saturate(1.7); backdrop-filter: blur(24px) saturate(1.7);
@@ -1176,6 +1178,15 @@
   .notif__kbd kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; min-width: 16px; height: 16px; padding: 0 3px; display: inline-grid; place-items: center; color: var(--ink-4); background: var(--raised); border: 0.5px solid var(--line); border-radius: 5px; box-shadow: 0 0.5px 0 var(--line-soft); }
   .notif:hover .notif__kbd { color: var(--text-muted); }
   .notif:hover .notif__kbd kbd { color: var(--ink-2); }
+  /* The countdown bar on a self-dismissing toast — the split focus bar's grammar reused as a
+     clock: same 2px weight, same --focus token, ends inset by the card radius with soft caps.
+     It drains toward its left origin over the toast's lifetime; the card dismisses on the
+     bar's animationend, so bar and timer can never disagree. Hovering the deck pauses the
+     drain — reading is not ignoring. Sticky toasts (input / error) ask for an answer, so
+     they carry no bar and never self-dismiss. */
+  .notif__timer { position: absolute; left: 13px; right: 13px; bottom: 0; height: 2px; pointer-events: none; background: var(--focus); border-radius: 2px 2px 0 0; opacity: 0.85; transform-origin: left; animation: notif-drain var(--life, 6000ms) linear forwards; }
+  @keyframes notif-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  .notifs:hover .notif__timer { animation-play-state: paused; }
   /* "+N" for cards tucked behind a deck deeper than three */
   .notifs__more { position: absolute; left: 13px; z-index: 200; pointer-events: none; font-size: 10.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 2px 7px; background: var(--glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 0.5px solid var(--border-strong); border-radius: 20px; box-shadow: var(--shadow); opacity: 0; transition: opacity 200ms ease; }
   .notifs.deck .notifs__more.show { opacity: 1; }
@@ -2737,10 +2748,11 @@
 
   // ===== In-app notifications ===============================================
   // A background session (never the open one) that moves to needs-input or error rises as a
-  // quiet glass toast, bottom-left. Several collapse into a deck — most-urgent in front — that
-  // fans out on hover; ⌘↩ jumps to the front card, a click to any. 'done' (a live session
-  // settling to idle off-screen) raises a transient toast that dismisses itself — it asks
-  // for nothing, so it never persists; Claude and terminal alike (browsers carry no state).
+  // quiet glass toast at the shell's bottom-left corner. Several collapse into a deck —
+  // most-urgent in front — that fans out on hover; ⌘↩ jumps to the front card, a click to
+  // any. 'done' (a live session settling to idle off-screen) raises a transient toast that
+  // drains its countdown bar and dismisses itself — it asks for nothing, so it never
+  // persists; Claude and terminal alike (browsers carry no state).
   // When Synth is unfocused the native app raises these through Notification Center instead;
   // this is the focused-window counterpart.
   const notifsEl = document.getElementById('notifs');
@@ -2751,7 +2763,7 @@
   let notifSeq = 0;
 
   const notifLive = (s) => s === 'work' || s === 'run' || s === 'input' || s === 'error';
-  const NOTIF_DONE_MS = 6000;   // a done toast asks for nothing — it dismisses itself
+  const NOTIF_DONE_MS = 6000;   // how long a done toast's countdown bar takes to drain
 
   function notifyOnTransition(el, prev, next) {
     if (el === openEl) { clearNotif(el); return; }
@@ -2766,20 +2778,22 @@
   function notify(el, kind) {
     el.classList.add('session--unread');
     const prev = notifState.get(el);
-    if (prev && prev.timer) clearTimeout(prev.timer);
     if (prev && prev.kind !== kind) {   // kind changed → rebuild the card, don't restyle a stale one
       const c = notifCards.get(el);
       if (c) { leaveNotif(c); notifCards.delete(el); }
     }
-    const entry = { kind, order: ++notifSeq };
-    if (kind === 'done') entry.timer = setTimeout(() => clearNotif(el), NOTIF_DONE_MS);
-    notifState.set(el, entry);
+    notifState.set(el, { kind, order: ++notifSeq });
+    const standing = notifCards.get(el);
+    if (kind === 'done' && standing) restartNotifTimer(standing);   // done again → the clock rewinds
     renderNotifs();
   }
   function clearNotif(el) {
-    const st = notifState.get(el);
-    if (st && st.timer) clearTimeout(st.timer);
     if (notifState.delete(el)) renderNotifs();
+  }
+  function restartNotifTimer(card) {
+    const bar = card.querySelector('.notif__timer');
+    if (!bar) return;
+    bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = '';
   }
 
   // background notifications, most-urgent first: error before input before done, newest first
@@ -2814,6 +2828,13 @@
       + '<span class="dot" style="background:' + color + '"></span>'
       + '<span class="k">' + icon + '</span>' + esc(name)
       + '</div><div class="notif__what">' + notifWhat(el, kind) + '</div></div>' + NOTIF_KBD;
+    if (kind === 'done') {   // the bar IS the timer: dismissal rides its animationend
+      const bar = document.createElement('div');
+      bar.className = 'notif__timer';
+      bar.style.setProperty('--life', NOTIF_DONE_MS + 'ms');
+      bar.addEventListener('animationend', () => clearNotif(el));
+      c.appendChild(bar);
+    }
     notifCards.set(el, c);
     return c;
   }

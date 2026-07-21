@@ -646,3 +646,9 @@ disclosure to dive deeper.
   dark), ends inset by the app radius so it clears the shell's rounded corners; sweeps in from
   the left while the old pane's bar fades. Design files done; app port rides with the
   split-focus click fix.
+
+- **Toasts anchor to the shell's corner and drain a countdown bar** — the notification deck moves
+  to the bottom-left of the whole shell (over the sidebar, one fixed home whatever the sidebar or
+  splits do), and a self-dismissing toast carries the focus bar's grammar as a clock: a 2px
+  `--focus` bar along its bottom edge draining left over its lifetime, dismissal riding the bar's
+  `animationend`; hover pauses it. Sticky toasts (input / error) carry no bar.

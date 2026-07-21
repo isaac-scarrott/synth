@@ -72,11 +72,6 @@ struct ContentPane: View {
         // Follow the window's firstResponder so body clicks activate the pane (one observer
         // for the whole window, not one per pane).
         .background(FocusFollower(store: store))
-        // In-app notification deck, bottom-left hugging the sidebar — hidden in settings
-        // (working.html `.app.settings .notifs { display: none }`).
-        .overlay(alignment: .bottomLeading) {
-            if !store.settingsOpen { NotificationDeck() }
-        }
     }
 }
 

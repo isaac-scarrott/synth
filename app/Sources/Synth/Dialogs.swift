@@ -309,7 +309,9 @@ struct FeedbackSheet: View {
             TextEditor(text: $store.feedbackDraft)
                 .font(.system(size: 14))
                 .scrollContentBackground(.hidden)
-                .padding(7)
+                // Horizontal 7 + the text view's own 5pt line-fragment padding lands the caret
+                // at 12, matching the placeholder and the title field.
+                .padding(.horizontal, 7).padding(.vertical, 11)
                 .frame(width: 428, height: 96, alignment: .topLeading)
                 .background(Theme.raised)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -319,7 +321,7 @@ struct FeedbackSheet: View {
                     if store.feedbackDraft.isEmpty {
                         Text(isAuthor ? "Add detail (optional)" : "What's off?")
                             .font(.system(size: 14)).foregroundStyle(Theme.inkFaint)
-                            .padding(.horizontal, 12).padding(.vertical, 15)
+                            .padding(.horizontal, 12).padding(.vertical, 11)
                             .allowsHitTesting(false)
                     }
                 }

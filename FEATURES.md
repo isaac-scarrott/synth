@@ -659,3 +659,9 @@ disclosure to dive deeper.
   brake on the done toast's drain clock — it only counts down while Synth is frontmost.
   `automation.notifRoute` now pins the focus rule (deck-only vs deck + NC). App change; design
   files comment-only (the mock is always "focused").
+
+- **Closing a session drops you back to the one you were on before it** — sessions you view stack
+  up (016); a close that would leave an empty surface pops the stack and opens the last live
+  session you were on, across branches if need be. Splits are unchanged (the sibling still
+  reflows). Also fixed: the row-exit handler ran twice and re-aimed the keyboard cursor at the
+  closed row's parent.

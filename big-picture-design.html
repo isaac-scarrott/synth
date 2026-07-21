@@ -2407,6 +2407,26 @@
     return changed;
   }
 
+  // ===== The view stack (016) =====
+  // Every session you look at goes on top, most recent last, one entry each. Closing the session
+  // you're viewing pops back to the one you were on before it instead of leaving an empty pane —
+  // the same "undo the open" a browser's tab history gives you. Dead rows are dropped lazily on
+  // read, so a session closed from anywhere just falls out of the stack.
+  const viewStack = [];
+  function noteView(el) {
+    const i = viewStack.indexOf(el);
+    if (i >= 0) viewStack.splice(i, 1);
+    viewStack.push(el);
+  }
+  function lastViewed() {
+    while (viewStack.length) {
+      const el = viewStack[viewStack.length - 1];
+      if (document.contains(el)) return el;
+      viewStack.pop();
+    }
+    return null;
+  }
+
   // Mirror the active pane into the sidebar (the sticky "you are here" tint) + the derived
   // pill, and keep openEl pointing at its session — the DOM-cheap half of activation, no
   // content re-render, so clicking between panes never tears down a live surface.
@@ -2419,6 +2439,7 @@
       s.classList.remove('session--unread');
       clearNotif(s);
       derivePill(s);
+      noteView(s);
     } else if (leaf && leaf.setup) {
       nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
       leaf.setup.classList.add('branch--active');   // the grayed pending row reads as "you are here"
@@ -4101,11 +4122,18 @@
       fallback = (up || neighbour) ? (up || neighbour).querySelector(':scope > [data-row]') : null;
     }
     unit.classList.add('row-exit');
+    let ran = false;
     const done = () => {
+      if (ran) return;           // animationend and the safety timeout both fire — settle focus once
+      ran = true;
       unit.remove(); rollUpGroups();
       if (setupEl && !document.contains(setupEl)) setupEl = null;
       // a deleted session's pane collapses; its sibling reflows (001) — no guard (005)
       if (pruneLayout()) renderLayout();
+      // Nothing left on screen: pop the view stack (016) and land on the session you were
+      // viewing before this one — across branches if that's where it lives.
+      const back = layout ? null : lastViewed();
+      if (back) { jumpTo(back); return; }
       if (fallback && document.contains(fallback)) select(fallback, true);
     };
     unit.addEventListener('animationend', done, { once: true });

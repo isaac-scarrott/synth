@@ -200,6 +200,11 @@ enum FeedbackMode {
     /// and otherwise lands as a quiet unread row instead of yanking the viewport
     /// (last-intent-wins). Never persisted; a pending row can't outlive a quit.
     var openSetupBranchID: UUID?
+    /// The view stack (016): every session you look at, most recent last, one entry each. A close
+    /// that would leave an empty surface pops it instead (Layout.swift restoreLastViewed) — closing
+    /// is an undo of an open, so it puts you back where you were. In-memory like working.html's:
+    /// the stack is about this sitting, not something to inherit from a previous launch.
+    @ObservationIgnored var viewStack: [UUID] = []
     var sidebarCollapsed = false
 
     /// The layout spine (009): the pane tree filling the content surface. A lone leaf is today's
@@ -1241,6 +1246,7 @@ enum FeedbackMode {
         // the existing removeUnit → prune path, no new guard (004 §6).
         pruneLayout()
         syncActive()
+        restoreLastViewed()   // nothing left on screen → back to the session you were on before (016)
     }
 
     /// Release everything a session holds *outside* the tree: its terminal + browser

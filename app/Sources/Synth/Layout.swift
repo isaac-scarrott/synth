@@ -112,6 +112,7 @@ extension AppStore {
         if let leaf = activePane, let sid = leaf.sessionID {
             openSessionID = sid
             openSetupBranchID = nil
+            noteView(sid)
             session(sid)?.unread = false
             clearNotif(sid)
         } else if let leaf = activePane, let bid = leaf.setupBranchID {
@@ -121,6 +122,32 @@ extension AppStore {
             openSessionID = nil
             openSetupBranchID = nil
         }
+    }
+
+    // MARK: The view stack (016)
+
+    /// Push a session onto the view stack — most recent last, one entry each.
+    func noteView(_ sessionID: UUID) {
+        viewStack.removeAll { $0 == sessionID }
+        viewStack.append(sessionID)
+    }
+
+    /// The last session you were viewing that still exists, dropping dead ids as it goes — so a
+    /// session closed from anywhere just falls out of the stack.
+    func lastViewed() -> Session? {
+        while let id = viewStack.last {
+            if let s = session(id) { return s }
+            viewStack.removeLast()
+        }
+        return nil
+    }
+
+    /// Called after a close: if it emptied the surface, pop the view stack and open the session you
+    /// were on before this one — across a branch or workspace boundary if that's where it lives. A
+    /// close inside a split never reaches here; the surviving sibling reflows into the space (001).
+    func restoreLastViewed() {
+        guard layout == nil, let back = lastViewed() else { return }
+        open(back)
     }
 
     // MARK: Tree ops (the whole vocabulary — every gesture and chord funnels through these)

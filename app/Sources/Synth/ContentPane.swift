@@ -67,10 +67,65 @@ struct ContentPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.panel)
+        // Clicks inside an AppKit-hosted surface (terminal / browser) never reach the pane's
+        // tap gesture — the surface consumes the mouseDown — but they DO move first responder.
+        // Follow the window's firstResponder so body clicks activate the pane (one observer
+        // for the whole window, not one per pane).
+        .background(FocusFollower(store: store))
         // In-app notification deck, bottom-left hugging the sidebar — hidden in settings
         // (working.html `.app.settings .notifs { display: none }`).
         .overlay(alignment: .bottomLeading) {
             if !store.settingsOpen { NotificationDeck() }
+        }
+    }
+}
+
+/// Follows the content window's `firstResponder` (KVO): when a click lands inside an
+/// AppKit-hosted surface, the surface becomes first responder without the pane's tap gesture
+/// ever firing — the keyboard would move while the bar/sidebar stayed on the old pane. Map the
+/// new responder back to the session owning it (terminal or browser surface, or a subview) and
+/// activate that leaf. The `activePane` guard also breaks the loop the other direction sets up:
+/// setActivePane → focusSurface → makeFirstResponder → observer fires → same leaf → stop.
+private struct FocusFollower: NSViewRepresentable {
+    let store: AppStore
+
+    func makeCoordinator() -> Coordinator { Coordinator(store: store) }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { context.coordinator.adopt(view.window) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { context.coordinator.adopt(view.window) }
+    }
+
+    @MainActor final class Coordinator {
+        private let store: AppStore
+        private weak var window: NSWindow?
+        private var observation: NSKeyValueObservation?
+
+        init(store: AppStore) { self.store = store }
+
+        func adopt(_ window: NSWindow?) {
+            guard let window, window !== self.window else { return }
+            self.window = window
+            observation = window.observe(\.firstResponder) { [weak self] window, _ in
+                let responder = window.firstResponder
+                // KVO fires inside makeFirstResponder (mid mouseDown / mid render) — defer the
+                // store mutation out of that stack.
+                DispatchQueue.main.async { self?.responderChanged(responder) }
+            }
+        }
+
+        private func responderChanged(_ responder: NSResponder?) {
+            // Activation only means anything with a split open; a single pane needs none.
+            guard store.isSplit, let view = responder as? NSView else { return }
+            guard let sid = TerminalManager.shared.sessionID(containing: view)
+                    ?? BrowserManager.shared.sessionID(containing: view),
+                  let leaf = store.leaf(of: sid), leaf !== store.activePane else { return }
+            store.setActivePane(leaf)
         }
     }
 }
@@ -84,7 +139,7 @@ private struct PaneTreeView: View {
 
     var body: some View {
         if node.isLeaf {
-            // The ring is meaningful only inside a split, so a lone pane stays ringless (004 §4).
+            // The bar is meaningful only inside a split, so a lone pane stays bare (004 §4).
             LeafPane(node: node, inSplit: store.isSplit)
         } else {
             SplitContainer(node: node)
@@ -179,10 +234,12 @@ private struct PaneSeam: View {
 }
 
 /// working.html `.pane`: one leaf hosting exactly one session (or a setup skeleton). Inside a
-/// split it carries the active copper ring — living at zero alpha on every split pane and only
-/// the active one lighting it, so a focus change cross-fades the copper (150ms) rather than
-/// snapping (`.split .pane--active::after`). Clicking a pane body activates it in place, without
-/// tearing down the live surface (working.html:2230 setActivePane).
+/// split it carries the active-pane bar — a 2px line across the top edge in the mark colour,
+/// both ends inset by the app radius so it always clears the shell's rounded corners. It lives
+/// at zero alpha on every split pane and only the active one shows it, sweeping in from the
+/// left while the old pane's fades, instead of snapping (`.split .pane--active::after`, 015).
+/// Clicking a pane body activates it in place, without tearing down the live surface
+/// (working.html:2230 setActivePane).
 private struct LeafPane: View {
     @Environment(AppStore.self) private var store
     let node: PaneNode
@@ -198,11 +255,15 @@ private struct LeafPane: View {
             // Activate on click without consuming the event, so the terminal/browser/composer
             // still receives it (the mock's non-preventDefault content click).
             .simultaneousGesture(inSplit ? TapGesture().onEnded { store.setActivePane(node) } : nil)
-            .overlay {
+            .overlay(alignment: .top) {
                 if inSplit {
-                    Rectangle()
-                        .strokeBorder(Theme.copper, lineWidth: 2)
-                        .opacity(isActive ? 0.85 : 0)
+                    UnevenRoundedRectangle(bottomLeadingRadius: 2, bottomTrailingRadius: 2)
+                        .fill(Theme.focus)
+                        .frame(height: 2)
+                        .padding(.horizontal, 14)   // --radius-app: clear the shell's rounded corners
+                        .scaleEffect(x: isActive ? 1 : 0, y: 1, anchor: .leading)
+                        .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.2), value: isActive)
+                        .opacity(isActive ? 1 : 0)
                         .animation(.easeOut(duration: 0.15), value: isActive)
                         .allowsHitTesting(false)
                 }

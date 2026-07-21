@@ -63,6 +63,8 @@ enum Theme {
     /// it fails contrast on white — so light takes a copper of the same warm family (4.78:1).
     /// Spent only on focus, selection, the ⌘K active row and the open-session tint.
     static let accent      = dyn(0xA86038, 0xEEE0CD)
+    /// The mark's own pair — charcoal on light, champagne on dark (--focus): the active pane's bar.
+    static let focus       = dyn(0x1E2126, 0xEEE0CD)
     static let run         = Color(hex: 0x34C759)   // green liveness
     static let working     = Color(hex: 0xF5A623)   // amber (working) — 4° off champagne, so it
                                                     // stays put and the accent keeps clear of it

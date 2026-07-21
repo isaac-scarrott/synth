@@ -69,6 +69,13 @@ enum TerminalLauncher {
     /// shell. Used to move first-responder focus onto an open terminal (⌘1).
     func existingView(_ id: UUID) -> GhosttySurfaceView? { views[id] }
 
+    /// The session whose surface is (or contains) `view` — the reverse of `existingView`,
+    /// so a first-responder change can be mapped back to the pane that owns it. The
+    /// responder may be the surface itself or one of its subviews.
+    func sessionID(containing view: NSView) -> UUID? {
+        views.first { view === $0.value || view.isDescendant(of: $0.value) }?.key
+    }
+
     /// Feed `text` into a session's PTY as pasted input, then press Enter to submit —
     /// how a browser comment reaches the branch's Claude Code session (ADR-0011 stage
     /// three). The Enter trails by a beat so the TUI finishes ingesting the paste

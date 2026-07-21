@@ -64,6 +64,14 @@ import AppKit
         }
     }
 
+    /// The session whose engine view is (or contains) `view` — TerminalManager's reverse
+    /// lookup for browser surfaces, so a first-responder change maps back to its pane.
+    func sessionID(containing view: NSView) -> UUID? {
+        controllers.first {
+            view === $0.value.engine.view || view.isDescendant(of: $0.value.engine.view)
+        }?.key
+    }
+
     func terminate(_ id: UUID) {
         dead.insert(id)
         controllers[id]?.shutdown()

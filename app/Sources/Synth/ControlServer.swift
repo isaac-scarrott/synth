@@ -288,9 +288,10 @@ final class ControlServer: @unchecked Sendable {
             ctrl.toggleCommentMode(store: store)   // the bar button's exact call
             return ["ok": true]
 
-        // Pin which surface a background transition notifies on. Focus normally decides, and a
-        // driven instance never holds focus on a live desktop, so neither branch is otherwise
-        // reachable. "auto" hands the decision back to focus.
+        // Pin which focus rule a background transition follows: "deck" the frontmost case (deck
+        // only), "nc" the unfocused one (Notification Center on top of the deck). Focus normally
+        // decides, and a driven instance never holds focus on a live desktop, so the frontmost
+        // branch is otherwise unreachable. "auto" hands the decision back to focus.
         case "automation.notifRoute" where automation:
             switch request["route"] as? String {
             case "deck": store.automationNotifRoute = .inApp

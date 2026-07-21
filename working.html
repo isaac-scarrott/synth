@@ -1134,9 +1134,10 @@
      off-screen) raises a transient green-check toast that dismisses itself — Claude and
      terminal alike (browsers carry no state, so they never transition). 2+ collapse
      into a deck (most-urgent in front) that fans on hover; ⌘↩ jumps to the front card, a
-     click to any. Driven by setSessionState → notifyOnTransition. When Synth is unfocused
-     the native app raises these through Notification Center instead — this is the
-     focused-window layer. */
+     click to any. Driven by setSessionState → notifyOnTransition. The deck is raised whether
+     Synth is focused or not; unfocused, the native app posts Notification Center on top, and
+     the toast waits here for focus to return. A browser page is always "focused", so this
+     mock drives the deck alone. */
   .notifs { position: absolute; left: calc(var(--sidebar-w, 260px) + 22px); bottom: 22px; width: 320px; z-index: 60; pointer-events: none; }
   .app.collapsed .notifs { left: 22px; }
   .app.settings .notifs { display: none; }
@@ -2741,8 +2742,8 @@
   // fans out on hover; ⌘↩ jumps to the front card, a click to any. 'done' (a live session
   // settling to idle off-screen) raises a transient toast that dismisses itself — it asks
   // for nothing, so it never persists; Claude and terminal alike (browsers carry no state).
-  // When Synth is unfocused the native app raises these through Notification Center instead;
-  // this is the focused-window counterpart.
+  // The deck is raised whether Synth is focused or not; unfocused, the native app posts
+  // Notification Center on top, and the toast waits here for focus to return.
   const notifsEl = document.getElementById('notifs');
   const notifState = new Map();   // sessionEl -> { kind, order }
   const notifCards = new Map();   // sessionEl -> card element

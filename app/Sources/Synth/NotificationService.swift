@@ -3,7 +3,8 @@ import UserNotifications
 
 /// The unfocused-window notification path. working.html defers this case to "the native app";
 /// this is it: when Synth isn't frontmost, a background session's needs-input / error / done is
-/// raised through Notification Center instead of the in-app deck (the focus branch lives in
+/// raised through Notification Center *on top of* the in-app deck — the banner catches the eye
+/// now, the toast waits in the deck for focus to return (the focus branch lives in
 /// `AppStore.routeTransition`). Attention states read as alerts, `done` as a transient banner;
 /// all use `.active` interruption so Focus / DND is respected (never `.timeSensitive`). Toasts
 /// are grouped by branch (`threadIdentifier`), carry the session identity, and — tapped —

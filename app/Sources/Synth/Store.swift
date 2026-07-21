@@ -129,9 +129,10 @@ struct InAppNotif: Identifiable {
     var iconPath: String? = nil
 }
 
-/// Where a notification is surfaced. `nil` at a call site means "the real rule" — branch on
-/// `NSApp.isActive`; the DEBUG trigger passes an explicit value so both layers are drivable
-/// headless (a driven instance isn't reliably frontmost).
+/// Which focus rule a notification follows: `.inApp` is the frontmost case (deck only),
+/// `.notificationCenter` the unfocused one (Notification Center on top of the deck). `nil` at
+/// a call site means "the real rule" — branch on `NSApp.isActive`; the DEBUG trigger passes an
+/// explicit value so both layers are drivable headless (a driven instance isn't reliably frontmost).
 enum NotifRoute { case inApp, notificationCenter }
 
 /// Which settings scope the full-screen settings page is showing. A workspace is
@@ -694,15 +695,18 @@ enum FeedbackMode {
 
     /// A background session's status transition, turned into a notification — the single seam
     /// terminals and Claude both reach (`term-*` and Claude signals alike flow through `apply`).
-    /// Focus picks the surface: frontmost → the in-app deck, unfocused → Notification Center.
+    /// The in-app deck is always raised; focus only gates Notification Center: frontmost → the
+    /// deck alone, unfocused → Notification Center *as well*, with the toast waiting in the
+    /// deck when focus returns (a banner that slid by while you were away leaves no trace).
     /// The open session never notifies in-app (the user is looking at it), but open ≠ seen
     /// when Synth isn't frontmost — unfocused, it goes to Notification Center like any other.
     /// `force` overrides the focus rule for the DEBUG trigger.
     /// `closing` marks the exit-close transition: the caller removes the row right after,
     /// so the raised done toast must outlive its session.
-    /// Harness seam (`SYNTH_AUTOMATION`, ControlServer `automation.notifRoute`): pin the surface
-    /// a transition routes to. Focus normally decides, and a driven instance never holds focus on
-    /// a live desktop — other apps take it straight back — so the deck path is otherwise untestable.
+    /// Harness seam (`SYNTH_AUTOMATION`, ControlServer `automation.notifRoute`): pin the focus
+    /// rule a transition follows. Focus normally decides, and a driven instance never holds focus
+    /// on a live desktop — other apps take it straight back — so the frontmost (deck-only) branch
+    /// is otherwise untestable.
     @ObservationIgnored var automationNotifRoute: NotifRoute?
 
     func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil, closing: Bool = false) {
@@ -712,21 +716,21 @@ enum FeedbackMode {
         switch next.rollup {
         case .input, .error:
             let kind: NotifKind = next.rollup == .error ? .error : .input
-            if openSessionID != id { session(id)?.unread = true }   // working.html notify() marks the row unread too
+            if openSessionID != id {
+                session(id)?.unread = true   // working.html notify() marks the row unread too
+                raiseInApp(id, kind)
+            }
             if toNC { NotificationService.shared.postAttention(store: self, id: id, kind: kind) }
-            else { raiseInApp(id, kind) }
         case .idle where prev.rollup != .idle:
             // A live session settling to idle off-screen → "done": the unread bullet, one
             // soft row sweep, and a transient toast that dismisses itself (a finished session
-            // should be seen, but asks for nothing). Unfocused → a transient banner.
-            if openSessionID != id { session(id)?.unread = true }   // working.html done also marks the row unread
-            if toNC {
-                clearNotif(id)
-                NotificationService.shared.postDone(store: self, id: id)
-            } else {
+            // should be seen, but asks for nothing). Unfocused, a banner rides on top.
+            if openSessionID != id {
+                session(id)?.unread = true   // working.html done also marks the row unread
                 pulseTokens[id, default: 0] += 1
                 raiseInApp(id, .done, outlivesSession: closing)
             }
+            if toNC { NotificationService.shared.postDone(store: self, id: id) }
         default:
             clearNotif(id)   // work / run (and idle-from-idle) clear any standing toast
         }
@@ -746,7 +750,14 @@ enum FeedbackMode {
         if kind == .done {
             let seq = notifSeq
             Task { @MainActor [weak self] in
+                // The countdown only runs while Synth is frontmost — a done toast raised
+                // (or still up) unfocused waits in the deck, and gets its 6 seconds of
+                // being seen after focus returns before dismissing itself.
                 try? await Task.sleep(for: .seconds(6))
+                while !NSApp.isActive {
+                    for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) { break }
+                    try? await Task.sleep(for: .seconds(6))
+                }
                 self?.notifs.removeAll { $0.id == id && $0.seq == seq }
             }
         }

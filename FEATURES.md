@@ -646,3 +646,9 @@ disclosure to dive deeper.
   dark), ends inset by the app radius so it clears the shell's rounded corners; sweeps in from
   the left while the old pane's bar fades. Design files done; app port rides with the
   split-focus click fix.
+
+- **Unfocused notifications raise the toast as well as the banner** — the deck toast is raised
+  for every background transition regardless of focus; unfocused, Notification Center posts on
+  top of it, and the toast waits in the deck for focus to return. A done toast's 6s self-dismiss
+  only counts down while Synth is frontmost. `automation.notifRoute` now pins the focus rule
+  (deck-only vs deck + NC). App change; design files comment-only (the mock is always "focused").

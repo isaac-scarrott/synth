@@ -665,3 +665,12 @@ disclosure to dive deeper.
   session you were on, across branches if need be. Splits are unchanged (the sibling still
   reflows). Also fixed: the row-exit handler ran twice and re-aimed the keyboard cursor at the
   closed row's parent.
+
+- **Synth 0.7.0 shipped (build 293)** — this window's split + notification refinements on the 0.6.0
+  pane-splitting base: corner-anchored toast deck with a draining countdown bar (hover / lose-focus
+  brakes, raised-when-unfocused), the split-focus top-edge bar with click-to-focus, the per-branch
+  split band surviving branch/workspace switches, the copper reorder drop line (sidebar + templates),
+  single-branch split enforcement, and the keyboard two-pane Changelog. Minor bump for the new
+  toast/countdown and split-focus surfaces. Notarized, stapled, 15 deltas (23MB) against a 137MB
+  download; verified credential-less (spctl accepted / Notarized Developer ID, staple valid, appcast
+  newest `Synth-0.7.0.zip` at `sparkle:version` 293 with `edSignature`) and installed to `/Applications`.

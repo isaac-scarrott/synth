@@ -61,6 +61,8 @@
     /* state colors */
     --run: #34c759;
     --work: #f5a623;
+    --live: #0891b2;         /* liveness (running/working) — deep cyan, clears the light sidebar */
+    --live-rest: 0.28;       /* the dormant lattice between beats */
     --input: #3a6db3;        /* needs-input STATE only — slate-blue sibling of the charcoal, not the old iOS blue */
     --input-rgb: 58,109,179; /* drives every functional rgba(var(--input-rgb),A) ring/wash */
     --copper: #a05633;       /* AI-owned/session warm mark — one token collapsing the terracottas, kept distinct from the pale accent */
@@ -546,7 +548,6 @@
   .msg__body li { margin: 3px 0; }
   .msg__body code { font-family: var(--mono); font-size: 12px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
   .msg--work .msg__body { color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
-  .work-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--work); box-shadow: 0 0 3px rgba(245,166,35,0.55), 0 0 8px 2px rgba(245,166,35,0.32); flex-shrink: 0; }
 
   .chat__composer {
     flex-shrink: 0;
@@ -936,7 +937,7 @@
 
   /* unread roll-up dot: a collapsed worktree/branch holding finished-but-unseen output.
      Same blue as the row's gutter bullet (.session__bullet), on the shared indicator axis.
-     Flat (no glow) — an ambient "something to read", quieter than the live sdots and the
+     Flat (no glow) — an ambient "something to read", quieter than the live beat grids and the
      attention glyphs, so it ranks below them in the roll-up and only surfaces once the
      group has settled to idle. */
   .udot {
@@ -1087,19 +1088,39 @@
   }
   .ind svg { width: 15px; height: 15px; display: block; }
 
-  /* liveness dots: running / working (idle shows nothing) */
-  .sdot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
+  /* liveness beat: running / working (idle shows nothing).
+     A 5x5 lattice where the beat lights the center cell and radiates outward as a
+     diamond wavefront — cells share one clock, delayed by their Manhattan distance
+     from the middle. The dormant lattice never drops out of sight (--live-rest): the
+     indicator has to read as PRESENT between beats, or a slow session looks dead.
+     .beat--run / .beat--work carry no styling of their own; they mark the state
+     for the roll-up logic, which reads the DOM to decide what a group shows. */
+  .beat {
+    display: inline-grid;
+    grid-template-columns: repeat(5, 2px);
+    grid-auto-rows: 2px;
+    gap: 1px;
+    /* the cells are empty elements — without stretch they collapse to zero height */
+    place-items: stretch;
+    flex-shrink: 0;
+    line-height: 0;
   }
-  .sdot--run {
-    background: var(--work);
-    box-shadow: 0 0 3px rgba(245, 166, 35, 0.55), 0 0 8px 2px rgba(245, 166, 35, 0.32);
+  .beat i {
+    background: var(--live);
+    border-radius: 0.5px;
+    opacity: var(--live-rest);
+    animation: beat-pulse 1.15s ease-in-out infinite;
   }
-  .sdot--work {
-    background: var(--work);
-    box-shadow: 0 0 3px rgba(245, 166, 35, 0.55), 0 0 8px 2px rgba(245, 166, 35, 0.32);
+  /* delay by Manhattan distance from the center cell (13), so the beat travels out as a diamond */
+  .beat i:nth-child(8), .beat i:nth-child(12), .beat i:nth-child(14), .beat i:nth-child(18) { animation-delay: 130ms; }
+  .beat i:nth-child(3), .beat i:nth-child(7), .beat i:nth-child(9), .beat i:nth-child(11),
+  .beat i:nth-child(15), .beat i:nth-child(17), .beat i:nth-child(19), .beat i:nth-child(23) { animation-delay: 260ms; }
+  .beat i:nth-child(2), .beat i:nth-child(4), .beat i:nth-child(6), .beat i:nth-child(10),
+  .beat i:nth-child(16), .beat i:nth-child(20), .beat i:nth-child(22), .beat i:nth-child(24) { animation-delay: 390ms; }
+  .beat i:nth-child(1), .beat i:nth-child(5), .beat i:nth-child(21), .beat i:nth-child(25) { animation-delay: 520ms; }
+  @keyframes beat-pulse {
+    0%, 100% { opacity: var(--live-rest); transform: scale(0.72); }
+    50% { opacity: 1; transform: scale(1); }
   }
 
   /* attention glyphs: needs-input (?) and error (!) — bare marks, no border.
@@ -1872,8 +1893,9 @@
     * { transition-duration: 0.01ms !important; }
     .row:active, .icon-btn:active, .kebab:active { transform: translateY(0); }
     .kebab:active { transform: translateY(-50%); }
-    .ind, .sdot--work, .ind--input svg, .work-dot, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .ind, .beat i, .ind--input svg, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
     .session--pulse, .notif--input .notif__glyph svg { animation: none; }
+    .beat i { opacity: 0.85; transform: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
     .cmdk__panel { transform: none !important; }
     .row-enter, .row-exit { animation: none; }
@@ -1884,6 +1906,7 @@
      Only variables change here — every surface reads them, so the whole shell,
      the ⌘K palette, menus, dialogs, settings and the terminal all move together. */
   :root[data-theme="dark"] {
+    --live: #22d3ee;         /* liveness lifts to bright cyan on the dark sidebar */
     --oc-ring: #f1ecec;
     --oc-inner: #4b4646;
     --canvas: #0d0f13;
@@ -2052,7 +2075,7 @@
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">dev server</span>
-                  <span class="ind"><span class="sdot sdot--run"></span></span>
+                  <span class="ind"><span class="beat beat--run"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
                 </a>
                 <!-- api-tests — error -->
                 <a class="row session session--unread" data-row data-session data-type="terminal">
@@ -2073,7 +2096,7 @@
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">build</span>
-                  <span class="ind"><span class="sdot sdot--work"></span></span>
+                  <span class="ind"><span class="beat beat--work"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
                 </a>
                 <!-- migrate — idle, unread (finished, not yet seen) -->
                 <a class="row session session--unread" data-row data-session data-type="terminal">
@@ -2094,7 +2117,7 @@
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M176,16H80A24,24,0,0,0,56,40V216a24,24,0,0,0,24,24h96a24,24,0,0,0,24-24V40A24,24,0,0,0,176,16ZM72,64H184V192H72Zm8-32h96a8,8,0,0,1,8,8v8H72V40A8,8,0,0,1,80,32Zm96,192H80a8,8,0,0,1-8-8v-8H184v8A8,8,0,0,1,176,224Z"/></svg></span>
                   <span class="session__name">iPhone 15 Pro</span>
-                  <span class="ind"><span class="sdot sdot--run"></span></span>
+                  <span class="ind"><span class="beat beat--run"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
                 </a>
               </div>
               </div></div>
@@ -2231,8 +2254,8 @@
   function sessionState(s) {
     if (s.querySelector('.ind--input')) return 'input';
     if (s.querySelector('.ind--error')) return 'error';
-    if (s.querySelector('.sdot--work')) return 'work';
-    if (s.querySelector('.sdot--run')) return 'run';
+    if (s.querySelector('.beat--work')) return 'work';
+    if (s.querySelector('.beat--run')) return 'run';
     return 'idle';
   }
   // Busy: a live agent turn or process. Closing one loses that turn, so it's the only
@@ -2241,8 +2264,8 @@
   const ROLL = {
     input: () => `<span class="ind ind--input">${MARK_INPUT}</span>`,
     error: () => `<span class="ind ind--error">${MARK_ERROR}</span>`,
-    work:  () => `<span class="ind"><span class="sdot sdot--work"></span></span>`,
-    run:   () => `<span class="ind"><span class="sdot sdot--run"></span></span>`,
+    work:  () => `<span class="ind"><span class="beat beat--work"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>`,
+    run:   () => `<span class="ind"><span class="beat beat--run"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>`,
     unread:() => `<span class="ind"><span class="udot"></span></span>`,
   };
   function rollUpGroups() {
@@ -2297,8 +2320,8 @@
   const IND_HTML = {
     input: `<span class="ind ind--input">${MARK_INPUT}</span>`,
     error: `<span class="ind ind--error">${MARK_ERROR}</span>`,
-    work:  `<span class="ind"><span class="sdot sdot--work"></span></span>`,
-    run:   `<span class="ind"><span class="sdot sdot--run"></span></span>`,
+    work:  `<span class="ind"><span class="beat beat--work"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>`,
+    run:   `<span class="ind"><span class="beat beat--run"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>`,
     idle:  `<span class="ind"></span>`,
   };
   let openEl = null;
@@ -3367,7 +3390,7 @@
     if (state === 'work') {
       return `<div class="chat"><div class="chat__scroll">${transcript}
         <div class="msg msg--assistant msg--work"><div class="msg__role">Claude Code</div>
-          <div class="msg__body"><span class="work-dot"></span>Editing <code>src/palette/CommandPalette.tsx</code>…</div></div>
+          <div class="msg__body"><span class="beat"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Editing <code>src/palette/CommandPalette.tsx</code>…</div></div>
       </div>${composerHTML(false)}</div>`;
     }
     return `<div class="chat"><div class="chat__scroll">${transcript}</div>${composerHTML(state === 'input')}</div>`;
@@ -3578,7 +3601,7 @@
       setSessionState(sessionEl, 'work');
       const w = document.createElement('div');
       w.className = 'msg msg--assistant msg--work';
-      w.innerHTML = `<div class="msg__role">Claude Code</div><div class="msg__body"><span class="work-dot"></span>On it — wiring that up now…</div>`;
+      w.innerHTML = `<div class="msg__role">Claude Code</div><div class="msg__body"><span class="beat"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>On it — wiring that up now…</div>`;
       scroll.appendChild(w);
       scroll.scrollTop = scroll.scrollHeight;
       setTimeout(() => {
@@ -4844,7 +4867,7 @@
     const rows = [];
     if (openEl) rows.push(['Here', (kindLabel[openEl.dataset.type] || 'session') + ' · ' + branchNameOf(openEl)]);
     const ws = document.querySelectorAll('.repo__head').length;
-    const busy = document.querySelectorAll('.session .sdot--work, .session .sdot--run').length;
+    const busy = document.querySelectorAll('.session .beat--work, .session .beat--run').length;
     const unread = document.querySelectorAll('.session--unread').length;
     rows.push(['State', ws + (ws === 1 ? ' project' : ' projects') + ' · ' + busy + ' busy · ' + unread + ' unread']);
     rows.push(['Env', 'Synth 0.4 · macOS 15 · ' + (document.documentElement.dataset.theme || 'system') + ' theme']);

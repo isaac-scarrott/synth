@@ -659,3 +659,15 @@ disclosure to dive deeper.
   brake on the done toast's drain clock — it only counts down while Synth is frontmost.
   `automation.notifRoute` now pins the focus rule (deck-only vs deck + NC). App change; design
   files comment-only (the mock is always "focused").
+
+- **Liveness is a five-bar wave, not an amber dot** — the running / working indicator (sidebar
+  rows, collapsed roll-up, the agent transcript's in-progress line) becomes an amber five-bar
+  level meter breathing on a 1s cycle; the level meter is the loading shape an app named for a
+  synth should use, and movement separates "live" from the flat unread dot by more than hue.
+  Landed in both design files and the native sidebar.
+
+- **Liveness becomes a cyan diamond beat** (supersedes the five-bar wave above) — the running /
+  working indicator is a 5×5 lattice beating from the center outward as a diamond wavefront, in a
+  new per-theme `--live` cyan (deep on light, bright on dark) that stops the indicator reading as
+  Claude's amber mark inside Synth's own chrome. The dormant lattice stays visible between beats —
+  an indicator that blinks out of existence makes a slow session look dead.

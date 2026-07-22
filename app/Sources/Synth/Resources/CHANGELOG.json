@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.8.2",
+    "date": "2026-07-22",
+    "changes": [
+      "The working indicator is now a violet sphere that pulses outward in rings. Violet keeps it clearly apart from the blue needs-input mark, which the previous cyan lattice could resemble at a glance."
+    ]
+  },
+  {
     "version": "0.8.1",
     "date": "2026-07-22",
     "changes": [

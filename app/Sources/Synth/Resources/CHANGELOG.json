@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.8.1",
+    "date": "2026-07-22",
+    "changes": [
+      "Synth now downloads as a disk image you drag into Applications. Running it straight from Downloads could leave it unable to find its own tooling, and on some Macs macOS refused to open it at all."
+    ]
+  },
+  {
     "version": "0.8.0",
     "date": "2026-07-22",
     "changes": [

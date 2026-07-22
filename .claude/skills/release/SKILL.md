@@ -99,6 +99,21 @@ In the appcast, check `sparkle:version` is the new build number (`git rev-list -
 that an `sparkle:edSignature` is present on every enclosure. A missing signature means installed
 copies will reject the update.
 
+## Publish the site, if its links changed
+
+`landing/index.html` is the source of the marketing site; the deployed copy is a **separate public
+repo**, `isaac-scarrott/synth-site`, served by GitHub Pages from `index.html` at its root. Nothing
+automates the hop, so a change here is invisible to the world until it is copied over:
+
+```bash
+gh repo clone isaac-scarrott/synth-site /tmp/synth-site
+cp landing/index.html landing/img/* /tmp/synth-site/…   # index.html sits at the repo root
+cd /tmp/synth-site && git commit -am "…" && git push
+```
+
+Order matters: the buttons point at bucket objects, so **publish the release first**. Pointing the
+site at an artifact the bucket does not have yet is a 404 on the one link that matters.
+
 ## Record it
 
 Append a dated entry to `docs/features/<today>.md` and a one-line index entry to `FEATURES.md`

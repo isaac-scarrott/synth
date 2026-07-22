@@ -2,8 +2,8 @@ import AppKit
 import GhosttyKit
 
 /// The terminal's ghostty configuration, themed to match the app appearance — the native
-/// counterpart of working.html's `--tui-*` tokens. Light mode is a warm "paper" surface with
-/// a muted-but-legible palette; dark mode is a deep near-black card with brighter accents.
+/// counterpart of working.html's `--tui-*` tokens. Light mode is a cool near-white surface
+/// carrying the app's own ink; dark mode is a deep near-black card with brighter accents.
 /// Everything else (font, padding, clipboard, the shell-integration=none used by the env
 /// scrub) is scheme-independent and lives here too, so one config fully describes a surface.
 enum TerminalTheme {
@@ -14,15 +14,17 @@ enum TerminalTheme {
         let ansi: [String]   // 16 entries
     }
 
-    // Light-mode legibility: every colour holds ≥4.5:1 contrast on the paper bg, and the
-    // bright set (8–15) is *darker* than normal — TUIs lean on bright for emphasis, and on
-    // a light background "brighter" must mean deeper ink, not lighter.
-    // The icon retint moved the surface, ink and dim mirrors onto the cool-slate charcoal; the
-    // 16-colour ANSI hue set (red/green/yellow/blue/magenta/cyan) is deliberately unchanged.
+    // Light-mode legibility: the hue set holds 7:1 on the surface and the bright set (9–14) is
+    // *deeper* than normal — TUIs lean on bright for emphasis, and on a light background
+    // "brighter" must mean deeper ink, not lighter. Brights stop at 9:1 rather than going as
+    // dark as they can: past that the six hues collapse into each other and into black.
+    // Slots 7 and 15 are the exception and stay light. They are what a TUI paints *under*
+    // white-on-colour — selected rows, inverse video, status bars — and inverting them to ink
+    // dropped those to 1.04:1. Anything wanting readable body text uses the default fg.
     private static let light = Palette(
-        bg: "f3efe7", fg: "33353c", cursor: "33353c", selection: "dde3ec",
-        ansi: ["33353c", "c03a30", "1c7d40", "8a660c", "2361c4", "8b40b5", "16717a", "6c6c76",
-               "696c76", "a52e25", "176b37", "75560a", "1c4fa8", "76349c", "115e66", "26262b"])
+        bg: "f7f8fa", fg: "1c1e23", cursor: "1c1e23", selection: "d0d9e6",
+        ansi: ["1c1e23", "a2241a", "106236", "754d09", "194eb7", "86289e", "075d6f", "9296a1",
+               "5b5e68", "851d16", "0d4f2c", "5f3e07", "143f96", "6e2082", "064c5b", "ffffff"])
 
     private static let dark = Palette(
         bg: "121317", fg: "e3e5ea", cursor: "e3e5ea", selection: "333a48",

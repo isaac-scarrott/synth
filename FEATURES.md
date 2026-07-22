@@ -738,3 +738,8 @@ disclosure to dive deeper.
   non-key event, so resting a finger on ⌘ crashed the process.
 - **Synth 0.9.1 shipped (build 320)** — a same-day patch carrying only that crash fix, since the
   keys chained shortcuts start from were the ones taking Synth down.
+- **The light terminal moves to cool near-white** — `#f7f8fa` carrying `--ink` as its text, with the
+  16 colours rebuilt to even ratios (hues 7:1, brights 9:1, dim 6.1:1). ANSI 7/15 stop being
+  inverted, taking selected rows and inverse video from 1.04:1 to 7.4:1. Claude Code was never
+  reading this palette — it runs its own dark theme by default, which is a `theme` Synth still has
+  to set.

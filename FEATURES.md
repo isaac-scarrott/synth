@@ -717,3 +717,12 @@ disclosure to dive deeper.
   is a circle rather than a diamond. HTML and SwiftUI both.
 - **Synth 0.8.2 shipped (build 312)** — the violet sphere liveness indicator reaches installed
   copies, so working and needs-input can no longer be mistaken for each other at a glance.
+- **The browser MCP server survives a loaded engine** — an engine holding ~35 CDP targets broke
+  every browser tool behind one opaque 10s attach timeout. The attach budget now scales with the
+  engine's target count, session→page probes run concurrently and cache, reconnects are gated on
+  the endpoint's own target list, and a navigation that runs out of time reports as still in
+  flight rather than as a failure that silently ate a single-use URL. `browser_create` rolls back
+  a session whose page never appears and `browser_close` accounts for the tab; new `browser_health`
+  (target count, attach cost, per-session responsiveness, `reconnect`) and `browser_cookies`;
+  `browser_snapshot` takes `selector`/`maxDepth`; every lookup is scoped to this worktree's own
+  sessions. Left open: per-worktree engines, and target→PID mapping (CDP exposes none).

@@ -726,3 +726,6 @@ disclosure to dive deeper.
   (target count, attach cost, per-session responsiveness, `reconnect`) and `browser_cookies`;
   `browser_snapshot` takes `selector`/`maxDepth`; every lookup is scoped to this worktree's own
   sessions. Left open: per-worktree engines, and target→PID mapping (CDP exposes none).
+- **Every sidebar row ends in two buttons, not one ⋯** — delete plus the verb its level owns:
+  + on a workspace or worktree, ⋯ on a session leaf. Bigger hit targets, and delete still routes
+  through the ⌘K confirm.

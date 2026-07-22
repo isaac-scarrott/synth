@@ -291,11 +291,12 @@ private struct WorkspaceRow: View {
                             trailing.opacity(revealed ? 0 : 1)
                         }
                         .padding(.horizontal, 6).padding(.vertical, 6)
+                        .rowContentFade(revealed)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(RowButtonStyle())
 
-                    KebabButton(ref: .workspace(workspace))
+                    RowActions(ref: .workspace(workspace))
                         .opacity(revealed ? 1 : 0)
                         .padding(.trailing, 2)
                 }
@@ -423,12 +424,13 @@ private struct BranchRow: View {
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
                         .opacity(branch.isPending ? 0.5 : 1)
+                        .rowContentFade(revealed)
                         .background(activePillBackground)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(RowButtonStyle())
 
-                    KebabButton(ref: .branch(branch))
+                    RowActions(ref: .branch(branch))
                         .opacity(revealed ? 1 : 0)
                         .padding(.trailing, 2)
                 }
@@ -582,6 +584,7 @@ private struct SessionRow: View {
                         .opacity(revealed ? 0 : 1)
                     }
                     .padding(.leading, 61).padding(.trailing, 6).padding(.vertical, 6)
+                    .rowContentFade(revealed)
                     // The open session's sticky tint (working.html .session--open), deepening
                     // on hover like every other accent wash.
                     .background(
@@ -604,7 +607,7 @@ private struct SessionRow: View {
                         .offset(x: 54.5)
                 }
 
-                KebabButton(ref: .session(session))
+                RowActions(ref: .session(session))
                     .opacity(revealed ? 1 : 0)
                     .padding(.trailing, 2)
             }
@@ -696,8 +699,8 @@ private struct SessionTile: View {
                             .foregroundStyle(isOpen ? Theme.inkOpen : Theme.sessionName)
                             .lineLimit(1).truncationMode(.tail)
                     }
-                    // Reserve room for the kebab so the name never sits under it.
-                    if revealed { Spacer(minLength: 20) }
+                    // Reserve room for the action cluster so the name never sits under it.
+                    if revealed { Spacer(minLength: 46) }
                 }
                 .padding(.horizontal, 7).padding(.vertical, 6)
                 .frame(maxWidth: showName ? .infinity : nil, alignment: .leading)
@@ -711,10 +714,10 @@ private struct SessionTile: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            // The ⋮ kebab — hover-revealed like a session row's, opening the drilled ⌘K actions
-            // (Unsplit / Close …). A tile IS a session row, so the actions come along (012).
+            // The action cluster — hover-revealed like a session row's: close, and ⋯ for the
+            // drilled ⌘K actions (Unsplit / Close …). A tile IS a session row (012).
             if revealed {
-                KebabButton(ref: .session(session)).padding(.trailing, 3)
+                RowActions(ref: .session(session)).padding(.trailing, 3)
             }
         }
         .onHover { hovering = $0 }
@@ -743,33 +746,96 @@ private struct EmptyGroupHint: View {
     }
 }
 
-private struct KebabButton: View {
+/// working.html `.row-acts` — every row ends in the same two-button cluster: delete first, then
+/// the verb its level owns. A session leaf has no children to add, so it keeps ⋯ (its own verbs
+/// live in the pinned ⌘K frame); a worktree or workspace gets +, straight into the create frame.
+/// Delete routes through the same ⌘K confirm as ⌫, so no button destroys on one click.
+private struct RowActions: View {
     @Environment(AppStore.self) private var store
     let ref: RowRef
+
+    var body: some View {
+        HStack(spacing: 1) {
+            switch ref {
+            case .session:
+                RowActionButton(ref: ref, glyph: Phosphor.trash, size: 14, help: "Close",
+                                danger: true) { store.requestDelete(ref) }
+                RowActionButton(ref: ref, glyph: Phosphor.dots, size: 16, help: "Actions") {
+                    // ⋯ opens the ⌘K palette drilled to this row (working.html openRowActions),
+                    // not the hover popover. The popover stays for the `d` quick-delete keybinding.
+                    store.openRowActions(ref)
+                }
+            case .workspace:
+                RowActionButton(ref: ref, glyph: Phosphor.trash, size: 14, help: "Remove",
+                                danger: true) { store.requestDelete(ref) }
+                RowActionButton(ref: ref, glyph: Phosphor.plus, size: 14, help: "New worktree") {
+                    store.addToRow(ref)
+                }
+            case .branch:
+                RowActionButton(ref: ref, glyph: Phosphor.trash, size: 14, help: "Remove",
+                                danger: true) { store.requestDelete(ref) }
+                RowActionButton(ref: ref, glyph: Phosphor.plus, size: 14, help: "New session") {
+                    store.addToRow(ref)
+                }
+            }
+        }
+        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [id = ref.id] anchor in [id: anchor] }
+    }
+}
+
+private struct RowActionButton: View {
+    @Environment(AppStore.self) private var store
+    let ref: RowRef
+    let glyph: String
+    let size: CGFloat
+    let help: String
+    var danger = false
+    let action: () -> Void
 
     private var menuOpen: Bool { store.activeMenu?.rowID == ref.id }
     @State private var hovering = false
 
     var body: some View {
-        let active = menuOpen || hovering
-        Button {
-            // The ⋯ kebab opens the ⌘K palette drilled to this row (working.html openRowActions),
-            // not the hover popover. The popover stays for the `d` quick-delete keybinding.
-            store.openRowActions(ref)
-        } label: {
-            // 13px glyph in a 20px box; hover / open menu fills a rounded 7px hover box
-            // (echoing the 8px row radius) and darkens the glyph (working.html .kebab).
-            Phos(path: Phosphor.dots, size: 13)
-                .foregroundStyle(active ? Theme.ink2 : Theme.inkMeta)
-                .frame(width: 20, height: 20)
-                .background(RoundedRectangle(cornerRadius: 7).fill(active ? Theme.rowSelected : .clear))
+        Button(action: action) {
+            // 14pt glyph (16 for the dots) in a 22pt box; hovering fills a rounded 7pt box
+            // (echoing the 8px row radius) and darkens the glyph — red, on delete (.kebab).
+            Phos(path: glyph, size: size)
+                .foregroundStyle(hovering ? (danger ? Theme.danger : Theme.ink2) : Theme.inkMeta)
+                .frame(width: 22, height: 22)
+                .background(RoundedRectangle(cornerRadius: 7)
+                    .fill(hovering || (menuOpen && !danger) ? Theme.rowSelected : .clear))
                 .contentShape(Rectangle())
         }
         .onHover { hovering = $0 }
         .buttonStyle(KebabPressStyle())
-        .help("Actions")
-        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [id = ref.id] anchor in [id: anchor] }
+        .help(help)
     }
+}
+
+/// working.html's mask on the row labels: the cluster owns the row end and nothing may move for
+/// it, so the row's content keeps its layout and simply stops painting where the buttons start —
+/// clear for the cluster's 47pt (45pt of buttons + its 2pt inset), ramping out over the 14pt
+/// before that. Identical geometry hovered or not; only paint changes.
+private struct RowContentFade: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        content.mask {
+            if active {
+                HStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 14)
+                    Color.clear.frame(width: 33)
+                }
+            } else {
+                Rectangle()
+            }
+        }
+    }
+}
+
+private extension View {
+    func rowContentFade(_ active: Bool) -> some View { modifier(RowContentFade(active: active)) }
 }
 
 /// The name field shown in place of a row's label while it is being renamed —

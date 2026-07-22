@@ -715,3 +715,5 @@ disclosure to dive deeper.
   corners drop out and the dots shrink and darken toward the rim, so the mark reads as a ball lit
   from its near face; the beat now travels out by radial distance, not Manhattan, so its wavefront
   is a circle rather than a diamond. HTML and SwiftUI both.
+- **Synth 0.8.2 shipped (build 312)** — the violet sphere liveness indicator reaches installed
+  copies, so working and needs-input can no longer be mistaken for each other at a glance.

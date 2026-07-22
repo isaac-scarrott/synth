@@ -1,5 +1,11 @@
 {
   "mcpServers" : {
+    "synth-app" : {
+      "args" : [
+        "\/Users\/isaac\/Library\/Application Support\/Synth\/browser-mcp\/app-server.mjs"
+      ],
+      "command" : "node"
+    },
     "synth-browser" : {
       "args" : [
         "\/Users\/isaac\/Library\/Application Support\/Synth\/browser-mcp\/server.mjs"

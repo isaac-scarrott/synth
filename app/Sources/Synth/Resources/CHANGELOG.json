@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.7.1",
+    "date": "2026-07-21",
+    "changes": [
+      "Fixed a crash that could close Synth the moment a web page reached for Bluetooth.",
+      "Crashes are captured again instead of silently vanishing, so the ones that slip through get reported and fixed."
+    ]
+  },
+  {
     "version": "0.7.0",
     "date": "2026-07-21",
     "changes": [

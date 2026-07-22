@@ -45,6 +45,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Start the terminal engine before analytics. libghostty's `ghostty_init` brings up a
+        // statically linked sentry-native/Breakpad handler that claims the task's Mach exception
+        // ports, and Mach exceptions preempt POSIX signals — so whatever registers last wins the
+        // crash. Starting it here lets PostHog's Mach handler (below) layer on top and chain back
+        // to Breakpad, instead of Breakpad silently swallowing every crash on first terminal use.
+        GhosttyApp.shared.start()
         // Anonymous usage analytics — off on the dev channel and honouring the saved opt-out
         // (read straight from defaults so it doesn't wait on the store). No-ops until a key is set.
         Analytics.bootstrap(optedOut: !AppStore.loadBoolPref(AppStore.analyticsKey, default: true))

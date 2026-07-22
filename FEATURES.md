@@ -674,6 +674,15 @@ disclosure to dive deeper.
   toast/countdown and split-focus surfaces. Notarized, stapled, 15 deltas (23MB) against a 137MB
   download; verified credential-less (spctl accepted / Notarized Developer ID, staple valid, appcast
   newest `Synth-0.7.0.zip` at `sparkle:version` 293 with `edSignature`) and installed to `/Applications`.
+- **Crash reporting actually reports** — libghostty statically links sentry-native, whose Breakpad
+  claimed the task's Mach exception ports and swallowed every crash (Mach preempts POSIX signals),
+  leaving `CrashReporter`'s handlers dead from first terminal use. `GhosttyApp.start()` now runs
+  before `Analytics.bootstrap` so PostHog's PLCrashReporter layers on top and chains back; the
+  signal-marker path stays as a backstop.
+- **Synth 0.7.1 shipped (build 294)** — patch release, two crash fixes on 0.7.0. The now-working
+  crash reporting caught a Bluetooth `SIGABRT`: an embedded engine (CEF Web Bluetooth / libghostty)
+  probes the radio and TCC hard-aborts an app with no `NSBluetoothAlwaysUsageDescription`.
+  `write_info_plist` now emits the key. No user-facing surface change.
 - **Liveness is a five-bar wave, not an amber dot** — the running / working indicator (sidebar
   rows, collapsed roll-up, the agent transcript's in-progress line) becomes an amber five-bar
   level meter breathing on a 1s cycle; the level meter is the loading shape an app named for a

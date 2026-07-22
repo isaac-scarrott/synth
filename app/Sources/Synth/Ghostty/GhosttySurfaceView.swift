@@ -335,7 +335,12 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         key.mods = Self.mods(event.modifierFlags)
         key.consumed_mods = GHOSTTY_MODS_NONE
         key.keycode = UInt32(event.keyCode)
-        key.unshifted_codepoint = event.charactersIgnoringModifiers?.unicodeScalars.first?.value ?? 0
+        // charactersIgnoringModifiers raises on anything but a key event, so flagsChanged
+        // must not touch it — a bare modifier has no codepoint anyway.
+        let isKeyEvent = event.type == .keyDown || event.type == .keyUp
+        key.unshifted_codepoint = isKeyEvent
+            ? event.charactersIgnoringModifiers?.unicodeScalars.first?.value ?? 0
+            : 0
         key.composing = hasMarkedText()
         if text.isEmpty {
             key.text = nil

@@ -142,6 +142,69 @@ sign_app() {
   "${sign[@]}" --entitlements signing/Synth.entitlements "$app"
 }
 
+# make_dmg <app_dir> <dmg_path> <volume_name> <identity>
+# The human install path: a disk image holding the app beside an /Applications symlink, so the
+# install gesture is a drag. The zip has no such step, and an app launched from ~/Downloads gets
+# app-translocated — run read-only from a random mount point, where Synth cannot find its own
+# bundled synth-hook.
+#
+# Built read-write and converted, rather than straight from a folder, because the icon layout can
+# only be set on a mounted writable image. The layout is cosmetic and Finder automation is flaky
+# under a non-interactive shell, so it never fails the release; the drag target is the symlink,
+# which exists either way.
+make_dmg() {
+  local app="$1" dmg="$2" volname="$3" id="$4"
+  local name; name="$(basename "$app")"
+  local stage rw mnt
+  stage="$(mktemp -d)"; rw="$(mktemp -u)/rw.dmg"; mkdir -p "$(dirname "$rw")"
+
+  ditto "$app" "$stage/$name"
+  ln -s /Applications "$stage/Applications"
+
+  # Room for the copy plus Finder's own metadata; UDZO squeezes the slack back out at convert.
+  local mb=$(( $(du -sm "$stage" | cut -f1) + 100 ))
+  hdiutil create -srcfolder "$stage" -volname "$volname" -fs HFS+ \
+    -format UDRW -size "${mb}m" "$rw" >/dev/null
+
+  # hdiutil interleaves checksum progress with the mount table on stdout, so match the mount
+  # point by shape rather than by line — the progress lines carry no path.
+  mnt="$(hdiutil attach "$rw" -nobrowse -noautoopen | grep -o '/Volumes/.*$' | tail -1)"
+  [ -d "$mnt" ] || { echo "make_dmg: could not mount $rw" >&2; return 1; }
+
+  # Address the volume Finder actually mounted, not $volname: a stale volume of the same name
+  # pushes this one to "<volname> 1", and laying out the stale one would silently do nothing here.
+  local disk; disk="$(basename "$mnt")"
+  osascript >/dev/null 2>&1 <<APPLESCRIPT || echo "    (icon layout skipped — Finder unavailable)"
+tell application "Finder"
+  tell disk "$disk"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 150, 800, 570}
+    set theViewOptions to the icon view options of container window
+    set arrangement of theViewOptions to not arranged
+    set icon size of theViewOptions to 128
+    set position of item "$name" of container window to {150, 200}
+    set position of item "Applications" of container window to {450, 200}
+    close
+    open
+    update without registering applications
+    delay 1
+  end tell
+end tell
+APPLESCRIPT
+  hdiutil detach "$mnt" >/dev/null
+
+  rm -f "$dmg"
+  hdiutil convert "$rw" -format UDZO -imagekey zlib-level=9 -o "$dmg" >/dev/null
+  rm -rf "$stage" "$(dirname "$rw")"
+
+  # A quarantined disk image is itself assessed at mount, so the image needs its own signature
+  # and its own notarization ticket — the app's ticket inside does not cover it.
+  codesign --force --sign "$id" --timestamp "$dmg"
+}
+
 # signing_identity
 # The Developer ID Application certificate to sign with: $SYNTH_SIGN_IDENTITY when set,
 # otherwise the first one in the keychain, otherwise "-" for an ad-hoc signature.

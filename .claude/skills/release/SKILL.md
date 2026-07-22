@@ -71,6 +71,17 @@ which is the exact state a browser download is in:
 
 ```bash
 cd "$(mktemp -d)"
+
+# The disk image — what a person downloads. Quarantine goes on the .dmg, as a browser would set it.
+curl -fsSL -o S.dmg https://synth-releases.fly.storage.tigris.dev/Synth.dmg
+xattr -w com.apple.quarantine "0083;00000000;Safari;" S.dmg
+spctl --assess --type open --context context:primary-signature -v S.dmg   # want: accepted
+MNT=$(hdiutil attach S.dmg -nobrowse -noautoopen | grep -o '/Volumes/.*$' | tail -1)
+spctl --assess --type execute --verbose=4 "$MNT/Synth.app"  # want: accepted / source=Notarized Developer ID
+xcrun stapler validate "$MNT/Synth.app"                     # want: The validate action worked!
+hdiutil detach "$MNT"
+
+# The zip — what Sparkle downloads.
 curl -fsSL -o S.zip https://synth-releases.fly.storage.tigris.dev/Synth.zip
 ditto -x -k S.zip .
 xattr -w com.apple.quarantine "0083;00000000;Safari;" Synth.app
@@ -78,6 +89,11 @@ spctl --assess --type execute --verbose=4 Synth.app     # want: accepted / sourc
 xcrun stapler validate Synth.app                        # want: The validate action worked!
 curl -fsSL https://synth-releases.fly.storage.tigris.dev/appcast.xml
 ```
+
+The app inside the image must validate on its own, not just the image around it. A dragged-out copy
+carries no trace of the .dmg it came from, so an unstapled app inside a stapled image verifies only
+while Apple is reachable — and fails as "Apple could not verify Synth is free of malware" when it
+isn't.
 
 In the appcast, check `sparkle:version` is the new build number (`git rev-list --count HEAD`) and
 that an `sparkle:edSignature` is present on every enclosure. A missing signature means installed
@@ -98,5 +114,12 @@ not that a release happened.
   effect for updates issued *from* a build that already has them.
 - **`CFBundleVersion` is `git rev-list --count HEAD`,** not the marketing version. Sparkle orders
   releases by it, so it must only ever increase. `app/VERSION` is the human-facing string.
-- The landing page's Download buttons point at the bucket's stable `Synth.zip` alias, so they never
-  need updating per release.
+- **Two artifacts, two audiences.** People get `Synth.dmg` (drag to /Applications); Sparkle gets
+  `Synth-<version>.zip` plus its deltas. Both are notarized separately — a ticket for the app does
+  not cover the image that carries it. The landing page's Download buttons point at the bucket's
+  stable `Synth.dmg` alias, and the `Synth.zip` alias stays published because shipped builds
+  reference it.
+- **The dmg is deliberately not in `app/releases/`.** `generate_appcast` treats every archive in
+  that directory as a release enclosure and would publish the image as a second, competing update
+  for the same version.
+- **Notarization runs twice** (zip, then dmg), so budget roughly double the Apple wait.

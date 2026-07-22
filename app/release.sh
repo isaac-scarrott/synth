@@ -80,6 +80,20 @@ rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 echo "==> Archived $ZIP"
 
+# The disk image is what a person downloads; the zip is what Sparkle downloads. It is built from
+# the already-stapled app so the copy dragged to /Applications carries its own ticket and verifies
+# with no network, then notarized in its own right because Gatekeeper assesses the image at mount.
+# It stays out of $ARCHIVE: generate_appcast treats every archive it finds there as a release
+# enclosure, and would publish the dmg as a second, competing update for this same version.
+DMG="build/Synth-$VERSION.dmg"
+echo "==> Building $DMG"
+make_dmg "$APP" "$DMG" "Synth $VERSION" "$IDENTITY"
+
+echo "==> Notarizing the disk image ($(du -h "$DMG" | cut -f1))"
+xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun stapler staple "$DMG"
+xcrun stapler validate "$DMG"
+
 # generate_appcast signs each zip with the private EdDSA key from the login keychain and, given
 # older zips alongside, emits binary deltas between them. CEF is 93% of the bundle and changes
 # only when it's re-vendored, so a delta between two ordinary Synth releases is a few MB against
@@ -105,14 +119,22 @@ s3 sync "$ARCHIVE" "s3://$RELEASE_BUCKET/" \
   --exclude "appcast.xml" --exclude ".*" \
   --cache-control "public, max-age=31536000, immutable"
 
-# A stable name for the landing page's download button, so the link outlives every release.
+s3 cp "$DMG" "s3://$RELEASE_BUCKET/$(basename "$DMG")" \
+  --cache-control "public, max-age=31536000, immutable"
+
+# Stable names, so the landing page's links outlive every release. The zip alias stays because
+# Sparkle's own installed copies were shipped pointing at it.
+s3 cp "$DMG" "s3://$RELEASE_BUCKET/Synth.dmg" --cache-control "public, max-age=300"
 s3 cp "$ZIP" "s3://$RELEASE_BUCKET/Synth.zip" --cache-control "public, max-age=300"
 
 # One ranged byte proves reachability without pulling 144MB. The `aws` calls above used your keys
-# and prove nothing about an updater, which carries none. Nothing is live yet if this fails.
-echo "==> Checking the new zip is readable without credentials"
-curl -fsS --max-time 30 -r 0-0 -o /dev/null "$RELEASE_BASE_URL/$(basename "$ZIP")" \
-  || die "$RELEASE_BASE_URL/$(basename "$ZIP") is not public — check the bucket is public. Nothing was published."
+# and prove nothing about an updater or a stranger's browser, which carry none. Nothing is live
+# yet if this fails.
+echo "==> Checking the new artifacts are readable without credentials"
+for artifact in "$(basename "$ZIP")" "$(basename "$DMG")" Synth.dmg; do
+  curl -fsS --max-time 30 -r 0-0 -o /dev/null "$RELEASE_BASE_URL/$artifact" \
+    || die "$RELEASE_BASE_URL/$artifact is not public — check the bucket is public. Nothing was published."
+done
 
 echo "==> Publishing appcast"
 s3 cp "$ARCHIVE/appcast.xml" "s3://$RELEASE_BUCKET/appcast.xml" \
@@ -130,5 +152,5 @@ echo "Released $TAG. Source stayed private; artifacts are public at $RELEASE_BAS
 echo "Installed copies will see it at $FEED_URL within a day, or immediately"
 echo "via Synth > Check for Updates…"
 echo
-echo "Landing page download link:  $RELEASE_BASE_URL/Synth.zip"
+echo "Landing page download link:  $RELEASE_BASE_URL/Synth.dmg"
 echo "Keep $ARCHIVE/ — without the previous zips the next release ships no deltas."

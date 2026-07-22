@@ -733,3 +733,8 @@ disclosure to dive deeper.
   sphere, and the browser MCP server's survival on a loaded engine reach installed copies. A minor
   bump, not a patch: the row-action pair and `browser_health` / `browser_cookies` grow the surface
   rather than only correcting it.
+- **A bare modifier key no longer kills the app** — `flagsChanged` sent modifier presses down the
+  real-keystroke path, which reads `charactersIgnoringModifiers`; AppKit raises on that for any
+  non-key event, so resting a finger on ⌘ crashed the process.
+- **Synth 0.9.1 shipped (build 320)** — a same-day patch carrying only that crash fix, since the
+  keys chained shortcuts start from were the ones taking Synth down.

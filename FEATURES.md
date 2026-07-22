@@ -702,3 +702,8 @@ disclosure to dive deeper.
   Also folded the published-but-unmerged `v0.7.1` into main first: main had a higher build number
   but was missing that release's two crash fixes, so shipping from it would have auto-installed
   the regression everywhere.
+- **Synth installs from a disk image (0.8.1, build 307)** — the download is now a `.dmg` with an
+  `/Applications` drag target, ending the run-from-Downloads translocation that hid Synth's own
+  `synth-hook` from it. Image and app are each notarized and stapled separately, since a
+  dragged-out copy carries no trace of the image; Sparkle keeps its zip. Also documented the
+  hand-sync from `landing/` to the separate `synth-site` deploy repo.

@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.8.0",
+    "date": "2026-07-22",
+    "changes": [
+      "A working session now shows a cyan lattice that beats outward from its centre, replacing the amber dot \u2014 easier to tell apart from the blue unread mark, and it reads as alive at a glance."
+    ]
+  },
+  {
     "version": "0.7.1",
     "date": "2026-07-21",
     "changes": [

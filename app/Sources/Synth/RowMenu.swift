@@ -80,7 +80,8 @@ struct RowMenu: View {
             Rectangle().fill(Theme.border).frame(height: 0.5)
                 .padding(.horizontal, 6).padding(.vertical, 4)
         }
-        MenuItem(icon: Phosphor.trash, title: deleteTitle, danger: danger) {
+        MenuItem(icon: level == .session ? Phosphor.close : Phosphor.trash,
+                 title: deleteTitle, danger: danger) {
             confirming = true
         }
     }

@@ -758,7 +758,7 @@ private struct RowActions: View {
         HStack(spacing: 1) {
             switch ref {
             case .session:
-                RowActionButton(ref: ref, glyph: Phosphor.trash, size: 14, help: "Close",
+                RowActionButton(ref: ref, glyph: Phosphor.close, size: 14, help: "Close",
                                 danger: true) { store.requestDelete(ref) }
                 RowActionButton(ref: ref, glyph: Phosphor.dots, size: 16, help: "Actions") {
                     // ⋯ opens the ⌘K palette drilled to this row (working.html openRowActions),

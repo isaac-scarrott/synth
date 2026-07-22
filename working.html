@@ -1095,6 +1095,9 @@
      outside the ball and drop out, so the silhouette reads round; the remaining 21 dots
      shrink and sink from --live-lift to --live-deep as they go out, because the middle is
      the near face of the sphere and the rim is where the surface turns away from you.
+     The ramp is walked a fifth at a time, one step per ring, so no two neighbouring rings
+     jump more than a fifth of it and the shading curves rather than steps; the rim stops a
+     fifth short of --live-deep, which at 1.35px on a light sidebar read as a black speck.
      One clock: each ring is delayed by its true radial distance from the centre, so the
      beat leaves the middle as a circular wavefront (the old lattice stepped by Manhattan
      distance, which made a diamond — visible, and at odds with a round mark).
@@ -1119,24 +1122,25 @@
     animation: beat-pulse 1.15s ease-in-out infinite;
   }
   /* Rings out from the centre cell (13). Each carries its diameter, its point on the
-     lift→deep ramp and its delay (radius x 118ms). The corners are held rather than
+     lift→deep ramp (100/80/60/40/20) and its delay (radius x 118ms). The corners are held rather than
      removed, so the lattice keeps its geometry and the nth-child indices stay readable. */
   .beat i:nth-child(13) { width: 2.5px; height: 2.5px; background: var(--live-lift); }
   .beat i:nth-child(8), .beat i:nth-child(12), .beat i:nth-child(14), .beat i:nth-child(18) {
     width: 2px; height: 2px; animation-delay: 118ms;
-    background: color-mix(in oklab, var(--live-lift) 55%, var(--live-deep));
+    background: color-mix(in oklab, var(--live-lift) 80%, var(--live-deep));
   }
   .beat i:nth-child(7), .beat i:nth-child(9), .beat i:nth-child(17), .beat i:nth-child(19) {
     width: 1.8px; height: 1.8px; animation-delay: 167ms;
-    background: color-mix(in oklab, var(--live-lift) 37%, var(--live-deep));
+    background: color-mix(in oklab, var(--live-lift) 60%, var(--live-deep));
   }
   .beat i:nth-child(3), .beat i:nth-child(11), .beat i:nth-child(15), .beat i:nth-child(23) {
     width: 1.5px; height: 1.5px; animation-delay: 236ms;
-    background: color-mix(in oklab, var(--live-lift) 11%, var(--live-deep));
+    background: color-mix(in oklab, var(--live-lift) 40%, var(--live-deep));
   }
   .beat i:nth-child(2), .beat i:nth-child(4), .beat i:nth-child(6), .beat i:nth-child(10),
   .beat i:nth-child(16), .beat i:nth-child(20), .beat i:nth-child(22), .beat i:nth-child(24) {
-    width: 1.35px; height: 1.35px; animation-delay: 264ms; background: var(--live-deep);
+    width: 1.35px; height: 1.35px; animation-delay: 264ms;
+    background: color-mix(in oklab, var(--live-lift) 20%, var(--live-deep));
   }
   .beat i:nth-child(1), .beat i:nth-child(5), .beat i:nth-child(21), .beat i:nth-child(25) { visibility: hidden; }
   @keyframes beat-pulse {

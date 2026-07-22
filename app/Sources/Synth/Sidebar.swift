@@ -946,7 +946,7 @@ private struct PendingSpinner: View {
 
 /// working.html `.beat` — a small sphere of dots. The 5×5 lattice keeps its footprint, but the
 /// four corners lie outside the ball and drop out so the silhouette reads round; the remaining
-/// 21 dots shrink and sink from `Theme.liveLift` to `Theme.liveDeep` as they go out, because the
+/// 21 dots shrink and sink from `Theme.liveLift` towards `Theme.liveDeep` as they go out, because the
 /// middle is the sphere's near face and the rim is where the surface turns away from you.
 /// One clock, each ring delayed by its true radial distance from the centre, so the beat leaves
 /// the middle as a circular wavefront. The dormant sphere stays visible (`rest`) so a slow
@@ -958,14 +958,17 @@ private struct Beat: View {
 
     /// The rings, keyed by squared distance from the centre cell — an integer, so a cell lands on
     /// its ring exactly. The four corners (8) are absent: they lie off the sphere.
-    /// Colours are the lift→deep ramp sampled at each ring. CSS mixes those two ends in oklab at
-    /// paint time; macOS 14 has no colour mixing, so the stops are resolved here instead.
+    /// Colours are the lift→deep ramp walked a fifth at a time, one step per ring (100/80/60/40/20),
+    /// so no two neighbouring rings jump more than a fifth of it and the shading curves rather than
+    /// steps; the rim stops a fifth short of `Theme.liveDeep`, which at 1.35pt on a light sidebar
+    /// read as a black speck. CSS mixes the two ends in oklab at paint time; macOS 14 has no colour
+    /// mixing, so the stops are resolved here instead.
     private static let rings: [Int: (color: Color, diameter: CGFloat)] = [
         0: (Theme.dyn(0xC4B5FD, 0xEDE9FE), 2.5),    // the near face
-        1: (Theme.dyn(0x8A73CE, 0xAE9BF2), 2),
-        2: (Theme.dyn(0x7559BC, 0x977BEB), 1.8),
-        4: (Theme.dyn(0x5731A1, 0x7846DF), 1.5),
-        5: (Theme.dyn(0x4C1D95, 0x6D28D9), 1.35),   // the rim
+        1: (Theme.dyn(0xAA97E8, 0xD0C7FA), 2),
+        2: (Theme.dyn(0x907AD4, 0xB4A4F4), 1.8),
+        4: (Theme.dyn(0x785DBF, 0x9A80EC), 1.5),
+        5: (Theme.dyn(0x613FAA, 0x825AE3), 1.35),   // the rim
     ]
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

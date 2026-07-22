@@ -31,7 +31,10 @@ import GhosttyKit
             return
         }
 
-        let config = TerminalTheme.makeConfig(dark: TerminalTheme.isDark(NSApp.effectiveAppearance))
+        let dark = TerminalTheme.isDark(NSApp.effectiveAppearance)
+        // Before any surface exists, so the first session of the launch starts on the right theme.
+        AgentTheme.sync(dark: dark)
+        let config = TerminalTheme.makeConfig(dark: dark)
 
         var runtime = ghostty_runtime_config_s()
         runtime.userdata = Unmanaged.passUnretained(self).toOpaque()

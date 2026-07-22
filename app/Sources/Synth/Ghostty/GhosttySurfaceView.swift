@@ -194,7 +194,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// light "paper" vs dark card). Called on creation and whenever the appearance flips.
     private func applyTheme() {
         guard let surface else { return }
-        let config = TerminalTheme.makeConfig(dark: TerminalTheme.isDark(effectiveAppearance))
+        let dark = TerminalTheme.isDark(effectiveAppearance)
+        AgentTheme.sync(dark: dark)
+        let config = TerminalTheme.makeConfig(dark: dark)
         ghostty_surface_update_config(surface, config)
         ghostty_config_free(config)
         ghostty_surface_refresh(surface)

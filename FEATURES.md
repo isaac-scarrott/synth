@@ -743,3 +743,7 @@ disclosure to dive deeper.
   inverted, taking selected rows and inverse video from 1.04:1 to 7.4:1. Claude Code was never
   reading this palette — it runs its own dark theme by default, which is a `theme` Synth still has
   to set.
+- **Claude Code's theme follows Synth's appearance** — `AgentTheme.sync` writes `theme` into
+  `~/.claude.json` alongside the Ghostty re-theme, so a light Synth stops running Claude Code's
+  dark theme (white body text at 1.03:1). Verified against 2.1.217 under a pty. Custom variants
+  like `light-daltonized` are left alone, and open sessions keep the theme they launched with.

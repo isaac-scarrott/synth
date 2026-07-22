@@ -729,3 +729,7 @@ disclosure to dive deeper.
 - **Every sidebar row ends in two buttons, not one ⋯** — delete plus the verb its level owns:
   + on a workspace or worktree, ⋯ on a session leaf. Bigger hit targets, and delete still routes
   through the ⌘K confirm.
+- **Synth 0.9.0 shipped (build 317)** — the two-button sidebar rows, the evenly-lit liveness
+  sphere, and the browser MCP server's survival on a loaded engine reach installed copies. A minor
+  bump, not a patch: the row-action pair and `browser_health` / `browser_cookies` grow the surface
+  rather than only correcting it.

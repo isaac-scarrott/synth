@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.9.0",
+    "date": "2026-07-22",
+    "changes": [
+      "Every sidebar row now ends in two buttons: delete, plus the verb that row owns — + to add a worktree or session, ⋯ on a session. Bigger targets, and delete still asks first.",
+      "The liveness sphere is lit evenly from its core out to the rim, so it reads as a ball rather than a flat cluster of dots.",
+      "Browser tools keep working on a busy engine. A browser holding dozens of tabs used to fail every call with an opaque timeout; there are also new health and cookie tools, and snapshots can be scoped to a selector."
+    ]
+  },
+  {
     "version": "0.8.2",
     "date": "2026-07-22",
     "changes": [

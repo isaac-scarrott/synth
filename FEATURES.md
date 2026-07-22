@@ -710,3 +710,8 @@ disclosure to dive deeper.
 - **The release tag names the commit that was built** — `release.sh` pinned the commit before
   building instead of reading `HEAD` after Apple's ~20-minute wait, where a commit made meanwhile
   silently retargeted the tag onto a build that never shipped.
+- **The liveness indicator is a sphere, in violet** — the cyan 5×5 lattice read as the slate-blue
+  needs-input `?` at 14px, so liveness took the one hue nothing else on the right axis claims. The
+  corners drop out and the dots shrink and darken toward the rim, so the mark reads as a ball lit
+  from its near face; the beat now travels out by radial distance, not Manhattan, so its wavefront
+  is a circle rather than a diamond. HTML and SwiftUI both.

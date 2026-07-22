@@ -944,15 +944,29 @@ private struct PendingSpinner: View {
     }
 }
 
-/// working.html `.beat` — a 5×5 lattice where the beat lights the center cell and radiates
-/// outward as a diamond wavefront: one clock, each cell delayed by its Manhattan distance
-/// from the middle. The dormant lattice stays visible (`rest`) so a slow session still reads
-/// as present between beats rather than blinking out of existence.
+/// working.html `.beat` — a small sphere of dots. The 5×5 lattice keeps its footprint, but the
+/// four corners lie outside the ball and drop out so the silhouette reads round; the remaining
+/// 21 dots shrink and sink from `Theme.liveLift` to `Theme.liveDeep` as they go out, because the
+/// middle is the sphere's near face and the rim is where the surface turns away from you.
+/// One clock, each ring delayed by its true radial distance from the centre, so the beat leaves
+/// the middle as a circular wavefront. The dormant sphere stays visible (`rest`) so a slow
+/// session still reads as present between beats rather than blinking out of existence.
 private struct Beat: View {
-    private static let cell: CGFloat = 2
+    private static let cell: CGFloat = 2       // lattice pitch; a dot may overhang its own cell
     private static let gap: CGFloat = 1
     private static let rest: Double = 0.28
-    private static let step: Double = 0.13     // per ring of Manhattan distance
+
+    /// The rings, keyed by squared distance from the centre cell — an integer, so a cell lands on
+    /// its ring exactly. The four corners (8) are absent: they lie off the sphere.
+    /// Colours are the lift→deep ramp sampled at each ring. CSS mixes those two ends in oklab at
+    /// paint time; macOS 14 has no colour mixing, so the stops are resolved here instead.
+    private static let rings: [Int: (color: Color, diameter: CGFloat)] = [
+        0: (Theme.dyn(0xC4B5FD, 0xEDE9FE), 2.5),    // the near face
+        1: (Theme.dyn(0x8A73CE, 0xAE9BF2), 2),
+        2: (Theme.dyn(0x7559BC, 0x977BEB), 1.8),
+        4: (Theme.dyn(0x5731A1, 0x7846DF), 1.5),
+        5: (Theme.dyn(0x4C1D95, 0x6D28D9), 1.35),   // the rim
+    ]
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var lit = false
@@ -962,21 +976,34 @@ private struct Beat: View {
             ForEach(0..<5, id: \.self) { row in
                 HStack(spacing: Self.gap) {
                     ForEach(0..<5, id: \.self) { col in
-                        RoundedRectangle(cornerRadius: 0.5)
-                            .fill(Theme.live)
-                            .frame(width: Self.cell, height: Self.cell)
-                            .opacity(lit ? 1 : Self.rest)
-                            .scaleEffect(lit ? 1 : 0.72)
-                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.575)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(abs(row - 2) + abs(col - 2)) * Self.step), value: lit)
+                        dot(row: row, col: col)
                     }
                 }
             }
         }
-        // Frozen at rest the lattice reads as switched off, so reduced motion holds it lit.
+        // Frozen at rest the sphere reads as switched off, so reduced motion holds it lit.
         .opacity(reduceMotion ? 0.85 : 1)
         .onAppear { lit = true }
+    }
+
+    @ViewBuilder
+    private func dot(row: Int, col: Int) -> some View {
+        let squared = (row - 2) * (row - 2) + (col - 2) * (col - 2)
+        // The cell is always laid out — a corner just goes unpainted, so the lattice keeps its pitch.
+        Color.clear
+            .frame(width: Self.cell, height: Self.cell)
+            .overlay {
+                if let ring = Self.rings[squared] {
+                    Circle()
+                        .fill(ring.color)
+                        .frame(width: ring.diameter, height: ring.diameter)
+                        .opacity(lit ? 1 : Self.rest)
+                        .scaleEffect(lit ? 1 : 0.72)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.575)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(squared).squareRoot() * 0.118), value: lit)
+                }
+            }
     }
 }
 

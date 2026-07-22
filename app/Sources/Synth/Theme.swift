@@ -68,9 +68,12 @@ enum Theme {
     static let run         = Color(hex: 0x34C759)   // green liveness
     static let working     = Color(hex: 0xF5A623)   // amber (working) — 4° off champagne, so it
                                                     // stays put and the accent keeps clear of it
-    /// Liveness (running / working), working.html `--live`. Tuned per theme: the dark theme's
-    /// bright cyan washes out on a light sidebar, so light drops to a deeper one.
-    static let live        = dyn(0x0891B2, 0x22D3EE)
+    /// Liveness (running / working), working.html `--live-lift` → `--live-deep`: the two ends of
+    /// the sphere's ramp, near face to rim. Violet is the one hue no other right-side indicator
+    /// claims — the needs-input ? is slate-blue and the error ! is red, and the old cyan sat
+    /// close enough to that blue to be mistaken for it at 14px.
+    static let liveLift    = dyn(0xC4B5FD, 0xEDE9FE)
+    static let liveDeep    = dyn(0x4C1D95, 0x6D28D9)
     /// Needs-input state only: a desaturated sibling of the charcoal's own 223° hue. Never brand.
     static let input       = dyn(0x3A6DB3, 0x7EA6DC)
     static let danger      = Color(hex: 0xFF3B30)   // error (!)

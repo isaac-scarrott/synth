@@ -61,8 +61,10 @@
     /* state colors */
     --run: #34c759;
     --work: #f5a623;
-    --live: #0891b2;         /* liveness (running/working) — deep cyan, clears the light sidebar */
-    --live-rest: 0.28;       /* the dormant lattice between beats */
+    --live-lift: #c4b5fd;    /* liveness (running/working) — the sphere's near face, where the light lands */
+    --live-deep: #4c1d95;    /* and its rim, where the surface turns away. Violet: the one hue no
+                                other right-side indicator claims — the ? is slate-blue, the ! red. */
+    --live-rest: 0.28;       /* the dormant sphere between beats */
     --input: #3a6db3;        /* needs-input STATE only — slate-blue sibling of the charcoal, not the old iOS blue */
     --input-rgb: 58,109,179; /* drives every functional rgba(var(--input-rgb),A) ring/wash */
     --copper: #a05633;       /* AI-owned/session warm mark — one token collapsing the terracottas, kept distinct from the pale accent */
@@ -1089,10 +1091,15 @@
   .ind svg { width: 15px; height: 15px; display: block; }
 
   /* liveness beat: running / working (idle shows nothing).
-     A 5x5 lattice where the beat lights the center cell and radiates outward as a
-     diamond wavefront — cells share one clock, delayed by their Manhattan distance
-     from the middle. The dormant lattice never drops out of sight (--live-rest): the
-     indicator has to read as PRESENT between beats, or a slow session looks dead.
+     A small sphere of dots. The 5x5 lattice keeps its footprint, but the four corners sit
+     outside the ball and drop out, so the silhouette reads round; the remaining 21 dots
+     shrink and sink from --live-lift to --live-deep as they go out, because the middle is
+     the near face of the sphere and the rim is where the surface turns away from you.
+     One clock: each ring is delayed by its true radial distance from the centre, so the
+     beat leaves the middle as a circular wavefront (the old lattice stepped by Manhattan
+     distance, which made a diamond — visible, and at odds with a round mark).
+     The dormant sphere never drops out of sight (--live-rest): the indicator has to read
+     as PRESENT between beats, or a slow session looks dead.
      .beat--run / .beat--work carry no styling of their own; they mark the state
      for the roll-up logic, which reads the DOM to decide what a group shows. */
   .beat {
@@ -1100,24 +1107,38 @@
     grid-template-columns: repeat(5, 2px);
     grid-auto-rows: 2px;
     gap: 1px;
-    /* the cells are empty elements — without stretch they collapse to zero height */
-    place-items: stretch;
+    /* each dot is sized per ring and centered in its cell, so the 2.5px core can overhang
+       its own 2px slot without shifting anything around it */
+    place-items: center;
     flex-shrink: 0;
     line-height: 0;
   }
   .beat i {
-    background: var(--live);
-    border-radius: 0.5px;
+    border-radius: 50%;
     opacity: var(--live-rest);
     animation: beat-pulse 1.15s ease-in-out infinite;
   }
-  /* delay by Manhattan distance from the center cell (13), so the beat travels out as a diamond */
-  .beat i:nth-child(8), .beat i:nth-child(12), .beat i:nth-child(14), .beat i:nth-child(18) { animation-delay: 130ms; }
-  .beat i:nth-child(3), .beat i:nth-child(7), .beat i:nth-child(9), .beat i:nth-child(11),
-  .beat i:nth-child(15), .beat i:nth-child(17), .beat i:nth-child(19), .beat i:nth-child(23) { animation-delay: 260ms; }
+  /* Rings out from the centre cell (13). Each carries its diameter, its point on the
+     lift→deep ramp and its delay (radius x 118ms). The corners are held rather than
+     removed, so the lattice keeps its geometry and the nth-child indices stay readable. */
+  .beat i:nth-child(13) { width: 2.5px; height: 2.5px; background: var(--live-lift); }
+  .beat i:nth-child(8), .beat i:nth-child(12), .beat i:nth-child(14), .beat i:nth-child(18) {
+    width: 2px; height: 2px; animation-delay: 118ms;
+    background: color-mix(in oklab, var(--live-lift) 55%, var(--live-deep));
+  }
+  .beat i:nth-child(7), .beat i:nth-child(9), .beat i:nth-child(17), .beat i:nth-child(19) {
+    width: 1.8px; height: 1.8px; animation-delay: 167ms;
+    background: color-mix(in oklab, var(--live-lift) 37%, var(--live-deep));
+  }
+  .beat i:nth-child(3), .beat i:nth-child(11), .beat i:nth-child(15), .beat i:nth-child(23) {
+    width: 1.5px; height: 1.5px; animation-delay: 236ms;
+    background: color-mix(in oklab, var(--live-lift) 11%, var(--live-deep));
+  }
   .beat i:nth-child(2), .beat i:nth-child(4), .beat i:nth-child(6), .beat i:nth-child(10),
-  .beat i:nth-child(16), .beat i:nth-child(20), .beat i:nth-child(22), .beat i:nth-child(24) { animation-delay: 390ms; }
-  .beat i:nth-child(1), .beat i:nth-child(5), .beat i:nth-child(21), .beat i:nth-child(25) { animation-delay: 520ms; }
+  .beat i:nth-child(16), .beat i:nth-child(20), .beat i:nth-child(22), .beat i:nth-child(24) {
+    width: 1.35px; height: 1.35px; animation-delay: 264ms; background: var(--live-deep);
+  }
+  .beat i:nth-child(1), .beat i:nth-child(5), .beat i:nth-child(21), .beat i:nth-child(25) { visibility: hidden; }
   @keyframes beat-pulse {
     0%, 100% { opacity: var(--live-rest); transform: scale(0.72); }
     50% { opacity: 1; transform: scale(1); }
@@ -1906,7 +1927,8 @@
      Only variables change here — every surface reads them, so the whole shell,
      the ⌘K palette, menus, dialogs, settings and the terminal all move together. */
   :root[data-theme="dark"] {
-    --live: #22d3ee;         /* liveness lifts to bright cyan on the dark sidebar */
+    --live-lift: #ede9fe;    /* the liveness sphere lifts on the dark sidebar, both ends of its ramp */
+    --live-deep: #6d28d9;
     --oc-ring: #f1ecec;
     --oc-inner: #4b4646;
     --canvas: #0d0f13;

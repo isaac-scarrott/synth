@@ -694,3 +694,11 @@ disclosure to dive deeper.
   new per-theme `--live` cyan (deep on light, bright on dark) that stops the indicator reading as
   Claude's amber mark inside Synth's own chrome. The dormant lattice stays visible between beats —
   an indicator that blinks out of existence makes a slow session look dead.
+
+## [2026-07-22](docs/features/2026-07-22.md)
+
+- **Synth 0.8.0 shipped (build 303)** — minor bump for the cyan diamond beat replacing the amber
+  liveness dot. Notarized, stapled, verified credential-less; 0.7.1 users take a 697KB delta.
+  Also folded the published-but-unmerged `v0.7.1` into main first: main had a higher build number
+  but was missing that release's two crash fixes, so shipping from it would have auto-installed
+  the regression everywhere.

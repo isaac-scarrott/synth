@@ -33,6 +33,10 @@ die() { echo "release: $*" >&2; exit 1; }
 s3() { aws s3 "$@" --endpoint-url "$TIGRIS_ENDPOINT" --profile "$AWS_PROFILE_NAME"; }
 
 [ -z "$(git status --porcelain)" ] || die "working tree is dirty — commit before releasing"
+# Pinned here, not read at tagging time: a release takes ~20 minutes of Apple's waiting, and any
+# commit made in that window would otherwise move HEAD and hand the tag to a commit that was
+# never built — one whose `git rev-list --count` no longer matches the CFBundleVersion shipped.
+RELEASE_COMMIT="$(git rev-parse HEAD)"
 git rev-parse "$TAG" >/dev/null 2>&1 && die "$TAG already exists — bump VERSION"
 command -v aws >/dev/null || die "aws CLI not found (brew install awscli)"
 [ -f signing/ed25519-public.txt ] || die "signing/ed25519-public.txt missing — see setup above"
@@ -144,7 +148,7 @@ curl -fsS --max-time 30 -o /dev/null "$FEED_URL" \
 
 # Last, because a tag should record a release that happened. Only the tag leaves the private repo.
 echo "==> Tagging $TAG (private source repo)"
-git tag -a "$TAG" -m "Synth $VERSION"
+git tag -a "$TAG" -m "Synth $VERSION" "$RELEASE_COMMIT"
 git push origin "$TAG"
 
 echo

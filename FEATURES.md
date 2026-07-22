@@ -707,3 +707,6 @@ disclosure to dive deeper.
   `synth-hook` from it. Image and app are each notarized and stapled separately, since a
   dragged-out copy carries no trace of the image; Sparkle keeps its zip. Also documented the
   hand-sync from `landing/` to the separate `synth-site` deploy repo.
+- **The release tag names the commit that was built** — `release.sh` pinned the commit before
+  building instead of reading `HEAD` after Apple's ~20-minute wait, where a commit made meanwhile
+  silently retargeted the tag onto a build that never shipped.

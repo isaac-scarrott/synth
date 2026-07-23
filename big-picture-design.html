@@ -28,6 +28,8 @@
     --glass: rgba(250,251,253,0.84);  /* blurred popovers (menu, ⌘K) */
     --chrome: #f2f3f6;       /* browser toolbar */
     --term-bg: #191b1f;      /* terminal / code surfaces */
+    --set-inherit: #8b8e96;  /* an inherited settings field: dimmer INK on --term-bg (clears AA),
+                                never opacity — opacity reads as disabled, not inherited */
     --tui-bg: #f7f8fa;       /* terminal surface — cool near-white; TUIs that ship their own light theme (Claude Code) build it for #fff, and warmth cost them contrast */
     --tui-fg: #1c1e23;       /* terminal default text — the app's own --ink, so terminal and chrome read as one surface */
     --tui-dim: #5b5e68;      /* terminal dim / comments */
@@ -763,11 +765,10 @@
 
   /* keyboard selection ring — only visible while navigating by keyboard.
      Same ring for every navigable row: tree rows, the Settings foot button,
-     and the settings scope list — one cursor primitive across both screens. */
+     and settings rows — one cursor primitive across every surface. */
   body.kbd .row.sel,
   body.kbd .foot-btn.sel,
-  body.kbd .settings-back.sel,
-  body.kbd .scope.sel {
+  body.kbd .set-row.sel {
     background: var(--hover);
     box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5);
   }
@@ -1023,7 +1024,7 @@
   /* ---- Full-width rows: the hover / selection band spans the whole sidebar while content
      stays indented. Depth moves from the container margins onto the row's own padding-left,
      so the empty indent space to the left of a nested row is part of that row's hit area.
-     Scoped to .nav so the Settings worktree-preview keeps its compact container indent. ---- */
+     Scoped to .nav so the settings RESULT preview keeps its compact container indent. ---- */
   .nav .sessions { margin-left: 0; padding-left: 0; }
   .nav .branch { padding-left: 37px; }    /* 29px former container indent + 8px row pad */
   .nav .session { padding-left: 61px; }   /* 55px former container indent + 6px row pad */
@@ -1187,7 +1188,6 @@
      Center on top, and the toast waits here for focus to return. A browser page is always
      "focused", so this mock drives the deck alone. */
   .notifs { position: absolute; left: 22px; bottom: 22px; width: 320px; z-index: 60; pointer-events: none; }
-  .app.settings .notifs { display: none; }
   .notif {
     position: relative;   /* the countdown bar anchors to the card, deck-mode absolute or not */
     pointer-events: auto; display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center;
@@ -1696,140 +1696,102 @@
     .foot-btn:hover svg { color: var(--ink-3); }
   }
 
-  /* ---- Settings mode: swaps the sidebar tree for a scope list; same shell otherwise ---- */
-  .settings-nav {
-    display: none;
-    flex: 1;
-    flex-direction: column;
-    overflow-y: auto;
-    overflow-x: hidden;
-    /* mirrors .nav's 10px gutter so pills don't shift when toggling Settings */
-    padding: 8px 10px 14px;
-  }
-  .app.settings .nav { display: none; }
-  .app.settings .sidebar__foot { display: none; }
-  .app.settings .settings-nav { display: flex; }
-
-  .settings-back {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    padding: 6px 6px;
-    margin-bottom: 6px;
-    border: 0;
-    background: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 12.5px;
-    font-weight: 600;
-    letter-spacing: -0.006em;
-    color: var(--ink);
-    transition: background-color 120ms ease, transform 110ms var(--ease-out);
-  }
-  .settings-back svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--text-muted); }
-  .settings-back:active { transform: scale(0.985); }
+  /* Settings mode never touches the sidebar — the tree stays live and navigable throughout,
+     so clicking a project row still goes to that project. The foot button just lights up. */
+  .foot-btn.is-on { background: rgba(var(--accent-rgb),0.10); color: var(--ink-open); }
+  .foot-btn.is-on svg { color: var(--accent); }
+  .foot-btn.is-on span { font-weight: 600; }
   @media (hover: hover) and (pointer: fine) {
-    .settings-back:hover { background: var(--hover); }
+    .foot-btn.is-on:hover { background: rgba(var(--accent-rgb),0.14); color: var(--ink-open); }
   }
+  .foot-btn__kbd { margin-left: auto; font-size: 10.5px; font-weight: 500; color: var(--text-faint); font-family: var(--mono); }
 
-  .scope {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    width: 100%;
-    padding: 6px 6px;
-    border: 0;
-    background: none;
-    border-radius: 8px;
-    cursor: pointer;
-    text-align: left;
-    font-family: inherit;
-    transition: background-color 120ms ease, transform 110ms var(--ease-out);
-  }
-  .scope:active { transform: scale(0.985); }
-  @media (hover: hover) and (pointer: fine) {
-    .scope:hover { background: var(--hover-soft); }
-  }
-  .scope--on { background: rgba(var(--input-rgb),0.10); }
-  @media (hover: hover) and (pointer: fine) {
-    .scope--on:hover { background: rgba(var(--input-rgb),0.14); }
-  }
-  .scope__icon {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-  }
-  .scope__icon svg { width: 16px; height: 16px; display: block; }
-  .scope__name {
-    flex: 1;
-    font-size: 12.5px;
-    font-weight: 500;
-    letter-spacing: -0.006em;
-    color: var(--ink-3);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .scope--on .scope__name { color: var(--ink); }
-
-  /* ---- Settings content (rendered in the shared content pane) ---- */
+  /* ---- Settings: a flat, fully-visible scrolling list rendered in the content pane.
+     Two tabs in the pane header — Synth (app settings + the defaults every project starts
+     from) and the project you're currently in. Scope is never picked inside Settings; the
+     sidebar tree retargets the project tab, so the tree keeps meaning exactly what it always
+     meant and there is no list of project names in here to misread as navigation. ---- */
   .set-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px 44px; }
-  .set-body__inner { max-width: 620px; }
-  .set-section { margin-bottom: 30px; }
-  .set-section:last-child { margin-bottom: 0; }
-  .set-section__title { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
-  .set-section__sub { font-size: 12px; line-height: 1.5; color: var(--text-muted); margin-top: 4px; }
-  .set-section__sub b { font-weight: 600; color: var(--ink-2); }
+  .set-body__inner { max-width: 660px; }
 
-  /* run-order strip — makes the "both run, global first" merge legible at a glance */
-  .set-flow {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 10px 12px;
-    margin: 14px 0 4px;
-    background: var(--hover-soft);
+  /* tab strip, in .pane__head after the title */
+  .set-tabs { display: flex; align-self: stretch; gap: 2px; margin-left: 18px; }
+  .set-tab {
+    position: relative;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 10px;
+    border: 0; background: none; cursor: pointer;
+    font-family: inherit; font-size: 12.5px; font-weight: 550; letter-spacing: -0.006em;
+    color: var(--ink-4);
+    transition: color 120ms ease;
+  }
+  .set-tab .repo__chip { width: 15px; height: 15px; font-size: 9px; border-radius: 4.5px; }
+  .set-tab:hover { color: var(--ink-2); }
+  .set-tab.is-on { color: var(--ink); }
+  .set-tab::after {
+    content: ''; position: absolute; left: 10px; right: 10px; bottom: -0.5px; height: 2px;
+    border-radius: 1px; background: var(--accent);
+    opacity: 0; transform: scaleX(0.6);
+    transition: opacity 140ms ease, transform 180ms var(--ease-out);
+  }
+  .set-tab.is-on::after { opacity: 1; transform: none; }
+  /* the project tab's label changes when the tree retargets it — a short fade so the swap
+     is felt rather than silent */
+  @keyframes tab-retarget { from { opacity: 0.35; } to { opacity: 1; } }
+  .set-tab.retarget { animation: tab-retarget 220ms var(--ease-out); }
+
+  @keyframes set-tab-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  .set-body__inner { animation: set-tab-in 130ms var(--ease-out); }
+
+  /* one uppercase level on the whole page */
+  .set-grp__label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-meta);
+    margin: 28px 0 10px 2px;
+  }
+  .set-grp:first-child .set-grp__label { margin-top: 0; }
+
+  .set-card {
+    background: var(--raised);
     border: 0.5px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
+    box-shadow: 0 1px 1.5px rgba(0,0,0,0.04);
+    overflow: hidden;
   }
-  .set-flow__step { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 550; color: var(--ink); }
-  .set-flow__ico { display: flex; color: var(--text-muted); }
-  .set-flow__ico svg { width: 15px; height: 15px; display: block; }
-  .set-flow .repo__chip { width: 16px; height: 16px; font-size: 9.5px; border-radius: 5px; }
-  .set-flow__arrow { display: flex; color: var(--ink-meta); }
-  .set-flow__arrow svg { width: 15px; height: 15px; display: block; }
-  .set-flow__note { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-muted); }
+  .set-row + .set-row { border-top: 0.5px solid var(--line-soft); }
+  /* head holds label + control on one line; the body (editor, session list) spans the full
+     card width beneath it, so a field never stops short of the card edge */
+  .set-row { padding: 11px 14px; }
+  .set-row__head { display: flex; align-items: center; gap: 12px; min-height: 22px; }
+  .set-row__label { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 550; letter-spacing: -0.006em; color: var(--ink); line-height: 17px; }
+  .set-row__desc { margin-top: 2px; font-size: 11.5px; line-height: 1.45; color: var(--text-muted); }
+  /* the control sits against the LABEL's line, not the description's */
+  .set-row__ctl { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+  .set-row__ctl .set-seg { width: 216px; margin: 0; }
+  .set-override__word { font-size: 11.5px; font-weight: 500; color: var(--text-muted); transition: color 160ms ease; }
+  .set-override.is-on .set-override__word { color: var(--ink-3); }
 
-  .set-code-wrap { margin-top: 14px; }
-  .set-code-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
-  .set-code-head__label {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--ink-meta);
+  /* "Reset to default" — a visible text button on the description line, never an icon */
+  .set-reset {
+    margin-left: auto; flex-shrink: 0;
+    border: 0; background: none; padding: 0;
+    font-family: inherit; font-size: 11.5px; font-weight: 500;
+    color: var(--ink-4); cursor: pointer;
+    animation: reset-in 120ms ease;
   }
-  .set-link {
-    margin-left: auto;
-    border: 0;
-    background: none;
-    padding: 0;
-    font-family: inherit;
-    font-size: 11.5px;
-    font-weight: 500;
-    color: var(--input);
-    cursor: pointer;
-  }
-  .set-link:hover { text-decoration: underline; }
+  @keyframes reset-in { from { opacity: 0; } to { opacity: 1; } }
+  .set-reset:hover { color: var(--ink); text-decoration: underline; }
+  .set-row__desc-line { display: flex; align-items: baseline; gap: 12px; }
+  .set-row__desc-line .set-row__desc { flex: 1; min-width: 0; }
+
+  /* caption above a field: real casing, plus the constraint text that used to be a footnote */
+  .set-cap { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 6px; }
+  .set-cap__name { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink-4); }
+  .set-cap__note { margin-left: auto; font-size: 11px; color: var(--text-faint); }
+
   .set-code {
     width: 100%;
-    min-height: 130px;
+    min-height: 96px;
     resize: vertical;
     display: block;
     padding: 13px 15px;
@@ -1845,31 +1807,76 @@
     outline: none;
     box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18);
     -webkit-font-smoothing: auto;
+    transition: color 160ms ease;
   }
   .set-code:focus { box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18), 0 0 0 2.5px rgba(var(--accent-rgb),0.22); }
-  .set-code--ro { min-height: 0; opacity: 0.62; resize: none; }
-  .set-note {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-    font-size: 11.5px;
-    line-height: 1.5;
-    color: var(--text-muted);
+  .set-code::placeholder { color: rgba(212,214,220,0.30); }
+  /* Inherited: the same field, dimmer INK — never opacity, which reads as disabled.
+     #8b8e96 on --term-bg clears AA. */
+  .set-code--inherit { color: var(--set-inherit); caret-color: transparent; cursor: default; resize: none; }
+  .set-code--flags { min-height: 0; height: 40px; resize: none; white-space: pre; overflow-x: auto; }
+
+  /* ---- Layered project controls ---- */
+  /* the delta editor joins the shared strip into one stack that reads top-to-bottom = run order */
+  .set-stack .set-shared { border-radius: 10px 10px 0 0; border-bottom: 0; }
+  .set-stack .set-code { border-radius: 0 0 10px 10px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06); }
+
+  /* shared-setup strip: the base script, collapsed above the project's own steps */
+  .set-shared { border: 0.5px solid var(--border); background: var(--hover-soft); overflow: hidden; }
+  .set-shared__head { display: flex; align-items: center; gap: 7px; padding: 8px 11px; cursor: pointer; user-select: none; }
+  .set-shared__chev { display: flex; color: var(--text-faint); transition: transform 185ms var(--ease-out); }
+  .set-shared__chev svg { width: 12px; height: 12px; display: block; }
+  .set-shared.is-open .set-shared__chev { transform: rotate(90deg); }
+  .set-shared__label { font-size: 11.5px; font-weight: 500; color: var(--ink-4); }
+  .set-link { border: 0; background: none; padding: 0; font-family: inherit; font-size: 11.5px; font-weight: 500; color: var(--input); cursor: pointer; }
+  .set-link:hover { text-decoration: underline; }
+  .set-shared__head .set-link { margin-left: auto; }
+  .set-shared__body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 185ms var(--ease-out); }
+  .set-shared.is-open .set-shared__body { grid-template-rows: 1fr; }
+  .set-shared__body > div { overflow: hidden; min-height: 0; }
+  .set-shared__code { margin: 0 11px 8px; padding: 10px 12px; background: var(--term-bg); border-radius: 8px; color: var(--set-inherit); font-family: var(--mono); font-size: 11px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+  .set-shared__code--skip { text-decoration: line-through; }
+  .set-shared__skip { display: flex; align-items: center; gap: 7px; margin: 0 11px 10px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
+  .set-shared__skip input { accent-color: var(--accent); }
+
+  /* agent flags as one launch line: shared tokens dim + locked, the project's tail editable */
+  .set-cmd--edit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; }
+  .set-cmd__bin { color: var(--tui-fg); }
+  .set-cmd__shared { color: var(--tui-dim); }
+  .set-cmd__tail { flex: 1 1 90px; min-width: 90px; border: 0; padding: 0; background: none; outline: none; font-family: var(--mono); font-size: 11.5px; line-height: 1.6; color: var(--tui-blue); }
+  .set-cmd__tail::placeholder { color: var(--tui-dim); }
+
+  /* locked shared session rows sit above the project's own, joined into one stack */
+  .tpl-stack { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  .tpl-stack .tpl-list { margin-top: 0; }
+  .tpl-row--shared { background: var(--hover-soft); box-shadow: none; border-color: var(--line-soft); }
+  .tpl-row--shared .tpl-name { color: var(--text-muted); }
+  .tpl-syn { flex-shrink: 0; padding: 2px 7px; border-radius: 999px; background: var(--hover); font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--text-faint); }
+
+  /* strip a project's delta on a row */
+  .set-clear { margin-left: auto; flex-shrink: 0; border: 0; background: none; padding: 0; font-family: inherit; font-size: 11.5px; font-weight: 500; color: var(--ink-4); cursor: pointer; }
+  .set-clear:hover { color: var(--ink); text-decoration: underline; }
+
+  /* ---- Toggle-only rows share the switch ---- */
+  .switch {
+    flex-shrink: 0; position: relative;
+    width: 34px; height: 20px; padding: 0;
+    border: 0; border-radius: 999px;
+    background: var(--press); cursor: pointer;
+    transition: background-color 160ms var(--ease-out);
   }
-  .set-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: var(--ink-meta); }
-  .set-note code, .set-section__sub code { font-family: var(--mono); font-size: 11px; background: var(--hover); padding: 0 4px; border-radius: 4px; }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 999px;
+    background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.22);
+    transition: transform 160ms var(--ease-out);
+  }
+  .switch.is-on { background: var(--accent); }
+  .switch.is-on::after { transform: translateX(14px); }
 
-  .set-code--flags { min-height: 0; height: 52px; resize: vertical; }
-  /* effective launch-command preview, styled like the terminal surface */
-  .set-cmd { margin-top: 14px; padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--tui-fg); background: var(--tui-bg); border: 1px solid var(--tui-hair); border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
-  .set-cmd__prompt { color: var(--tui-dim); user-select: none; }
-  .set-cmd__flag { color: var(--tui-blue); }
-
-  /* ---- New-worktree sessions (settings): the ordered session set every worktree starts with.
-     Each row is one template entry — drag the grip to reorder, type in the name to rename,
-     × removes. The preview underneath renders the resulting sidebar subtree live. */
-  .tpl-list { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
-  .set-code-wrap .tpl-list { margin-top: 0; }
+  /* ---- New-worktree sessions: the ordered set every worktree opens with. Grip far left,
+     add-row at the bottom. The list is the whole control — there is no separate preview. ---- */
+  .tpl-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
   .tpl-row {
     display: flex;
     align-items: center;
@@ -1880,8 +1887,8 @@
     border-radius: 9px;
     box-shadow: 0 1px 1.5px rgba(0,0,0,0.04);
   }
-  /* read-only mirror (the inherited global list on a workspace scope) — same dial as .set-code--ro */
-  .tpl-list--ro .tpl-row { background: transparent; box-shadow: none; opacity: 0.62; }
+  .tpl-list--ro .tpl-row { background: transparent; box-shadow: none; border-color: var(--line-soft); }
+  .tpl-list--ro .tpl-name { color: var(--text-muted); }
   .tpl-grip { display: flex; flex-shrink: 0; color: var(--text-faint); cursor: grab; touch-action: none; }
   .tpl-grip svg { width: 14px; height: 14px; display: block; }
   .tpl-idx { flex-shrink: 0; width: 13px; text-align: center; font-size: 10.5px; font-weight: 500; color: var(--text-faint); font-variant-numeric: tabular-nums; }
@@ -1903,6 +1910,10 @@
   input.tpl-name:hover { background: var(--hover-soft); }
   input.tpl-name:focus { background: var(--hover-soft); box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5); }
   .tpl-kind { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; background: var(--hover); font-size: 10.5px; font-weight: 550; color: var(--text-muted); }
+  /* the one that opens — the sidebar's own open tint, so the list needs no preview to say which */
+  .tpl-row--first { background: rgba(var(--accent-rgb),0.10); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),0.26); border-color: transparent; }
+  .tpl-row--first .tpl-name { color: var(--ink-open); font-weight: 600; }
+  .tpl-opens { flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
   .tpl-x {
     flex-shrink: 0;
     width: 20px;
@@ -1944,11 +1955,13 @@
   @media (hover: hover) and (pointer: fine) {
     .tpl-add__btn:hover { background: var(--hover-soft); border-color: var(--line-2); color: var(--ink); }
   }
-  /* live preview: the sidebar subtree a new worktree would open with — display only */
-  .tpl-preview { margin-top: 14px; padding: 10px 12px 12px; background: var(--sidebar); border: 0.5px solid var(--border); border-radius: 10px; }
-  .tpl-preview .set-code-head { margin-bottom: 4px; }
-  .tpl-preview .repo { margin: 0; }
-  .tpl-preview .row { pointer-events: none; }
+
+  /* ---- Empty state: centred icon, one heading, one caption, one button ---- */
+  .set-empty { padding: 34px 20px; text-align: center; }
+  .set-empty svg { width: 26px; height: 26px; color: var(--text-faint); }
+  .set-empty__title { margin-top: 10px; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .set-empty__sub { margin-top: 4px; font-size: 11.5px; color: var(--text-muted); }
+  .set-empty .tpl-add__btn { display: inline-flex; margin-top: 14px; }
 
   /* Respect reduced motion: keep opacity/color, drop movement + looping pulses */
   @media (prefers-reduced-motion: reduce) {
@@ -1961,6 +1974,8 @@
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
     .cmdk__panel { transform: none !important; }
     .row-enter, .row-exit { animation: none; }
+    .seg--slide .seg__thumb, .switch, .switch::after { transition: none; }
+    .set-tab::after, .set-body__inner, .set-reset { animation: none; transition: none; }
   }
 
   /* ============================ Dark mode ============================ */
@@ -2031,8 +2046,17 @@
   :root[data-theme="dark"] .app { border-color: rgba(255,255,255,0.09); }
   /* the ⌘K glass reads as frosted dark, not a white sheet */
   :root[data-theme="dark"] .cmdk__panel { background: rgba(31,34,40,0.86); }
-  /* settings appearance control sits on the standard segmented track */
-  .set-seg { max-width: 300px; margin-top: 14px; }
+  /* opt-in sliding thumb: on a rarely-seen control, the movement teaches "one of these",
+     which a cross-fade can't. The shared .seg elsewhere is untouched. */
+  .seg--slide { position: relative; }
+  .seg--slide .seg__thumb {
+    position: absolute; top: 2px; bottom: 2px; left: 0;
+    border-radius: 6px; background: var(--raised);
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.08);
+    transition: transform 180ms var(--ease-out), width 180ms var(--ease-out);
+  }
+  .seg--slide .seg__btn { position: relative; z-index: 1; }
+  .seg--slide .seg__btn.is-on { background: none; box-shadow: none; color: var(--ink); }
   /* menu icons: brighter on the dark glass (danger keeps its red via its own rule) */
   :root[data-theme="dark"] .menu__item:not(.menu__item--danger) svg { color: var(--ink-4); }
   /* big-picture-only surfaces: the simulator stage + browser skeleton must go dark too */
@@ -2283,12 +2307,11 @@
         </div>
       </nav>
 
-      <div class="settings-nav" id="settingsNav"></div>
-
       <div class="sidebar__foot">
         <button class="foot-btn" id="openSettings" aria-label="Settings">
           <svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.16,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.93l23.72,2.64q1.49,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L94.89,215.8a91.57,91.57,0,0,1-15-6.23L77.39,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L40.93,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L34.7,100.45a91.57,91.57,0,0,1,6.23-15L63.51,83a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,77.39,69l2.51-22.58a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.11,40.2a91.57,91.57,0,0,1,15,6.23L172.61,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.8,123.66Z"/></svg>
           <span>Settings</span>
+          <span class="foot-btn__kbd">⌘,</span>
         </button>
       </div>
     </aside>
@@ -2807,7 +2830,7 @@
   //  • Target branch has no split → the session is the single pane (degenerate one-leaf case).
   function openSession(el) {
     if (!el) return;
-    app.classList.remove('settings');   // jumping to a session leaves settings mode
+    leaveSettingsMode();                // jumping to a session leaves settings mode
     setupEl = null;                     // opening a real session revokes any armed setup-resolve
     const bk = branchKeyOf(el);
     if (bk !== currentBranchKey) {       // branch switch: stash the one we leave, load the target's
@@ -2835,7 +2858,7 @@
   // an async gap. Opening anything else clears setupEl (openSession / enterSettings), so a
   // finished checkout only resolves in place while this still points here.
   function openWorktreeSetup(groupRow) {
-    app.classList.remove('settings');
+    leaveSettingsMode();
     // the setup skeleton is a transient, branchless view — stash the branch we leave so its
     // remembered layout survives, and don't let the skeleton clobber any branch's entry (014)
     if (currentBranchKey != null) branchLayouts.set(currentBranchKey, durableLayout());
@@ -3706,6 +3729,10 @@
   }
 
   nav.addEventListener('click', (e) => {
+    // the tree is the only thing that sets settings scope — clicking a project row means
+    // exactly what it always meant, and the settings project tab follows along
+    const inRepo = e.target.closest('[data-repo]');
+    if (inRepo) retargetSettings(headOf(inRepo.querySelector(':scope > [data-row]') || inRepo));
     const toggleEl = e.target.closest('[data-toggle]');
     if (toggleEl) {
       e.preventDefault();
@@ -3746,18 +3773,16 @@
 
   // The single list the keyboard cursor walks. In the main view it's the tree
   // followed by the Settings foot button — so ↓/j off the last worktree leaf
-  // flows straight into Settings. In Settings it's the scope list (Back + scopes).
-  // One list means every nav keybinding works identically on both screens.
+  // flows straight into Settings. In Settings it's the settings rows. One list means
+  // every nav keybinding works identically on both screens.
   function activeRows() {
-    if (app.classList.contains('settings')) {
-      return [...settingsNav.querySelectorAll('.settings-back, .scope')];
-    }
+    if (app.classList.contains('settings')) return [...content.querySelectorAll('.set-row')];
     return [...treeRows(), document.getElementById('openSettings')];
   }
   // Where the cursor rests when nothing is explicitly selected: the open session
-  // in the tree, or the active scope in Settings.
+  // in the tree, or the expanded setting.
   function currentRow(rows) {
-    if (app.classList.contains('settings')) return settingsNav.querySelector('.scope--on');
+    if (app.classList.contains('settings')) return content.querySelector('.set-item--open > .set-row') || rows[0];
     return openEl && rows.includes(openEl) ? openEl : null;
   }
   // rows that own the create/rename/delete verbs — the tree only (you can't
@@ -3787,8 +3812,7 @@
   function activateRow(row) {
     if (!row) return;
     if (row.id === 'openSettings') { enterSettings(); return; }
-    if (row.matches('.settings-back')) { exitSettings(); return; }
-    if (row.matches('.scope')) { selectScope(row); return; }
+    if (row.matches('.set-row')) { activateSetting(row); return; }
     if (row.matches('[data-toggle]')) { toggle(row.closest('[data-repo]')); return; }
     if (row.matches('[data-session]')) { openSession(row); focusContent(); }
   }
@@ -3846,7 +3870,20 @@
       if (app.classList.contains('settings')) exitSettings(); else enterSettings();
       return;
     }
-    if (k === 'Escape' && app.classList.contains('settings')) { e.preventDefault(); exitSettings(); return; }
+    // Esc leaves the field you're in, then leaves Settings — one layer per press
+    if (k === 'Escape' && app.classList.contains('settings')) {
+      e.preventDefault();
+      const f = document.activeElement;
+      if (f && f.closest && f.closest('.set-row')) {
+        const r = f.closest('.set-row');
+        f.blur();
+        document.body.classList.add('kbd');
+        select(r, true);
+        return;
+      }
+      exitSettings();
+      return;
+    }
     // Cmd/Ctrl+B toggles the sidebar
     if ((e.metaKey || e.ctrlKey) && (k === 'b' || k === 'B')) {
       e.preventDefault();
@@ -3953,15 +3990,22 @@
     else if (k === 'ArrowUp' || k === 'k') { e.preventDefault(); move(-1); }
     else if (k === 'ArrowRight' || k === 'l') {
       e.preventDefault();
+      if (stepSetting(1)) return;
       const repo = selEl && selEl.matches('[data-toggle]') ? selEl.closest('[data-repo]') : null;
       if (repo && !repo.classList.contains('repo--open')) toggle(repo);
       else move(1);
     }
     else if (k === 'ArrowLeft' || k === 'h') {
       e.preventDefault();
+      if (stepSetting(-1)) return;
       const repo = selEl && selEl.matches('[data-toggle]') ? selEl.closest('[data-repo]') : null;
       if (repo && repo.classList.contains('repo--open')) toggle(repo);
       else move(-1);
+    }
+    // [ / ] walk the settings tabs
+    else if ((k === '[' || k === ']') && app.classList.contains('settings') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      stepSettingsTab(k === ']' ? 1 : -1);
     }
     else if (k === 'Enter' || k === ' ') {
       if (!selEl) return;
@@ -4866,8 +4910,7 @@
   // wire the action cluster onto every existing row
   nav.querySelectorAll('[data-row]').forEach(addRowActions);
 
-  // A right-click anywhere on a row opens that same ⌘K palette frame (no native browser menu) —
-  // the settings-mode scope rows aren't [data-row], so they fall through untouched.
+  // A right-click anywhere on a row opens that same ⌘K palette frame (no native browser menu).
   nav.addEventListener('contextmenu', (e) => {
     const row = e.target.closest('[data-row]');
     if (!row) return;
@@ -5670,20 +5713,24 @@
     if (k === 'Backspace' && !pal.input.value) { if (pal.stack.length > 1) { e.preventDefault(); popFrame(); } }
   });
 
-  // ===== Settings — a full-screen mode layered over the same shell (sidebar + content). =====
-  // Two scopes: Global settings apply to every workspace; each workspace can add its own on top.
-  // For the worktree setup script the scopes do NOT override — the effective config runs BOTH:
-  // the global script first, then the workspace's. The right pane renders the scope you pick;
-  // a Back button at the top of the left panel returns to the workspace tree.
+  // ===== Settings — a flat, fully-visible list in the content pane. =====
+  // Two tabs: Synth (the app, plus the defaults every project starts from) and the project
+  // you're currently in. Scope is never picked in here — the sidebar tree retargets the
+  // project tab, so the tree keeps meaning what it always meant.
+  // Inheritance is one hop, shown in the field: an inherited row is the Synth value, dimmed
+  // and read-only, with Override off. Turning Override on seeds the field with that same
+  // text, editable, and reveals Reset to default.
   const ICON_GEAR  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.16,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.93l23.72,2.64q1.49,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L94.89,215.8a91.57,91.57,0,0,1-15-6.23L77.39,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L40.93,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L34.7,100.45a91.57,91.57,0,0,1,6.23-15L63.51,83a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,77.39,69l2.51-22.58a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.11,40.2a91.57,91.57,0,0,1,15,6.23L172.61,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.8,123.66Z"/></svg>';
-  const ICON_GLOBE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg>';
-  const ICON_BACK  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"/></svg>';
-  const ICON_INFO  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"/></svg>';
+  const ICON_GRIP = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,60A12,12,0,1,1,92,48,12,12,0,0,1,104,60Zm60,12a12,12,0,1,0-12-12A12,12,0,0,0,164,72ZM92,116a12,12,0,1,0,12,12A12,12,0,0,0,92,116Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,116ZM92,184a12,12,0,1,0,12,12A12,12,0,0,0,92,184Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,184Z"/></svg>';
+  const ICON_REPO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM40,56H92.69l16,16H40ZM216,200H40V88H216Z"/></svg>';
 
-  const settingsNav = document.getElementById('settingsNav');
-  let settingsScope = 'global';   // 'global', or a .repo__head element (a workspace)
+  // ---- State -------------------------------------------------------------------------
+  let setTab = 'app';                 // 'app' | 'project'
+  let setProject = null;              // the .repo__head the project tab targets
+  let scriptSharedOpen = false;       // the shared-setup strip's expand state, kept across renders
+  const PROJ_KEY = 'synth-settings-project';
 
-  // Appearance — global only. 'system' follows the OS live; 'light'/'dark' pin it.
+  // Appearance — app-level. 'system' follows the OS live; 'light'/'dark' pin it.
   const themeMql = window.matchMedia('(prefers-color-scheme: dark)');
   let themePref = (() => { try { return localStorage.getItem('synth-theme') || 'system'; } catch (e) { return 'system'; } })();
   function applyTheme() {
@@ -5694,254 +5741,340 @@
     themePref = pref;
     try { localStorage.setItem('synth-theme', pref); } catch (e) {}
     applyTheme();
-    if (app.classList.contains('settings')) markThemeSeg();
-  }
-  function markThemeSeg() {
-    content.querySelectorAll('[data-theme-opt]').forEach((b) => b.classList.toggle('is-on', b.dataset.themeOpt === themePref));
+    if (app.classList.contains('settings')) renderSettings();
   }
   themeMql.addEventListener('change', () => { if (themePref === 'system') applyTheme(); });
   applyTheme();
 
-  // Mock persistence — the setup scripts the effective config is assembled from. The native
-  // app would read these from disk; here they just live in memory so edits survive scope hops.
-  let globalScript = '#!/usr/bin/env bash\nset -euo pipefail\n\n# Runs in every new worktree, across all projects.\n[ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env';
-  const wsScripts = {
-    synth: '#!/usr/bin/env bash\nset -euo pipefail\n\npnpm install\npnpm run db:generate',
-    'aviator-api': '#!/usr/bin/env bash\nset -euo pipefail\n\ngo mod download',
+  // App settings. The native app reads these from disk; here they live in memory.
+  const appSet = {
+    sounds: { done: true, input: true, fail: false },
+    mcp: { browser: true, app: false },
+    analytics: true,
   };
-  const scriptFor = (name) => wsScripts[name] != null ? wsScripts[name] : '#!/usr/bin/env bash\n\n# No extra setup for this project yet.';
+  const SOUNDS = [
+    ['done',  'Session finished', 'A background agent stopped working.'],
+    ['input', 'Needs input',      'An agent is waiting on you.'],
+    ['fail',  'Command failed',   'A terminal command exited non-zero.'],
+  ];
+  const MCP = [
+    ['browser', 'Browser',   '13 tools to drive and inspect browser sessions.'],
+    ['app',     'Synth app', 'Lets an agent create worktrees.'],
+  ];
 
-  // Default flags passed to `claude` when a Claude Code session starts. The canonical
-  // value is a raw flag string, so ANY claude flag works (now and future); the switches
-  // are just shortcuts that add/remove their token. Global applies everywhere; a
-  // a workspace's flags override the global outright (empty inherits) — flags don't compose.
-  // Flags are per agent: each runs a different binary and takes different tokens. opencode
-  // needs none by default — it auto-approves, and its needs-input signal rides the question
-  // tool rather than a permission flag.
+  // ---- Worktree defaults, and each project's override of them ------------------------
   const AGENT_BIN = { claude: 'claude', opencode: 'opencode' };
-  const AGENT_EG = { claude: '--dangerously-skip-permissions --model opus', opencode: '--model anthropic/claude-opus-4-5 --agent build' };
-  let globalFlags = { claude: '--dangerously-skip-permissions', opencode: '' };
-  const wsFlags = { synth: { claude: '--chrome' } };
-  const flagsFor = (name, agent) => (wsFlags[name] && wsFlags[name][agent] != null) ? wsFlags[name][agent] : '';
-  const flagToks = (s) => s.trim().split(/\s+/).filter(Boolean);
-  const effectiveFlags = (isGlobal, name, agent) => {
-    if (isGlobal) return (globalFlags[agent] || '').trim();
-    const w = flagsFor(name, agent).trim();
-    return w ? w : (globalFlags[agent] || '').trim();   // workspace overrides global outright; empty inherits
-  };
-  // preview line: `<binary> <flags>` with each flag tinted like a terminal command
-  function cmdPreview(agent, flags) {
-    const toks = flagToks(flags);
-    const rest = toks.length ? ' ' + toks.map((t) => `<span class="set-cmd__flag">${esc(t)}</span>`).join(' ') : '';
-    return `<div class="set-cmd" data-agent="${agent}"><span class="set-cmd__prompt">$ </span>${esc(AGENT_BIN[agent])}${rest}</div>`;
-  }
-
-  const workspaceHeads = () => [...nav.querySelectorAll(':scope > [data-repo] > .repo__head')];
-
-  function buildScopeNav() {
-    const heads = workspaceHeads();
-    settingsNav.innerHTML = `<button class="settings-back" id="settingsBack">${ICON_BACK}<span>Projects</span></button>
-      <button class="scope" data-scope="global">
-        <span class="scope__icon">${ICON_GLOBE}</span>
-        <span class="scope__name">Global</span>
-      </button>
-      <div class="nav__label">Projects</div>
-      ${heads.map(() => '').join('')}`;
-    // append workspace scope rows, keeping a live handle back to each head element
-    heads.forEach((h) => {
-      const b = document.createElement('button');
-      b.className = 'scope';
-      b.dataset.scope = 'ws';
-      b.innerHTML = `<span class="scope__icon">${wsChip(h)}</span><span class="scope__name">${esc(wsName(h))}</span>`;
-      b._head = h;
-      settingsNav.appendChild(b);
-    });
-  }
-
-  function markScope() {
-    settingsNav.querySelectorAll('.scope').forEach((b) => {
-      const on = b.dataset.scope === 'global' ? settingsScope === 'global' : b._head === settingsScope;
-      b.classList.toggle('scope--on', on);
-    });
-  }
-
-  // Appearance is global-only: it sits above the setup script on the Global scope.
-  function appearanceSection() {
-    return `<div class="set-section">
-        <div class="set-section__title">Appearance</div>
-        <div class="set-section__sub"><b>System</b> follows your macOS appearance; Light and Dark pin it.</div>
-        <div class="seg set-seg" role="group" aria-label="Theme">
-          <button class="seg__btn" data-theme-opt="system">System</button>
-          <button class="seg__btn" data-theme-opt="light">Light</button>
-          <button class="seg__btn" data-theme-opt="dark">Dark</button>
-        </div>
-      </div>`;
-  }
-
-  // The one setting so far: the worktree setup script. Global shows just its own; a workspace
-  // shows the run order + the read-only global script (what also runs) above its editable one.
-  function scriptSection(isGlobal, name) {
-    if (isGlobal) {
-      return appearanceSection() + `<div class="set-section">
-        <div class="set-section__title">Worktree setup script</div>
-        <div class="set-section__sub">Runs once inside every new worktree, right after it's created — across all projects.</div>
-        <div class="set-code-wrap">
-          <div class="set-code-head"><span class="set-code-head__label">setup.sh</span></div>
-          <textarea class="set-code" data-edit="global" spellcheck="false">${esc(globalScript)}</textarea>
-        </div>
-        <div class="set-note">${ICON_INFO}<span>Runs in the new worktree's root with <code>$SYNTH_MAIN</code> pointing at the primary checkout. Times out after 5&nbsp;minutes; a non-zero exit is reported on the worktree but never blocks it.</span></div>
-      </div>`;
-    }
-    return `<div class="set-section">
-      <div class="set-section__title">Worktree setup script</div>
-      <div class="set-section__sub">Extra setup for <b>${esc(name)}</b> worktrees, on top of the global script.</div>
-      <div class="set-flow">
-        <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
-        <span class="set-flow__arrow">${ICON_CARET}</span>
-        <span class="set-flow__step">${wsChip(contextHeadByName(name))}${esc(name)}</span>
-        <span class="set-flow__note">Both run · global first</span>
-      </div>
-      <div class="set-code-wrap">
-        <div class="set-code-head"><span class="set-code-head__label">Global — runs first</span><button class="set-link" data-goto="global">Edit in Global</button></div>
-        <textarea class="set-code set-code--ro" rows="3" readonly spellcheck="false">${esc(globalScript)}</textarea>
-      </div>
-      <div class="set-code-wrap">
-        <div class="set-code-head"><span class="set-code-head__label">${esc(name)} — runs next</span></div>
-        <textarea class="set-code" data-edit="ws" spellcheck="false">${esc(scriptFor(name))}</textarea>
-      </div>
-      <div class="set-note">${ICON_INFO}<span>Each runs in the new worktree's root. Times out after 5&nbsp;minutes; a non-zero exit is reported but never blocks it.</span></div>
-    </div>`;
-  }
-  // Claude Code flags. Global is the raw flags field (the source of truth) + a live
-  // `claude …` preview. A workspace shows the read-only global flags (inherited when
-  // empty) above its own field, which overrides global outright when set.
-  function flagsSection(isGlobal, name) {
-    return AGENTS.map((k) => agentFlagsSection(isGlobal, name, k)).join('');
-  }
-
-  function agentFlagsSection(isGlobal, name, agent) {
-    const label = SESSION_KINDS[agent].name, bin = AGENT_BIN[agent];
-    if (isGlobal) {
-      return `<div class="set-section">
-        <div class="set-section__title">${esc(label)} flags</div>
-        <div class="set-section__sub">Passed to <code>${esc(bin)}</code> every time a ${esc(label)} session starts — across all projects.</div>
-        <div class="set-code-wrap">
-          <div class="set-code-head"><span class="set-code-head__label">flags</span></div>
-          <textarea class="set-code set-code--flags" data-flags="global" data-agent="${agent}" spellcheck="false">${esc(globalFlags[agent] || '')}</textarea>
-        </div>
-        ${cmdPreview(agent, globalFlags[agent] || '')}
-        <div class="set-note">${ICON_INFO}<span>Any <code>${esc(bin)}</code> flag works here — type them as you would on the command line, like <code>${esc(AGENT_EG[agent])}</code>.</span></div>
-      </div>`;
-    }
-    return `<div class="set-section">
-      <div class="set-section__title">${esc(label)} flags</div>
-      <div class="set-section__sub">Flags for <b>${esc(name)}</b> ${esc(label)} sessions — these override the global flags. Leave empty to inherit global.</div>
-      <div class="set-flow">
-        <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
-        <span class="set-flow__arrow">${ICON_CARET}</span>
-        <span class="set-flow__step">${wsChip(contextHeadByName(name))}${esc(name)}</span>
-        <span class="set-flow__note">Project overrides global</span>
-      </div>
-      <div class="set-code-wrap">
-        <div class="set-code-head"><span class="set-code-head__label">Global — inherited when empty</span><button class="set-link" data-goto="global">Edit in Global</button></div>
-        <textarea class="set-code set-code--ro set-code--flags" readonly spellcheck="false">${esc(globalFlags[agent] || '')}</textarea>
-      </div>
-      <div class="set-code-wrap">
-        <div class="set-code-head"><span class="set-code-head__label">${esc(name)} — overrides global</span></div>
-        <textarea class="set-code set-code--flags" data-flags="ws" data-agent="${agent}" spellcheck="false">${esc(flagsFor(name, agent))}</textarea>
-      </div>
-      ${cmdPreview(agent, effectiveFlags(false, name, agent))}
-    </div>`;
-  }
-
-  // New-worktree sessions: the ordered session set every new worktree starts with.
-  // Same override model as flags: a workspace's list replaces the global one outright,
-  // and an empty workspace list inherits global. Order is creation order — the first
-  // session is the one that opens.
-  const ICON_GRIP = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,60A12,12,0,1,1,92,48,12,12,0,0,1,104,60Zm60,12a12,12,0,1,0-12-12A12,12,0,0,0,164,72ZM92,116a12,12,0,1,0,12,12A12,12,0,0,0,92,116Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,116ZM92,184a12,12,0,1,0,12,12A12,12,0,0,0,92,184Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,184Z"/></svg>';
+  const AGENT_EG = { claude: '--model opus --dangerously-skip-permissions', opencode: '--model anthropic/claude-opus-4-5 --agent build' };
   const TPL_KINDS = {
     claude:   { label: 'Claude Code', start: 'Claude Code', icon: `<span class="session__icon session__icon--ai">${ICON_CLAWD}</span>` },
     opencode: { label: 'OpenCode',    start: 'OpenCode',    icon: `<span class="session__icon">${ICON_OPENCODE}</span>` },
     terminal: { label: 'Terminal',    start: 'shell',       icon: `<span class="session__icon">${ICON_TERMINAL}</span>` },
     browser:  { label: 'Browser',     start: 'Browser',     icon: `<span class="session__icon">${ICON_BROWSER}</span>` },
   };
-  let globalTpl = [];
-  const wsTpls = { synth: [
-    { kind: 'claude',   name: 'Claude Code' },
-    { kind: 'terminal', name: 'pnpm dev' },
-    { kind: 'browser',  name: 'localhost:3000' },
-  ] };
-  const tplFor = (name) => wsTpls[name] || (wsTpls[name] = []);
-  const effectiveTpl = (isGlobal, name) => (isGlobal || !tplFor(name).length ? globalTpl : tplFor(name));
 
-  function tplRows(list, editable, emptyText) {
-    if (!list.length) return `<div class="tpl-empty">${emptyText}</div>`;
-    return list.map((s, i) => {
-      const k = TPL_KINDS[s.kind];
-      return `<div class="tpl-row" data-i="${i}">
-        ${editable ? `<span class="tpl-grip" title="Drag to reorder">${ICON_GRIP}</span>` : ''}
-        <span class="tpl-idx">${i + 1}</span>
-        ${k.icon}
-        ${editable ? `<input class="tpl-name" value="${esc(s.name)}" spellcheck="false" aria-label="Session name" />`
-                   : `<span class="tpl-name">${esc(s.name)}</span>`}
-        <span class="tpl-kind">${k.label}</span>
-        ${editable ? `<button class="tpl-x" title="Remove" aria-label="Remove session">${ICON_CLOSE}</button>` : ''}
-      </div>`;
-    }).join('');
+  // DEF is the shared base — what runs in every project. A project holds only its DELTA:
+  // the extra script lines, extra flags, extra sessions layered ON TOP of the shared base.
+  // Empty delta = pure inheritance, always tracking the base. There is no replace-mode and
+  // no forked copy to keep in sync.
+  const DEF = {
+    script: '#!/usr/bin/env bash\nset -euo pipefail\n\n[ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env',
+    flags: { claude: '--dangerously-skip-permissions', opencode: '' },
+    sessions: [{ kind: 'claude', name: 'Claude Code' }],
+  };
+  const PROJ = {
+    synth: {
+      script: 'pnpm install\npnpm run db:generate',   // runs after the shared base
+      sessions: [                                      // added after the shared Claude Code
+        { kind: 'terminal', name: 'pnpm dev' },
+        { kind: 'browser',  name: 'localhost:3000' },
+      ],
+      flags: { claude: '--chrome' },                   // appended to the shared claude flags
+    },
+  };
+  const projOf = (name) => PROJ[name] || (PROJ[name] = {});
+
+  const flagToks = (s) => s.trim().split(/\s+/).filter(Boolean);
+  const lineCount = (s) => s.trim() ? s.trim().split('\n').length : 0;
+  const flagName = (t) => t.split('=')[0];   // --model=opus and --model collide
+
+  const projectHeads = () => [...nav.querySelectorAll(':scope > [data-repo] > .repo__head')];
+  const headByName = (name) => projectHeads().find((h) => wsName(h) === name) || null;
+
+  // ---- Row primitives ----------------------------------------------------------------
+  const row = (label, desc, ctl, body) => `<div class="set-row" data-row>
+    <div class="set-row__head">
+      <div class="set-row__label">${label}</div>
+      ${ctl ? `<div class="set-row__ctl">${ctl}</div>` : ''}
+    </div>
+    ${desc ? `<div class="set-row__desc-line">${desc}</div>` : ''}
+    ${body || ''}
+  </div>`;
+  const desc = (t) => `<div class="set-row__desc">${t}</div>`;
+  const switchCtl = (on, key) => `<button class="switch${on ? ' is-on' : ''}" data-switch="${key}" role="switch" aria-checked="${on}"></button>`;
+  const cap = (name, note) => `<div class="set-cap"><span class="set-cap__name">${name}</span>${note ? `<span class="set-cap__note">${note}</span>` : ''}</div>`;
+  // strips a project's whole delta on a row — back to pure inheritance
+  const clearBtn = (key) => `<button class="set-clear" data-clear="${key}">Clear</button>`;
+
+  // One session row. `shared` rows are the base (locked, greyed, "Synth"); the rest are the
+  // project's own (or the base itself on the Synth tab) — draggable, renamable, removable.
+  function tplRow(s, num, o) {
+    const k = TPL_KINDS[s.kind];
+    return `<div class="tpl-row${o.first ? ' tpl-row--first' : ''}${o.shared ? ' tpl-row--shared' : ''}"${o.shared ? '' : ` data-i="${o.idx}"`}>
+      ${o.shared ? '' : `<span class="tpl-grip" title="Drag to reorder">${ICON_GRIP}</span>`}
+      <span class="tpl-idx">${num}</span>
+      ${k.icon}
+      ${o.shared ? `<span class="tpl-name">${esc(s.name)}</span>`
+                 : `<input class="tpl-name" value="${esc(s.name)}" spellcheck="false" aria-label="Session name" />`}
+      ${o.first ? '<span class="tpl-opens">opens</span>' : ''}
+      <span class="tpl-kind">${k.label}</span>
+      ${o.shared ? '<span class="tpl-syn">Synth</span>' : `<button class="tpl-x" title="Remove" aria-label="Remove session">${ICON_CLOSE}</button>`}
+    </div>`;
+  }
+  // the Synth tab's own session list — a plain editable list, first opens
+  function tplRows(list) {
+    if (!list.length) return `<div class="tpl-empty">No sessions — new worktrees open empty.</div>`;
+    return list.map((s, i) => tplRow(s, i + 1, { idx: i, first: i === 0 })).join('');
   }
   const tplAddBar = () => `<div class="tpl-add">${Object.keys(TPL_KINDS).map((k) =>
     `<button class="tpl-add__btn" data-add="${k}">${ICON_PLUS}${TPL_KINDS[k].label}</button>`).join('')}</div>`;
 
-  // what the sidebar will actually show: a branch group with the sessions nested in
-  // order — the first row carries the open tint, so "the first one opens" is visible
-  function tplPreview(list) {
-    const rows = list.map((s, i) => `<div class="row session${i === 0 ? ' session--open' : ''}">
-        <span class="session__bullet"></span>${TPL_KINDS[s.kind].icon}
-        <span class="session__name">${esc(s.name)}</span>
-      </div>`).join('');
-    return `<div class="tpl-preview">
-      <div class="set-code-head"><span class="set-code-head__label">New worktree preview</span></div>
-      <div class="repo repo--open">
-        <span class="row branch branch--group"><span class="chev">${ICON_CARET}</span><span class="branch__name">feature/next-thing</span></span>
-        <div class="sessions">${rows}</div>
+  // ---- Layered project controls: shared base shown in place, delta added after ----------
+  // Setup script: the shared base collapses into a strip above the project's own steps, so the
+  // stack reads top-to-bottom in run order. A rare project can skip the base outright.
+  function scriptShared(name, p) {
+    return `<div class="set-shared${scriptSharedOpen ? ' is-open' : ''}">
+      <div class="set-shared__head" data-shared-toggle>
+        <span class="set-shared__chev">${ICON_CARET}</span>
+        <span class="set-shared__label">Shared Synth setup · ${lineCount(DEF.script)} lines</span>
+        <button class="set-link" data-goto-synth>Edit in Synth</button>
       </div>
+      <div class="set-shared__body"><div>
+        <pre class="set-shared__code${p.skipScript ? ' set-shared__code--skip' : ''}">${esc(DEF.script)}</pre>
+        <label class="set-shared__skip"><input type="checkbox" data-skip ${p.skipScript ? 'checked' : ''}/>Don't run the shared setup in ${esc(name)}</label>
+      </div></div>
     </div>`;
   }
+  // Agent flags: one launch line — shared tokens dim and locked, the project's tail editable.
+  // A tail flag that repeats a shared one strikes the shared token: last one wins, shown.
+  function flagLine(agent, sharedStr, tail) {
+    const shared = flagToks(sharedStr);
+    const tailNames = new Set(flagToks(tail).filter((t) => t.startsWith('-')).map(flagName));
+    const sharedHtml = shared.map((t) => {
+      const dead = t.startsWith('-') && tailNames.has(flagName(t));
+      return `<span class="set-cmd__shared${dead ? ' set-cmd__flag--dead' : ''}" data-sflag="${esc(flagName(t))}">${esc(t)}</span>`;
+    }).join(' ');
+    return `<div class="set-cmd set-cmd--edit" data-flagline="${agent}">
+      <span class="set-cmd__prompt">$</span><span class="set-cmd__bin">${esc(AGENT_BIN[agent])}</span>${shared.length ? ' ' + sharedHtml : ''}
+      <input class="set-cmd__tail" data-tail="${agent}" value="${esc(tail)}" placeholder="${esc(shared.length ? 'add flags' : AGENT_EG[agent])}" spellcheck="false" aria-label="${esc(agent)} flags for this project" />
+    </div>`;
+  }
+  // Sessions: the shared base rows locked on top, the project's own added below and reorderable.
+  function sessionsLayered(p) {
+    const shared = DEF.sessions, mine = p.sessions || [];
+    const sharedRows = shared.map((s, i) => tplRow(s, i + 1, { shared: true, first: i === 0 })).join('');
+    const mineRows = mine.length
+      ? mine.map((s, i) => tplRow(s, shared.length + i + 1, { idx: i, first: !shared.length && i === 0 })).join('')
+      : `<div class="tpl-empty">No extra sessions — opens with the shared set.</div>`;
+    return `<div class="tpl-stack">
+      ${shared.length ? `<div class="tpl-list tpl-list--ro">${sharedRows}</div>` : ''}
+      <div class="tpl-list" data-tpl>${mineRows}</div>
+    </div>` + tplAddBar();
+  }
 
-  function sessionsSection(isGlobal, name) {
-    if (isGlobal) {
-      return `<div class="set-section">
-        <div class="set-section__title">New worktree sessions</div>
-        <div class="set-section__sub">Every new worktree starts with these sessions, created in order — the first one opens.</div>
-        <div class="tpl-list" data-tpl>${tplRows(globalTpl, true, 'No sessions — new worktrees start empty.')}</div>
-        ${tplAddBar()}
-        ${tplPreview(globalTpl)}
-        <div class="set-note">${ICON_INFO}<span>Sessions spawn once the setup script finishes. The template only shapes the start — rename, reorder or close them freely afterwards.</span></div>
-      </div>`;
+  // ---- The two tabs ------------------------------------------------------------------
+  const SCRIPT_NOTE = '$SYNTH_MAIN = primary checkout · 5 min limit';
+
+  function appTab() {
+    const sec = (label, cards) => `<section class="set-grp"><div class="set-grp__label">${label}</div><div class="set-card">${cards}</div></section>`;
+    return sec('Appearance',
+      row('Theme', desc('Follows macOS unless you pin it.'),
+        `<div class="seg seg--slide set-seg" role="group" aria-label="Theme"><span class="seg__thumb" data-thumb></span>${
+          ['system', 'light', 'dark'].map((v) => `<button class="seg__btn${themePref === v ? ' is-on' : ''}" data-theme-opt="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div>`))
+    + sec('Notification sounds', SOUNDS.map(([k, l, d]) => row(l, desc(d), switchCtl(appSet.sounds[k], 'sounds.' + k))).join(''))
+    + sec('MCP servers', MCP.map(([k, l, d]) => row(l, desc(d), switchCtl(appSet.mcp[k], 'mcp.' + k))).join(''))
+    + sec('New worktree defaults',
+        row('Setup script', desc("Runs once in each new worktree, after it's created."), '',
+          cap('setup.sh', SCRIPT_NOTE) + `<textarea class="set-code" data-edit="script" spellcheck="false" placeholder="# bash. Runs in the new worktree.">${esc(DEF.script)}</textarea>`)
+      + row('Sessions', desc('Every new worktree opens with these. The first one opens.'), '',
+          `<div class="tpl-list" data-tpl>${tplRows(DEF.sessions)}</div>` + tplAddBar()))
+    + sec('Agent defaults', AGENTS.map((a) => row(AGENT_BIN[a], desc(`Flags added to every ${AGENT_BIN[a]} launch.`), '',
+        `<textarea class="set-code set-code--flags" data-flags="${a}" spellcheck="false" placeholder="${esc(AGENT_EG[a])}">${esc(DEF.flags[a] || '')}</textarea>`)).join(''))
+    + sec('Privacy', row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics')))
+    + sec('About', row('Synth 0.9.1 (317)', desc('Up to date · checked 2 hours ago'),
+        '<button class="tpl-add__btn" data-check>Check for updates</button>'));
+  }
+
+  // The project tab is nothing but deltas layered on the shared base. Each row shows the
+  // shared part in place (dim, locked) and the project's own additions after it, so you read
+  // top-to-bottom what actually runs. Empty = pure inheritance.
+  function projectTab() {
+    const name = wsName(setProject);
+    const p = projOf(name);
+    const sec = (label, cards) => `<section class="set-grp"><div class="set-grp__label">${label}</div><div class="set-card">${cards}</div></section>`;
+
+    const hasScript = !!(p.script && p.script.trim());
+    const scriptDesc = desc(p.skipScript ? 'Runs instead of the shared setup.' : 'Runs after the shared setup.')
+      + ((hasScript || p.skipScript) ? clearBtn('script') : '');
+    const script = row('Setup script', scriptDesc, '',
+      `<div class="set-stack">${scriptShared(name, p)}<textarea class="set-code" data-edit="script" spellcheck="false" placeholder="# extra steps for ${esc(name)} worktrees">${esc(p.script || '')}</textarea></div>`);
+
+    const mine = p.sessions || [];
+    const sessDesc = desc('Opens after the shared sessions.') + (mine.length ? clearBtn('sessions') : '');
+    const sessions = row('Sessions', sessDesc, '', sessionsLayered(p));
+
+    const agents = AGENTS.map((a) => {
+      const sharedFlags = (DEF.flags[a] || '').trim();
+      const tail = (p.flags && p.flags[a]) || '';
+      const d = desc(sharedFlags ? `Added after the shared ${AGENT_BIN[a]} flags.` : `Flags for ${AGENT_BIN[a]} launches.`)
+        + (tail.trim() ? clearBtn('flags.' + a) : '');
+      return row(AGENT_BIN[a], d, '', flagLine(a, sharedFlags, tail));
+    }).join('');
+
+    return sec('New worktree', script + sessions) + sec('Agents', agents);
+  }
+
+  function noProjectTab() {
+    return `<section class="set-grp"><div class="set-grp__label">New worktree defaults</div>
+      <div class="set-card"><div class="set-empty">${ICON_REPO}
+        <div class="set-empty__title">No projects yet</div>
+        <div class="set-empty__sub">Add a project to set what its worktrees open with.</div>
+        <button class="tpl-add__btn" data-add-project>${ICON_PLUS}Add project</button>
+      </div></div></section>`;
+  }
+
+  // ---- Render ------------------------------------------------------------------------
+  function renderSettings() {
+    stopStream();
+    // the pane is rebuilt wholesale, so remember where the keyboard cursor was sitting
+    const keepRow = selEl && selEl.matches('.set-row') ? [...content.querySelectorAll('.set-row')].indexOf(selEl) : -1;
+    if (setProject && !document.contains(setProject)) setProject = null;
+    if (!setProject) setProject = restoreProject();
+    if (!setProject && setTab === 'project') setTab = 'app';
+
+    const tabs = `<div class="set-tabs">
+      <button class="set-tab${setTab === 'app' ? ' is-on' : ''}" data-tab="app">Synth</button>
+      ${setProject ? `<button class="set-tab${setTab === 'project' ? ' is-on' : ''}" data-tab="project">${wsChip(setProject)}${esc(wsName(setProject))}</button>` : ''}
+    </div>`;
+
+    content.innerHTML = `<div class="pane">
+      <div class="pane__head">
+        <div class="pane__title"><span class="session__icon">${ICON_GEAR}</span><span>Settings</span></div>
+        ${tabs}
+        <div class="pane__spacer"></div>
+      </div>
+      <div class="set-body"><div class="set-body__inner">${
+        setTab === 'project' ? projectTab() : (projectHeads().length ? appTab() : appTab() + noProjectTab())
+      }</div></div>
+    </div>`;
+    wireSettings();
+    if (keepRow >= 0) {
+      const rows = [...content.querySelectorAll('.set-row')];
+      select(rows[Math.min(keepRow, rows.length - 1)] || null);
     }
-    return `<div class="set-section">
-      <div class="set-section__title">New worktree sessions</div>
-      <div class="set-section__sub">Starting sessions for <b>${esc(name)}</b> worktrees — these replace the global set. Leave empty to inherit global.</div>
-      <div class="set-flow">
-        <span class="set-flow__step"><span class="set-flow__ico">${ICON_GLOBE}</span>Global</span>
-        <span class="set-flow__arrow">${ICON_CARET}</span>
-        <span class="set-flow__step">${wsChip(contextHeadByName(name))}${esc(name)}</span>
-        <span class="set-flow__note">Project overrides global</span>
-      </div>
-      <div class="set-code-wrap">
-        <div class="set-code-head"><span class="set-code-head__label">Global — inherited when empty</span><button class="set-link" data-goto="global">Edit in Global</button></div>
-        <div class="tpl-list tpl-list--ro">${tplRows(globalTpl, false, 'No global sessions.')}</div>
-      </div>
-      <div class="set-code-wrap">
-        <div class="set-code-head"><span class="set-code-head__label">${esc(name)} — overrides global</span></div>
-        <div class="tpl-list" data-tpl>${tplRows(tplFor(name), true, 'Inheriting global — add a session to override.')}</div>
-        ${tplAddBar()}
-      </div>
-      ${tplPreview(effectiveTpl(false, name))}
-    </div>`;
   }
 
-  // drag-to-reorder within the template list: the grabbed row stays put (faded) while a lifted
+  // the script editor grows with its content rather than clipping or making you scroll a box
+  function fitCode(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(320, Math.max(96, ta.scrollHeight + 2)) + 'px';
+  }
+
+  function placeThumbs() {
+    content.querySelectorAll('.seg--slide').forEach((seg) => {
+      const on = seg.querySelector('.seg__btn.is-on'), th = seg.querySelector('[data-thumb]');
+      if (!on || !th) return;
+      th.style.width = on.offsetWidth + 'px';
+      th.style.transform = `translateX(${on.offsetLeft}px)`;
+    });
+  }
+
+  function wireSettings() {
+    placeThumbs();
+    requestAnimationFrame(placeThumbs);
+    content.querySelectorAll('.set-code:not(.set-code--flags)').forEach(fitCode);
+
+    const name = setProject ? wsName(setProject) : null;
+    const proj = setTab === 'project' ? projOf(name) : null;
+
+    content.querySelectorAll('.set-tab').forEach((b) => b.addEventListener('click', () => {
+      setTab = b.dataset.tab; renderSettings();
+    }));
+    content.querySelectorAll('[data-theme-opt]').forEach((b) =>
+      b.addEventListener('click', () => setTheme(b.dataset.themeOpt)));
+    content.querySelectorAll('[data-switch]').forEach((b) => b.addEventListener('click', () => {
+      const [grp, k] = b.dataset.switch.split('.');
+      if (k) appSet[grp][k] = !appSet[grp][k]; else appSet[grp] = !appSet[grp];
+      renderSettings();
+    }));
+
+    // Clear a project's whole delta on a row — back to pure inheritance.
+    content.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
+      const key = b.dataset.clear;
+      if (key === 'script') { delete proj.script; delete proj.skipScript; }
+      else if (key === 'sessions') delete proj.sessions;
+      else delete (proj.flags || {})[key.split('.')[1]];
+      renderSettings();
+    }));
+    // The shared-setup strip: expand in place (no re-render, so the caret below is never
+    // yanked); the "Edit in Synth" link jumps tabs instead of toggling.
+    content.querySelectorAll('[data-shared-toggle]').forEach((h) => h.addEventListener('click', (e) => {
+      if (e.target.closest('[data-goto-synth]')) return;
+      scriptSharedOpen = !scriptSharedOpen;
+      h.closest('.set-shared').classList.toggle('is-open', scriptSharedOpen);
+    }));
+    content.querySelectorAll('[data-goto-synth]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation(); setTab = 'app'; renderSettings();
+    }));
+    content.querySelectorAll('[data-skip]').forEach((cb) => cb.addEventListener('change', () => {
+      proj.skipScript = cb.checked; renderSettings();
+    }));
+
+    // Fields write straight through. The Synth tab edits the base; a project tab edits its delta.
+    content.querySelectorAll('.set-code[data-edit="script"]').forEach((ta) =>
+      ta.addEventListener('input', () => { if (proj) proj.script = ta.value; else DEF.script = ta.value; fitCode(ta); }));
+    // Synth-tab flags stay a plain field; project-tab flags are the inline launch-line tail.
+    content.querySelectorAll('.set-code--flags[data-flags]').forEach((ta) =>
+      ta.addEventListener('input', () => { DEF.flags[ta.dataset.flags] = ta.value; }));
+    content.querySelectorAll('.set-cmd__tail[data-tail]').forEach((inp) => inp.addEventListener('input', () => {
+      const a = inp.dataset.tail;
+      proj.flags = proj.flags || {};
+      proj.flags[a] = inp.value;
+      // restrike shared tokens the tail now overrides, without disturbing the caret
+      const names = new Set(flagToks(inp.value).filter((t) => t.startsWith('-')).map(flagName));
+      inp.closest('[data-flagline]').querySelectorAll('[data-sflag]').forEach((s) =>
+        s.classList.toggle('set-cmd__flag--dead', names.has(s.dataset.sflag)));
+    }));
+
+    const list = () => proj ? (proj.sessions || (proj.sessions = [])) : DEF.sessions;
+    content.querySelectorAll('.tpl-list[data-tpl]').forEach((el) => {
+      el.addEventListener('input', (e) => {
+        const inp = e.target.closest('input.tpl-name');
+        if (inp) list()[+inp.closest('.tpl-row').dataset.i].name = inp.value;
+      });
+      el.addEventListener('click', (e) => {
+        const x = e.target.closest('.tpl-x');
+        if (!x) return;
+        list().splice(+x.closest('.tpl-row').dataset.i, 1);
+        renderSettings();
+      });
+      el.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('.tpl-grip')) startTplDrag(e, el, list());
+      });
+    });
+    content.querySelectorAll('.tpl-add__btn[data-add]').forEach((b) => b.addEventListener('click', () => {
+      list().push({ kind: b.dataset.add, name: TPL_KINDS[b.dataset.add].start });
+      renderSettings();
+    }));
+    const addProj = content.querySelector('[data-add-project]');
+    if (addProj) addProj.addEventListener('click', () => openPaletteAt(createFrame('workspace')));
+    const check = content.querySelector('[data-check]');
+    if (check) check.addEventListener('click', () => {
+      check.textContent = 'Checking…';
+      setTimeout(() => { check.textContent = 'Check for updates'; }, 1400);
+    });
+  }
+
+  // drag-to-reorder within the session list: the grabbed row stays put (faded) while a lifted
   // clone tracks the pointer and a copper insertion line marks the landing slot (same feel as the tree)
   function startTplDrag(e, listEl, list) {
     e.preventDefault();
@@ -5983,120 +6116,90 @@
     document.addEventListener('pointerup', onUp);
   }
 
-  // find a workspace head by its name (for the chip in the run-order strip)
-  const contextHeadByName = (name) => workspaceHeads().find((h) => wsName(h) === name) || null;
-
-  function renderSettings() {
-    stopStream();
-    const isGlobal = settingsScope === 'global';
-    // a removed workspace can leave settingsScope dangling — fall back to Global
-    if (!isGlobal && !document.contains(settingsScope)) { settingsScope = 'global'; return renderSettings(); }
-    const head = isGlobal ? null : settingsScope;
-    const name = isGlobal ? 'Global' : wsName(head);
-    const titleIcon = isGlobal ? `<span class="scope__icon">${ICON_GLOBE}</span>` : wsChip(head);
-    content.innerHTML = `<div class="pane">
-      <div class="pane__head">
-        <div class="pane__title">${titleIcon}<span>${esc(name)}</span></div>
-        <div class="pane__crumb"><b>Settings</b> / ${esc(isGlobal ? 'All projects' : name)}</div>
-        <div class="pane__spacer"></div>
-      </div>
-      <div class="set-body"><div class="set-body__inner">${scriptSection(isGlobal, name)}${sessionsSection(isGlobal, name)}${flagsSection(isGlobal, name)}</div></div>
-    </div>`;
-    markScope();
-    // theme segmented control (Global scope only)
-    markThemeSeg();
-    content.querySelectorAll('[data-theme-opt]').forEach((b) => {
-      b.addEventListener('click', () => setTheme(b.dataset.themeOpt));
-    });
-    // edits persist to the mock store so they survive switching scopes
-    content.querySelectorAll('.set-code[data-edit]').forEach((ta) => {
-      ta.addEventListener('input', () => {
-        if (ta.dataset.edit === 'global') globalScript = ta.value;
-        else wsScripts[name] = ta.value;
-      });
-    });
-    // Agent flags: the field edits the raw string live, updating the preview in place so
-    // the caret is never yanked mid-type.
-    content.querySelectorAll('.set-code--flags[data-flags]').forEach((ta) => {
-      ta.addEventListener('input', () => {
-        const agent = ta.dataset.agent;
-        if (ta.dataset.flags === 'global') globalFlags[agent] = ta.value;
-        else (wsFlags[name] || (wsFlags[name] = {}))[agent] = ta.value;
-        const sec = ta.closest('.set-section');
-        const pv = sec.querySelector('.set-cmd');
-        if (pv) pv.outerHTML = cmdPreview(agent, ta.dataset.flags === 'global' ? (globalFlags[agent] || '') : effectiveFlags(false, name, agent));
-      });
-    });
-    // Session template: renames edit the store in place (preview refreshes, caret never
-    // yanked); add / remove / drag-reorder re-render the pane. data-tpl marks the one
-    // editable list on this scope — the global mirror on a workspace scope stays inert.
-    const tplList = () => (isGlobal ? globalTpl : tplFor(name));
-    const tplRefresh = () => {
-      const pv = content.querySelector('.tpl-preview');
-      if (pv) pv.outerHTML = tplPreview(effectiveTpl(isGlobal, name));
-    };
-    content.querySelectorAll('.tpl-list[data-tpl]').forEach((listEl) => {
-      listEl.addEventListener('input', (e) => {
-        const inp = e.target.closest('input.tpl-name');
-        if (!inp) return;
-        tplList()[+inp.closest('.tpl-row').dataset.i].name = inp.value;
-        tplRefresh();
-      });
-      listEl.addEventListener('click', (e) => {
-        const x = e.target.closest('.tpl-x');
-        if (!x) return;
-        tplList().splice(+x.closest('.tpl-row').dataset.i, 1);
-        renderSettings();
-      });
-      listEl.addEventListener('pointerdown', (e) => {
-        if (e.target.closest('.tpl-grip')) startTplDrag(e, listEl, tplList());
-      });
-    });
-    content.querySelectorAll('.tpl-add__btn').forEach((b) => {
-      b.addEventListener('click', () => {
-        tplList().push({ kind: b.dataset.add, name: TPL_KINDS[b.dataset.add].start });
-        renderSettings();
-      });
-    });
+  // ---- Scope: set by the tree, remembered across visits ------------------------------
+  function restoreProject() {
+    let saved = null;
+    try { saved = localStorage.getItem(PROJ_KEY); } catch (e) {}
+    return (saved && headByName(saved)) || (openEl && headOf(openEl)) || projectHeads()[0] || null;
+  }
+  const headOf = (el) => {
+    let r = el.closest('[data-repo]');
+    while (r) { const o = r.parentElement && r.parentElement.closest('[data-repo]'); if (!o) break; r = o; }
+    return r ? r.querySelector(':scope > .repo__head') : null;
+  };
+  // Retarget the project tab from the tree. Settings stays exactly where it is; only the
+  // tab's label (and, if you're on it, its rows) change.
+  function retargetSettings(head) {
+    if (!head || head === setProject) return;
+    setProject = head;
+    try { localStorage.setItem(PROJ_KEY, wsName(head)); } catch (e) {}
+    if (!app.classList.contains('settings')) return;
+    renderSettings();
+    const tab = content.querySelector('.set-tab[data-tab="project"]');
+    if (tab) { tab.classList.add('retarget'); tab.addEventListener('animationend', () => tab.classList.remove('retarget'), { once: true }); }
   }
 
+  // ---- Enter / exit ------------------------------------------------------------------
   function enterSettings(scope) {
     closeMenu();
     if (paletteOpen) closePalette();
     if (shortcutsEl) closeShortcuts();
     setupEl = null;   // leaving for settings revokes any armed setup-resolve
-    app.classList.remove('collapsed');
-    settingsScope = scope || 'global';
-    buildScopeNav();
+    if (scope) { setProject = scope; setTab = 'project'; try { localStorage.setItem(PROJ_KEY, wsName(scope)); } catch (e) {} }
     app.classList.add('settings');
+    document.getElementById('openSettings').classList.add('is-on');
     renderSettings();
-    select(settingsNav.querySelector('.scope--on'));  // keyboard cursor lands on the active scope
+    select(content.querySelector('.set-row'), true);
+  }
+  // Drop out of settings mode without touching the content pane — for the callers that are
+  // about to render their own thing over it (opening a session, a worktree's setup skeleton).
+  function leaveSettingsMode() {
+    app.classList.remove('settings');
+    document.getElementById('openSettings').classList.remove('is-on');
   }
   function exitSettings() {
     if (!app.classList.contains('settings')) return;
-    app.classList.remove('settings');
+    leaveSettingsMode();
     renderLayout();   // restore the layout that was open before
     // cursor returns to the tree — the open session, else the Settings button we came from
     select(openEl && treeRows().includes(openEl) ? openEl : document.getElementById('openSettings'));
   }
-  // switch to a scope (from click or ↵) — the settings-nav equivalent of opening a session
-  function selectScope(sc) {
-    settingsScope = sc.dataset.scope === 'global' ? 'global' : sc._head;
-    renderSettings();
-    select(sc);
-  }
 
-  document.getElementById('openSettings').addEventListener('click', () => enterSettings());
-  settingsNav.addEventListener('click', (e) => {
-    if (e.target.closest('#settingsBack')) return exitSettings();
-    const sc = e.target.closest('.scope');
-    if (sc) selectScope(sc);
+  document.getElementById('openSettings').addEventListener('click', () => {
+    if (app.classList.contains('settings')) exitSettings(); else enterSettings();
   });
-  // "Edit in Global" jumps scope without leaving settings
-  content.addEventListener('click', (e) => {
-    const g = e.target.closest('[data-goto]');
-    if (g && app.classList.contains('settings')) { settingsScope = 'global'; renderSettings(); }
-  });
+
+  // ↵ / click on a settings row drives that row's own control — a row is never itself a button.
+  function activateSetting(r) {
+    const seg = r.querySelector('.seg--slide');
+    if (seg) { stepSeg(seg, 1); return; }
+    const sw = r.querySelector('[data-switch]');
+    if (sw) { sw.click(); return; }
+    const f = r.querySelector('.set-code:not([readonly]), .set-cmd__tail, input.tpl-name');
+    if (f) { f.focus(); document.body.classList.remove('kbd'); return; }
+    const btn = r.querySelector('.tpl-add__btn');
+    if (btn) btn.click();
+  }
+  // h / l walk a segmented control's options; ↵ advances it
+  function stepSeg(seg, dir) {
+    const btns = [...seg.querySelectorAll('.seg__btn')];
+    const i = btns.findIndex((b) => b.classList.contains('is-on'));
+    btns[(i + dir + btns.length) % btns.length].click();
+  }
+  function stepSetting(dir) {
+    if (!selEl || !selEl.matches('.set-row')) return false;
+    const seg = selEl.querySelector('.seg--slide');
+    if (seg) { stepSeg(seg, dir); return true; }
+    const sw = selEl.querySelector('[data-switch]');
+    if (sw && sw.classList.contains('is-on') !== (dir > 0)) { sw.click(); return true; }
+    return !!sw;
+  }
+  const stepSettingsTab = (dir) => {
+    const tabs = [...content.querySelectorAll('.set-tab')];
+    if (tabs.length < 2) return;
+    const i = tabs.findIndex((t) => t.classList.contains('is-on'));
+    tabs[(i + dir + tabs.length) % tabs.length].click();
+  };
 
   // Restore each branch's remembered layout from the last session (014); if nothing was saved,
   // open a session by default so the workspace feels live on load (the Claude Code hero).

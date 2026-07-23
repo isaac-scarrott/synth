@@ -747,3 +747,17 @@ disclosure to dive deeper.
   `~/.claude.json` alongside the Ghostty re-theme, so a light Synth stops running Claude Code's
   dark theme (white body text at 1.03:1). Verified against 2.1.217 under a pty. Custom variants
   like `light-daltonized` are left alone, and open sessions keep the theme they launched with.
+- **Settings: flat list, two tabs, scope set by the tree** — the sidebar scope list (read as
+  navigation) is gone; Settings renders in the content pane over a live tree, with `Synth` and
+  current-project tabs and a remembered project. Flat rows with the control on the right edge
+  replace the accordion; inheritance is a per-row `Override` switch over a dimmed inherited field,
+  retiring the three-way relation control and the `RESULT` preview. Notification sounds, MCP
+  servers, analytics and About finally get a home.
+- **Project settings layer on the shared default** — a project holds only its delta, shown on top
+  of the shared base in run order: setup script after a collapsible shared strip, flags as an
+  inline `$ claude <shared> <yours>` launch line, sessions added below the locked shared ones.
+  Empty = pure inheritance; `Clear` strips the delta. Replaces the `Override`/replace switch, since
+  a project's values concatenate with the default rather than swapping it.
+- **Settings redesign ported to the native app** — the SwiftUI `SettingsPane` is the flat two-tab
+  layered surface; the sidebar tree stays live under Settings (scope list gone, foot button lit);
+  `agentFlags`/`sessionTemplate` compose shared+project instead of overriding. Driven-app verified.

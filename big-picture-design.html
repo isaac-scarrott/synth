@@ -1032,12 +1032,10 @@
   .tabstrip__tabs {
     flex: 1; min-width: 0;
     display: flex; align-items: stretch;
-    overflow-x: auto; overflow-y: hidden;
-    scrollbar-width: none;
+    overflow: hidden;                       /* no scroll — tabs shrink to fit so the + stays visible */
   }
-  .tabstrip__tabs::-webkit-scrollbar { display: none; }
   .tab {
-    flex: 0 0 auto;
+    flex: 0 1 auto; min-width: 40px;         /* shrink to fit; the name ellipsizes, the + never scrolls off */
     position: relative;
     display: flex; align-items: center; gap: 6px;
     max-width: 190px;
@@ -2581,8 +2579,13 @@
       const inStrip = under && under.closest('.tabstrip');
       const onPane = under && under.closest('.content .pane');
       if (inStrip && onTab && onTab !== tabEl) {
-        mode = 'pair'; hideDropline(); hideDZ(); split = null;
-        if (pairEl !== onTab) { clearPair(); pairEl = onTab; onTab.classList.add('tab--pair-to'); }
+        const tr = onTab.getBoundingClientRect(), fx = (ev.clientX - tr.left) / tr.width;
+        if (fx > 0.3 && fx < 0.7) {   // squarely over a tab's centre → pair the two into a split
+          mode = 'pair'; hideDropline(); hideDZ(); split = null;
+          if (pairEl !== onTab) { clearPair(); pairEl = onTab; onTab.classList.add('tab--pair-to'); }
+        } else {                      // near a tab's edge → reorder between tabs (drop-line)
+          mode = 'reorder'; clearPair(); hideDZ(); split = null; showDropline();
+        }
       } else if (inStrip) {
         mode = 'reorder'; clearPair(); hideDZ(); split = null; showDropline();
       } else if (onPane && onPane._node && onPane._node.session) {
@@ -2607,10 +2610,12 @@
       if (m === 'reorder') {   // compute before cleanup while the tabs are still laid out
         const others = realTabs(), idx = dropIndex(others), order = others.map((t) => t._session);
         order.splice(idx, 0, dragged);
+        const wasMember = inSplit(dragged);   // a split member dropped in the strip is pulled OUT of the split (013)
         cleanup(); suppressTabClick = true; setTimeout(() => { suppressTabClick = false; }, 0);
         const rows = order.filter(Boolean);
         if (rows.length) { const parent = rows[0].parentElement; rows.forEach((r) => parent.appendChild(r)); }   // reorder the branch's session rows
-        renderLayout(); return;
+        if (wasMember) unsplitSession(dragged); else renderLayout();
+        return;
       }
       cleanup(); suppressTabClick = true; setTimeout(() => { suppressTabClick = false; }, 0);
       if (m === 'split' && sp && dragged && sp.session !== dragged) {   // split the target pane with the dragged session

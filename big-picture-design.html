@@ -1117,9 +1117,16 @@
   }
   /* an on-screen split bonds its member tabs into one unit — the horizontal echo of the sidebar's
      split band: a faint accent field + inset accent ring, seams between members, no inner right-border. */
-  .tab-group { display: flex; align-items: stretch; background: rgba(var(--accent-rgb), 0.06); box-shadow: inset 0 0 0 0.5px rgba(var(--accent-rgb), 0.22); }
-  .tab-group .tab { border-right: 0; }
-  .tab-group .tab + .tab { border-left: 0.5px solid rgba(var(--accent-rgb), 0.18); }
+  /* a split reads as a bonded cluster, styled like the sidebar's split band (003): rounded chips on
+     --raised with a hairline ring, a small gap between, and the active member accent-ringed. */
+  .tab-group { display: flex; align-items: center; gap: 3px; padding: 0 5px; }
+  .tab-group .tab { flex: 0 0 auto; height: 22px; padding: 0 5px 0 9px; border: 0; border-radius: 7px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-soft); }
+  .tab-group .tab::after { display: none; }        /* no underline in the cluster — the ring marks active */
+  .tab-group .tab__ind { display: none; }          /* tiles carry no status slot, matching the band */
+  .tab-group .tab--active { background: rgba(var(--accent-rgb), 0.12); color: var(--ink); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.34); }
+  /* the tab a dragged tab is about to pair into a split with — copper ring, echoing the sidebar's pair-to (012) */
+  .tab--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.7); background: rgba(var(--accent-rgb), 0.12); }
+  .tab-group .tab--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.7); }
   /* tabs mode drops the per-pane title bar (the strip carries name + icon); its PR chip moves to the strip */
   html[data-tabs="on"] .pane__head { display: none; }
   .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; padding: 0 8px 0 6px; }
@@ -2515,6 +2522,11 @@
   // source dims in place and a copper drop-line marks where it will land. On drop we splice the
   // session into the computed slot and re-render; a real drag suppresses the trailing click so the
   // tab isn't also activated. Reorder within the strip — moving a tab to another pane is ⌘⇧arrow.
+  // Tab drag (tabsMode): a floating ghost follows the cursor. Three drop targets, mirroring the
+  // sidebar drag (010/012): inside the strip → reorder (copper drop-line); over a pane → SPLIT it
+  // toward the nearest edge (copper .dz--split region); over another tab → pair the two into a
+  // split. Drop reuses the module split ops (splitPane / removeLeaf) — a session lives in one leaf,
+  // so a dragged session already on screen is pulled out first, never duplicated.
   let suppressTabClick = false;
   content.addEventListener('pointerdown', (e) => {
     if (!tabsMode || e.button !== 0) return;
@@ -2525,27 +2537,29 @@
     const startX = e.clientX, startY = e.clientY;
     const tabRect = tabEl.getBoundingClientRect();
     const grabDX = startX - tabRect.left, grabDY = startY - tabRect.top;
-    let dragging = false, ghost = null, dropline = null, lastX = startX;
+    let dragging = false, ghost = null, dropline = null, dz = null, pairEl = null, mode = 'reorder', split = null, lastX = startX;
 
     const realTabs = () => [...strip.querySelectorAll('.tab')].filter((t) => t !== tabEl);
-    // where a drop at lastX lands among the OTHER tabs (the dragged one removed from the count)
-    const dropIndex = (others) => {
-      for (let j = 0; j < others.length; j++) {
-        const r = others[j].getBoundingClientRect();
-        if (lastX < r.left + r.width / 2) return j;
-      }
-      return others.length;
-    };
-    const paintIndicator = () => {
+    const dropIndex = (others) => { for (let j = 0; j < others.length; j++) { const r = others[j].getBoundingClientRect(); if (lastX < r.left + r.width / 2) return j; } return others.length; };
+    const showDropline = () => {
       const others = realTabs(), idx = dropIndex(others), sr = strip.getBoundingClientRect();
       let x;
       if (idx < others.length) x = others[idx].getBoundingClientRect().left;
       else if (others.length) x = others[others.length - 1].getBoundingClientRect().right;
       else { const plus = strip.querySelector('.tabstrip__new'); x = plus ? plus.getBoundingClientRect().left : sr.left; }
       x = Math.max(sr.left, Math.min(x, sr.right));
-      dropline.style.left = (x - 1) + 'px';
-      dropline.style.top = sr.top + 'px';
-      dropline.style.height = sr.height + 'px';
+      dropline.style.display = ''; dropline.style.left = (x - 1) + 'px'; dropline.style.top = sr.top + 'px'; dropline.style.height = sr.height + 'px';
+    };
+    const hideDropline = () => { if (dropline) dropline.style.display = 'none'; };
+    const clearPair = () => { if (pairEl) { pairEl.classList.remove('tab--pair-to'); pairEl = null; } };
+    const hideDZ = () => { if (dz) { dz.remove(); dz = null; } };
+    // split toward the pane edge nearest the pointer
+    const edgeSplit = (x, y, r) => { const dl = (x - r.left) / r.width, dr = 1 - dl, dt = (y - r.top) / r.height, db = 1 - dt, m = Math.min(dl, dr, dt, db); if (m === dl) return { dir: 'row', before: true }; if (m === dr) return { dir: 'row', before: false }; if (m === dt) return { dir: 'col', before: true }; return { dir: 'col', before: false }; };
+    const paintDZ = (r, dir, before) => {
+      if (!dz) { dz = document.createElement('div'); dz.className = 'dz dz--split'; document.body.appendChild(dz); }
+      let x = r.left, y = r.top, w = r.width, h = r.height;
+      if (dir === 'row') { w = r.width / 2; if (!before) x = r.left + w; } else { h = r.height / 2; if (!before) y = r.top + h; }
+      dz.style.left = x + 'px'; dz.style.top = y + 'px'; dz.style.width = w + 'px'; dz.style.height = h + 'px';
     };
     const onMove = (ev) => {
       lastX = ev.clientX;
@@ -2555,36 +2569,64 @@
         document.body.classList.add('dragging');
         tabEl.classList.add('tab--dragsource');
         ghost = tabEl.cloneNode(true);
-        ghost.classList.add('tab-ghost');
-        ghost.classList.remove('tab--dragsource');
+        ghost.classList.add('tab-ghost'); ghost.classList.remove('tab--dragsource');
         ghost.style.width = tabRect.width + 'px';
         document.body.appendChild(ghost);
-        dropline = document.createElement('div');
-        dropline.className = 'tab-dropline';
-        document.body.appendChild(dropline);
+        dropline = document.createElement('div'); dropline.className = 'tab-dropline'; document.body.appendChild(dropline);
       }
-      ghost.style.left = (ev.clientX - grabDX) + 'px';   // follow the pointer freely — both axes, off the rail
+      ghost.style.left = (ev.clientX - grabDX) + 'px';   // follow the pointer freely — both axes
       ghost.style.top = (ev.clientY - grabDY) + 'px';
-      paintIndicator();
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);   // overlays are pointer-events:none
+      const onTab = under && under.closest('.tab');
+      const inStrip = under && under.closest('.tabstrip');
+      const onPane = under && under.closest('.content .pane');
+      if (inStrip && onTab && onTab !== tabEl) {
+        mode = 'pair'; hideDropline(); hideDZ(); split = null;
+        if (pairEl !== onTab) { clearPair(); pairEl = onTab; onTab.classList.add('tab--pair-to'); }
+      } else if (inStrip) {
+        mode = 'reorder'; clearPair(); hideDZ(); split = null; showDropline();
+      } else if (onPane && onPane._node && onPane._node.session) {
+        mode = 'split'; clearPair(); hideDropline();
+        const leaf = onPane._node, r = onPane.getBoundingClientRect(), q = edgeSplit(ev.clientX, ev.clientY, r);
+        split = { session: leaf.session, dir: q.dir, before: q.before };
+        paintDZ(r, q.dir, q.before);
+      } else { mode = 'none'; clearPair(); hideDZ(); hideDropline(); split = null; }
     };
     const cleanup = () => {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       if (ghost) ghost.remove();
       if (dropline) dropline.remove();
+      hideDZ(); clearPair();
       tabEl.classList.remove('tab--dragsource');
       document.body.classList.remove('dragging');
     };
     const onUp = () => {
       if (!dragging) { cleanup(); return; }
-      const others = realTabs(), idx = dropIndex(others);
-      const order = others.map((t) => t._session);
-      order.splice(idx, 0, tabEl._session);
-      cleanup();
-      suppressTabClick = true; setTimeout(() => { suppressTabClick = false; }, 0);
-      const rows = order.filter(Boolean);
-      if (rows.length) { const parent = rows[0].parentElement; rows.forEach((r) => parent.appendChild(r)); }   // reorder the branch's session rows
-      renderLayout();
+      const dragged = tabEl._session, m = mode, sp = split, pr = pairEl && pairEl._session;
+      if (m === 'reorder') {   // compute before cleanup while the tabs are still laid out
+        const others = realTabs(), idx = dropIndex(others), order = others.map((t) => t._session);
+        order.splice(idx, 0, dragged);
+        cleanup(); suppressTabClick = true; setTimeout(() => { suppressTabClick = false; }, 0);
+        const rows = order.filter(Boolean);
+        if (rows.length) { const parent = rows[0].parentElement; rows.forEach((r) => parent.appendChild(r)); }   // reorder the branch's session rows
+        renderLayout(); return;
+      }
+      cleanup(); suppressTabClick = true; setTimeout(() => { suppressTabClick = false; }, 0);
+      if (m === 'split' && sp && dragged && sp.session !== dragged) {   // split the target pane with the dragged session
+        const ex = leafInTree(layout, dragged); if (ex) removeLeaf(ex);   // pull it out of its current leaf first
+        const tl = leafInTree(layout, sp.session);
+        if (tl) { splitPane(tl, dragged, sp.dir, sp.before); return; }
+        renderLayout(); return;
+      }
+      if (m === 'pair' && pr && dragged && pr !== dragged) {   // pair two tabs into a split
+        const ex = leafInTree(layout, dragged); if (ex) removeLeaf(ex);
+        let ul = leafInTree(layout, pr);
+        if (!ul) { openSession(pr); ul = leafInTree(layout, pr); }   // bring the target on screen, then split it
+        if (ul) { splitPane(ul, dragged, 'row', false); return; }
+        renderLayout(); return;
+      }
+      renderLayout();   // 'none' → cancelled
     };
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);

@@ -213,14 +213,6 @@ struct RootView: View {
                 }
             }
         }
-        .overlay {
-            if let pending = store.pendingWorkspace {
-                ModalBackdrop(onDismiss: { store.pendingWorkspace = nil }) {
-                    AddWorktreesSheet(pending: pending, onClose: { store.pendingWorkspace = nil })
-                        .environment(store)
-                }
-            }
-        }
         .overlayPreferenceValue(MenuAnchorKey.self) { anchors in
             GeometryReader { proxy in
                 if let m = store.activeMenu, let anchor = anchors[m.rowID] {
@@ -305,10 +297,9 @@ struct RootView: View {
             store.pointerStale = true
 
             // Modal Esc must win even while its text field is first responder.
-            if store.creatingWorktreeIn != nil || store.pendingWorkspace != nil || store.feedbackOpen {
+            if store.creatingWorktreeIn != nil || store.feedbackOpen {
                 if event.keyCode == 53 {   // Esc closes the modal
                     store.creatingWorktreeIn = nil
-                    store.pendingWorkspace = nil
                     store.feedbackOpen = false
                     return nil
                 }

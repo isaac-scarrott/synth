@@ -747,6 +747,9 @@ disclosure to dive deeper.
   `~/.claude.json` alongside the Ghostty re-theme, so a light Synth stops running Claude Code's
   dark theme (white body text at 1.03:1). Verified against 2.1.217 under a pty. Custom variants
   like `light-daltonized` are left alone, and open sessions keep the theme they launched with.
+
+## [2026-07-23](docs/features/2026-07-23.md)
+
 - **Settings: flat list, two tabs, scope set by the tree** — the sidebar scope list (read as
   navigation) is gone; Settings renders in the content pane over a live tree, with `Synth` and
   current-project tabs and a remembered project. Flat rows with the control on the right edge
@@ -761,3 +764,8 @@ disclosure to dive deeper.
 - **Settings redesign ported to the native app** — the SwiftUI `SettingsPane` is the flat two-tab
   layered surface; the sidebar tree stays live under Settings (scope list gone, foot button lit);
   `agentFlags`/`sessionTemplate` compose shared+project instead of overriding. Driven-app verified.
+- **Add project drops the branch picker and the typed path** — a new project comes in with just
+  its default branch (the checkout already at the repo root), collapsed; other branches are added
+  later, one at a time. Both entry points — the sidebar `+` and ⌘K "Add project" — now open the
+  native folder picker, so a repository path is never typed. Removed the "Add worktrees"
+  multi-select sheet and the ⌘K path-input frame entirely. HTML and SwiftUI both.

@@ -58,20 +58,6 @@ enum SessionEvent: Sendable {
     func post(_ event: SessionEvent) { continuation.yield(event) }
 }
 
-/// A repo chosen for adding, awaiting the branch picker: the user selects which
-/// branches to show; each becomes a row backed by a real worktree folder.
-struct PendingWorkspace {
-    let url: URL
-    let candidates: [BranchCandidate]
-}
-
-struct BranchCandidate: Identifiable {
-    let id = UUID()
-    let name: String
-    let age: String
-    let existingWorktree: URL?   // nil → a worktree will be created on Add
-}
-
 /// An agent-requested worktree create awaiting the user's yes/no — the synth-app MCP
 /// server's approval gate. Nothing happens unless the user clicks Create; `respond`
 /// answers the control-socket connection blocked on the answer (called exactly once,
@@ -366,7 +352,6 @@ enum FeedbackMode {
 
     /// Sheet drivers.
     var creatingWorktreeIn: Workspace?
-    var pendingWorkspace: PendingWorkspace?
 
     /// Agent-requested worktree prompts (synth-app MCP), oldest first — the ⌘K confirm
     /// frame shows the head; resolving or cancelling it reveals the next.
@@ -1559,7 +1544,8 @@ enum FeedbackMode {
         if kind == .done { armDoneToast(id) }
     }
 
-    /// Folder picker → branch picker. Panel runs modally, so state mutation happens after dismiss.
+    /// Folder picker → adds the repo with its default branch. Panel runs modally, so
+    /// state mutation happens after dismiss.
     func promptAddWorkspace() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -1571,58 +1557,27 @@ enum FeedbackMode {
         beginAddWorkspace(url: url)
     }
 
-    /// Discover branches + existing worktrees (off the main thread — `for-each-ref` on a
-    /// large/cold repo can take a beat), then open the multi-select picker. A non-repo
-    /// folder skips the picker (nothing to pick).
+    /// Add the repo with just its default branch — the checkout already at the repo
+    /// root — as the sole worktree row. No branch picker: further branches are added
+    /// later, one at a time, from the row's "New branch" action. The git read runs off
+    /// the main thread (`for-each-ref` on a large/cold repo can take a beat); a non-repo
+    /// folder yields a branchless workspace.
     func beginAddWorkspace(url: URL) {
         Task { [weak self] in
             guard let self else { return }
-            let (branches, worktreeByBranch) = await runGit(repo: url) {
-                () -> ([GitService.BranchInfo], [String: URL]) in
+            let seed = await runGit(repo: url) { () -> (name: String, worktree: URL, age: String)? in
                 let branches = GitService.branches(at: url)
-                guard !branches.isEmpty else { return ([], [:]) }
-                return (branches, Dictionary(
-                    GitService.worktrees(at: url).compactMap { wt in wt.branch.map { ($0, wt.path) } },
-                    uniquingKeysWith: { first, _ in first }
-                ))
+                guard !branches.isEmpty else { return nil }
+                // git lists the main worktree first; the branch checked out there is the
+                // repo's default, and its folder (the repo root) is its worktree already.
+                let main = GitService.worktrees(at: url).first
+                let name = main?.branch ?? branches[0].name
+                let age = branches.first { $0.name == name }
+                    .map { GitService.compactAge($0.lastCommitUnix) } ?? ""
+                return (name, main?.path ?? url, age)
             }
-            guard !branches.isEmpty else {
-                finishAddWorkspace(url: url, branches: [])
-                return
-            }
-            pendingWorkspace = PendingWorkspace(url: url, candidates: branches.map {
-                BranchCandidate(name: $0.name,
-                                age: GitService.compactAge($0.lastCommitUnix),
-                                existingWorktree: worktreeByBranch[$0.name])
-            })
-        }
-    }
-
-    /// Materialise the chosen branches: existing worktrees become ready rows at once;
-    /// the rest appear pending and check out in the background (features 2026-07-06) —
-    /// the dialog never blocks the app on git.
-    func confirmAddWorkspace(_ pending: PendingWorkspace, selected: Set<UUID>) {
-        pendingWorkspace = nil
-        var rows: [Branch] = []
-        var creating: [Branch] = []
-        for c in pending.candidates where selected.contains(c.id) {
-            if let existing = c.existingWorktree {
-                rows.append(Branch(name: c.name, worktreeURL: existing, lastActivity: c.age))
-            } else {
-                let path = GitService.plannedWorktreePath(repo: pending.url, branch: c.name)
-                let row = Branch(name: c.name, worktreeURL: path, lastActivity: c.age, isPending: true)
-                rows.append(row)
-                creating.append(row)
-            }
-        }
-        finishAddWorkspace(url: pending.url, branches: rows)
-        guard let ws = workspaces.last else { return }
-        for row in creating {
-            let repo = pending.url, path = row.worktreeURL, name = row.name
-            materialize(row, in: ws) {
-                GitService.addWorktree(repo: repo, path: path, branch: name).map { .failed($0) }
-                    ?? .ready(path)
-            }
+            let rows = seed.map { [Branch(name: $0.name, worktreeURL: $0.worktree, lastActivity: $0.age)] } ?? []
+            finishAddWorkspace(url: url, branches: rows)
         }
     }
 

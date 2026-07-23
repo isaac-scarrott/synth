@@ -759,3 +759,10 @@ disclosure to dive deeper.
   Nothing pinned — the agent is a peer tab; an agent-opened browser lands in its owner's strip with
   an unread dot, no focus-steal. Keyboard: panes keep `⌘1–9`/`⌘⌥arrows`; tabs add `⌘⇧[`/`⌘⇧]`
   switch, `⌘W` close, and `⌘⇧arrow` to send a tab into a neighbour pane or a new split.
+- **Tabs revised — single strip, split as a bonded cluster (supersedes the per-pane strips)** — one
+  tab strip per branch, not one per pane: a split reads as a bonded cluster of its member tabs within
+  the single strip, mirroring how the sidebar draws a split (the horizontal twin of the echo band),
+  never a second strip. Selecting a lone tab full-screens it (split stays bonded, stashed); selecting
+  a member returns to the split. Drops the per-pane tab machinery — leaves stay single-session
+  (ADR-0014 spine unchanged); the strip is pure presentation over the existing openSession/stash
+  model. ADR-0014's amendment rewritten to match.

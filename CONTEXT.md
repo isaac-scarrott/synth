@@ -113,14 +113,16 @@ field).
 _Avoid_: Selected session, active session, current session.
 
 **Tab** (experimental; the "Tabs" view mode, off by default):
-A session's **handle** in a pane's strip — the clickable header that carries the session's name,
-icon, and its live/unread/needs-input signal. A tab is not an entity: it is how one session is
-presented when Tabs is on, exactly the sidebar row it replaces. A session lives in exactly **one**
-pane's strip at a time (a live surface can't render in two places — see ADR-0014), so switching tabs
-picks which session that pane shows, and "splitting" *ejects* the active tab into a new pane rather
-than duplicating it. No tab is pinned or privileged — the agent is a peer tab like any other.
-_Avoid_: calling the session itself a tab; pinned tab (Synth pins none); child/nested tab (the strip
-is flat — a browser tab wears its owner's mark, never nests under it).
+A session's **handle** in the content surface's one strip — the clickable header carrying the
+session's name, icon, and its live/unread/needs-input signal. A tab is not an entity: it is how a
+session is presented when Tabs is on, exactly the sidebar row it replaces. There is a **single strip**
+per branch (never one per pane); it mirrors the branch's sessions, and an on-screen split shows as a
+**bonded cluster** of its member tabs — the same way the sidebar draws a split as a bonded band (see
+Roll-up / ADR-0005), not as a second strip. Selecting a lone tab full-screens that session; selecting
+a cluster member returns to the split. No tab is pinned or privileged — the agent is a peer tab.
+_Avoid_: calling the session itself a tab; pinned tab (Synth pins none); a tab strip per pane (there is
+one strip; a split is a bonded cluster within it); child/nested tab (a browser tab wears its owner's
+mark, never nests under it).
 
 **Belongs to**:
 The relation between a browser session and the agent that opened it. The browser sits as a sibling

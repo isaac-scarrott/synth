@@ -57,3 +57,44 @@ Accepted. The spine (the tree model, multi-pane render, active-pane ring, and th
 invariant) is implemented in `Layout.swift` + `ContentPane.swift` + the store. The gesture, resize,
 sidebar-echo, unsplit, persistence, keybinding, and narrow-pane slices build on it without changing
 the primitive.
+
+## 2026-07-23: the Tabs view mode amends "one session per pane"
+
+An experimental **Tabs** view mode (off by default, one global Settings toggle) changes how the same
+tree is *presented*, not what it is. Two things move: the sidebar drops to **two deep** (sessions
+leave the tree — the branch is the deepest row, carrying only its roll-up), and each pane draws a
+**strip of tabs**, one per session it hosts. A tab is a session's handle, nothing more (`CONTEXT.md`
+carries the term); the flag is presentation-only, so it flips instantly and losslessly with no
+migration — the store is `branch → pane-tree → sessions` either way.
+
+**The one invariant that genuinely changes.** This ADR's *"a pane hosts exactly one session"* becomes
+**"a pane hosts a strip of ≥1 sessions, exactly one active."** Everything else in the spine survives
+verbatim: still exactly one active pane, still no *empty* pane (a strip always holds at least one
+session), still `pruneLayout` on the last tab leaving a pane — closing the last tab collapses the pane
+and reflows its sibling, and closing the last tab of the *last* pane drops the branch to **dormant**
+(worktree kept), which is just the zero-session case the taxonomy already names. `openSessionID`
+keeps mirroring the active leaf's *active tab*, so notifications, ⌘K, the header and the "you are
+here" pill read it untouched.
+
+**A session lives in exactly one strip at a time — split *moves*, never duplicates.** This is the
+load-bearing divergence from editor tabs (Cursor/VSCode open one file in two split groups). A session
+is a live surface rendering into its own `NSView` (ADR-0009/0011); it cannot be in two panes at once.
+So `⌘⇧arrow` *sends* the active tab toward the arrow — into the neighbour pane's strip if one exists
+there, else a new split — and the existing tree ops (`splitPane`, `removeLeaf`, `pruneLayout`) carry
+it with no new primitive. Tab-switch is a new, cheap op (move the active-tab pointer + the mirror,
+never re-mount a surface), keyed `⌘⇧[`/`⌘⇧]` (panes keep `⌘1–9`); `⌘W` closes the active tab.
+
+**Nothing is pinned.** The agent is a peer tab, orderable and closable like any other — the explicit
+rejection of Cursor's fixed chat rail. An agent-opened browser lands as a tab in its *owner's* pane
+strip wearing the owner-mark, with an unread dot and no focus-steal (the `belongs-to` relation is
+unchanged; only its display moves off the sidebar row onto the tab).
+
+*Rejected:* a separate persisted tab-group model beside the pane-tree — it would make the toggle a
+migration and forfeit "flip it off and the sessions are back in the tree." *Rejected:* refusing to
+close the last tab (traps you in a session; Close is a session verb and must always work) and hiding
+the strip until a second tab exists (the strip appearing/disappearing is a layout jump, and the
+new-tab affordance would hide exactly when a newcomer needs it). The strip shows even for a lone tab.
+
+Status: **experimental, unbuilt in the native app.** Landing first in both design files
+(`working.html` + `big-picture-design.html`, subset invariant held) behind the toggle; the native
+port amends the `Layout` invariant above rather than forking a second layout path.

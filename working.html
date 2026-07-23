@@ -1007,6 +1007,120 @@
   .ind--owned { color: var(--copper); }
   .ind--owned svg { width: 12px; height: 12px; opacity: 0.9; }
 
+  /* ===== Tabs view mode (experimental) — presentation-only over the same store =====
+     Off by default. Every rule keys off html[data-tabs="on"] so the default build is byte-for-byte
+     untouched. Sidebar drops to 2-deep (session rows + the split echo band leave the tree; the
+     branch becomes the deepest row, still carrying its roll-up); per-session signals ride the tabs
+     the panes draw instead. */
+  html[data-tabs="on"] .nav .session { display: none; }        /* rows leave the tree — they're tabs now */
+  html[data-tabs="on"] .nav .session-group { display: none; }  /* the on-screen-split echo band goes too */
+  html[data-tabs="on"] .branch--group > .chev { display: none; }  /* nothing left to disclose under the branch */
+  /* The roll-up normally hides while a branch is expanded (each session shows its own indicator
+     inside). Tabs hides those rows, so the branch's roll-up must show in either state — it's the
+     branch's only per-session signal in the 2-deep tree. */
+  html[data-tabs="on"] .repo--open > .branch--group .branch__roll .ind { display: flex; }
+
+  /* Tab strip: the pane's hosted sessions, exactly one active, with a + new-tab and per-tab ×.
+     Shows even for a lone tab. Uncapped — overflow scrolls horizontally. ~30px, compact, tabular. */
+  .tabstrip {
+    flex-shrink: 0;
+    display: flex; align-items: stretch;
+    height: 30px;
+    background: var(--panel);
+    border-bottom: 0.5px solid var(--border);
+  }
+  .tabstrip__tabs {
+    flex: 1; min-width: 0;
+    display: flex; align-items: stretch;
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .tabstrip__tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto;
+    position: relative;
+    display: flex; align-items: center; gap: 6px;
+    max-width: 190px;
+    padding: 0 6px 0 11px;
+    border-right: 0.5px solid var(--border);
+    font-size: 12px; font-weight: 500;
+    color: var(--text-muted);
+    cursor: default; white-space: nowrap;
+    transition: background-color 110ms ease, color 110ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .tab:hover { background: var(--hover); }
+  }
+  .tab--active { background: var(--raised); color: var(--ink); }
+  .tab--active::after {   /* the active-tab bar, echoing the active-pane focus bar */
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+    background: var(--focus);
+  }
+  .tab__icon { position: relative; flex-shrink: 0; display: flex; width: 14px; height: 14px; }
+  .tab__icon svg { width: 14px; height: 14px; display: block; }
+  /* unread lands as a quiet blue dot on the tab icon — coexists with an owned browser's owner-mark */
+  .tab--unread .tab__icon::after {
+    content: ''; position: absolute; top: -2px; right: -3px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--input); box-shadow: 0 0 0 1.5px var(--panel);
+  }
+  .tab--active.tab--unread .tab__icon::after { box-shadow: 0 0 0 1.5px var(--raised); }
+  .tab__name { overflow: hidden; text-overflow: ellipsis; }
+  .tab__ind { flex-shrink: 0; display: flex; align-items: center; }
+  .tab__ind .ind { animation: none; }   /* the strip rebuilds on every switch — skip the per-render pop */
+  .tab__close {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; padding: 0; margin-left: 1px;
+    border: 0; background: none; border-radius: 4px;
+    color: var(--text-faint); cursor: pointer;
+    opacity: 0;
+    transition: opacity 110ms ease, background-color 110ms ease, color 110ms ease;
+  }
+  .tab__close svg { width: 11px; height: 11px; display: block; }
+  @media (hover: hover) and (pointer: fine) {
+    .tab:hover .tab__close { opacity: 0.6; }
+    .tab__close:hover { opacity: 1; background: var(--hover); color: var(--ink); }
+  }
+  .tab--active .tab__close { opacity: 0.6; }
+  .tabstrip__new {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; padding: 0;
+    border: 0;
+    background: none; color: var(--text-muted); cursor: pointer;
+    transition: background-color 110ms ease, color 110ms ease;
+  }
+  .tabstrip__new svg { width: 14px; height: 14px; display: block; }
+  @media (hover: hover) and (pointer: fine) {
+    .tabstrip__new:hover { background: var(--hover); color: var(--ink); }
+  }
+  /* drag-to-reorder: the same idiom as the sidebar (drag-clone + gliding accent drop-line). The
+     lifted ghost tracks the pointer freely — off the strip, not on a rail; the source dims in place;
+     the strip never reshuffles mid-drag — the line IS the drop preview and glides between slots. */
+  .tab { cursor: grab; }
+  .tab--dragsource { opacity: 0.4; }
+  .tab-ghost {
+    position: fixed; z-index: 300; pointer-events: none;
+    height: 30px; box-sizing: border-box;
+    background: var(--raised); color: var(--ink);
+    border: 0.5px solid var(--border); border-radius: 7px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 14px 30px rgba(0, 0, 0, 0.22);
+    transform: scale(1.03); opacity: 0.98;
+  }
+  :root[data-theme="dark"] .tab-ghost { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 34px rgba(0, 0, 0, 0.5); }
+  .tab-dropline {
+    position: fixed; z-index: 301; width: 2px; border-radius: 1px; pointer-events: none;
+    background: rgba(var(--accent-rgb), 0.9);
+    transition: left 80ms var(--ease-out), top 80ms var(--ease-out), height 80ms var(--ease-out);
+    animation: dz-in 110ms var(--ease-out);
+  }
+  .tab-dropline::before {
+    content: ""; position: absolute; left: -2px; top: -3px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(var(--accent-rgb), 0.9);
+  }
+
   /* unread gutter bullet */
   .session__bullet {
     position: absolute;
@@ -2057,6 +2171,9 @@
         var p = localStorage.getItem('synth-theme') || 'system';
         var dark = p === 'dark' || (p !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        // Tabs is an opt-in view mode (off by default). Stamp it here too so the 2-deep sidebar
+        // never flashes its full tree before the main script boots.
+        document.documentElement.setAttribute('data-tabs', localStorage.getItem('synth-tabs') === 'on' ? 'on' : 'off');
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'light');
       }
@@ -2343,9 +2460,118 @@
   function crumbCopyHTML(branch) {
     return `<button class="crumb-copy" data-copy="${esc(branch)}" title="Copy branch name" aria-label="Copy branch name">${ICON_COPY_CRUMB}</button>`;
   }
+  // Tab drag-to-reorder (tabsMode): grab a tab and a floating ghost follows the cursor while the
+  // source dims in place and a copper drop-line marks where it will land. On drop we splice the
+  // session into the computed slot and re-render; a real drag suppresses the trailing click so the
+  // tab isn't also activated. Reorder within the strip — moving a tab to another pane is ⌘⇧arrow.
+  let suppressTabClick = false;
+  content.addEventListener('pointerdown', (e) => {
+    if (!tabsMode || e.button !== 0) return;
+    const tabEl = e.target.closest('.tab');
+    if (!tabEl || e.target.closest('.tab__close')) return;
+    const strip = tabEl.closest('.tabstrip__tabs');
+    const pane = tabEl.closest('.pane');
+    const leaf = pane && pane._node;
+    if (!strip || !leaf) return;
+    const startX = e.clientX, startY = e.clientY;
+    const tabRect = tabEl.getBoundingClientRect();
+    const grabDX = startX - tabRect.left, grabDY = startY - tabRect.top;
+    let dragging = false, ghost = null, dropline = null, lastX = startX;
+
+    const realTabs = () => [...strip.querySelectorAll('.tab')].filter((t) => t !== tabEl);
+    // where a drop at lastX lands among the OTHER tabs (the dragged one removed from the count)
+    const dropIndex = (others) => {
+      for (let j = 0; j < others.length; j++) {
+        const r = others[j].getBoundingClientRect();
+        if (lastX < r.left + r.width / 2) return j;
+      }
+      return others.length;
+    };
+    const paintIndicator = () => {
+      const others = realTabs(), idx = dropIndex(others), sr = strip.getBoundingClientRect();
+      let x;
+      if (idx < others.length) x = others[idx].getBoundingClientRect().left;
+      else if (others.length) x = others[others.length - 1].getBoundingClientRect().right;
+      else { const plus = strip.querySelector('.tabstrip__new'); x = plus ? plus.getBoundingClientRect().left : sr.left; }
+      x = Math.max(sr.left, Math.min(x, sr.right));
+      dropline.style.left = (x - 1) + 'px';
+      dropline.style.top = sr.top + 'px';
+      dropline.style.height = sr.height + 'px';
+    };
+    const onMove = (ev) => {
+      lastX = ev.clientX;
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < 4 && Math.abs(ev.clientY - startY) < 4) return;
+        dragging = true;
+        document.body.classList.add('dragging');
+        tabEl.classList.add('tab--dragsource');
+        ghost = tabEl.cloneNode(true);
+        ghost.classList.add('tab-ghost');
+        ghost.classList.remove('tab--dragsource');
+        ghost.style.width = tabRect.width + 'px';
+        document.body.appendChild(ghost);
+        dropline = document.createElement('div');
+        dropline.className = 'tab-dropline';
+        document.body.appendChild(dropline);
+      }
+      ghost.style.left = (ev.clientX - grabDX) + 'px';   // follow the pointer freely — both axes, off the rail
+      ghost.style.top = (ev.clientY - grabDY) + 'px';
+      paintIndicator();
+    };
+    const cleanup = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if (ghost) ghost.remove();
+      if (dropline) dropline.remove();
+      tabEl.classList.remove('tab--dragsource');
+      document.body.classList.remove('dragging');
+    };
+    const onUp = () => {
+      if (!dragging) { cleanup(); return; }
+      const others = realTabs(), idx = dropIndex(others);
+      const order = others.map((t) => t._session);
+      order.splice(idx, 0, tabEl._session);
+      cleanup();
+      suppressTabClick = true; setTimeout(() => { suppressTabClick = false; }, 0);   // eat the trailing click
+      leaf.sessions = order.filter(Boolean);   // commit the new order
+      renderLayout();
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+
   // The header PR chip opens the pull request in the user's default browser (the native app
   // hands the URL to NSWorkspace). In the mock there's nothing to open, so just swallow the nav.
   content.addEventListener('click', (e) => {
+    // Tabs (experimental): + opens a new tab in that pane, × closes a tab through the SAME
+    // confirm/close path as ⌘D, and a tab body activates it. Handled before pane-activation so
+    // these never fall through to it. Guarded by tabsMode → tabs-off is untouched.
+    if (tabsMode) {
+      const newBtn = e.target.closest('[data-tab-new]');
+      if (newBtn) {
+        e.preventDefault();
+        const leaf = newBtn.closest('.pane') && newBtn.closest('.pane')._node;
+        if (leaf) { setActivePane(leaf); const br = leaf.session ? branchGroupOf(leaf.session) : contextBranch(); if (br) openPaletteAt(newSessionFrame(br)); }
+        return;
+      }
+      const closeBtn = e.target.closest('[data-tab-close]');
+      if (closeBtn) {
+        e.preventDefault(); e.stopPropagation();
+        const leaf = closeBtn.closest('.pane')._node, tab = closeBtn.closest('[data-tab]');
+        const s = leaf && leafSessions(leaf)[+tab.dataset.tab];
+        if (s) requestDelete(s);   // routes through confirmFrame — confirms while busy, silent when idle
+        return;
+      }
+      const tab = e.target.closest('[data-tab]');
+      if (tab) {
+        if (suppressTabClick) return;   // a drag just ended on this tab — don't also activate it
+        e.preventDefault();
+        const leaf = tab.closest('.pane')._node, s = leaf && leafSessions(leaf)[+tab.dataset.tab];
+        if (s && s !== leaf.session) { leaf.session = s; activePane = leaf; renderLayout(); focusContent(); }
+        else if (s) { setActivePane(leaf); focusContent(); }
+        return;
+      }
+    }
     // clicking a pane's body makes it the active pane (002) — in place, so the click also
     // reaches whatever control it landed on. Settings renders a bare .pane (no _node) — skip.
     const pane = e.target.closest('.pane');
@@ -2387,6 +2613,25 @@
   // the instant a create is requested and cleared the moment anything else opens — so a
   // finished checkout resolves in place only while this still points at it (last-intent-wins).
   let setupEl = null;
+
+  // ===== Tabs view mode (experimental) =====
+  // Opt-in, presentation-only view over the same store: sessions stay the only entity, a "tab" is
+  // just a session's handle in a pane's strip. OFF by default, and EVERY behaviour change below is
+  // guarded by `tabsMode`, so a tabs-off build stays byte-for-byte identical to today — a partial or
+  // buggy tabs path can never regress the default experience. Persisted like the theme; the boot
+  // script already stamped data-tabs so CSS keys off it before first paint.
+  const LS_TABS = 'synth-tabs';
+  let tabsMode = false;
+  try { tabsMode = localStorage.getItem(LS_TABS) === 'on'; } catch (e) {}
+  function setTabsMode(on) {
+    on = !!on;
+    if (on === tabsMode) return;
+    tabsMode = on;
+    try { localStorage.setItem(LS_TABS, tabsMode ? 'on' : 'off'); } catch (e) {}
+    document.documentElement.dataset.tabs = tabsMode ? 'on' : 'off';
+    rollUpGroups();                 // the 2-deep sidebar leans on the branch roll-up
+    if (!app.classList.contains('settings') && layout) renderLayout();   // (re)draw / drop the strips
+  }
 
   // ===== Per-branch layout ownership, persistence & sticky nav (014 / 005) =====
   // Each branch owns exactly one remembered layout. Switching branch stashes the one you leave and
@@ -2448,14 +2693,33 @@
 
   // ---- Pane-tree helpers ----
   let paneSeq = 0;
-  const leafNode  = (session) => ({ leaf: true, id: ++paneSeq, session, setup: null, el: null });
-  const setupLeaf = (groupRow) => ({ leaf: true, id: ++paneSeq, session: null, setup: groupRow, el: null });
+  // A leaf keeps `session` = the ACTIVE session (every existing read stays valid) and, under tabs,
+  // `sessions` = the ordered strip it hosts. tabs-off leaves the strip length 1 and never draws it.
+  const leafNode  = (session) => ({ leaf: true, id: ++paneSeq, session, sessions: session ? [session] : [], setup: null, el: null });
+  const setupLeaf = (groupRow) => ({ leaf: true, id: ++paneSeq, session: null, sessions: [], setup: groupRow, el: null });
   function eachLeaf(node, fn) { if (!node) return; if (node.leaf) fn(node); else { eachLeaf(node.a, fn); eachLeaf(node.b, fn); } }
   function leafBySession(session) { let hit = null; eachLeaf(layout, (l) => { if (l.session === session) hit = l; }); return hit; }
   function leafInTree(tree, session) { let hit = null; eachLeaf(tree, (l) => { if (l.session === session) hit = l; }); return hit; }
   const isSplit = (tree) => !!(tree && !tree.leaf);
   const firstLeaf = (node) => (node.leaf ? node : firstLeaf(node.a));
   const activePaneEl = () => (activePane && activePane.el) || null;
+
+  // ---- Tab-strip helpers (tabsMode) — a session lives in exactly one pane's strip ----
+  const leafSessions = (leaf) => (leaf.sessions || (leaf.sessions = leaf.session ? [leaf.session] : []));
+  const leafHasSession = (leaf, s) => leafSessions(leaf).indexOf(s) >= 0;
+  // The leaf whose strip holds `session` anywhere (active or not) — the tabs twin of leafBySession.
+  function leafBySessionInStrip(session) { let hit = null; eachLeaf(layout, (l) => { if (leafHasSession(l, session)) hit = l; }); return hit; }
+  function addTabToLeaf(leaf, s) {
+    const arr = leafSessions(leaf);
+    if (arr.indexOf(s) < 0) arr.push(s);
+    leaf.session = s; leaf.setup = null;   // a real session lands: the pane is no longer a setup skeleton
+  }
+  function removeTabFromLeaf(leaf, s) {
+    const arr = leafSessions(leaf), i = arr.indexOf(s);
+    if (i < 0) return;
+    arr.splice(i, 1);
+    if (leaf.session === s) leaf.session = arr[Math.min(i, arr.length - 1)] || null;   // fall to a neighbour
+  }
 
   // Drop dead leaves (session / setup detached from the DOM) and collapse the split above each
   // — the surviving sibling reflows into the freed space (001). Returns true if it changed.
@@ -2464,7 +2728,16 @@
     function walk(node) {
       if (!node) return null;
       if (node.leaf) {
-        const alive = node.setup ? document.contains(node.setup) : (node.session && document.contains(node.session));
+        if (node.setup) { if (!document.contains(node.setup)) { changed = true; return null; } return node; }
+        if (tabsMode) {   // drop closed tabs from the strip; the pane dies only when its last tab does
+          const before = leafSessions(node).length;
+          node.sessions = leafSessions(node).filter((s) => document.contains(s));
+          if (node.sessions.length !== before) changed = true;
+          if (!node.sessions.length) return null;
+          if (!node.session || !document.contains(node.session)) node.session = node.sessions[0];
+          return node;
+        }
+        const alive = node.session && document.contains(node.session);
         if (!alive) { changed = true; return null; }
         return node;
       }
@@ -2541,6 +2814,7 @@
       }
       g.remove();
     });
+    if (tabsMode) return;   // tabs carries per-session signals on the strip — no sidebar echo band
     const members = [];
     eachLeaf(durableLayout(), (l) => { if (l.session) members.push(l.session); });
     if (members.length < 2) return;
@@ -2570,6 +2844,11 @@
     const incoming = leafNode(session);
     const kept = leafNode(targetLeaf.session);
     kept.setup = targetLeaf.setup;
+    if (tabsMode) {   // the kept pane keeps its whole tab strip minus the ejected session
+      kept.sessions = leafSessions(targetLeaf).filter((s) => s !== session);
+      if (!kept.sessions.length && kept.session) kept.sessions = [kept.session];
+      if (kept.sessions.indexOf(kept.session) < 0) kept.session = kept.sessions[0] || kept.session;
+    }
     targetLeaf.leaf = false;
     targetLeaf.dir = dir === 'col' ? 'col' : 'row';
     targetLeaf.split = 0.5;
@@ -2631,6 +2910,18 @@
   // ⌘1…⌘9 teleport to the Nth session pane in reading order (the tree flattened a-before-b);
   // ⌘1 on a single pane is the old "focus the open session". Hand the keyboard to the pane.
   function focusPane(n) {
+    // Tabs: ⌘1…9 addresses the Nth thing on the content surface — panes when the branch is split,
+    // else the Nth tab of the lone pane, so the numbers stay useful in the common single-strip case.
+    if (tabsMode) {
+      const ls = paneLeaves();
+      if (ls.length < 2) {
+        const leaf = (activePane && activePane.leaf) ? activePane : ls[0];
+        const s = leaf && leafSessions(leaf)[n - 1];
+        if (s) { leaf.session = s; activePane = leaf; renderLayout(); focusContent(); }
+        else if (n === 1) focusContent();
+        return;
+      }
+    }
     const leaf = paneLeaves()[n - 1];
     if (!leaf) { if (n === 1) focusContent(); return; }
     setActivePane(leaf);
@@ -2643,6 +2934,31 @@
     let i = ls.indexOf(activePane); if (i < 0) i = 0;
     setActivePane(ls[(i + step + ls.length) % ls.length]);
     focusContent();
+  }
+  // ⌘⇧[ / ⌘⇧] and ⌃⇥ / ⌃⇧⇥ step the active pane's tab set (tabsMode only), wrapping. A lone tab
+  // has nowhere to step, so it's a no-op — the strip is the whole world for this pane.
+  function cycleTab(step) {
+    const leaf = activePane;
+    if (!tabsMode || !leaf || !leaf.leaf || leafSessions(leaf).length < 2) return;
+    const arr = leafSessions(leaf);
+    let i = arr.indexOf(leaf.session); if (i < 0) i = 0;
+    leaf.session = arr[(i + step + arr.length) % arr.length];
+    renderLayout(); focusContent();
+  }
+  // ⌘⇧U in tabsMode: fold the active pane's WHOLE strip into a neighbour and drop the pane. Unlike
+  // the tabs-off unsplit (which detaches one session's leaf), a multi-tab pane must not lose its
+  // other tabs — they ride along and the active one stays active in its new home.
+  function mergeActivePane() {
+    const ls = paneLeaves();
+    if (ls.length < 2 || !activePane) return;
+    const src = activePane, i = ls.indexOf(src), dst = ls[i + 1] || ls[i - 1];
+    if (!dst || dst === src) return;
+    const keep = src.session;
+    leafSessions(src).forEach((s) => addTabToLeaf(dst, s));
+    dst.session = keep;
+    removeLeaf(src);
+    activePane = dst;
+    renderLayout(); focusContent();
   }
   // ⌘⌥+arrow / hjkl move focus spatially: the nearest pane whose edge lies past the active pane's
   // edge in that direction, tie-broken by cross-axis centre distance. Geometry, so it reads the
@@ -2744,9 +3060,27 @@
   function splitActiveWith(session, dir, before, target) {
     target = target || activePane;
     if (!session || !target || !target.leaf) return;
+    if (tabsMode) {   // moving a session between panes drops it from its old strip (never duplicates)
+      const existing = leafBySessionInStrip(session);
+      if (existing && existing !== target) removeTabFromLeaf(existing, session);
+      splitPane(target, session, dir, before);
+      return;
+    }
     const existing = leafBySession(session);
     if (existing && existing !== target) removeLeaf(existing);
     splitPane(target, session, dir, before);
+  }
+
+  // ⌘⇧+arrow under tabsMode: send the active tab into a new pane toward the arrow, removing it from
+  // the source strip (splitting MOVES a tab, never duplicates). A lone tab has nothing to eject —
+  // the caller falls back to the pick-a-session split frame, exactly as tabs-off does.
+  function ejectActiveTab(dir, before) {
+    const src = activePane;
+    if (!tabsMode || !src || !src.leaf || !src.session || leafSessions(src).length < 2) return false;
+    const s = src.session;
+    removeTabFromLeaf(src, s);
+    splitPane(src, s, dir, before);
+    return true;
   }
   // "New …" in the split frame: spawn the session unopened, then bind it into the new pane.
   function splitNew(branchRow, kind, dir, before, target) {
@@ -2771,7 +3105,7 @@
           items.push({ sec: 'act', icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => splitNew(br, 'browser', dir, before, target)) });
         }
         allRows('.session').forEach((s) => {
-          if (leafBySession(s)) return;   // already a pane in this layout — nothing to pull in
+          if (tabsMode ? leafBySessionInStrip(s) : leafBySession(s)) return;   // already hosted here — nothing to pull in
           if (!canJoinLayout(s)) return;  // a split stays within one branch / worktree (003)
           items.push({ sec: 'list', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => splitActiveWith(s, dir, before, target)) });
         });
@@ -2801,6 +3135,22 @@
       currentBranchKey = bk;
       stashedSplit = null;
       layout = branchLayouts.get(bk) || null;
+    }
+    if (tabsMode) {
+      // Tabs: a session is a tab in exactly one pane's strip. Opening it activates its existing tab,
+      // or lands it as a new tab in the active pane — never replacing the pane's session, never
+      // duplicating a live surface. No transient full-screen (the strip is the switcher instead).
+      stashedSplit = null;
+      const existing = layout && leafBySessionInStrip(el);
+      if (existing) { existing.session = el; activePane = existing; }
+      else if (layout) {
+        let target = activePane, ok = false;
+        eachLeaf(layout, (l) => { if (l === target) ok = true; });
+        if (!ok || !target || !target.leaf) target = firstLeaf(layout);
+        addTabToLeaf(target, el); activePane = target;
+      } else { layout = leafNode(el); activePane = layout; }
+      renderLayout();
+      return;
     }
     const durable = durableLayout();
     if (isSplit(durable)) {
@@ -3497,12 +3847,42 @@
       <div class="pane__body">${body}</div>`;
   }
 
+  // The pane's tab strip (tabsMode): every session it hosts, exactly one active, each carrying its
+  // own live/unread/needs-input signal (the sidebar row's own .ind — an owned browser's owner-mark
+  // rides there too) plus a close ×; a trailing + opens a new tab. data-tab indexes into
+  // leaf.sessions so a click resolves back to the row without stashing DOM refs in markup.
+  function renderTabStrip(leaf) {
+    const tabs = leafSessions(leaf).map((s, i) => {
+      const active = s === leaf.session;
+      const icon = s.querySelector('.session__icon').outerHTML;
+      const name = esc(s.querySelector('.session__name').textContent.trim());
+      const indEl = s.querySelector(':scope > .ind');
+      const ind = indEl ? indEl.outerHTML : '<span class="ind"></span>';
+      const unread = s.classList.contains('session--unread') ? ' tab--unread' : '';
+      return `<div class="tab${active ? ' tab--active' : ''}${unread}" data-tab="${i}" role="tab" aria-selected="${active}" title="${name}">
+        <span class="tab__icon">${icon}</span>
+        <span class="tab__name">${name}</span>
+        <span class="tab__ind">${ind}</span>
+        <button class="tab__close" data-tab-close aria-label="Close ${name}" title="Close">${ICON_CLOSE}</button>
+      </div>`;
+    }).join('');
+    // the + rides inside the scrolling tab row, right after the last tab — grouped with the tabs,
+    // not floated to the strip's far edge.
+    return `<div class="tabstrip" role="tablist">
+      <div class="tabstrip__tabs">${tabs}<button class="tabstrip__new" data-tab-new aria-label="New tab" title="New tab">${ICON_PLUS}</button></div>
+    </div>`;
+  }
+
   function renderPane(leaf) {
     const pane = document.createElement('div');
     pane.className = 'pane';
     pane._node = leaf;
     leaf.el = pane;
-    pane.innerHTML = leaf.setup ? setupPaneHTML(leaf.setup) : sessionPaneHTML(leaf.session);
+    // tabs-off (or a setup skeleton, or an empty strip) draws no strip → byte-identical to today.
+    const strip = (tabsMode && !leaf.setup && leafSessions(leaf).length) ? renderTabStrip(leaf) : '';
+    pane.innerHTML = strip + (leaf.setup ? setupPaneHTML(leaf.setup) : sessionPaneHTML(leaf.session));
+    // pin each tab to its session so drag-reorder can rebuild the strip order from the DOM (below).
+    if (strip) { const ss = leafSessions(leaf); pane.querySelectorAll('.tabstrip .tab').forEach((t, i) => { t._session = ss[i]; }); }
     return pane;
   }
 
@@ -3563,6 +3943,13 @@
   function layoutToJSON(tree) {
     if (!tree) return null;
     if (tree.leaf) {
+      if (tabsMode) {   // serialize the whole strip (keys + active index); old readers ignore ss
+        const sess = leafSessions(tree).filter((s) => document.contains(s) && sessionKey(s));
+        const keys = sess.map(sessionKey);
+        if (!keys.length) return null;
+        let ai = sess.indexOf(tree.session); if (ai < 0) ai = 0;
+        return { ss: keys, ai };
+      }
       if (!tree.session || !document.contains(tree.session)) return null;
       const k = sessionKey(tree.session);
       return k ? { s: k } : null;
@@ -3573,6 +3960,14 @@
   }
   function layoutFromJSON(j) {
     if (!j) return null;
+    if (j.ss) {   // a serialized tab strip — drop any session that no longer resolves (005)
+      const els = j.ss.map((k) => keyToEl.get(k)).filter(Boolean);
+      if (!els.length) return null;
+      const leaf = leafNode(els[0]);
+      leaf.sessions = els;
+      leaf.session = els[Math.min(j.ai || 0, els.length - 1)];
+      return leaf;
+    }
     if (j.s != null) { const el = keyToEl.get(j.s); return el ? leafNode(el) : null; }   // missing → collapse
     const a = layoutFromJSON(j.a), b = layoutFromJSON(j.b);
     if (a && b) return { leaf: false, dir: j.d, split: j.f, a, b };
@@ -3846,9 +4241,33 @@
     // ===== Split layer (007): pure ⌘-chords over the mouse split model. Placed before the browser
     // page-verbs so ⌘⌥L (focus-right alias) beats ⌘L (address), while a bare ⌘L still reaches it. =====
     if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !document.querySelector('.backdrop')) {
+      // Tabs chords (tabsMode only, so tabs-off is untouched):
+      //  • ⌃⇥ / ⌃⇧⇥ cycle the active pane's tabs.
+      //  • ⌘W closes the active tab — routed through the SAME confirm/close path as ⌘D (⌘D still works
+      //    as its silent alias), so a busy tab still confirms before it dies.
+      if (tabsMode && e.ctrlKey && !e.metaKey && !e.altKey && k === 'Tab') {
+        e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1); return;
+      }
+      if (tabsMode && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        if (activePane && activePane.session) requestDelete(activePane.session);
+        return;
+      }
       // Create: ⌘⇧+arrow splits toward the arrow; ⌘⇧\ (⌘|) side-by-side, ⌘⇧- (⌘—) stacked — fixed
       // side. Zoom ⌘⇧⏎, unsplit ⌘⇧U, cycle-prev ⌘⇧` all ride the shift row too.
       if (e.shiftKey && !e.altKey) {
+        // Under tabsMode ⌘⇧+arrow SENDS the active tab toward the arrow (moving it out of the source
+        // strip); a lone tab has nothing to eject, so it falls back to the pick-a-session frame.
+        if (tabsMode && (k === 'ArrowRight' || k === 'ArrowLeft' || k === 'ArrowDown' || k === 'ArrowUp')) {
+          const dm = { ArrowRight: ['row', false], ArrowLeft: ['row', true], ArrowDown: ['col', false], ArrowUp: ['col', true] }[k];
+          e.preventDefault();
+          if (!ejectActiveTab(dm[0], dm[1])) openSplitPicker(dm[0], dm[1]);
+          return;
+        }
+        // ⌘⇧[ / ⌘⇧] step the active pane's tabs (e.code dodges the shifted { } glyphs).
+        if (tabsMode && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+          e.preventDefault(); cycleTab(e.code === 'BracketRight' ? 1 : -1); return;
+        }
         if (k === 'ArrowRight') { e.preventDefault(); openSplitPicker('row', false); return; }
         if (k === 'ArrowLeft')  { e.preventDefault(); openSplitPicker('row', true);  return; }
         if (k === 'ArrowDown')  { e.preventDefault(); openSplitPicker('col', false); return; }
@@ -3856,7 +4275,7 @@
         if (k === '|' || k === '\\') { e.preventDefault(); openSplitPicker('row', false); return; }
         if (k === '_' || k === '-')  { e.preventDefault(); openSplitPicker('col', false); return; }
         if (k === 'Enter')      { e.preventDefault(); toggleZoom(); return; }
-        if (k === 'U' || k === 'u') { e.preventDefault(); if (activePane && activePane.session) unsplitSession(activePane.session); return; }
+        if (k === 'U' || k === 'u') { e.preventDefault(); if (tabsMode) mergeActivePane(); else if (activePane && activePane.session) unsplitSession(activePane.session); return; }
         if (k === '~' || k === '`') { e.preventDefault(); cyclePane(-1); return; }
       }
       // Focus move: ⌘⌥+arrow / hjkl. Add ⇧ (⌘⌥⇧) to resize the active pane instead.
@@ -4864,55 +5283,84 @@
   // ===== Keyboard shortcuts sheet (⌘?) — every binding above, one glanceable modal =====
   const ICON_KEYS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200Z"/><path d="M192,112H64a8,8,0,0,1,0-16H192a8,8,0,0,1,0,16Z"/><path d="M160,160H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z"/></svg>';
   // [keys, label, altKeys?]
+  // Mirrors app/Sources/Synth/Shortcuts.swift verbatim (order, labels, keys, alts) — the native
+  // sheet is the source of truth. shortcutGroups() layers the experimental tabs variant on top.
   const SHORTCUTS = [
     ['General', [
       [['⌘', 'K'], 'Command menu'],
       [['⌘', 'N'], 'New session'],
       [['⌘', 'T'], 'New terminal'],
-      [['⌘', 'D'], 'Close current session'],
+      [['⌘', 'D'], 'Close session'],
       [['⌘', 'B'], 'Toggle sidebar'],
-      [['⌘', '0'], 'Focus sidebar'],
-      [['⌘', '1'], 'Focus open session'],
+      [['⌘', '⏎'], 'Jump to notification'],
       [['⌘', ','], 'Settings'],
       [['⌘', '?'], 'Keyboard shortcuts'],
       [['⌘', '⇧', 'F'], 'Send feedback'],
     ]],
-    ['Split layout', [
-      [['⌘', '⇧', '→ ↑ ↓ ←'], 'Split (new pane toward arrow)'],
-      [['⌘', '⇧', '\\'], 'Split side-by-side · stacked', ['⌘', '⇧', '-']],
-      [['⌘', '⌥', '→ ↑ ↓ ←'], 'Move focus between panes', ['⌘', '⌥', 'H J K L']],
-      [['⌘', '1…9'], 'Focus pane by number'],
-      [['⌘', '`'], 'Cycle panes', ['⌘', '⇧', '`']],
-      [['⌘', '⌥', '⇧', '→ ↑ ↓ ←'], 'Resize active pane'],
-      [['⌘', '⇧', '↵'], 'Zoom · unzoom pane'],
-      [['⌘', '⇧', 'U'], 'Unsplit active pane'],
+    ['Command menu', [
+      [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
+      [['↵'], 'Open'],
+      [['⌫'], 'Back'],
+      [['⌘', 'K'], 'Close', ['esc']],
     ]],
     ['Sidebar', [
       [['↑', '↓'], 'Move selection', ['J', 'K']],
       [['→', '←'], 'Expand · collapse', ['L', 'H']],
       [['⇥'], 'Toggle group'],
-      [['↵'], 'Open session / toggle', ['Space']],
-      [['R'], 'Rename selected'],
-      [['D'], 'Close · remove selected'],
-      [['⇧J', '⇧K'], 'Reorder down · up'],
+      [['↵'], 'Open · toggle', ['Space']],
+      [['A'], 'Add session'],
+      [['R'], 'Rename'],
+      [['D'], 'Close · remove'],
+      [['⇧J', '⇧K'], 'Reorder'],
+      [['esc'], 'Focus content'],
+    ]],
+    ['Split layout', [
+      [['⌘', '⇧', '→'], 'Split toward arrow', ['⌘', '|']],
+      [['⌘', '⇧', '—'], 'Split stacked'],
+      [['⌘', '⌥', '→'], 'Focus pane', ['⌘', '⌥', 'L']],
+      [['⌘', '1'], 'Focus pane N', ['⌘', '9']],
+      [['⌘', '0'], 'Focus sidebar'],
+      [['⌘', '`'], 'Cycle panes', ['⌘', '⇧', '`']],
+      [['⌘', '⌥', '⇧', '→'], 'Resize pane'],
+      [['⌘', '⇧', '⏎'], 'Zoom pane'],
+      [['⌘', '⇧', 'U'], 'Unsplit'],
     ]],
     ['Browser', [
       [['⌘', 'L'], 'Go to address'],
-      [['⌘', 'R'], 'Reload page'],
+      [['⌘', 'R'], 'Reload'],
       [['⌘', '['], 'Back'],
       [['⌘', ']'], 'Forward'],
       [['⌘', '+'], 'Zoom in', ['⌘', '=']],
       [['⌘', '−'], 'Zoom out'],
-      [['⌥', '⌘', 'I'], 'Toggle DevTools'],
-      [['⌘', '⇧', 'M'], 'Toggle device mode'],
-    ]],
-    ['Command menu', [
-      [['↑', '↓'], 'Move', ['⌃J', '⌃K']],
-      [['↵'], 'Open · drill in'],
-      [['⌫'], 'Back (empty search)'],
-      [['esc'], 'Back · close'],
+      [['⌥', '⌘', 'I'], 'DevTools'],
+      [['⌘', '⇧', 'M'], 'Device mode'],
+      [['esc'], 'Exit comment mode'],
     ]],
   ];
+  // Tabs-off shows SHORTCUTS as-is. Tabs-on inserts a Tabs group and rewrites the two sections tabs
+  // changes: the sidebar loses its session-level rows (sessions are tabs now), and the split-layout's
+  // ⌘⇧arrow moves into Tabs as "Send tab". Keyed off tabsMode so the sheet always matches reality.
+  function shortcutGroups() {
+    if (!tabsMode) return SHORTCUTS;
+    // Tabs on: add a Tabs group and adjust the two Split-layout rows whose behaviour tabs changes
+    // (⌘⇧arrow now sends a tab; ⌘⇧U merges the pane). Everything else stays as the Swift base.
+    const tabsGroup = ['Tabs', [
+      [['⌘', '⇧', ']'], 'Next tab', ['⌃', '⇥']],
+      [['⌘', '⇧', '['], 'Previous tab', ['⌃', '⇧', '⇥']],
+      [['⌘', 'W'], 'Close tab', ['⌘', 'D']],
+      [['⌘', '⇧', '→'], 'Send tab to pane · split'],
+      [['drag'], 'Reorder tab'],
+    ]];
+    const groups = SHORTCUTS.map(([g, rows]) => {
+      if (g === 'Split layout') return [g, rows
+        .filter((r) => r[1] !== 'Split toward arrow' && r[1] !== 'Unsplit')
+        .map((r) => r[1] === 'Focus pane N' ? [r[0], 'Focus pane · select tab', r[2]] : r)
+        .concat([[['⌘', '⇧', 'U'], 'Merge pane']])];
+      return [g, rows];
+    });
+    groups.splice(1, 0, tabsGroup);   // right after General
+    return groups;
+  }
   let shortcutsEl = null;
   function openShortcuts() {
     if (shortcutsEl) return;
@@ -4922,7 +5370,7 @@
     backdrop.className = 'backdrop';
     backdrop.innerHTML = '<div class="dialog dialog--shortcuts" role="dialog" aria-label="Keyboard shortcuts">'
       + '<div class="dialog__title">Keyboard shortcuts</div>'
-      + SHORTCUTS.map(([group, rows]) => '<div class="sc-group"><div class="sc-group__label">' + group + '</div>'
+      + shortcutGroups().map(([group, rows]) => '<div class="sc-group"><div class="sc-group__label">' + group + '</div>'
         + rows.map(([ks, label, alt]) => '<div class="sc-row"><span class="sc-row__label">' + label + '</span>'
           + '<span class="sc-row__keys">' + keys(ks) + (alt ? '<span class="sc-row__or">or</span>' + keys(alt) : '') + '</span></div>').join('')
         + '</div>').join('')
@@ -5764,6 +6212,22 @@
       </div>`;
   }
 
+  // Experimental features, global-only. Tabs is an opt-in view mode (off by default) — a segmented
+  // Off/On mirroring Appearance's control. Flipping it re-keys the whole UI on data-tabs.
+  function experimentalSection() {
+    return `<div class="set-section">
+        <div class="set-section__title">Experimental</div>
+        <div class="set-section__sub"><b>Tabs</b> collapses the sidebar to 2 levels and gives each pane a tab strip of the sessions it hosts. Off by default — a work-in-progress preview.</div>
+        <div class="seg set-seg" role="group" aria-label="Tabs view mode">
+          <button class="seg__btn" data-tabs-opt="off">Off</button>
+          <button class="seg__btn" data-tabs-opt="on">Tabs</button>
+        </div>
+      </div>`;
+  }
+  function markTabsSeg() {
+    content.querySelectorAll('[data-tabs-opt]').forEach((b) => b.classList.toggle('is-on', (b.dataset.tabsOpt === 'on') === tabsMode));
+  }
+
   // The one setting so far: the worktree setup script. Global shows just its own; a workspace
   // shows the run order + the read-only global script (what also runs) above its editable one.
   function scriptSection(isGlobal, name) {
@@ -5986,13 +6450,19 @@
         <div class="pane__crumb"><b>Settings</b> / ${esc(isGlobal ? 'All projects' : name)}</div>
         <div class="pane__spacer"></div>
       </div>
-      <div class="set-body"><div class="set-body__inner">${scriptSection(isGlobal, name)}${sessionsSection(isGlobal, name)}${flagsSection(isGlobal, name)}</div></div>
+      <div class="set-body"><div class="set-body__inner">${scriptSection(isGlobal, name)}${sessionsSection(isGlobal, name)}${flagsSection(isGlobal, name)}${isGlobal ? experimentalSection() : ''}</div></div>
     </div>`;
     markScope();
     // theme segmented control (Global scope only)
     markThemeSeg();
     content.querySelectorAll('[data-theme-opt]').forEach((b) => {
       b.addEventListener('click', () => setTheme(b.dataset.themeOpt));
+    });
+    // Experimental: Tabs view-mode toggle (Global scope only). setTabsMode persists + re-keys the UI;
+    // in Settings the layout stays hidden, so just re-mark the segment (renderLayout is skipped there).
+    markTabsSeg();
+    content.querySelectorAll('[data-tabs-opt]').forEach((b) => {
+      b.addEventListener('click', () => { setTabsMode(b.dataset.tabsOpt === 'on'); markTabsSeg(); });
     });
     // edits persist to the mock store so they survive switching scopes
     content.querySelectorAll('.set-code[data-edit]').forEach((ta) => {

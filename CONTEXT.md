@@ -19,7 +19,8 @@ _Avoid_: Ref (when a branch specifically is meant).
 **Session**:
 A live thing running inside a branch — an agent, a terminal, a browser, or a simulator. Each carries
 a live status that drives the sidebar indicators.
-_Avoid_: Tab, pane, process (a session may own a process but is not synonymous with one).
+_Avoid_: Tab (a session is never *called* a tab — the tab is only its handle; see Tab), pane, process
+(a session may own a process but is not synonymous with one).
 
 **Agent**:
 The category of session that hosts a coding agent. Claude Code and OpenCode are agents; a third is a
@@ -111,10 +112,22 @@ tree and only changes when a session is activated (Enter/click). The one "you ar
 field).
 _Avoid_: Selected session, active session, current session.
 
+**Tab** (experimental; the "Tabs" view mode, off by default):
+A session's **handle** in a pane's strip — the clickable header that carries the session's name,
+icon, and its live/unread/needs-input signal. A tab is not an entity: it is how one session is
+presented when Tabs is on, exactly the sidebar row it replaces. A session lives in exactly **one**
+pane's strip at a time (a live surface can't render in two places — see ADR-0014), so switching tabs
+picks which session that pane shows, and "splitting" *ejects* the active tab into a new pane rather
+than duplicating it. No tab is pinned or privileged — the agent is a peer tab like any other.
+_Avoid_: calling the session itself a tab; pinned tab (Synth pins none); child/nested tab (the strip
+is flat — a browser tab wears its owner's mark, never nests under it).
+
 **Belongs to**:
 The relation between a browser session and the agent that opened it. The browser sits as a sibling
-row wearing its owner's mark; it is never indented under it. **Attach to** and **Detach** are the two
-verbs that make and break the relation. A browser you opened yourself belongs to nobody.
+row wearing its owner's mark; it is never indented under it (with Tabs on, that sibling row is a peer
+tab wearing the same mark — the relation is unchanged, only its display moves). **Attach to** and
+**Detach** are the two verbs that make and break the relation. A browser you opened yourself belongs
+to nobody.
 _Avoid_: Move under, nested, child, parent (all claim an indentation the sidebar does not draw).
 
 **Comment**:

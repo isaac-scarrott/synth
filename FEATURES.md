@@ -747,3 +747,15 @@ disclosure to dive deeper.
   `~/.claude.json` alongside the Ghostty re-theme, so a light Synth stops running Claude Code's
   dark theme (white body text at 1.03:1). Verified against 2.1.217 under a pty. Custom variants
   like `light-daltonized` are left alone, and open sessions keep the theme they launched with.
+
+## [2026-07-23](docs/features/2026-07-23.md)
+
+- **Experimental Tabs — two-deep sidebar + a tab strip per pane (off by default)** — an opt-in,
+  presentation-only view mode (one global Settings toggle) over the same `branch → pane-tree →
+  sessions` store, so it flips losslessly. Sessions leave the sidebar (branch becomes the deepest
+  row, roll-up only) and render as tabs inside the ADR-0014 panes; a tab is a session's handle,
+  nothing more (`CONTEXT.md` **Tab**). ADR-0014's "one session per pane" amends to "a strip of ≥1,
+  one active"; splitting *moves* a tab (a live surface can't render twice), never duplicates.
+  Nothing pinned — the agent is a peer tab; an agent-opened browser lands in its owner's strip with
+  an unread dot, no focus-steal. Keyboard: panes keep `⌘1–9`/`⌘⌥arrows`; tabs add `⌘⇧[`/`⌘⇧]`
+  switch, `⌘W` close, and `⌘⇧arrow` to send a tab into a neighbour pane or a new split.

@@ -8,15 +8,12 @@ struct Sidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topStrip
-            // Settings mode swaps the tree + foot for a scope list; the shell is otherwise
-            // untouched (working.html `.app.settings`).
-            if store.settingsOpen {
-                SettingsNav()
-            } else {
-                header
-                tree.frame(maxHeight: .infinity, alignment: .top)
-                SidebarFoot()
-            }
+            // Settings never touches the sidebar — the tree stays live so a project row still
+            // opens that project. The foot Settings button just lights up (working.html: the
+            // scope list is gone; scope lives in the pane head as a tab).
+            header
+            tree.frame(maxHeight: .infinity, alignment: .top)
+            SidebarFoot()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -101,16 +98,18 @@ private struct EmptySidebarHint: View {
     }
 }
 
-// MARK: - Sidebar foot (Settings entry) + settings-mode scope list
+// MARK: - Sidebar foot (Settings entry)
 
-/// working.html `.sidebar__foot` — pinned to the bottom of the left panel.
+/// working.html `.sidebar__foot` — pinned to the bottom of the left panel. Lights up while
+/// Settings is open (working.html `.foot-btn.is-on`); clicking it toggles Settings.
 private struct SidebarFoot: View {
     @Environment(AppStore.self) private var store
-    // The foot button is the last row of the main-view navigable list, so it shows the
-    // same keyboard selection ring as a tree row when the cursor rests on it (F5).
+    // The foot button is the last row of the navigable list, so it shows the same keyboard
+    // selection ring as a tree row when the cursor rests on it (F5).
     private var selected: Bool { store.keyboardActive && store.navCursor == NavID.settingsFoot }
     var body: some View {
-        FootButton(icon: Phosphor.gear, title: "Settings", selected: selected) { store.enterSettings() }
+        FootButton(icon: Phosphor.gear, title: "Settings", kbd: "⌘,",
+                   selected: selected, active: store.settingsOpen) { store.toggleSettings() }
             .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
             .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
@@ -119,7 +118,9 @@ private struct SidebarFoot: View {
 private struct FootButton: View {
     let icon: String
     let title: String
+    var kbd: String? = nil
     let selected: Bool
+    var active = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -127,118 +128,36 @@ private struct FootButton: View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Phos(path: icon, size: 16)
-                    .foregroundStyle(hovering ? Theme.inkMuted : Theme.navLabel).frame(width: 16)
+                    .foregroundStyle(iconTint).frame(width: 16)
                 Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(hovering ? Theme.repoName : Theme.branchName)
+                    .font(.system(size: 12.5, weight: active ? .semibold : .medium))
+                    .foregroundStyle(labelTint)
                 Spacer(minLength: 0)
+                if let kbd {
+                    Text(kbd)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(Theme.inkFaint)
+                }
             }
             .padding(.horizontal, 6).padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
-        .rowChrome(hovering: hovering, selected: selected)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.accent.opacity(active ? (hovering ? 0.14 : 0.10) : 0))
+        )
+        .rowChrome(hovering: hovering && !active, selected: selected)
         .onHover { hovering = $0 }
     }
-}
 
-/// working.html `.settings-nav` — the left panel in settings mode: a Back button back
-/// to the tree, then Global + one scope row per workspace.
-private struct SettingsNav: View {
-    @Environment(AppStore.self) private var store
-    // Whether the keyboard cursor sits on a given settings-nav target — the same ring the
-    // tree rows use, now shared across the scope list (F5).
-    private func selected(_ id: UUID) -> Bool { store.keyboardActive && store.navCursor == id }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 1) {
-                BackButton(selected: selected(NavID.back)) { store.exitSettings() }
-                    .padding(.bottom, 6)
-                ScopeRow(label: "Global", on: store.settingsIsGlobal, selected: selected(NavID.scopeGlobal)) {
-                    store.selectScope(.global)
-                }
-                Text("Projects")
-                    .font(.system(size: 10.5, weight: .semibold)).kerning(0.5).textCase(.uppercase)
-                    .foregroundStyle(Theme.navLabel)
-                    .padding(.horizontal, 6).padding(.top, 10).padding(.bottom, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                ForEach(store.workspaces) { ws in
-                    ScopeRow(label: ws.name, workspace: ws,
-                             on: store.settingsWorkspace?.id == ws.id, selected: selected(ws.id)) {
-                        store.selectScope(.workspace(ws.id))
-                    }
-                }
-            }
-            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 14)
-        }
-        .frame(maxHeight: .infinity)
+    private var iconTint: Color {
+        if active { return Theme.accent }
+        return hovering ? Theme.inkMuted : Theme.navLabel
     }
-}
-
-private struct BackButton: View {
-    let selected: Bool
-    let action: () -> Void
-    @State private var hovering = false
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Phos(path: Phosphor.back, size: 17).foregroundStyle(Theme.inkMuted).frame(width: 17)
-                Text("Projects").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.repoName)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6).padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(RowButtonStyle())
-        .rowChrome(hovering: hovering, selected: selected)
-        .onHover { hovering = $0 }
-    }
-}
-
-/// One row in the scope list — Global (globe) or a workspace (chip). The selected scope
-/// gets the blue "you are here" tint (working.html `.scope--on`).
-private struct ScopeRow: View {
-    let label: String
-    var workspace: Workspace? = nil
-    let on: Bool
-    let selected: Bool
-    let action: () -> Void
-    @State private var hovering = false
-
-    // The keyboard ring wins over the blue "you are here" tint (working.html: `.scope.sel`
-    // outweighs `.scope--on`), so a selected scope reads as the cursor first.
-    private var background: Color {
-        if selected { return Theme.rowSelected }
-        if on { return Theme.input.opacity(hovering ? 0.14 : 0.10) }
-        return hovering ? Theme.rowHover : .clear
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Group {
-                    if let workspace { WsChip(workspace: workspace, size: 19) }
-                    else { Phos(path: Phosphor.globe, size: 16).foregroundStyle(Theme.inkMuted) }
-                }
-                .frame(width: 20, height: 20)
-                Text(label)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(on ? Theme.repoName : Theme.ink3)
-                    .lineLimit(1).truncationMode(.tail)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6).padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(background))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.selRing, lineWidth: 1.5)
-                    .opacity(selected ? 1 : 0)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(RowButtonStyle())
-        .onHover { hovering = $0 }
+    private var labelTint: Color {
+        if active { return Theme.inkOpen }
+        return hovering ? Theme.repoName : Theme.branchName
     }
 }
 

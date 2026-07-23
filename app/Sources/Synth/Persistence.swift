@@ -38,6 +38,9 @@ struct PersistedWorkspace: Codable {
     var claudeFlags: String?
     /// Omitted when empty — an empty list means "inherit global", same as no list.
     var sessionTemplate: [SessionTemplateEntry]?
+    /// The rare "don't run the shared setup script in this project" opt-out. Omitted when
+    /// off (the default), so an untouched workspace adds no key.
+    var skipSharedSetup: Bool?
 }
 
 struct PersistedBranch: Codable {

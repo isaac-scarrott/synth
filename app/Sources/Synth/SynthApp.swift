@@ -430,6 +430,16 @@ struct RootView: View {
                 store.exitSettings(); return nil
             }
 
+            // [ / ] walk the Settings tabs (Synth ⇄ current project), matching working.html —
+            // a no-op when there's no project tab to switch to.
+            if store.settingsOpen, event.keyCode == 33 || event.keyCode == 30,
+               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
+                if store.settingsProject != nil {
+                    store.settingsTab = store.settingsTab == .app ? .project : .app
+                }
+                return nil
+            }
+
             // ⌘0 focuses the sidebar, ⌘1 the open session's content — even over the
             // terminal, so focus can bounce between panes without the mouse.
             if event.modifierFlags.contains(.command), key == "0" {

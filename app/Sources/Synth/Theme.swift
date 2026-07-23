@@ -28,7 +28,7 @@ enum Theme {
 
     // Secondary ink tiers (used inline across menus, palette, settings, shortcuts)
     static let ink2         = dyn(0x44464E, 0xC4C7CF)   // crumbs, shortcut labels, kebab-hover glyph
-    static let ink3         = dyn(0x54565E, 0xADB0B9)   // settings scope name
+    static let ink3         = dyn(0x54565E, 0xADB0B9)   // tertiary label (add-bar, About button)
     static let ink4         = dyn(0x666971, 0x979AA3)   // menu confirm label, palette icon
     static let ink5         = dyn(0x787B84, 0x83868F)   // branch / mono label
     static let inkOpen      = dyn(0x2B2D34, 0xDCDEE4)   // open session name

@@ -18,15 +18,11 @@ enum RowRef: Identifiable, Equatable {
     static func == (lhs: RowRef, rhs: RowRef) -> Bool { lhs.id == rhs.id }
 }
 
-/// Stable ids for the non-tree cursor targets, so the one `navCursor: UUID?` primitive
-/// can address the Settings foot button and the settings scope list alongside tree rows
-/// (working.html addresses these by DOM element; here by constant id). Workspace scope
-/// rows reuse their workspace id — the tree and settings lists never render at once, so
-/// there's no collision.
+/// Stable id for the one non-tree cursor target — the Settings foot button — so the single
+/// `navCursor: UUID?` primitive can address it alongside tree rows (working.html addresses
+/// it by DOM element; here by a constant id).
 enum NavID {
     static let settingsFoot = UUID(uuidString: "00000000-0000-0000-0000-0000000F0071")!
-    static let back         = UUID(uuidString: "00000000-0000-0000-0000-0000000BACC0")!
-    static let scopeGlobal  = UUID(uuidString: "00000000-0000-0000-0000-00000060BA10")!
 }
 
 extension AppStore {
@@ -58,28 +54,22 @@ extension AppStore {
         return rows
     }
 
-    /// The tree row under the cursor — nil in Settings, where the cursor lives on the
-    /// scope list, not a tree row. Everything gated on "cursor is a real tree row"
-    /// (create/rename/delete, Tab-toggle) reads through this (working.html `isTreeRow`).
-    var cursorRef: RowRef? { settingsOpen ? nil : visibleRows.first { $0.id == navCursor } }
+    /// The tree row under the cursor. The tree stays live in Settings, so this resolves
+    /// there too — the same create/rename/delete/Tab-toggle verbs keep working.
+    var cursorRef: RowRef? { visibleRows.first { $0.id == navCursor } }
 
     // MARK: Movement
 
-    /// The single list the keyboard cursor walks — screen-aware. In the main view it's
-    /// the tree followed by the Settings foot button, so ↓/j off the last leaf flows
-    /// straight into Settings. In Settings it's the scope list (Back, Global, workspaces).
-    /// One list means every nav key works identically on both screens (working.html `activeRows`).
+    /// The single list the keyboard cursor walks: the tree followed by the Settings foot
+    /// button, so ↓/j off the last leaf flows straight into Settings. The tree stays live
+    /// in Settings too, so the same list drives both screens (working.html `activeRows`).
     var activeRows: [UUID] {
-        if settingsOpen {
-            return [NavID.back, NavID.scopeGlobal] + workspaces.map(\.id)
-        }
-        return visibleRows.map(\.id) + [NavID.settingsFoot]
+        visibleRows.map(\.id) + [NavID.settingsFoot]
     }
 
     /// Where the cursor rests when nothing is explicitly selected: the open session in the
-    /// tree, or the active scope in Settings (working.html `currentRow`).
+    /// tree, if any (working.html `currentRow`).
     func currentRow(_ rows: [UUID]) -> UUID? {
-        if settingsOpen { return settingsWorkspace?.id ?? NavID.scopeGlobal }
         if let open = openSessionID, rows.contains(open) { return open }
         return nil
     }
@@ -213,17 +203,8 @@ extension AppStore {
     /// (working.html `activateRow`).
     func activateCursor() {
         keyboardActive = true
-        if settingsOpen {
-            switch navCursor {
-            case NavID.back:        exitSettings()
-            case NavID.scopeGlobal: selectScope(.global)
-            case let id? where workspaces.contains(where: { $0.id == id }):
-                selectScope(.workspace(id))
-            default: break
-            }
-            return
-        }
-        if navCursor == NavID.settingsFoot { enterSettings(); return }
+        // The lit foot button toggles Settings; the tree is live on both screens.
+        if navCursor == NavID.settingsFoot { toggleSettings(); return }
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
         case let .branch(b): toggleExpanded(b.id)

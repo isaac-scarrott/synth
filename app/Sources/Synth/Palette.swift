@@ -518,7 +518,7 @@ struct PaletteFrame {
             }
             items += [
                 PaletteItem(icon: .phosphor(Phosphor.gear), label: "Project settings…", sec: "act",
-                            enter: { self.runAndClose { self.store.enterSettings(.workspace(ws.id)) } }),
+                            enter: { self.runAndClose { self.store.enterSettings(project: ws) } }),
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.workspace(ws))) }),
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(ws.name)", sec: "act",

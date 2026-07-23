@@ -150,13 +150,10 @@ struct InAppNotif: Identifiable {
 /// explicit value so both layers are drivable headless (a driven instance isn't reliably frontmost).
 enum NotifRoute { case inApp, notificationCenter }
 
-/// Which settings scope the full-screen settings page is showing. A workspace is
-/// referenced by id so a removed workspace leaves a dangling scope that falls back
-/// to Global rather than crashing (working.html's dangling-scope guard).
-enum SettingsScope: Equatable {
-    case global
-    case workspace(UUID)
-}
+/// Which tab the full-screen Settings page shows: the app itself, or the project you're
+/// currently in. Scope is no longer a place in the sidebar — the tree stays live and the
+/// project tab follows it (working.html setTab / setProject).
+enum SettingsTab: Equatable { case app, project }
 
 /// The appearance choice (working.html's System / Light / Dark segmented control).
 enum ThemePref: String, CaseIterable, Identifiable {
@@ -287,6 +284,16 @@ enum FeedbackMode {
         UserDefaults.standard.object(forKey: key) as? Bool ?? def
     }
 
+    /// Which project the Settings project-tab last targeted (working.html's localStorage).
+    static let settingsProjectKey = "synth-settings-project"
+    static func loadSettingsProject() -> UUID? {
+        UserDefaults.standard.string(forKey: settingsProjectKey).flatMap(UUID.init)
+    }
+    static func saveSettingsProject(_ id: UUID?) {
+        if let id { UserDefaults.standard.set(id.uuidString, forKey: settingsProjectKey) }
+        else { UserDefaults.standard.removeObject(forKey: settingsProjectKey) }
+    }
+
     /// Per-machine MCP server toggles (Settings → MCP servers): which bundled servers are
     /// registered in every managed worktree's agent config. The browser server ships on;
     /// the app-control server (worktree creation behind a user prompt) is opt-in. A flip
@@ -413,18 +420,24 @@ enum FeedbackMode {
     var changelogVersion = 0
 
     /// Full-screen Settings page: a mode layered over the same shell (working.html's
-    /// `.app.settings`). `settingsScope` picks which scope the right pane renders.
+    /// `.app.settings`). The tree stays live throughout; a tab in the pane head picks app
+    /// vs the current project.
     var settingsOpen = false
-    var settingsScope: SettingsScope = .global
+    var settingsTab: SettingsTab = .app
+    /// The project the project-tab targets — remembered across visits (working.html
+    /// setProject / localStorage). The tree retargets it; entering from a project presets it.
+    var settingsProjectID: UUID? = AppStore.loadSettingsProject() {
+        didSet { AppStore.saveSettingsProject(settingsProjectID) }
+    }
 
-    /// The worktree setup scripts the effective config is assembled from — a design
-    /// surface only. These live in memory (like working.html's mock store) so edits
-    /// survive scope hops; no setup-script runner is wired up yet (see FEATURES).
+    /// A project's setup script is its DELTA — the extra lines that run AFTER the shared
+    /// base (globalScript). Empty = pure inheritance. `wsSkipScript` is the rare opt-out:
+    /// run only the project's lines, not the shared base. Design surface only, no runner yet.
+    var wsSkipScript: [UUID: Bool] = [:]
     var globalScript = """
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Runs in every new worktree, across all workspaces.
     [ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env
     """
     var wsScripts: [UUID: String] = [:]
@@ -435,10 +448,9 @@ enum FeedbackMode {
     """
 
     /// Default flags passed to an agent's binary when one of its sessions starts, per agent.
-    /// The raw string is the source of truth, so ANY flag the agent accepts works; the
-    /// Settings switches are shortcuts for common ones. A workspace's flags OVERRIDE the
-    /// global outright — unlike the setup scripts, flags don't compose; the last word wins.
-    /// An empty workspace value inherits global.
+    /// The raw string is the source of truth, so ANY flag the agent accepts works. A project's
+    /// flags are a TAIL appended after these shared ones (working.html's layered model), so the
+    /// shell's last-wins resolves any repeat; an empty project tail runs the shared flags alone.
     ///
     /// opencode needs none: it auto-approves by default, and the needs-input signal Synth
     /// relies on rides the question tool (enabled by env), not a permission flag.
@@ -448,13 +460,14 @@ enum FeedbackMode {
     ]
     var wsAgentFlags: [UUID: [AgentID: String]] = [:]
 
-    /// The effective flags for an agent in a scope. A workspace with its own flags replaces
-    /// the global outright; an empty (or absent) workspace value inherits global.
+    /// The effective flags for an agent in a project — the shared base with the project's
+    /// tail appended (working.html's layered model). The shell parses the line left-to-right,
+    /// so a tail flag that repeats a base one wins naturally; empty tail = the base alone.
     func agentFlags(_ agent: AgentID, for workspace: Workspace?) -> String {
-        let w = (workspace.flatMap { wsAgentFlags[$0.id]?[agent] } ?? "")
+        let base = (globalAgentFlags[agent] ?? "").trimmingCharacters(in: .whitespaces)
+        let tail = (workspace.flatMap { wsAgentFlags[$0.id]?[agent] } ?? "")
             .trimmingCharacters(in: .whitespaces)
-        if !w.isEmpty { return w }
-        return (globalAgentFlags[agent] ?? "").trimmingCharacters(in: .whitespaces)
+        return [base, tail].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     /// The ordered session set every new worktree starts with (working.html TPL_KINDS /
@@ -462,11 +475,11 @@ enum FeedbackMode {
     var globalSessionTemplate: [SessionTemplateEntry] = []
     var wsSessionTemplates: [UUID: [SessionTemplateEntry]] = [:]
 
-    /// The effective template for a scope — same override model as the flags: a workspace
-    /// with its own list replaces the global outright; an empty (or absent) list inherits.
+    /// The effective template for a project — the shared base sessions with the project's
+    /// own added after (working.html's layered model). The first entry overall is the one
+    /// that opens; an empty project list means "just the shared set".
     func sessionTemplate(for workspace: Workspace?) -> [SessionTemplateEntry] {
-        if let w = workspace.flatMap({ wsSessionTemplates[$0.id] }), !w.isEmpty { return w }
-        return globalSessionTemplate
+        globalSessionTemplate + (workspace.flatMap { wsSessionTemplates[$0.id] } ?? [])
     }
 
     /// Session ids with a LIVE coding agent attached THIS run — asserted only by the supervisor
@@ -949,10 +962,16 @@ enum FeedbackMode {
 
     func toggleExpanded(_ id: UUID) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+        // The live tree retargets the Settings project tab at whatever project you touch.
+        if let wsID = workspaces.first(where: { $0.id == id || $0.branches.contains { $0.id == id } })?.id {
+            retargetSettings(toWorkspace: wsID)
+        }
     }
 
     func open(_ session: Session) {
         settingsOpen = false   // jumping to a session leaves settings mode
+        // …but it still remembers the project you jumped into, for the next Settings visit.
+        if let br = branch(of: session), let ws = workspace(of: br) { retargetSettings(toWorkspace: ws.id) }
         // Take-me-to-it (002), branch-aware and sticky (014). A branch switch stashes the layout you
         // leave into its Branch.layout and restores the target's remembered one; then, within it:
         //  • the target's durable is a split and the session is a member → return to the split;
@@ -1002,26 +1021,25 @@ enum FeedbackMode {
 
     // MARK: Settings
 
-    /// True when the settings page should render Global — either the scope is Global
-    /// or it points at a workspace that no longer exists (dangling → Global).
-    var settingsIsGlobal: Bool { settingsWorkspace == nil }
-
-    /// The workspace the settings scope points at, or nil for Global / a dangling scope.
-    var settingsWorkspace: Workspace? {
-        guard case let .workspace(id) = settingsScope else { return nil }
-        return workspaces.first { $0.id == id }
+    /// The project the project-tab renders — the remembered one if it still exists, else the
+    /// open session's workspace, else the first workspace, else nil (no projects yet).
+    var settingsProject: Workspace? {
+        if let id = settingsProjectID, let ws = workspaces.first(where: { $0.id == id }) { return ws }
+        if let open = openSessionID, let s = session(open),
+           let b = branch(of: s), let ws = workspace(of: b) { return ws }
+        return workspaces.first
     }
 
-    func enterSettings(_ scope: SettingsScope = .global) {
+    func enterSettings(project: Workspace? = nil) {
         activeMenu = nil
         closePalette()
         shortcutsOpen = false
         sidebarCollapsed = false
         openSetupBranchID = nil   // leaving for settings revokes any armed setup-resolve
-        settingsScope = scope
+        if let project { settingsProjectID = project.id; settingsTab = .project }
         settingsOpen = true
-        // Keyboard cursor lands on the active scope (working.html enterSettings → select .scope--on).
-        navCursor = scopeCursorID(scope)
+        // The tree stays live; the keyboard cursor rests on the lit Settings foot button.
+        navCursor = NavID.settingsFoot
     }
 
     func exitSettings() {
@@ -1032,19 +1050,12 @@ enum FeedbackMode {
         navCursor = openSessionID.flatMap { visible.contains($0) ? $0 : nil } ?? NavID.settingsFoot
     }
 
-    /// Switch scope — the settings-nav twin of opening a session (working.html selectScope):
-    /// used by both a scope-row click and ↵ on the cursor. Moves the cursor onto the scope.
-    func selectScope(_ scope: SettingsScope) {
-        settingsScope = scope
-        navCursor = scopeCursorID(scope)
-    }
-
-    /// The cursor id for a scope: the Global sentinel, or the workspace's own id.
-    func scopeCursorID(_ scope: SettingsScope) -> UUID {
-        switch scope {
-        case .global:            return NavID.scopeGlobal
-        case let .workspace(id): return id
-        }
+    /// Touching a project in the tree points the Settings project tab at it and remembers it
+    /// across visits — the tree is the only thing that sets scope (working.html retargetSettings,
+    /// which updates the remembered project on every tree click regardless of Settings being open).
+    func retargetSettings(toWorkspace id: UUID) {
+        guard settingsProjectID != id else { return }
+        settingsProjectID = id
     }
 
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
@@ -1977,7 +1988,8 @@ enum FeedbackMode {
                     // nil when empty: an empty workspace list means "inherit global",
                     // the same fact as having no list at all.
                     sessionTemplate: (wsSessionTemplates[ws.id]?.isEmpty ?? true)
-                        ? nil : wsSessionTemplates[ws.id])
+                        ? nil : wsSessionTemplates[ws.id],
+                    skipSharedSetup: (wsSkipScript[ws.id] ?? false) ? true : nil)
             },
             // Sorted so an unchanged set always encodes to identical bytes (Set iteration
             // order is per-process nondeterministic) — the skip-if-unchanged check relies on it.
@@ -2000,6 +2012,7 @@ enum FeedbackMode {
         var scripts: [UUID: String] = [:]
         var flags: [UUID: [AgentID: String]] = [:]
         var templates: [UUID: [SessionTemplateEntry]] = [:]
+        var skips: [UUID: Bool] = [:]
         for pw in state.workspaces {
             guard !confirmedMissing(pw.url) else { continue }
             let branches: [Branch] = pw.branches.compactMap { pb -> Branch? in
@@ -2025,11 +2038,13 @@ enum FeedbackMode {
             if let s = pw.setupScript { scripts[pw.id] = s }
             if let f = pw.effectiveAgentFlags { flags[pw.id] = f }
             if let t = pw.sessionTemplate, !t.isEmpty { templates[pw.id] = t }
+            if pw.skipSharedSetup == true { skips[pw.id] = true }
         }
         workspaces = restored
         wsScripts = scripts
         wsAgentFlags = flags
         wsSessionTemplates = templates
+        wsSkipScript = skips
         // Global settings: a nil (pre-settings snapshot) keeps the built-in default. A
         // pre-agents snapshot carries only Claude's flags — merge, don't replace, or the
         // other agents' defaults vanish.

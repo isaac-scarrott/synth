@@ -422,7 +422,7 @@ struct PaletteFrame {
             }
             items += [
                 PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project", group: "Actions",
-                            enter: { self.push(self.createWorkspaceFrame()) }),
+                            enter: { self.runAndClose { self.store.promptAddWorkspace() } }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
                             kbd: ["⌘", "B"],
                             enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
@@ -461,7 +461,7 @@ struct PaletteFrame {
         PaletteFrame(crumb: "Projects", placeholder: "Search projects…") { [self] _ in
             var items = [
                 PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project", sec: "act",
-                            enter: { self.push(self.createWorkspaceFrame()) }),
+                            enter: { self.runAndClose { self.store.promptAddWorkspace() } }),
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove project…", sec: "act",
                             enter: { self.push(self.removeWorkspacePicker()) }),
             ]
@@ -683,20 +683,6 @@ struct PaletteFrame {
     }
 
     // MARK: Create frames — the search input becomes the name field
-
-    func createWorkspaceFrame() -> PaletteFrame {
-        PaletteFrame(crumb: "Add project", placeholder: "Repository path…", mode: .input) { [self] q in
-            let v = q.trimmingCharacters(in: .whitespaces)
-            return [PaletteItem(icon: .phosphor(Phosphor.plus),
-                                label: v.isEmpty ? "Type a repository path…" : "Add project “\(v)”",
-                                disabled: v.isEmpty,
-                                enter: { self.runAndClose {
-                                    let path = (v as NSString).expandingTildeInPath
-                                    // Opens the worktree picker sheet after the palette closes.
-                                    self.store.beginAddWorkspace(url: URL(fileURLWithPath: path))
-                                } })]
-        }
-    }
 
     /// Rename any unit inline — the field seeds with the current name and commits once
     /// it actually changes (working.html renameFrame).

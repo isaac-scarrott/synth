@@ -747,3 +747,11 @@ disclosure to dive deeper.
   `~/.claude.json` alongside the Ghostty re-theme, so a light Synth stops running Claude Code's
   dark theme (white body text at 1.03:1). Verified against 2.1.217 under a pty. Custom variants
   like `light-daltonized` are left alone, and open sessions keep the theme they launched with.
+
+## [2026-07-23](docs/features/2026-07-23.md)
+
+- **Add project drops the branch picker and the typed path** — a new project comes in with just
+  its default branch (the checkout already at the repo root), collapsed; other branches are added
+  later, one at a time. Both entry points — the sidebar `+` and ⌘K "Add project" — now open the
+  native folder picker, so a repository path is never typed. Removed the "Add worktrees"
+  multi-select sheet and the ⌘K path-input frame entirely. HTML and SwiftUI both.

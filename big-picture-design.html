@@ -1757,29 +1757,55 @@
     color: var(--ink-meta);
   }
 
-  /* ---- Keyboard shortcuts sheet (⌘?) ---- */
-  .dialog--shortcuts { width: 420px; }
-  .sc-group { margin-bottom: 14px; }
-  .sc-group:last-child { margin-bottom: 2px; }
-  .sc-group__label {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--ink-meta);
-    padding: 0 2px 5px;
+  /* ---- Keyboard shortcuts sheet (⌘?) — two-pane category navigator, mirroring the Swift design
+     (app/Sources/Synth/Shortcuts.swift): an icon'd, keyboard-navigable category rail + a detail
+     pane, so the set stays glanceable as it grows and reads like the rest of the app. ---- */
+  .dialog--shortcuts { width: 600px; height: 428px; padding: 0; display: flex; overflow: hidden; }
+  .sc-rail {
+    flex-shrink: 0; width: 194px;
+    display: flex; flex-direction: column;
+    padding: 14px 8px;
+    background: var(--sidebar);
+    border-right: 0.5px solid var(--border);
   }
+  .sc-rail__label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-meta); padding: 4px 10px 8px;
+  }
+  .sc-cat {
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; padding: 7px 9px; margin-bottom: 2px;
+    border: 0; border-radius: 8px; background: none; cursor: pointer;
+    font-family: inherit; text-align: left; color: var(--ink-3);
+    transition: background-color 110ms ease, color 110ms ease;
+  }
+  .sc-cat__icon { display: flex; width: 15px; height: 15px; flex-shrink: 0; color: var(--ink-meta); }
+  .sc-cat__icon svg { width: 15px; height: 15px; display: block; }
+  .sc-cat__name { font-size: 12.5px; font-weight: 500; }
+  @media (hover: hover) and (pointer: fine) { .sc-cat:hover { background: rgba(var(--accent-rgb), 0.06); } }
+  .sc-cat--on { background: rgba(var(--accent-rgb), 0.11); color: var(--ink-open); }
+  .sc-cat--on .sc-cat__icon { color: var(--accent); }
+  .sc-cat--on .sc-cat__name { font-weight: 600; }
+  @media (hover: hover) and (pointer: fine) { .sc-cat--on:hover { background: rgba(var(--accent-rgb), 0.16); } }
+  .sc-rail__spacer { flex: 1; }
+  .sc-rail__foot { display: flex; align-items: center; gap: 6px; padding: 6px 10px 0; }
+  .sc-rail__foothint { font-size: 10.5px; color: var(--ink-meta); }
+  .sc-rail__footesc { margin-left: auto; }
+  .sc-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 20px; }
+  .sc-detail__head { display: flex; align-items: center; gap: 9px; padding-bottom: 14px; }
+  .sc-detail__icon { display: flex; width: 16px; height: 16px; flex-shrink: 0; color: var(--accent); }
+  .sc-detail__icon svg { width: 15px; height: 15px; display: block; }
+  .sc-detail__title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .sc-detail__rows { overflow-y: auto; }
   .sc-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 4px 2px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 0;
+    border-top: 0.5px solid var(--line-soft);
   }
+  .sc-detail__rows .sc-row:first-child { border-top: 0; }
   .sc-row__label { font-size: 12.5px; color: var(--ink-2); }
   .sc-row__keys { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
   .sc-row__or { font-size: 10.5px; color: var(--ink-meta); padding: 0 3px; }
-  .sc-hint { margin-top: 8px; padding-top: 11px; border-top: 0.5px solid var(--line-soft); display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-muted); }
 
   /* ---- Sidebar footer: Settings entry (pinned to the bottom of the left panel) ---- */
   .sidebar__foot {
@@ -4220,7 +4246,12 @@
       else { if (paletteOpen) closePalette(); openShortcuts(); }
       return;
     }
-    if (shortcutsEl) { if (k === 'Escape') closeShortcuts(); return; }
+    if (shortcutsEl) {   // the sheet owns the keyboard: ↑/↓ or j/k walk the category rail, esc closes
+      if (k === 'Escape') { e.preventDefault(); closeShortcuts(); }
+      else if (k === 'ArrowDown' || k === 'j') { e.preventDefault(); moveShortcutsCat(1); }
+      else if (k === 'ArrowUp' || k === 'k') { e.preventDefault(); moveShortcutsCat(-1); }
+      return;
+    }
     // ⌘⇧F — send feedback from anywhere. One textbox; the author path spawns a fix, everyone else emails.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (k === 'f' || k === 'F')) {
       e.preventDefault();
@@ -5375,24 +5406,59 @@
     groups.splice(1, 0, tabsGroup);   // right after General
     return groups;
   }
-  let shortcutsEl = null;
+  // Category icons for the shortcuts rail (Phosphor, matching Shortcuts.swift): squares = Split
+  // layout; a window-with-top-bar reads as the tab strip for the experimental Tabs category.
+  const ICON_SQUARES = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M108,40H48A16,16,0,0,0,32,56v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V56A16,16,0,0,0,108,40Zm0,76H48V56h60ZM208,40H148a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V56A16,16,0,0,0,208,40Zm0,76H148V56h60ZM108,148H48a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V164A16,16,0,0,0,108,148Zm0,76H48V164h60Zm100-76H148a16,16,0,0,0-16,16v60a16,16,0,0,0,16,16h60a16,16,0,0,0,16-16V164A16,16,0,0,0,208,148Zm0,76H148V164h60Z"/></svg>';
+  const ICON_TABS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V80H40V56ZM40,200V96H216V200Z"/></svg>';
+  // Resolved lazily (at open time), not as a top-level const — ICON_SEARCH / ICON_SIDEBAR /
+  // ICON_GLOBE are declared further down, so an eager map would hit their temporal dead zone.
+  const scIcon = (name) => ({ 'General': ICON_KEYS, 'Tabs': ICON_TABS, 'Command menu': ICON_SEARCH, 'Sidebar': ICON_SIDEBAR, 'Split layout': ICON_SQUARES, 'Browser': ICON_GLOBE }[name] || ICON_KEYS);
+  let shortcutsEl = null, shortcutsCat = 0;
+  const scKeys = (ks) => ks.map((x) => '<kbd class="cmdk__key">' + x + '</kbd>').join('');
+  // Rail (icon'd categories + a keyboard-first footer) beside the selected category's detail rows.
+  function shortcutsHTML() {
+    const cats = shortcutGroups();
+    shortcutsCat = Math.max(0, Math.min(cats.length - 1, shortcutsCat));
+    const rail = cats.map(([name], i) =>
+      '<button class="sc-cat' + (i === shortcutsCat ? ' sc-cat--on' : '') + '" data-sc-cat="' + i + '">'
+      + '<span class="sc-cat__icon">' + scIcon(name) + '</span>'
+      + '<span class="sc-cat__name">' + name + '</span></button>').join('');
+    const [name, rows] = cats[shortcutsCat];
+    const detail = '<div class="sc-detail__head"><span class="sc-detail__icon">' + scIcon(name) + '</span>'
+      + '<span class="sc-detail__title">' + name + '</span></div>'
+      + '<div class="sc-detail__rows">' + rows.map(([ks, label, alt]) =>
+        '<div class="sc-row"><span class="sc-row__label">' + label + '</span>'
+        + '<span class="sc-row__keys">' + scKeys(ks) + (alt ? '<span class="sc-row__or">or</span>' + scKeys(alt) : '') + '</span></div>').join('')
+      + '</div>';
+    return '<div class="sc-rail"><div class="sc-rail__label">Shortcuts</div>' + rail
+      + '<div class="sc-rail__spacer"></div>'
+      + '<div class="sc-rail__foot"><span class="sc-row__keys">' + scKeys(['↑', '↓']) + '</span>'
+      + '<span class="sc-rail__foothint">navigate</span>'
+      + '<span class="sc-rail__footesc">' + scKeys(['esc']) + '</span></div></div>'
+      + '<div class="sc-detail">' + detail + '</div>';
+  }
+  function paintShortcuts() {
+    if (!shortcutsEl) return;
+    shortcutsEl.querySelector('.dialog--shortcuts').innerHTML = shortcutsHTML();
+  }
+  function moveShortcutsCat(step) {
+    const n = shortcutGroups().length;
+    shortcutsCat = Math.max(0, Math.min(n - 1, shortcutsCat + step));
+    paintShortcuts();
+  }
   function openShortcuts() {
     if (shortcutsEl) return;
     closeMenu();
-    const keys = (ks) => ks.map((x) => '<kbd class="cmdk__key">' + x + '</kbd>').join('');
     const backdrop = document.createElement('div');
     backdrop.className = 'backdrop';
-    backdrop.innerHTML = '<div class="dialog dialog--shortcuts" role="dialog" aria-label="Keyboard shortcuts">'
-      + '<div class="dialog__title">Keyboard shortcuts</div>'
-      + shortcutGroups().map(([group, rows]) => '<div class="sc-group"><div class="sc-group__label">' + group + '</div>'
-        + rows.map(([ks, label, alt]) => '<div class="sc-row"><span class="sc-row__label">' + label + '</span>'
-          + '<span class="sc-row__keys">' + keys(ks) + (alt ? '<span class="sc-row__or">or</span>' + keys(alt) : '') + '</span></div>').join('')
-        + '</div>').join('')
-      + '<div class="sc-hint">Something off? Send feedback with ' + keys(['⌘', '⇧', 'F']) + '</div>'
-      + '</div>';
+    backdrop.innerHTML = '<div class="dialog dialog--shortcuts" role="dialog" aria-label="Keyboard shortcuts">' + shortcutsHTML() + '</div>';
     document.body.appendChild(backdrop);
     requestAnimationFrame(() => backdrop.classList.add('open'));
-    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeShortcuts(); });
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) { closeShortcuts(); return; }
+      const c = e.target.closest('[data-sc-cat]');
+      if (c) { shortcutsCat = +c.dataset.scCat; paintShortcuts(); }
+    });
     shortcutsEl = backdrop;
   }
   function closeShortcuts() {

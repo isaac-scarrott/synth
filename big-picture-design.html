@@ -1420,41 +1420,6 @@
   .fb-toast--mail .fb-toast__glyph { color: var(--input); }
   .fb-toast b { font-weight: 600; color: var(--ink); }
 
-  /* ---- Add-worktrees picker (multi-select, keyboard-first like the tree) ---- */
-  .wtlist { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 12px; max-height: 264px; overflow-y: auto; }
-  .wtrow {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 6px 8px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 120ms ease;
-  }
-  @media (hover: hover) and (pointer: fine) {
-    .wtrow:hover { background: var(--hover-soft); }
-  }
-  .wtrow.cur { background: var(--hover); box-shadow: 0 0 0 1.5px rgba(var(--accent-rgb),0.5); }
-  .wtcheck {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    border-radius: 4.5px;
-    border: 1px solid var(--line-2);
-    background: var(--raised);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    transition: background-color 120ms ease, border-color 120ms ease;
-  }
-  .wtcheck svg { width: 10px; height: 10px; display: block; opacity: 0; transition: opacity 120ms ease; }
-  .wtrow.on .wtcheck { background: rgba(var(--input-rgb),0.9); border-color: transparent; }
-  .wtrow.on .wtcheck svg { opacity: 1; }
-  .wtrow__name { flex: 1; font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wtrow__age { font-size: 10.5px; color: var(--ink-meta); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-  .wtrow__tag { width: 74px; text-align: right; font-size: 10.5px; color: var(--text-faint); flex-shrink: 0; }
-
   /* segmented control (Create worktree: existing branch / new branch) */
   .seg { display: flex; background: var(--hover); border-radius: 8px; padding: 2px; margin-bottom: 12px; }
   .seg__btn {
@@ -4251,6 +4216,10 @@
     { name: 'chore/deps', age: '1w' },
   ];
 
+  // The repo's default branch (main/master/HEAD) — the sole worktree a freshly
+  // added project starts with. Other branches are added later, one at a time.
+  const DEFAULT_BRANCH = FAKE_BRANCHES.find((b) => b.worktree) || FAKE_BRANCHES[0];
+
   // Remote-tracking branches on origin that aren't checked out locally — the extra
   // reach the ⌘K worktree picker searches (git branch -a). Kept out of the
   // local-only flows (add-workspace picker, kebab dialog) so those are unchanged.
@@ -4406,8 +4375,8 @@
   const CHIP_COLORS = ['#7569b5', '#477b90', '#7b773d', '#3e7e74', '#ad587f', '#a158ad'];
   let workspaceSeq = nav.querySelectorAll(':scope > [data-repo]').length;
 
-  // Every branch row maps to a real worktree folder (ADR-0007), so a workspace is
-  // added with exactly the branches the user picked — collapsed, count = picked.
+  // Every branch row maps to a real worktree folder (ADR-0007). Add project takes no
+  // branch choice — the repo comes in with just its default branch, collapsed.
   function addWorkspace(pathOrName, cands) {
     const name = (pathOrName.split('/').filter(Boolean).pop() || pathOrName).trim();
     const color = CHIP_COLORS[workspaceSeq++ % CHIP_COLORS.length];
@@ -4439,102 +4408,16 @@
     repo.addEventListener('animationend', () => repo.classList.remove('row-enter'), { once: true });
   }
 
-  // Step 2 of adding a workspace: pick which branches to show. Pre-checked rows
-  // already have a worktree (reused); other checked rows get one created on Add.
-  // Keyboard-first like the tree: ↑/↓ move, Space toggles, Enter adds, Esc cancels.
-  const ICON_CHECK = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
-  function openWorktreePicker(pathOrName) {
-    const name = (pathOrName.split('/').filter(Boolean).pop() || pathOrName).trim();
-    const cands = FAKE_BRANCHES;
-    const checked = cands.map((c) => !!c.worktree);
-    let cur = 0;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'backdrop';
-    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="Add worktrees">
-      <div class="dialog__title">Add worktrees — ${esc(name)}</div>
-      <div class="wtlist">${cands.map((c, i) => `
-        <div class="wtrow" data-i="${i}">
-          <span class="wtcheck">${ICON_CHECK}</span>
-          <span class="wtrow__name">${esc(c.name)}</span>
-          <span class="wtrow__age">${esc(c.age)}</span>
-          <span class="wtrow__tag"></span>
-        </div>`).join('')}</div>
-      <div class="dialog__actions">
-        <span class="dialog__btn" data-d="cancel">Cancel</span>
-        <span class="dialog__btn dialog__btn--primary" data-d="create">Add</span>
-      </div></div>`;
-    document.body.appendChild(backdrop);
-    requestAnimationFrame(() => backdrop.classList.add('open'));
-
-    const rows = [...backdrop.querySelectorAll('.wtrow')];
-    const addBtn = backdrop.querySelector('[data-d="create"]');
-    const paint = () => {
-      rows.forEach((r, i) => {
-        r.classList.toggle('on', checked[i]);
-        r.classList.toggle('cur', i === cur);
-        r.querySelector('.wtrow__tag').textContent =
-          cands[i].worktree ? 'has worktree' : (checked[i] ? 'will create' : '');
-      });
-      const n = checked.filter(Boolean).length;
-      addBtn.textContent = 'Add ' + n;
-      addBtn.classList.toggle('is-disabled', !n);
-    };
-    paint();
-
-    const close = () => { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey, true); };
-    const submit = () => {
-      const picked = cands.filter((_, i) => checked[i]);
-      if (!picked.length) return;
-      addWorkspace(pathOrName, picked);
-      close();
-    };
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) return close();
-      const r = e.target.closest('.wtrow');
-      if (r) { cur = +r.dataset.i; checked[cur] = !checked[cur]; paint(); return; }
-      const b = e.target.closest('.dialog__btn'); if (!b) return;
-      if (b.dataset.d === 'cancel') close(); else submit();
-    });
-    function onKey(e) {
-      const k = e.key;
-      if (k === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
-      else if (k === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); cur = Math.min(cur + 1, cands.length - 1); paint(); }
-      else if (k === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); cur = Math.max(cur - 1, 0); paint(); }
-      else if (k === ' ') { e.preventDefault(); e.stopPropagation(); checked[cur] = !checked[cur]; paint(); }
-      else if (k === 'Enter') { e.preventDefault(); e.stopPropagation(); submit(); }
-    }
-    document.addEventListener('keydown', onKey, true);   // capture: the picker owns the keyboard
+  // Add project opens the OS folder picker (native chrome we can't render here), so a
+  // click stands in for "folder chosen" and adds the repo straight away with its default
+  // branch — a path is never typed. The pool cycles plausible folders so repeated adds
+  // read like distinct real picks.
+  const DEMO_REPOS = ['payments-api', 'design-system', 'infra', 'growth-web', 'data-pipeline'];
+  let demoRepoSeq = 0;
+  function addProjectViaPicker() {
+    addWorkspace('~/code/' + DEMO_REPOS[demoRepoSeq++ % DEMO_REPOS.length], [DEFAULT_BRANCH]);
   }
-
-  function openWorkspaceDialog() {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'backdrop';
-    backdrop.innerHTML = `<div class="dialog" role="dialog" aria-label="Add project">
-      <div class="dialog__title">Add project</div>
-      <div class="field"><label>Repository</label>
-        <input id="wsPath" placeholder="~/code/my-repo" autocomplete="off" spellcheck="false"></div>
-      <div class="dialog__actions">
-        <span class="dialog__btn" data-d="cancel">Cancel</span>
-        <span class="dialog__btn dialog__btn--primary is-disabled" data-d="create">Next</span>
-      </div></div>`;
-    document.body.appendChild(backdrop);
-    requestAnimationFrame(() => backdrop.classList.add('open'));
-    const input = backdrop.querySelector('#wsPath');
-    const addBtn = backdrop.querySelector('[data-d="create"]');
-    setTimeout(() => input.focus(), 60);
-    input.addEventListener('input', () => addBtn.classList.toggle('is-disabled', !input.value.trim()));
-    const close = () => { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 200); document.removeEventListener('keydown', onKey); };
-    const submit = () => { const v = input.value.trim(); if (!v) return; close(); openWorktreePicker(v); };
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) return close();
-      const b = e.target.closest('.dialog__btn'); if (!b) return;
-      if (b.dataset.d === 'cancel') close(); else submit();
-    });
-    function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter') { e.preventDefault(); submit(); } }
-    document.addEventListener('keydown', onKey);
-  }
-  document.getElementById('addWorkspace').addEventListener('click', openWorkspaceDialog);
+  document.getElementById('addWorkspace').addEventListener('click', addProjectViaPicker);
 
   // --- Drag-to-reorder: change a session / worktree / workspace's priority ---
   // Each row reorders only within its own sibling list (sessions in a worktree,
@@ -5243,7 +5126,7 @@
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(br)) });
-    if (head) items.push({ grp: 'Project', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(createFrame('worktree', head)) });
+    if (head) items.push({ grp: 'Project', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(worktreeFrame(head)) });
     return { items };
   }
 
@@ -5294,7 +5177,7 @@
         ];
         const items = [
           ...here.items.map((it) => ({ ...it, g: 'Actions', ctx: it.unit })),
-          { g: 'Actions', icon: ICON_PLUS,     label: 'Add project', enter: () => pushFrame(createFrame('workspace')) },
+          { g: 'Actions', icon: ICON_PLUS,     label: 'Add project', enter: () => runAndClose(addProjectViaPicker) },
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
@@ -5314,7 +5197,7 @@
       crumb: 'Projects', placeholder: 'Search projects…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_PLUS, label: 'Add project', enter: () => pushFrame(createFrame('workspace')) },
+          { sec: 'act', icon: ICON_PLUS, label: 'Add project', enter: () => runAndClose(addProjectViaPicker) },
         ];
         allRows('.repo__head').forEach((h) => items.push({ sec: 'list', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         return items;
@@ -5343,7 +5226,7 @@
       crumb: name, placeholder: 'Search ' + name + '…',
       build() {
         const items = [
-          { sec: 'act', icon: ICON_BRANCH, label: 'New branch',  enter: () => pushFrame(createFrame('worktree', head)) },
+          { sec: 'act', icon: ICON_BRANCH, label: 'New branch',  enter: () => pushFrame(worktreeFrame(head)) },
         ];
         // Session creates land on the workspace's active branch (contextBranch's fallback);
         // the ctx chip names it since the crumb only establishes the workspace.
@@ -5427,7 +5310,7 @@
   // the ⌘K frame for that action rather than the row's full action list.
   function addToRow(row) {
     const lvl = rowLevel(row);
-    if (lvl === 'repo') openPaletteAt(createFrame('worktree', row));
+    if (lvl === 'repo') openPaletteAt(worktreeFrame(row));
     else if (lvl === 'branch') openPaletteAt(newSessionFrame(row));
     else if (lvl === 'session') { const b = branchGroupOf(row); if (b) openPaletteAt(newSessionFrame(b)); }
   }
@@ -5467,20 +5350,6 @@
           { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
-      },
-    };
-  }
-
-  function createFrame(kind, ctx) {
-    if (kind === 'worktree') return worktreeFrame(ctx);
-    const cfg = {
-      workspace: { crumb: 'Add project', ph: 'Repository path…', empty: 'Type a repository path…', mk: (v) => 'Add project “' + v + '”', go: (v) => openWorktreePicker(v) },
-    }[kind];
-    return {
-      crumb: cfg.crumb, mode: 'input', placeholder: cfg.ph,
-      build(q) {
-        const v = q.trim();
-        return [{ icon: ICON_PLUS, label: v ? cfg.mk(v) : cfg.empty, disabled: !v, enter: () => { if (v) runAndClose(() => cfg.go(v)); } }];
       },
     };
   }

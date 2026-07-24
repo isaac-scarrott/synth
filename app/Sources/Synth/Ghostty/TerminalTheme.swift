@@ -3,9 +3,10 @@ import GhosttyKit
 
 /// The terminal's ghostty configuration, themed to match the app appearance — the native
 /// counterpart of working.html's `--tui-*` tokens. Light mode is a cool near-white surface
-/// carrying the app's own ink. Dark mode overrides nothing: ghostty's own default scheme
-/// stands, so the terminal matches Claude Code's built-in dark theme instead of fighting it
-/// with a bespoke near-black card. Everything else (font, padding, clipboard, the
+/// carrying the app's own ink. Dark mode overrides only the background (the near-black
+/// `--tui-bg`), so the surface — and the padding band ghostty fills with it — reads as one
+/// continuous dark card with the app frame; foreground and ANSI palette ride on Claude Code's
+/// own dark theme rather than fighting it. Everything else (font, padding, clipboard, the
 /// shell-integration=none used by the env scrub) is scheme-independent and lives here too.
 enum TerminalTheme {
     /// Colours for one appearance. Backgrounds/foreground plus a full 16-colour ANSI palette
@@ -46,8 +47,10 @@ enum TerminalTheme {
         confirm-close-surface = false
         shell-integration = none
         """
-        // Dark mode rides on ghostty's default scheme — no surface or palette overrides.
-        guard !dark else { return base }
+        // Dark mode overrides only the background: `window-padding-color = background` fills the
+        // padding band with it, so this keeps the surface flush with the app's near-black frame
+        // instead of leaking ghostty's lighter default. Foreground and palette stay Claude Code's.
+        guard !dark else { return base + "\nbackground = 121317" }
         let c = Self.light
         let palette = c.ansi.enumerated()
             .map { "palette = \($0.offset)=#\($0.element)" }

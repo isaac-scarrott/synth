@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.12.2",
+    "date": "2026-07-24",
+    "changes": [
+      "The dark terminal surface goes back to Synth's near-black, flush with the app frame — the 0.12.1 change had left ghostty's lighter default showing in the padding band as a pale halo. Foreground and colours still come from Claude Code's own dark theme."
+    ]
+  },
+  {
     "version": "0.12.1",
     "date": "2026-07-24",
     "changes": [

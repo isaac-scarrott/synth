@@ -876,3 +876,12 @@ disclosure to dive deeper.
   Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads; 0.12.0 (353)
   users take a small delta. Appcast newest is `sparkle:version` 359, all 18 enclosures EdDSA-signed.
   Clean run. Landing links unchanged (stable `Synth.dmg` alias), so no site republish.
+- **Dark terminal keeps the background override (supersedes the 0.12.1 drop)** — 0.12.1 dropped the
+  dark override entirely, but `window-padding-color = background` then leaked ghostty's lighter
+  default into the padding band, so the surface read lighter than the near-black frame — a pale halo
+  inside a darker border. The complaint was the palette recolouring, not the dark surface. Fix: dark
+  mode emits a single `background = 121317` (matching `--tui-bg`) and lets fg/cursor/selection/palette
+  ride on Claude Code's own theme. Surface flush with the frame, no colours fought; light unchanged.
+- **Synth 0.12.2 shipped (build 360)** — patch bump carrying the dark-terminal background correction
+  above. Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads;
+  0.12.1 users take a small delta. Landing links unchanged (stable `Synth.dmg` alias), no site republish.

@@ -321,12 +321,9 @@ private struct BranchRow: View {
                         store.navCursor = branch.id
                         // Tabs: the branch is the deepest row — clicking it OPENS the branch (its
                         // tabs appear in the strip) rather than toggling a disclosure with nothing
-                        // under it. Restore whatever session its remembered layout was showing,
-                        // falling back to its first tab.
+                        // under it. Same verb the keyboard's ↵ uses (working.html `openBranch`).
                         if store.tabsMode {
-                            let target = branch.layout.map { store.firstLeaf($0).sessionID }?
-                                .flatMap { store.session($0) } ?? branch.sessions.first
-                            if let target { store.open(target); focusContent(store) }
+                            store.openBranch(branch)
                             return
                         }
                         store.toggleExpanded(branch.id)

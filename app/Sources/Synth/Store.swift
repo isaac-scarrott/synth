@@ -503,10 +503,6 @@ enum FeedbackMode {
     /// bundled MCP server. Request/response, so separate from the one-way hook socket.
     @ObservationIgnored private var controlServer: ControlServer!
 
-    /// Bytes of the last snapshot written — lets the autosave skip an unchanged rewrite
-    /// (ADR-0010). @ObservationIgnored: a bookkeeping field, not UI state.
-    @ObservationIgnored private var lastSavedBytes: Data?
-
     /// The single live store. `AppDelegate.applicationShouldTerminate` reaches it here to gate
     /// quit on busy work — it runs outside SwiftUI's environment and can't `@Environment` it in.
     /// Weak: the store's lifetime is the app's; this only borrows it.
@@ -2039,7 +2035,9 @@ enum FeedbackMode {
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.saveNow()
+                // Synchronous flush, not the async saveNow(): willTerminate runs in the same stack
+                // as the imminent exit(), so a queued async write would never reach disk.
+                self?.flushSave()
                 // Engines must not outlive the app: a surviving instance owns the profile
                 // singleton and silently absorbs the next launch (BrowserEngine.shutdown docs).
                 BrowserManager.shared.shutdownAll()
@@ -2051,8 +2049,12 @@ enum FeedbackMode {
         }
     }
 
+    /// Synchronous state flush for app termination — snapshot on main, then block until the write
+    /// queue has drained it to disk (PersistenceStore.flush), so quitting never loses the last edit.
+    func flushSave() { PersistenceStore.flush(snapshot()) }
+
     func saveNow() {
-        lastSavedBytes = PersistenceStore.save(snapshot(), lastBytes: lastSavedBytes)
+        PersistenceStore.save(snapshot())
         syncAgentBridge()
     }
 

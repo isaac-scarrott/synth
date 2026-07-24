@@ -135,21 +135,46 @@ enum PersistenceStore {
                   let state = try? JSONDecoder().decode(PersistedState.self, from: data),
                   state.version == schemaVersion
             else { continue }
+            // Seed the write queue's last-written bytes so the first autosave doesn't rewrite an
+            // unchanged tree — but only from the primary: a load off the backup means the primary
+            // is missing/corrupt, so the next save must actually write it.
+            if url == fileURL { writeQueue.async { lastBytes = data } }
             return state
         }
         return nil
     }
 
-    /// Write `state`, rotating the current file to `-previous` first. Returns the encoded
-    /// bytes so the caller can skip an unchanged rewrite (the encoder sorts keys, so equal
-    /// trees encode to equal bytes). Returns `lastBytes` unchanged on an encode failure or
-    /// when nothing changed — nothing is written in those cases.
-    @discardableResult
-    static func save(_ state: PersistedState, lastBytes: Data?) -> Data? {
+    /// A serial queue that owns the encode + disk write so the main thread never blocks on JSON
+    /// serialization or atomic file I/O — the hot cost that made every reorder keystroke and each
+    /// 4s autosave tick stall on a loaded tree. Serial so a later save always lands after an
+    /// earlier one (last-writer-wins per ADR-0010 stays intact). `lastBytes` lives here too, read
+    /// and written only on this queue, so the unchanged-rewrite skip needs no cross-thread guard.
+    private static let writeQueue = DispatchQueue(label: "tech.holibob.synth.persistence", qos: .utility)
+    private static var lastBytes: Data?
+
+    /// Persist `state` off the main thread. `snapshot()` must be taken on the main actor (it reads
+    /// the live tree); the value it returns is handed here to encode + write on `writeQueue`.
+    static func save(_ state: PersistedState) {
+        writeQueue.async { write(state) }
+    }
+
+    /// Synchronous flush for the terminate path: the app calls `exit()` in the same stack as
+    /// `willTerminate`, so an async write would never drain. `sync` blocks the caller until the
+    /// queue (any pending async saves, then this one) has finished, guaranteeing the last state
+    /// reaches disk before the process dies.
+    static func flush(_ state: PersistedState) {
+        writeQueue.sync { write(state) }
+    }
+
+    /// Runs on `writeQueue`. Rotates the current file to `-previous`, then writes `state`. The
+    /// encoder sorts keys, so an unchanged tree encodes to bytes equal to `lastBytes` and is
+    /// skipped — no encode-diff work reaches the caller, and nothing is written when clean.
+    private static func write(_ state: PersistedState) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(state) else { return lastBytes }
-        if let lastBytes, lastBytes == data { return lastBytes }
+        guard let data = try? encoder.encode(state) else { return }
+        if lastBytes == data { return }
+        lastBytes = data
 
         let dir = fileURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -157,6 +182,5 @@ enum PersistenceStore {
             try? existing.write(to: backupURL, options: .atomic)
         }
         try? data.write(to: fileURL, options: .atomic)
-        return data
     }
 }

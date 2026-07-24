@@ -1,10 +1,11 @@
 import AppKit
 import GhosttyKit
 
-/// The Metal-backed NSView that hosts one libghostty surface. libghostty owns the renderer
-/// (it draws into this view's CAMetalLayer on its own thread, driven by a CVDisplayLink
-/// keyed to the display id) and the PTY/shell. This view's job is narrow: create the
-/// surface, keep it sized to the view in pixels, and forward keyboard/mouse/IME input.
+/// The NSView that hosts one libghostty surface. libghostty owns the renderer — at surface
+/// creation it swaps this view's layer for its own IOSurface-backed CALayer and draws into
+/// that from its renderer thread, driven by a CVDisplayLink keyed to the display id — and
+/// the PTY/shell. This view's job is narrow: create the surface, keep it sized to the view
+/// in pixels and its layer's contentsScale current, and forward keyboard/mouse/IME input.
 final class GhosttySurfaceView: NSView, NSTextInputClient {
     private(set) var surface: ghostty_surface_t?
     private let sessionID: UUID
@@ -72,6 +73,12 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         guard let window else { return }
         if surface == nil { createSurface() }
         updateDisplayID()
+        // Re-stamp scale + size on every window join, not just creation: the observers
+        // below are unregistered while the view sits detached (pane switches re-parent
+        // cached views), so a monitor change during that window is otherwise caught only
+        // by AppKit's insertion-time viewDidChangeBackingProperties. Idempotent when
+        // nothing changed.
+        updateSurfaceSize()
         updateOcclusion()
 
         // libghostty paces its renderer with a display link keyed to the display id, and
@@ -118,6 +125,11 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         updateDisplayID()
         updateSurfaceSize()
         ghostty_surface_refresh(surface)
+        // While this notification is in flight the window can still report the old
+        // display's backingScaleFactor, and AppKit doesn't reliably follow up with
+        // viewDidChangeBackingProperties (ghostty-org/ghostty#2731) — settle once more
+        // after the runloop turn so the grid re-typesets at the real scale.
+        DispatchQueue.main.async { [weak self] in self?.updateSurfaceSize() }
     }
 
     /// Mirror the window's occlusion into the renderer, forcing a full repaint on the
@@ -251,11 +263,19 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         let pxW = max(1, Int((bounds.width * scale).rounded(.down)))
         let pxH = max(1, Int((bounds.height * scale).rounded(.down)))
 
-        // libghostty's renderer owns this CAMetalLayer and sets its contentsScale and
-        // drawableSize itself, on its own thread, in response to the calls below. The host
-        // must not also write them: crossing to a display with a different backingScaleFactor
-        // otherwise makes the two writers race, compositing a frame at a mismatched scale
-        // (blurry / wrong-sized terminal) until the next repaint.
+        // libghostty replaced this view's layer with its own IOSurface-backed layer at
+        // surface creation, stamping its contentsScale once from the creation-time scale —
+        // the renderer never updates it afterwards. Keeping it current is the host's job
+        // (Ghostty.app's SurfaceView does the same): left stale, the compositor rescales
+        // the terminal contents when the window crosses to a display with a different
+        // backingScaleFactor — wrong-sized, blurry text until the next re-typeset.
+        if let layer, layer.contentsScale != scale {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)  // no implicit scale animation
+            layer.contentsScale = scale
+            CATransaction.commit()
+        }
+
         ghostty_surface_set_content_scale(surface, scale, scale)
         ghostty_surface_set_size(surface, UInt32(pxW), UInt32(pxH))
         ghostty_surface_refresh(surface)

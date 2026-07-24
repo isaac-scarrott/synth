@@ -865,3 +865,14 @@ disclosure to dive deeper.
   users take a ~727KB delta. Appcast newest is `sparkle:version` 353, every enclosure EdDSA-signed.
   Clean run — no killed pre-publish, no feed residue. Landing links unchanged (stable `Synth.dmg`
   alias), so no site republish.
+- **Terminal colours: dark rides ghostty's default, light cools to near-white** — dark mode drops
+  Synth's bespoke near-black override entirely (Claude Code paints its own dark theme, so the
+  override only fought the surface); `TerminalTheme.swift` now emits no bg/fg/cursor/selection/palette
+  lines in dark and lets ghostty's default scheme stand. Light mode cools its warm cream surface to
+  the design's `#f7f8fa` (`Theme.tuiBg`) and drops the dead `.term:focus` copper ring that the
+  top-edge focus bar (004 §4) had already superseded. Light keeps its palette (it earns its keep
+  against Claude Code's `#fff` light theme); native app + both designs (subset invariant held).
+- **Synth 0.12.1 shipped (build 359)** — patch bump carrying the two terminal-colour fixes above.
+  Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads; 0.12.0 (353)
+  users take a small delta. Appcast newest is `sparkle:version` 359, all 18 enclosures EdDSA-signed.
+  Clean run. Landing links unchanged (stable `Synth.dmg` alias), so no site republish.

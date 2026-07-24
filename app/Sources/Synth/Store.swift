@@ -338,6 +338,13 @@ enum FeedbackMode {
     /// (mousemove clears it), mirroring working.html's `.kbd` class.
     var keyboardActive = false
 
+    /// One-shot: the next terminal mount skips the focus-grab `TerminalHost` normally does on
+    /// open. A sidebar click opens the session in the content pane but keeps the keyboard on the
+    /// tree (working.html handToSidebar), and `TerminalHost`'s mount-focus would fight that — so
+    /// `openFromSidebar` raises this and the mount consumes it. Any dive-into-content path
+    /// (`focusContent`) clears it, so a normal open focuses the shell as before.
+    var suppressShellFocusOnOpen = false
+
     /// True from the moment a keystroke hides the pointer (`NSCursor.setHiddenUntilMouseMoves`)
     /// until it next genuinely moves. SwiftUI's `onHover`/`onContinuousHover` re-fire from mere
     /// hit-testing whenever a view is laid out under the pointer's last known position — scrolling

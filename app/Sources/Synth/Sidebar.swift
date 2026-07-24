@@ -195,9 +195,8 @@ private struct WorkspaceRow: View {
                     .padding(.horizontal, 6).padding(.vertical, 6)
                 } else {
                     Button {
-                        focusSidebar()
                         store.toggleExpanded(workspace.id)
-                        store.navCursor = workspace.id
+                        store.handToSidebar(workspace.id)
                     } label: {
                         HStack(spacing: 8) {
                             Chevron(open: isOpen)
@@ -317,19 +316,20 @@ private struct BranchRow: View {
                 } else {
                     Button {
                         guard !branch.isPending else { return }   // nothing to expand or open yet
-                        focusSidebar()
-                        store.navCursor = branch.id
                         // Tabs: the branch is the deepest row — clicking it OPENS the branch (its
                         // tabs appear in the strip) rather than toggling a disclosure with nothing
                         // under it. Restore whatever session its remembered layout was showing,
-                        // falling back to its first tab.
+                        // falling back to its first tab; the keyboard follows into the pane.
                         if store.tabsMode {
+                            focusSidebar()
+                            store.navCursor = branch.id
                             let target = branch.layout.map { store.firstLeaf($0).sessionID }?
                                 .flatMap { store.session($0) } ?? branch.sessions.first
                             if let target { store.open(target); focusContent(store) }
                             return
                         }
                         store.toggleExpanded(branch.id)
+                        store.handToSidebar(branch.id)   // the keyboard stays on the tree
                     } label: {
                         HStack(spacing: 6) {
                             // Tabs: the branch is the deepest row — nothing left to disclose, so
@@ -493,7 +493,7 @@ private struct SessionRow: View {
                 }
                 .padding(.leading, 61).padding(.trailing, 6).padding(.vertical, 6)
             } else {
-                Button { store.open(session); focusContent(store) } label: {
+                Button { store.openFromSidebar(session) } label: {
                     HStack(spacing: 8) {
                         SessionIcon(kind: session.kind, size: 14).frame(width: 14)
                         // The box always reserves the semibold width (hidden ghost), so the
@@ -633,7 +633,7 @@ private struct SessionTile: View {
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            Button { store.open(session); focusContent(store) } label: {
+            Button { store.openFromSidebar(session) } label: {
                 HStack(spacing: 5) {
                     SessionIcon(kind: session.kind, size: 13).frame(width: 13)
                     if showName {
@@ -1407,6 +1407,7 @@ struct SidebarResizeHandle: View {
 /// A browser session focuses its engine view (the page takes keys).
 @MainActor func focusContent(_ store: AppStore) {
     store.keyboardActive = false
+    store.suppressShellFocusOnOpen = false   // diving into the pane always focuses the shell
     guard let id = store.openSessionID else { return }
     if let view = TerminalManager.shared.existingView(id) {
         NSApp.keyWindow?.makeFirstResponder(view)

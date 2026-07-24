@@ -4152,15 +4152,14 @@
     if (toggleEl) {
       e.preventDefault();
       toggle(toggleEl.closest('[data-repo]'));
-      select(toggleEl); // keep selection on the row you acted on
+      handToSidebar(toggleEl); // select the row you acted on and take the keyboard with it
       return;
     }
     const session = e.target.closest('[data-session]');
     if (session) {
       e.preventDefault();
-      select(session);
       openSession(session); // becomes the open session: renders content, marks read, derives the pill
-      focusContent();       // focus follows the open session into the content pane
+      handToSidebar(session); // the session opens in the content pane, but the keyboard stays on the tree
     }
   });
 
@@ -4253,6 +4252,16 @@
     const scope = activePaneEl() || content;   // ⌘1 hands the keyboard to the active pane (002)
     const el = scope.querySelector('.chat__input') || scope.querySelector('[data-term]');
     if (el) el.focus();
+  }
+  // Clicking a row hands the keyboard to the sidebar, exactly like ⌘0: the clicked row becomes
+  // the cursor and the nav verbs (r/d/a, j/k) act on it. A clicked session still opens in the
+  // content pane, but the keyboard doesn't follow it there — you're working the tree now. Press
+  // ↵ (or ⌘1) to dive into the pane once you want to type.
+  function handToSidebar(row) {
+    app.classList.remove('collapsed');
+    if (document.activeElement && document.activeElement.closest('.content')) document.activeElement.blur();
+    document.body.classList.add('kbd');
+    select(row);
   }
 
   document.addEventListener('keydown', (e) => {

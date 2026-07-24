@@ -860,6 +860,11 @@ disclosure to dive deeper.
   so ⌘W falls through to the stock window-close only when nothing's closeable, and the local key
   monitor owns ⌘W in all modes so a real close never leaks to macOS's ⌘W. Shortcuts sheet, palette
   hint, and comments track ⌘W; the bare sidebar `d` key is unchanged. Builds clean.
+- **Clicking a sidebar row hands the keyboard to the sidebar** — a click now makes the tree
+  keyboard-active (blurs content, selects the row) instead of `focusContent()`, so `r`/`d`/`a`/`j`/`k`
+  act on the clicked branch/worktree/session immediately; the session still opens in the pane, ↵ or ⌘1
+  dives in to type. `handToSidebar()` mirrors ⌘0. Both designs + native (`openFromSidebar` +
+  a one-shot `suppressShellFocusOnOpen` so the terminal's mount-focus doesn't re-steal the keyboard).
 - **Synth 0.12.0 shipped (build 353)** — minor bump carrying the single ⌘D→⌘W close-session remap.
   Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads; 0.11.0 (346)
   users take a ~727KB delta. Appcast newest is `sparkle:version` 353, every enclosure EdDSA-signed.

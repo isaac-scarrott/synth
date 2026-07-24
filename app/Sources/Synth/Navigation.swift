@@ -94,6 +94,28 @@ extension AppStore {
         navCursor = currentRow(rows) ?? rows.first
     }
 
+    /// A sidebar row click hands the keyboard to the tree — working.html's `handToSidebar`,
+    /// which is ⌘0's grammar aimed at a specific row. Un-collapse the sidebar, release the
+    /// content pane's first responder, light the keyboard ring, and land the cursor on the
+    /// clicked row. A clicked session still opens in the content pane, but the keyboard stays
+    /// on the tree — so r/d/a act on the row you clicked. ↵ (or ⌘1) dives into the pane to type.
+    func handToSidebar(_ id: UUID) {
+        sidebarCollapsed = false
+        focusSidebar()               // release the terminal/page: the global monitor drives nav
+        keyboardActive = true
+        navCursor = id
+    }
+
+    /// Clicking a session row opens it in the content pane but keeps the keyboard on the tree
+    /// (working.html: `openSession` then `handToSidebar`, not `focusContent`). The one shell-focus
+    /// `TerminalHost` grabs when the terminal mounts is suppressed for this open, so first
+    /// responder stays with the sidebar nav — ↵ or ⌘1 dive into the pane when you want to type.
+    func openFromSidebar(_ session: Session) {
+        suppressShellFocusOnOpen = true
+        open(session)
+        handToSidebar(session.id)
+    }
+
     // MARK: Reorder within a sibling list (F2 drag + F7 ⇧J/⇧K)
 
     /// Change a row's priority by moving it `delta` positions within its own sibling list —

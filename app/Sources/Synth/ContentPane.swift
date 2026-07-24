@@ -4,6 +4,7 @@ import AppKit
 /// Hosts a managed terminal NSView. The view is owned by TerminalManager (not created
 /// here), so SwiftUI re-parenting it never restarts the shell.
 struct TerminalHost: NSViewRepresentable {
+    @Environment(AppStore.self) private var store
     let terminal: GhosttySurfaceView
 
     func makeNSView(context: Context) -> NSView {
@@ -18,8 +19,13 @@ struct TerminalHost: NSViewRepresentable {
         ])
         // Focus the shell when a session is opened (this view is rebuilt per
         // session via .id). Not on every update — that would steal focus from
-        // the sidebar and dialogs.
-        DispatchQueue.main.async { container.window?.makeFirstResponder(terminal) }
+        // the sidebar and dialogs. A sidebar-click open skips it (openFromSidebar
+        // keeps the keyboard on the tree); the flag is one-shot, cleared on consume.
+        let store = store
+        DispatchQueue.main.async {
+            if store.suppressShellFocusOnOpen { store.suppressShellFocusOnOpen = false }
+            else { container.window?.makeFirstResponder(terminal) }
+        }
         return container
     }
 

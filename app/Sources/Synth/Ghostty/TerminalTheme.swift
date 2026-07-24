@@ -3,9 +3,10 @@ import GhosttyKit
 
 /// The terminal's ghostty configuration, themed to match the app appearance — the native
 /// counterpart of working.html's `--tui-*` tokens. Light mode is a cool near-white surface
-/// carrying the app's own ink; dark mode is a deep near-black card with brighter accents.
-/// Everything else (font, padding, clipboard, the shell-integration=none used by the env
-/// scrub) is scheme-independent and lives here too, so one config fully describes a surface.
+/// carrying the app's own ink. Dark mode overrides nothing: ghostty's own default scheme
+/// stands, so the terminal matches Claude Code's built-in dark theme instead of fighting it
+/// with a bespoke near-black card. Everything else (font, padding, clipboard, the
+/// shell-integration=none used by the env scrub) is scheme-independent and lives here too.
 enum TerminalTheme {
     /// Colours for one appearance. Backgrounds/foreground plus a full 16-colour ANSI palette
     /// (0–7 normal, 8–15 bright), kept in step with the HTML design tokens.
@@ -26,21 +27,12 @@ enum TerminalTheme {
         ansi: ["1c1e23", "a2241a", "106236", "754d09", "194eb7", "86289e", "075d6f", "9296a1",
                "5b5e68", "851d16", "0d4f2c", "5f3e07", "143f96", "6e2082", "064c5b", "ffffff"])
 
-    private static let dark = Palette(
-        bg: "121317", fg: "e3e5ea", cursor: "e3e5ea", selection: "333a48",
-        ansi: ["2a2a30", "ec6a5e", "6fcf8e", "e0b45f", "6fa2ee", "c398e8", "5fc9c1", "cfcfd4",
-               "7e818c", "ff8a80", "8fe0a8", "f0c674", "8ab4f8", "d8b6fb", "86e3dc", "f6f6f8"])
-
     static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
     private static func configString(dark: Bool) -> String {
-        let c = dark ? Self.dark : Self.light
-        let palette = c.ansi.enumerated()
-            .map { "palette = \($0.offset)=#\($0.element)" }
-            .joined(separator: "\n")
-        return """
+        let base = """
         font-family = SF Mono
         font-size = 12
         term = xterm-256color
@@ -53,6 +45,14 @@ enum TerminalTheme {
         clipboard-write = allow
         confirm-close-surface = false
         shell-integration = none
+        """
+        // Dark mode rides on ghostty's default scheme — no surface or palette overrides.
+        guard !dark else { return base }
+        let c = Self.light
+        let palette = c.ansi.enumerated()
+            .map { "palette = \($0.offset)=#\($0.element)" }
+            .joined(separator: "\n")
+        return base + "\n" + """
         background = \(c.bg)
         foreground = \(c.fg)
         cursor-color = \(c.cursor)

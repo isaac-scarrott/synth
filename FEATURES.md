@@ -860,13 +860,43 @@ disclosure to dive deeper.
   so ⌘W falls through to the stock window-close only when nothing's closeable, and the local key
   monitor owns ⌘W in all modes so a real close never leaks to macOS's ⌘W. Shortcuts sheet, palette
   hint, and comments track ⌘W; the bare sidebar `d` key is unchanged. Builds clean.
-- **Clicking a sidebar row hands the keyboard to the sidebar** — a click now makes the tree
-  keyboard-active (blurs content, selects the row) instead of `focusContent()`, so `r`/`d`/`a`/`j`/`k`
-  act on the clicked branch/worktree/session immediately; the session still opens in the pane, ↵ or ⌘1
-  dives in to type. `handToSidebar()` mirrors ⌘0. Both designs + native (`openFromSidebar` +
-  a one-shot `suppressShellFocusOnOpen` so the terminal's mount-focus doesn't re-steal the keyboard).
 - **Synth 0.12.0 shipped (build 353)** — minor bump carrying the single ⌘D→⌘W close-session remap.
   Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads; 0.11.0 (346)
   users take a ~727KB delta. Appcast newest is `sparkle:version` 353, every enclosure EdDSA-signed.
   Clean run — no killed pre-publish, no feed residue. Landing links unchanged (stable `Synth.dmg`
   alias), so no site republish.
+- **Terminal colours: dark rides ghostty's default, light cools to near-white** — dark mode drops
+  Synth's bespoke near-black override entirely (Claude Code paints its own dark theme, so the
+  override only fought the surface); `TerminalTheme.swift` now emits no bg/fg/cursor/selection/palette
+  lines in dark and lets ghostty's default scheme stand. Light mode cools its warm cream surface to
+  the design's `#f7f8fa` (`Theme.tuiBg`) and drops the dead `.term:focus` copper ring that the
+  top-edge focus bar (004 §4) had already superseded. Light keeps its palette (it earns its keep
+  against Claude Code's `#fff` light theme); native app + both designs (subset invariant held).
+- **Synth 0.12.1 shipped (build 359)** — patch bump carrying the two terminal-colour fixes above.
+  Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads; 0.12.0 (353)
+  users take a small delta. Appcast newest is `sparkle:version` 359, all 18 enclosures EdDSA-signed.
+  Clean run. Landing links unchanged (stable `Synth.dmg` alias), so no site republish.
+- **Dark terminal keeps the background override (supersedes the 0.12.1 drop)** — 0.12.1 dropped the
+  dark override entirely, but `window-padding-color = background` then leaked ghostty's lighter
+  default into the padding band, so the surface read lighter than the near-black frame — a pale halo
+  inside a darker border. The complaint was the palette recolouring, not the dark surface. Fix: dark
+  mode emits a single `background = 121317` (matching `--tui-bg`) and lets fg/cursor/selection/palette
+  ride on Claude Code's own theme. Surface flush with the frame, no colours fought; light unchanged.
+- **Synth 0.12.2 shipped (build 360)** — patch bump carrying the dark-terminal background correction
+  above. Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads;
+  0.12.1 users take a small delta. Landing links unchanged (stable `Synth.dmg` alias), no site republish.
+- **In-app notifications stack, nothing replaces (supersedes "one pill at a time")** — a new
+  notification joins the deck rather than evicting an unseen one, and each fades on its own timer. Two
+  roots fixed in both designs (subset invariant held): `.fb-toast` confirmation toasts moved from a
+  wipe-all + single shared timer into a bottom-centre `column-reverse` `.fb-toasts` stack where each
+  toast owns its own dismissal; and the delete/close undo went from a single `pendingUndoKey`
+  (committed by the next delete) to a `pendingUndos` Set, so several undo cards coexist, each
+  committing/undoing its own key and ⌘↩ targeting the newest. Native app landed in the same change:
+  its toasts already stacked in the shared deck, so only the undo needed fixing — `softDelete` drops
+  its `commitPendingUndo()`, and undo resolution goes per-id (`performUndo(_ id:)`) over the deck's
+  already-per-id drain, ⌘↩ targeting the front-most undo. Builds clean.
+- **Clicking a sidebar row hands the keyboard to the sidebar** — a click now makes the tree
+  keyboard-active (blurs content, selects the row) instead of `focusContent()`, so `r`/`d`/`a`/`j`/`k`
+  act on the clicked branch/worktree/session immediately; the session still opens in the pane, ↵ or ⌘1
+  dives in to type. `handToSidebar()` mirrors ⌘0. Both designs + native (`openFromSidebar` +
+  a one-shot `suppressShellFocusOnOpen` so the terminal's mount-focus doesn't re-steal the keyboard).

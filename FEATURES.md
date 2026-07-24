@@ -823,3 +823,10 @@ disclosure to dive deeper.
   PR chip, hidden pane header, tab keyboard chords (`⌘⇧[`/`⌘⇧]`, `⌃⇥`, `⌘1–9`, `⌘W`), a Tabs group
   in the ⌘? sheet, and the full reorder/pair/split/unsplit drag reusing the sidebar's drop ops.
   Runtime-verified by driving the built app; tabs-off confirmed unchanged.
+- **Destructive mouse actions go instant, undo pill as the net** — closing a session / removing a
+  project no longer confirms: the row soft-deletes immediately and an undo pill (`softRemove`, 8s
+  `UNDO_MS`, draining the notif countdown bar) parks it — bring it back by clicking the pill or ⌘↩,
+  else it commits when the bar empties (no restore surface; the window is the whole net). Deleting a
+  worktree stays the one confirm (its sidebar-vs-disk fork is irreversible), then both arms soft-delete
+  with the same pill. Every delete gesture funnels through the one `requestDelete` choke point; landed
+  in both designs (subset invariant holds); native app is a follow-up.

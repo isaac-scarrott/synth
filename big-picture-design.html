@@ -1550,6 +1550,18 @@
   .fb-toast--mail .fb-toast__glyph { color: var(--input); }
   .fb-toast b { font-weight: 600; color: var(--ink); }
 
+  /* Undo pill — a soft-delete's safety net: an actionable fb-toast that drains the notif
+     timer's countdown bar. Clickable (the base pill isn't) and it pauses on hover so the
+     cursor can reach Undo without the window closing under it. */
+  .fb-toast--undo { pointer-events: auto; cursor: pointer; padding-right: 7px; }
+  .fb-toast--undo .fb-toast__glyph { color: var(--ink-2); }
+  .fb-toast__undo { display: inline-flex; align-items: center; gap: 6px; margin-left: 5px; padding: 4px 9px; border-radius: 999px; background: rgba(255,255,255,0.10); border: 0.5px solid var(--line); font: inherit; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .fb-toast--undo:hover .fb-toast__undo { background: rgba(255,255,255,0.18); }
+  .fb-toast__kbd { display: inline-flex; gap: 2px; }
+  .fb-toast__undo kbd { font-family: inherit; font-size: 10px; font-weight: 600; padding: 0 4px; border-radius: 4px; background: rgba(255,255,255,0.16); }
+  .fb-toast--undo .fb-toast__timer { left: 14px; right: 14px; border-radius: 2px; }
+  .fb-toast--undo:hover .fb-toast__timer { animation-play-state: paused; }
+
   /* segmented control (Create worktree: existing branch / new branch) */
   .seg { display: flex; background: var(--hover); border-radius: 8px; padding: 2px; margin-bottom: 12px; }
   .seg__btn {
@@ -2469,7 +2481,8 @@
     return 'idle';
   }
   // Busy: a live agent turn or process. Closing one loses that turn, so it's the only
-  // Close that's red — every Close still confirms, busy or not.
+  // Close still styled red — a caution, not a gate: every Close is instant now, the undo
+  // pill is the net.
   function sessionIsBusy(s) { const st = sessionState(s); return st === 'work' || st === 'run'; }
   const ROLL = {
     input: () => `<span class="ind ind--input">${MARK_INPUT}</span>`,
@@ -2629,7 +2642,7 @@
   // hands the URL to NSWorkspace). In the mock there's nothing to open, so just swallow the nav.
   content.addEventListener('click', (e) => {
     // Tabs (experimental): + opens a new tab on the branch, × closes a tab through the SAME
-    // confirm/close path as ⌘D, and a tab body opens it. Handled before pane-activation so
+    // instant close path as ⌘D (soft-delete + undo pill), and a tab body opens it. Handled before pane-activation so
     // these never fall through to it. Guarded by tabsMode → tabs-off is untouched.
     if (tabsMode) {
       const newBtn = e.target.closest('[data-tab-new]');
@@ -3369,10 +3382,11 @@
     notifsEl.classList.remove('spread'); notifsEl.style.height = ''; notifsEl.style.pointerEvents = '';
   });
 
-  // ⌘↩ jumps to the most-urgent notification — inert when the deck is empty, so the chord
-  // is never stolen otherwise.
+  // ⌘↩ undoes the last soft-delete while its pill is up, else jumps to the most-urgent
+  // notification — inert when neither is pending, so the chord is never stolen otherwise.
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      if (pendingUndo) { e.preventDefault(); performUndo(); return; }
       const el = notifTop();
       if (el) { e.preventDefault(); jumpTo(el); }
     }
@@ -4298,8 +4312,8 @@
     if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !document.querySelector('.backdrop')) {
       // Tabs chords (tabsMode only, so tabs-off is untouched):
       //  • ⌃⇥ / ⌃⇧⇥ cycle the active pane's tabs.
-      //  • ⌘W closes the active tab — routed through the SAME confirm/close path as ⌘D (⌘D still works
-      //    as its silent alias), so a busy tab still confirms before it dies.
+      //  • ⌘W closes the active tab — routed through the SAME close path as ⌘D (⌘D still works
+      //    as its silent alias): instant, with the undo pill as the net even for a busy tab.
       if (tabsMode && e.ctrlKey && !e.metaKey && !e.altKey && k === 'Tab') {
         e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1); return;
       }
@@ -4433,8 +4447,8 @@
       e.preventDefault();
       addToRow(selEl);
     }
-    // r renames the selected row in place; d closes/removes it (idle sessions go straight
-    // through; anything busy, owning browsers, branch, or repo drops into the ⌘K confirm frame)
+    // r renames the selected row in place; d closes/removes it instantly — the undo pill
+    // parks it for a few seconds. Only a worktree (branch) still asks, via the remove fork.
     else if ((k === 'r' || k === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (!isTreeRow(selEl)) return;
       e.preventDefault();
@@ -4631,11 +4645,15 @@
     el.addEventListener('blur', onBlur);
   }
 
-  // Close/remove the selected row from the keyboard — always through the ⌘K confirm frame,
-  // so a single keystroke can't destroy anything — ↵ confirms, Esc cancels.
+  // The one delete verb every gesture funnels through — kebab, tab ×, ⌘W, ⌘D, `d`. It just
+  // does it: the row soft-deletes instantly and an undo pill parks it for a few seconds.
+  // The sole exception is a worktree (branch): deleting its folder on disk is irreversible,
+  // so that one still drops into the deliberate remove-from-sidebar / delete-worktree fork.
   function requestDelete(row) {
     if (!row) return;
-    openPaletteAt(confirmFrame(row));
+    if (rowLevel(row) === 'branch') { openPaletteAt(removeWorktreeFrame(row)); return; }
+    const name = rowLevel(row) === 'repo' ? wsName(row) : seName(row);
+    softRemove(rowUnit(row), { label: (rowLevel(row) === 'session' ? 'Closed ' : 'Removed ') + name });
   }
 
   function actionBtn(kind, icon, label, run) {
@@ -4666,39 +4684,6 @@
   function closeMenu() {
     if (openMenuEl) { const m = openMenuEl; m.classList.remove('open'); setTimeout(() => m.remove(), 160); openMenuEl = null; }
     if (openMenuRow) { openMenuRow.classList.remove('menu-open'); openMenuRow = null; }
-  }
-
-  function removeUnit(unit) {
-    if (!unit) return;
-    // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
-    // live and die with it — the close confirm names them before this runs.
-    if (unit.matches && unit.matches('.session[data-sid]')) ownedOf(unit).forEach(removeUnit);
-    // If the keyboard cursor is on (or inside) the removed unit it falls back up the
-    // hierarchy — session → its branch row, branch → its workspace head — instead of
-    // resetting; a removed top-level workspace falls to a neighbouring workspace.
-    let fallback = null;
-    if (selEl && unit.contains(selEl)) {
-      const up = unit.parentElement && unit.parentElement.closest('[data-repo]');
-      const neighbour = up ? null : [unit.previousElementSibling, unit.nextElementSibling].find((el) => el && el.matches('[data-repo]'));
-      fallback = (up || neighbour) ? (up || neighbour).querySelector(':scope > [data-row]') : null;
-    }
-    unit.classList.add('row-exit');
-    let ran = false;
-    const done = () => {
-      if (ran) return;           // animationend and the safety timeout both fire — settle focus once
-      ran = true;
-      unit.remove(); rollUpGroups();
-      if (setupEl && !document.contains(setupEl)) setupEl = null;
-      // a deleted session's pane collapses; its sibling reflows (001) — no guard (005)
-      if (pruneLayout()) renderLayout();
-      // Nothing left on screen: pop the view stack (016) and land on the session you were
-      // viewing before this one — across branches if that's where it lives.
-      const back = layout ? null : lastViewed();
-      if (back) { jumpTo(back); return; }
-      if (fallback && document.contains(fallback)) select(fallback, true);
-    };
-    unit.addEventListener('animationend', done, { once: true });
-    setTimeout(done, 260);
   }
 
   // Mock "git branch" discovery — stands in for the native app's real GitService.
@@ -5505,7 +5490,7 @@
   };
   let toastTimer = null;
   function flashToast(kind, title, sub) {
-    document.querySelectorAll('.fb-toast').forEach((t) => t.remove());
+    document.querySelectorAll('.fb-toast:not(.fb-toast--undo)').forEach((t) => t.remove());
     if (toastTimer) clearTimeout(toastTimer);
     const t = document.createElement('div');
     t.className = 'fb-toast fb-toast--' + kind;
@@ -5514,6 +5499,112 @@
     document.body.appendChild(t);
     requestAnimationFrame(() => t.classList.add('in'));
     toastTimer = setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 260); }, 3400);
+  }
+
+  // ===== Soft delete + undo =================================================
+  // Destructive mouse actions no longer stop to confirm — they fire instantly and park the
+  // removed row in a soft-deleted state for UNDO_MS. An undo pill drains a countdown bar
+  // (the notif timer's grammar reused); until it empties the row can be brought back — click
+  // the pill or ⌘↩, the same chord that jumps a notification. When the bar empties the
+  // removal commits: the detached nodes are simply let go. The one action that still asks
+  // first is deleting a worktree — its folder on disk is the only irreversible move.
+  const UNDO_MS = 8000;
+  const ICON_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></svg>';
+
+  // The focus cursor falls up the hierarchy when the row it sits on leaves — the same rule
+  // the old hard-remove used, lifted out so soft-remove settles focus identically.
+  function fallbackFor(unit) {
+    if (!(selEl && unit.contains(selEl))) return null;
+    const up = unit.parentElement && unit.parentElement.closest('[data-repo]');
+    const neighbour = up ? null : [unit.previousElementSibling, unit.nextElementSibling].find((el) => el && el.matches('[data-repo]'));
+    return (up || neighbour) ? (up || neighbour).querySelector(':scope > [data-row]') : null;
+  }
+
+  // Everything the tree reconciles once a unit leaves the DOM — shared by the detach and the
+  // commit that follows if undo never comes. (Was the tail of the old hard removeUnit.)
+  function settleAfterRemoval(fallback) {
+    rollUpGroups();
+    if (setupEl && !document.contains(setupEl)) setupEl = null;
+    if (pruneLayout()) renderLayout();
+    const back = layout ? null : lastViewed();
+    if (back) { jumpTo(back); return; }
+    if (fallback && document.contains(fallback)) select(fallback, true);
+  }
+
+  let pendingUndo = null;
+  function softRemove(unit, opts) {
+    if (!unit) return;
+    commitPendingUndo();   // only one removal parks at a time — the previous just commits
+
+    // A claude session takes its owned browsers with it (ADR-0011); snapshot the whole set's
+    // anchors up front so undo can slot every node back exactly where it stood.
+    const targets = [unit];
+    if (unit.matches && unit.matches('.session[data-sid]')) ownedOf(unit).forEach((b) => targets.push(b));
+    const snap = targets.map((n) => ({ node: n, parent: n.parentElement, next: n.nextElementSibling }));
+    const fallback = fallbackFor(unit);
+    const reopen = openEl && unit.contains(openEl) ? openEl : null;
+    const label = (opts && opts.label) || 'Removed';
+
+    // exit animation, then detach (the refs keep the nodes alive) and let the tree settle
+    targets.forEach((n) => n.classList.add('row-exit'));
+    let ran = false;
+    const detach = () => {
+      if (ran) return; ran = true;
+      snap.forEach((s) => { if (s.node.parentElement) s.node.remove(); s.node.classList.remove('row-exit'); });
+      settleAfterRemoval(fallback);
+    };
+    unit.addEventListener('animationend', detach, { once: true });
+    setTimeout(detach, 260);
+
+    pendingUndo = {
+      restore() {
+        detach();   // if undo lands mid-animation, finish the detach first so anchors are stable
+        snap.forEach((s) => {
+          const ref = (s.next && s.next.parentElement === s.parent) ? s.next : null;
+          s.parent.insertBefore(s.node, ref);
+        });
+        rollUpGroups(); if (pruneLayout()) renderLayout();
+        if (reopen && document.contains(reopen)) jumpTo(reopen);
+        else if (snap[0].node.matches('.session')) jumpTo(snap[0].node);
+        else select(snap[0].node.querySelector(':scope > [data-row]') || snap[0].node, true);
+      },
+    };
+    showUndoToast(label);
+  }
+
+  function performUndo() {
+    if (!pendingUndo) return;
+    const p = pendingUndo; pendingUndo = null;
+    dismissUndoToast();
+    p.restore();
+  }
+  function commitPendingUndo() {
+    if (!pendingUndo) return;
+    pendingUndo = null;   // nodes are already detached — committing is just letting go
+    dismissUndoToast();
+  }
+
+  let undoToast = null;
+  function dismissUndoToast() {
+    if (!undoToast) return;
+    const t = undoToast; undoToast = null;
+    t.classList.remove('in');
+    setTimeout(() => t.remove(), 260);
+  }
+  function showUndoToast(label) {
+    dismissUndoToast();
+    document.querySelectorAll('.fb-toast--undo').forEach((t) => t.remove());
+    const t = document.createElement('div');
+    t.className = 'fb-toast fb-toast--undo';
+    t.innerHTML = '<span class="fb-toast__glyph">' + ICON_UNDO + '</span>'
+      + '<span><b>' + esc(label) + '</b></span>'
+      + '<button type="button" class="fb-toast__undo">Undo<span class="fb-toast__kbd"><kbd>⌘</kbd><kbd>↩</kbd></span></button>'
+      + '<div class="fb-toast__timer notif__timer" style="--life:' + UNDO_MS + 'ms"></div>';
+    document.body.appendChild(t);
+    undoToast = t;
+    requestAnimationFrame(() => t.classList.add('in'));
+    t.querySelector('.fb-toast__timer').addEventListener('animationend', commitPendingUndo);
+    t.addEventListener('click', (e) => { e.preventDefault(); performUndo(); });
   }
 
   // ===== Command palette (⌘K) — Linear-style fuzzy command + jump menu =====
@@ -5676,13 +5767,13 @@
       if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', danger: true, enter: () => runAndClose(() => detach(open)) });
       else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', danger: true, enter: () => runAndClose(() => adopt(open, c)) }));
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: true, enter: () => pushFrame(confirmFrame(open)) });
+    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: true, enter: () => runAndClose(() => softRemove(rowUnit(open), { label: 'Closed ' + seName(open) })) });
     if (open && inSplit(open)) items.push({ grp: 'Session', unit: seName(open), icon: ICON_UNSPLIT, label: 'Unsplit', enter: () => runAndClose(() => unsplitSession(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(br)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', danger: true, enter: () => pushFrame(removeWorktreeFrame(br)) });
     if (head) items.push({ grp: 'Project', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(worktreeFrame(head)) });
     return { items };
   }
@@ -5798,7 +5889,7 @@
         items.push(
           { sec: 'act', icon: ICON_GEAR,   label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) },
           { sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) },
-          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(head)) },
+          { sec: 'act', icon: ICON_MINUS,  label: 'Remove', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(head), { label: 'Removed ' + wsName(head) })) },
         );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -5817,7 +5908,7 @@
           ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
           { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
-          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', danger: true, enter: () => pushFrame(confirmFrame(row)) },
+          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', danger: true, enter: () => pushFrame(removeWorktreeFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
           row.closest('[data-repo]').querySelectorAll('.sessions .session').forEach((s) =>
@@ -5872,39 +5963,21 @@
     else if (lvl === 'session') { const b = branchGroupOf(row); if (b) openPaletteAt(newSessionFrame(b)); }
   }
 
-  function confirmFrame(row) {
-    const level = rowLevel(row);
-    if (level === 'branch') return removeWorktreeFrame(row);
-    const name = level === 'repo' ? wsName(row) : seName(row);
-    const verb = level === 'session' ? 'Close' : 'Remove';
-    const owned = level === 'session' ? ownedOf(row) : [];
-    const danger = true;   // Close and Remove are both destructive/negative — always red
-    const hint = level === 'repo' ? 'Removes it from the sidebar. Nothing on disk is deleted.'
-      : owned.length ? `Ends this session and its process, and closes its ${owned.length === 1 ? 'browser' : owned.length + ' browsers'}.`
-      : 'Ends this session and its process.';
-    return {
-      crumb: verb + ' ' + name + '?', mode: 'confirm', note: hint, placeholder: '↵ confirm · esc cancel',
-      build() {
-        return [
-          { icon: level === 'session' ? ICON_CLOSE : ICON_MINUS, label: verb, danger, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
-          { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
-        ];
-      },
-    };
-  }
-
-  // Removing a worktree forks: delete it for real (git worktree remove + rm the folder),
-  // or just drop it from the sidebar and leave the checkout on disk to re-add later.
-  // The destructive path is danger-styled; the list-only path isn't — the colour is the tell.
+  // Removing a worktree is the one delete that still asks first, because its two outcomes
+  // differ irreversibly: drop it from the sidebar (folder + branch stay on disk, re-add
+  // anytime) or delete the worktree folder for real. Either arm then soft-deletes with an
+  // undo pill, so nothing is actually torn off disk until the window closes — the confirm
+  // picks the outcome; the undo pill guards the few seconds after. The git branch survives
+  // both. The destructive arm is danger-styled; the list-only one isn't — colour is the tell.
   function removeWorktreeFrame(row) {
     const name = brName(row);
     return {
       crumb: 'Remove ' + name + '?', mode: 'confirm',
-      note: 'Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way.', placeholder: '↵ select · esc cancel',
+      note: 'Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way — and you can undo for a few seconds after.', placeholder: '↵ select · esc cancel',
       build() {
         return [
-          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
-          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => removeUnit(rowUnit(row))) },
+          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(row), { label: 'Removed ' + name })) },
+          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(row), { label: 'Archived ' + name })) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },

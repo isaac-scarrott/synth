@@ -957,11 +957,14 @@ struct PaletteOverlay: View {
 
     @State private var shown = false
 
-    private var rows: [PaletteRow] {
+    /// Section the flat item list into header/divider/item rows. Takes `items` rather than reading
+    /// `model.items` so the caller builds the (O(n) + fuzzy + sort) list once per render instead of
+    /// once here plus again for `.isEmpty` and `.count`.
+    private static func rows(from items: [PaletteItem]) -> [PaletteRow] {
         var rows: [PaletteRow] = []
         var lastGroup: String?
         var lastSec: String?
-        for (i, it) in model.items.enumerated() {
+        for (i, it) in items.enumerated() {
             if let g = it.group, g != lastGroup {
                 rows.append(.header(g)); lastGroup = g; lastSec = it.sec
             } else if let s = it.sec, s != lastSec {
@@ -1036,7 +1039,9 @@ struct PaletteOverlay: View {
     }
 
     private var list: some View {
-        ScrollViewReader { proxy in
+        let items = model.items          // O(n) build + fuzzy + sort — do it once, not per read below
+        let rows = Self.rows(from: items)
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let note = model.noteText {
@@ -1046,7 +1051,7 @@ struct PaletteOverlay: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(EdgeInsets(top: 3, leading: 8, bottom: 5, trailing: 8))
                     }
-                    if model.items.isEmpty {
+                    if items.isEmpty {
                         if model.noteText == nil {
                             Text("No results")
                                 .font(.system(size: 13))
@@ -1082,7 +1087,7 @@ struct PaletteOverlay: View {
             }
             .frame(maxHeight: 340)
             .fixedSize(horizontal: false, vertical: true)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.items.count)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: items.count)
             .onChange(of: model.activeIndex) { _, i in
                 guard model.consumeScrollToActive() else { return }
                 proxy.scrollTo(i, anchor: nil)

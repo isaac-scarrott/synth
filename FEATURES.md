@@ -860,3 +860,8 @@ disclosure to dive deeper.
   so ⌘W falls through to the stock window-close only when nothing's closeable, and the local key
   monitor owns ⌘W in all modes so a real close never leaks to macOS's ⌘W. Shortcuts sheet, palette
   hint, and comments track ⌘W; the bare sidebar `d` key is unchanged. Builds clean.
+- **Synth 0.12.0 shipped (build 353)** — minor bump carrying the single ⌘D→⌘W close-session remap.
+  Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads; 0.11.0 (346)
+  users take a ~727KB delta. Appcast newest is `sparkle:version` 353, every enclosure EdDSA-signed.
+  Clean run — no killed pre-publish, no feed residue. Landing links unchanged (stable `Synth.dmg`
+  alias), so no site republish.

@@ -127,6 +127,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         case .error: return "\(who) hit an error"
         case .input: return "\(who) needs your input"
         case .done:  return "\(who) finished"
+        case .undo:  return ""   // undo cards always carry their own message; never routed here
         }
     }
     switch kind {
@@ -135,5 +136,6 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
     // so these read as they would for any plain process.
     case .error: return "exited with an error"
     case .done:  return "finished"
+    case .undo:  return ""
     }
 }

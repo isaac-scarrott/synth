@@ -192,11 +192,6 @@ struct RootView: View {
         .overlay(alignment: .bottomLeading) {
             if !store.settingsOpen { NotificationDeck() }
         }
-        // The soft-delete undo pill at the shell's bottom-centre (working.html `.fb-toast--undo`),
-        // a sibling of the deck so the two never collide.
-        .overlay(alignment: .bottom) {
-            if store.pendingUndo != nil { UndoPill() }
-        }
         // The free-floating session drag ghost, at the window root so it floats over both panes.
         .overlay(alignment: .topLeading) { DragGhost() }
         // The reorder insertion line paints over everything, the ghost included (working.html
@@ -315,10 +310,10 @@ struct RootView: View {
             }
             let key = event.charactersIgnoringModifiers?.lowercased()
 
-            // ⌘↩ undoes the last soft-delete while its pill is up (working.html: pendingUndo
+            // ⌘↩ undoes the last soft-delete while its undo card is up (working.html: pendingUndo
             // wins over notifTop), then falls through to the notif deck's jump.
             if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
-               store.pendingUndo != nil {
+               store.pendingUndoNotif != nil {
                 store.performUndo(); return nil
             }
 

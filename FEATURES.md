@@ -836,3 +836,9 @@ disclosure to dive deeper.
   mutators defer the irreversible tail — process teardown + `deleteWorktreeFolder` — to the pill's
   commit; the worktree keeps its fork; hard `closeSession`/`removeBranch` stay for non-gesture paths.
   Driven-app verified over the control socket; `working.html` untouched.
+- **Undo folds into the notification deck (supersedes the bespoke pill)** — the undo is no longer a
+  third toast primitive: it's a session-less `.undo` card in the existing notification deck (same
+  corner, glass card, countdown bar, ⌘↩), in both the design and the native app. `.fb-toast--undo` and
+  `UndoPill.swift` are deleted; native `InAppNotif` gained a per-instance `life` so the 8s undo drains
+  right, and the card reuses the deck's drain so it now pauses on hover / while unfocused (your undo
+  window waits for you, like any notification). Driven-app + browser verified.

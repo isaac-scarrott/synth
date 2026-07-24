@@ -84,11 +84,12 @@ enum AgentPromptStart {
 /// any live session settling to idle — the green ✓ `done`, a transient toast that
 /// dismisses itself.
 enum NotifKind: Sendable {
-    case input, error, done
+    case input, error, done, undo
 
-    /// Deck precedence (front first): errors before needs-input before done.
+    /// Deck precedence (front first): a fresh undo (you just acted, and it has a fuse) sits ahead
+    /// of everything, then errors before needs-input before done.
     var rank: Int {
-        switch self { case .error: return 0; case .input: return 1; case .done: return 2 }
+        switch self { case .undo: return -1; case .error: return 0; case .input: return 1; case .done: return 2 }
     }
 }
 
@@ -117,6 +118,9 @@ struct InAppNotif: Identifiable {
     /// A done toast's life, working.html `NOTIF_DONE_MS`. Sticky toasts (input / error)
     /// never read these.
     static let doneLife: TimeInterval = 6
+    /// This toast's full life — done toasts use `doneLife`; an undo card overrides it (8s) so
+    /// its longer window drains at the right rate.
+    var life: TimeInterval = InAppNotif.doneLife
     /// The pausable countdown (working.html: the `.notif__timer` bar IS the timer, so the
     /// drain and the dismissal share one clock). `remaining` banks the life left while
     /// paused; `armedAt` is the start of the current draining stretch, nil while paused.
@@ -126,7 +130,7 @@ struct InAppNotif: Identifiable {
     /// Life left → 1…0, linear — what the countdown bar shows at `now`.
     func timerFraction(at now: Date) -> Double {
         let left = armedAt.map { max(0, remaining - now.timeIntervalSince($0)) } ?? remaining
-        return min(1, max(0, left / Self.doneLife))
+        return min(1, max(0, left / life))
     }
 }
 
@@ -813,16 +817,20 @@ enum FeedbackMode {
     /// release arms it.
     private func armDoneToast(_ id: UUID) {
         cancelDismiss(id)
-        guard let i = notifs.firstIndex(where: { $0.id == id && $0.kind == .done }) else { return }
+        guard let i = notifs.firstIndex(where: { $0.id == id && ($0.kind == .done || $0.kind == .undo) }) else { return }
         guard !drainHeld else { notifs[i].armedAt = nil; return }
         notifs[i].armedAt = Date()
         let remaining = notifs[i].remaining
         let seq = notifs[i].seq
         notifDismissTasks[id] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(remaining))
-            guard !Task.isCancelled else { return }
-            self?.notifs.removeAll { $0.id == id && $0.seq == seq }
-            self?.notifDismissTasks[id] = nil
+            guard !Task.isCancelled, let self else { return }
+            self.notifDismissTasks[id] = nil
+            // An undo that drains out commits its removal; every other done toast just clears.
+            let action = self.undoActions[id]
+            self.undoActions[id] = nil
+            self.notifs.removeAll { $0.id == id && $0.seq == seq }
+            action?.commit()
         }
     }
 
@@ -853,7 +861,7 @@ enum FeedbackMode {
                 cancelDismiss(notifs[i].id)
             }
         } else {
-            for n in notifs where n.kind == .done { armDoneToast(n.id) }
+            for n in notifs where n.kind == .done || n.kind == .undo { armDoneToast(n.id) }
         }
     }
 
@@ -1357,71 +1365,50 @@ enum FeedbackMode {
 
     // MARK: Soft delete + undo (working.html softRemove)
 
-    /// The row parked in soft-delete. Destructive gestures fire instantly and leave this pill
-    /// up for `undoLife` seconds: `commit` runs the irreversible tail (process teardown / disk
-    /// delete) when the bar empties, `restore` puts the detached rows back if undo comes first.
+    /// Destructive gestures fire instantly and raise a session-less `.undo` card into the
+    /// notification deck — same chrome, corner, countdown bar and ⌘↩ as any toast, not a bespoke
+    /// pill. `restore` puts the detached rows back on undo; `commit` runs the irreversible tail
+    /// (process teardown / disk delete) when the bar drains or a fresh removal supersedes it.
     static let undoLife: TimeInterval = 8
-    var pendingUndo: PendingUndo?
-    @ObservationIgnored private var undoTask: Task<Void, Never>?
+    @ObservationIgnored private var undoActions: [UUID: (restore: () -> Void, commit: () -> Void)] = [:]
 
-    /// Park a reversible removal behind the undo pill — one at a time, so a fresh gesture
-    /// commits the previous pill before parking its own (working.html `commitPendingUndo`).
+    /// The live undo card, or nil — ⌘↩ resolves to undo whenever one is up (working.html:
+    /// pendingUndo wins over notifTop).
+    var pendingUndoNotif: InAppNotif? { notifs.first { $0.kind == .undo } }
+
+    /// Park a reversible removal as an undo card — one at a time, so a fresh gesture commits the
+    /// previous before parking its own (working.html `commitPendingUndo`).
     private func softDelete(_ label: String, restore: @escaping () -> Void, commit: @escaping () -> Void) {
         commitPendingUndo()
-        pendingUndo = PendingUndo(id: UUID(), label: label, restore: restore, commit: commit,
-                                  life: Self.undoLife, remaining: Self.undoLife, armedAt: Date())
-        armUndo()
+        notifSeq += 1
+        let id = UUID()
+        undoActions[id] = (restore, commit)
+        var n = InAppNotif(id: id, kind: .undo, seq: notifSeq, sessionKind: .terminal,
+                           title: "", colorIndex: nil, outlivesSession: true,
+                           message: label, iconPath: Phosphor.reset)
+        n.life = Self.undoLife
+        n.remaining = Self.undoLife
+        notifs.append(n)
+        armDoneToast(id)   // the deck's own drain; when it empties, its expiry runs the commit
     }
 
-    /// Sleep out the pill's banked life on the same clock its bar drains; when it empties the
-    /// removal commits. Re-armed after a hover-pause with whatever life was left.
-    private func armUndo() {
-        undoTask?.cancel()
-        guard let p = pendingUndo, p.armedAt != nil else { return }
-        let remaining = p.remaining, id = p.id
-        undoTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(remaining))
-            guard !Task.isCancelled, self?.pendingUndo?.id == id else { return }
-            self?.commitPendingUndo()
-        }
-    }
-
-    /// The pointer resting on the pill freezes its drain (working.html `.fb-toast--undo:hover`),
-    /// banking the remaining life so the window resumes where it left off.
-    func setUndoDrainPaused(_ paused: Bool) {
-        guard var p = pendingUndo else { return }
-        if paused {
-            guard let armed = p.armedAt else { return }
-            p.remaining = max(0, p.remaining - Date().timeIntervalSince(armed))
-            p.armedAt = nil
-            pendingUndo = p
-            undoTask?.cancel()
-        } else {
-            guard p.armedAt == nil else { return }
-            p.armedAt = Date()
-            pendingUndo = p
-            armUndo()
-        }
-    }
-
-    /// Bring the parked row back (pill click / ⌘↩).
-    func performUndo() {
-        undoTask?.cancel(); undoTask = nil
-        guard let p = pendingUndo else { return }
-        pendingUndo = nil
-        p.restore()
-    }
+    /// Bring the parked row back (card click / ⌘↩).
+    func performUndo() { resolveUndo { $0.restore() } }
 
     /// Let the parked row go — run its irreversible tail (window elapsed, or superseded).
-    func commitPendingUndo() {
-        undoTask?.cancel(); undoTask = nil
-        guard let p = pendingUndo else { return }
-        pendingUndo = nil
-        p.commit()
+    func commitPendingUndo() { resolveUndo { $0.commit() } }
+
+    private func resolveUndo(_ pick: ((restore: () -> Void, commit: () -> Void)) -> Void) {
+        guard let n = notifs.first(where: { $0.kind == .undo }) else { return }
+        cancelDismiss(n.id)
+        let action = undoActions[n.id]
+        undoActions[n.id] = nil
+        notifs.removeAll { $0.id == n.id }
+        if let action { pick(action) }
     }
 
     /// Close a session instantly and reversibly. The row and its owned browsers detach from the
-    /// tree but keep their live processes; only the pill's commit tears them down (working.html
+    /// tree but keep their live processes; only the undo's commit tears them down (working.html
     /// softRemove of a session leaf + its ADR-0011 browser cascade).
     func softCloseSession(_ session: Session) {
         let victims = [session] + ownedBrowsers(of: session)
@@ -1473,7 +1460,7 @@ enum FeedbackMode {
     }
 
     /// Remove a worktree row instantly and reversibly. The disk delete (`deleteWorktree`) and
-    /// the sessions' teardown are both deferred to the pill's commit, so an undo within the
+    /// the sessions' teardown are both deferred to the undo's commit, so an undo within the
     /// window leaves the checkout and its processes untouched (working.html archive-with-undo).
     func softRemoveBranch(_ branch: Branch, deleteWorktree: Bool) {
         var homes: [(ws: Workspace, index: Int)] = []

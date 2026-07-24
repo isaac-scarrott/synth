@@ -124,11 +124,15 @@ private struct NotifCard: View {
     var body: some View {
         // A system toast (no session — a failed background worktree op) persists until
         // this click; a session toast jumps as before.
-        Button { if let s = session { store.jump(to: s) } else { store.clearNotif(notif.id) } } label: {
+        Button {
+            if notif.kind == .undo { store.performUndo() }
+            else if let s = session { store.jump(to: s) }
+            else { store.clearNotif(notif.id) }
+        } label: {
             HStack(spacing: 11) {
                 glyph
                 VStack(alignment: .leading, spacing: 1) {
-                    who
+                    if notif.kind != .undo { who }   // an undo card is a single line: just what happened
                     Text(notif.message ?? notifVerb(displayKind, notif.kind))
                         .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(Theme.inkOpen)
@@ -142,9 +146,9 @@ private struct NotifCard: View {
             .padding(EdgeInsets(top: 11, leading: 13, bottom: 11, trailing: 12))
             .frame(width: NotificationDeck.cardWidth, alignment: .leading)
             .background(cardSurface)
-            // Done only — sticky toasts (input / error) carry no bar and never self-dismiss.
+            // Done + undo drain a bar; sticky toasts (input / error) carry none and never self-dismiss.
             .overlay(alignment: .bottom) {
-                if notif.kind == .done { NotifTimerBar(notif: notif) }
+                if notif.kind == .done || notif.kind == .undo { NotifTimerBar(notif: notif) }
             }
             .contentShape(RoundedRectangle(cornerRadius: 13))
         }
@@ -172,6 +176,7 @@ private struct NotifCard: View {
         case .error: return Theme.danger
         case .input: return Theme.input
         case .done:  return Theme.run
+        case .undo:  return Theme.inkMuted   // neither success nor error — a neutral action
         }
     }
     private var glyphPath: String {
@@ -179,6 +184,7 @@ private struct NotifCard: View {
         case .error: return Phosphor.exclamation
         case .input: return Phosphor.question
         case .done:  return Phosphor.check
+        case .undo:  return Phosphor.reset
         }
     }
 
@@ -212,8 +218,8 @@ private struct NotifCard: View {
     private var hint: some View {
         HStack(spacing: 5) {
             KeyCaps(keys: ["⌘", "↩"])
-            // ⌘↩ on a system toast acknowledges it (nowhere to jump) — say so.
-            Text(session == nil ? "dismiss" : "jump")
+            // ⌘↩ undoes an undo card, jumps to a session toast, or acknowledges a system toast.
+            Text(notif.kind == .undo ? "undo" : (session == nil ? "dismiss" : "jump"))
                 .font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
         }
     }

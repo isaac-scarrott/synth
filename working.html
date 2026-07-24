@@ -1550,17 +1550,9 @@
   .fb-toast--mail .fb-toast__glyph { color: var(--input); }
   .fb-toast b { font-weight: 600; color: var(--ink); }
 
-  /* Undo pill — a soft-delete's safety net: an actionable fb-toast that drains the notif
-     timer's countdown bar. Clickable (the base pill isn't) and it pauses on hover so the
-     cursor can reach Undo without the window closing under it. */
-  .fb-toast--undo { pointer-events: auto; cursor: pointer; padding-right: 7px; }
-  .fb-toast--undo .fb-toast__glyph { color: var(--ink-2); }
-  .fb-toast__undo { display: inline-flex; align-items: center; gap: 6px; margin-left: 5px; padding: 4px 9px; border-radius: 999px; background: rgba(255,255,255,0.10); border: 0.5px solid var(--line); font: inherit; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; }
-  .fb-toast--undo:hover .fb-toast__undo { background: rgba(255,255,255,0.18); }
-  .fb-toast__kbd { display: inline-flex; gap: 2px; }
-  .fb-toast__undo kbd { font-family: inherit; font-size: 10px; font-weight: 600; padding: 0 4px; border-radius: 4px; background: rgba(255,255,255,0.16); }
-  .fb-toast--undo .fb-toast__timer { left: 14px; right: 14px; border-radius: 2px; }
-  .fb-toast--undo:hover .fb-toast__timer { animation-play-state: paused; }
+  /* Undo lives in the notification deck (.notif--undo), not here — a soft delete's card wears
+     a muted glyph (it's neither success nor error) and reuses the deck's countdown bar. */
+  .notif--undo .notif__glyph { color: var(--ink-2); background: color-mix(in srgb, var(--ink) 8%, transparent); }
 
   /* segmented control (Create worktree: existing branch / new branch) */
   .seg { display: flex; background: var(--hover); border-radius: 8px; padding: 2px; margin-bottom: 12px; }
@@ -2456,6 +2448,7 @@
   const MARK_INPUT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg>';
   const MARK_ERROR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg>';
   const MARK_DONE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
+  const MARK_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></svg>';
 
   // priority: needs-input > error > working > running > idle
   const PRIORITY = ['input', 'error', 'work', 'run', 'idle'];
@@ -3231,6 +3224,7 @@
   const notifCards = new Map();   // sessionEl -> card element
   const NOTIF_OP = [1, 0.7, 0.45];   // front, then two peeking; deeper cards hide behind "+N"
   const NOTIF_KBD = '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>jump</span>';
+  const NOTIF_KBD_UNDO = '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>undo</span>';
   let notifSeq = 0;
 
   const notifLive = (s) => s === 'work' || s === 'run' || s === 'input' || s === 'error';
@@ -3267,10 +3261,12 @@
     bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = '';
   }
 
-  // background notifications, most-urgent first: error before input before done, newest first
-  const NOTIF_RANK = { error: 0, input: 1, done: 2 };
+  // background notifications, most-urgent first: a fresh undo sits ahead of everything (you just
+  // acted and it has a fuse), then error before input before done, newest first
+  const NOTIF_RANK = { undo: -1, error: 0, input: 1, done: 2 };
   function notifOrder() {
-    return [...notifState.keys()].filter((el) => el !== openEl && document.contains(el)).sort((a, b) => {
+    // an undo card is session-less — it lives in the deck even though its row left the DOM
+    return [...notifState.keys()].filter((el) => el.undo || (el !== openEl && document.contains(el))).sort((a, b) => {
       const A = notifState.get(a), B = notifState.get(b);
       if (NOTIF_RANK[A.kind] !== NOTIF_RANK[B.kind]) return NOTIF_RANK[A.kind] - NOTIF_RANK[B.kind];
       return B.order - A.order;
@@ -3286,6 +3282,20 @@
   }
   function buildNotif(el) {
     const kind = notifState.get(el).kind;
+    if (el.undo) {   // session-less undo card: same chrome as a done toast, but click / drain-end act
+      const c = document.createElement('div');
+      c.className = 'notif notif--undo';
+      c.addEventListener('click', () => performUndo());
+      c.innerHTML = '<div class="notif__glyph">' + MARK_UNDO + '</div>'
+        + '<div class="notif__text"><div class="notif__what">' + esc(el.label) + '</div></div>' + NOTIF_KBD_UNDO;
+      const bar = document.createElement('div');
+      bar.className = 'notif__timer';
+      bar.style.setProperty('--life', UNDO_MS + 'ms');
+      bar.addEventListener('animationend', () => commitPendingUndo());
+      c.appendChild(bar);
+      notifCards.set(el, c);
+      return c;
+    }
     const name = el.querySelector('.session__name').textContent.trim();
     const icon = el.querySelector('.session__icon').innerHTML;
     const repo = outerRepoOf(el);
@@ -3372,7 +3382,7 @@
   // notification — inert when neither is pending, so the chord is never stolen otherwise.
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      if (pendingUndo) { e.preventDefault(); performUndo(); return; }
+      if (pendingUndoKey) { e.preventDefault(); performUndo(); return; }
       const el = notifTop();
       if (el) { e.preventDefault(); jumpTo(el); }
     }
@@ -5476,7 +5486,7 @@
   };
   let toastTimer = null;
   function flashToast(kind, title, sub) {
-    document.querySelectorAll('.fb-toast:not(.fb-toast--undo)').forEach((t) => t.remove());
+    document.querySelectorAll('.fb-toast').forEach((t) => t.remove());
     if (toastTimer) clearTimeout(toastTimer);
     const t = document.createElement('div');
     t.className = 'fb-toast fb-toast--' + kind;
@@ -5489,13 +5499,12 @@
 
   // ===== Soft delete + undo =================================================
   // Destructive mouse actions no longer stop to confirm — they fire instantly and park the
-  // removed row in a soft-deleted state for UNDO_MS. An undo pill drains a countdown bar
-  // (the notif timer's grammar reused); until it empties the row can be brought back — click
-  // the pill or ⌘↩, the same chord that jumps a notification. When the bar empties the
-  // removal commits: the detached nodes are simply let go. The one action that still asks
-  // first is deleting a worktree — its folder on disk is the only irreversible move.
+  // removed row in a soft-deleted state for UNDO_MS. The undo lives in the notification deck,
+  // not a bespoke pill: a soft delete raises a session-less card there (same chrome, corner,
+  // countdown bar, ⌘↩) — click it or ⌘↩ to bring the row back; when the bar drains the removal
+  // commits (the detached nodes just fall away). The one action that still asks first is
+  // deleting a worktree — its folder on disk is the only irreversible move.
   const UNDO_MS = 8000;
-  const ICON_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></svg>';
 
   // The focus cursor falls up the hierarchy when the row it sits on leaves — the same rule
   // the old hard-remove used, lifted out so soft-remove settles focus identically.
@@ -5517,7 +5526,6 @@
     if (fallback && document.contains(fallback)) select(fallback, true);
   }
 
-  let pendingUndo = null;
   function softRemove(unit, opts) {
     if (!unit) return;
     commitPendingUndo();   // only one removal parks at a time — the previous just commits
@@ -5542,55 +5550,41 @@
     unit.addEventListener('animationend', detach, { once: true });
     setTimeout(detach, 260);
 
-    pendingUndo = {
-      restore() {
-        detach();   // if undo lands mid-animation, finish the detach first so anchors are stable
-        snap.forEach((s) => {
-          const ref = (s.next && s.next.parentElement === s.parent) ? s.next : null;
-          s.parent.insertBefore(s.node, ref);
-        });
-        rollUpGroups(); if (pruneLayout()) renderLayout();
-        if (reopen && document.contains(reopen)) jumpTo(reopen);
-        else if (snap[0].node.matches('.session')) jumpTo(snap[0].node);
-        else select(snap[0].node.querySelector(':scope > [data-row]') || snap[0].node, true);
-      },
-    };
-    showUndoToast(label);
+    raiseUndo(label, () => {   // restore: slot every detached node back where it stood
+      detach();   // if undo lands mid-animation, finish the detach first so anchors are stable
+      snap.forEach((s) => {
+        const ref = (s.next && s.next.parentElement === s.parent) ? s.next : null;
+        s.parent.insertBefore(s.node, ref);
+      });
+      rollUpGroups(); if (pruneLayout()) renderLayout();
+      if (reopen && document.contains(reopen)) jumpTo(reopen);
+      else if (snap[0].node.matches('.session')) jumpTo(snap[0].node);
+      else select(snap[0].node.querySelector(':scope > [data-row]') || snap[0].node, true);
+    });
   }
 
+  // The undo is a card in the notification deck (working.html's own notif system, reused). The
+  // synthetic key carries the label + restore closure; notifState/renderNotifs treat it like any
+  // other card. Only one is live at a time — a fresh removal commits the previous.
+  let pendingUndoKey = null;
+  function raiseUndo(label, restore) {
+    const key = { undo: true, label, restore };
+    pendingUndoKey = key;
+    notifState.set(key, { kind: 'undo', order: ++notifSeq });
+    renderNotifs();
+  }
   function performUndo() {
-    if (!pendingUndo) return;
-    const p = pendingUndo; pendingUndo = null;
-    dismissUndoToast();
-    p.restore();
+    const key = pendingUndoKey;
+    if (!key) return;
+    pendingUndoKey = null;
+    clearNotif(key);
+    key.restore();
   }
+  // Window elapsed (bar drained) or superseded by a fresh removal — the row is gone for good.
   function commitPendingUndo() {
-    if (!pendingUndo) return;
-    pendingUndo = null;   // nodes are already detached — committing is just letting go
-    dismissUndoToast();
-  }
-
-  let undoToast = null;
-  function dismissUndoToast() {
-    if (!undoToast) return;
-    const t = undoToast; undoToast = null;
-    t.classList.remove('in');
-    setTimeout(() => t.remove(), 260);
-  }
-  function showUndoToast(label) {
-    dismissUndoToast();
-    document.querySelectorAll('.fb-toast--undo').forEach((t) => t.remove());
-    const t = document.createElement('div');
-    t.className = 'fb-toast fb-toast--undo';
-    t.innerHTML = '<span class="fb-toast__glyph">' + ICON_UNDO + '</span>'
-      + '<span><b>' + esc(label) + '</b></span>'
-      + '<button type="button" class="fb-toast__undo">Undo<span class="fb-toast__kbd"><kbd>⌘</kbd><kbd>↩</kbd></span></button>'
-      + '<div class="fb-toast__timer notif__timer" style="--life:' + UNDO_MS + 'ms"></div>';
-    document.body.appendChild(t);
-    undoToast = t;
-    requestAnimationFrame(() => t.classList.add('in'));
-    t.querySelector('.fb-toast__timer').addEventListener('animationend', commitPendingUndo);
-    t.addEventListener('click', (e) => { e.preventDefault(); performUndo(); });
+    if (!pendingUndoKey) return;
+    const key = pendingUndoKey; pendingUndoKey = null;
+    clearNotif(key);   // detached nodes just fall away — nothing more to do in the mock
   }
 
   // ===== Command palette (⌘K) — Linear-style fuzzy command + jump menu =====

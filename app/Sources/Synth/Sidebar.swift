@@ -399,8 +399,18 @@ private struct BranchRow: View {
                     Button {
                         guard !branch.isPending else { return }   // nothing to expand or open yet
                         focusSidebar()
-                        store.toggleExpanded(branch.id)
                         store.navCursor = branch.id
+                        // Tabs: the branch is the deepest row — clicking it OPENS the branch (its
+                        // tabs appear in the strip) rather than toggling a disclosure with nothing
+                        // under it. Restore whatever session its remembered layout was showing,
+                        // falling back to its first tab.
+                        if store.tabsMode {
+                            let target = branch.layout.map { store.firstLeaf($0).sessionID }?
+                                .flatMap { store.session($0) } ?? branch.sessions.first
+                            if let target { store.open(target); focusContent(store) }
+                            return
+                        }
+                        store.toggleExpanded(branch.id)
                     } label: {
                         HStack(spacing: 6) {
                             // Tabs: the branch is the deepest row — nothing left to disclose, so
@@ -990,9 +1000,12 @@ private struct BranchRollup: View {
             // fallback). Expanded, each session's own gutter bullet carries it instead.
             if collapsed && branch.hasUnread {
                 Ind { UnreadDot() }
-            } else if !branch.lastActivity.isEmpty {
-                Text(branch.lastActivity)
-                    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.branchMeta).monospacedDigit()
+            } else if branch.lastActivityAt != nil || !branch.lastActivity.isEmpty {
+                // Relative age, re-rendered each minute so it decays live ("now" → "5m" → "2h").
+                TimelineView(.periodic(from: Date(), by: 60)) { ctx in
+                    Text(branch.activityLabel(now: ctx.date))
+                        .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.branchMeta).monospacedDigit()
+                }
             }
         }
     }

@@ -1235,7 +1235,7 @@ enum FeedbackMode {
         Analytics.capture("session_created", ["kind": kind.rawValue, "agent_initiated": !focus])
         br.sessions.append(session)
         if let owner { adopt(session, by: owner) }
-        br.lastActivity = "now"
+        br.markActivity()
         // Either way the row must be visible in the sidebar — expand down to it.
         if let ws = workspace(of: br) { expanded.insert(ws.id) }
         expanded.insert(br.id)
@@ -1373,7 +1373,7 @@ enum FeedbackMode {
         let kind = SessionKind.agent(agent)
         let session = Session(kind: kind, title: kind.tplStart, status: .working)
         branch.sessions.append(session)
-        branch.lastActivity = "now"
+        branch.markActivity()
         if let ws = workspace(of: branch) { expanded.insert(ws.id) }
         expanded.insert(branch.id)
         return session
@@ -1722,7 +1722,7 @@ enum FeedbackMode {
             case .ready(let url):
                 row.worktreeURL = url
                 row.isPending = false
-                row.lastActivity = "now"
+                row.markActivity()
                 Analytics.capture("worktree_created", ["from_template": spawningTemplate])
                 if spawningTemplate { applySessionTemplate(to: row, in: ws) }
                 onReady?(row)
@@ -1917,7 +1917,8 @@ enum FeedbackMode {
     @discardableResult
     private func addBranchRow(in ws: Workspace, name: String, worktreeURL: URL, pending: Bool = false) -> Branch {
         let branch = Branch(name: name, worktreeURL: worktreeURL,
-                            lastActivity: pending ? "" : "now", isPending: pending)
+                            lastActivity: pending ? "" : "now",
+                            lastActivityAt: pending ? nil : Date(), isPending: pending)
         ws.branches.append(branch)
         expanded.insert(ws.id)
         navCursor = branch.id
@@ -1947,7 +1948,7 @@ enum FeedbackMode {
                     titleIsCustom: entry.name != entry.kind.tplStart)
         }
         branch.sessions.append(contentsOf: sessions)
-        branch.lastActivity = "now"
+        branch.markActivity()
         expanded.insert(ws.id)
         expanded.insert(branch.id)
         if watching, let first = sessions.first {
@@ -1974,6 +1975,7 @@ enum FeedbackMode {
                         PersistedBranch(
                             id: br.id, name: br.name, worktreeURL: br.worktreeURL,
                             lastActivity: br.lastActivity,
+                            lastActivityAt: br.lastActivityAt,
                             sessions: br.sessions.map { s in
                                 PersistedSession(id: s.id, kind: s.kind.rawValue, title: s.title,
                                                  titleIsCustom: s.titleIsCustom,
@@ -2030,10 +2032,15 @@ enum FeedbackMode {
                 let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }
                 let br = Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
                                 sessions: sessions, lastActivity: pb.lastActivity,
+                                lastActivityAt: pb.lastActivityAt,
                                 browserRecents: recents)
                 // Restore the remembered split, resolving leaves against this branch's sessions;
                 // an unresolved leaf (e.g. a runtime browser that didn't come back) collapses (014).
                 br.layout = deserializeLayout(pb.layout, valid: Set(sessions.map(\.id)))
+                // Migration: a pre-timestamp snapshot carries no activity Date. Seed live branches
+                // at load so the relative label decays from here instead of showing a stale string;
+                // real activity thereafter stamps and persists its own Date.
+                if br.lastActivityAt == nil, !br.sessions.isEmpty { br.markActivity() }
                 return br
             }
             restored.append(Workspace(id: pw.id, name: pw.name, url: pw.url,

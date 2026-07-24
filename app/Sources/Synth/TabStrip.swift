@@ -93,33 +93,43 @@ private struct TabChip: View {
     private var isActive: Bool { store.openSessionID == session.id }
 
     var body: some View {
-        HStack(spacing: 6) {
-            TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel)
-            Text(session.title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
-                .lineLimit(1).truncationMode(.tail)
-            indicator
-            TabCloseButton(session: session, visible: hovering || isActive)
-        }
-        .padding(.leading, 11).padding(.trailing, 6)
-        .frame(minWidth: 40, maxWidth: 190)
-        .frame(maxHeight: .infinity)
-        .background(isActive ? Theme.raised : (hovering ? Theme.rowHover : Color.clear))
-        .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 0.5) }
-        // The active-tab bar, echoing the active-pane focus bar.
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.focus).frame(height: 2).opacity(isActive ? 1 : 0)
-        }
-        // Copper ring when a dragged tab is about to pair into a split with this one (012).
-        .overlay {
-            if store.pairTargetID == session.id {
-                Rectangle().strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1.5)
+        // A Button carries the tap (so the drag's highPriorityGesture never swallows the click —
+        // the sidebar's proven pattern); the close is a ZStack sibling, not nested, so it stays
+        // independently clickable. Title is left-aligned and greedy, pushing the status slot + close
+        // to the right edge; the tab fills to a 240pt cap and compresses when the strip is crowded.
+        ZStack(alignment: .trailing) {
+            Button { store.open(session); focusContent(store) } label: {
+                HStack(spacing: 6) {
+                    TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel)
+                    Text(session.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
+                        .lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    indicator
+                    Color.clear.frame(width: 16)   // reserve the close slot (overlaid below)
+                }
+                .padding(.leading, 11).padding(.trailing, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(isActive ? Theme.raised : (hovering ? Theme.rowHover : Color.clear))
+                .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 0.5) }
+                // The active-tab bar, echoing the active-pane focus bar.
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Theme.focus).frame(height: 2).opacity(isActive ? 1 : 0)
+                }
+                // Copper ring when a dragged tab is about to pair into a split with this one (012).
+                .overlay {
+                    if store.pairTargetID == session.id {
+                        Rectangle().strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1.5)
+                    }
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            TabCloseButton(session: session, visible: hovering || isActive).padding(.trailing, 6)
         }
-        .contentShape(Rectangle())
+        .frame(maxWidth: 240, maxHeight: .infinity)
         .onHover { hovering = $0 }
-        .onTapGesture { store.open(session); focusContent(store) }
         .tabDrag(session)
         .help(session.title)
     }
@@ -223,29 +233,37 @@ private struct ClusterChip: View {
     private var isActive: Bool { store.openSessionID == session.id }
 
     var body: some View {
-        HStack(spacing: 5) {
-            // Cluster keeps the unread dot (only the status slot is dropped), and the active member
-            // is marked by the accent ring alone — no bold, matching the sidebar's split band.
-            TabIcon(session: session, size: 13, ring: Theme.raised)
-            Text(session.title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
-                .lineLimit(1).truncationMode(.tail)
-            TabCloseButton(session: session, visible: hovering || isActive)
+        // Button carries the tap (drag can't swallow it); close is a sibling, not nested. Cluster
+        // keeps the unread dot (only the status slot is dropped), and the active member is marked by
+        // the accent ring alone — no bold, matching the sidebar's split band.
+        ZStack(alignment: .trailing) {
+            Button { store.open(session); focusContent(store) } label: {
+                HStack(spacing: 5) {
+                    TabIcon(session: session, size: 13, ring: Theme.raised)
+                    Text(session.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
+                        .lineLimit(1).truncationMode(.tail)
+                    if hovering || isActive { Color.clear.frame(width: 14) }   // reserve close slot
+                }
+                .padding(.leading, 9).padding(.trailing, 4)
+                .frame(height: 22)
+                .background(RoundedRectangle(cornerRadius: 7)
+                    .fill(isActive ? Theme.accent.opacity(0.12) : Theme.raised))
+                // Copper pair-to ring while a dragged tab hovers this member's centre (012); else the
+                // active member is accent-ringed, the rest hairline.
+                .overlay(RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(store.pairTargetID == session.id ? Theme.accent.opacity(0.7)
+                                  : (isActive ? Theme.accent.opacity(0.34) : Theme.line),
+                                  lineWidth: store.pairTargetID == session.id ? 1.5 : 1))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if hovering || isActive {
+                TabCloseButton(session: session, visible: true).padding(.trailing, 2)
+            }
         }
-        .padding(.leading, 9).padding(.trailing, 4)
-        .frame(height: 22)
-        .background(RoundedRectangle(cornerRadius: 7)
-            .fill(isActive ? Theme.accent.opacity(0.12) : Theme.raised))
-        // Copper pair-to ring while a dragged tab hovers this member's centre (012); else the
-        // active member is accent-ringed, the rest hairline.
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .strokeBorder(store.pairTargetID == session.id ? Theme.accent.opacity(0.7)
-                          : (isActive ? Theme.accent.opacity(0.34) : Theme.line),
-                          lineWidth: store.pairTargetID == session.id ? 1.5 : 1))
-        .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture { store.open(session); focusContent(store) }
         .tabDrag(session)
         .help(session.title)
     }

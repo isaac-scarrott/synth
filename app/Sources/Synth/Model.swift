@@ -215,7 +215,12 @@ extension URL {
     /// worktree on disk (the repo root for the main checkout). Sessions run here.
     var worktreeURL: URL
     var sessions: [Session]
-    var lastActivity: String   // cosmetic for now ("2h", "now")
+    /// A git-derived age string for a dormant branch ("2h" from the curated add); once the branch
+    /// sees real activity `lastActivityAt` supersedes it (see `activityLabel`).
+    var lastActivity: String
+    /// When this branch last saw activity (a session or worktree created). The source of truth for
+    /// the sidebar's relative timestamp; nil until the first activity, then it decays live.
+    var lastActivityAt: Date?
     /// The 5 most recent distinct URLs visited across this branch's browser sessions —
     /// feeds the home surface / omnibox-dropdown "Recent" list. Empty until a browser
     /// session navigates (working.html's static BROWSER_RECENTS, made real + persisted).
@@ -232,18 +237,39 @@ extension URL {
     /// by the store (syncBranchLayout) and serialized to disk (slice 014).
     var layout: PaneNode?
 
-    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", browserRecents: [BrowserRecent] = [], isPending: Bool = false) {
+    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", lastActivityAt: Date? = nil, browserRecents: [BrowserRecent] = [], isPending: Bool = false) {
         self.id = id
         self.name = name
         self.worktreeURL = worktreeURL
         self.sessions = sessions
         self.lastActivity = lastActivity
+        self.lastActivityAt = lastActivityAt
         self.browserRecents = browserRecents
         self.isPending = isPending
     }
 
     /// A branch with sessions is a live "branch group": expandable, with a roll-up.
     var isLive: Bool { !sessions.isEmpty }
+
+    /// Stamp "activity happened now" — a session or worktree was created. Drives the relative
+    /// timestamp, which then decays on its own.
+    func markActivity() { lastActivityAt = Date() }
+
+    /// The sidebar's relative timestamp: the real elapsed age once the branch has seen activity,
+    /// else the git-derived age string (a dormant branch's commit age). Empty when neither exists.
+    func activityLabel(now: Date) -> String {
+        guard let at = lastActivityAt else { return lastActivity }
+        return relativeAge(at, now: now)
+    }
+}
+
+/// A compact elapsed-time label: `now` under a minute, then `Nm` / `Nh` / `Nd`.
+func relativeAge(_ date: Date, now: Date) -> String {
+    let s = max(0, now.timeIntervalSince(date))
+    if s < 60 { return "now" }
+    if s < 3600 { return "\(Int(s / 60))m" }
+    if s < 86400 { return "\(Int(s / 3600))h" }
+    return "\(Int(s / 86400))d"
 }
 
 @Observable final class Workspace: Identifiable {

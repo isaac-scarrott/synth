@@ -784,3 +784,7 @@ disclosure to dive deeper.
 - **Synth 0.10.0 shipped (build 331)** — minor bump rolling up the two-tab Settings redesign,
   the simplified Add-project flow, the cool near-white light terminal with Claude Code theme-follow,
   and the ⌘K palette focus fix.
+- **Every native text field focuses instantly — password-autofill key-view walk killed app-wide** —
+  no-op'd `-[NSAutoFillHeuristicController _showPasswordAutoFillIfNecessaryForView:…]` at launch
+  (`AutoFillSuppression`), the same whole-window gather the palette escaped via `NSPanel`; `sample`
+  on the 30-session tree: inline rename 412ms→3ms, feedback field 358ms→90ms. Native app only.

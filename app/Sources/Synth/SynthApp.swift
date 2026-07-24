@@ -45,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Kill the per-focus password-autofill key-view walk before any field can focus — it stalls
+        // every native text field by 250–400ms on a loaded tree (see AutoFillSuppression).
+        AutoFillSuppression.install()
         // Start the terminal engine before analytics. libghostty's `ghostty_init` brings up a
         // statically linked sentry-native/Breakpad handler that claims the task's Mach exception
         // ports, and Mach exceptions preempt POSIX signals — so whatever registers last wins the

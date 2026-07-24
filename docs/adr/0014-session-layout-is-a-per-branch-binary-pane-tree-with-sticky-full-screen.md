@@ -57,3 +57,50 @@ Accepted. The spine (the tree model, multi-pane render, active-pane ring, and th
 invariant) is implemented in `Layout.swift` + `ContentPane.swift` + the store. The gesture, resize,
 sidebar-echo, unsplit, persistence, keybinding, and narrow-pane slices build on it without changing
 the primitive.
+
+## 2026-07-23: the Tabs view mode — a single strip that mirrors the sidebar
+
+An experimental **Tabs** view mode (off by default, one global Settings toggle) changes how the same
+tree is *presented*, not what it is. Two things move: the sidebar drops to **two deep** (sessions
+leave the tree — the branch is the deepest row, carrying only its roll-up), and the content surface
+gains **one tab strip** listing the branch's sessions. A tab is a session's handle, nothing more
+(`CONTEXT.md` carries the term); the flag is presentation-only, so it flips instantly and losslessly
+with no migration — the store is `branch → pane-tree → sessions` either way, and this ADR's spine,
+including *"a pane hosts exactly one session,"* is **unchanged**.
+
+**One strip per branch, not one per pane — the split is a bonded cluster of tabs, not a second
+strip.** This is the shape decided after a first pass gave every pane its own strip: a split must read
+as *one* set of tabs, exactly as the sidebar already shows a split (ADR-0005/012's echo band — the
+member rows pull together into a bonded band). So the single strip lists all of the branch's sessions;
+the sessions in the on-screen split bond into a contiguous **cluster** at the position of their first
+member, and the rest are lone tabs. The strip is a *derived mirror* of the branch's sessions + the
+durable layout's membership — the horizontal twin of `renderSidebarEcho`, built the same way, so the
+sidebar (tabs-off) and the tab strip (tabs-on) are the same idea drawn on different edges.
+
+**Selecting a tab is the existing open/stash behaviour, verbatim.** Clicking a lone tab full-screens
+that session (`openSession` stashes the durable split, which keeps showing as a bonded cluster in the
+strip — the band persists behind a transient full-screen, ADR-0014); clicking a cluster member returns
+to the split with it active. Splitting stays the existing gesture — `⌘⇧arrow` / the split picker adds a
+session to the layout, which *is* bonding it into the cluster; `⌘⇧U` unsplits it back to a lone tab. No
+"eject a tab from a strip," no per-pane tab machinery, no new persisted structure. `openSessionID` is
+still the one "you are here," now also the strip's active tab.
+
+**Keyboard.** `⌘⇧[`/`⌘⇧]` and `⌃⇥`/`⌃⇧⇥` step through the strip (the branch's sessions, via
+`openSession`); `⌘1–9` selects the Nth tab; `⌘W` closes the active tab; `⌘⇧arrow`/`⌘⇧U` split/unsplit
+as above; panes keep `⌘1–9`-as-pane and `⌘⌥arrows` while a split is on screen. Closing the last
+session drops the branch to **dormant** (worktree kept) — the zero-session case the taxonomy names.
+
+**Nothing is pinned.** The agent is a peer tab, orderable and closable like any other — the explicit
+rejection of Cursor's fixed chat rail. An agent-opened browser is a tab wearing its owner-mark with an
+unread dot, no focus-steal (the `belongs-to` relation is unchanged; only its display moves onto a tab).
+
+*Rejected:* **a tab strip per pane** (the first pass) — two sets of tabs on a split contradicts "a
+single set of tabs," and drifts from the sidebar, which shows a split as one bonded band; the single
+strip restores that symmetry. *Rejected:* collapsing a split into one composite tab (you lose the
+jump-straight-to-a-member the sidebar gives). *Rejected:* a separate persisted tab model beside the
+pane-tree (would make the toggle a migration). The strip shows even for a lone tab, so it never
+appears/disappears.
+
+Status: **experimental, unbuilt in the native app.** Landing first in both design files
+(`working.html` + `big-picture-design.html`, subset invariant held) behind the toggle; the native
+port renders the same strip from the existing layout rather than forking a second layout path.

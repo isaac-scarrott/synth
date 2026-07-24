@@ -48,6 +48,9 @@ struct PersistedBranch: Codable {
     var name: String
     var worktreeURL: URL
     var lastActivity: String
+    /// When the branch last saw activity — drives the relative timestamp. Optional/omitted so a
+    /// pre-timestamp snapshot decodes (nil → fall back to the `lastActivity` string).
+    var lastActivityAt: Date?
     var sessions: [PersistedSession]
     /// The branch's browser "Recent" list (≤5). Optional/omitted when empty so pre-browser
     /// snapshots decode and an untouched branch adds no keys.

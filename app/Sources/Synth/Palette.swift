@@ -1,6 +1,80 @@
 import AppKit
 import SwiftUI
 
+/// The palette's search input, bridged from AppKit rather than driven by SwiftUI's `TextField`
+/// + `@FocusState`. Focusing a `TextField` in `.onAppear` intermittently fails to take: opening
+/// the palette makes a text field first responder, which triggers AppKit's autofill heuristic and
+/// SwiftUI's whole-window key-view gather (`_recursiveGatherAllKeyViewCandidates`) — a main-thread
+/// churn that scales with the view tree and, while it runs, leaves the `@FocusState` binding
+/// unreliable (the field silently never focuses; keys fall through to the pane underneath). Grabbing
+/// first responder imperatively here is immune to that race. Return / arrows / Esc never reach the
+/// field editor — the key monitor consumes them while the palette is open — so this is input only.
+struct PaletteQueryField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let transformsDashSpaces: Bool
+    /// Bumped when a seeded frame (rename) pre-fills the field, so the coordinator selects the
+    /// text once — a keystroke then replaces it (working.html pushFrame → input.select()).
+    let seedSelectNonce: Int
+
+    func makeNSView(context: Context) -> NSTextField {
+        let f = NSTextField()
+        f.isBordered = false
+        f.drawsBackground = false
+        f.focusRingType = .none
+        f.font = .systemFont(ofSize: 15)
+        f.textColor = NSColor(Theme.repoName)
+        f.lineBreakMode = .byTruncatingTail
+        f.cell?.usesSingleLineMode = true
+        f.delegate = context.coordinator
+        // Grab first responder as soon as the field is in a window. Deferred because `window`
+        // is nil until SwiftUI inserts the view. Imperative, so it doesn't ride the starved
+        // SwiftUI focus cycle that intermittently never applies on palette open.
+        DispatchQueue.main.async { f.window?.makeFirstResponder(f) }
+        return f
+    }
+
+    func updateNSView(_ f: NSTextField, context: Context) {
+        context.coordinator.dashSpacesOn = transformsDashSpaces
+        f.placeholderString = placeholder
+        if f.stringValue != text { f.stringValue = text }
+        let selectNow = context.coordinator.consumeSeedSelect(seedSelectNonce)
+        // Reclaim first responder after a frame drill swaps the field's siblings, and select the
+        // seed of a rename frame so a keystroke replaces it. No-op once we already hold focus.
+        let held = f.currentEditor() != nil && f.window?.firstResponder === f.currentEditor()
+        if !held || selectNow {
+            DispatchQueue.main.async {
+                f.window?.makeFirstResponder(f)
+                if selectNow { f.currentEditor()?.selectAll(nil) }
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        private let parent: PaletteQueryField
+        var dashSpacesOn: Bool
+        private var lastSeedNonce: Int
+        init(_ parent: PaletteQueryField) {
+            self.parent = parent
+            self.dashSpacesOn = parent.transformsDashSpaces
+            self.lastSeedNonce = parent.seedSelectNonce
+        }
+        func consumeSeedSelect(_ nonce: Int) -> Bool {
+            guard nonce != lastSeedNonce else { return false }
+            lastSeedNonce = nonce
+            return true
+        }
+        func controlTextDidChange(_ obj: Notification) {
+            guard let f = obj.object as? NSTextField else { return }
+            let v = dashSpacesOn ? dashSpaces(f.stringValue) : f.stringValue
+            if v != f.stringValue { f.stringValue = v }
+            parent.text = v
+        }
+    }
+}
+
 // The ⌘K command palette — a navigation stack of frames (working.html's cmdk).
 // Simple at rest, progressive search on typing; drill pushes a frame, Backspace on
 // an empty query pops. Create / delete / confirm happen inline as text — never a modal.
@@ -79,6 +153,9 @@ struct PaletteFrame {
     var stack: [PaletteFrame] = []
     var query = "" { didSet { activeIndex = 0 } }
     var activeIndex = 0
+    /// Bumped each time a seeded frame pre-fills the query, so the input selects the seed
+    /// once (a keystroke then replaces it). The input field watches this.
+    var seedSelectNonce = 0
 
     /// The row the ⋯ kebab / right-click pinned this palette to (working.html `pal.pinned`).
     /// While set it leads `contextRow`, so the grouped root actions target the CLICKED row
@@ -151,7 +228,11 @@ struct PaletteFrame {
         frame.note?(query.trimmingCharacters(in: .whitespaces)).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    func push(_ frame: PaletteFrame) { stack.append(frame); query = frame.seed ?? "" }
+    func push(_ frame: PaletteFrame) {
+        stack.append(frame)
+        query = frame.seed ?? ""
+        if frame.seed != nil { seedSelectNonce += 1 }
+    }
     func pop() { if stack.count > 1 { stack.removeLast(); query = "" } }
     func pop(to depth: Int) { stack.removeLast(stack.count - max(1, depth + 1)); query = "" }
 
@@ -865,7 +946,6 @@ struct PaletteOverlay: View {
     let model: PaletteModel
 
     @State private var shown = false
-    @FocusState private var focused: Bool
 
     private var rows: [PaletteRow] {
         var rows: [PaletteRow] = []
@@ -902,7 +982,6 @@ struct PaletteOverlay: View {
         }
         .opacity(shown ? 1 : 0)
         .onAppear {
-            focused = true
             if reduceMotion { shown = true }
             else { withAnimation(.easeOut(duration: 0.2)) { shown = true } }
         }
@@ -921,23 +1000,11 @@ struct PaletteOverlay: View {
                         }
                     }
                 }
-                TextField(model.frame.placeholder, text: Binding(
-                    get: { model.query },
-                    set: { model.query = model.frame.dashSpaces ? dashSpaces($0) : $0 }))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.repoName)
-                    .focused($focused)
-                    .onChange(of: model.stack.count) {
-                        focused = true
-                        // A seeded rename frame pre-fills the name — select it so a keystroke
-                        // replaces (working.html pushFrame → input.select()).
-                        if model.frame.seed != nil {
-                            DispatchQueue.main.async {
-                                (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
-                            }
-                        }
-                    }
+                PaletteQueryField(
+                    text: Binding(get: { model.query }, set: { model.query = $0 }),
+                    placeholder: model.frame.placeholder,
+                    transformsDashSpaces: model.frame.dashSpaces,
+                    seedSelectNonce: model.seedSelectNonce)
             }
             .padding(.horizontal, 16).padding(.vertical, 13)
             .overlay(alignment: .bottom) {

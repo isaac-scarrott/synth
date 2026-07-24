@@ -4226,8 +4226,9 @@
     const toggleEl = e.target.closest('[data-toggle]');
     if (toggleEl) {
       e.preventDefault();
-      toggle(toggleEl.closest('[data-repo]'));
       select(toggleEl); // keep selection on the row you acted on
+      if (canDisclose(toggleEl)) toggle(toggleEl.closest('[data-repo]'));
+      else if (tabsMode && toggleEl.matches('.branch')) openBranch(toggleEl); // branch → open its tabs, not disclose
       return;
     }
     const session = e.target.closest('[data-session]');
@@ -4247,6 +4248,12 @@
     // hides its rows — except a focus peek, where the closed accordion still reveals the
     // open session's path (the folded-away rows go display:none, caught by offsetParent).
     return [...nav.querySelectorAll('[data-row]')].filter((row) => {
+      // Tabs mode makes the sidebar 2-deep: sessions are tabs in the panes, not tree rows,
+      // so the cursor never lands on one. This is the structural rule, stated outright —
+      // not left to the CSS that visually hides them (offsetParent below only catches the
+      // hidden rows by luck; a render path that keeps them laid out would leak the cursor
+      // into invisible sessions, which is exactly what tabs mode must never do).
+      if (tabsMode && row.matches('[data-session]')) return false;
       if (row.offsetParent === null) return false; // folded away inside a peek
       let p = row.parentElement;
       while (p && p !== nav) {
@@ -4279,6 +4286,22 @@
   // rename Settings or a scope). Guards a/r/d against the shared cursor landing there.
   const isTreeRow = (el) => !!(el && el.closest && el.closest('#nav'));
 
+  // A row discloses children when its chevron opens an accordion: a repo head shows/hides its
+  // branches, a branch group shows/hides its sessions. Tabs mode turns sessions into pane tabs,
+  // so a branch has nothing to disclose (its chevron is hidden to say exactly that) — only repo
+  // heads still toggle. One predicate so every disclosure path (click, ↵, Tab, ←/→) obeys the
+  // same rule instead of each re-deriving it from the raw [data-toggle] markup.
+  const canDisclose = (el) => !!(el && el.matches('[data-toggle]') && !(tabsMode && el.matches('.branch')));
+  // Tabs mode's twin of clicking into a branch: bring its tabs on screen (the session that's
+  // already open if it's this branch's, else the first). It's what "activate" means for the
+  // deepest sidebar row when sessions are tabs, not children. Empty branch: nothing to open.
+  function openBranch(row) {
+    const group = row.closest('[data-repo]');
+    const sessions = group ? [...group.querySelectorAll('.session')] : [];
+    const target = sessions.find((s) => s === openEl) || sessions[0];
+    if (target) { openSession(target); focusContent(); }
+  }
+
   function select(el, scroll) {
     if (selEl) selEl.classList.remove('sel');
     selEl = el;
@@ -4303,13 +4326,14 @@
     if (!row) return;
     if (row.id === 'openSettings') { enterSettings(); return; }
     if (row.matches('.set-row')) { activateSetting(row); return; }
-    if (row.matches('[data-toggle]')) { toggle(row.closest('[data-repo]')); return; }
+    if (canDisclose(row)) { toggle(row.closest('[data-repo]')); return; }
+    if (tabsMode && row.matches('.branch')) { openBranch(row); return; }
     if (row.matches('[data-session]')) { openSession(row); focusContent(); }
   }
 
   // Tab toggles the highlighted group open/closed (groups only; the cursor stays put).
   function toggleGroup() {
-    if (!selEl || !selEl.matches('[data-toggle]')) return;
+    if (!canDisclose(selEl)) return;
     toggle(selEl.closest('[data-repo]'));
   }
 
@@ -4480,7 +4504,7 @@
     // Tab toggles the highlighted group open/closed (no-op / default Tab elsewhere).
     if (k === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (document.querySelector('.backdrop')) return;   // a dialog owns Tab
-      if (selEl && selEl.matches('[data-toggle]')) {
+      if (canDisclose(selEl)) {
         e.preventDefault();
         document.body.classList.add('kbd');
         toggleGroup();
@@ -4503,14 +4527,14 @@
     else if (k === 'ArrowRight' || k === 'l') {
       e.preventDefault();
       if (stepSetting(1)) return;
-      const repo = selEl && selEl.matches('[data-toggle]') ? selEl.closest('[data-repo]') : null;
+      const repo = canDisclose(selEl) ? selEl.closest('[data-repo]') : null;
       if (repo && !repo.classList.contains('repo--open')) toggle(repo);
       else move(1);
     }
     else if (k === 'ArrowLeft' || k === 'h') {
       e.preventDefault();
       if (stepSetting(-1)) return;
-      const repo = selEl && selEl.matches('[data-toggle]') ? selEl.closest('[data-repo]') : null;
+      const repo = canDisclose(selEl) ? selEl.closest('[data-repo]') : null;
       if (repo && repo.classList.contains('repo--open')) toggle(repo);
       else move(-1);
     }

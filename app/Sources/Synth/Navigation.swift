@@ -376,7 +376,7 @@ extension AppStore {
         }
     }
 
-    /// `d`, ⌘D, the row × / trash, and the tab close all land here. It just does it: the row
+    /// `d`, ⌘W, the row × / trash, and the tab close all land here. It just does it: the row
     /// soft-deletes instantly and the undo pill parks it (working.html requestDelete → softRemove).
     /// The sole exception is a worktree — deleting its folder on disk is irreversible, so a branch
     /// still drops into the deliberate remove-from-sidebar / delete-worktree fork.
@@ -393,13 +393,16 @@ extension AppStore {
         }
     }
 
-    /// ⌘D — close the current context through the same flow as `d` on a sidebar row:
+    /// ⌘W — close the current context through the same flow as `d` on a sidebar row:
     /// the focused sidebar row when the keyboard owns the sidebar, else the open session
     /// (working.html contextRow → requestDelete). Inert in Settings, where an idle open
-    /// session would otherwise close invisibly behind the settings surface.
-    func closeContext() {
-        guard !settingsOpen else { return }
-        if keyboardActive, let ref = cursorRef { requestDelete(ref); return }
-        if let s = openSession { requestDelete(.session(s)) }
+    /// session would otherwise close invisibly behind the settings surface. Returns whether
+    /// it closed anything, so ⌘W can fall through to the stock window-close when there isn't.
+    @discardableResult
+    func closeContext() -> Bool {
+        guard !settingsOpen else { return false }
+        if keyboardActive, let ref = cursorRef { requestDelete(ref); return true }
+        if let s = openSession { requestDelete(.session(s)); return true }
+        return false
     }
 }

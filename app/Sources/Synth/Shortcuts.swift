@@ -67,7 +67,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "K"], label: "Command menu"),
             Shortcut(keys: ["⌘", "N"], label: "New session"),
             Shortcut(keys: ["⌘", "T"], label: "New terminal"),
-            Shortcut(keys: ["⌘", "D"], label: "Close session"),
+            Shortcut(keys: ["⌘", "W"], label: "Close session"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
             Shortcut(keys: ["⌘", "⏎"], label: "Jump to notification"),
             Shortcut(keys: ["⌘", ","], label: "Settings"),
@@ -123,7 +123,7 @@ struct ShortcutsSheet: View {
         let tabsGroup = ShortcutCategory(name: "Tabs", icon: Phosphor.tabs, rows: [
             Shortcut(keys: ["⌘", "⇧", "]"], label: "Next tab", alt: ["⌃", "⇥"]),
             Shortcut(keys: ["⌘", "⇧", "["], label: "Previous tab", alt: ["⌃", "⇧", "⇥"]),
-            Shortcut(keys: ["⌘", "W"], label: "Close tab", alt: ["⌘", "D"]),
+            Shortcut(keys: ["⌘", "W"], label: "Close tab"),
             Shortcut(keys: ["⌘", "⇧", "→"], label: "Send tab to pane · split"),
             Shortcut(keys: ["drag"], label: "Reorder tab"),
         ])

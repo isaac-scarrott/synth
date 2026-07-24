@@ -28,10 +28,12 @@ struct SynthApp: App {
                 Button("New Terminal") { store.newTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
                 Divider()
-                // ⌘D closes the current context — the focused sidebar row when the keyboard
+                // ⌘W closes the current context — the focused sidebar row when the keyboard
                 // owns the sidebar, else the open session — through the same flow as `d`.
+                // The local key monitor consumes ⌘W first (below), so it never collides with
+                // the stock ⌘W window-close; this item just keeps the File menu discoverable.
                 Button("Close Session") { store.closeContext() }
-                    .keyboardShortcut("d", modifiers: .command)
+                    .keyboardShortcut("w", modifiers: .command)
             }
             CommandGroup(after: .sidebar) {
                 Button("Toggle Sidebar") { store.sidebarCollapsed.toggle() }
@@ -515,12 +517,18 @@ struct RootView: View {
                 if !opt, !shift, let n = Self.splitDigit(event.keyCode), n >= 2 {
                     store.focusPane(n); focusContent(store); return nil
                 }
-                // Tabs (experimental): ⌘⇧[ / ⌘⇧] step the branch's tabs; ⌘W closes the active tab
-                // through the same confirm/close path as ⌘D. Guarded by tabsMode so a tabs-off
-                // build is untouched (bare ⌘[ / ⌘] stay the browser's history verbs, below).
+                // Tabs (experimental): ⌘⇧[ / ⌘⇧] step the branch's tabs. Guarded by tabsMode so a
+                // tabs-off build is untouched (bare ⌘[ / ⌘] stay the browser's history verbs, below).
                 if store.tabsMode, shift, !opt, event.keyCode == 33 { store.cycleTab(-1); focusContent(store); return nil }
                 if store.tabsMode, shift, !opt, event.keyCode == 30 { store.cycleTab(1); focusContent(store); return nil }
-                if store.tabsMode, !shift, !opt, event.keyCode == 13 { store.closeContext(); return nil }
+                // ⌘W closes the current context (focused sidebar row or open session) through the
+                // same instant close + undo path as `d` — the verb ⌘D used to drive. Consumed here
+                // so it beats the stock ⌘W window-close; only a no-op close (nothing focused, or in
+                // Settings) falls through to let ⌘W close the window as usual.
+                if !shift, !opt, event.keyCode == 13 {
+                    if store.closeContext() { return nil }
+                    return event
+                }
                 // Create aliases: ⌘| (⌘⇧\) side-by-side right · ⌘— (⌘⇧-) stacked below.
                 if shift, !opt, event.keyCode == 42 { store.openSplitPicker(dir: .row, before: false); return nil }
                 if shift, !opt, event.keyCode == 27 { store.openSplitPicker(dir: .col, before: false); return nil }

@@ -175,7 +175,7 @@ private struct TabCloseButton: View {
     @State private var hovering = false
 
     var body: some View {
-        // × closes through the same confirm/close path as ⌘D (confirms while busy).
+        // × closes through the same confirm/close path as ⌘W (confirms while busy).
         Button { store.requestDelete(.session(session)) } label: {
             Phos(path: Phosphor.close, size: 11)
                 .foregroundStyle(hovering ? Theme.ink2 : Theme.inkFaint)

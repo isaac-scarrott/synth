@@ -2635,7 +2635,7 @@
   // hands the URL to NSWorkspace). In the mock there's nothing to open, so just swallow the nav.
   content.addEventListener('click', (e) => {
     // Tabs (experimental): + opens a new tab on the branch, × closes a tab through the SAME
-    // instant close path as ⌘D (soft-delete + undo pill), and a tab body opens it. Handled before pane-activation so
+    // instant close path as ⌘W (soft-delete + undo pill), and a tab body opens it. Handled before pane-activation so
     // these never fall through to it. Guarded by tabsMode → tabs-off is untouched.
     if (tabsMode) {
       const newBtn = e.target.closest('[data-tab-new]');
@@ -4322,8 +4322,8 @@
     if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !document.querySelector('.backdrop')) {
       // Tabs chords (tabsMode only, so tabs-off is untouched):
       //  • ⌃⇥ / ⌃⇧⇥ cycle the active pane's tabs.
-      //  • ⌘W closes the active tab — routed through the SAME close path as ⌘D (⌘D still works
-      //    as its silent alias): instant, with the undo pill as the net even for a busy tab.
+      //  • ⌘W closes the active tab (its specific tab, not just the open session) — the same
+      //    instant close path ⌘W uses everywhere, with the undo pill as the net for a busy tab.
       if (tabsMode && e.ctrlKey && !e.metaKey && !e.altKey && k === 'Tab') {
         e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1); return;
       }
@@ -4371,9 +4371,10 @@
       if (br) { e.preventDefault(); openPaletteAt(newSessionFrame(br)); }
       return;
     }
-    // Cmd/Ctrl+D closes the current context — the focused sidebar row when its ring is
+    // Cmd/Ctrl+W closes the current context — the focused sidebar row when its ring is
     // showing, else the open session — through the same flow as `d` on a sidebar row.
-    if ((e.metaKey || e.ctrlKey) && (k === 'd' || k === 'D') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
+    // (In tabs mode the earlier ⌘W branch already closed the active tab and returned.)
+    if ((e.metaKey || e.ctrlKey) && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
       const row = contextRow();
       if (row) { e.preventDefault(); requestDelete(row); }
       return;
@@ -4655,7 +4656,7 @@
     el.addEventListener('blur', onBlur);
   }
 
-  // The one delete verb every gesture funnels through — kebab, tab ×, ⌘W, ⌘D, `d`. It just
+  // The one delete verb every gesture funnels through — kebab, tab ×, ⌘W, `d`. It just
   // does it: the row soft-deletes instantly and an undo pill parks it for a few seconds.
   // The sole exception is a worktree (branch): deleting its folder on disk is irreversible,
   // so that one still drops into the deliberate remove-from-sidebar / delete-worktree fork.
@@ -5256,7 +5257,7 @@
       [['⌘', 'K'], 'Command menu'],
       [['⌘', 'N'], 'New session'],
       [['⌘', 'T'], 'New terminal'],
-      [['⌘', 'D'], 'Close session'],
+      [['⌘', 'W'], 'Close session'],
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '⏎'], 'Jump to notification'],
       [['⌘', ','], 'Settings'],
@@ -5313,7 +5314,7 @@
     const tabsGroup = ['Tabs', [
       [['⌘', '⇧', ']'], 'Next tab', ['⌃', '⇥']],
       [['⌘', '⇧', '['], 'Previous tab', ['⌃', '⇧', '⇥']],
-      [['⌘', 'W'], 'Close tab', ['⌘', 'D']],
+      [['⌘', 'W'], 'Close tab'],
       [['⌘', '⇧', '→'], 'Send tab to pane · split'],
       [['drag'], 'Reorder tab'],
     ]];
@@ -5761,7 +5762,7 @@
       if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', danger: true, enter: () => runAndClose(() => detach(open)) });
       else claudesOf(open.parentElement).forEach((c) => items.push({ grp: 'Session', unit: seName(open), icon: agentIcon(c.getAttribute('data-agent')), label: 'Attach to “' + sessionTitle(c) + '”', danger: true, enter: () => runAndClose(() => adopt(open, c)) }));
     }
-    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'D'], danger: true, enter: () => runAndClose(() => softRemove(rowUnit(open), { label: 'Closed ' + seName(open) })) });
+    if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'W'], danger: true, enter: () => runAndClose(() => softRemove(rowUnit(open), { label: 'Closed ' + seName(open) })) });
     if (open && inSplit(open)) items.push({ grp: 'Session', unit: seName(open), icon: ICON_UNSPLIT, label: 'Unsplit', enter: () => runAndClose(() => unsplitSession(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
@@ -6084,7 +6085,7 @@
     pal.list.innerHTML = (items.length || fr.note) ? html : '<div class="cmdk__empty">No results</div>';
     // fresh open: nothing pre-highlighted so reflexive Enter is a no-op. A confirm frame never
     // opens on a destructive row — start on its first non-danger item (Cancel) so one Enter, from a
-    // stray ⌘D on a branch or a habituated close chord, can't delete a worktree or close a session.
+    // stray ⌘W on a branch or a habituated close chord, can't delete a worktree or close a session.
     palActive = pal.fresh ? -1 : (curFrame().mode === 'confirm' ? Math.max(0, items.findIndex((it) => !it.danger)) : 0);
     pal.fresh = false;
     paintActive();

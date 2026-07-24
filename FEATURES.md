@@ -853,3 +853,10 @@ disclosure to dive deeper.
   `UndoPill.swift` are deleted; native `InAppNotif` gained a per-instance `life` so the 8s undo drains
   right, and the card reuses the deck's drain so it now pauses on hover / while unfocused (your undo
   window waits for you, like any notification). Driven-app + browser verified.
+- **Close-session moves from ⌘D to ⌘W (supersedes the ⌘D binding)** — the close-current-context verb
+  (focused sidebar row, else open session) is now ⌘W, matching every tab/session app; behaviour is
+  otherwise identical (instant soft-delete + undo deck, no confirm; worktree fork still the sole
+  confirm). Both designs (subset invariant holds) and the native app: `closeContext()` returns `Bool`
+  so ⌘W falls through to the stock window-close only when nothing's closeable, and the local key
+  monitor owns ⌘W in all modes so a real close never leaks to macOS's ⌘W. Shortcuts sheet, palette
+  hint, and comments track ⌘W; the bare sidebar `d` key is unchanged. Builds clean.

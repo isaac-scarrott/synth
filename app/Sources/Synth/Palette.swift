@@ -237,7 +237,7 @@ struct PaletteFrame {
 
     /// A `.confirm` frame never opens with a destructive row on the Enter line: the selection
     /// starts on its first non-danger item (Cancel / Not now), so a single Enter — from a stray
-    /// ⌘D on a branch, a habituated close chord, or an agent driving the keyboard — can't delete
+    /// ⌘W on a branch, a habituated close chord, or an agent driving the keyboard — can't delete
     /// a worktree from disk or close a session. The one confirm whose lead item isn't destructive
     /// (the agent-worktree approval's "Create") keeps its top row. Other modes open at the top.
     private func initialIndex(for frame: PaletteFrame) -> Int {
@@ -351,7 +351,7 @@ struct PaletteFrame {
                                          enter: { self.runAndClose { self.store.unsplitSession(open.id) } }))
             }
             items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close",
-                                     group: g, ctx: open.title, kbd: ["⌘", "D"],
+                                     group: g, ctx: open.title, kbd: ["⌘", "W"],
                                      danger: true,
                                      enter: { self.runAndClose { self.store.softCloseSession(open) } }))
         }

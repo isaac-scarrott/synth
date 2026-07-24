@@ -194,6 +194,8 @@ struct RootView: View {
         // The reorder insertion line paints over everything, the ghost included (working.html
         // z-index 301 over the clone's 300).
         .overlay(alignment: .topLeading) { DropLine() }
+        // Tabs mode's horizontal twin of the reorder line, same z-order.
+        .overlay(alignment: .topLeading) { TabDropLine() }
         .background(WindowChrome().frame(width: 0, height: 0))
         // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
         .preferredColorScheme(store.colorSchemeOverride)
@@ -504,6 +506,12 @@ struct RootView: View {
                 if !opt, !shift, let n = Self.splitDigit(event.keyCode), n >= 2 {
                     store.focusPane(n); focusContent(store); return nil
                 }
+                // Tabs (experimental): ⌘⇧[ / ⌘⇧] step the branch's tabs; ⌘W closes the active tab
+                // through the same confirm/close path as ⌘D. Guarded by tabsMode so a tabs-off
+                // build is untouched (bare ⌘[ / ⌘] stay the browser's history verbs, below).
+                if store.tabsMode, shift, !opt, event.keyCode == 33 { store.cycleTab(-1); focusContent(store); return nil }
+                if store.tabsMode, shift, !opt, event.keyCode == 30 { store.cycleTab(1); focusContent(store); return nil }
+                if store.tabsMode, !shift, !opt, event.keyCode == 13 { store.closeContext(); return nil }
                 // Create aliases: ⌘| (⌘⇧\) side-by-side right · ⌘— (⌘⇧-) stacked below.
                 if shift, !opt, event.keyCode == 42 { store.openSplitPicker(dir: .row, before: false); return nil }
                 if shift, !opt, event.keyCode == 27 { store.openSplitPicker(dir: .col, before: false); return nil }
@@ -544,6 +552,16 @@ struct RootView: View {
                 default: break
                 }
             }
+            // Tabs (experimental): ⌃⇥ / ⌃⇧⇥ cycle the branch's tabs. Placed before the surface
+            // passthrough so it works even while a terminal/browser holds focus (a global nav
+            // chord, like ⌘⇧[ / ⌘⇧]). Guarded by tabsMode.
+            if store.tabsMode, event.keyCode == 48,
+               event.modifierFlags.contains(.control),
+               !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.option) {
+                store.cycleTab(event.modifierFlags.contains(.shift) ? -1 : 1)
+                focusContent(store); return nil
+            }
+
             if let fr = event.window?.firstResponder {
                 if fr is GhosttySurfaceView || fr is NSText || fr is NSTextView { return event }
                 // A focused browser page keeps its keys too (Space/Enter act in the page).

@@ -21,6 +21,7 @@ struct SettingsPane: View {
                     if isGlobal { soundsSection }
                     if isGlobal { mcpSection }
                     if isGlobal { privacySection }
+                    if isGlobal { experimentalSection }
                     scriptSection
                     templateSection
                     flagsSection
@@ -73,6 +74,22 @@ struct SettingsPane: View {
                 .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
                 .lineSpacing(3).padding(.top, 4)
             ThemeSeg().padding(.top, 14)
+        }
+    }
+
+    // MARK: Experimental — global only. Tabs is an opt-in, off-by-default view mode
+    // (working.html's global Experimental → Tabs segmented control).
+
+    @ViewBuilder private var experimentalSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Experimental")
+                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .foregroundStyle(Theme.repoName)
+            (Text("Tabs").fontWeight(.semibold)
+                + Text(" collapses the sidebar to two levels and gives the content a tab strip of the branch's sessions. Off by default — a work-in-progress preview."))
+                .font(.system(size: 12)).foregroundStyle(Theme.inkMuted)
+                .lineSpacing(3).padding(.top, 4)
+            TabsSeg().padding(.top, 14)
         }
     }
 
@@ -821,6 +838,41 @@ private struct ThemeSeg: View {
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowSelected))
         .frame(maxWidth: 300, alignment: .leading)
+    }
+}
+
+/// The Experimental → Tabs picker — the same pill segmented control as ThemeSeg, but a
+/// two-state (Off / Tabs) flip over the off-by-default `tabsMode` preference.
+private struct TabsSeg: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 2) {
+            seg("Off", on: !store.tabsMode) { store.tabsMode = false }
+            seg("Tabs", on: store.tabsMode) { store.tabsMode = true }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowSelected))
+        .frame(maxWidth: 300, alignment: .leading)
+    }
+
+    private func seg(_ label: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(on ? Theme.repoName : Theme.inkMuted)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(on ? Theme.raised : Color.clear)
+                        .shadow(color: on ? Color.black.opacity(0.12) : .clear, radius: 1, y: 1)
+                        .overlay(on ? RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(Theme.border, lineWidth: 0.5) : nil)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -44,23 +44,29 @@ struct ContentPane: View {
             if store.settingsOpen {
                 SettingsPane()
             } else if let root = store.layout {
-                // The layout spine (009): render the pane tree. A lone leaf is byte-for-byte
-                // today's single session; ≥2 leaves lay out as nested splits.
-                PaneTreeView(node: root)
-                    .coordinateSpace(name: Self.contentSpace)
-                    // Each node reports its frame here; the keyboard's spatial focus + resize
-                    // (Layout.swift) read real geometry from the store.
-                    .onPreferenceChange(PaneFramesKey.self) { store.paneFrames = $0 }
-                    // Drop-zone highlight (010): the region the dropped pane will occupy, bare
-                    // colour + shape, driven by the sidebar drag in flight.
-                    .overlay { DropZoneOverlay() }
-                    // Report the content area's global frame so a sidebar drag can map the global
-                    // pointer into content-local space (the coordinateSpace origin matches this).
-                    .background(GeometryReader { g in
-                        Color.clear
-                            .onAppear { store.contentGlobalFrame = g.frame(in: .global) }
-                            .onChange(of: g.frame(in: .global)) { _, f in store.contentGlobalFrame = f }
-                    })
+                // Tabs (experimental): one strip per branch above the pane tree — the horizontal
+                // twin of the sidebar's session rows. The pane tree spine below is unchanged; the
+                // strip is pure presentation over the same layout (working.html renderContentTabStrip).
+                VStack(spacing: 0) {
+                    if store.tabsMode { TabStrip() }
+                    // The layout spine (009): render the pane tree. A lone leaf is byte-for-byte
+                    // today's single session; ≥2 leaves lay out as nested splits.
+                    PaneTreeView(node: root)
+                        .coordinateSpace(name: Self.contentSpace)
+                        // Each node reports its frame here; the keyboard's spatial focus + resize
+                        // (Layout.swift) read real geometry from the store.
+                        .onPreferenceChange(PaneFramesKey.self) { store.paneFrames = $0 }
+                        // Drop-zone highlight (010): the region the dropped pane will occupy, bare
+                        // colour + shape, driven by the sidebar drag in flight.
+                        .overlay { DropZoneOverlay() }
+                        // Report the content area's global frame so a sidebar drag can map the global
+                        // pointer into content-local space (the coordinateSpace origin matches this).
+                        .background(GeometryReader { g in
+                            Color.clear
+                                .onAppear { store.contentGlobalFrame = g.frame(in: .global) }
+                                .onChange(of: g.frame(in: .global)) { _, f in store.contentGlobalFrame = f }
+                        })
+                }
             } else {
                 PaneEmpty()
             }
@@ -306,9 +312,13 @@ private struct SessionPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PaneHead(session: session,
-                     workspace: store.branch(of: session).flatMap { store.workspace(of: $0) },
-                     branch: store.branch(of: session))
+            // Tabs: the strip carries the session's name + icon and the branch's PR, so the
+            // per-pane header is redundant (working.html `html[data-tabs=on] .pane__head{display:none}`).
+            if !store.tabsMode {
+                PaneHead(session: session,
+                         workspace: store.branch(of: session).flatMap { store.workspace(of: $0) },
+                         branch: store.branch(of: session))
+            }
             paneBody
         }
         .opacity(shown ? 1 : 0)
@@ -442,7 +452,9 @@ private struct CrumbCopyButton: View {
 /// + number, not a full fill, so it's a control, not a status lamp. Opens the PR in the
 /// user's default browser. Dev builds float a DEV badge in this same corner, so the button
 /// clears it (`.app.is-dev`).
-private struct PRChip: View {
+// Shared with the content tab strip (TabStrip.swift) — in tabs mode the per-pane header is
+// hidden and this chip relocates to the strip's top-right.
+struct PRChip: View {
     let pr: PRInfo
     var bare: Bool = false
     @State private var hovering = false

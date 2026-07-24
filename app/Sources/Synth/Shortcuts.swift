@@ -50,7 +50,7 @@ private struct ShortcutCategory {
 extension AppStore {
     /// Walk the shortcuts sheet's category sidebar, clamped to its bounds.
     func moveShortcutsCategory(_ delta: Int) {
-        let n = ShortcutsSheet.categoryCount
+        let n = ShortcutsSheet.categories(tabsMode: tabsMode).count
         shortcutsCategory = max(0, min(n - 1, shortcutsCategory + delta))
     }
 }
@@ -62,7 +62,7 @@ struct ShortcutsSheet: View {
 
     // Ordered by importance: the everyday app chords, then the two things you drive constantly
     // (the ⌘K menu and the sidebar), then the power features, then contextual surfaces.
-    fileprivate static let categories: [ShortcutCategory] = [
+    fileprivate static let baseCategories: [ShortcutCategory] = [
         ShortcutCategory(name: "General", icon: Phosphor.keys, rows: [
             Shortcut(keys: ["⌘", "K"], label: "Command menu"),
             Shortcut(keys: ["⌘", "N"], label: "New session"),
@@ -114,9 +114,34 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
     ]
-    static var categoryCount: Int { categories.count }
 
-    private var selected: Int { min(max(0, store.shortcutsCategory), Self.categories.count - 1) }
+    /// Tabs-off shows the base list. Tabs-on inserts a Tabs category and rewrites the two Split-
+    /// layout rows tabs changes — ⌘⇧arrow becomes "Send tab" and ⌘⇧U becomes "Merge pane" — so the
+    /// sheet always matches reality (working.html `shortcutGroups`).
+    fileprivate static func categories(tabsMode: Bool) -> [ShortcutCategory] {
+        guard tabsMode else { return baseCategories }
+        let tabsGroup = ShortcutCategory(name: "Tabs", icon: Phosphor.tabs, rows: [
+            Shortcut(keys: ["⌘", "⇧", "]"], label: "Next tab", alt: ["⌃", "⇥"]),
+            Shortcut(keys: ["⌘", "⇧", "["], label: "Previous tab", alt: ["⌃", "⇧", "⇥"]),
+            Shortcut(keys: ["⌘", "W"], label: "Close tab", alt: ["⌘", "D"]),
+            Shortcut(keys: ["⌘", "⇧", "→"], label: "Send tab to pane · split"),
+            Shortcut(keys: ["drag"], label: "Reorder tab"),
+        ])
+        var out = baseCategories.map { cat -> ShortcutCategory in
+            guard cat.name == "Split layout" else { return cat }
+            // ⌘⇧arrow now sends a tab (it's in the Tabs group) and ⌘⇧U merges the pane; drop those
+            // two rows, relabel Focus-pane-N, and re-add Merge.
+            var rows = cat.rows.filter { $0.label != "Split toward arrow" && $0.label != "Unsplit" }
+                .map { $0.label == "Focus pane N" ? Shortcut(keys: $0.keys, label: "Focus pane · select tab", alt: $0.alt) : $0 }
+            rows.append(Shortcut(keys: ["⌘", "⇧", "U"], label: "Merge pane"))
+            return ShortcutCategory(name: cat.name, icon: cat.icon, rows: rows)
+        }
+        out.insert(tabsGroup, at: 1)   // right after General
+        return out
+    }
+
+    private var cats: [ShortcutCategory] { Self.categories(tabsMode: store.tabsMode) }
+    private var selected: Int { min(max(0, store.shortcutsCategory), cats.count - 1) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -137,7 +162,7 @@ struct ShortcutsSheet: View {
                 .font(.system(size: 10, weight: .semibold)).kerning(0.6)
                 .foregroundStyle(Theme.navLabel)
                 .padding(.leading, 10).padding(.top, 4).padding(.bottom, 8)
-            ForEach(Array(Self.categories.enumerated()), id: \.offset) { i, cat in
+            ForEach(Array(cats.enumerated()), id: \.offset) { i, cat in
                 CategoryRow(icon: cat.icon, name: cat.name, selected: i == selected) {
                     store.shortcutsCategory = i
                 }
@@ -158,7 +183,7 @@ struct ShortcutsSheet: View {
     }
 
     private var detail: some View {
-        let cat = Self.categories[selected]
+        let cat = cats[selected]
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
                 Phos(path: cat.icon, size: 15).foregroundStyle(Theme.copper).frame(width: 16)

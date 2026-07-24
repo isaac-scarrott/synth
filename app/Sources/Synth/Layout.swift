@@ -277,6 +277,13 @@ extension AppStore {
 
     /// ⌘1…⌘9 teleport to the Nth session pane in reading order (the tree flattened a-before-b).
     func focusPane(_ n: Int) {
+        // Tabs: ⌘1…9 selects the Nth tab in the single strip (branch order), not a pane.
+        if tabsMode {
+            let tabs = branchTabs
+            guard n >= 1, n <= tabs.count else { return }
+            open(tabs[n - 1])
+            return
+        }
         let ls = paneLeaves
         guard n >= 1, n <= ls.count else { return }
         setActivePane(ls[n - 1])
@@ -289,6 +296,21 @@ extension AppStore {
         let i = ls.firstIndex(where: { $0 === activePane }) ?? 0
         let n = ls.count
         setActivePane(ls[((i + step) % n + n) % n])
+    }
+
+    /// The current branch's sessions in sidebar order — the single strip's tabs (the horizontal
+    /// twin of the sidebar rows; the mock's `branchTabs()`).
+    var branchTabs: [Session] { currentBranch?.sessions ?? [] }
+
+    /// ⌘⇧[ / ⌘⇧] and ⌃⇥ / ⌃⇧⇥ step the branch's tabs (tabsMode only), wrapping. Fewer than two
+    /// tabs has nowhere to step, so it's a no-op. Selecting a tab is the existing open/stash path.
+    func cycleTab(_ step: Int) {
+        guard tabsMode else { return }
+        let tabs = branchTabs
+        guard tabs.count >= 2 else { return }
+        let i = tabs.firstIndex(where: { $0.id == openSessionID }) ?? 0
+        let n = tabs.count
+        open(tabs[((i + step) % n + n) % n])
     }
 
     /// ⌘⌥+arrow / hjkl move focus spatially: the nearest pane whose edge lies past the active
@@ -618,6 +640,40 @@ extension AppStore {
     func reorderSession(_ sid: UUID, toGlobalY y: CGFloat) {
         guard let s = session(sid) else { return }
         commitReorderDrop(.session(s), atGlobalY: y, animated: true)
+    }
+
+    /// The horizontal twin of `reorderDrop` for the tab strip (tabs mode): the slot a reorder drag
+    /// at global `x` points at among the branch's tabs, comparing X-midpoints. Returns `nil` when
+    /// the pointer rests in the dragged tab's own slot (a no-op) — the line hides. Shared by the
+    /// live drop-line and the release, so the line never promises a slot the release won't land in.
+    private func tabReorder(_ sid: UUID, atGlobalX x: CGFloat) -> (delta: Int, line: CGRect)? {
+        guard let s = session(sid), s.ownerSessionID == nil, let br = branch(of: s) else { return nil }
+        let ids = br.sessions.filter { $0.ownerSessionID == nil }.map(\.id)
+        let present = ids.filter { $0 == sid || sessionRowFrames[$0] != nil }
+        guard let cur = present.firstIndex(of: sid) else { return nil }
+        let items = present.filter { $0 != sid }.compactMap { sessionRowFrames[$0] }
+        guard !items.isEmpty else { return nil }
+        let hit = items.firstIndex { x < $0.midX }
+        let target = hit ?? items.count
+        guard target != cur else { return nil }
+        let r = items[hit ?? items.count - 1]
+        let lx = (hit != nil ? r.minX : r.maxX)
+        return (target - cur, CGRect(x: lx - 1, y: r.minY + 3, width: 2, height: r.height - 6))
+    }
+
+    /// The vertical insertion line a tab reorder drag at global `x` points at (nil = no-op slot).
+    func tabReorderLine(_ sid: UUID, atGlobalX x: CGFloat) -> CGRect? {
+        tabReorder(sid, atGlobalX: x)?.line
+    }
+
+    /// Land a tab reorder (tabs mode): step the tab into the slot the insertion line promised, moving
+    /// the underlying `.session` rows (the strip mirrors branch order), and persist once.
+    func reorderTab(_ sid: UUID, toGlobalX x: CGFloat) {
+        guard let s = session(sid), let drop = tabReorder(sid, atGlobalX: x) else { return }
+        var delta = drop.delta
+        while delta > 0, moveWithinSiblings(.session(s), by: 1, animated: true) { delta -= 1 }
+        while delta < 0, moveWithinSiblings(.session(s), by: -1, animated: true) { delta += 1 }
+        saveNow()
     }
 
     /// Land a pair (012): if the target is already a pane the dragged session splits it in place

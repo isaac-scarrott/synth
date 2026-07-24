@@ -766,3 +766,13 @@ disclosure to dive deeper.
   a member returns to the split. Drops the per-pane tab machinery — leaves stay single-session
   (ADR-0014 spine unchanged); the strip is pure presentation over the existing openSession/stash
   model. ADR-0014's amendment rewritten to match.
+
+## [2026-07-24](docs/features/2026-07-24.md)
+
+- **Experimental Tabs — the native port lands (off by default)** — the single-strip Tabs view mode
+  is now implemented in the native SwiftUI app (`AppStore.tabsMode`, `TabStrip.swift`), a faithful
+  port of `working.html` gated behind the same off-by-default global preference so tabs-off stays
+  byte-for-byte today's behaviour. Two-deep sidebar, one bonded-cluster strip per branch, relocated
+  PR chip, hidden pane header, tab keyboard chords (`⌘⇧[`/`⌘⇧]`, `⌃⇥`, `⌘1–9`, `⌘W`), a Tabs group
+  in the ⌘? sheet, and the full reorder/pair/split/unsplit drag reusing the sidebar's drop ops.
+  Runtime-verified by driving the built app; tabs-off confirmed unchanged.

@@ -360,7 +360,10 @@ private struct BranchRow: View {
     /// Focus peek: while collapsed, the open session it holds still shows — just that one
     /// session, nothing else (working.html `.collapse:has(.session--open)`).
     private var peeking: Bool {
-        !isOpen && store.openSession.map { store.branch(of: $0)?.id == branch.id } == true
+        // Tabs: the 2-deep sidebar never shows a session row below the branch, so there is
+        // nothing to peek — the branch carries the pill itself (see isActivePill).
+        if store.tabsMode { return false }
+        return !isOpen && store.openSession.map { store.branch(of: $0)?.id == branch.id } == true
     }
     private var isActivePill: Bool {
         // Its own setup skeleton is what the content pane is showing — highlight the row
@@ -370,6 +373,9 @@ private struct BranchRow: View {
         // it's collapsed; the white header pill on top of that is gated separately (see
         // activePillBackground) so a peeked session doesn't double-encode.
         guard let open = store.openSession, store.branch(of: open)?.id == branch.id else { return false }
+        // Tabs: the branch is the deepest row and its sessions never show below it, so it is
+        // the only "you are here" — it carries the pill even while nominally expanded.
+        if store.tabsMode { return true }
         return !(branch.isLive && isOpen)
     }
     /// The active-group label goes bold only when it is the *sole* focus cue. Once its open
@@ -397,7 +403,9 @@ private struct BranchRow: View {
                         store.navCursor = branch.id
                     } label: {
                         HStack(spacing: 6) {
-                            Chevron(open: isOpen)
+                            // Tabs: the branch is the deepest row — nothing left to disclose, so
+                            // the chevron goes (working.html `.branch--group > .chev { display:none }`).
+                            if !store.tabsMode { Chevron(open: isOpen) }
                             Text(branch.name)
                                 .font(.system(size: 12, design: .monospaced))
                                 .fontWeight(boldName ? .semibold : .medium)
@@ -414,7 +422,10 @@ private struct BranchRow: View {
                             if branch.isPending {
                                 Ind { PendingSpinner() }
                             } else {
-                                BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
+                                // Tabs: sessions leave the tree, so the roll-up is the branch's only
+                                // per-session signal — force it visible even while nominally expanded
+                                // (working.html `html[data-tabs=on] .branch__roll .ind { display:flex }`).
+                                BranchRollup(branch: branch, collapsed: store.tabsMode || !isOpen).opacity(revealed ? 0 : 1)
                             }
                         }
                         // Full-width row: 37pt leading holds the branch content at its indent
@@ -443,7 +454,10 @@ private struct BranchRow: View {
             .reorderGesture(.branch(branch))
             .onSecondaryClick { store.openRowActions(.branch(branch)) }
 
-            Reveal(open: isOpen || peeking) {
+            // Tabs: the 2-deep sidebar drops session rows and the split echo band — they're tabs
+            // now (working.html hides `.nav .session` and `.session-group`). Keep the disclosure
+            // shut so nothing renders below the branch.
+            Reveal(open: !store.tabsMode && (isOpen || peeking)) {
                 VStack(alignment: .leading, spacing: 1) {
                     if branch.sessions.isEmpty {
                         EmptyGroupHint(text: "No sessions yet", leading: 61)
@@ -903,7 +917,9 @@ private struct Monogram: View {
 /// The slot pops in with a soft overshoot (ind-in, 240ms back-out) whenever it
 /// appears or swaps state — a state swap lands as a new view identity (a different
 /// switch branch, or `.id`) so the pop retriggers, like the HTML replacing the node.
-private struct Ind<Content: View>: View {
+// Shared with the content tab strip (TabStrip.swift) — the tab reuses the sidebar's exact
+// indicator chrome, mirroring the mock's `makeTabEl` cloning `.session__icon` / `.ind`.
+struct Ind<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown = false
     @ViewBuilder var content: Content
@@ -919,7 +935,7 @@ private struct Ind<Content: View>: View {
     }
 }
 
-private struct StatusIndicator: View {
+struct StatusIndicator: View {
     let status: SessionStatus
     var body: some View {
         switch status {
@@ -940,7 +956,7 @@ private struct StatusIndicator: View {
 /// (working.html `.ind--owned`). It mirrors the owner's icon, so a browser owned by Claude Code
 /// shows Clawd and one owned by OpenCode shows OpenCode's mark. Browsers are status-less, so this
 /// only ever stands where a StatusIndicator's empty idle slot would be.
-private struct OwnedIndicator: View {
+struct OwnedIndicator: View {
     /// The owning row's kind; nil owner falls back to the generic agent glyph.
     var ownerKind: SessionKind = .agent(.claudeCode)
 

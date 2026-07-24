@@ -318,6 +318,16 @@ enum FeedbackMode {
     }
     static let analyticsKey = "synth-analytics-enabled"
 
+    /// Experimental "Tabs" view mode (working.html `data-tabs`). Presentation-only over the same
+    /// branch → pane-tree → session store: on, the sidebar drops to two deep (sessions leave the
+    /// tree) and the content surface gains one tab strip per branch. OFF by default, and every
+    /// tabs-gated behaviour keys off this, so a tabs-off build is byte-for-byte today's. `@Observable`
+    /// re-renders the sidebar and content the instant it flips — the lossless toggle, no migration.
+    var tabsMode = AppStore.loadBoolPref(AppStore.tabsModeKey, default: false) {
+        didSet { UserDefaults.standard.set(tabsMode, forKey: AppStore.tabsModeKey) }
+    }
+    static let tabsModeKey = "synth-tabs"
+
     /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
     var sidebarWidth: CGFloat = {
         let w = UserDefaults.standard.double(forKey: AppStore.sidebarWidthKey)
@@ -351,6 +361,12 @@ enum FeedbackMode {
     /// the release will land in. nil = hidden: no drag in flight, or the pointer rests in the
     /// dragged unit's own slot (the faded source row already marks that slot).
     var reorderDropLine: CGRect?
+    /// The vertical copper insertion line of a tab-strip reorder drag (tabs mode), in global coords —
+    /// the horizontal twin of `reorderDropLine`. nil = hidden.
+    var tabReorderLine: CGRect?
+    /// The tab strip's global frame (tabs mode) — a tab drag only reorders while the pointer is over
+    /// it; released anywhere else (a pane handles its own split; the sidebar / off-window) it cancels.
+    @ObservationIgnored var tabStripFrame: CGRect = .zero
     /// A free-floating drag ghost for a session drag (010/012) — the session tracks the cursor like
     /// a VS Code file drag while the source row dims in place. nil when no session drag is in flight;
     /// `dragGhostPoint` is the cursor in global (window) coordinates.

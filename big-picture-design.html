@@ -2981,7 +2981,7 @@
   // ⌘1 on a single pane is the old "focus the open session". Hand the keyboard to the pane.
   function focusPane(n) {
     // Tabs: ⌘1…9 selects the Nth tab in the single strip (branch order).
-    if (tabsMode) { const tabs = branchTabs(); const s = tabs[n - 1]; if (s) { openSession(s); focusContent(); } else if (n === 1) focusContent(); return; }
+    if (tabsMode) { const tabs = branchTabsVisual(); const s = tabs[n - 1]; if (s) { openSession(s); focusContent(); } else if (n === 1) focusContent(); return; }
     const leaf = paneLeaves()[n - 1];
     if (!leaf) { if (n === 1) focusContent(); return; }
     setActivePane(leaf);
@@ -2999,7 +2999,7 @@
   // has nowhere to step, so it's a no-op.
   function cycleTab(step) {
     if (!tabsMode) return;
-    const tabs = branchTabs();
+    const tabs = branchTabsVisual();
     if (tabs.length < 2) return;
     let i = tabs.indexOf(openEl); if (i < 0) i = 0;
     openSession(tabs[(i + step + tabs.length) % tabs.length]); focusContent();
@@ -3885,6 +3885,21 @@
   function branchTabs() {   // the current branch's session rows, sidebar order = the single strip's tabs
     if (currentBranchKey == null) return [];
     return [...nav.querySelectorAll('.session')].filter((s) => branchKeyOf(s) === currentBranchKey);
+  }
+  // The branch's tabs in the exact left-to-right order the strip paints (renderContentTabStrip):
+  // the on-screen split's members fold into one contiguous run at their first member's slot. ⌘1…9
+  // and ⌘⇧[ /] read this so the number keys match what the user sees, not raw sidebar order.
+  function branchTabsVisual() {
+    const tabs = branchTabs();
+    const members = []; eachLeaf(durableLayout(), (l) => { if (l.session) members.push(l.session); });
+    if (members.length < 2) return tabs;
+    const memberSet = new Set(members);
+    const out = []; let emitted = false;
+    tabs.forEach((el) => {
+      if (memberSet.has(el)) { if (!emitted) { emitted = true; members.forEach((m) => out.push(m)); } }
+      else out.push(el);
+    });
+    return out;
   }
   function makeTabEl(el) {
     const icon = el.querySelector('.session__icon').outerHTML;

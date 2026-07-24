@@ -279,7 +279,7 @@ extension AppStore {
     func focusPane(_ n: Int) {
         // Tabs: ⌘1…9 selects the Nth tab in the single strip (branch order), not a pane.
         if tabsMode {
-            let tabs = branchTabs
+            let tabs = branchTabsVisual
             guard n >= 1, n <= tabs.count else { return }
             open(tabs[n - 1])
             return
@@ -302,11 +302,34 @@ extension AppStore {
     /// twin of the sidebar rows; the mock's `branchTabs()`).
     var branchTabs: [Session] { currentBranch?.sessions ?? [] }
 
+    /// The current branch's tabs in the exact order the strip paints them (TabStrip.items twin):
+    /// the on-screen split's members fold into one contiguous run at their first member's slot.
+    /// ⌘1…9 and ⌘⇧[ /] read this so the number keys match what the user sees, not raw session order.
+    var branchTabsVisual: [Session] {
+        guard let branch = currentBranch else { return [] }
+        let echo = echoMemberIDs(for: branch)
+        let memberSet = Set(echo)
+        guard !echo.isEmpty, branch.sessions.contains(where: { memberSet.contains($0.id) }) else {
+            return branch.sessions
+        }
+        let members = echo.compactMap { id in branch.sessions.first { $0.id == id } }
+        var out: [Session] = []
+        var placed = false
+        for s in branch.sessions {
+            if memberSet.contains(s.id) {
+                if !placed { out.append(contentsOf: members); placed = true }
+            } else {
+                out.append(s)
+            }
+        }
+        return out
+    }
+
     /// ⌘⇧[ / ⌘⇧] and ⌃⇥ / ⌃⇧⇥ step the branch's tabs (tabsMode only), wrapping. Fewer than two
     /// tabs has nowhere to step, so it's a no-op. Selecting a tab is the existing open/stash path.
     func cycleTab(_ step: Int) {
         guard tabsMode else { return }
-        let tabs = branchTabs
+        let tabs = branchTabsVisual
         guard tabs.count >= 2 else { return }
         let i = tabs.firstIndex(where: { $0.id == openSessionID }) ?? 0
         let n = tabs.count

@@ -916,3 +916,11 @@ disclosure to dive deeper.
   on) now gates every disclosure path, so on a branch those keys just navigate; activating a branch
   runs `openBranch` — brings its tabs on screen + focuses content — instead of nothing. Repo heads
   still disclose; Tabs off is unchanged. Both design files (subset invariant held).
+- **The native app lands the tabs-mode sidebar-keyboard fix** — port of the two entries above into
+  SwiftUI (`Navigation.swift`/`Sidebar.swift`). The view was already tabs-aware but the keyboard model
+  wasn't: `visibleRows` (native `treeRows`) now drops `.session` rows when `tabsMode`; `isToggle`
+  becomes `canDisclose` (returns `!tabsMode` for a branch, workspaces still disclose) gating `→`/`←`/
+  `Tab`/`↵`; and a shared `openBranch(_:)` (factored from the click handler) opens a branch's tabs on
+  `↵`/click. `swift build` clean; driven headless + screenshot — Tabs on, `↓`/`↑` walk workspaces +
+  branches only and `↵` opens a branch's tabs; Tabs off still walks into sessions. `working.html`
+  untouched.

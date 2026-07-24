@@ -51,6 +51,12 @@ extension AppStore {
                 rows.append(.session(open))           // ...and the open session inside it
             }
         }
+        // Tabs mode makes the sidebar 2-deep: sessions are tabs in the panes, not tree rows, so
+        // the cursor never lands on one. Stated outright here — not left to the view happening not
+        // to render them (working.html treeRows drops [data-session] rows when tabsMode is on).
+        if tabsMode {
+            rows = rows.filter { if case .session = $0 { return false }; return true }
+        }
         return rows
     }
 
@@ -170,19 +176,33 @@ extension AppStore {
         return true
     }
 
-    /// A row that can expand/collapse: a workspace, or any branch group.
-    private func isToggle(_ ref: RowRef) -> Bool {
+    /// A row whose chevron opens an accordion: a workspace shows/hides its branches, a branch
+    /// group shows/hides its sessions. Tabs mode turns sessions into pane tabs, so a branch has
+    /// nothing to disclose (its chevron is hidden to say exactly that) — only workspaces still
+    /// toggle. One predicate so every disclosure path (↵, Tab, ←/→) obeys the same rule
+    /// (working.html `canDisclose`).
+    private func canDisclose(_ ref: RowRef) -> Bool {
         switch ref {
         case .workspace:      return true
-        case .branch:         return true
+        case .branch:         return !tabsMode
         case .session:        return false
         }
+    }
+
+    /// Tabs mode's twin of clicking into a branch: bring its tabs on screen — the session its
+    /// remembered layout was showing, else its first tab. It's what "activate" means for the
+    /// deepest sidebar row when sessions are tabs, not children (working.html `openBranch`).
+    /// Empty branch: nothing to open.
+    func openBranch(_ branch: Branch) {
+        let target = branch.layout.map { firstLeaf($0).sessionID }?
+            .flatMap { session($0) } ?? branch.sessions.first
+        if let target { open(target); focusContent(self) }
     }
 
     /// → : open a closed toggle, else move down (mirrors working.html).
     func expandOrIn() {
         keyboardActive = true
-        if let ref = cursorRef, isToggle(ref), !expanded.contains(ref.id) {
+        if let ref = cursorRef, canDisclose(ref), !expanded.contains(ref.id) {
             expanded.insert(ref.id)
         } else {
             moveCursor(1)
@@ -192,7 +212,7 @@ extension AppStore {
     /// ← : close an open toggle, else move up (mirrors working.html).
     func collapseOrOut() {
         keyboardActive = true
-        if let ref = cursorRef, isToggle(ref), expanded.contains(ref.id) {
+        if let ref = cursorRef, canDisclose(ref), expanded.contains(ref.id) {
             expanded.remove(ref.id)
         } else {
             moveCursor(-1)
@@ -207,7 +227,8 @@ extension AppStore {
         if navCursor == NavID.settingsFoot { toggleSettings(); return }
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
-        case let .branch(b): toggleExpanded(b.id)
+        // Tabs: a branch has no disclosure to toggle — activating it opens its tabs instead.
+        case let .branch(b): if tabsMode { openBranch(b) } else { toggleExpanded(b.id) }
         case let .session(s): open(s); focusContent(self)
         case .none: break
         }
@@ -216,13 +237,13 @@ extension AppStore {
     /// The cursor sits on a group (workspace or branch group) that Tab can toggle.
     var cursorIsGroup: Bool {
         guard let ref = cursorRef else { return false }
-        return isToggle(ref)
+        return canDisclose(ref)
     }
 
     /// Tab: toggle the highlighted group open↔closed (groups only; the cursor stays put).
     /// `l`/`h` remain the directional expand/collapse — Tab is the toggle (working.html).
     func toggleGroup() {
-        guard let ref = cursorRef, isToggle(ref) else { return }
+        guard let ref = cursorRef, canDisclose(ref) else { return }
         keyboardActive = true
         toggleExpanded(ref.id)
     }

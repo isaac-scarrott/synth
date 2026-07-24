@@ -450,19 +450,20 @@ struct PaletteFrame {
         }
     }
 
-    private func wsOf(_ branch: Branch) -> String { store.workspace(of: branch)?.name ?? "" }
-    private func ctxOf(_ session: Session) -> String {
-        guard let br = store.branch(of: session) else { return "" }
-        return [wsOf(br), br.name].filter { !$0.isEmpty }.joined(separator: " / ")
+    /// The "Workspace / Branch" context chip, built from the enclosing loop's ws+br. Callers hold
+    /// both while iterating the tree, so a session row never re-derives its parents by scanning the
+    /// whole tree — that re-derivation made search O(N²) over all sessions.
+    private func ctxString(_ ws: Workspace, _ br: Branch) -> String {
+        [ws.name, br.name].filter { !$0.isEmpty }.joined(separator: " / ")
     }
 
     private func chipIcon(_ ws: Workspace) -> PaletteIcon {
         .chip(ws.monogram, Theme.chipColors[ws.colorIndex % Theme.chipColors.count])
     }
 
-    private func sessionItem(_ s: Session, ctx: Bool, sec: String? = nil, group: String? = nil) -> PaletteItem {
+    private func sessionItem(_ s: Session, ctx: String?, sec: String? = nil, group: String? = nil) -> PaletteItem {
         PaletteItem(icon: .session(s.kind), label: s.title, sec: sec, group: group,
-                    ctx: ctx ? ctxOf(s) : nil,
+                    ctx: ctx,
                     meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
                     enter: { [self] in runAndClose { [store] in store.jump(to: s) } })
     }
@@ -520,7 +521,8 @@ struct PaletteFrame {
             // Search groups run most-local-first: Actions (above), then Sessions, Branches, Workspaces.
             for ws in store.workspaces {
                 for br in ws.branches {
-                    for s in br.sessions { items.append(sessionItem(s, ctx: true, group: "Sessions")) }
+                    let ctx = ctxString(ws, br)
+                    for s in br.sessions { items.append(sessionItem(s, ctx: ctx, group: "Sessions")) }
                 }
             }
             for ws in store.workspaces {
@@ -579,7 +581,8 @@ struct PaletteFrame {
             ]
             for ws in store.workspaces {
                 for br in ws.branches {
-                    for s in br.sessions { items.append(sessionItem(s, ctx: true, sec: "list")) }
+                    let ctx = ctxString(ws, br)
+                    for s in br.sessions { items.append(sessionItem(s, ctx: ctx, sec: "list")) }
                 }
             }
             return items
@@ -648,7 +651,7 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(branch.name)", sec: "act",
                             danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
             ]
-            for s in branch.sessions { items.append(sessionItem(s, ctx: false, sec: "list")) }
+            for s in branch.sessions { items.append(sessionItem(s, ctx: nil, sec: "list")) }
             return items
         }
     }
@@ -677,11 +680,18 @@ struct PaletteFrame {
 
     func deleteSessionPicker() -> PaletteFrame {
         PaletteFrame(crumb: "Close session", placeholder: "Select a session to close…") { [self] _ in
-            store.workspaces.flatMap(\.branches).flatMap(\.sessions).map { s in
-                PaletteItem(icon: .session(s.kind), label: s.title, ctx: ctxOf(s),
-                            meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
-                            danger: true, enter: { self.closeOrConfirm(s) })
+            var items: [PaletteItem] = []
+            for ws in store.workspaces {
+                for br in ws.branches {
+                    let ctx = ctxString(ws, br)
+                    for s in br.sessions {
+                        items.append(PaletteItem(icon: .session(s.kind), label: s.title, ctx: ctx,
+                                                 meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
+                                                 danger: true, enter: { self.closeOrConfirm(s) }))
+                    }
+                }
             }
+            return items
         }
     }
 

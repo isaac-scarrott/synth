@@ -545,9 +545,14 @@ extension AppStore {
     /// territory) — the pair-to-split target (012). Excludes the dragged session's own row, and any
     /// row in another branch / worktree — a pair is a split, which stays within one branch (003).
     func pairTarget(atGlobal p: CGPoint, dragging sessionID: UUID) -> UUID? {
-        let dragBranch = session(sessionID).flatMap { branch(of: $0)?.id }
+        // Map every session to its branch once (O(total)); the per-row scan below is then a dict
+        // lookup rather than another full-tree branch(of:) walk per candidate — that was O(rows ×
+        // total) every drag frame at 60–120Hz.
+        var branchOf: [UUID: UUID] = [:]
+        for ws in workspaces { for br in ws.branches { for s in br.sessions { branchOf[s.id] = br.id } } }
+        let dragBranch = branchOf[sessionID]
         for (sid, frame) in sessionRowFrames where sid != sessionID {
-            guard session(sid).flatMap({ branch(of: $0)?.id }) == dragBranch else { continue }
+            guard branchOf[sid] == dragBranch else { continue }
             guard frame.contains(p) else { continue }
             let ry = (p.y - frame.minY) / max(1, frame.height)
             // The centre 60% of a row reads as "onto" (pair); its top/bottom 20% edges stay reorder

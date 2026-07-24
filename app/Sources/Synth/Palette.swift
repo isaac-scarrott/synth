@@ -230,8 +230,20 @@ struct PaletteFrame {
 
     func push(_ frame: PaletteFrame) {
         stack.append(frame)
-        query = frame.seed ?? ""
+        query = frame.seed ?? ""          // didSet resets activeIndex = 0
         if frame.seed != nil { seedSelectNonce += 1 }
+        activeIndex = initialIndex(for: frame)
+    }
+
+    /// A `.confirm` frame never opens with a destructive row on the Enter line: the selection
+    /// starts on its first non-danger item (Cancel / Not now), so a single Enter — from a stray
+    /// ⌘D on a branch, a habituated close chord, or an agent driving the keyboard — can't delete
+    /// a worktree from disk or close a session. The one confirm whose lead item isn't destructive
+    /// (the agent-worktree approval's "Create") keeps its top row. Other modes open at the top.
+    private func initialIndex(for frame: PaletteFrame) -> Int {
+        guard frame.mode == .confirm else { return 0 }
+        let built = frame.build(query.trimmingCharacters(in: .whitespaces))
+        return built.firstIndex { !$0.danger } ?? 0
     }
     func pop() { if stack.count > 1 { stack.removeLast(); query = "" } }
     func pop(to depth: Int) { stack.removeLast(stack.count - max(1, depth + 1)); query = "" }
@@ -706,12 +718,15 @@ struct PaletteFrame {
                      placeholder: "Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel",
                      mode: .confirm) { [self] _ in
             [
-                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
-                            ctx: "git worktree remove + delete its folder on disk", danger: true,
-                            enter: { self.runAndClose { self.store.softRemoveBranch(br, deleteWorktree: true) } }),
+                // Safe order (1bc2545): the non-disk-destroying arm leads, and the confirm opens
+                // on Cancel — but both arms now soft-delete with an undo card, so even the disk
+                // delete is recoverable for its window.
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
                             ctx: "stop tracking it here — the worktree stays on disk", danger: true,
                             enter: { self.runAndClose { self.store.softRemoveBranch(br, deleteWorktree: false) } }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
+                            ctx: "git worktree remove + delete its folder on disk", danger: true,
+                            enter: { self.runAndClose { self.store.softRemoveBranch(br, deleteWorktree: true) } }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
         }

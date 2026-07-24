@@ -6082,7 +6082,10 @@
         + '<span class="cmdk__ico">' + it.icon + '</span><span class="cmdk__label">' + esc(it.label) + '</span>' + ctx + meta + hint + '</div>';
     });
     pal.list.innerHTML = (items.length || fr.note) ? html : '<div class="cmdk__empty">No results</div>';
-    palActive = pal.fresh ? -1 : 0;   // fresh open: nothing pre-highlighted so reflexive Enter is a no-op
+    // fresh open: nothing pre-highlighted so reflexive Enter is a no-op. A confirm frame never
+    // opens on a destructive row — start on its first non-danger item (Cancel) so one Enter, from a
+    // stray ⌘D on a branch or a habituated close chord, can't delete a worktree or close a session.
+    palActive = pal.fresh ? -1 : (curFrame().mode === 'confirm' ? Math.max(0, items.findIndex((it) => !it.danger)) : 0);
     pal.fresh = false;
     paintActive();
     sizeList();

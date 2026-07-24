@@ -823,6 +823,17 @@ disclosure to dive deeper.
   PR chip, hidden pane header, tab keyboard chords (`⌘⇧[`/`⌘⇧]`, `⌃⇥`, `⌘1–9`, `⌘W`), a Tabs group
   in the ⌘? sheet, and the full reorder/pair/split/unsplit drag reusing the sidebar's drop ops.
   Runtime-verified by driving the built app; tabs-off confirmed unchanged.
+- **A worktree Delete can no longer fire from one stray keypress** — Command-menu confirm frames
+  pre-selected their first row, and the native remove-worktree confirm had inverted the design's
+  order to lead with "Delete worktree" (rm from disk), so a single Enter — or ⌘D on a branch — deleted
+  a checkout (it did, to a real `holibob` worktree). Now no `.confirm` frame opens on a destructive
+  row: selection starts on the first non-danger item (Cancel), and the native order is restored to
+  match `working.html`. Native + both design files; the detach/sweep machinery is unchanged.
+- **Synth 0.11.0 shipped (build 346)** — minor bump: the experimental Tabs view mode (off by default)
+  plus the worktree-delete safety fix. Notarized, stapled, verified credential-less; 0.10.1 users take
+  an ~880KB delta. First release run was killed pre-publish to fold in the safety fix (nothing shipped);
+  its leftover stale `0.11.0/345` appcast item was pruned from the re-run's feed so 346 + 342 are the
+  only items, every enclosure signed.
 - **Destructive mouse actions go instant, undo pill as the net** — closing a session / removing a
   project no longer confirms: the row soft-deletes immediately and an undo pill (`softRemove`, 8s
   `UNDO_MS`, draining the notif countdown bar) parks it — bring it back by clicking the pill or ⌘↩,

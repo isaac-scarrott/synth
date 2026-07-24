@@ -788,3 +788,7 @@ disclosure to dive deeper.
   no-op'd `-[NSAutoFillHeuristicController _showPasswordAutoFillIfNecessaryForView:…]` at launch
   (`AutoFillSuppression`), the same whole-window gather the palette escaped via `NSPanel`; `sample`
   on the 30-session tree: inline rename 412ms→3ms, feedback field 358ms→90ms. Native app only.
+- **Scaling-perf pass: persistence, palette/drag scans, browser-open off the main-thread hot path** —
+  state save encode+write moved to a serial background queue (reorder 28ms→6ms; sync flush on quit);
+  ⌘K search + drag-pair dropped O(N²)→O(N) by threading known ws/br; browser engine bootstraps a
+  runloop turn after the pane paints instead of freezing the open. Native app only.

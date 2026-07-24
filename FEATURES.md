@@ -903,6 +903,27 @@ disclosure to dive deeper.
   invariant held) and native app (`RenameField` reused; a `DoubleClickCatcher` overlay claims only the
   second click of a plain double-click so single-click open, tab drag, and close pass through). Both
   cover lone tabs and split-member cluster chips. Builds clean.
+- **Tabs mode: the keyboard cursor is branches-only, stated outright** — in Tabs mode the sidebar is
+  2-deep (sessions are tabs, not tree rows), so `J`/`K`/arrows must walk repos + branches only. The
+  native app leaked the cursor into the hidden session rows because keyboard-nav membership was
+  inferred from CSS visibility (`offsetParent`), which Tabs mode only *happened* to satisfy. `treeRows()`
+  now drops `[data-session]` rows outright when `tabsMode` is on — the rule is explicit, not a side
+  effect of `display:none`. Both design files (subset invariant held); native port is the follow-up.
+- **Tabs mode: the rest of the sidebar shortcuts stop toggling a branch's invisible disclosure** — a
+  branch is the deepest sidebar row in Tabs mode (chevron hidden), but `→`/`←`/`Tab`/`Enter`/click
+  still treated it as an expandable group and silently flipped its now-hidden session accordion. One
+  shared `canDisclose(row)` predicate (a `[data-toggle]` row that isn't a branch while `tabsMode` is
+  on) now gates every disclosure path, so on a branch those keys just navigate; activating a branch
+  runs `openBranch` — brings its tabs on screen + focuses content — instead of nothing. Repo heads
+  still disclose; Tabs off is unchanged. Both design files (subset invariant held).
+- **The native app lands the tabs-mode sidebar-keyboard fix** — port of the two entries above into
+  SwiftUI (`Navigation.swift`/`Sidebar.swift`). The view was already tabs-aware but the keyboard model
+  wasn't: `visibleRows` (native `treeRows`) now drops `.session` rows when `tabsMode`; `isToggle`
+  becomes `canDisclose` (returns `!tabsMode` for a branch, workspaces still disclose) gating `→`/`←`/
+  `Tab`/`↵`; and a shared `openBranch(_:)` (factored from the click handler) opens a branch's tabs on
+  `↵`/click. `swift build` clean; driven headless + screenshot — Tabs on, `↓`/`↑` walk workspaces +
+  branches only and `↵` opens a branch's tabs; Tabs off still walks into sessions. `working.html`
+  untouched.
 - **Clicking a sidebar row hands the keyboard to the sidebar** — a click now makes the tree
   keyboard-active (blurs content, selects the row) instead of `focusContent()`, so `r`/`d`/`a`/`j`/`k`
   act on the clicked branch/worktree/session immediately; the session still opens in the pane, ↵ or ⌘1

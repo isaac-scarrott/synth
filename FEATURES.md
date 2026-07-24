@@ -929,3 +929,11 @@ disclosure to dive deeper.
   act on the clicked branch/worktree/session immediately; the session still opens in the pane, ↵ or ⌘1
   dives in to type. `handToSidebar()` mirrors ⌘0. Both designs + native (`openFromSidebar` +
   a one-shot `suppressShellFocusOnOpen` so the terminal's mount-focus doesn't re-steal the keyboard).
+
+- **Synth 0.13.0 shipped (build 376)** — minor bump: clicking a sidebar row now hands the keyboard to
+  the sidebar (row shortcuts act at once, ↵/⌘1 dives in), plus the experimental-Tabs rename/right-click
+  gestures and tabs-mode keyboard-nav fix, and two fixes riding along — in-app notifications stack
+  instead of replacing, and the terminal re-scales across mixed-DPI displays. Notarized + stapled
+  (zip + dmg), verified credential-less on the quarantined downloads; appcast newest `sparkle:version`
+  376 / `0.13.0`, all 18 enclosures EdDSA-signed, deltas against 342/346/353/359/361. Clean run.
+  Landing links unchanged (stable `Synth.dmg` alias), no site republish.

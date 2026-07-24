@@ -53,6 +53,21 @@ import AppKit
     /// up an engine. Used to move first-responder focus onto an open page (⌘1).
     func existing(_ id: UUID) -> BrowserSessionController? { controllers[id] }
 
+    /// The pane's non-blocking read: the engine if it's already up, else nil — but it *subscribes*
+    /// to `generation` (unlike `existing`, whose `controllers` map is observation-ignored), so the
+    /// pane re-renders the instant a deferred create completes. Crucially it never creates: the pane
+    /// triggers creation itself, one runloop turn later, so CEF's runloop-pumping bootstrap lands
+    /// after the open frame has painted a placeholder instead of freezing it.
+    func paneEngine(for session: Session) -> BrowserSessionController? {
+        _ = generation
+        guard !dead.contains(session.id) else { return nil }
+        return controllers[session.id]
+    }
+
+    /// A pane must not schedule a create for a row that's being deleted (it would render a
+    /// placeholder card mid-teardown); this distinguishes "gone" from "not up yet".
+    func isDead(_ id: UUID) -> Bool { dead.contains(id) }
+
     /// Whether the window's first responder sits inside any engine view — the browser
     /// twin of the key monitor's Ghostty/NSText passthrough guard, so a focused page
     /// keeps its own keys (Space must click the page's button, not re-open the
@@ -297,11 +312,28 @@ struct BrowserPane: View {
     }
 
     var body: some View {
-        // nil = the session was deleted while this pane was still on screen; render
-        // nothing for the frame it takes the selection to move on.
-        if let ctrl = BrowserManager.shared.controller(for: session) {
+        if let ctrl = BrowserManager.shared.paneEngine(for: session) {
             pane(ctrl)
+        } else if !BrowserManager.shared.isDead(session.id) {
+            // Engine not up yet: paint the pane's card immediately, then bootstrap the engine on
+            // the next runloop turn (the focus:false create's proven deferral, Store.newBrowser) so
+            // CEF's bootstrap doesn't freeze the open animation. `generation` re-renders us when it
+            // lands. A deleted session (isDead) renders nothing, as before.
+            placeholder
+                .onAppear {
+                    DispatchQueue.main.async { _ = BrowserManager.shared.controller(for: session) }
+                }
         }
+    }
+
+    /// The pane's chrome with no engine yet — matches `pane`'s outer card so the swap to the live
+    /// page is a fill, not a layout jump.
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(Theme.raised)
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
+            .padding(14)
     }
 
     private func pane(_ ctrl: BrowserSessionController) -> some View {

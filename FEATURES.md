@@ -792,3 +792,5 @@ disclosure to dive deeper.
   state save encode+write moved to a serial background queue (reorder 28ms→6ms; sync flush on quit);
   ⌘K search + drag-pair dropped O(N²)→O(N) by threading known ws/br; browser engine bootstraps a
   runloop turn after the pane paints instead of freezing the open. Native app only.
+- **Perf follow-ups: feedback submit resolves its branch name off-main (no more `git for-each-ref`
+  freeze), and the ⌘K palette builds its item list once per render instead of three times.** Native app.

@@ -772,6 +772,10 @@ disclosure to dive deeper.
 
 ## [2026-07-24](docs/features/2026-07-24.md)
 
+- **⌘K palette opens instantly again — the ~240ms key-view stall is gone** — hosting the palette in
+  its own borderless `NSPanel` scopes the autofill key-view gather to the palette's tiny tree instead
+  of the whole app window; `sample` shows the gather stack drop from ~250ms/open to zero, and the main
+  window stays *main* (traffic lights lit) while the panel takes *key*. Native app only.
 - **⌘K reliably focuses the palette input again** — focusing the palette's `TextField` via
   `@FocusState` in `.onAppear` was losing a race with AppKit's autofill heuristic + SwiftUI's
   whole-window key-view gather (~240ms/open, scaling with the tree), so on a loaded session the

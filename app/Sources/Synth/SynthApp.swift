@@ -223,12 +223,10 @@ struct RootView: View {
                 }
             }
         }
-        .overlay {
-            if let pal = store.palette {
-                PaletteOverlay(model: pal)
-                    .environment(store)
-            }
-        }
+        // The palette is hosted in its own panel (see PaletteHost) so its search field's key-view
+        // loop doesn't walk the whole app tree. This zero-size probe drives that panel from the
+        // main window's tree, reacting to `store.palette`.
+        .background(PalettePresenter(palette: store.palette, store: store))
         .overlay {
             if store.shortcutsOpen {
                 ModalBackdrop(onDismiss: { store.shortcutsOpen = false }) {

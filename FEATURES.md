@@ -829,3 +829,8 @@ disclosure to dive deeper.
   a checkout (it did, to a real `holibob` worktree). Now no `.confirm` frame opens on a destructive
   row: selection starts on the first non-danger item (Cancel), and the native order is restored to
   match `working.html`. Native + both design files; the detach/sweep machinery is unchanged.
+- **Synth 0.11.0 shipped (build 346)** — minor bump: the experimental Tabs view mode (off by default)
+  plus the worktree-delete safety fix. Notarized, stapled, verified credential-less; 0.10.1 users take
+  an ~880KB delta. First release run was killed pre-publish to fold in the safety fix (nothing shipped);
+  its leftover stale `0.11.0/345` appcast item was pruned from the re-run's feed so 346 + 342 are the
+  only items, every enclosure signed.

@@ -823,3 +823,9 @@ disclosure to dive deeper.
   PR chip, hidden pane header, tab keyboard chords (`⌘⇧[`/`⌘⇧]`, `⌃⇥`, `⌘1–9`, `⌘W`), a Tabs group
   in the ⌘? sheet, and the full reorder/pair/split/unsplit drag reusing the sidebar's drop ops.
   Runtime-verified by driving the built app; tabs-off confirmed unchanged.
+- **A worktree Delete can no longer fire from one stray keypress** — Command-menu confirm frames
+  pre-selected their first row, and the native remove-worktree confirm had inverted the design's
+  order to lead with "Delete worktree" (rm from disk), so a single Enter — or ⌘D on a branch — deleted
+  a checkout (it did, to a real `holibob` worktree). Now no `.confirm` frame opens on a destructive
+  row: selection starts on the first non-danger item (Cancel), and the native order is restored to
+  match `working.html`. Native + both design files; the detach/sweep machinery is unchanged.

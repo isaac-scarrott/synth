@@ -3,7 +3,8 @@
     "version": "0.11.0",
     "date": "2026-07-24",
     "changes": [
-      "New experimental Tabs view mode, off by default behind a single Settings toggle: sessions leave the sidebar and open as tabs, one strip per branch, with a split shown as a bonded cluster of its tabs. Switch tabs with ⌘⇧[ / ⌘⇧], close with ⌘W. Turn it off and Synth is byte-for-byte what it is today."
+      "New experimental Tabs view mode, off by default behind a single Settings toggle: sessions leave the sidebar and open as tabs, one strip per branch, with a split shown as a bonded cluster of its tabs. Switch tabs with ⌘⇧[ / ⌘⇧], close with ⌘W. Turn it off and Synth is byte-for-byte what it is today.",
+      "Removing a worktree can no longer delete its folder from a single stray keypress. The confirm now opens on the safe choice, and delete-from-disk is never the pre-selected option — so ⌘D on a branch, or a reflexive Enter, keeps your files."
     ]
   },
   {

@@ -794,3 +794,9 @@ disclosure to dive deeper.
   runloop turn after the pane paints instead of freezing the open. Native app only.
 - **Perf follow-ups: feedback submit resolves its branch name off-main (no more `git for-each-ref`
   freeze), and the ⌘K palette builds its item list once per render instead of three times.** Native app.
+- **Synth 0.10.1 shipped (build 342)** — a patch rolling up the responsiveness pass since 0.10.0: the
+  ⌘K palette in its own `NSPanel`, the app-wide password-autofill key-view walk killed so every text
+  field focuses instantly, and persistence / palette-drag scans / browser-open / feedback branch-name
+  moved off the main thread. No new surface — just keeping large sessions instant. Notarized, stapled,
+  verified credential-less (spctl accepted / Notarized Developer ID on the quarantined dmg + zip,
+  staple valid, appcast build 342 with an EdDSA signature on the full download and every delta).

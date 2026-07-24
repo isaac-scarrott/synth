@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.10.1",
+    "date": "2026-07-24",
+    "changes": [
+      "The command palette (⌘K) opens instantly again, and text fields — rename, feedback, search — focus with no delay even in a session with dozens of panes; a system password-autofill check had been quietly stalling every field.",
+      "Big sessions stay fluid: saving your layout, dragging rows, and opening a browser no longer hitch as the session tree grows."
+    ]
+  },
+  {
     "version": "0.10.0",
     "date": "2026-07-24",
     "changes": [

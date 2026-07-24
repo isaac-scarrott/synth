@@ -769,3 +769,14 @@ disclosure to dive deeper.
   later, one at a time. Both entry points — the sidebar `+` and ⌘K "Add project" — now open the
   native folder picker, so a repository path is never typed. Removed the "Add worktrees"
   multi-select sheet and the ⌘K path-input frame entirely. HTML and SwiftUI both.
+
+## [2026-07-24](docs/features/2026-07-24.md)
+
+- **⌘K reliably focuses the palette input again** — focusing the palette's `TextField` via
+  `@FocusState` in `.onAppear` was losing a race with AppKit's autofill heuristic + SwiftUI's
+  whole-window key-view gather (~240ms/open, scaling with the tree), so on a loaded session the
+  input silently never focused and keys fell through to the pane. Now bridged from AppKit
+  (`PaletteQueryField`) and focused imperatively via `makeFirstResponder`.
+- **Synth 0.10.0 shipped (build 331)** — minor bump rolling up the two-tab Settings redesign,
+  the simplified Add-project flow, the cool near-white light terminal with Claude Code theme-follow,
+  and the ⌘K palette focus fix.

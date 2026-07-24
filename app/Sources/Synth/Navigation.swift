@@ -376,20 +376,21 @@ extension AppStore {
         }
     }
 
-    /// `d` on the selected row — always drops into the ⌘K palette's confirm frame so a
-    /// single keystroke can't delete (working.html requestDelete → openPaletteAt(confirmFrame)).
+    /// `d`, ⌘D, the row × / trash, and the tab close all land here. It just does it: the row
+    /// soft-deletes instantly and the undo pill parks it (working.html requestDelete → softRemove).
+    /// The sole exception is a worktree — deleting its folder on disk is irreversible, so a branch
+    /// still drops into the deliberate remove-from-sidebar / delete-worktree fork.
     func requestDelete(_ ref: RowRef) {
         activeMenu = nil
-        if palette == nil { palette = PaletteModel(store: self) }
-        guard let pal = palette else { return }
-        let frame: PaletteFrame
         switch ref {
-        case let .workspace(w): frame = pal.confirmRemoveWorkspace(w)
-        case let .branch(b):    frame = pal.confirmRemoveBranch(b)
-        case let .session(s):   frame = pal.confirmDeleteSession(s)
+        case let .workspace(w): softRemoveWorkspace(w)
+        case let .session(s):   softCloseSession(s)
+        case let .branch(b):
+            if palette == nil { palette = PaletteModel(store: self) }
+            guard let pal = palette else { return }
+            pal.stack = [pal.rootFrame()]
+            pal.push(pal.confirmRemoveBranch(b))
         }
-        pal.stack = [pal.rootFrame()]
-        pal.push(frame)
     }
 
     /// ⌘D — close the current context through the same flow as `d` on a sidebar row:

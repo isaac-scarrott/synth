@@ -1355,6 +1355,155 @@ enum FeedbackMode {
         return "Close this session? This also closes its \(what)."
     }
 
+    // MARK: Soft delete + undo (working.html softRemove)
+
+    /// The row parked in soft-delete. Destructive gestures fire instantly and leave this pill
+    /// up for `undoLife` seconds: `commit` runs the irreversible tail (process teardown / disk
+    /// delete) when the bar empties, `restore` puts the detached rows back if undo comes first.
+    static let undoLife: TimeInterval = 8
+    var pendingUndo: PendingUndo?
+    @ObservationIgnored private var undoTask: Task<Void, Never>?
+
+    /// Park a reversible removal behind the undo pill — one at a time, so a fresh gesture
+    /// commits the previous pill before parking its own (working.html `commitPendingUndo`).
+    private func softDelete(_ label: String, restore: @escaping () -> Void, commit: @escaping () -> Void) {
+        commitPendingUndo()
+        pendingUndo = PendingUndo(id: UUID(), label: label, restore: restore, commit: commit,
+                                  life: Self.undoLife, remaining: Self.undoLife, armedAt: Date())
+        armUndo()
+    }
+
+    /// Sleep out the pill's banked life on the same clock its bar drains; when it empties the
+    /// removal commits. Re-armed after a hover-pause with whatever life was left.
+    private func armUndo() {
+        undoTask?.cancel()
+        guard let p = pendingUndo, p.armedAt != nil else { return }
+        let remaining = p.remaining, id = p.id
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(remaining))
+            guard !Task.isCancelled, self?.pendingUndo?.id == id else { return }
+            self?.commitPendingUndo()
+        }
+    }
+
+    /// The pointer resting on the pill freezes its drain (working.html `.fb-toast--undo:hover`),
+    /// banking the remaining life so the window resumes where it left off.
+    func setUndoDrainPaused(_ paused: Bool) {
+        guard var p = pendingUndo else { return }
+        if paused {
+            guard let armed = p.armedAt else { return }
+            p.remaining = max(0, p.remaining - Date().timeIntervalSince(armed))
+            p.armedAt = nil
+            pendingUndo = p
+            undoTask?.cancel()
+        } else {
+            guard p.armedAt == nil else { return }
+            p.armedAt = Date()
+            pendingUndo = p
+            armUndo()
+        }
+    }
+
+    /// Bring the parked row back (pill click / ⌘↩).
+    func performUndo() {
+        undoTask?.cancel(); undoTask = nil
+        guard let p = pendingUndo else { return }
+        pendingUndo = nil
+        p.restore()
+    }
+
+    /// Let the parked row go — run its irreversible tail (window elapsed, or superseded).
+    func commitPendingUndo() {
+        undoTask?.cancel(); undoTask = nil
+        guard let p = pendingUndo else { return }
+        pendingUndo = nil
+        p.commit()
+    }
+
+    /// Close a session instantly and reversibly. The row and its owned browsers detach from the
+    /// tree but keep their live processes; only the pill's commit tears them down (working.html
+    /// softRemove of a session leaf + its ADR-0011 browser cascade).
+    func softCloseSession(_ session: Session) {
+        let victims = [session] + ownedBrowsers(of: session)
+        var homes: [(branch: Branch, index: Int, session: Session)] = []
+        for v in victims {
+            if let br = branch(of: v), let i = br.sessions.firstIndex(where: { $0.id == v.id }) {
+                homes.append((br, i, v))
+            }
+        }
+        let wasOpen = openSessionID == session.id
+        if navCursor == session.id { navCursor = branch(of: session)?.id }
+        let victimIDs = Set(victims.map(\.id))
+        for br in workspaces.flatMap(\.branches) { br.sessions.removeAll { victimIDs.contains($0.id) } }
+        pruneLayout(); syncActive(); restoreLastViewed()
+
+        softDelete("Closed \(session.title)", restore: { [weak self] in
+            guard let self else { return }
+            for h in homes.sorted(by: { $0.index < $1.index }) {
+                h.branch.sessions.insert(h.session, at: min(h.index, h.branch.sessions.count))
+            }
+            self.pruneLayout(); self.syncActive()
+            if wasOpen { self.jump(to: session) }
+        }, commit: { [weak self] in
+            victims.forEach { self?.teardownSession($0) }
+        })
+    }
+
+    /// Remove a project from the sidebar instantly and reversibly — nothing on disk is touched
+    /// either way; the commit just tears down its sessions' processes.
+    func softRemoveWorkspace(_ ws: Workspace) {
+        guard let index = workspaces.firstIndex(where: { $0.id == ws.id }) else { return }
+        let wasExpanded = expanded.contains(ws.id)
+        if cursorInside(.workspace(ws)) {
+            navCursor = index > 0 ? workspaces[index - 1].id
+                : workspaces.count > 1 ? workspaces[index + 1].id : nil
+        }
+        workspaces.remove(at: index)
+        expanded.remove(ws.id)
+        pruneLayout(); syncActive(); restoreLastViewed()
+
+        softDelete("Removed \(ws.name)", restore: { [weak self] in
+            guard let self else { return }
+            self.workspaces.insert(ws, at: min(index, self.workspaces.count))
+            if wasExpanded { self.expanded.insert(ws.id) }
+            self.pruneLayout(); self.syncActive()
+        }, commit: { [weak self] in
+            for s in ws.branches.flatMap(\.sessions) { self?.teardownSession(s) }
+        })
+    }
+
+    /// Remove a worktree row instantly and reversibly. The disk delete (`deleteWorktree`) and
+    /// the sessions' teardown are both deferred to the pill's commit, so an undo within the
+    /// window leaves the checkout and its processes untouched (working.html archive-with-undo).
+    func softRemoveBranch(_ branch: Branch, deleteWorktree: Bool) {
+        var homes: [(ws: Workspace, index: Int)] = []
+        for ws in workspaces {
+            if let i = ws.branches.firstIndex(where: { $0.id == branch.id }) { homes.append((ws, i)) }
+        }
+        let wasExpanded = expanded.contains(branch.id)
+        if cursorInside(.branch(branch)) { navCursor = workspace(of: branch)?.id }
+        if openSetupBranchID == branch.id { openSetupBranchID = nil }
+        let ownerWs = workspaces.first { $0.branches.contains { $0.id == branch.id } }
+        for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
+        expanded.remove(branch.id)
+        pruneLayout(); syncActive(); restoreLastViewed()
+
+        softDelete(deleteWorktree ? "Archived \(branch.name)" : "Removed \(branch.name)", restore: { [weak self] in
+            guard let self else { return }
+            for h in homes.sorted(by: { $0.index < $1.index }) {
+                h.ws.branches.insert(branch, at: min(h.index, h.ws.branches.count))
+            }
+            if wasExpanded { self.expanded.insert(branch.id) }
+            self.pruneLayout(); self.syncActive()
+        }, commit: { [weak self] in
+            for s in branch.sessions { self?.teardownSession(s) }
+            if deleteWorktree, let ownerWs, branch.worktreeURL != ownerWs.url {
+                self?.deleteWorktreeFolder(repo: ownerWs.url, path: branch.worktreeURL,
+                                           branchName: branch.name, workspaceName: ownerWs.name)
+            }
+        })
+    }
+
     /// The comment ladder's spawn rung (CommentMode rung 3): an agent row created exactly
     /// like `newAgent` but WITHOUT `open()` — the spawn is silent, focus stays on the
     /// browser pane. The caller mounts the row for a beat so its PTY boots

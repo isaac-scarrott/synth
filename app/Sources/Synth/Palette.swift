@@ -341,7 +341,7 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.close), label: "Close",
                                      group: g, ctx: open.title, kbd: ["⌘", "D"],
                                      danger: true,
-                                     enter: { self.closeOrConfirm(open) }))
+                                     enter: { self.runAndClose { self.store.softCloseSession(open) } }))
         }
         if let branch {
             let g = "Branch · \(branch.name)"
@@ -606,7 +606,7 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(ws.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.workspace(ws))) }),
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(ws.name)", sec: "act",
-                            danger: true, enter: { self.push(self.confirmRemoveWorkspace(ws)) }),
+                            danger: true, enter: { self.runAndClose { self.store.softRemoveWorkspace(ws) } }),
             ]
             for br in ws.branches {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, sec: "list",
@@ -662,7 +662,7 @@ struct PaletteFrame {
         PaletteFrame(crumb: "Remove project", placeholder: "Select a project to remove…") { [self] _ in
             store.workspaces.map { ws in
                 PaletteItem(icon: chipIcon(ws), label: ws.name,
-                            enter: { self.push(self.confirmRemoveWorkspace(ws)) })
+                            enter: { self.runAndClose { self.store.softRemoveWorkspace(ws) } })
             }
         }
     }
@@ -687,7 +687,7 @@ struct PaletteFrame {
                     for s in br.sessions {
                         items.append(PaletteItem(icon: .session(s.kind), label: s.title, ctx: ctx,
                                                  meta: s.status.paletteLabel, metaColor: s.status.paletteColor,
-                                                 danger: true, enter: { self.closeOrConfirm(s) }))
+                                                 danger: true, enter: { self.runAndClose { self.store.softCloseSession(s) } }))
                     }
                 }
             }
@@ -695,35 +695,12 @@ struct PaletteFrame {
         }
     }
 
-    private func confirmFrame(verb: String, name: String, hint: String, danger: Bool = true,
-                              perform: @escaping () -> Void) -> PaletteFrame {
-        // The glyph carries the same grammar as the verb: trash destroys, minus drops a row,
-        // × ends a session. A confirm that says Close must not show a trash can.
-        let glyph = switch verb {
-        case "Delete": Phosphor.trash
-        case "Remove": Phosphor.minusCircle
-        default:       Phosphor.close
-        }
-        return PaletteFrame(crumb: "\(verb) \(name)?", placeholder: "\(hint)  ↵ confirm · esc cancel",
-                     mode: .confirm) { [self] _ in
-            [
-                PaletteItem(icon: .phosphor(glyph), label: "\(verb) \(name)", danger: danger,
-                            enter: { self.runAndClose(perform) }),
-                PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
-            ]
-        }
-    }
-
-    func confirmRemoveWorkspace(_ ws: Workspace) -> PaletteFrame {
-        confirmFrame(verb: "Remove", name: ws.name,
-                     hint: "Remove this project from the sidebar? Nothing on disk is deleted.") { [store] in
-            store.removeWorkspace(ws)
-        }
-    }
-    // Removing a worktree forks: delete it for real (git worktree remove + rm the folder),
-    // or just drop it from the sidebar and leave the checkout on disk to re-add later. Both are
-    // red — every Remove is now negative-coloured — so the label + ctx line, not the colour,
-    // is what tells the destructive path from the list-only one.
+    // Removing a worktree is the one delete that still asks first, because its two outcomes
+    // differ irreversibly: drop it from the sidebar (folder + branch stay on disk, re-add
+    // anytime) or delete the worktree folder for real. Either arm then soft-deletes with the
+    // undo pill, so nothing is torn off disk until the window closes — the confirm picks the
+    // outcome, the pill guards the seconds after. Both arms are red; the label + ctx line, not
+    // the colour, tells the destructive path from the list-only one.
     func confirmRemoveBranch(_ br: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "Remove \(br.name)?",
                      placeholder: "Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel",
@@ -731,17 +708,13 @@ struct PaletteFrame {
             [
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
                             ctx: "git worktree remove + delete its folder on disk", danger: true,
-                            enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: true) } }),
+                            enter: { self.runAndClose { self.store.softRemoveBranch(br, deleteWorktree: true) } }),
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
                             ctx: "stop tracking it here — the worktree stays on disk", danger: true,
-                            enter: { self.runAndClose { self.store.removeBranch(br, deleteWorktree: false) } }),
+                            enter: { self.runAndClose { self.store.softRemoveBranch(br, deleteWorktree: false) } }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
         }
-    }
-    func confirmDeleteSession(_ s: Session) -> PaletteFrame {
-        confirmFrame(verb: "Close", name: s.title, hint: store.deleteSessionHint(s),
-                     danger: true) { [store] in store.closeSession(s) }
     }
 
     /// The synth-app MCP server's approval gate (was a modal sheet) — an agent asked Synth
@@ -767,11 +740,6 @@ struct PaletteFrame {
         }
     }
 
-    /// A session close always confirms first, so a single click or keystroke can't destroy
-    /// a session outright.
-    private func closeOrConfirm(_ s: Session) {
-        push(confirmDeleteSession(s))
-    }
 
     // MARK: Create frames — the search input becomes the name field
 

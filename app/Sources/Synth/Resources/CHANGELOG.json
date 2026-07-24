@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.10.0",
+    "date": "2026-07-24",
+    "changes": [
+      "Settings is now a flat, two-tab surface — Synth and the current project — laid over the live sidebar. Per-row Override switches replace the accordion, and notification sounds, MCP servers, analytics and About finally have a home.",
+      "A project's settings layer on top of the shared default rather than replacing it: it holds only its delta, shown over the shared base — an empty project is pure inheritance.",
+      "Adding a project takes just its default branch and always opens the folder picker — no branch multi-select, no typed path. Add more branches later, one at a time.",
+      "The light terminal moves to a cool near-white with its 16 colours rebuilt for even contrast, and Claude Code now follows Synth's appearance instead of running its own dark theme in a light window.",
+      "⌘K reliably focuses the command palette input again — it could silently fail to focus once a session had built up many panes."
+    ]
+  },
+  {
     "version": "0.9.1",
     "date": "2026-07-22",
     "changes": [

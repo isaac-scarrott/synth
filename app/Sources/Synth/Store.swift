@@ -1393,23 +1393,32 @@ enum FeedbackMode {
     private func startFeedbackFix(title: String, body: String) {
         guard let ws = feedbackWorkspace() else { openFeedbackEmail(body.isEmpty ? title : body); return }
         let repo = ws.url
-        let (branchName, planned) = uniqueFeedbackBranch(slug: Self.feedbackSlug(from: title), repo: repo)
+        let slug = Self.feedbackSlug(from: title)
         let gripe = body.isEmpty ? title : title + "\n\n" + body
         let seed = gripe + "\n\n" + captureFeedbackContext()
-        let row = addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
-        materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
-            self?.seedAgent(in: branch, seed: seed)
-        }) {
-            GitService.addWorktree(repo: repo, path: planned, newBranch: branchName, base: nil)
-                .map { .failed($0) } ?? .ready(planned)
+        // The "On it" ack is instant; the collision-free branch name needs `git for-each-ref` over
+        // heads + remotes, which blocks for hundreds of ms on a big/cold repo — so resolve it (and
+        // add the pending row) off the main thread rather than freezing the submit.
+        raiseFeedbackToast(.done, message: "On it", title: "feedback/\(slug)")
+        Task { [weak self] in
+            guard let self else { return }
+            let (branchName, planned) = await self.runGit(repo: repo) {
+                Self.uniqueFeedbackBranch(slug: slug, repo: repo)
+            }
+            let row = self.addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
+            self.materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
+                self?.seedAgent(in: branch, seed: seed)
+            }) {
+                GitService.addWorktree(repo: repo, path: planned, newBranch: branchName, base: nil)
+                    .map { .failed($0) } ?? .ready(planned)
+            }
         }
-        raiseFeedbackToast(.done, message: "On it", title: branchName)
     }
 
     /// Resolve `feedback/<slug>` to a name no existing branch or planned worktree dir already
     /// holds, suffixing `-2`, `-3`… on collision — so a repeated gripe (or the `note` fallback)
     /// can never hard-fail `git worktree add` with "a branch already exists".
-    private func uniqueFeedbackBranch(slug: String, repo: URL) -> (branch: String, path: URL) {
+    private nonisolated static func uniqueFeedbackBranch(slug: String, repo: URL) -> (branch: String, path: URL) {
         let taken = Set(GitService.allBranches(at: repo).map(\.name))
         var n = 1
         while true {

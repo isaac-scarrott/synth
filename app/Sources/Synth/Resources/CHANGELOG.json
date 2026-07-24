@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.13.0",
+    "date": "2026-07-24",
+    "changes": [
+      "Notifications now stack instead of replacing each other — a new one no longer evicts an unread card, and each fades on its own timer.",
+      "Click a sidebar row and the keyboard goes to the sidebar: r / d / a and j / k act on the row you clicked straight away, while the session still opens in the pane — press ↵ or ⌘1 to dive in and type.",
+      "The terminal stays crisp when you drag Synth's window between monitors of different pixel density, instead of rendering blurry until the next relayout.",
+      "Tabs (experimental): double-click a tab to rename it, right-click for its command menu — the same gestures the sidebar rows already have.",
+      "Tabs (experimental): the sidebar's keyboard shortcuts stay on branches and no longer flip a branch's hidden session list."
+    ]
+  },
+  {
     "version": "0.12.2",
     "date": "2026-07-24",
     "changes": [

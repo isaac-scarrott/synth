@@ -830,3 +830,9 @@ disclosure to dive deeper.
   worktree stays the one confirm (its sidebar-vs-disk fork is irreversible), then both arms soft-delete
   with the same pill. Every delete gesture funnels through the one `requestDelete` choke point; landed
   in both designs (subset invariant holds); native app is a follow-up.
+- **Instant destructive actions + undo pill land in the native app** — the SwiftUI port matches
+  `working.html`: `AppStore.requestDelete` soft-deletes instantly (no ⌘K confirm) and `UndoPill.swift`
+  parks an 8s pill draining the notif countdown bar (click or ⌘↩ to restore, else it commits). The soft
+  mutators defer the irreversible tail — process teardown + `deleteWorktreeFolder` — to the pill's
+  commit; the worktree keeps its fork; hard `closeSession`/`removeBranch` stay for non-gesture paths.
+  Driven-app verified over the control socket; `working.html` untouched.

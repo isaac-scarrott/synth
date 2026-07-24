@@ -109,6 +109,9 @@ struct SettingsPane: View {
                     switchControl(bind(\.analyticsEnabled))
                 }
             }
+            SetSection(label: "Experimental") {
+                switchRow("Tabs", "Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview.", bind(\.tabsMode))
+            }
             SetSection(label: "About") { aboutRow }
             if store.workspaces.isEmpty { emptyProject }
         }

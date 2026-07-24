@@ -769,6 +769,22 @@ disclosure to dive deeper.
   later, one at a time. Both entry points — the sidebar `+` and ⌘K "Add project" — now open the
   native folder picker, so a repository path is never typed. Removed the "Add worktrees"
   multi-select sheet and the ⌘K path-input frame entirely. HTML and SwiftUI both.
+- **Experimental Tabs — two-deep sidebar + a tab strip per pane (off by default)** — an opt-in,
+  presentation-only view mode (one global Settings toggle) over the same `branch → pane-tree →
+  sessions` store, so it flips losslessly. Sessions leave the sidebar (branch becomes the deepest
+  row, roll-up only) and render as tabs inside the ADR-0014 panes; a tab is a session's handle,
+  nothing more (`CONTEXT.md` **Tab**). ADR-0014's "one session per pane" amends to "a strip of ≥1,
+  one active"; splitting *moves* a tab (a live surface can't render twice), never duplicates.
+  Nothing pinned — the agent is a peer tab; an agent-opened browser lands in its owner's strip with
+  an unread dot, no focus-steal. Keyboard: panes keep `⌘1–9`/`⌘⌥arrows`; tabs add `⌘⇧[`/`⌘⇧]`
+  switch, `⌘W` close, and `⌘⇧arrow` to send a tab into a neighbour pane or a new split.
+- **Tabs revised — single strip, split as a bonded cluster (supersedes the per-pane strips)** — one
+  tab strip per branch, not one per pane: a split reads as a bonded cluster of its member tabs within
+  the single strip, mirroring how the sidebar draws a split (the horizontal twin of the echo band),
+  never a second strip. Selecting a lone tab full-screens it (split stays bonded, stashed); selecting
+  a member returns to the split. Drops the per-pane tab machinery — leaves stay single-session
+  (ADR-0014 spine unchanged); the strip is pure presentation over the existing openSession/stash
+  model. ADR-0014's amendment rewritten to match.
 
 ## [2026-07-24](docs/features/2026-07-24.md)
 
@@ -794,3 +810,10 @@ disclosure to dive deeper.
   runloop turn after the pane paints instead of freezing the open. Native app only.
 - **Perf follow-ups: feedback submit resolves its branch name off-main (no more `git for-each-ref`
   freeze), and the ⌘K palette builds its item list once per render instead of three times.** Native app.
+- **Experimental Tabs — the native port lands (off by default)** — the single-strip Tabs view mode
+  is now implemented in the native SwiftUI app (`AppStore.tabsMode`, `TabStrip.swift`), a faithful
+  port of `working.html` gated behind the same off-by-default global preference so tabs-off stays
+  byte-for-byte today's behaviour. Two-deep sidebar, one bonded-cluster strip per branch, relocated
+  PR chip, hidden pane header, tab keyboard chords (`⌘⇧[`/`⌘⇧]`, `⌃⇥`, `⌘1–9`, `⌘W`), a Tabs group
+  in the ⌘? sheet, and the full reorder/pair/split/unsplit drag reusing the sidebar's drop ops.
+  Runtime-verified by driving the built app; tabs-off confirmed unchanged.

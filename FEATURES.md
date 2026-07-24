@@ -885,3 +885,13 @@ disclosure to dive deeper.
 - **Synth 0.12.2 shipped (build 360)** — patch bump carrying the dark-terminal background correction
   above. Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads;
   0.12.1 users take a small delta. Landing links unchanged (stable `Synth.dmg` alias), no site republish.
+- **In-app notifications stack, nothing replaces (supersedes "one pill at a time")** — a new
+  notification joins the deck rather than evicting an unseen one, and each fades on its own timer. Two
+  roots fixed in both designs (subset invariant held): `.fb-toast` confirmation toasts moved from a
+  wipe-all + single shared timer into a bottom-centre `column-reverse` `.fb-toasts` stack where each
+  toast owns its own dismissal; and the delete/close undo went from a single `pendingUndoKey`
+  (committed by the next delete) to a `pendingUndos` Set, so several undo cards coexist, each
+  committing/undoing its own key and ⌘↩ targeting the newest. Native app landed in the same change:
+  its toasts already stacked in the shared deck, so only the undo needed fixing — `softDelete` drops
+  its `commitPendingUndo()`, and undo resolution goes per-id (`performUndo(_ id:)`) over the deck's
+  already-per-id drain, ⌘↩ targeting the front-most undo. Builds clean.

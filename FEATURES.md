@@ -895,6 +895,14 @@ disclosure to dive deeper.
   its toasts already stacked in the shared deck, so only the undo needed fixing — `softDelete` drops
   its `commitPendingUndo()`, and undo resolution goes per-id (`performUndo(_ id:)`) over the deck's
   already-per-id drain, ⌘↩ targeting the front-most undo. Builds clean.
+- **Tabs: double-click to rename, right-click for the ⌘K menu** — two tabs-mode gestures, each the
+  horizontal twin of a sidebar-row one: double-clicking a tab renames it inline (whole name
+  preselected, ↵ commit / Esc revert / blur commit, reusing the row's `renamingRowID` machinery), and
+  right-clicking opens the command palette pinned to that session (the same `openRowActions` the row's
+  ⋯ kebab opens — Rename / Close + the search groups). Design (`working.html` + big-picture, subset
+  invariant held) and native app (`RenameField` reused; a `DoubleClickCatcher` overlay claims only the
+  second click of a plain double-click so single-click open, tab drag, and close pass through). Both
+  cover lone tabs and split-member cluster chips. Builds clean.
 - **Clicking a sidebar row hands the keyboard to the sidebar** — a click now makes the tree
   keyboard-active (blurs content, selects the row) instead of `focusContent()`, so `r`/`d`/`a`/`j`/`k`
   act on the clicked branch/worktree/session immediately; the session still opens in the pane, ↵ or ⌘1

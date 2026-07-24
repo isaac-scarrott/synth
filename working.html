@@ -1192,7 +1192,8 @@
      existing selection ring stays the only ring. ↵ commits, Esc reverts. */
   .session__name.renaming,
   .branch__name.renaming,
-  .repo__name.renaming {
+  .repo__name.renaming,
+  .tab__name.renaming {
     outline: none;
     overflow: visible;
     text-overflow: clip;
@@ -2509,7 +2510,7 @@
   content.addEventListener('pointerdown', (e) => {
     if (!tabsMode || e.button !== 0) return;
     const tabEl = e.target.closest('.tab');
-    if (!tabEl || e.target.closest('.tab__close')) return;
+    if (!tabEl || e.target.closest('.tab__close') || e.target.closest('.tab__name[contenteditable]')) return;
     const strip = tabEl.closest('.tabstrip__tabs');
     if (!strip) return;
     const startX = e.clientX, startY = e.clientY;
@@ -2628,6 +2629,7 @@
       if (newBtn) { e.preventDefault(); const br = openEl ? branchGroupOf(openEl) : contextBranch(); if (br) openPaletteAt(newSessionFrame(br)); return; }
       const closeBtn = e.target.closest('[data-tab-close]');
       if (closeBtn) { e.preventDefault(); e.stopPropagation(); const t = closeBtn.closest('.tab'); if (t && t._session) requestDelete(t._session); return; }
+      if (e.target.closest('.tab__name[contenteditable]')) return;   // a click inside a renaming tab just moves the caret
       const tab = e.target.closest('.tab');
       if (tab && tab._session) { if (suppressTabClick) return; e.preventDefault(); openSession(tab._session); focusContent(); return; }
     }
@@ -2647,6 +2649,24 @@
       copy._t = setTimeout(() => { copy.classList.remove('copied'); copy.innerHTML = ICON_COPY_CRUMB; }, 1100);
     }
   });
+
+  // Tabs (experimental): double-click a tab's name to rename it in place (whole name preselected,
+  // ↵ commits / Esc reverts), mirroring the sidebar row's `r` rename. Right-click a tab opens the
+  // SAME pinned ⌘K frame as the sidebar row's ⋯ kebab / right-click, its context aimed at that tab.
+  content.addEventListener('dblclick', (e) => {
+    if (!tabsMode) return;
+    if (e.target.closest('.tab__close')) return;
+    const tab = e.target.closest('.tab');
+    if (tab && tab._session) { e.preventDefault(); startTabRename(tab); }
+  });
+  content.addEventListener('contextmenu', (e) => {
+    if (!tabsMode) return;
+    const tab = e.target.closest('.tab');
+    if (!tab || !tab._session) return;
+    e.preventDefault();
+    openRowActions(tab._session);
+  });
+
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ICON_SEND = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z"/></svg>';
   const ICON_EMPTY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
@@ -3904,6 +3924,42 @@
       + '<button class="tab__close" data-tab-close aria-label="Close ' + name + '" title="Close">' + ICON_CLOSE + '</button>';
     tab._session = el;
     return tab;
+  }
+  // Rename a tab in place: the name span becomes an editable field with the whole name preselected,
+  // the horizontal twin of the sidebar's startRename. Commit routes through renameUnit so the session
+  // row and any open pane title stay in sync; the tab's own label is set here since the strip isn't redrawn.
+  function startTabRename(tab) {
+    const el = tab && tab.querySelector('.tab__name');
+    if (!el || el.isContentEditable || !tab._session) return;
+    const prev = (el.textContent || '').trim();
+    el.setAttribute('contenteditable', 'plaintext-only');
+    el.classList.add('renaming');
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    let done = false;
+    const finish = (commit) => {
+      if (done) return; done = true;
+      el.removeEventListener('keydown', onKey);
+      el.removeEventListener('blur', onBlur);
+      el.removeAttribute('contenteditable');
+      el.classList.remove('renaming');
+      const val = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      const name = commit && val ? val : prev;
+      el.textContent = name;
+      renameUnit(tab._session, name);
+    };
+    const onKey = (ev) => {
+      ev.stopPropagation();                       // typing must not reach the content / nav key handlers
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+    };
+    const onBlur = () => finish(true);
+    el.addEventListener('keydown', onKey);
+    el.addEventListener('blur', onBlur);
   }
   // One strip, mirroring the branch's sessions; the on-screen split bonds into a contiguous cluster at
   // its first member's position (the horizontal twin of renderSidebarEcho). Lone tabs render in place.

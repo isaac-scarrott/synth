@@ -786,7 +786,7 @@ private extension View {
 /// place with its text preselected and no ring of its own (the row's selection ring is
 /// the only ring).
 /// ↵/Esc are handled by the global key monitor; losing focus (blur) commits.
-private struct RenameField: View {
+struct RenameField: View {
     @Environment(AppStore.self) private var store
     let font: Font
     @FocusState private var focused: Bool
@@ -1086,6 +1086,12 @@ extension View {
     func onSecondaryClick(_ action: @escaping () -> Void) -> some View {
         overlay(SecondaryClickCatcher(action: action))
     }
+
+    /// A double-click on the view fires the closure while single clicks and drags pass through —
+    /// the entry point for a tab's inline rename (working.html `dblclick` → startTabRename).
+    func onDoubleClick(_ action: @escaping () -> Void) -> some View {
+        overlay(DoubleClickCatcher(action: action))
+    }
 }
 
 /// Transparent AppKit view that turns a secondary click (right-click or ⌃-click) into a closure —
@@ -1118,6 +1124,35 @@ private struct SecondaryClickCatcher: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             if event.modifierFlags.contains(.control) { action() } else { super.mouseDown(with: event) }
         }
+    }
+}
+
+/// The double-click twin of `SecondaryClickCatcher`: turns a double-click into a closure while
+/// letting single clicks, drags and the secondary click fall straight through to the content
+/// beneath. Used to arm a tab's inline rename (working.html `dblclick` → startTabRename).
+private struct DoubleClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> NSView { CatcherView(action: action) }
+    func updateNSView(_ view: NSView, context: Context) { (view as? CatcherView)?.action = action }
+
+    private final class CatcherView: NSView {
+        var action: () -> Void
+        init(action: @escaping () -> Void) {
+            self.action = action
+            super.init(frame: .zero)
+        }
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+        /// Claim the pointer only for the second click of a plain (no-modifier) left double-click;
+        /// decline everything else so the first click still opens the tab and drags still start.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let e = NSApp.currentEvent else { return nil }
+            let dbl = (e.type == .leftMouseDown || e.type == .leftMouseUp)
+                && !e.modifierFlags.contains(.control) && e.clickCount == 2
+            return dbl ? self : nil
+        }
+        override func mouseDown(with event: NSEvent) { if event.clickCount == 2 { action() } }
     }
 }
 

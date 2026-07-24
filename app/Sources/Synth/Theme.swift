@@ -38,7 +38,7 @@ enum Theme {
     static let menuIcon     = dyn(0x7A7A80, 0x979AA3)   // popover item icons
     static let termBg       = dyn(0x191B1F, 0x121317)   // code editor surface (Settings)
     static let chrome       = dyn(0xF2F3F6, 0x22252B)   // browser toolbar (--chrome)
-    static let tuiBg        = dyn(0xF3EFE7, 0x121317)   // terminal card: light "paper" / dark card
+    static let tuiBg        = dyn(0xF7F8FA, 0x121317)   // terminal card: cool near-white (--tui-bg) / dark card
     static let tuiHair      = mono(0.13, 0.06)          // terminal card inset hairline
     static let paletteActive = accent                   // ⌘K active-row label
     /// Frosted popover fill layered over `.ultraThinMaterial` (⌘K / menus).

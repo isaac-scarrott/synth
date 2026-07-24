@@ -1372,14 +1372,14 @@ enum FeedbackMode {
     static let undoLife: TimeInterval = 8
     @ObservationIgnored private var undoActions: [UUID: (restore: () -> Void, commit: () -> Void)] = [:]
 
-    /// The live undo card, or nil — ⌘↩ resolves to undo whenever one is up (working.html:
-    /// pendingUndo wins over notifTop).
-    var pendingUndoNotif: InAppNotif? { notifs.first { $0.kind == .undo } }
+    /// The front-most undo card (newest — undo outranks every other kind), or nil. ⌘↩ resolves
+    /// to undo whenever one is up, targeting this one (working.html: pendingUndo wins over notifTop).
+    var pendingUndoNotif: InAppNotif? { notifOrder.first { $0.kind == .undo } }
 
-    /// Park a reversible removal as an undo card — one at a time, so a fresh gesture commits the
-    /// previous before parking its own (working.html `commitPendingUndo`).
+    /// Park a reversible removal as its own undo card. Several stack in the deck at once — each
+    /// keeps its own countdown and commits when its own bar drains (`armDoneToast`), so a fresh
+    /// removal never evicts a pending undo (working.html `pendingUndos`).
     private func softDelete(_ label: String, restore: @escaping () -> Void, commit: @escaping () -> Void) {
-        commitPendingUndo()
         notifSeq += 1
         let id = UUID()
         undoActions[id] = (restore, commit)
@@ -1392,19 +1392,15 @@ enum FeedbackMode {
         armDoneToast(id)   // the deck's own drain; when it empties, its expiry runs the commit
     }
 
-    /// Bring the parked row back (card click / ⌘↩).
-    func performUndo() { resolveUndo { $0.restore() } }
-
-    /// Let the parked row go — run its irreversible tail (window elapsed, or superseded).
-    func commitPendingUndo() { resolveUndo { $0.commit() } }
-
-    private func resolveUndo(_ pick: ((restore: () -> Void, commit: () -> Void)) -> Void) {
-        guard let n = notifs.first(where: { $0.kind == .undo }) else { return }
-        cancelDismiss(n.id)
-        let action = undoActions[n.id]
-        undoActions[n.id] = nil
-        notifs.removeAll { $0.id == n.id }
-        if let action { pick(action) }
+    /// Bring a specific parked row back (card click, or ⌘↩ on the front undo card). The window
+    /// elapsing runs the mirror path inline in `armDoneToast` (drain → commit), keyed the same way.
+    func performUndo(_ id: UUID) {
+        guard notifs.contains(where: { $0.id == id && $0.kind == .undo }) else { return }
+        cancelDismiss(id)
+        let action = undoActions[id]
+        undoActions[id] = nil
+        notifs.removeAll { $0.id == id }
+        action?.restore()
     }
 
     /// Close a session instantly and reversibly. The row and its owned browsers detach from the

@@ -125,7 +125,7 @@ private struct NotifCard: View {
         // A system toast (no session — a failed background worktree op) persists until
         // this click; a session toast jumps as before.
         Button {
-            if notif.kind == .undo { store.performUndo() }
+            if notif.kind == .undo { store.performUndo(notif.id) }
             else if let s = session { store.jump(to: s) }
             else { store.clearNotif(notif.id) }
         } label: {

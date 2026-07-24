@@ -315,8 +315,8 @@ struct RootView: View {
             // ⌘↩ undoes the last soft-delete while its undo card is up (working.html: pendingUndo
             // wins over notifTop), then falls through to the notif deck's jump.
             if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
-               store.pendingUndoNotif != nil {
-                store.performUndo(); return nil
+               let undo = store.pendingUndoNotif {
+                store.performUndo(undo.id); return nil
             }
 
             // ⌘↩ jumps to the most-urgent in-app notification — bound only while the deck is

@@ -610,6 +610,19 @@ final class ControlServer: @unchecked Sendable {
             else { return ["ok": false, "error": "no archived branch named \(request["branch"] ?? "")"] }
             return ["ok": store.restoreArchivedBranch(target)]
 
+        // The branch rows the sidebar draws, workspace by workspace. `archiveStatus` proves a
+        // row reached the Archived list; only this proves it left the tree. The two were assumed
+        // to be one fact, and they weren't: the sidebar rendered `branches` while everything else
+        // read the archive filter, so an archived row walked back into the tree the moment the
+        // undo window committed it.
+        case "automation.tree" where automation:
+            return ["ok": true,
+                    "workspaces": store.workspaces.map { ws -> [String: Any] in
+                        ["workspace": ws.name,
+                         "count": ws.liveBranches.count,
+                         "branches": ws.liveBranches.map(\.name)]
+                    }]
+
         case "automation.archiveStatus" where automation:
             return ["ok": true,
                     "archived": store.workspaces.flatMap { store.archivedBranches(in: $0) }.map { br in

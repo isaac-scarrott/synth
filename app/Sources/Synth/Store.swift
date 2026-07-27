@@ -1307,7 +1307,7 @@ enum FeedbackMode {
             switch ref {
             case let .branch(b):    return b
             case let .session(s):   return branch(of: s)
-            case let .workspace(w): return w.branches.first { !$0.isPending }
+            case let .workspace(w): return w.liveBranches.first { !$0.isPending }
             }
         }()
         guard let br = contextual ?? defaultBranch() else { return }
@@ -1320,7 +1320,7 @@ enum FeedbackMode {
 
     private func defaultBranch() -> Branch? {
         if let open = openSession, let br = branch(of: open) { return br }
-        return workspaces.first?.branches.first { !$0.isPending }
+        return workspaces.first?.liveBranches.first { !$0.isPending }
     }
 
     @discardableResult

@@ -221,14 +221,14 @@ private struct WorkspaceRow: View {
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
-            .help("\(workspace.name) · \(workspace.branches.count) branches")
+            .help("\(workspace.name) · \(workspace.liveBranches.count) branches")
             .id(workspace.id)
             .reorderGesture(.workspace(workspace))
             .onSecondaryClick { store.openRowActions(.workspace(workspace)) }
 
             Reveal(open: isOpen || peekBranchID != nil) {
                 VStack(alignment: .leading, spacing: 1) {
-                    if workspace.branches.isEmpty {
+                    if workspace.liveBranches.isEmpty {
                         EmptyGroupHint(text: "No worktrees yet", leading: 37)
                     } else {
                         // Peeking a collapsed workspace shows only the branch that holds the
@@ -236,8 +236,8 @@ private struct WorkspaceRow: View {
                         // `selected` computed here, passed as a plain value: a cursor move
                         // then re-evaluates only the two rows whose value flipped, not every
                         // row body in the tree (hundreds, at scale).
-                        ForEach(peekBranchID.map { id in workspace.branches.filter { $0.id == id } }
-                                ?? workspace.branches) {
+                        ForEach(peekBranchID.map { id in workspace.liveBranches.filter { $0.id == id } }
+                                ?? workspace.liveBranches) {
                             BranchRow(branch: $0, workspace: workspace,
                                       selected: store.keyboardActive && store.navCursor == $0.id)
                         }
@@ -254,7 +254,7 @@ private struct WorkspaceRow: View {
                 // .id(a) — a single branch hosts both states here, so force a fresh
                 // slot identity on input↔error swaps to replay the entry pop.
                 if let a = workspace.attention { Ind { AttentionGlyph(state: a) }.id(a) }
-                Text("\(workspace.branches.count)")
+                Text("\(workspace.liveBranches.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.repoCount).monospacedDigit()
             }

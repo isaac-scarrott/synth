@@ -1045,3 +1045,13 @@ disclosure to dive deeper.
   sub-line divided by a hardcoded day while the reminder used an overridable one (so the gate could
   not watch a reminder age), Restart-from-Settings raised a card as a side effect of repairing one
   it never spent, and a stale record could announce the version you are already running.
+
+- **An archived row stopped walking back into the sidebar.** Archiving detaches the row at the
+  gesture and stamps `archivedAt` only when the undo window commits — so the disappearance was the
+  detach, and the commit's re-insert into `ws.branches` (what the Archived list reads and what
+  persists) put the row back on screen, because the SwiftUI sidebar rendered `branches` while
+  `visibleRows`, ⌘K and the config writer each open-coded the archive filter. One
+  `Workspace.liveBranches` now serves the tree, its empty hint, both counts, and the
+  which-branch-is-this-action-for fallbacks; reordering counts in drawn rows, not raw indices. New
+  `automation.tree` verb, and `t9_archive` asserts the row leaves the tree — it only ever asserted
+  it reached the Archived list.

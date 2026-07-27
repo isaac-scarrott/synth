@@ -40,6 +40,11 @@ def status_map(ctl):
     return {r["branch"]: r for r in rows}
 
 
+def tree_branches(ctl):
+    """Every branch row the sidebar draws, across workspaces."""
+    return [b for ws in ctl("automation.tree").get("workspaces", []) for b in ws["branches"]]
+
+
 def main():
     kill_all()
     repo, made = build_sandbox()
@@ -65,6 +70,7 @@ def main():
         # archivedAt is stamped on COMMIT, not on the gesture: the 8s window must change
         # nothing. If this regresses, undo puts a row back that the archive filter then hides,
         # and the row is unreachable except through ⌘K.
+        check("the row starts in the tree", "merged-clean" in tree_branches(ctl))
         first = ctl("automation.archiveBranch", branch="merged-clean")
         check("archiveBranch verb finds the row", first.get("ok") is True, str(first))
         immediately = status_map(ctl)
@@ -77,6 +83,12 @@ def main():
         landed = wait(lambda: "merged-clean" in status_map(ctl), secs=20)
         check("archive lands once the undo window drains", bool(landed))
 
+        # The commit puts the row back in `branches` so the Archived list can reach it. It must
+        # not put it back on screen: the sidebar drew straight from `branches`, so archiving a
+        # row made it vanish for the length of the undo window and then reappear.
+        check("the archived row stays out of the tree once committed",
+              "merged-clean" not in tree_branches(ctl), str(tree_branches(ctl)))
+
         for name in made:
             if name != "merged-clean":
                 ctl("automation.archiveBranch", branch=name)
@@ -85,6 +97,8 @@ def main():
         rows = status_map(ctl)
         check("every archived row is listed", len(rows) == len(made),
               f"{len(rows)}/{len(made)}: {sorted(rows)}")
+        left = [b for b in tree_branches(ctl) if b in made]
+        check("archiving every row empties the tree", not left, f"still drawn: {left}")
 
         # --- the two-evaluation rule ----------------------------------------------------
         ctl("automation.archiveSweep")
@@ -143,6 +157,8 @@ def main():
 
         restored = ctl("automation.archiveRestore", branch="merged-clean")
         check("restore reports success", restored.get("ok") is True, str(restored))
+        check("restore puts the row back in the tree",
+              "merged-clean" in tree_branches(ctl), str(tree_branches(ctl)))
         check("restored folder is back at its original path", held_path.exists())
         check("git still resolves the restored worktree",
               git(held_path, "rev-parse --is-inside-work-tree") == "true")

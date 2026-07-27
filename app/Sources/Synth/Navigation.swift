@@ -155,7 +155,7 @@ extension AppStore {
                 return AppStore.shiftSessionBlock(&br.sessions, id: s.id, by: delta)
             case let .branch(b):
                 guard let ws = workspace(of: b) else { return false }
-                return AppStore.shift(&ws.branches, id: b.id, by: delta)
+                return AppStore.shiftBranch(&ws.branches, id: b.id, by: delta)
             case let .workspace(w):
                 return AppStore.shift(&workspaces, id: w.id, by: delta)
             }
@@ -175,6 +175,18 @@ extension AppStore {
         let j = i + delta
         guard j >= 0, j < array.count, j != i else { return false }
         array.insert(array.remove(at: i), at: j)
+        return true
+    }
+
+    /// `shift` counted in the rows the tree shows. Archived branches keep their slot in
+    /// `branches`, so a raw-index step past one moves nothing on screen — the keypress reads
+    /// as a dead one, and a drag lands a slot short of the line it promised.
+    private static func shiftBranch(_ array: inout [Branch], id: UUID, by delta: Int) -> Bool {
+        let visible = array.indices.filter { !array[$0].isArchived }
+        guard let v = visible.firstIndex(where: { array[$0].id == id }) else { return false }
+        let w = v + delta
+        guard w >= 0, w < visible.count, w != v else { return false }
+        array.insert(array.remove(at: visible[v]), at: visible[w])
         return true
     }
 

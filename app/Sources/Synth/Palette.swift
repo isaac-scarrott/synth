@@ -310,10 +310,10 @@ struct PaletteFrame {
             switch row {
             case let .branch(b):    return b
             case let .session(s):   return store.branch(of: s)
-            case let .workspace(w): return w.branches.first
+            case let .workspace(w): return w.liveBranches.first
             case .none:             return nil
             }
-        }() ?? workspace?.branches.first
+        }() ?? workspace?.liveBranches.first
         // Grouped by the scope each action targets, most-local-first (Session → Branch →
         // Workspace). The header carries "Level · unit", so labels stay bare; browse drops
         // the now-redundant context chip and search restores it (see rootFrame).
@@ -538,7 +538,7 @@ struct PaletteFrame {
                 }
             }
             for ws in store.workspaces {
-                for br in ws.branches {
+                for br in ws.liveBranches {
                     items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name,
                                              group: "Branches", ctx: ws.name,
                                              enter: { self.push(self.branchFrame(br)) }))
@@ -609,7 +609,7 @@ struct PaletteFrame {
             ]
             // Session creates land on the workspace's first branch (contextActions' fallback);
             // the ctx chip names it since the crumb only establishes the workspace.
-            if let br = ws.branches.first {
+            if let br = ws.liveBranches.first {
                 items += sessionCreates(in: br, ctx: br.name)
             }
             items += [

@@ -303,4 +303,9 @@ func relativeAge(_ date: Date, now: Date) -> String {
     }
 
     var monogram: String { String(name.first ?? "?").uppercased() }
+
+    /// The branches the tree shows. Archived rows stay in `branches` — that array is what the
+    /// Archived list reads, what restore puts back, and what persists — so every surface that
+    /// means "the rows the user has" must ask for these, not for `branches`.
+    var liveBranches: [Branch] { branches.filter { !$0.isArchived } }
 }

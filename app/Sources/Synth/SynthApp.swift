@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (after bootstrap, so an `app_crashed` event has somewhere to go).
         CrashReporter.install()
         CrashReporter.reportPending()
+        // Start Sparkle here rather than leaving it to the first person who opens the app menu:
+        // the updater is what finds and stages a build in the background, and a build nobody
+        // ever staged is a card nobody ever sees. No-ops on the dev channel (Updates.controller).
+        _ = Updates.controller
         // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd),
         // and reap any archive hold whose window elapsed while Synth was shut.
         Task.detached(priority: .background) {
@@ -335,10 +339,13 @@ struct RootView: View {
             }
 
             #if DEBUG
+            // Typing ⌥u into the setup-script box must stage a character, not a build — the
+            // first-responder guard these keys sit above is 200 lines below them.
+            let editing = (event.window?.firstResponder).map { $0 is NSText || $0 is NSTextView } ?? false
             // Notification harness (working.html's ⌥N demo): ⌥N grows the deck, ⌥D fires an
             // ambient "done", ⌥C clears. Add ⇧ to force the unfocused rule (Notification Center
             // on top of the deck), so both layers are drivable when the instance isn't frontmost.
-            if event.modifierFlags.contains(.option), let code = Optional(event.keyCode),
+            if !editing, event.modifierFlags.contains(.option), let code = Optional(event.keyCode),
                code == 45 || code == 2 || code == 8 || code == 3 {
                 let route: NotifRoute = event.modifierFlags.contains(.shift) ? .notificationCenter : .inApp
                 switch code {
@@ -348,6 +355,11 @@ struct RootView: View {
                 default: store.debugClearNotifs()              // ⌥C
                 }
                 return nil
+            }
+            // ⌥U stages a build (working.html's ⌥U demo); pressing it again winds the clock on a
+            // day, so the daily reminder can be read as it will actually arrive.
+            if !editing, event.modifierFlags.contains(.option), event.keyCode == 32 {
+                store.debugStageUpdate(); return nil
             }
             #endif
 

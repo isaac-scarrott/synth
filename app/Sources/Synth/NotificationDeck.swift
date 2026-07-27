@@ -167,7 +167,10 @@ private struct NotifCard: View {
                         .lineLimit(1).truncationMode(.tail)
                 }
             }
-            Spacer(minLength: 6)
+            // The text column takes the slack itself (working.html's `1fr`) rather than a Spacer
+            // between it and the button: a Spacer is a third column, so the HStack's gap is paid
+            // twice and the words lose 17pt of a 320pt card to whitespace nobody asked for.
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let action = notif.action { actionButton(action) }
         }
         .padding(ambient
@@ -270,7 +273,7 @@ private struct NotifCard: View {
                 Text(action.label)
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(action.danger ? Theme.danger : Theme.ink2)
-                if isFront { KeyCaps(keys: ["⌘", "↩"]) }
+                if isFront { NotifKeyCaps() }
             }
             .padding(EdgeInsets(top: 5, leading: 9, bottom: 5, trailing: 8))
             .background(
@@ -326,6 +329,32 @@ private struct NotifCard: View {
 /// It renders the same store clock the dismissal task sleeps on, so bar and timer can never
 /// disagree; a paused deck shows it frozen at the banked fraction. Deliberately not gated on
 /// reduce-motion — the bar is the timer's display, not decoration.
+/// ⌘↩ printed inside a card's button. Deliberately not `KeyCaps`, which is the palette's
+/// `.cmdk__key` — working.html gives the card its own smaller cap (`.notif__act kbd`: 10px mono,
+/// 15pt square, tighter gap) and the difference is load-bearing rather than cosmetic. The card is
+/// 320pt wide with the verb line and the button competing for it, and the palette's caps are wide
+/// enough to eat the words: "Synth 0.13.1 is ready" truncated at "is r…" while they were in here.
+private struct NotifKeyCaps: View {
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(["⌘", "↩"], id: \.self) { key in
+                Text(key)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Theme.ink4)
+                    .lineLimit(1).fixedSize()
+                    .frame(minWidth: 15, minHeight: 15)
+                    .padding(.horizontal, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Theme.panel)
+                            .overlay(RoundedRectangle(cornerRadius: 5)
+                                .strokeBorder(Theme.line, lineWidth: 0.5))
+                    )
+            }
+        }
+    }
+}
+
 private struct NotifTimerBar: View {
     let notif: InAppNotif
 

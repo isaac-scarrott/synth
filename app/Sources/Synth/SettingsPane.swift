@@ -883,21 +883,48 @@ private struct ThemeSeg: View {
 // MARK: - About (working.html About row)
 
 private struct AboutRow: View {
+    @Environment(AppStore.self) private var store
     let version: String
     @State private var checking = false
     var body: some View {
-        SetToggleRow(label: version, desc: checking ? "Checking…" : "Up to date · checked 2 hours ago") {
-            Button {
-                checking = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { checking = false }
-            } label: {
-                Text("Check for updates")
-                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.ink3)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5)))
-            }.buttonStyle(.plain)
+        // The card and this row are one fact seen twice — pushed and pulled — so a staged build
+        // says so here too, and offers the same Restart rather than a Check that would only
+        // re-find what is already downloaded.
+        if let update = store.stagedUpdate {
+            SetToggleRow(label: version,
+                         desc: "Synth \(update.version) is ready · installs when you quit") {
+                aboutButton("Restart") { store.restartForUpdate() }
+            }
+        } else {
+            SetToggleRow(label: version, desc: "Up to date · checked 2 hours ago") {
+                // The button carries "Checking…", not the description: the row's one fact should
+                // not blink out while the check runs.
+                aboutButton(checking ? "Checking…" : "Check for updates") {
+                    // A real build asks Sparkle, and a check you asked for answers in its own
+                    // window. A dev build has no updater, so it stages a demo build instead —
+                    // checking by hand has to be able to end in the card, or the dev channel is
+                    // the one place this feature can never be seen.
+                    if let updater = Updates.controller?.updater { updater.checkForUpdates(); return }
+                    checking = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                        checking = false
+                        #if DEBUG
+                        store.stageStubUpdate(version: AppStore.debugNextVersion())
+                        #endif
+                    }
+                }
+            }
         }
+    }
+
+    private func aboutButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.ink3)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5)))
+        }.buttonStyle(.plain)
     }
 }
 

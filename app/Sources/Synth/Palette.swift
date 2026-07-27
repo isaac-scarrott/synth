@@ -760,6 +760,31 @@ struct PaletteFrame {
         }
     }
 
+    /// Restarting into a staged build is the shortcut, not the price — it installs itself on the
+    /// next quit either way. So this asks only when a restart would cost something: live turns
+    /// die with it, which is the same rule Close and the quit confirm already wear (ADR-0013).
+    /// The reason wraps in the note rather than the placeholder because it ends with the way out,
+    /// and a way out clipped by an input field is not one. Cancel is preselected by
+    /// `initialIndex(for:)`, so a stray ↵ costs nothing.
+    func confirmRestartForUpdate(busy: Int) -> PaletteFrame {
+        let version = store.stagedUpdate?.version ?? ""
+        let subject = busy == 1 ? "1 session is busy" : "\(busy) sessions are busy"
+        return PaletteFrame(crumb: "Restart Synth?",
+                            placeholder: "↵ select · esc cancel",
+                            mode: .confirm,
+                            note: { _ in
+                                "\(subject) — restarting ends what they are doing. Leave it and "
+                                + "the update installs itself the next time you quit."
+                            }) { [self] _ in
+            [
+                PaletteItem(icon: .phosphor(Phosphor.arrowCircleDown), label: "Restart now",
+                            ctx: "installs Synth \(version)", danger: true,
+                            enter: { self.runAndClose { self.store.applyUpdate() } }),
+                PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
+            ]
+        }
+    }
+
     /// The synth-app MCP server's approval gate (was a modal sheet) — an agent asked Synth
     /// for a worktree, and nothing happens until this frame is answered. Store owns presenting
     /// and chaining it (`presentAgentPrompt`); resolving always routes back through

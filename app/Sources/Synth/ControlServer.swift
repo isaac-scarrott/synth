@@ -581,6 +581,28 @@ final class ControlServer: @unchecked Sendable {
             store.drainPendingUndos()
             return ["ok": true]
 
+        // Stage a build without Sparkle: same path the real `willInstallUpdateOnQuit` takes, with
+        // an installer that records the ask instead of relaunching (a harness can't assert on an
+        // instance that just quit). `daysAgo` back-dates the arrival so the reminder's ageing
+        // sub-line is readable without waiting days for it.
+        case "automation.updateStage" where automation:
+            let version = request["version"] as? String ?? "9.9.9"
+            store.stageStubUpdate(version: version,
+                                  daysAgo: (request["daysAgo"] as? NSNumber)?.doubleValue ?? 0)
+            return ["ok": true]
+
+        // "The day rolled over" — the daily reminder, without a day.
+        case "automation.updateRemind" where automation:
+            store.showUpdateCard()
+            return ["ok": true]
+
+        case "automation.updateStatus" where automation:
+            return ["ok": true,
+                    "pending": store.stagedUpdate != nil,
+                    "version": store.stagedUpdate?.version ?? "",
+                    "sub": store.updateSubline(),
+                    "installRequested": store.updateInstallRequested]
+
         case "automation.archiveRestore" where automation:
             guard let name = request["branch"] as? String,
                   let target = store.workspaces.flatMap(\.branches)
@@ -613,6 +635,9 @@ final class ControlServer: @unchecked Sendable {
             let frame = pal.stack.last
             return ["ok": true, "open": true,
                     "crumb": frame?.crumb ?? "",
+                    // The line above the rows — a confirm's reason, a new branch's base. It is
+                    // copy, and copy is the thing these frames exist to get right.
+                    "note": pal.noteText ?? "",
                     "items": pal.items.map(\.label),
                     "disabled": pal.items.map(\.disabled),
                     // ADR-0013: red marks loss, so a harness must be able to see which rows wear it.

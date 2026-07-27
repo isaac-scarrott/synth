@@ -1082,3 +1082,14 @@ disclosure to dive deeper.
   staples on its own); appcast newest `sparkle:version` 390 / `0.15.1`, every enclosure EdDSA-signed,
   deltas against 359/361/376/380/386. Clean run; landing links unchanged (stable `Synth.dmg` alias),
   no site republish.
+
+- **Synth 0.16.0 shipped (build 392).** The defaults change above, and nothing else. Changelog names
+  the seam it creates: the two `UserDefaults`-backed toggles (Synth-app MCP, archive sweep) switch
+  themselves on for anyone who never touched them, while the snapshot-backed setup script and agent
+  flags only change for fresh installs. Notarized + stapled (zip + dmg), verified credential-less on
+  the quarantined downloads (both Notarized Developer ID, app inside the dmg staples on its own);
+  appcast newest `sparkle:version` 392 / `0.16.0`, all 18 enclosures EdDSA-signed, deltas against
+  361/376/380/386/390. Landing links unchanged, no site republish. Took two attempts — a mid-upload
+  session teardown (nothing published; stable `Synth.dmg` never at risk) and a `nohup setsid` that
+  did nothing because `setsid` isn't a macOS command. Launch long releases via python3 `os.setsid()`,
+  and make the watcher emit on process-gone, not just on success.

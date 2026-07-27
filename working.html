@@ -1308,7 +1308,7 @@
      state colours, plus the row's identity. 'done' (a live session settling to idle
      off-screen) raises a transient green-check toast that drains a countdown bar and
      dismisses itself — Claude and terminal alike (browsers carry no state, so they never
-     transition). 2+ collapse into a deck (most-urgent in front) that fans on hover; ⌘↩
+     transition). 2+ collapse into a deck (see notifOrder for what leads) that fans on hover; ⌘↩
      jumps to the front card, a click to any. Driven by setSessionState → notifyOnTransition.
      The deck anchors to the whole shell (over the sidebar) — one fixed home whatever the
      sidebar or split layout does; the 22px inset clears the rounded corner. The deck is
@@ -1329,7 +1329,7 @@
   .notif--ambient { padding: 9px 12px 9px 11px; gap: 10px; }
   .notif.in { opacity: 1; transform: translateY(0) scale(1); }
   .notif:hover { background: color-mix(in srgb, var(--glass) 100%, var(--text) 4%); }
-  /* deck: 2+ notifications overlap, most-urgent (i=0) in front. Cards are anchored by their
+  /* deck: 2+ notifications overlap, the card notifOrder puts first (i=0) in front. Cards are anchored by their
      TOP edge, not the shared bottom — a flat rise only worked while every card was the same
      height, and a card can now carry a sub-line. JS sets --peek so card i's top sits 10.5px*i
      above the front card's top, whatever the two heights are; --fan does the same job spread. */
@@ -1396,6 +1396,10 @@
   .notif__timer i { display: block; height: 100%; background: var(--focus); opacity: 0.85; transform-origin: left; animation: notif-drain var(--life, 6000ms) linear forwards; }
   @keyframes notif-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
   .notifs:hover .notif__timer i { animation-play-state: paused; }
+  /* A card folded under "+N" holds its clock for the same reason hovering does: a countdown you
+     cannot see is not being read, and a receipt with no other surface (a digest, a confirmation)
+     that expires while buried delivered nothing at all. It gets its seconds when it surfaces. */
+  .notifs.deck .notif.deep .notif__timer i { animation-play-state: paused; }
   /* "+N" for cards tucked behind a deck deeper than three */
   .notifs__more { position: absolute; left: 13px; z-index: 200; pointer-events: none; font-size: 10.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 2px 7px; background: var(--glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 0.5px solid var(--border-strong); border-radius: 20px; box-shadow: var(--shadow); opacity: 0; transition: opacity 200ms ease; }
   .notifs.deck .notifs__more.show { opacity: 1; }
@@ -3349,7 +3353,7 @@
   // ===== In-app notifications ===============================================
   // A background session (never the open one) that moves to needs-input or error rises as a
   // quiet glass toast at the shell's bottom-left corner. Several collapse into a deck —
-  // most-urgent in front — that fans out on hover; ⌘↩ jumps to the front card, a click to
+  // ordered by notifOrder — that fans out on hover; ⌘↩ jumps to the front card, a click to
   // any. 'done' (a live session settling to idle off-screen) raises a transient toast that
   // drains its countdown bar and dismisses itself — it asks for nothing, so it never
   // persists; Claude and terminal alike (browsers carry no state).
@@ -3396,15 +3400,25 @@
     bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = '';
   }
 
-  // background notifications, most-urgent first: a fresh undo sits ahead of everything (you just
-  // acted and it has a fuse), then error before input before done, newest first
-  const NOTIF_RANK = { undo: -1, error: 0, input: 1, done: 2, neutral: 2 };
+  // Deck precedence (front first) — not severity, but what it costs to miss the card.
+  //   0 fused    — an undo: actionable AND expiring. When the bar drains the option is gone for
+  //                good, so nothing sits in front of one while it burns.
+  //   1 standing — sticky and asking: needs-input, an error, a failed op, an update waiting. It
+  //                never expires and the sidebar indicator still carries it, so nothing is lost
+  //                by ordering these purely by recency.
+  //   2 receipt  — self-dismissing and asking nothing: a done toast, a digest, a confirmation.
+  // Newest first inside every band.
+  //
+  // Errors used to outrank needs-input. That was a severity judgement the deck can't act on:
+  // both are "an agent stopped and wants you", neither is lost by waiting, and ranking them
+  // buried the toast you were just nudged about behind one you had already seen — ⌘↩ included,
+  // which fires the front card.
+  const notifDrains = (el) => (el.system ? !!el.life : notifState.get(el).kind === 'done');
+  const notifBand = (el) => (notifState.get(el).kind === 'undo' ? 0 : notifDrains(el) ? 2 : 1);
   function notifOrder() {
     // undo and system cards are session-less — they live in the deck with no row behind them
     return [...notifState.keys()].filter((el) => el.undo || el.system || (el !== openEl && document.contains(el))).sort((a, b) => {
-      const A = notifState.get(a), B = notifState.get(b);
-      if (NOTIF_RANK[A.kind] !== NOTIF_RANK[B.kind]) return NOTIF_RANK[A.kind] - NOTIF_RANK[B.kind];
-      return B.order - A.order;
+      return (notifBand(a) - notifBand(b)) || (notifState.get(b).order - notifState.get(a).order);
     });
   }
   function notifTop() { return notifOrder()[0] || null; }
@@ -3562,7 +3576,7 @@
     notifsEl.classList.remove('spread'); notifsEl.style.height = ''; notifsEl.style.pointerEvents = '';
   });
 
-  // ⌘↩ undoes the last soft-delete while its pill is up, else jumps to the most-urgent
+  // ⌘↩ undoes the last soft-delete while its pill is up, else jumps to the front
   // notification — inert when neither is pending, so the chord is never stolen otherwise.
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {

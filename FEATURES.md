@@ -1138,3 +1138,13 @@ disclosure to dive deeper.
   fresh worktree's first Claude now meets two prompts. That last part fell out of the default flip
   rather than being decided; the gate now matches reality, the product question is still open.
   13/13 suites, 205 checks.
+- **The notification deck orders by what it costs to miss a card, not by severity** — `kind` ranking
+  put a five-minute-old error ahead of a ten-second-old needs-input, so the toast you were just
+  nudged about landed behind one you'd already dismissed in your head, ⌘↩ included. The sort key is
+  now what missing the card costs: fused (an undo, actionable *and* expiring) → standing (sticky and
+  asking, and carried by the sidebar anyway) → receipt (self-dismissing, asking nothing), newest
+  first inside each. Error and needs-input are one band; recency decides.
+- **A countdown you cannot see no longer runs** — a draining card folded under "+N" still drained,
+  so a receipt with no other surface (sweep digest, "Handed to Mail") could expire having never been
+  on screen. Burial joins deck-hover and app-unfocused as a drain brake; the app reconciles in one
+  place (`settleDrains()` off `notifs.didSet`), working.html in one selector.

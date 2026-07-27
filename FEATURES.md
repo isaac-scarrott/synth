@@ -1158,3 +1158,33 @@ disclosure to dive deeper.
   fresh worktree's first Claude now meets two prompts. That last part fell out of the default flip
   rather than being decided; the gate now matches reality, the product question is still open.
   13/13 suites, 205 checks.
+- **The notification deck orders by what it costs to miss a card, not by severity** — `kind` ranking
+  put a five-minute-old error ahead of a ten-second-old needs-input, so the toast you were just
+  nudged about landed behind one you'd already dismissed in your head, ⌘↩ included. The sort key is
+  now what missing the card costs: fused (an undo, actionable *and* expiring) → standing (sticky and
+  asking, and carried by the sidebar anyway) → receipt (self-dismissing, asking nothing), newest
+  first inside each. Error and needs-input are one band; recency decides.
+- **A countdown you cannot see no longer runs** — a draining card folded under "+N" still drained,
+  so a receipt with no other surface (sweep digest, "Handed to Mail") could expire having never been
+  on screen. Burial joins deck-hover and app-unfocused as a drain brake; the app reconciles in one
+  place (`settleDrains()` off `notifs.didSet`), working.html in one selector.
+- **Synth 0.17.0 shipped (build 398).** The scratch terminal (⌘⇧T) reaches people, with the two
+  release-readiness fixes as their own changelog lines (quit/Restart name a running scratch job;
+  scrim tuned per theme). The ⌘? repair stayed out — design-file only, never shipped. Notarized +
+  stapled (zip + dmg), verified credential-less on the quarantined downloads, app inside the dmg
+  staples on its own; appcast newest `sparkle:version` 398 / `0.17.0`, all 18 enclosures
+  EdDSA-signed, 5 deltas against 376/380/386/390/392 (28M). Landing links unchanged, no site
+  republish. `generate_appcast` logged a "File exists" per archive failing to move into
+  `old_updates/` — non-fatal, and it leaves the previous zips where the next release's deltas need
+  them. Detached launch via python3 `os.setsid()` plus a watcher that exits on process-gone held up.
+
+- **Branch names leave the monospace** — the sidebar's branch row goes to the UI sans, tracking to
+  0 (mono's fixed advance was what the `-0.01em` compensated) and ink up to `--ink-2` (`--ink-3`
+  was calibrated against mono's heavier stems). Mono elsewhere is untouched: it still means "the
+  machine owns this string" for crumbs, PR chips, URLs, keys and terminals. Two knock-ons, both
+  because mono had been load-bearing: the two rules that de-emphasised `.branch--active` are gone,
+  so the branch you're checked out on no longer renders identical to the ones you aren't (the
+  white pill still drops — a fill behind a fill double-encodes, a name at another level doesn't);
+  and top-level projects separate by a 10px margin rather than indent, since the chip already eats
+  the repo row's indent budget and sessions can't afford to move right. A leading branch glyph was
+  considered and rejected — it would sit in the session-icon column.

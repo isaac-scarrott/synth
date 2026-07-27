@@ -2,9 +2,11 @@ import SwiftUI
 
 /// The in-app notification layer (working.html's `.notifs`): background sessions escalated to
 /// quiet glass toasts, stacked bottom-left, hugging the sidebar. One toast reads plainly; two
-/// or more collapse into a deck — most-urgent in front, the two behind peeking, anything past
-/// three folded under a "+N" pill. Hovering the deck fans it into individually clickable cards
-/// and holds every draining toast's countdown; a click runs the card's action, ⌘↩ the front's.
+/// or more collapse into a deck — a burning undo first, then standing asks, then receipts,
+/// newest first inside each (`InAppNotif.band`) — the two behind the front peeking, anything
+/// past three folded under a "+N" pill. Hovering the deck fans it into individually clickable
+/// cards and holds every draining toast's countdown; a click runs the card's action, ⌘↩ the
+/// front's. A card buried under "+N" holds its countdown too — it is not on screen to be read.
 /// Mounted at the window root so it sits at the whole shell's bottom-left corner, over the
 /// sidebar (hidden in settings), and driven purely by `AppStore.notifOrder`.
 ///
@@ -20,6 +22,7 @@ struct NotificationDeck: View {
     // How far each card behind the front rises, TOP edge to top edge (working.html --peek), and
     // how the peeking cards shrink / dim; a fourth+ card hides behind "+N".
     fileprivate static let peekRise: CGFloat = 10.5
+    /// One entry per `AppStore.notifDeckDepth` — how far a card dims as it falls back.
     fileprivate static let peekOpacity: [Double] = [1, 0.7, 0.45]
     fileprivate static let cardWidth: CGFloat = 320
     fileprivate static let cornerRadius: CGFloat = 13

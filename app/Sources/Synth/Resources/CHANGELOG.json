@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.17.0",
+    "date": "2026-07-27",
+    "changes": [
+      "⌘⇧T opens a scratch terminal: a full shell in the branch you're looking at, for the quick errand you don't want a session row for. The same chord dismisses it, and dismissing ends it — every summon is a fresh shell. Esc closes it too, but only at an idle prompt, so vim and other full-screen tools keep working.",
+      "Quitting or restarting while a scratch command is still running now says so and names it, instead of ending it quietly. Restart had skipped its confirmation entirely and installed over a running job.",
+      "The dim behind the scratch terminal is now tuned per theme — in Light it no longer flattened the whole app to grey — and Reduce Motion is honoured."
+    ]
+  },
+  {
     "version": "0.16.0",
     "date": "2026-07-27",
     "changes": [

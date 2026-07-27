@@ -57,7 +57,7 @@ enum Theme {
     static let repoCount    = inkMeta
     static let navLabel     = inkMeta
     static let chevron      = inkMeta
-    static let branchName   = ink3                      // inactive branch (parent tier above sessions)
+    static let branchName   = ink2                      // inactive branch (parent tier above sessions)
     static let branchMeta   = inkMeta
     static let sessionName  = inkMeta
     static let sessionNameUnread = dyn(0x34363D, 0xECEEF2)

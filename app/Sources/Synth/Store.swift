@@ -88,17 +88,6 @@ enum NotifKind: Sendable {
     /// confirmation. It never wears a session's state colour, so green keeps meaning "your
     /// agent finished" and blue keeps meaning "something is blocked on you".
     case input, error, done, undo, neutral
-
-    /// Deck precedence (front first): a fresh undo (you just acted, and it has a fuse) sits ahead
-    /// of everything, then errors before needs-input before done.
-    var rank: Int {
-        switch self {
-        case .undo: return -1
-        case .error: return 0
-        case .input: return 1
-        case .done, .neutral: return 2
-        }
-    }
 }
 
 /// Which of the three tiers a card belongs to. The tier decides *presence* — chip size, verb
@@ -152,6 +141,22 @@ struct InAppNotif: Identifiable {
     /// Whether this card runs a countdown and dismisses itself. Kind alone can't say — an
     /// archive nudge is `.neutral` and sticky, a sweep digest is `.neutral` and transient.
     var drains: Bool = false
+
+    /// Deck precedence (front first). Not severity — what it costs to miss the card.
+    ///
+    /// `0` **fused**: an undo. Actionable *and* expiring — when the bar drains the option is
+    /// gone for good, so nothing sits in front of one while it burns.
+    /// `1` **standing**: sticky and asking — needs-input, an error, a failed op, an update
+    /// waiting. It never expires and every other surface (sidebar indicator, unread dot) still
+    /// carries it, so nothing is lost by ordering these purely by recency.
+    /// `2` **receipt**: self-dismissing and asking nothing — a done toast, a digest, a
+    /// confirmation. It leaves on its own.
+    ///
+    /// Errors used to outrank needs-input. That was a severity judgement the deck can't act on:
+    /// both are "an agent stopped and wants you", neither is lost by waiting, and ranking them
+    /// buried the toast you were *just* nudged about behind one you had already seen — ⌘↩
+    /// included, which fires the front card.
+    var band: Int { kind == .undo ? 0 : (drains ? 2 : 1) }
 
     /// A done toast's life, working.html `NOTIF_DONE_MS`. Sticky toasts (input / error)
     /// never read these.
@@ -283,8 +288,13 @@ enum FeedbackMode {
     /// NotificationDeck while Synth is frontmost; the unfocused path goes through Notification
     /// Center instead (NotificationService). The open session is never in here — opening one
     /// clears its toast, mirroring the `.markUnread` open-guard.
-    var notifs: [InAppNotif] = []
+    /// Any raise or dismissal reshuffles the deck, which changes which cards are on screen and
+    /// so which clocks may run — settling here means no raise site has to remember to.
+    var notifs: [InAppNotif] = [] { didSet { settleDrains() } }
     @ObservationIgnored private var notifSeq = 0
+    /// How many cards the deck actually shows before the rest fold under "+N"
+    /// (NotificationDeck.peekOpacity has one entry per).
+    static let notifDeckDepth = 3
 
     /// One-shot ambient row-pulse tokens (working.html `session--pulse`). A `done` on an
     /// off-screen live session bumps its token; the sidebar row runs a single soft sweep on
@@ -894,7 +904,6 @@ enum FeedbackMode {
                                  tier: kind == .done ? .ambient : .attention,
                                  sub: sub, action: NotifAction(label: "Open"),
                                  drains: kind == .done))
-        if kind == .done { armDoneToast(id) }   // re-raised done → the clock rewinds (fresh toast, full life)
     }
 
     /// True while the pointer rests on the deck: every done toast's drain (bar and dismissal
@@ -908,6 +917,16 @@ enum FeedbackMode {
     /// releases it.
     @ObservationIgnored private var notifDrainUnfocused = true
     private var drainHeld: Bool { notifDrainPaused || notifDrainUnfocused }
+    /// The drain's third brake, and the only per-card one: the card is folded under "+N". A
+    /// countdown you cannot see is not being read — the same reason hovering pauses it — and a
+    /// receipt with no other surface (a sweep digest, a "Handed to Mail") that expires while
+    /// buried delivered nothing at all. Buried cards wait banked and get their seconds once the
+    /// cards ahead of them clear.
+    private func isBuried(_ id: UUID) -> Bool {
+        guard let i = notifOrder.firstIndex(where: { $0.id == id }) else { return false }
+        return i >= Self.notifDeckDepth
+    }
+    @ObservationIgnored private var settlingDrains = false
     /// One armed dismissal per toast, sleeping exactly what its bar shows.
     @ObservationIgnored private var notifDismissTasks: [UUID: Task<Void, Never>] = [:]
 
@@ -917,12 +936,12 @@ enum FeedbackMode {
     }
 
     /// Start a done toast draining: stamp `armedAt` and sleep out its banked `remaining`.
-    /// Under a held drain (deck hovered, or Synth unfocused) the toast waits fully banked —
-    /// release arms it.
+    /// Under any held brake (deck hovered, Synth unfocused, card buried under "+N") the toast
+    /// waits fully banked — release arms it.
     private func armDoneToast(_ id: UUID) {
         cancelDismiss(id)
         guard let i = notifs.firstIndex(where: { $0.id == id && $0.drains }) else { return }
-        guard !drainHeld else { notifs[i].armedAt = nil; return }
+        guard !drainHeld, !isBuried(id) else { notifs[i].armedAt = nil; return }
         notifs[i].armedAt = Date()
         let remaining = notifs[i].remaining
         let seq = notifs[i].seq
@@ -962,23 +981,34 @@ enum FeedbackMode {
         applyDrainBrake { notifDrainUnfocused = !active }
     }
 
-    /// Flip one brake and settle the clocks: newly held → bank every armed toast's remaining
-    /// life; newly released → re-arm every done toast. A flip that doesn't change the combined
-    /// hold (e.g. unhover while still unfocused) touches nothing.
+    /// Flip one brake and settle the clocks. A flip that doesn't change the combined hold (e.g.
+    /// unhover while still unfocused) touches nothing.
     private func applyDrainBrake(_ flip: () -> Void) {
         let wasHeld = drainHeld
         flip()
         guard drainHeld != wasHeld else { return }
-        if drainHeld {
-            let now = Date()
-            for i in notifs.indices {
-                guard let armed = notifs[i].armedAt else { continue }
+        settleDrains()
+    }
+
+    /// Every draining card re-settled against its brakes: one that should not be running banks
+    /// what is left of its life and drops its dismissal, one that should be starts a fresh
+    /// stretch. The one place a countdown starts or stops, so hover, focus, burial and a
+    /// reshuffled deck all reach it the same way.
+    private func settleDrains() {
+        guard !settlingDrains else { return }
+        settlingDrains = true
+        defer { settlingDrains = false }
+        let now = Date()
+        for id in notifs.filter(\.drains).map(\.id) {
+            guard let i = notifs.firstIndex(where: { $0.id == id }) else { continue }
+            let shouldRun = !drainHeld && !isBuried(id)
+            if let armed = notifs[i].armedAt, !shouldRun {
                 notifs[i].remaining = max(0, notifs[i].remaining - now.timeIntervalSince(armed))
                 notifs[i].armedAt = nil
-                cancelDismiss(notifs[i].id)
+                cancelDismiss(id)
+            } else if notifs[i].armedAt == nil, shouldRun {
+                armDoneToast(id)
             }
-        } else {
-            for n in notifs where n.drains { armDoneToast(n.id) }
         }
     }
 
@@ -1052,12 +1082,13 @@ enum FeedbackMode {
         }
     }
 
-    /// Active toasts, most-urgent first: errors before needs-input before done, then newest
-    /// within a kind (working.html `notifOrder`). Drops any whose session vanished (except
-    /// the self-dismissing exit-close done toast) or is now the open one.
+    /// Active toasts, most-urgent first: a burning undo, then standing asks, then receipts —
+    /// newest first inside each band (`InAppNotif.band`, working.html `notifOrder`). Drops any
+    /// whose session vanished (except the self-dismissing exit-close done toast) or is now the
+    /// open one.
     var notifOrder: [InAppNotif] {
         notifs.filter { $0.id != openSessionID && (session($0.id) != nil || $0.outlivesSession) }.sorted { a, b in
-            if a.kind.rank != b.kind.rank { return a.kind.rank < b.kind.rank }
+            if a.band != b.band { return a.band < b.band }
             return a.seq > b.seq
         }
     }
@@ -1601,7 +1632,6 @@ enum FeedbackMode {
         n.life = Self.undoLife
         n.remaining = Self.undoLife
         notifs.append(n)
-        armDoneToast(id)   // the deck's own drain; when it empties, its expiry runs the commit
     }
 
     /// Bring a specific parked row back (card click, or ⌘↩ on the front undo card). The window
@@ -1971,7 +2001,6 @@ enum FeedbackMode {
                                  message: message, iconPath: Phosphor.archive,
                                  tier: tier, action: action, drains: drains))
         if let run { notifActions[id] = run }
-        if drains { armDoneToast(id) }
     }
 
     private func logTick(eligible: Int) {
@@ -2374,7 +2403,6 @@ enum FeedbackMode {
                                  title: title, colorIndex: nil, outlivesSession: true,
                                  message: message, iconPath: icon,
                                  tier: .ambient, sub: sub, drains: true))
-        armDoneToast(id)
     }
 
     /// Folder picker → adds the repo with its default branch. Panel runs modally, so

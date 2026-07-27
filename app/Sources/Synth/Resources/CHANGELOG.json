@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.14.0",
+    "date": "2026-07-27",
+    "changes": [
+      "Removing a worktree now archives it — instant, with an undo, and your files left untouched; restore it any time from ⌘K → Archived. Deleting a worktree from disk is a separate step that always confirms, and a background clean-up only ever reclaims a folder once its work is safely on a remote.",
+      "Notifications get a cleaner shape: every card carries a real action button — Open, Undo, Retry or Review — with its keyboard shortcut printed inside, plus a separate × to dismiss, so leaving a notification is no longer the same click as acting on it. Errors now show what actually went wrong.",
+      "Creating a worktree works again in a repository that has no remote.",
+      "A browser opening straight onto a page no longer gets stuck showing a blank address."
+    ]
+  },
+  {
     "version": "0.13.0",
     "date": "2026-07-24",
     "changes": [

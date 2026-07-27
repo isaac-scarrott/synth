@@ -20,6 +20,18 @@ def result():
 def sh(cmd, **kw):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, **kw).stdout.strip()
 
+# Which Application Support sandbox the driven build uses. AppSupport keys it on the bundle's
+# CFBundleName, so the dev build lives under "Synth Dev" and never shares state with a stable
+# one — the harness has to follow the bundle it is actually driving rather than assume "Synth",
+# or it reads files that were never written and sees every field as absent.
+def support_dir():
+    name = sh(f"/usr/libexec/PlistBuddy -c 'Print :CFBundleName' '{APP}/Contents/Info.plist'") or "Synth"
+    return pathlib.Path.home() / "Library/Application Support" / name
+
+def instance_json(pid):
+    p = support_dir() / "instances" / f"{pid}.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
 def kill_all():
     """Tear down only THIS harness's app and its children.
 
@@ -35,7 +47,7 @@ def kill_all():
         time.sleep(0.2)
     time.sleep(1.5)
 
-WT_ROOT = str(pathlib.Path.home() / "Library/Application Support/Synth/worktrees")
+WT_ROOT = str(support_dir() / "worktrees")
 
 def fresh_repo(name="repo", branches=()):
     d = pathlib.Path(H) / name
@@ -138,15 +150,3 @@ def wait(fn, secs=30, every=0.3):
         if v: return v
         time.sleep(every)
     return None
-
-# Which Application Support sandbox the driven build uses. AppSupport keys it on the bundle's
-# CFBundleName, so the dev build lives under "Synth Dev" and never shares state with a stable
-# one — the harness has to follow the bundle it is actually driving rather than assume "Synth",
-# or it reads an instance file that was never written and sees every field as absent.
-def support_dir():
-    name = sh(f"/usr/libexec/PlistBuddy -c 'Print :CFBundleName' '{APP}/Contents/Info.plist'") or "Synth"
-    return pathlib.Path.home() / "Library/Application Support" / name
-
-def instance_json(pid):
-    p = support_dir() / "instances" / f"{pid}.json"
-    return json.loads(p.read_text()) if p.exists() else {}

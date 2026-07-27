@@ -128,7 +128,7 @@ os.environ.update({
     "SYNTH_ARCHIVE_HOLD_SECONDS": "999999",
 })
 H = pathlib.Path(lib.H)
-sandbox, made = fx.build(H / "sandbox", pathlib.Path.home() / "Library/Application Support/Synth Dev")
+sandbox, made = fx.build(H / "sandbox", support_dir())
 sd2 = H / "state2"
 sh(f"rm -rf '{sd2}'")
 sd2.mkdir(parents=True)
@@ -189,7 +189,7 @@ kill_all()
 # A fresh sandbox: phase B already reclaimed the one eligible worktree, so nothing in that one
 # is left for a brake to trip over.
 os.environ["SYNTH_ARCHIVE_BULK_BRAKE"] = "0"
-sandbox3, made3 = fx.build(H / "sandbox3", pathlib.Path.home() / "Library/Application Support/Synth Dev")
+sandbox3, made3 = fx.build(H / "sandbox3", support_dir())
 sd3 = H / "state3"
 sh(f"rm -rf '{sd3}'")
 sd3.mkdir(parents=True)

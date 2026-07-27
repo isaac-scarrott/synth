@@ -174,12 +174,25 @@ import os.log
         installDir.appendingPathComponent(serverScripts[name] ?? "server.mjs").path
     }
 
-    /// Claude Code: `.mcp.json` → `mcpServers.<name>.{command,args}`.
+    /// Which channel installed the server. The servers discover the running app through
+    /// `<AppSupport.root>/instances`, and nothing else in their environment says which sandbox
+    /// that is — so without this a dev build's agents find no instances at all, or worse, find a
+    /// stable Synth and drive *its* browser. Names AppSupport's own override variable, which is
+    /// how the app itself resolves the sandbox.
+    private static var channelEnv: [String: String] {
+        ["SYNTH_SUPPORT_DIR": AppSupport.root.path]
+    }
+
+    /// Claude Code: `.mcp.json` → `mcpServers.<name>.{command,args,env}`.
     private static func writeClaudeConfig(atWorktree path: String, servers: [String: Bool]) {
         var built: [String: [String: Any]?] = [:]
         for (name, enabled) in servers {
-            built.updateValue(enabled ? ["command": "node", "args": [serverPath(name)]] : nil,
-                              forKey: name)
+            let entry: [String: Any] = [
+                "command": "node",
+                "args": [serverPath(name)],
+                "env": channelEnv,
+            ]
+            built.updateValue(enabled ? entry : nil, forKey: name)
         }
         merge(atWorktree: path, file: ".mcp.json", container: "mcpServers", entries: built)
     }
@@ -194,7 +207,7 @@ import os.log
                 "type": "local",
                 "command": ["node", serverPath(name)],
                 "enabled": true,
-                "environment": ["SYNTH_WORKTREE": path],
+                "environment": channelEnv.merging(["SYNTH_WORKTREE": path]) { _, new in new },
             ]
             built.updateValue(enabled ? entry : nil, forKey: name)
         }

@@ -11,10 +11,10 @@ feature, and each of those refusals is a data-loss bug if it regresses.
 import json, os, pathlib, subprocess, sys, time, urllib.parse, uuid
 
 import lib
-from lib import check, result, sh, wait, kill_all, launch, Ctl
+from lib import check, result, sh, wait, kill_all, launch, Ctl, support_dir
 
 H = pathlib.Path(lib.H)
-APP_SUPPORT = pathlib.Path.home() / "Library/Application Support/Synth Dev"
+APP_SUPPORT = support_dir()
 
 
 import archive_fixture as fx

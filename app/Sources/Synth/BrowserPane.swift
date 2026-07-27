@@ -275,8 +275,12 @@ import AppKit
 extension BrowserSessionController: BrowserEngineDelegate {
     func engine(_ engine: BrowserEngine, addressDidChange url: URL) {
         // CEF idles on about:blank behind the home surface (an engine needs a URL at
-        // creation); that's not a navigation — home stays until a real one.
-        if address == nil && url.absoluteString == "about:blank" { return }
+        // creation); that's not a navigation — home stays until a real one. Never
+        // conditional on `address` still being nil: a session that opens straight onto a
+        // page (restored, popup-born, agent-created) navigates in `init`, on the same turn
+        // the engine is built, so the creation-time callback can land *after* that and
+        // would clobber the real URL with plumbing no re-fire ever corrects.
+        if url.absoluteString == "about:blank" { return }
         address = url
         // Zoom rides navigation (the mock re-applies after every paint). CEF stores zoom
         // per-origin, so a cross-origin hop would otherwise snap back to 100%.

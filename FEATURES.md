@@ -973,3 +973,27 @@ disclosure to dive deeper.
   the dev build's registry under `Synth Dev`, but the harness hardcoded `Synth` — so `t4a`, `t4b`
   and `t5` failed on an absent CDP port and empty worktree list while the browser engine was
   demonstrably fine. Pre-existing since the channel split.
+
+## [2026-07-27](docs/features/2026-07-27.md)
+
+- **An MCP server now knows which channel installed it** — `shared.mjs` hardcoded
+  `Application Support/Synth/instances`, so a dev build's agents discovered *no* Synth (empty
+  `browser_list`, nothing to drive) or — with a stable Synth also running — discovered **that** one
+  and drove its browser, the exact cross-channel control the `AppSupport` split exists to prevent.
+  `MCPInstaller` now injects `SYNTH_SUPPORT_DIR` (= `AppSupport.root.path`) into both config
+  writers — `opencode.json`'s `environment` and `.mcp.json`'s `env`, which carried no environment
+  at all — and `shared.mjs` roots instance discovery there. Covers both bundled servers, which
+  share discovery. `t4a` asserts the variable in both files.
+- **The harness follows the bundle it drives, everywhere it looks** — the remaining four hardcoded
+  sandbox paths now go through `lib.support_dir()`: `t5`'s comment screenshots (looked under
+  `Synth/comments`, written to `Synth Dev/comments` — check 10's `0 new png`), `lib.WT_ROOT` (had
+  been sweeping the wrong sandbox silently since the split), and `t9`/`t10`, which hardcoded
+  `Synth Dev` and so passed for a reason that isn't true. `run.sh`'s CEF precheck honours
+  `SYNTH_APP` like the suites do.
+- **A browser that opens straight onto a page could show `about:blank` forever** — the
+  `addressDidChange` guard suppressed CEF's creation-time idle URL only `if address == nil`, but a
+  restored / popup-born / agent-created session navigates inside `init`, on the same turn the engine
+  is built — so the late callback overwrote the real URL with plumbing, `isHome` went false so home
+  wouldn't cover it, and nothing re-fired until the next navigation. `about:blank` is never a
+  destination; the guard is now unconditional. Caught by `t4b` check 4, where `browser.list` (session
+  model) and `automation.state` (live controller address) disagreed in the same run.

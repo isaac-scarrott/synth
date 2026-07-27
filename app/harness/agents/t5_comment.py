@@ -39,7 +39,7 @@ check("8. the owning opencode session started a turn from the comment", bool(wor
 idle = wait(lambda: ((ctl.row(oc) or {}).get("status") == "idle") or None, 120, 0.5)
 check("9. it finished the turn", bool(idle))
 
-shots = pathlib.Path.home() / "Library/Application Support/Synth/comments"
+shots = support_dir() / "comments"
 fresh = [f for f in (shots.rglob("*.png") if shots.exists() else []) if f.stat().st_mtime > T0]
 check("10. located context captured this run (element + viewport screenshots)", len(fresh) >= 2, f"{len(fresh)} new png")
 

@@ -8,8 +8,14 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-const INSTANCES_DIR = path.join(
-  os.homedir(), "Library/Application Support/Synth/instances");
+// Which channel's Synth this server belongs to. AppSupport keys the sandbox on the app's
+// CFBundleName, so a dev build's instances live under "Synth Dev" — MCPInstaller passes its
+// own AppSupport.root down as SYNTH_SUPPORT_DIR precisely so a server installed by one channel
+// never discovers (and drives) another channel's app.
+const SUPPORT_ROOT = process.env.SYNTH_SUPPORT_DIR ||
+  path.join(os.homedir(), "Library/Application Support/Synth");
+
+const INSTANCES_DIR = path.join(SUPPORT_ROOT, "instances");
 
 // ---------------------------------------------------------------------------
 // Instance discovery — re-read on every tool call so a Synth launched (or quit)

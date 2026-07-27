@@ -1063,3 +1063,18 @@ disclosure to dive deeper.
   which-branch-is-this-action-for fallbacks; reordering counts in drawn rows, not raw indices. New
   `automation.tree` verb, and `t9_archive` asserts the row leaves the tree — it only ever asserted
   it reached the Archived list.
+
+- **The scratch terminal (⌘⇧T) — a shell for the errand, not for the tree (both designs)** — a
+  throwaway full terminal in the context branch (`contextBranch()`, like ⌘T/⌘N; lazily creates a
+  dormant branch's worktree per ADR-0004), summoned and dismissed on the same chord. Deliberately
+  **not a Session**: no row, no status, no roll-up — its own glossary term, because "a session
+  that isn't in the sidebar" would split the central noun. **Dismissing kills it** (fresh shell
+  every summon) to hold the rule that nothing runs that the sidebar doesn't show, which is why
+  closing it while busy confirms and names what it ends (ADR-0013). **Esc closes only at an idle,
+  empty prompt** — otherwise it reaches the shell, so vim/TUIs work; ⌃C and ⌃D are never
+  intercepted; ⌘W closes too. A centred card over a 0.5 dim (deeper than a dialog's — a detour out
+  of the app, not a step within it), no chrome but the branch name bottom-left. Listed in ⌘? and
+  ⌘K. Overlay won over a curtain and a pane-inline panel, both built and driven first.
+- **⌘? had been dead in both design files** — `scIcon` asked for `ICON_GLOBE`, declared nowhere
+  (its own comment claimed it was "declared further down"), so `openShortcuts()` threw and the
+  shortcuts sheet never opened. Now `ICON_BROWSER`; every category renders.

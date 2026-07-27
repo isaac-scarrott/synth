@@ -997,3 +997,11 @@ disclosure to dive deeper.
   wouldn't cover it, and nothing re-fired until the next navigation. `about:blank` is never a
   destination; the guard is now unconditional. Caught by `t4b` check 4, where `browser.list` (session
   model) and `automation.state` (live controller address) disagreed in the same run.
+- **Synth 0.14.0 shipped (build 380)** — minor bump headlined by the archive-not-delete worktree
+  redesign (instant, undoable, background reclaim only once the work is safely on a remote), plus the
+  three-tier toast redesign, the no-`origin` worktree-creation fix, and the `about:blank`-forever
+  browser fix; the cross-channel MCP-sandbox / harness-path fixes stayed out of the user changelog.
+  Notarized + stapled (zip + dmg), verified credential-less on the quarantined downloads (both
+  Notarized Developer ID, app inside the dmg staples on its own); appcast newest `sparkle:version`
+  380 / `0.14.0`, all 18 enclosures EdDSA-signed, deltas against 346/353/359/361/376. Clean run.
+  Landing links unchanged (stable `Synth.dmg` alias), no site republish.

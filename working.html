@@ -2475,6 +2475,7 @@
   const MARK_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></svg>';
   const MARK_DISMISS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
   const MARK_MAIL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48ZM98.71,128,40,181.81V74.19Zm11.84,10.85,12,11.05a8,8,0,0,0,10.82,0l12-11.05,58,53.15H52.57ZM157.29,128,216,74.18V181.82ZM203.43,64,128,133.15,52.57,64Z"/></svg>';
+  const MARK_UPDATE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm45.66-93.66a8,8,0,0,1,0,11.32l-40,40a8,8,0,0,1-11.32,0l-40-40a8,8,0,0,1,11.32-11.32L120,148.69V88a8,8,0,0,1,16,0v60.69l26.34-26.35A8,8,0,0,1,173.66,122.34Z"/></svg>';
 
   // priority: needs-input > error > working > running > idle
   const PRIORITY = ['input', 'error', 'work', 'run', 'idle'];
@@ -3478,6 +3479,10 @@
       const top = notifTop();
       if (!top) return;
       e.preventDefault();
+      // The chord is spent here. Without this, an action that opens a confirm — the update
+      // card's Restart — would watch the same keystroke reach the palette a moment later and
+      // answer the dialog it had just raised.
+      e.stopImmediatePropagation();
       // ⌘↩ fires whatever the front card's own button says: Undo, Open, or — on a card with
       // nowhere to go — dismiss.
       if (top.undo) { performUndo(top); return; }
@@ -3498,6 +3503,105 @@
     e.preventDefault();
     setSessionState(bg[notifDemo % bg.length], ['input', 'error', 'input', 'idle'][notifDemo % 4]);
     notifDemo++;
+  });
+
+  // ===== The update card ====================================================
+  // A new build used to announce itself in exactly one place — Settings → About — which is a
+  // place you only go once you already suspect there is an update. So the updater now speaks
+  // first, in the deck everything else already speaks in.
+  //
+  // It speaks twice at most: once when a download lands, then once a day for as long as that
+  // build sits unapplied. The card is attention-tier, so it is sticky and carries no countdown
+  // — the decision stays open until you make it — but neutral-inked, because this is the app
+  // talking about its own housekeeping and green still has to mean "your agent finished".
+  //
+  // It is the one attention card that never posts Notification Center while Synth is unfocused.
+  // A version you were not waiting for does not earn a system banner over the app you were
+  // actually using; it waits in the deck for you to come back.
+  //
+  // Nothing here is urgent, and the copy says so. The build is already downloaded and installs
+  // itself the next time you quit, so `Restart` is a shortcut rather than a price and the ×
+  // ("not now") is a complete answer. The reminder returns tomorrow wearing the only fact that
+  // changed by then: how long it has been waiting.
+  const APP_VERSION = '0.9.1';        // the build this mock claims to be running
+  const UPDATE_VERSION = '0.9.2';     // what the demo updater finds waiting
+  const UPDATE_REMIND_MS = 24 * 60 * 60 * 1000;
+  const update = { version: null, since: 0, card: null, timer: 0 };
+
+  // Settings is the pull surface for the same fact, so it can never disagree with the card.
+  const refreshSettings = () => { if (content.querySelector('.set-body')) renderSettings(); };
+
+  function updateFound(version) {
+    update.version = version;
+    update.since = Date.now();
+    showUpdateCard();
+  }
+
+  // Raising re-raises: a dismissed card comes back, and one still standing is rebuilt, so the
+  // daily reminder returns to the front of the deck instead of ageing quietly behind newer news.
+  function showUpdateCard() {
+    clearTimeout(update.timer);
+    if (update.card) clearNotif(update.card);
+    update.card = raiseSystemNotif({
+      kind: 'neutral', glyph: MARK_UPDATE,
+      what: 'Synth ' + update.version + ' is ready', sub: updateSub(),
+      act: { label: 'Restart', run: restartForUpdate },
+    });
+    update.timer = setTimeout(showUpdateCard, UPDATE_REMIND_MS);
+    refreshSettings();
+  }
+
+  // The first card is news; every card after it is a reminder, and by then the only thing that
+  // has changed is how long you have been putting it off — so that is what the line says.
+  function updateSub() {
+    const days = Math.floor((Date.now() - update.since) / UPDATE_REMIND_MS);
+    if (!days) return 'Installs when you quit';
+    return days === 1 ? 'Downloaded yesterday' : 'Downloaded ' + days + ' days ago';
+  }
+
+  // Restarting is the shortcut, not the price — but it ends every live turn, so it asks first
+  // exactly when there is something to lose, and never otherwise.
+  function restartForUpdate() {
+    const busy = document.querySelectorAll('.session .beat--work, .session .beat--run').length;
+    if (busy) { openPaletteAt(restartForUpdateFrame(busy)); return; }
+    applyUpdate();
+  }
+
+  function restartForUpdateFrame(busy) {
+    return {
+      crumb: 'Restart Synth?', mode: 'confirm',
+      note: busy + (busy === 1 ? ' session is busy' : ' sessions are busy')
+        + ' — restarting ends what they are doing. Leave it and the update installs itself the next time you quit.',
+      placeholder: '↵ select · esc cancel',
+      build() {
+        return [
+          { icon: MARK_UPDATE, label: 'Restart now', ctx: 'installs Synth ' + update.version, danger: true, enter: () => runAndClose(applyUpdate) },
+          { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
+        ];
+      },
+    };
+  }
+
+  // The real app relaunches into the new build here; the mock says what would happen instead.
+  function applyUpdate() {
+    clearTimeout(update.timer);
+    if (update.card) clearNotif(update.card);
+    update.card = null;
+    update.version = null;
+    raiseSystemNotif({ kind: 'neutral', tier: 'ambient', glyph: MARK_UPDATE, life: NOTIF_DONE_MS, what: 'Restarting to install' });
+    refreshSettings();
+  }
+
+  // Design demo: ⌥U finds an update, and pressing it again winds the clock on a day so the
+  // daily reminder can be read as it will actually arrive. In the app Sparkle raises these.
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.code !== 'KeyU') return;
+    const a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    e.preventDefault();
+    if (!update.version) { updateFound(UPDATE_VERSION); return; }
+    update.since -= UPDATE_REMIND_MS;
+    showUpdateCard();
   });
 
   // ---- mock content, generated purely from (type, name, state) ----
@@ -6574,8 +6678,13 @@
         `<textarea class="set-code set-code--flags" data-flags="${a}" spellcheck="false" placeholder="${esc(AGENT_EG[a])}">${esc(DEF.flags[a] || '')}</textarea>`)).join(''))
     + sec('Privacy', row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics')))
     + sec('Experimental', row('Tabs', desc("Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview."), switchCtl(tabsMode, 'tabs')))
-    + sec('About', row('Synth 0.9.1 (317)', desc('Up to date · checked 2 hours ago'),
-        '<button class="tpl-add__btn" data-check>Check for updates</button>'));
+    // The row and the card are one fact seen twice, so About states the update outright and
+    // offers the same Restart rather than a Check that would only re-find what is already here.
+    + sec('About', update.version
+        ? row('Synth ' + APP_VERSION + ' (317)', desc('Synth ' + update.version + ' is ready · installs when you quit'),
+            '<button class="tpl-add__btn" data-restart>Restart</button>')
+        : row('Synth ' + APP_VERSION + ' (317)', desc('Up to date · checked 2 hours ago'),
+            '<button class="tpl-add__btn" data-check>Check for updates</button>'));
   }
 
   // The project tab is nothing but deltas layered on the shared base. Each row shows the
@@ -6745,8 +6854,12 @@
     const check = content.querySelector('[data-check]');
     if (check) check.addEventListener('click', () => {
       check.textContent = 'Checking…';
-      setTimeout(() => { check.textContent = 'Check for updates'; }, 1400);
+      // Checking by hand lands in the same place as finding one on your own: the card rises,
+      // and this row is redrawn by it. One path, so the two surfaces cannot get out of step.
+      setTimeout(() => { if (update.version) refreshSettings(); else updateFound(UPDATE_VERSION); }, 1400);
     });
+    const restart = content.querySelector('[data-restart]');
+    if (restart) restart.addEventListener('click', restartForUpdate);
   }
 
   // drag-to-reorder within the session list: the grabbed row stays put (faded) while a lifted

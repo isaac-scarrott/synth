@@ -973,3 +973,19 @@ disclosure to dive deeper.
   the dev build's registry under `Synth Dev`, but the harness hardcoded `Synth` — so `t4a`, `t4b`
   and `t5` failed on an absent CDP port and empty worktree list while the browser engine was
   demonstrably fine. Pre-existing since the channel split.
+
+## [2026-07-27](docs/features/2026-07-27.md)
+
+- **An available update announces itself.** A new build used to live only behind `Check for
+  Updates…` and the Settings → About row — places you go once you already suspect there is one.
+  It now raises a deck card when the download lands, and again once a day while it sits unapplied:
+  attention tier (sticky, no countdown) but neutral-inked, no who-line, and the one attention card
+  that never posts Notification Center when Synth is unfocused. The copy says the build installs
+  itself the next time you quit, which makes `Restart` a shortcut rather than a price and the ×
+  ("not now") a complete answer; the daily reminder swaps its sub-line for the age (`Downloaded
+  3 days ago`), the only fact that changed. `Restart` with sessions busy goes through the ⌘K
+  confirm frame. Settings → About states the same fact and offers the same `Restart`.
+
+- **The deck's ⌘↩ stops the chord it has claimed.** The palette's `Enter` handler runs later in the
+  same dispatch, so ⌘↩ on a card whose action opens a confirm raised the dialog and then activated
+  its preselected Cancel — one keystroke asking and answering. Found building the update card.

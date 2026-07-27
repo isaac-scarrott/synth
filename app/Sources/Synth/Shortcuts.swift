@@ -87,7 +87,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["↵"], label: "Open · toggle", alt: ["Space"]),
             Shortcut(keys: ["A"], label: "Add session"),
             Shortcut(keys: ["R"], label: "Rename"),
-            Shortcut(keys: ["D"], label: "Close · remove"),
+            Shortcut(keys: ["D"], label: "Close · archive"),
             Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder"),
             Shortcut(keys: ["esc"], label: "Focus content"),
         ]),

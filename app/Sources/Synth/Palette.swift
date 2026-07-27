@@ -371,9 +371,9 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
                                      group: g, ctx: branch.name,
                                      enter: { self.push(self.renameFrame(.branch(branch))) }))
-            items.append(PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove",
+            items.append(PaletteItem(icon: .phosphor(Phosphor.archive), label: "Archive",
                                      group: g, ctx: branch.name, danger: true,
-                                     enter: { self.push(self.confirmRemoveBranch(branch)) }))
+                                     enter: { self.runAndClose { self.store.softArchiveBranch(branch) } }))
         }
         if let workspace {
             items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: "New branch",
@@ -571,11 +571,11 @@ struct PaletteFrame {
     func branchesFrame() -> PaletteFrame {
         PaletteFrame(crumb: "Branches", placeholder: "Search branches…") { [self] _ in
             var items = [
-                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove branch…", sec: "act",
-                            enter: { self.push(self.removeBranchPicker()) }),
+                PaletteItem(icon: .phosphor(Phosphor.archive), label: "Archive branch…", sec: "act",
+                            enter: { self.push(self.archiveBranchPicker()) }),
             ]
             for ws in store.workspaces {
-                for br in ws.branches {
+                for br in ws.branches where !br.isArchived {
                     items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name,
                                              sec: "list", ctx: ws.name,
                                              enter: { self.push(self.branchFrame(br)) }))
@@ -620,7 +620,12 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(ws.name)", sec: "act",
                             danger: true, enter: { self.runAndClose { self.store.softRemoveWorkspace(ws) } }),
             ]
-            for br in ws.branches {
+            let archived = store.archivedBranches(in: ws)
+            if !archived.isEmpty {
+                items.append(PaletteItem(icon: .phosphor(Phosphor.archive), label: "Archived · \(archived.count)", sec: "act",
+                                         enter: { self.push(self.archivedFrame(ws)) }))
+            }
+            for br in ws.branches where !br.isArchived {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, sec: "list",
                                          enter: { self.push(self.branchFrame(br)) }))
             }
@@ -660,8 +665,12 @@ struct PaletteFrame {
             items += [
                 PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename \(branch.name)…", sec: "act",
                             enter: { self.push(self.renameFrame(.branch(branch))) }),
-                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove \(branch.name)", sec: "act",
-                            danger: true, enter: { self.push(self.confirmRemoveBranch(branch)) }),
+                PaletteItem(icon: .phosphor(Phosphor.archive), label: "Archive", sec: "act",
+                            danger: true,
+                            enter: { self.runAndClose { self.store.softArchiveBranch(branch) } }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree now", sec: "act",
+                            danger: true,
+                            enter: { self.push(self.confirmDeleteWorktree(branch)) }),
             ]
             for s in branch.sessions { items.append(sessionItem(s, ctx: nil, sec: "list")) }
             return items
@@ -679,14 +688,39 @@ struct PaletteFrame {
         }
     }
 
-    func removeBranchPicker() -> PaletteFrame {
-        PaletteFrame(crumb: "Remove branch", placeholder: "Select a branch to remove…") { [self] _ in
+    func archiveBranchPicker() -> PaletteFrame {
+        PaletteFrame(crumb: "Archive branch", placeholder: "Select a branch to archive…") { [self] _ in
             store.workspaces.flatMap { ws in
-                ws.branches.map { br in
+                ws.branches.filter { !$0.isArchived }.map { br in
                     PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name, ctx: ws.name,
-                                enter: { self.push(self.confirmRemoveBranch(br)) })
+                                enter: { self.runAndClose { self.store.softArchiveBranch(br) } })
                 }
             }
+        }
+    }
+
+    /// Everything a project has archived, with why each one is still on disk. Without this the
+    /// sweeper is a background process deleting folders the user can't enumerate — and it is
+    /// also the whole answer to "why hasn't this been cleaned up yet".
+    func archivedFrame(_ ws: Workspace) -> PaletteFrame {
+        PaletteFrame(crumb: "Archived", placeholder: "Restore a worktree, or delete one now…") { [self] _ in
+            store.archivedBranches(in: ws).map { br in
+                PaletteItem(icon: .phosphor(Phosphor.archive), label: br.name,
+                            ctx: self.store.archiveStatusLine(br),
+                            enter: { self.push(self.archivedBranchFrame(br)) })
+            }
+        }
+    }
+
+    /// One archived row: put it back, or stop waiting and delete it now.
+    func archivedBranchFrame(_ br: Branch) -> PaletteFrame {
+        PaletteFrame(crumb: br.name, placeholder: "Restore or delete…") { [self] _ in
+            [
+                PaletteItem(icon: .phosphor(Phosphor.reset), label: "Restore",
+                            enter: { self.runAndClose { self.store.restoreArchivedBranch(br) } }),
+                PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree now", danger: true,
+                            enter: { self.push(self.confirmDeleteWorktree(br)) }),
+            ]
         }
     }
 
@@ -707,26 +741,20 @@ struct PaletteFrame {
         }
     }
 
-    // Removing a worktree is the one delete that still asks first, because its two outcomes
-    // differ irreversibly: drop it from the sidebar (folder + branch stay on disk, re-add
-    // anytime) or delete the worktree folder for real. Either arm then soft-deletes with the
-    // undo pill, so nothing is torn off disk until the window closes — the confirm picks the
-    // outcome, the pill guards the seconds after. Both arms are red; the label + ctx line, not
-    // the colour, tells the destructive path from the list-only one.
-    func confirmRemoveBranch(_ br: Branch) -> PaletteFrame {
-        PaletteFrame(crumb: "Remove \(br.name)?",
-                     placeholder: "Delete the worktree from disk, or just remove it from the sidebar?  ↵ select · esc cancel",
+    // Archive doesn't ask — it's reversible from the undo card and then from the Archived list,
+    // and a verb whose consequence depends on which surface summoned it isn't one verb.
+    // Deleting the folder outright is the irreversible act, so that's what confirms — and it
+    // confirms from every surface, which is the invariant Apple's own apps hold (Mail archives
+    // silently from swipe, toolbar and ⌘⌃A; the dialog is bolted to Empty Trash, not to the
+    // input device). Cancel is preselected by `initialIndex(for:)`.
+    func confirmDeleteWorktree(_ br: Branch) -> PaletteFrame {
+        PaletteFrame(crumb: "Delete \(br.name)?",
+                     placeholder: "Deletes the worktree folder now. The git branch stays.  ↵ select · esc cancel",
                      mode: .confirm) { [self] _ in
             [
-                // Safe order (1bc2545): the non-disk-destroying arm leads, and the confirm opens
-                // on Cancel — but both arms now soft-delete with an undo card, so even the disk
-                // delete is recoverable for its window.
-                PaletteItem(icon: .phosphor(Phosphor.minusCircle), label: "Remove from sidebar",
-                            ctx: "stop tracking it here — the worktree stays on disk", danger: true,
-                            enter: { self.runAndClose { self.store.softRemoveBranch(br, deleteWorktree: false) } }),
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
-                            ctx: "git worktree remove + delete its folder on disk", danger: true,
-                            enter: { self.runAndClose { self.store.softRemoveBranch(br, deleteWorktree: true) } }),
+                            ctx: "removes the folder from disk", danger: true,
+                            enter: { self.runAndClose { self.store.deleteWorktreeNow(br) } }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
         }

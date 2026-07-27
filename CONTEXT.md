@@ -34,17 +34,32 @@ else that could be confused for one).
 The git worktree that physically hosts a branch's sessions, created lazily when a branch first gains
 a session. One per active branch. Session processes run with cwd set to their branch's worktree.
 
-Say it only where a folder on disk is genuinely the subject: **Delete worktree**, and Settings. You
-create a **New branch**, never a worktree, because you ask for a branch and the folder is how Synth
-gives it to you. The asymmetry is load-bearing: deleting names the folder precisely because the git
-branch survives it.
+Say it only where a folder on disk is genuinely the subject: **Delete worktree now**, and Settings.
+You create a **New branch**, never a worktree, because you ask for a branch and the folder is how
+Synth gives it to you. The asymmetry is load-bearing: deleting names the folder precisely because the
+git branch survives it.
 _Avoid_: Checkout, clone, working copy, branch folder.
 
 **Remove**:
-Drops a row from the sidebar. The thing it stood for survives: the repo stays cloned, the worktree
-folder stays on disk. Always reversible by adding it back. Red all the same — every negative action
-is (see Red, below).
+Drops a **project** row from the sidebar. The thing it stood for survives: the repo stays cloned, the
+worktree folders stay on disk. Always reversible by adding it back. Red all the same — every negative
+action is (see Red, below). Scoped to projects since 2026-07-24; a branch row **archives**.
 _Avoid_: Delete, close, hide.
+
+**Archive**:
+Drops a branch row from the sidebar and starts a clock. The worktree folder is untouched, the row is
+restorable indefinitely from ⌘K → Archived, and once the work is provably recoverable from a remote
+— merged, clean, nothing unpushed — the background clean-up reclaims the folder. The git branch is
+never deleted.
+
+To the user this is one idea: the row is put away, and it can come back. Say only that. The undo
+card reads _Archived `<name>`_ and the Archived list says _archived 3d ago_ — when, not why. The
+conditions the clean-up weighs are housekeeping; narrating them turns a one-word action into a
+system report, and the user has no decision to make with them. They stay in the log.
+
+Archive never confirms, from any surface; the dialog belongs to Delete, which is the act that
+destroys something.
+_Avoid_: Remove, delete, hide, stash, park.
 
 **Close**:
 Ends a session. The row goes and the process dies; nothing leaves the filesystem. Always red. Confirms

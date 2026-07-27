@@ -26,6 +26,15 @@ struct PRInfo: Sendable, Equatable {
     let number: Int
     let state: PRState
     let url: String
+    /// The branch this PR merges *into*. The sweeper needs it to catch commits made after a
+    /// merge — `gh` still reports MERGED while the local tip has moved past the merge commit.
+    var baseRefName: String = ""
+    /// A draft reads OPEN today, so nothing depends on this yet. It's here so that the next
+    /// person to simplify the state check can't accidentally make drafts sweepable.
+    var isDraft: Bool = false
+    /// Login of the account owning the head repo. A cross-fork PR merges the *fork's* branch;
+    /// a same-named local branch is a different thing and must not inherit its merged state.
+    var headRepositoryOwner: String = ""
 }
 
 /// Reads pull requests from the GitHub CLI (`gh`). Everything the tree shows about a
@@ -48,11 +57,16 @@ enum PRService {
 
     /// Open, closed and merged PRs for `repo`, keyed by head branch name (`gh`'s
     /// `headRefName`). One entry per branch — the highest-precedence, then most recent PR
-    /// when a branch has several. Empty when `gh` is absent, the repo has no GitHub remote,
-    /// or the CLI isn't authenticated.
-    static func pullRequests(at repo: URL) -> [String: PRInfo] {
-        guard let ghPath else { return [:] }
-        var best = list(at: repo, ghPath: ghPath)
+    /// when a branch has several.
+    ///
+    /// **nil means "couldn't ask"** — `gh` absent, unauthenticated, no GitHub remote,
+    /// offline, unparseable answer — and is not the same as an empty map, which means "asked,
+    /// and this repo has no PRs". The display can treat both as "no badge"; nothing that
+    /// *deletes* anything may. Before this distinction existed, an offline laptop and "every
+    /// PR merged" were byte-identical to a caller.
+    static func pullRequests(at repo: URL) -> [String: PRInfo]? {
+        guard let ghPath else { return nil }
+        guard var best = list(at: repo, ghPath: ghPath) else { return nil }
         // Promote any open PR that's sitting in the merge queue to `.queued`. This is a second,
         // GraphQL read (`mergeQueueEntry`) because `gh pr list` only ever reports OPEN/MERGED/
         // CLOSED — the queue is a sub-state of open. Skipped when there are no PRs to promote,
@@ -66,12 +80,34 @@ enum PRService {
     }
 
     /// The raw `gh pr list` read — one PR per head branch (strongest, then most recent),
-    /// before any merge-queue promotion.
-    private static func list(at repo: URL, ghPath: String) -> [String: PRInfo] {
+    /// before any merge-queue promotion. nil when `gh` couldn't answer.
+    private static func list(at repo: URL, ghPath: String) -> [String: PRInfo]? {
+        run(["pr", "list", "--state", "all", "--limit", "100", "--json", jsonFields],
+            at: repo, ghPath: ghPath).flatMap(parse)
+    }
+
+    /// One branch's PR, asked for by name. The bulk read is capped at 100 and a busy repo
+    /// will push an older branch's PR off the tail — invisible, and it reads exactly like
+    /// "this branch has no PR". Anything gating a delete asks per-branch instead.
+    ///
+    /// nil means "couldn't ask"; `.some(nil)` means "asked, no PR for this branch".
+    static func pullRequest(head: String, at repo: URL) -> PRInfo?? {
+        guard let ghPath else { return .none }
+        guard let data = run(["pr", "list", "--head", head, "--state", "all", "--limit", "20",
+                              "--json", jsonFields], at: repo, ghPath: ghPath),
+              let byBranch = parse(data)
+        else { return .none }
+        return .some(byBranch[head])
+    }
+
+    private static let jsonFields =
+        "number,state,url,headRefName,baseRefName,isDraft,headRepositoryOwner"
+
+    /// A `gh` invocation that distinguishes "it said nothing" from "it couldn't be asked".
+    private static func run(_ args: [String], at repo: URL, ghPath: String) -> Data? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ghPath)
-        process.arguments = ["pr", "list", "--state", "all", "--limit", "100",
-                             "--json", "number,state,url,headRefName"]
+        process.arguments = args
         process.currentDirectoryURL = repo
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -80,10 +116,10 @@ enum PRService {
             try process.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return [:] }
-            return parse(data)
+            guard process.terminationStatus == 0 else { return nil }
+            return data
         } catch {
-            return [:]
+            return nil
         }
     }
 
@@ -132,9 +168,11 @@ enum PRService {
     }
 
     /// Fold `gh`'s JSON array into one PR per head branch, keeping the strongest.
-    private static func parse(_ data: Data) -> [String: PRInfo] {
+    /// nil when the payload wasn't the array we asked for — that's a failed read, not an
+    /// empty one.
+    private static func parse(_ data: Data) -> [String: PRInfo]? {
         guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return [:]
+            return nil
         }
         var best: [String: PRInfo] = [:]
         for row in rows {
@@ -144,7 +182,10 @@ enum PRService {
                   let state = PRState(rawValue: stateRaw),
                   let url = row["url"] as? String
             else { continue }
-            let pr = PRInfo(number: number, state: state, url: url)
+            let pr = PRInfo(number: number, state: state, url: url,
+                            baseRefName: row["baseRefName"] as? String ?? "",
+                            isDraft: row["isDraft"] as? Bool ?? false,
+                            headRepositoryOwner: (row["headRepositoryOwner"] as? [String: Any])?["login"] as? String ?? "")
             if let existing = best[branch] {
                 let stronger = pr.state.precedence < existing.state.precedence
                     || (pr.state.precedence == existing.state.precedence && pr.number > existing.number)

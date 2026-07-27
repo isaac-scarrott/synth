@@ -236,8 +236,17 @@ extension URL {
     /// relaunch. nil = a single pane (no split to remember). Kept in step with the on-screen tree
     /// by the store (syncBranchLayout) and serialized to disk (slice 014).
     var layout: PaneNode?
+    /// When the user archived this row. Non-nil is the whole archive state: the row leaves the
+    /// sidebar, keeps its folder, and starts the clock the sweeper measures against. Set at
+    /// undo-commit, not at the gesture — the 8s window must change nothing, and a row hidden
+    /// by an archive the user then undid would be unreachable.
+    var archivedAt: Date?
+    /// When the sweeper last found this branch clean on every condition. Two clean readings a
+    /// day apart are required before it acts, which is what makes a transient — mid-rebase,
+    /// briefly offline — unable to authorise a delete on its own.
+    var lastCleanSweepEval: Date?
 
-    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", lastActivityAt: Date? = nil, browserRecents: [BrowserRecent] = [], isPending: Bool = false) {
+    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", lastActivityAt: Date? = nil, browserRecents: [BrowserRecent] = [], isPending: Bool = false, archivedAt: Date? = nil) {
         self.id = id
         self.name = name
         self.worktreeURL = worktreeURL
@@ -246,10 +255,16 @@ extension URL {
         self.lastActivityAt = lastActivityAt
         self.browserRecents = browserRecents
         self.isPending = isPending
+        self.archivedAt = archivedAt
     }
 
     /// A branch with sessions is a live "branch group": expandable, with a roll-up.
     var isLive: Bool { !sessions.isEmpty }
+
+    /// Archived rows are out of the sidebar, out of ⌘K's branch lists, and out of every
+    /// count — reachable only through the workspace's Archived list. A row still visible in
+    /// the tree is not archived.
+    var isArchived: Bool { archivedAt != nil }
 
     /// Stamp "activity happened now" — a session or worktree was created. Drives the relative
     /// timestamp, which then decays on its own.

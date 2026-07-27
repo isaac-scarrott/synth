@@ -117,8 +117,9 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
     }
 }
 
-/// The one-line verb a state reads as — named for the agent doing it ("Claude finished",
-/// "OpenCode needs your input"), a plain process for a terminal (working.html `notifWhat`).
+/// The one-line verb a state reads as — a sentence, capitalised, no full stop. An agent card
+/// leads with its name ("Claude finished", "OpenCode needs your input"), a plain process with the
+/// verb itself ("Finished"): one grammar, not one per session kind (working.html `notifWhat`).
 /// Shared by the in-app card and the NC title.
 @MainActor func notifVerb(_ session: SessionKind, _ kind: NotifKind) -> String {
     if let agent = session.agentID {
@@ -127,15 +128,16 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         case .error: return "\(who) hit an error"
         case .input: return "\(who) needs your input"
         case .done:  return "\(who) finished"
-        case .undo:  return ""   // undo cards always carry their own message; never routed here
+        case .undo, .neutral: return ""   // these carry their own message; never routed here
         }
     }
     switch kind {
-    case .input: return "needs input"
+    case .input: return "Needs input"
     // A browser session never changes status (it stays .idle for life, no indicator),
     // so these read as they would for any plain process.
-    case .error: return "exited with an error"
-    case .done:  return "finished"
-    case .undo:  return ""
+    case .error: return "Exited with an error"
+    case .done:  return "Finished"
+    // undo and neutral cards always carry their own message; never routed here.
+    case .undo, .neutral: return ""
     }
 }

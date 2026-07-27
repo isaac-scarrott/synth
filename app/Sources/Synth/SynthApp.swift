@@ -63,8 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (after bootstrap, so an `app_crashed` event has somewhere to go).
         CrashReporter.install()
         CrashReporter.reportPending()
-        // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd).
-        Task.detached(priority: .background) { GitService.sweepDetachedWorktrees() }
+        // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd),
+        // and reap any archive hold whose window elapsed while Synth was shut.
+        Task.detached(priority: .background) {
+            GitService.sweepDetachedWorktrees()
+            GitService.reapHeldWorktrees(hold: ArchiveSweeper.holdSeconds)
+        }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -262,6 +266,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.refreshPullRequests()
         }
+        .onAppear { store.startArchiveSweep() }
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m) } }
     }
 
@@ -312,15 +317,10 @@ struct RootView: View {
             }
             let key = event.charactersIgnoringModifiers?.lowercased()
 
-            // ⌘↩ undoes the last soft-delete while its undo card is up (working.html: pendingUndo
-            // wins over notifTop), then falls through to the notif deck's jump.
-            if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
-               let undo = store.pendingUndoNotif {
-                store.performUndo(undo.id); return nil
-            }
-
-            // ⌘↩ jumps to the most-urgent in-app notification — bound only while the deck is
-            // non-empty, so the chord is never stolen otherwise (working.html notifTop).
+            // ⌘↩ fires the front card's own button — Undo, Open, Retry, Review — bound only
+            // while the deck is non-empty, so the chord is never stolen otherwise. An undo card
+            // outranks every other kind, so "undo wins over jump" falls out of the ordering
+            // rather than needing its own branch (working.html notifTop).
             if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
                store.topNotif != nil {
                 store.jumpToTopNotif(); return nil

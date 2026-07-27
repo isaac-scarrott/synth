@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Synth — Toast audit + redesign (standalone)</title>
+<style>
+  /* Tokens lifted verbatim from working.html — only what the toast layer and mock shell read. */
+  :root {
+    --canvas: #e9eaee;
+    --panel: #fafbfc;
+    --sidebar: #f0f1f4;
+    --border: rgba(0, 0, 0, 0.07);
+    --border-strong: rgba(0, 0, 0, 0.1);
+    --text: #1c1e23;
+    --text-muted: #7e808a;
+    --text-faint: #a6a8b0;
+    --ink-2: #44464e;
+    --ink-3: #54565e;
+    --ink-4: #666971;
+    --ink-5: #787b84;
+    --ink-open: #2b2d34;
+    --raised: #ffffff;
+    --glass: rgba(250,251,253,0.84);
+    --hover-soft: rgba(0,0,0,0.035);
+    --line-soft: rgba(0,0,0,0.06);
+    --line: rgba(0,0,0,0.1);
+    --accent: #a86038;
+    --focus: #1e2126;
+    --input: #3a6db3;
+    --error: #ff3b30;
+    --run: #34c759;
+    --copper: #a05633;
+    --radius-app: 14px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+    --notif-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 12px 30px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.06);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+  :root[data-theme="dark"] {
+    --canvas: #0d0f13;
+    --panel: #191b1f;
+    --sidebar: #1d1f24;
+    --border: rgba(255,255,255,0.09);
+    --border-strong: rgba(255,255,255,0.13);
+    --text: #e6e8ed;
+    --text-muted: #8d9099;
+    --text-faint: #666a72;
+    --ink-2: #c4c7cf;
+    --ink-3: #adb0b9;
+    --ink-4: #979aa3;
+    --ink-5: #83868f;
+    --ink-open: #dcdee4;
+    --raised: #282b30;
+    --glass: rgba(40,43,48,0.82);
+    --hover-soft: rgba(255,255,255,0.045);
+    --line-soft: rgba(255,255,255,0.08);
+    --line: rgba(255,255,255,0.12);
+    --accent: #eee0cd;
+    --focus: #eee0cd;
+    --input: #7ea6dc;
+    --error: #ff453a;
+    --run: #32d74b;
+    --copper: #c2724c;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.55);
+    --notif-shadow: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { font-family: var(--font); color: var(--text); background: var(--canvas); -webkit-font-smoothing: antialiased; }
+  body { padding: 28px 22px 80px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  /* ---- Page furniture (not part of the design) ---- */
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 6px; }
+  h1 { font-size: 21px; font-weight: 620; letter-spacing: -0.01em; }
+  .lede { font-size: 13px; line-height: 1.6; color: var(--text-muted); max-width: 720px; margin-top: 7px; }
+  h2 { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); margin: 44px 0 14px; }
+  h3 { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .btn { font: 500 12px/1 var(--font); color: var(--ink-3); padding: 7px 12px; border-radius: 8px; background: var(--raised); border: 0.5px solid var(--line); box-shadow: 0 0.5px 0 var(--line-soft); cursor: pointer; }
+  .btn:hover { background: color-mix(in srgb, var(--raised) 100%, var(--text) 5%); }
+  code { font-family: var(--mono); font-size: 11px; color: var(--ink-3); background: var(--hover-soft); padding: 1px 4px; border-radius: 4px; }
+
+  /* ---- Census table ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-size: 10.5px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); padding: 0 10px 7px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--ink-3); vertical-align: top; line-height: 1.45; }
+  td:first-child { color: var(--text-faint); font-variant-numeric: tabular-nums; width: 30px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 1.5px 6px; border-radius: 5px; background: var(--hover-soft); color: var(--ink-4); white-space: nowrap; }
+  .tag--sticky { color: var(--error); background: color-mix(in srgb, var(--error) 11%, transparent); }
+  .tag--auto { color: var(--ink-4); }
+  .tag--gone { color: var(--text-faint); text-decoration: line-through; }
+
+  /* ---- Findings ---- */
+  .findings { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .finding { padding: 13px 15px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 11px; }
+  .finding h3 { margin-bottom: 5px; display: flex; gap: 8px; align-items: baseline; }
+  .finding h3 span { font-size: 10.5px; font-weight: 650; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .finding p { font-size: 12px; line-height: 1.55; color: var(--text-muted); }
+  .finding p + p { margin-top: 6px; }
+  .finding b { color: var(--ink-3); font-weight: 600; }
+
+  /* ---- Gallery ---- */
+  .gal { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: 196px 350px 350px; gap: 16px; align-items: start; padding: 16px 0; border-top: 1px solid var(--border); }
+  .row--group { border-top: 1px solid var(--border-strong); }
+  .row__meta h3 { margin-bottom: 4px; }
+  .row__meta p { font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
+  .row__meta code { display: inline-block; margin-top: 5px; font-size: 10.5px; color: var(--text-faint); background: none; padding: 0; }
+  .row__note { grid-column: 2 / -1; font-size: 11.5px; line-height: 1.55; color: var(--text-muted); margin-top: 10px; padding-left: 2px; }
+  .row__note b { color: var(--ink-3); font-weight: 600; }
+  .cell__cap { font-size: 10px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 6px; }
+  .cell--pro .cell__cap { color: var(--accent); }
+  .stage { padding: 14px; background: var(--panel); border: 0.5px solid var(--border); border-radius: 12px; display: flex; align-items: center; min-height: 78px; overflow-x: auto; }
+  .stage--dead { opacity: 0.55; }
+
+  /* =====================================================================================
+     CURRENT — the shipped chassis, lifted verbatim from working.html
+     ===================================================================================== */
+  .notif {
+    position: relative; width: 320px;
+    display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center;
+    padding: 11px 12px 11px 13px; background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.7); backdrop-filter: blur(24px) saturate(1.7);
+    border: 0.5px solid var(--border-strong); border-radius: 13px; box-shadow: var(--notif-shadow);
+    cursor: pointer;
+  }
+  .notif.is-front { grid-template-columns: auto 1fr auto; }
+  .notif:hover { background: color-mix(in srgb, var(--glass) 100%, var(--text) 4%); }
+  .notif__glyph { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; }
+  .notif__glyph svg { width: 17px; height: 17px; display: block; }
+  .notif--input .notif__glyph { color: var(--input); background: color-mix(in srgb, var(--input) 13%, transparent); }
+  .notif--input .notif__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
+  .notif--error .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
+  .notif--done .notif__glyph { color: var(--run); background: color-mix(in srgb, var(--run) 13%, transparent); }
+  .notif--undo .notif__glyph { color: var(--ink-2); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .notif__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .notif__who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 13px; }
+  .notif__who .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+  .notif__who .k { width: 12px; height: 12px; flex-shrink: 0; color: var(--ink-5); }
+  .notif__who .k svg { width: 12px; height: 12px; display: block; }
+  .notif__what { font-size: 12.5px; font-weight: 570; color: var(--ink-open); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notif__kbd { display: none; align-items: center; gap: 5px; align-self: center; font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+  .notif.is-front .notif__kbd { display: flex; }
+  .notif__kbd .keys { display: inline-flex; gap: 2px; }
+  kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; min-width: 16px; height: 16px; padding: 0 3px; display: inline-grid; place-items: center; color: var(--ink-4); background: var(--raised); border: 0.5px solid var(--line); border-radius: 5px; box-shadow: 0 0.5px 0 var(--line-soft); }
+  .notif__timer { position: absolute; left: 13px; right: 13px; bottom: 0; height: 2px; pointer-events: none; background: var(--focus); border-radius: 2px 2px 0 0; opacity: 0.85; transform-origin: left; }
+  .notif__timer.is-static { transform: scaleX(0.62); }
+  @keyframes attn-breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.86); opacity: 0.75; } }
+
+  /* The mock's second, competing surface — the bottom-centre feedback pill. */
+  .fb-toast { display: flex; align-items: center; gap: 9px; padding: 9px 15px 9px 13px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); border-radius: 999px; box-shadow: var(--notif-shadow); font-size: 12.5px; font-weight: 550; color: var(--ink-2); }
+  .fb-toast svg { width: 15px; height: 15px; display: block; }
+  .fb-toast--done { color: var(--run); }
+  .fb-toast b { font-weight: 600; color: var(--ink); }
+
+  /* =====================================================================================
+     PROPOSED — one chassis, three tiers.
+
+     TIER 1 · attention  (sticky)   something is waiting on you: a session asking, a failure
+     TIER 2 · reversible (8s)       your last destructive move, still recallable
+     TIER 3 · ambient    (5s)       a result you asked for; read it or don't
+
+     What changes on the chassis itself:
+       · every card carries a dismiss × on hover — leaving is never the same gesture as acting
+       · a card with somewhere to go carries a real button, not a bare ⌘↩ whisper; the chord
+         lives inside the button so the card teaches its own shortcut
+       · no identity, no who-line — a card with nothing to name is one bold line, never an
+         orphan dot floating over empty space
+       · saturated state colour is reserved for a session's own state; the app talking about
+         itself uses neutral ink, so green keeps meaning "your agent finished"
+       · the ambient tier sits lower: 22px chip, tighter padding — a result, not a summons
+     ===================================================================================== */
+  .ntf {
+    position: relative; width: 320px;
+    display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center;
+    padding: 11px 12px 11px 13px; background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.7); backdrop-filter: blur(24px) saturate(1.7);
+    border: 0.5px solid var(--border-strong); border-radius: 13px; box-shadow: var(--notif-shadow);
+    cursor: pointer; transition: background 130ms ease;
+  }
+  .ntf:hover { background: color-mix(in srgb, var(--glass) 100%, var(--text) 4%); }
+  .ntf--ambient { padding: 9px 12px 9px 11px; gap: 10px; }
+
+  .ntf__glyph { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
+  .ntf__glyph svg { width: 17px; height: 17px; display: block; }
+  .ntf--ambient .ntf__glyph { width: 22px; height: 22px; border-radius: 7px; }
+  .ntf--ambient .ntf__glyph svg { width: 14px; height: 14px; }
+  .ntf--input .ntf__glyph { color: var(--input); background: color-mix(in srgb, var(--input) 13%, transparent); }
+  .ntf--input .ntf__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
+  .ntf--error .ntf__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
+  .ntf--done .ntf__glyph { color: var(--run); background: color-mix(in srgb, var(--run) 13%, transparent); }
+  /* The app talking about its own housekeeping — neutral ink, never a state colour. */
+  .ntf--neutral .ntf__glyph { color: var(--ink-4); background: color-mix(in srgb, var(--text) 7%, transparent); }
+  .ntf--undo .ntf__glyph { color: var(--ink-2); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  /* The one undo whose commit touches the disk — the glyph says "last chance", the bar times it. */
+  .ntf--destructive .ntf__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+  .ntf--destructive .ntf__timer { background: var(--error); }
+
+  .ntf__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .ntf__who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ntf__who .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+  .ntf__who .k { width: 12px; height: 12px; flex-shrink: 0; color: var(--ink-5); }
+  .ntf__who .k svg { width: 12px; height: 12px; display: block; }
+  .ntf__what { font-size: 12.5px; font-weight: 570; color: var(--ink-open); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ntf--ambient .ntf__what { font-weight: 550; color: var(--ink-2); }
+  .ntf__sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* The action: a real target, with the chord it answers to printed inside it. Only the front
+     card shows keys — the chord only ever aims at the front card, so only it may claim them. */
+  .ntf__act {
+    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    font: 550 11.5px/1 var(--font); color: var(--ink-2);
+    padding: 5px 8px 5px 9px; border-radius: 7px;
+    background: var(--raised); border: 0.5px solid var(--line); box-shadow: 0 0.5px 0 var(--line-soft);
+  }
+  .ntf__act:hover { background: color-mix(in srgb, var(--raised) 100%, var(--text) 6%); }
+  .ntf__act .keys { display: inline-flex; gap: 2px; }
+  .ntf__act kbd { min-width: 15px; height: 15px; font-size: 10px; }
+  .ntf__act--danger { color: var(--error); border-color: color-mix(in srgb, var(--error) 28%, var(--line)); }
+
+  /* Leaving is not acting. Every card can be dropped without triggering it — the × fades in on
+     hover so a resting deck stays quiet, and it never moves the layout (it sits over the card). */
+  .ntf__x {
+    position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+    display: grid; place-items: center; color: var(--ink-4);
+    background: var(--raised); border: 0.5px solid var(--border-strong); box-shadow: var(--shadow);
+    opacity: 0; transition: opacity 140ms ease;
+  }
+  .ntf__x svg { width: 9px; height: 9px; display: block; }
+  .ntf:hover .ntf__x { opacity: 1; }
+  .ntf__x:hover { color: var(--ink-open); }
+
+  /* The countdown is a track + a fill, so a variant can mask or inset the track without the
+     mask scaling along with the drain. The fill is the only thing that animates. */
+  .ntf__timer { position: absolute; left: 13px; right: 13px; bottom: 0; height: 2px; pointer-events: none; overflow: hidden; border-radius: 2px 2px 0 0; }
+  .ntf__timer i { display: block; height: 100%; background: var(--focus); opacity: 0.85; transform-origin: left; }
+  .ntf__timer i.is-static { transform: scaleX(0.62); }
+  .ntf--destructive .ntf__timer i { background: var(--error); }
+
+  /* ---- Countdown variants (section 5) ------------------------------------------------
+     The shipped bar is inset 13px at both ends to clear the card's 13px corner radius, so it
+     terminates in mid-air twice — a hard stop with nothing causing it. Five ways out. */
+
+  /* B · full-bleed, clipped by the card's own radius: the bar runs edge to edge and the corner
+     eats its ends, so it reads as running INTO the corner rather than stopping short of it. */
+  .tv--clip { overflow: hidden; }
+  .tv--clip .ntf__timer { left: 0; right: 0; border-radius: 0; }
+
+  /* C · tapered: keep the inset, but fade both ends out instead of cutting them. The mask lives
+     on the track, so the taper stays put while the fill drains through it. */
+  .tv--taper .ntf__timer { left: 6px; right: 6px; border-radius: 0;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
+
+  /* D · perimeter: the countdown becomes the card's own border, draining back toward the
+     bottom-left origin. No ends at all, so nothing can stop abruptly. */
+  .tv--ring .ntf__timer { display: none; }
+  .ntf__ringwrap { position: absolute; inset: 0; pointer-events: none; }
+  .ntf__ringwrap path { fill: none; stroke: var(--focus); stroke-width: 1.25; stroke-linecap: round; opacity: 0.62; }
+  .ntf--destructive .ntf__ringwrap path { stroke: var(--error); }
+
+  /* F · fade in, clip out — B and C combined, each applied to the end it suits. The origin end
+     dissolves into the card (nothing terminates it), the far end is eaten by the corner radius
+     (the card terminates it), and the live edge in between stays crisp because nothing is
+     masking the middle. It also means the last moments of the drain fade out instead of
+     snapping to zero: the bar retreats into its own taper and is gone. */
+  .tv--fade { overflow: hidden; }
+  .tv--fade .ntf__timer { left: 0; right: 0; border-radius: 0;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 20px);
+    mask-image: linear-gradient(90deg, transparent 0, #000 20px); }
+
+  /* E · the glyph wears the clock: a ring around the state chip, card edge left alone. */
+  .tv--glyph .ntf__timer { display: none; }
+  .ntf__glyphring { position: absolute; inset: -3px; pointer-events: none; }
+  .ntf__glyphring circle { fill: none; stroke: var(--focus); stroke-width: 1.5; stroke-linecap: round; opacity: 0.75; }
+  .ntf__glyph { position: relative; }
+
+  /* ---- Live playground ---- */
+  .app { position: relative; height: 460px; background: var(--panel); border-radius: var(--radius-app); box-shadow: var(--shadow); border: 0.5px solid var(--border-strong); display: grid; grid-template-columns: 240px 1fr; overflow: hidden; }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); padding: 46px 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+  .srow { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; color: var(--ink-3); }
+  .srow svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--ink-5); }
+  .srow--open { background: var(--hover-soft); color: var(--ink-open); font-weight: 550; }
+  .content { display: grid; place-items: center; color: var(--text-faint); font-size: 13px; }
+  .traffic { position: absolute; top: 16px; left: 16px; display: flex; gap: 8px; z-index: 5; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; background: var(--hover-soft); border: 0.5px solid var(--line); }
+  .deck { position: absolute; left: 22px; bottom: 22px; width: 320px; z-index: 60; }
+  .deck .ntf { position: absolute; left: 0; bottom: 0; transform-origin: center bottom; opacity: 0; transform: translateY(12px) scale(0.975); transition: transform 320ms var(--ease-out), opacity 220ms ease, background 130ms ease; }
+  .deck .ntf.in { opacity: var(--op, 1); transform: translateY(var(--peek, 0)) scale(var(--scale, 1)); }
+  .deck:hover .ntf.in { opacity: 1; transform: translateY(var(--fan, 0)) scale(1); }
+  .deck .ntf.leave { opacity: 0 !important; transform: translateY(8px) scale(0.985) !important; }
+  .deck__more { position: absolute; left: 13px; z-index: 200; pointer-events: none; font-size: 10.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 2px 7px; background: var(--glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 0.5px solid var(--border-strong); border-radius: 20px; box-shadow: var(--shadow); opacity: 0; transition: opacity 200ms ease; }
+  .deck:hover .deck__more { opacity: 0 !important; }
+  .deck .ntf__timer i { animation: ntf-drain var(--life, 5000ms) linear forwards; }
+  .deck .ntf__ringwrap path, .deck .ntf__glyphring circle { animation: ring-drain var(--life, 5000ms) linear forwards; }
+  .deck:hover .ntf__timer i,
+  .deck:hover .ntf__ringwrap path,
+  .deck:hover .ntf__glyphring circle { animation-play-state: paused; }
+  @keyframes ntf-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @keyframes ring-drain { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 100; } }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  .controls .seg { display: inline-flex; background: var(--hover-soft); border-radius: 9px; padding: 2px; gap: 2px; }
+  .controls .seg button { border: 0; box-shadow: none; background: transparent; padding: 6px 10px; }
+  .controls .seg button.on { background: var(--raised); border: 0.5px solid var(--line); box-shadow: 0 0.5px 0 var(--line-soft); color: var(--ink-open); }
+  .controls .lbl { font-size: 11px; color: var(--text-faint); }
+
+  /* ---- Countdown-variant grid ---- */
+  .tvgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .tvcard { padding: 15px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 12px; }
+  .tvcard--wide { grid-column: 1 / -1; }
+  .tvcard h3 { margin-bottom: 4px; }
+  .tvcard p { font-size: 11.5px; line-height: 1.55; color: var(--text-muted); margin-bottom: 13px; }
+  .tvcard p b { color: var(--ink-3); font-weight: 600; }
+  .tvcard .verdict { margin-top: 13px; margin-bottom: 0; font-size: 11px; color: var(--text-faint); }
+  .tvcard .verdict b { color: var(--accent); }
+  .tvstage { display: flex; justify-content: center; padding: 6px 0 4px; }
+  /* The variant demos loop so you can watch the whole drain without respawning. */
+  .tvstage .ntf__timer i { animation: ntf-drain 4200ms linear infinite; }
+  .tvstage .ntf__ringwrap path, .tvstage .ntf__glyphring circle { animation: ring-drain 4200ms linear infinite; }
+  .tvstage .ntf:hover .ntf__timer i,
+  .tvstage .ntf:hover .ntf__ringwrap path,
+  .tvstage .ntf:hover .ntf__glyphring circle { animation-play-state: paused; }
+
+  @media (max-width: 980px) {
+    .row { grid-template-columns: 1fr; gap: 12px; }
+    .row__note { grid-column: 1; }
+    .findings { grid-template-columns: 1fr; }
+  }
+</style>
+<script>
+  (function () {
+    try {
+      var p = localStorage.getItem('synth-theme') || 'system';
+      var dark = p === 'dark' || (p !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+  })();
+</script>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div>
+      <h1>Toast notifications — every one, audited and redesigned</h1>
+      <p class="lede">Seventeen distinct transient messages ship across two surfaces today. This is the census, what
+        is wrong with it, and one chassis with three tiers that carries all of them. Left column is what ships now
+        (the real <code>.notif</code> CSS, lifted verbatim); right column is the proposal. Hover any proposed card.</p>
+    </div>
+    <button class="btn" id="themeToggle">Toggle theme</button>
+  </div>
+
+  <h2>1 · The census</h2>
+  <table id="census"><thead><tr>
+    <th></th><th style="width:190px">Toast</th><th>Trigger</th><th style="width:110px">Kind · life</th><th style="width:150px">Raised by</th>
+  </tr></thead><tbody></tbody></table>
+
+  <h2>2 · What's wrong</h2>
+  <div class="findings" id="findings"></div>
+
+  <h2>3 · The three tiers</h2>
+  <div class="findings" id="tiers"></div>
+
+  <h2>4 · Every toast, current → proposed</h2>
+  <div class="gal" id="gallery"></div>
+
+  <h2>5 · The countdown, reconsidered</h2>
+  <p class="lede" style="margin:-4px 0 16px">The shipped bar is inset 13px at each end to clear the card's 13px corner radius — so it
+    terminates twice in mid-air, with nothing in the card causing the stop. Five ways out, all live and looping. Hover any
+    card to pause its clock, exactly as the deck does.</p>
+  <div class="tvgrid" id="timerVariants"></div>
+
+  <h2>6 · Live — stacking, drain, hover-fan</h2>
+  <div class="controls" id="playControls"></div>
+  <main class="app">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <aside class="sidebar">
+      <div class="srow"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72Zm0,128H40V88H216Z"/></svg>synth</div>
+      <div class="srow srow--open" id="sbAI">Claude Code</div>
+      <div class="srow" id="sbTerm">dev server</div>
+      <div class="srow" id="sbTests">tests</div>
+    </aside>
+    <section class="content">session surface</section>
+    <div class="deck" id="deck"></div>
+  </main>
+
+</div>
+
+<script>
+/* ============================================================================================
+   Marks — every SVG here is the exact path working.html / Phosphor.swift already use.
+   ============================================================================================ */
+const M = {
+  input:   '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg>',
+  error:   '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg>',
+  done:    '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>',
+  undo:    '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></svg>',
+  trash:   '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"/></svg>',
+  archive: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,48H32A16,16,0,0,0,16,64V88a16,16,0,0,0,16,16v88a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V104a16,16,0,0,0,16-16V64A16,16,0,0,0,224,48Zm-16,144H48V104H208ZM224,88H32V64H224ZM96,136a8,8,0,0,1,8-8h48a8,8,0,0,1,0,16H104A8,8,0,0,1,96,136Z"/></svg>',
+  branch:  '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H96a23.84,23.84,0,0,0-8,1.38V95a32,32,0,1,0-16,0v66a32,32,0,1,0,16,0V144a8,8,0,0,1,8-8h88a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,232,64ZM64,64A16,16,0,1,1,80,80,16,16,0,0,1,64,64ZM96,192a16,16,0,1,1-16-16A16,16,0,0,1,96,192ZM200,80a16,16,0,1,1,16-16A16,16,0,0,1,200,80Z"/></svg>',
+  folder:  '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM40,56H92.69l16,16H40Zm176,144H40V88H216Z"/></svg>',
+  term:    '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>',
+  ai:      '<svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg>',
+  mail:    '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48ZM98.71,128,40,181.81V74.19Zm11.84,10.85,12,11.05a8,8,0,0,0,10.82,0l12-11.05,58,53.15H52.57ZM157.29,128,216,74.18V181.82ZM203.43,64,128,133.15,52.57,64Z"/></svg>',
+  comment: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H40A16,16,0,0,0,24,64V224a15.85,15.85,0,0,0,9.24,14.5A16,16,0,0,0,40,240a15.86,15.86,0,0,0,10.25-3.78l.09-.07L83,208H216a16,16,0,0,0,16-16V64A16,16,0,0,0,216,48Zm0,144H80a8,8,0,0,0-5.23,1.95L40,224V64H216Z"/></svg>',
+  clip:    '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg>',
+  x:       '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>',
+};
+const C = { copper: 'var(--copper)', blue: '#5b8def', faint: 'var(--text-faint)' };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ============================================================================================
+   Renderers. `cur` builds a card on the shipped chassis; `pro` on the proposed one. Both take
+   the same shape so a row is a straight A/B of one message.
+   ============================================================================================ */
+function whoHTML(prefix, who) {
+  if (!who) return '';
+  return '<div class="' + prefix + '__who">'
+    + (who.dot === null ? '' : '<span class="dot" style="background:' + (who.dot || C.faint) + '"></span>')
+    + (who.icon ? '<span class="k">' + who.icon + '</span>' : '')
+    + esc(who.text || '') + '</div>';
+}
+
+function cur(c) {
+  const front = c.front !== false;
+  const kbd = front ? '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>' + (c.hint || 'jump') + '</span>' : '';
+  return '<div class="notif notif--' + c.kind + (front ? ' is-front' : '') + '">'
+    + '<div class="notif__glyph">' + M[c.glyph] + '</div>'
+    + '<div class="notif__text">' + whoHTML('notif', c.who) + '<div class="notif__what">' + esc(c.what) + '</div></div>'
+    + kbd
+    + (c.life ? '<div class="notif__timer is-static"></div>' : '')
+    + '</div>';
+}
+
+function pro(p) {
+  const act = p.act
+    ? '<button class="ntf__act' + (p.act.danger ? ' ntf__act--danger' : '') + '">' + esc(p.act.label)
+      + (p.act.keys ? '<span class="keys">' + p.act.keys.map((k) => '<kbd>' + k + '</kbd>').join('') + '</span>' : '')
+      + '</button>'
+    : '';
+  return '<div class="ntf ntf--' + p.kind + (p.tier ? ' ntf--' + p.tier : '') + (p.destructive ? ' ntf--destructive' : '') + '">'
+    + '<div class="ntf__glyph">' + M[p.glyph] + '</div>'
+    + '<div class="ntf__text">' + whoHTML('ntf', p.who)
+      + '<div class="ntf__what">' + esc(p.what) + '</div>'
+      + (p.sub ? '<div class="ntf__sub">' + esc(p.sub) + '</div>' : '')
+    + '</div>'
+    + act
+    + '<button class="ntf__x" title="Dismiss">' + M.x + '</button>'
+    + (p.life ? '<div class="ntf__timer"><i class="is-static"></i></div>' : '')
+    + '</div>';
+}
+
+/* ============================================================================================
+   The census — every transient message the product raises, in the order they group.
+   ============================================================================================ */
+const SPEC = [
+  { grp: 'Session state', title: 'Agent needs input', trig: 'A background agent session moves to needs-input',
+    life: 'input · sticky', src: 'Store.routeTransition',
+    cur: { kind: 'input', glyph: 'input', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude needs your input' },
+    pro: { kind: 'input', glyph: 'input', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude needs your input', act: { label: 'Open', keys: ['⌘', '↩'] } },
+    note: 'The card already does its job — this is the one toast that earns a saturated colour and a breathing glyph. It gains a real <b>Open</b> button (the ⌘↩ hint promoted from a whisper to the thing you click) and a dismiss ×, so "I saw it, not now" stops being impossible.' },
+
+  { grp: null, title: 'Terminal needs input', trig: 'A background terminal session moves to needs-input',
+    life: 'input · sticky', src: 'Store.routeTransition',
+    cur: { kind: 'input', glyph: 'input', who: { dot: C.blue, icon: M.term, text: 'dev server' }, what: 'needs input' },
+    pro: { kind: 'input', glyph: 'input', who: { dot: C.blue, icon: M.term, text: 'dev server' }, what: 'Needs input', act: { label: 'Open', keys: ['⌘', '↩'] } },
+    note: 'Only copy changes: the verb line is a sentence, so it starts with a capital. Today an agent card reads "Claude needs your input" (capital, because it starts with a name) and a terminal card reads "needs input" (lower) — same slot, two grammars.' },
+
+  { grp: null, title: 'Agent error', trig: 'Agent session rolls up to error',
+    life: 'error · sticky', src: 'Store.routeTransition',
+    cur: { kind: 'error', glyph: 'error', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude hit an error' },
+    pro: { kind: 'error', glyph: 'error', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude hit an error', act: { label: 'Open', keys: ['⌘', '↩'] } } },
+
+  { grp: null, title: 'Terminal error', trig: 'Terminal session exits non-zero',
+    life: 'error · sticky', src: 'Store.routeTransition',
+    cur: { kind: 'error', glyph: 'error', who: { dot: C.blue, icon: M.term, text: 'tests' }, what: 'exited with an error' },
+    pro: { kind: 'error', glyph: 'error', who: { dot: C.blue, icon: M.term, text: 'tests' }, what: 'Exited with an error', sub: 'exit 1', act: { label: 'Open', keys: ['⌘', '↩'] } },
+    note: 'The exit code is the first thing you want and the app already has it. A sub-line costs 13px and saves a jump.' },
+
+  { grp: null, title: 'Agent finished', trig: 'A live off-screen agent session settles to idle',
+    life: 'done · 6s', src: 'Store.routeTransition',
+    cur: { kind: 'done', glyph: 'done', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude finished', life: 1 },
+    pro: { kind: 'done', tier: 'ambient', glyph: 'done', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude finished', life: 1, act: { label: 'Open', keys: ['⌘', '↩'] } },
+    note: 'Drops to the ambient tier — 22px chip, tighter padding — because it is a result, not a summons. It keeps green: this is the completion the colour was minted for, and once the app stops spending green on its own housekeeping (below) the signal is exclusively "your agent finished".' },
+
+  { grp: null, title: 'Terminal finished', trig: 'A live off-screen terminal settles to idle',
+    life: 'done · 6s', src: 'Store.routeTransition',
+    cur: { kind: 'done', glyph: 'done', who: { dot: C.blue, icon: M.term, text: 'tests' }, what: 'finished', life: 1 },
+    pro: { kind: 'done', tier: 'ambient', glyph: 'done', who: { dot: C.blue, icon: M.term, text: 'tests' }, what: 'Finished', life: 1, act: { label: 'Open', keys: ['⌘', '↩'] } } },
+
+  { grp: 'App failures', title: 'Worktree create failed', trig: 'Background git worktree add fails after the row already appeared',
+    life: 'error · sticky', src: 'Store.raiseWorktreeError',
+    cur: { kind: 'error', glyph: 'error', who: { icon: M.branch, text: 'feedback/toasts · synth' }, what: "Couldn't create worktree", hint: 'dismiss' },
+    pro: { kind: 'error', glyph: 'error', who: { dot: null, icon: M.branch, text: 'feedback/toasts · synth' }, what: "Couldn't create worktree", sub: 'fatal: a branch named … already exists', act: { label: 'Retry' } },
+    note: 'Today the whole card is a dismiss target and nothing says so — the ⌘↩ hint reads "dismiss", but a click, the obvious gesture, silently throws the message away. The git error goes to <code>NSLog</code> only. Proposed: the first line of the git failure comes onto the card, dismissal moves to the ×, and the card offers the thing you were going to do anyway — <b>Retry</b>.' },
+
+  { grp: null, title: 'Worktree delete failed', trig: 'Background worktree remove fails',
+    life: 'error · sticky', src: 'Store.raiseWorktreeError',
+    cur: { kind: 'error', glyph: 'error', who: { icon: M.branch, text: 'feedback/toasts · synth' }, what: "Couldn't delete worktree", hint: 'dismiss' },
+    pro: { kind: 'error', glyph: 'error', who: { dot: null, icon: M.branch, text: 'feedback/toasts · synth' }, what: "Couldn't delete worktree", sub: 'worktree contains modified files', act: { label: 'Retry' } } },
+
+  { grp: 'Housekeeping', title: 'Archive sweep digest', trig: 'The archive sweeper actually cleaned something up',
+    life: 'done · 6s', src: 'Store.raiseSweepDigest',
+    cur: { kind: 'done', glyph: 'done', who: { icon: M.archive, text: '' }, what: 'Cleaned up 3 archived worktrees', life: 1 },
+    pro: { kind: 'neutral', tier: 'ambient', glyph: 'archive', what: 'Cleaned up 3 archived worktrees', life: 1, act: { label: 'Show' } },
+    note: 'Look at the left card: <b>the who-line is empty</b>. The app raises this with <code>title: ""</code>, and <code>NotifCard</code> renders the who row unconditionally — so a grey dot and a 12px archive glyph float above the message pointing at nothing. Proposed: no identity, no who-line. The glyph chip carries the archive mark instead of a second green check, and the tint goes neutral — the app tidying up after itself is not the same event as your agent finishing.' },
+
+  { grp: null, title: 'Archive review ready', trig: 'Sweeper finds archived worktrees eligible for cleanup',
+    life: 'input · sticky', src: 'Store.raiseArchiveReviewCard',
+    cur: { kind: 'input', glyph: 'input', who: { icon: M.archive, text: '' }, what: '12 archived worktrees ready to clean up' },
+    pro: { kind: 'neutral', glyph: 'archive', what: '12 worktrees ready to clean up', sub: 'about 2.1 GB', act: { label: 'Review' } },
+    note: 'This is the worst mis-tier in the set: a housekeeping suggestion wearing the <b>needs-input</b> costume — the same blue, the same breathing glyph, the same sticky life your agent gets when it is blocked on a question. It out-ranks a real done toast in the deck order. Proposed: neutral chip, no breathing, and a <b>Review</b> button, because "clean up" is a place to go, not a question to answer. Also the same empty who-line bug — and note that the current copy <b>does not fit</b>: at 320px it truncates to "12 archived worktrees read…", which is how these two cards were shipped without anyone seeing them full-width.' },
+
+  { grp: 'Feedback', title: 'Feedback filed', trig: 'Feedback sheet submitted on a repo Synth can branch',
+    life: 'done · 6s', src: 'Store.submitFeedback',
+    cur: { kind: 'done', glyph: 'done', who: { icon: M.branch, text: 'feedback/toast-notifications' }, what: 'On it', life: 1 },
+    pro: { kind: 'done', tier: 'ambient', glyph: 'comment', who: { dot: null, icon: M.branch, text: 'feedback/toast-notifications' }, what: 'On it', life: 1, act: { label: 'Open' } },
+    note: '"On it" stays — it is the right two words. The green check becomes the comment mark: the check means <i>a session finished</i> everywhere else on this list, and nothing finished here, something started.' },
+
+  { grp: null, title: 'Handed to Mail', trig: 'Feedback submitted with no repo to branch — mail client opened',
+    life: 'done · 6s', src: 'Store.submitFeedback',
+    cur: { kind: 'done', glyph: 'done', who: { icon: M.comment, text: 'Synth feedback' }, what: 'Handed to Mail', life: 1 },
+    pro: { kind: 'neutral', tier: 'ambient', glyph: 'mail', what: 'Handed to Mail', life: 1 },
+    note: 'The who-line carries the literal email subject ("Synth feedback"), which tells you nothing you did not just type. One line, mail glyph, gone in five seconds.' },
+
+  { grp: null, title: 'No mail app', trig: 'Feedback submitted, no mail client — copied to clipboard instead',
+    life: 'error · sticky', src: 'Store.submitFeedback',
+    cur: { kind: 'error', glyph: 'error', who: { icon: M.comment, text: 'feedback@synth.dev' }, what: 'No mail app — feedback copied', hint: 'dismiss' },
+    pro: { kind: 'neutral', tier: 'ambient', glyph: 'clip', what: 'Feedback copied to clipboard', sub: 'no mail app — paste it to feedback@synth.dev', life: 1 },
+    note: '<b>Nothing failed here.</b> The fallback worked: your text is on the clipboard. Today it raises a red, sticky <code>.error</code> that sits in the deck until you click it, and leads with the negative. Proposed: lead with what happened, keep the address (you need it), let it drain.' },
+
+  { grp: 'Undo windows', title: 'Closed a session', trig: '⌘W or Close on a session row',
+    life: 'undo · 8s', src: 'Store.softDelete',
+    cur: { kind: 'undo', glyph: 'ai', who: null, what: 'Closed Claude Code', life: 1, hint: 'undo' },
+    pro: { kind: 'undo', glyph: 'ai', what: 'Closed Claude Code', life: 1, act: { label: 'Undo', keys: ['⌘', '↩'] } },
+    note: 'Every undo card looks exactly like a completion report — same chrome, same one bold line, same drain bar as "Claude finished". The only thing separating "this is a receipt" from "this is your last chance" is an 11px grey hint on the front card. Proposed: a real <b>Undo</b> button on every undo card, at every depth in the deck. The bar stops being decoration and starts being the button\'s countdown.' },
+
+  { grp: null, title: 'Removed a workspace', trig: 'Remove on a workspace header',
+    life: 'undo · 8s', src: 'Store.softRemoveWorkspace',
+    cur: { kind: 'undo', glyph: 'folder', who: null, what: 'Removed synth', life: 1, hint: 'undo' },
+    pro: { kind: 'undo', glyph: 'folder', what: 'Removed synth', life: 1, act: { label: 'Undo', keys: ['⌘', '↩'] } } },
+
+  { grp: null, title: 'Archived a branch', trig: 'Archive on a branch row',
+    life: 'undo · 8s', src: 'Store.softDelete',
+    cur: { kind: 'undo', glyph: 'archive', who: null, what: 'Archived feedback/toasts', life: 1, hint: 'undo' },
+    pro: { kind: 'undo', glyph: 'archive', what: 'Archived feedback/toasts', life: 1, act: { label: 'Undo', keys: ['⌘', '↩'] } } },
+
+  { grp: null, title: 'Deleted a worktree', trig: 'Delete worktree — commit removes the folder from disk',
+    life: 'undo · 8s', src: 'Store.softDelete',
+    cur: { kind: 'undo', glyph: 'trash', who: null, what: 'Deleted feedback/toasts', life: 1, hint: 'undo' },
+    pro: { kind: 'undo', destructive: true, glyph: 'trash', what: 'Deleted feedback/toasts', sub: 'the folder goes when the bar does', life: 1, act: { label: 'Undo', keys: ['⌘', '↩'], danger: true } },
+    note: 'The one undo in the set whose expiry touches the disk — and today it is visually identical to "Archived", which touches nothing. Proposed: the destructive undo tints its glyph and its countdown bar with <code>--error</code>. Red on a draining bar reads as a fuse, which is exactly what it is.' },
+
+  { grp: 'Second surface', title: 'Feedback pill ×2', trig: 'working.html only — the same two feedback events, on a different surface',
+    life: 'pill · 3.4s', src: 'working.html flashToast', dead: true,
+    cur: { fb: true },
+    pro: { kind: 'neutral', tier: 'ambient', glyph: 'mail', what: 'Handed to Mail', life: 1 },
+    note: 'The mock has a whole second toast system — <code>.fb-toast</code>, a bottom-centre pill, 3.4s, no deck, no countdown, no keyboard, its own icon set — used by exactly two messages. The native app already routes both through the deck (<code>raiseFeedbackToast</code>), so this is pure mock drift. <b>Delete the surface.</b>' },
+];
+
+/* ---- Census table ---- */
+let censusNo = 0;
+document.querySelector('#census tbody').innerHTML = SPEC.map((s) => {
+  const cls = s.dead ? 'tag tag--gone' : (/sticky/.test(s.life) ? 'tag tag--sticky' : 'tag tag--auto');
+  return '<tr><td>' + (s.dead ? '—' : ++censusNo) + '</td><td><b style="color:var(--ink-2);font-weight:600">' + esc(s.title) + '</b></td>'
+    + '<td>' + esc(s.trig) + '</td><td><span class="' + cls + '">' + esc(s.life) + '</span></td>'
+    + '<td><code>' + esc(s.src) + '</code></td></tr>';
+}).join('');
+
+/* ---- Findings ---- */
+const FINDINGS = [
+  ['Two surfaces for one job', 'The deck (bottom-left, glass card, ⌘↩, countdown) and the feedback pill (bottom-centre, capsule, 3.4s, silent) both exist in <code>working.html</code>. The app only has the deck. Two of seventeen messages use the pill, and the app already renders those same two on the deck — so the pill is drift, not a design.'],
+  ['Severity does not mean severity', 'Red-and-sticky is spent on "No mail app — feedback copied", where the fallback succeeded. Needs-input blue and its breathing glyph are spent on "12 archived worktrees ready to clean up", a housekeeping nudge that then <b>outranks a real done toast</b> in the deck order. The two loudest signals the app owns are both being borrowed by non-events.'],
+  ['Green means two different things', 'The green check fires for "Claude finished" and for "Cleaned up 3 archived worktrees" and for "Handed to Mail". Two of those are the app talking about its own chores. Every non-agent green spends the signal that is supposed to make you look up.'],
+  ['An empty who-line ships today', 'Archive cards are raised with <code>title: ""</code> and <code>NotifCard</code> renders the identity row unconditionally — so a grey dot and a tiny glyph sit above the message pointing at nothing at all. Visible in the app right now; the left column of rows 9 and 10 reproduces it exactly.'],
+  ['Dismissing is indistinguishable from acting', 'There is no × on any card. A session card is one big click target that jumps you into the session; a system card is one big click target that throws the message away. Same gesture, opposite outcome, nothing on the card to tell them apart — and the only hint is 11px grey text on the front card alone.'],
+  ['The undo window looks like a receipt', 'An undo card and a completion toast share a chassis, a single bold line, and a draining bar. "Deleted feedback/toasts" reads as a report of something already finished, not as eight seconds of recall — and the one that actually deletes a folder from disk looks identical to the one that archives a row.'],
+  ['Nothing is actionable except the whole card', 'Every card is a single opaque target. A failure has no <b>Retry</b>, a review nudge has no <b>Review</b>, an undo has no <b>Undo</b>. The ⌘↩ chord is real and good, but it is advertised as grey helper text rather than printed on the thing it fires.'],
+  ['Three ad-hoc layouts, no rule', 'Session cards are who + verb. System cards are who + verb, where "who" is a branch path or an email subject. Undo cards are one line. Archive cards are one line plus an orphan who-row. Nobody decided this; it accumulated.'],
+];
+document.getElementById('findings').innerHTML = FINDINGS.map(([h, p], i) =>
+  '<div class="finding"><h3><span>' + String(i + 1).padStart(2, '0') + '</span>' + h + '</h3><p>' + p + '</p></div>').join('');
+
+/* ---- Tiers ---- */
+const TIERS = [
+  ['Tier 1 · Attention', 'Sticky. Something is waiting on <i>you</i>: a session asking a question, a session that broke, an app operation that failed, a pile of worktrees wanting a decision. 26px chip, identity line, a primary action button carrying ⌘↩, a dismiss ×. No countdown — it stays until answered or dismissed. The tier is about <i>demand</i>, not volume: colour is decided separately, so the archive nudge sits here in neutral ink while a blocked agent sits here in blue. <b>Seven of seventeen.</b>'],
+  ['Tier 2 · Reversible', 'Eight seconds. Your last destructive move, still recallable. Neutral chip (red for the one that hits the disk), one bold line, an <b>Undo</b> button carrying ⌘↩, and the drain bar as that button\'s countdown. <b>Four of seventeen.</b>'],
+  ['Tier 3 · Ambient', 'Five seconds. A result: your agent finished, the app tidied up, your feedback went somewhere. 22px chip, tighter padding, lighter weight — present without demanding. Green only when a session finished; neutral when the app is talking about itself. <b>Six of seventeen.</b>'],
+  ['One chassis under all three', 'Same glass, same 13px radius, same 320px width, same corner, same deck, same ⌘↩ front-card rule, same drain-pauses-on-hover-or-blur. The tier changes chip size, colour discipline, life, and which button appears — never the shape. A deck of mixed tiers still reads as one stack of one thing.'],
+  ['The deck has to re-anchor', 'A consequence worth flagging: the shipped deck offsets each card behind the front by a flat <code>-10.5px</code>, which only works because every card today is the same height. Sub-lines and the ambient tier make heights vary (46–66px) — and a 52px card behind a 66px front vanishes completely under a flat 10.5px rise. Peeks must anchor by <b>top edge</b> instead: card <i>i</i> sits so its top is 10.5px × <i>i</i> above the front card\'s top, whatever either height is. The playground below implements it; it is a two-line change in <code>DeckPlacement</code>.'],
+  ['Copy rules', 'One grammar, so seventeen messages read as one voice. <b>The verb line is a sentence</b> — capital first letter, no full stop ("Needs input", not "needs input"). <b>Lead with what happened</b>, not what didn\'t ("Feedback copied to clipboard", not "No mail app — feedback copied"). <b>The who-line names a thing, not a restatement</b> — a session, a branch, a workspace; never the email subject you just typed, and never an empty string. <b>The sub-line is evidence</b>: an exit code, a git message, a size. Nothing goes on a sub-line that the verb line already said.'],
+];
+document.getElementById('tiers').innerHTML = TIERS.map(([h, p]) =>
+  '<div class="finding"><h3>' + h + '</h3><p>' + p + '</p></div>').join('');
+
+/* ---- Gallery ---- */
+document.getElementById('gallery').innerHTML = SPEC.map((s) => {
+  const left = s.cur.fb
+    ? '<div style="display:flex;flex-direction:column;gap:8px">'
+      + '<div class="fb-toast"><span class="fb-toast--done">' + M.done + '</span><span><b>On it</b>&nbsp;&nbsp;feedback/toast-notifications</span></div>'
+      + '<div class="fb-toast"><span style="color:var(--input)">' + M.mail + '</span><span><b>Handed to Mail</b></span></div></div>'
+    : cur(s.cur);
+  return '<div class="row' + (s.grp ? ' row--group' : '') + '">'
+    + '<div class="row__meta">' + (s.grp ? '<div style="font-size:10.5px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:var(--text-faint);margin-bottom:7px">' + esc(s.grp) + '</div>' : '')
+      + '<h3>' + esc(s.title) + '</h3><p>' + esc(s.trig) + '</p><code>' + esc(s.src) + '</code></div>'
+    + '<div class="cell"><div class="cell__cap">Ships today</div><div class="stage' + (s.dead ? ' stage--dead' : '') + '">' + left + '</div></div>'
+    + '<div class="cell cell--pro"><div class="cell__cap">Proposed</div><div class="stage">' + pro(s.pro).replace('class="ntf ', 'class="ntf tv--fade ') + '</div></div>'
+    + (s.note ? '<div class="row__note">' + s.note + '</div>' : '')
+    + '</div>';
+}).join('');
+
+/* ============================================================================================
+   Section 5 — countdown treatments.
+
+   The perimeter ring is drawn as an explicit path rather than a <rect rx>, so the drain can
+   start where the flat bar starts: the bottom-left corner, running right along the bottom edge.
+   With pathLength=100 the whole outline is 100 units whatever the card's height, so one
+   keyframe (dashoffset 0 → 100) drains any card at any size. In SwiftUI this is
+   RoundedRectangle().trim(from:0, to:fraction).stroke() — a one-liner, same as the flat bar.
+   ============================================================================================ */
+function ringPath(w, h, r) {
+  const s = 0.75, R = r - s, x0 = s, y0 = s, x1 = w - s, y1 = h - s;
+  return 'M ' + (x0 + R) + ',' + y1 + ' H ' + (x1 - R)
+    + ' A ' + R + ',' + R + ' 0 0 0 ' + x1 + ',' + (y1 - R) + ' V ' + (y0 + R)
+    + ' A ' + R + ',' + R + ' 0 0 0 ' + (x1 - R) + ',' + y0 + ' H ' + (x0 + R)
+    + ' A ' + R + ',' + R + ' 0 0 0 ' + x0 + ',' + (y0 + R) + ' V ' + (y1 - R)
+    + ' A ' + R + ',' + R + ' 0 0 0 ' + (x0 + R) + ',' + y1 + ' Z';
+}
+function fitRings(root) {
+  root.querySelectorAll('.tv--ring').forEach((card) => {
+    if (card.querySelector('.ntf__ringwrap')) return;
+    const w = card.offsetWidth, h = card.offsetHeight;
+    card.insertAdjacentHTML('beforeend',
+      '<svg class="ntf__ringwrap" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">'
+      + '<path d="' + ringPath(w, h, 13) + '" pathLength="100" stroke-dasharray="100"/></svg>');
+  });
+  root.querySelectorAll('.tv--glyph .ntf__glyph').forEach((g) => {
+    if (g.querySelector('.ntf__glyphring')) return;
+    g.insertAdjacentHTML('beforeend',
+      '<svg class="ntf__glyphring" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" pathLength="100" stroke-dasharray="100"/></svg>');
+  });
+}
+
+const TIMER_BASE = { kind: 'done', tier: 'ambient', glyph: 'done', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude finished', life: 1, act: { label: 'Open', keys: ['⌘', '↩'] } };
+const TIMER_VARIANTS = [
+  { v: '', wide: true, name: 'A · Ships today — inset bar',
+    body: 'A 2px bar along the bottom edge, <b>inset 13px at each end</b> to clear the corner radius, draining toward its left origin. The inset is the problem: the bar begins and ends in mid-air, with nothing in the card to explain either stop — and the closer it gets to empty, the more the leftover 13px gap reads as a rendering mistake rather than a clock.' },
+  { v: 'tv--clip', name: 'B · Full-bleed, clipped',
+    body: 'Drop the inset entirely and let the card clip its own bar. The 13px radius nibbles both ends, so the bar reads as <b>running into the corners</b> instead of stopping short of them. Nothing else changes — same weight, same colour, same drain — and it is a two-property diff.',
+    verdict: 'Cheapest fix. Loses a little of the bar at rest, which is free.' },
+  { v: 'tv--taper', name: 'C · Tapered ends',
+    body: 'Keep it off the corner, but <b>fade the ends out</b> rather than cutting them. The mask sits on the track, so the taper holds still while the fill drains through it. No hard terminus anywhere — but the live edge softens too as it approaches the left, so the last second reads mushier than it should.',
+    verdict: 'Softest. Weakest at the moment precision matters most.' },
+  { v: 'tv--ring', name: 'D · The card\'s own border drains',
+    body: 'The countdown stops being a bar and becomes the <b>card outline</b>, draining back toward the bottom-left. It has no ends at all, so nothing can terminate abruptly; it follows the radius instead of avoiding it, and it scales to any card height for free. But a full perimeter of <code>--focus</code> is a lot more ink than 2px on one edge — even at 1.25px it reads like a selection ring, and on a fanned deck of four you get four of them.',
+    verdict: 'Structurally perfect, visually loud. The bold option.' },
+  { v: 'tv--glyph', name: 'E · The glyph wears the clock',
+    body: 'A ring around the state chip; the card edge is left completely alone. The quietest of the five and it survives any card shape — but a 26px ring is a coarse gauge, and it collides with the needs-input glyph\'s breathing animation, so it can only ever apply to the tiers that self-dismiss.',
+    verdict: 'Elegant, but too small to read remaining time.' },
+  { v: 'tv--fade', wide: true, name: 'F · Fade in, clip out',
+    body: 'B and C, each applied to the end it actually suits. <b>The origin end dissolves</b> into the card over 20px — nothing terminates it, so there is nothing to stop abruptly. <b>The far end is clipped by the corner</b> — the card terminates it, which is a reason you can see. The live edge in between stays perfectly crisp, because nothing is masking the middle where precision matters. And the ending improves: the last moments of the drain retreat into the taper and dissolve, instead of a 2px stub snapping to zero.',
+    verdict: '<b>The recommendation.</b> Fixes both stops, adds no ink, changes three properties.' },
+  { verdictOnly: true, wide: true, name: 'Recommendation',
+    body: 'Go with <b>F</b>. The diagnosis matters more than the fix: the bar has <i>two</i> ends and they are not the same problem. The origin end is arbitrary and should never have been visible — fade it. The far end is where the corner is — let the corner take it, rather than retreating 13px and pretending the corner is not there. Everything the current bar earned survives untouched: the <code>--focus</code> token, the left origin, pause-on-hover-or-blur, and dismissal fired by the animation ending so the clock and the card can never disagree. It also sidesteps a problem the ambient tier creates — with variable card heights a bar has to be re-inset per card, and a full-bleed bar simply does not care. <b>D is the bolder alternative</b> if you want the countdown to become a signature rather than a detail; it is the only option that reads from across the room, at the cost of a perimeter of ink on every self-dismissing card.' },
+];
+const tvGrid = document.getElementById('timerVariants');
+tvGrid.innerHTML = TIMER_VARIANTS.map((t) => {
+  const card = t.verdictOnly ? '' : '<div class="tvstage">' + pro(TIMER_BASE).replace('class="ntf ', 'class="ntf ' + t.v + ' ').replace(' is-static', '') + '</div>';
+  return '<div class="tvcard' + (t.wide ? ' tvcard--wide' : '') + '"><h3>' + t.name + '</h3><p>' + t.body + '</p>'
+    + card + (t.verdict ? '<p class="verdict">' + t.verdict + '</p>' : '') + '</div>';
+}).join('');
+fitRings(tvGrid);
+
+/* ============================================================================================
+   Live playground — the proposed chassis in a real deck: stacking, drain, hover-fan, +N.
+   ============================================================================================ */
+const deck = document.getElementById('deck');
+const more = document.createElement('div');
+more.className = 'deck__more';
+deck.appendChild(more);
+const LIVE = {
+  input:   { kind: 'input', glyph: 'input', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude needs your input', act: { label: 'Open', keys: ['⌘', '↩'] }, rank: 1 },
+  error:   { kind: 'error', glyph: 'error', who: { dot: C.blue, icon: M.term, text: 'tests' }, what: 'Exited with an error', sub: 'exit 1', act: { label: 'Open', keys: ['⌘', '↩'] }, rank: 0 },
+  done:    { kind: 'done', tier: 'ambient', glyph: 'done', who: { dot: C.copper, icon: M.ai, text: 'api-refactor' }, what: 'Claude finished', life: 5000, act: { label: 'Open', keys: ['⌘', '↩'] }, rank: 3 },
+  chore:   { kind: 'neutral', tier: 'ambient', glyph: 'archive', what: 'Cleaned up 3 archived worktrees', life: 5000, act: { label: 'Show' }, rank: 3 },
+  undo:    { kind: 'undo', glyph: 'undo', what: 'Archived feedback/toasts', life: 8000, act: { label: 'Undo', keys: ['⌘', '↩'] }, rank: 2 },
+  nuke:    { kind: 'undo', destructive: true, glyph: 'trash', what: 'Deleted feedback/toasts', sub: 'the folder goes when the bar does', life: 8000, act: { label: 'Undo', keys: ['⌘', '↩'], danger: true }, rank: 2 },
+};
+const live = [];
+let liveSeq = 0;
+
+let timerStyle = 'tv--fade';   // section 5's recommendation, live by default
+
+function spawn(key) {
+  const base = LIVE[key];
+  const el = document.createElement('div');
+  el.innerHTML = pro(base);
+  const card = el.firstElementChild;
+  if (base.life && timerStyle) card.classList.add(timerStyle);
+  card.querySelector('.ntf__x').addEventListener('click', (e) => { e.stopPropagation(); drop(entry); });
+  card.addEventListener('click', () => drop(entry));
+  const fill = card.querySelector('.ntf__timer i');
+  if (fill) fill.classList.remove('is-static');
+  if (base.life) {
+    card.style.setProperty('--life', base.life + 'ms');
+    // Dismissal rides the clock's own animationend — bar (or ring) and timer can never disagree.
+    card.addEventListener('animationend', (e) => {
+      if (e.animationName === 'ntf-drain' || e.animationName === 'ring-drain') drop(entry);
+    });
+  }
+  const entry = { card, rank: base.rank, seq: ++liveSeq };
+  live.push(entry);
+  deck.appendChild(card);
+  fitRings(deck);
+  requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('in')));
+  layout();
+}
+function drop(entry) {
+  const i = live.indexOf(entry);
+  if (i < 0) return;
+  live.splice(i, 1);
+  entry.card.classList.add('leave');
+  setTimeout(() => entry.card.remove(), 320);
+  layout();
+}
+// Same order rule the app uses: by urgency rank, then newest first within a rank.
+//
+// Peeks are anchored by TOP edge, not by the shared bottom edge. The shipped deck offsets each
+// card behind the front by a flat -10.5px, which worked only because every card was the same
+// height — the moment a card carries a sub-line (66px) and the one behind it doesn't (52px), a
+// flat rise of 10.5px leaves the shorter card entirely swallowed by the taller front. So each
+// card i is placed so its top edge sits 10.5px * i above the front card's top edge, whatever
+// the two heights are. Fanned, cards stack by their own heights plus a 9px gutter.
+function layout() {
+  const order = live.slice().sort((a, b) => a.rank - b.rank || b.seq - a.seq);
+  const frontH = order[0] ? order[0].card.offsetHeight : 56;
+  let fanned = 0;
+  order.forEach((e, i) => {
+    const h = e.card.offsetHeight;
+    e.card.style.setProperty('--peek', -(frontH + i * 10.5 - h) + 'px');
+    e.card.style.setProperty('--fan', -fanned + 'px');
+    e.card.style.setProperty('--op', i < 3 ? [1, 0.7, 0.45][i] : 0);
+    e.card.style.setProperty('--scale', i === 0 ? 1 : Math.max(0.5, 1 - i * 0.045));
+    e.card.style.zIndex = 100 - i;
+    fanned += h + 9;
+  });
+  const hidden = Math.max(0, order.length - 3);
+  more.textContent = '+' + hidden;
+  more.style.opacity = hidden ? 1 : 0;
+  more.style.bottom = (frontH + 2 * 10.5 + 8) + 'px';
+}
+const TIMER_PICKER = [['tv--fade', 'Fade + clip'], ['tv--ring', 'Ring'], ['tv--clip', 'Clipped'], ['tv--taper', 'Tapered'], ['tv--glyph', 'Glyph'], ['', 'Inset (today)']];
+document.getElementById('playControls').innerHTML =
+  Object.keys(LIVE).map((k) => '<button class="btn" data-k="' + k + '">' + ({
+    input: 'Needs input', error: 'Error', done: 'Agent finished', chore: 'Housekeeping', undo: 'Undo', nuke: 'Destructive undo',
+  })[k] + '</button>').join('')
+  + '<button class="btn" id="clearAll">Clear</button>'
+  + '<span class="lbl" style="margin-left:8px">Countdown</span><span class="seg">'
+  + TIMER_PICKER.map(([v, n]) => '<button class="btn' + (v === timerStyle ? ' on' : '') + '" data-tv="' + v + '">' + n + '</button>').join('')
+  + '</span>';
+document.getElementById('playControls').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.tv !== undefined) {
+    timerStyle = b.dataset.tv;
+    b.parentElement.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    return;
+  }
+  if (b.id === 'clearAll') { live.slice().forEach(drop); return; }
+  spawn(b.dataset.k);
+});
+document.getElementById('sbAI').insertAdjacentHTML('afterbegin', M.ai.replace('<svg', '<svg style="width:14px;height:14px;color:var(--copper)"'));
+document.getElementById('sbTerm').insertAdjacentHTML('afterbegin', M.term);
+document.getElementById('sbTests').insertAdjacentHTML('afterbegin', M.term);
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+  try { localStorage.setItem('synth-theme', dark ? 'light' : 'dark'); } catch (e) {}
+});
+</script>
+</body>
+</html>

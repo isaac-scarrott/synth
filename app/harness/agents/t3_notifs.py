@@ -35,8 +35,14 @@ check("2. background 'done' toast raised for the opencode row", bool(seen_done))
 check("3. the toast names the row", bool(seen_done) and bool(seen_done[0]["title"]), seen_done[0]["title"] if seen_done else "")
 check("4. the FOREGROUND row raised no toast", not [n for n in notifs()[0] if n["sessionId"] == a])
 check("5. the background row is marked unread", (ctl.row(b) or {}).get("unread") is True)
-gone = wait(lambda: (not [n for n in notifs()[0] if n["sessionId"] == b and n["kind"] == "done"]) or None, 15, 0.5)
-check("6. done toast auto-dismisses (transient)", bool(gone))
+# A done toast banks its life while Synth isn't frontmost — right for a user (it should still be
+# there when you come back), and a driven instance never is. So say focus came back, exactly as
+# the route is pinned rather than stolen; otherwise this check passes only when the harness
+# happens to own the desktop.
+ctl("automation.notifFocus", active=True)
+gone = wait(lambda: (not [n for n in notifs()[0] if n["sessionId"] == b and n["kind"] == "done"]) or None, 20, 0.5)
+check("6. done toast auto-dismisses once focus returns (transient)", bool(gone))
+ctl("automation.notifFocus", active=False)
 
 # --- needs-input toast: B stops and asks the user (the question channel) ---
 ctl("automation.deliver", sessionId=b, text=(

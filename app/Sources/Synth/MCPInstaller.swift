@@ -25,7 +25,7 @@ import os.log
     static let installDir = AppSupport.dir("browser-mcp")
 
     /// The bundled servers: registry name → entry script (shared.mjs serves both).
-    private static let serverScripts = [
+    nonisolated static let serverScripts = [
         "synth-browser": "server.mjs",
         "synth-app": "app-server.mjs",
     ]
@@ -133,6 +133,41 @@ import os.log
             writeClaudeConfig(atWorktree: path, servers: servers)
             writeOpencodeConfig(atWorktree: path, servers: servers)
         }
+    }
+
+    /// True when `relative` is one of the two config files Synth writes into every managed
+    /// worktree AND the user has put nothing of their own in it.
+    ///
+    /// The archive sweeper needs this. Synth dirties every managed worktree with `.mcp.json`
+    /// and `opencode.json` on the autosave cadence, and no *user* repo gitignores them — so
+    /// they show up as untracked in every worktree, and a sweeper that blocks on untracked
+    /// files (as it must) would block on Synth's own droppings and never reclaim anything.
+    /// Measured: with this carve-out absent, every scenario in the archive gate reported
+    /// "untracked files — kept", including the ones that were merged, clean and fully pushed.
+    ///
+    /// Deliberately not a bare filename allowlist: a user who added their own servers, or any
+    /// other opencode setting, has real work in that file and it must count as untracked. So
+    /// this proves the file contains *only* what Synth itself puts there.
+    ///
+    /// This whole carve-out is transitional. It disappears the day Synth stops writing into
+    /// worktrees at all (Claude's `--mcp-config`, opencode's `OPENCODE_CONFIG`) — and leaving
+    /// it in past that point would silently mask a real config file the user cares about.
+    nonisolated static func isUnmodifiedSynthConfig(_ relative: String, inWorktree worktree: String) -> Bool {
+        let container: String
+        let allowedTopLevel: Set<String>
+        switch relative {
+        case ".mcp.json":     container = "mcpServers"; allowedTopLevel = ["mcpServers"]
+        case "opencode.json": container = "mcp";        allowedTopLevel = ["mcp", "$schema"]
+        default: return false
+        }
+        let file = URL(fileURLWithPath: worktree).appendingPathComponent(relative)
+        guard let data = try? Data(contentsOf: file),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return false }
+        guard Set(root.keys).isSubset(of: allowedTopLevel) else { return false }
+        // Every registered server must be one of ours. An unknown name is the user's.
+        let servers = root[container] as? [String: Any] ?? [:]
+        return Set(servers.keys).isSubset(of: Set(serverScripts.keys))
     }
 
     private static func serverPath(_ name: String) -> String {

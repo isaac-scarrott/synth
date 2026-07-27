@@ -94,3 +94,46 @@ glossary denies. That is the drift this ADR exists to end.
 - Amber now carries every busy dot, and `docs/features/2026-07-09.md` records that `--work` amber
   sits four degrees of hue from the champagne accent. The two will meet far more often than before.
   Watch it once it is built.
+
+## 2026-07-24 — a fourth verb: Archive
+
+The delete fork this ADR cites as evidence ("Remove from sidebar" against "Delete worktree", the
+neighbouring ⌘K rows that motivated renaming workspace → project) is gone. It was replaced by
+**Archive** on the branch row plus a `Delete worktree now` one level down, so the citation above is
+history rather than current UI. The argument it supports is untouched.
+
+**Why a fourth verb and not a reused third.** Archive-as-hide-only would be verbatim `Remove`, and
+adopting `Remove` for it would be pure drift. But the new state has two consequences `Remove` does
+not own: an archived row is enumerable and restorable *indefinitely* (a removed row is gone the
+moment the 8-second undo drains), and something later reclaims its folder. One noun per thing, one
+verb per consequence — this is a different consequence, so it gets its own verb.
+
+**The cost, and how it is actually paid.** Mail, Gmail, Linear and Notion have all trained
+"archive = kept forever". Here it means "kept, then reclaimed once the work is provably safe
+elsewhere". The first attempt paid for that gap by making every surface state the consequence
+("folder deletes in 7 days once it's merged and clean"). That was wrong, and it was cut: it turned
+a one-word action into a running commentary on machinery the user has no decision to make about,
+and it put a countdown in front of someone who only wanted the row gone.
+
+The honest reading is that "kept, then reclaimed when it is provably safe to" **is** archiving —
+what the user keeps is the branch and the work, neither of which is ever destroyed. The folder is
+an implementation detail of ADR-0007, and a folder Synth can rebuild from a remote on demand is not
+a thing the user owns a decision about. So the UI says `Archived <name>`, the list says
+`archived 3d ago`, and the conditions live in `os.Logger` and the automation seam. If the clean-up
+ever grows a case where the user really would lose something, that case is a bug in the conditions,
+not a missing sentence in the copy.
+
+**Glyph.** An archive box. Not the trash can (which destroys) and not the minus (Remove). In the
+same pass the project row's Remove moved off the trash can onto the minus — a trash can on an action
+that destroys nothing was the actual violation of §"a trash can destroys", and it had been sitting
+there while the fork existed to explain it away.
+
+**Confirmation.** Archive confirms nowhere. `Delete worktree now` confirms everywhere. The rule is
+that the dialog attaches to irreversibility, never to the entry surface — a verb whose consequence
+depends on whether it was reached by click, by `d`, by ⌘W or by ⌘K is not one verb. This was decided
+against an explicit proposal to confirm only in ⌘K.
+
+**One verb, one label.** `Archive` is the label everywhere; the thing being archived is context (the
+`ctx` field, the group heading, the frame's crumb) exactly as it is for `Rename`, `New terminal` and
+every other action. A verb that reads "Archive locked" in a list of bare verbs is the kind of small
+inconsistency that makes a simple action feel like a special case.

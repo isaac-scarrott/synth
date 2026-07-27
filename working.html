@@ -1317,51 +1317,85 @@
      "focused", so this mock drives the deck alone. */
   .notifs { position: absolute; left: 22px; bottom: 22px; width: 320px; z-index: 60; pointer-events: none; }
   .notif {
-    position: relative;   /* the countdown bar anchors to the card, deck-mode absolute or not */
-    pointer-events: auto; display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center;
+    position: relative;   /* the countdown and the dismiss × both anchor to the card */
+    pointer-events: auto; display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center;
     padding: 11px 12px 11px 13px; background: var(--glass);
     -webkit-backdrop-filter: blur(24px) saturate(1.7); backdrop-filter: blur(24px) saturate(1.7);
     border: 0.5px solid var(--border-strong); border-radius: 13px; box-shadow: var(--notif-shadow);
     cursor: pointer; transform-origin: center bottom; opacity: 0; transform: translateY(12px) scale(0.975);
     transition: transform 320ms var(--ease-out), opacity 220ms ease, box-shadow 200ms ease, background 130ms ease;
   }
-  .notif.is-front { grid-template-columns: auto 1fr auto; }   /* only the ⌘↩ target carries the hint column */
+  /* Tier 3 — ambient: a result you asked for, not a summons. Same chassis, lower presence. */
+  .notif--ambient { padding: 9px 12px 9px 11px; gap: 10px; }
   .notif.in { opacity: 1; transform: translateY(0) scale(1); }
   .notif:hover { background: color-mix(in srgb, var(--glass) 100%, var(--text) 4%); }
-  /* deck: 2+ notifications overlap, anchored at the bottom, most-urgent (i=0) in front */
+  /* deck: 2+ notifications overlap, most-urgent (i=0) in front. Cards are anchored by their
+     TOP edge, not the shared bottom — a flat rise only worked while every card was the same
+     height, and a card can now carry a sub-line. JS sets --peek so card i's top sits 10.5px*i
+     above the front card's top, whatever the two heights are; --fan does the same job spread. */
   .notifs.deck .notif { position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z); }
-  .notifs.deck .notif.in { transform: translateY(calc(var(--i) * -10.5px)) scale(calc(1 - var(--i) * 0.045)); opacity: var(--op); }
+  .notifs.deck .notif.in { transform: translateY(var(--peek, 0px)) scale(var(--scale, 1)); opacity: var(--op); }
   .notifs.deck .notif.deep { pointer-events: none; }
   .notifs.deck.spread .notif { pointer-events: auto; }
-  .notifs.deck.spread .notif.in { transform: translateY(calc(var(--i) * (var(--step, 58px) * -1))) scale(1); opacity: 1; }
+  .notifs.deck.spread .notif.in { transform: translateY(var(--fan, 0px)) scale(1); opacity: 1; }
   .notif.leave { opacity: 0 !important; transform: translateY(8px) scale(0.985) !important; pointer-events: none; }
   .notif__glyph { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; }
   .notif__glyph svg { width: 17px; height: 17px; display: block; }
+  .notif--ambient .notif__glyph { width: 22px; height: 22px; border-radius: 7px; }
+  .notif--ambient .notif__glyph svg { width: 14px; height: 14px; }
   .notif--input .notif__glyph { color: var(--input); background: color-mix(in srgb, var(--input) 13%, transparent); }
   .notif--input .notif__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
   .notif--error .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
   .notif--done .notif__glyph { color: var(--run); background: color-mix(in srgb, var(--run) 13%, transparent); }
+  /* The app talking about its own housekeeping never wears a session's state colour — so green
+     keeps meaning "your agent finished" and blue keeps meaning "something is blocked on you". */
+  .notif--neutral .notif__glyph { color: var(--ink-4); background: color-mix(in srgb, var(--text) 7%, transparent); }
+  .notif--undo .notif__glyph { color: var(--ink-2); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  /* The one undo whose expiry touches the disk: glyph and countdown both go red, so the eight
+     seconds read as a fuse rather than a receipt. */
+  .notif--destructive .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+  .notif--destructive .notif__timer i { background: var(--error); }
   .notif__text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .notif__who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .notif__who .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
   .notif__who .k { width: 12px; height: 12px; flex-shrink: 0; color: var(--ink-5); }
   .notif__who .k svg { width: 12px; height: 12px; display: block; }
   .notif__what { font-size: 12.5px; font-weight: 570; color: var(--ink-open); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .notif__kbd { display: none; align-items: center; gap: 5px; align-self: center; font-size: 11px; color: var(--text-faint); white-space: nowrap; }
-  .notif.is-front .notif__kbd { display: flex; }
-  .notif__kbd .keys { display: inline-flex; gap: 2px; }
-  .notif__kbd kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; min-width: 16px; height: 16px; padding: 0 3px; display: inline-grid; place-items: center; color: var(--ink-4); background: var(--raised); border: 0.5px solid var(--line); border-radius: 5px; box-shadow: 0 0.5px 0 var(--line-soft); }
-  .notif:hover .notif__kbd { color: var(--text-muted); }
-  .notif:hover .notif__kbd kbd { color: var(--ink-2); }
-  /* The countdown bar on a self-dismissing toast — the split focus bar's grammar reused as a
-     clock: same 2px weight, same --focus token, ends inset by the card radius with soft caps.
-     It drains toward its left origin over the toast's lifetime; the card dismisses on the
-     bar's animationend, so bar and timer can never disagree. Hovering the deck pauses the
-     drain — reading is not ignoring. Sticky toasts (input / error) ask for an answer, so
-     they carry no bar and never self-dismiss. */
-  .notif__timer { position: absolute; left: 13px; right: 13px; bottom: 0; height: 2px; pointer-events: none; background: var(--focus); border-radius: 2px 2px 0 0; opacity: 0.85; transform-origin: left; animation: notif-drain var(--life, 6000ms) linear forwards; }
+  .notif--ambient .notif__what { font-weight: 550; color: var(--ink-2); }
+  .notif__sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The action is a real target with the chord printed inside it, not grey helper text beside
+     it. Only the front card shows the keys, because ⌘↩ only ever aims at the front card. */
+  .notif__act { display: inline-flex; align-items: center; gap: 6px; align-self: center; white-space: nowrap; font-family: var(--font); font-size: 11.5px; font-weight: 550; line-height: 1; color: var(--ink-2); padding: 5px 8px 5px 9px; border-radius: 7px; background: var(--raised); border: 0.5px solid var(--line); box-shadow: 0 0.5px 0 var(--line-soft); }
+  .notif__act:hover { background: color-mix(in srgb, var(--raised) 100%, var(--text) 6%); }
+  .notif__act .keys { display: none; gap: 2px; }
+  .notif.is-front .notif__act .keys { display: inline-flex; }
+  .notif__act kbd { font-family: var(--mono); font-size: 10px; line-height: 1; min-width: 15px; height: 15px; padding: 0 3px; display: inline-grid; place-items: center; color: var(--ink-4); background: var(--panel); border: 0.5px solid var(--line); border-radius: 5px; }
+  .notif__act--danger { color: var(--error); border-color: color-mix(in srgb, var(--error) 28%, var(--line)); }
+  /* Leaving is not acting. Until now a click on a session card jumped and a click on a
+     session-less card discarded — same gesture, opposite outcome, nothing to tell them apart.
+     The × is the one that always means "drop this": it fades in on hover so a resting deck
+     stays quiet, and sits over the corner so it never moves the layout. On an undo card it
+     means "let it stand", which is exactly what the countdown draining out already means. */
+  .notif__x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-4); background: var(--raised); border: 0.5px solid var(--border-strong); box-shadow: var(--shadow); opacity: 0; transition: opacity 140ms ease; }
+  .notif__x svg { width: 9px; height: 9px; display: block; }
+  .notif:hover .notif__x { opacity: 1; }
+  .notif__x:hover { color: var(--ink-open); }
+  /* The countdown bar — the split focus bar's grammar reused as a clock, but the bar has two
+     ends and they are not the same problem. The origin end is arbitrary, so it fades out over
+     20px and nothing terminates it; the far end is where the corner is, so the card's own
+     radius clips it (.notif__clip) rather than the bar retreating 13px and pretending the
+     corner is not there. The live edge in between stays crisp, because nothing masks the
+     middle — and the last moments of the drain dissolve into the taper instead of a 2px stub
+     snapping to zero. Dismissal fires on the fill's animationend, so what you see IS the
+     timer. Hovering the deck pauses it — reading is not ignoring. Sticky toasts (input,
+     error) ask for an answer, so they carry no bar and never self-dismiss. */
+  .notif__clip { position: absolute; inset: 0; border-radius: 13px; overflow: hidden; pointer-events: none; }
+  .notif__timer { position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 20px);
+    mask-image: linear-gradient(90deg, transparent 0, #000 20px); }
+  .notif__timer i { display: block; height: 100%; background: var(--focus); opacity: 0.85; transform-origin: left; animation: notif-drain var(--life, 6000ms) linear forwards; }
   @keyframes notif-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-  .notifs:hover .notif__timer { animation-play-state: paused; }
+  .notifs:hover .notif__timer i { animation-play-state: paused; }
   /* "+N" for cards tucked behind a deck deeper than three */
   .notifs__more { position: absolute; left: 13px; z-index: 200; pointer-events: none; font-size: 10.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 2px 7px; background: var(--glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 0.5px solid var(--border-strong); border-radius: 20px; box-shadow: var(--shadow); opacity: 0; transition: opacity 200ms ease; }
   .notifs.deck .notifs__more.show { opacity: 1; }
@@ -1540,20 +1574,9 @@
   .fb__send { display: inline-flex; align-items: center; gap: 7px; }
   .fb__send kbd { font-family: inherit; font-size: 10.5px; font-weight: 600; opacity: 0.85; padding: 1px 5px; border-radius: 5px; background: rgba(255,255,255,0.18); }
 
-  /* Toasts stack in a bottom-center column: newest slides in at the bottom, older ones ride up,
-     each fading out on its own timer without disturbing its neighbours (browser-style). */
-  .fb-toasts { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column-reverse; align-items: center; gap: 8px; pointer-events: none; }
-  .fb-toast { transform: translateY(8px); display: flex; align-items: center; gap: 9px; padding: 9px 15px 9px 13px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); border-radius: 999px; box-shadow: var(--notif-shadow); font-size: 12.5px; font-weight: 550; color: var(--ink-2); opacity: 0; transition: opacity 200ms ease, transform 240ms var(--ease-out); pointer-events: none; }
-  .fb-toast.in { opacity: 1; transform: translateY(0); }
-  .fb-toast__glyph { display: flex; }
-  .fb-toast__glyph svg { width: 15px; height: 15px; }
-  .fb-toast--done .fb-toast__glyph { color: var(--run); }
-  .fb-toast--mail .fb-toast__glyph { color: var(--input); }
-  .fb-toast b { font-weight: 600; color: var(--ink); }
-
-  /* Undo lives in the notification deck (.notif--undo), not here — a soft delete's card wears
-     a muted glyph (it's neither success nor error) and reuses the deck's countdown bar. */
-  .notif--undo .notif__glyph { color: var(--ink-2); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  /* Feedback confirmations are cards in the notification deck like everything else — there is
+     no second toast surface. A bottom-centre pill with its own timing, its own icon set and no
+     keyboard was two messages' worth of drift from the one deck that already exists. */
 
   /* segmented control (Create worktree: existing branch / new branch) */
   .seg { display: flex; background: var(--hover); border-radius: 8px; padding: 2px; margin-bottom: 12px; }
@@ -2450,6 +2473,8 @@
   const MARK_ERROR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg>';
   const MARK_DONE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
   const MARK_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></svg>';
+  const MARK_DISMISS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
+  const MARK_MAIL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48ZM98.71,128,40,181.81V74.19Zm11.84,10.85,12,11.05a8,8,0,0,0,10.82,0l12-11.05,58,53.15H52.57ZM157.29,128,216,74.18V181.82ZM203.43,64,128,133.15,52.57,64Z"/></svg>';
 
   // priority: needs-input > error > working > running > idle
   const PRIORITY = ['input', 'error', 'work', 'run', 'idle'];
@@ -3243,8 +3268,7 @@
   const notifState = new Map();   // sessionEl -> { kind, order }
   const notifCards = new Map();   // sessionEl -> card element
   const NOTIF_OP = [1, 0.7, 0.45];   // front, then two peeking; deeper cards hide behind "+N"
-  const NOTIF_KBD = '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>jump</span>';
-  const NOTIF_KBD_UNDO = '<span class="notif__kbd"><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span>undo</span>';
+  const NOTIF_PEEK = 10.5;           // how far each card behind the front rises, top edge to top edge
   let notifSeq = 0;
 
   const notifLive = (s) => s === 'work' || s === 'run' || s === 'input' || s === 'error';
@@ -3276,17 +3300,17 @@
     if (notifState.delete(el)) renderNotifs();
   }
   function restartNotifTimer(card) {
-    const bar = card.querySelector('.notif__timer');
+    const bar = card.querySelector('.notif__timer i');
     if (!bar) return;
     bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = '';
   }
 
   // background notifications, most-urgent first: a fresh undo sits ahead of everything (you just
   // acted and it has a fuse), then error before input before done, newest first
-  const NOTIF_RANK = { undo: -1, error: 0, input: 1, done: 2 };
+  const NOTIF_RANK = { undo: -1, error: 0, input: 1, done: 2, neutral: 2 };
   function notifOrder() {
-    // an undo card is session-less — it lives in the deck even though its row left the DOM
-    return [...notifState.keys()].filter((el) => el.undo || (el !== openEl && document.contains(el))).sort((a, b) => {
+    // undo and system cards are session-less — they live in the deck with no row behind them
+    return [...notifState.keys()].filter((el) => el.undo || el.system || (el !== openEl && document.contains(el))).sort((a, b) => {
       const A = notifState.get(a), B = notifState.get(b);
       if (NOTIF_RANK[A.kind] !== NOTIF_RANK[B.kind]) return NOTIF_RANK[A.kind] - NOTIF_RANK[B.kind];
       return B.order - A.order;
@@ -3294,50 +3318,91 @@
   }
   function notifTop() { return notifOrder()[0] || null; }
 
+  // The verb line is a sentence — capital first letter, no full stop. An agent card leads with
+  // its name ("Claude finished"), a plain process with the verb itself ("Finished"): one
+  // grammar, not one per session kind.
   function notifWhat(el, kind) {
     const ai = el.dataset.type === 'ai';
-    if (kind === 'error') return ai ? 'Claude hit an error' : 'exited with an error';
-    if (kind === 'done') return ai ? 'Claude finished' : 'finished';
-    return ai ? 'Claude needs your input' : 'needs input';
+    if (kind === 'error') return ai ? 'Claude hit an error' : 'Exited with an error';
+    if (kind === 'done') return ai ? 'Claude finished' : 'Finished';
+    return ai ? 'Claude needs your input' : 'Needs input';
   }
-  function buildNotif(el) {
+  // Three things raise cards — a session's own state, a session-less system message, and an
+  // undo window — and they differ only in what fills the slots, never in the chassis. Each
+  // resolves to one spec, so there is exactly one place that decides what a card looks like.
+  //
+  // A card with no identity to name carries no who-line at all; the old build rendered the row
+  // unconditionally, so a message with an empty title floated a dot and a glyph over nothing.
+  function notifSpec(el) {
     const kind = notifState.get(el).kind;
-    if (el.undo) {   // session-less undo card: same chrome as a done toast, but click / drain-end act
-      const c = document.createElement('div');
-      c.className = 'notif notif--undo';
-      c.addEventListener('click', () => performUndo(el));
-      c.innerHTML = '<div class="notif__glyph">' + MARK_UNDO + '</div>'
-        + '<div class="notif__text"><div class="notif__what">' + esc(el.label) + '</div></div>' + NOTIF_KBD_UNDO;
-      const bar = document.createElement('div');
-      bar.className = 'notif__timer';
-      bar.style.setProperty('--life', UNDO_MS + 'ms');
-      bar.addEventListener('animationend', () => commitPendingUndo(el));
-      c.appendChild(bar);
-      notifCards.set(el, c);
-      return c;
-    }
+    if (el.undo) return {
+      kind: 'undo', tier: el.destructive ? 'destructive' : '',
+      glyph: el.icon || MARK_UNDO, what: el.label, sub: el.sub, life: UNDO_MS,
+      act: { label: 'Undo', danger: !!el.destructive, run: () => performUndo(el) },
+      // × on an undo card means "let it stand" — the same thing the countdown draining means.
+      dismiss: () => commitPendingUndo(el),
+      expire: () => commitPendingUndo(el),
+    };
+    if (el.system) return {
+      kind, tier: el.tier || '', glyph: el.glyph, who: el.who, what: el.what, sub: el.sub,
+      life: el.life || 0, act: el.act,
+      dismiss: () => clearNotif(el), expire: () => clearNotif(el),
+    };
     const name = el.querySelector('.session__name').textContent.trim();
     const icon = el.querySelector('.session__icon').innerHTML;
     const repo = outerRepoOf(el);
     const chip = repo && repo.querySelector('.repo__chip');
     const color = (chip && chip.style.getPropertyValue('--c').trim()) || 'var(--text-faint)';
+    return {
+      kind, tier: kind === 'done' ? 'ambient' : '',
+      glyph: kind === 'error' ? MARK_ERROR : kind === 'done' ? MARK_DONE : MARK_INPUT,
+      who: { dot: color, icon, text: name }, what: notifWhat(el, kind),
+      life: kind === 'done' ? NOTIF_DONE_MS : 0,
+      act: { label: 'Open', run: () => jumpTo(el) },
+      dismiss: () => clearNotif(el), expire: () => clearNotif(el),
+    };
+  }
+
+  function buildNotif(el) {
+    const s = notifSpec(el);
     const c = document.createElement('div');
-    c.className = 'notif notif--' + kind;
-    c.addEventListener('click', () => jumpTo(el));
-    c.innerHTML = '<div class="notif__glyph">' + (kind === 'error' ? MARK_ERROR : kind === 'done' ? MARK_DONE : MARK_INPUT) + '</div>'
-      + '<div class="notif__text"><div class="notif__who">'
-      + '<span class="dot" style="background:' + color + '"></span>'
-      + '<span class="k">' + icon + '</span>' + esc(name)
-      + '</div><div class="notif__what">' + notifWhat(el, kind) + '</div></div>' + NOTIF_KBD;
-    if (kind === 'done') {   // the bar IS the timer: dismissal rides its animationend
-      const bar = document.createElement('div');
-      bar.className = 'notif__timer';
-      bar.style.setProperty('--life', NOTIF_DONE_MS + 'ms');
-      bar.addEventListener('animationend', () => clearNotif(el));
-      c.appendChild(bar);
+    c.className = 'notif notif--' + s.kind + (s.tier ? ' notif--' + s.tier : '');
+    let html = '<div class="notif__glyph">' + s.glyph + '</div><div class="notif__text">';
+    if (s.who) html += '<div class="notif__who">'
+      + (s.who.dot ? '<span class="dot" style="background:' + s.who.dot + '"></span>' : '')
+      + (s.who.icon ? '<span class="k">' + s.who.icon + '</span>' : '')
+      + esc(s.who.text) + '</div>';
+    html += '<div class="notif__what">' + esc(s.what) + '</div>';
+    if (s.sub) html += '<div class="notif__sub">' + esc(s.sub) + '</div>';
+    html += '</div>';
+    if (s.act) html += '<span class="notif__act' + (s.act.danger ? ' notif__act--danger' : '') + '" role="button">'
+      + esc(s.act.label) + '<span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span></span>';
+    html += '<span class="notif__x" role="button" aria-label="Dismiss">' + MARK_DISMISS + '</span>';
+    c.innerHTML = html;
+    // The body still carries the primary action, so the whole card stays a big target — but
+    // dismissing now has its own, so the two can no longer be the same click.
+    c.addEventListener('click', () => (s.act ? s.act.run() : s.dismiss()));
+    c.querySelector('.notif__x').addEventListener('click', (e) => { e.stopPropagation(); s.dismiss(); });
+    if (s.life) {
+      const clip = document.createElement('div');
+      clip.className = 'notif__clip';
+      clip.innerHTML = '<div class="notif__timer"><i></i></div>';
+      c.style.setProperty('--life', s.life + 'ms');
+      c.appendChild(clip);
+      clip.querySelector('i').addEventListener('animationend', s.expire);
     }
     notifCards.set(el, c);
     return c;
+  }
+
+  // A message with no session behind it — a confirmation, a background failure, a housekeeping
+  // digest — is a card in this deck like any other: same corner, same chrome, same countdown,
+  // same ⌘↩. Returns the key so the caller can clear it early.
+  function raiseSystemNotif(spec) {
+    const key = Object.assign({ system: true }, spec);
+    notifState.set(key, { kind: spec.kind, order: ++notifSeq });
+    renderNotifs();
+    return key;
   }
 
   function notifMore() {
@@ -3357,23 +3422,31 @@
     order.forEach((el, i) => {
       let c = notifCards.get(el);
       if (!c) { c = buildNotif(el); notifsEl.appendChild(c); requestAnimationFrame(() => requestAnimationFrame(() => c.classList.add('in'))); }
-      c.style.setProperty('--i', i);
       c.style.setProperty('--op', i < NOTIF_OP.length ? NOTIF_OP[i] : 0);
       c.style.setProperty('--z', 100 - i);
       c.classList.toggle('deep', i >= NOTIF_OP.length);
       c.classList.toggle('is-front', i === 0);
     });
-    const first = notifsEl.querySelector('.notif.in') || notifsEl.querySelector('.notif');
-    if (first) {
-      const step = first.offsetHeight + 9;   // card height + a breathing gap when fanned
-      notifsEl.style.setProperty('--step', step + 'px');
-      notifsEl._fanH = (order.length - 1) * step + first.offsetHeight + 4;
-      if (notifsEl.classList.contains('spread')) notifsEl.style.height = notifsEl._fanH + 'px';
-    }
+    // Place by TOP edge: card i's top sits NOTIF_PEEK * i above the front card's top, whatever
+    // the two heights are. A flat rise off the shared bottom edge only worked while every card
+    // was the same height — a 52px card behind a 66px front vanishes under it completely.
+    const frontH = (notifCards.get(order[0]) || {}).offsetHeight || 56;
+    let fan = 0;
+    order.forEach((el, i) => {
+      const c = notifCards.get(el);
+      if (!c) return;
+      const h = c.offsetHeight;
+      c.style.setProperty('--peek', -(frontH + i * NOTIF_PEEK - h) + 'px');
+      c.style.setProperty('--fan', -fan + 'px');   // fanned, cards stack by their own heights
+      c.style.setProperty('--scale', i === 0 ? 1 : Math.max(0.5, 1 - i * 0.045));
+      fan += h + 9;   // card height + a breathing gap
+    });
+    notifsEl._fanH = fan - 9 + 4;
+    if (notifsEl.classList.contains('spread')) notifsEl.style.height = notifsEl._fanH + 'px';
     const hidden = order.length - NOTIF_OP.length;
     const m = notifMore();
     m.textContent = '+' + hidden;
-    if (first) m.style.bottom = (first.offsetHeight + 26) + 'px';
+    m.style.bottom = (frontH + (NOTIF_OP.length - 1) * NOTIF_PEEK + 8) + 'px';
     m.classList.toggle('show', hidden > 0);
   }
 
@@ -3403,9 +3476,13 @@
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       const top = notifTop();
-      if (top && top.undo) { e.preventDefault(); performUndo(top); return; }
-      const el = top;
-      if (el) { e.preventDefault(); jumpTo(el); }
+      if (!top) return;
+      e.preventDefault();
+      // ⌘↩ fires whatever the front card's own button says: Undo, Open, or — on a card with
+      // nowhere to go — dismiss.
+      if (top.undo) { performUndo(top); return; }
+      if (top.system) { if (top.act) top.act.run(); else clearNotif(top); return; }
+      jumpTo(top);
     }
   });
 
@@ -4638,7 +4715,10 @@
   const ICON_DOTS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm56-12a12,12,0,1,0,12,12A12,12,0,0,0,196,116ZM60,116a12,12,0,1,0,12,12A12,12,0,0,0,60,116Z"/></svg>';
   const ICON_PLUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg>';
   const ICON_CLOSE  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
+  const ICON_MINUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,128Z"/></svg>';
   const ICON_TRASH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"/></svg>';
+  // Archive box — deliberately not the trash can (which destroys) and not the minus (Remove).
+  const ICON_ARCHIVE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,48H32A16,16,0,0,0,16,64V88a16,16,0,0,0,16,16v88a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V104a16,16,0,0,0,16-16V64A16,16,0,0,0,224,48Zm-16,144H48V104H208ZM224,88H32V64H224ZM96,136a8,8,0,0,1,8-8h48a8,8,0,0,1,0,16H104A8,8,0,0,1,96,136Z"/></svg>';
   const ICON_BRANCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H96a23.84,23.84,0,0,0-8,1.38V95a32,32,0,1,0-16,0v66a32,32,0,1,0,16,0V144a8,8,0,0,1,8-8h88a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,232,64ZM64,64A16,16,0,1,1,80,80,16,16,0,0,1,64,64ZM96,192a16,16,0,1,1-16-16A16,16,0,0,1,96,192ZM200,80a16,16,0,1,1,16-16A16,16,0,0,1,200,80Z"/></svg>';
   const ICON_TERMINAL = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
   const ICON_AI = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></svg>';
@@ -4754,13 +4834,28 @@
 
   // The one delete verb every gesture funnels through — kebab, tab ×, ⌘W, `d`. It just
   // does it: the row soft-deletes instantly and an undo pill parks it for a few seconds.
-  // The sole exception is a worktree (branch): deleting its folder on disk is irreversible,
-  // so that one still drops into the deliberate remove-from-sidebar / delete-worktree fork.
+  // A branch archives: the row leaves the sidebar, the folder stays, and the background
+  // clean-up reclaims it later only once the work is provably recoverable from a remote.
+  // Nothing here is irreversible, so nothing here confirms — the dialog lives on
+  // `Delete worktree now`, which is the act that actually destroys something.
   function requestDelete(row) {
     if (!row) return;
-    if (rowLevel(row) === 'branch') { openPaletteAt(removeWorktreeFrame(row)); return; }
-    const name = rowLevel(row) === 'repo' ? wsName(row) : seName(row);
-    softRemove(rowUnit(row), { label: (rowLevel(row) === 'session' ? 'Closed ' : 'Removed ') + name });
+    const lvl = rowLevel(row);
+    if (lvl === 'branch') { archiveBranch(row); return; }
+    const name = lvl === 'repo' ? wsName(row) : seName(row);
+    softRemove(rowUnit(row), { label: (lvl === 'session' ? 'Closed ' : 'Removed ') + name });
+  }
+
+  // Archived branches, most recent first. They keep their DOM node — restoring is slotting it
+  // back where it stood — which is also why the ⌘K list can show one and put it back.
+  const archived = [];
+  function archiveBranch(row) {
+    const name = brName(row);
+    softRemove(rowUnit(row), {
+      label: 'Archived ' + name,
+      icon: ICON_ARCHIVE,
+      onCommit: (restore) => archived.unshift({ name, restore, at: Date.now() }),
+    });
   }
 
   function actionBtn(kind, icon, label, run) {
@@ -4780,7 +4875,9 @@
     const lvl = rowLevel(row);
     const acts = document.createElement('span');
     acts.className = 'row-acts';
-    acts.appendChild(actionBtn('del', lvl === 'session' ? ICON_CLOSE : ICON_TRASH, lvl === 'session' ? 'Close' : 'Remove', () => requestDelete(row)));
+    const delIcon = lvl === 'session' ? ICON_CLOSE : lvl === 'branch' ? ICON_ARCHIVE : ICON_MINUS;
+    const delLabel = lvl === 'session' ? 'Close' : lvl === 'branch' ? 'Archive' : 'Remove';
+    acts.appendChild(actionBtn('del', delIcon, delLabel, () => requestDelete(row)));
     acts.appendChild(lvl === 'session'
       ? actionBtn('dots', ICON_DOTS, 'Actions', () => openRowActions(row))
       : actionBtn('add', ICON_PLUS, lvl === 'repo' ? 'New worktree' : 'New session', () => addToRow(row)));
@@ -5373,7 +5470,7 @@
       [['↵'], 'Open · toggle', ['Space']],
       [['A'], 'Add session'],
       [['R'], 'Rename'],
-      [['D'], 'Close · remove'],
+      [['D'], 'Close · archive'],
       [['⇧J', '⇧K'], 'Reorder'],
       [['esc'], 'Focus content'],
     ]],
@@ -5564,6 +5661,7 @@
   function sendFeedbackAsFix(text, ctx) {
     const repo = (openEl && outerRepoOf(openEl)) || document.querySelector('.repo[data-repo]');
     const slug = slugify(text);
+    let spawned = null;
     const seed = text + '\n\n' + ctx.map(([kk, v]) => kk + ': ' + v).join('\n');   // the prompt Claude is seeded with
     if (repo) {
       repo.classList.add('repo--open');
@@ -5574,11 +5672,17 @@
       wrapper.querySelectorAll('[data-row]').forEach(addRowActions);
       wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
       addSession(wrapper.querySelector('.branch--group'), 'claude', { name: 'Claude Code', open: false });
-      const sess = wrapper.querySelector('.session');
-      if (sess) { setSessionState(sess, 'work'); sess.classList.add('session--unread'); sess.title = seed; }
+      spawned = wrapper.querySelector('.session');
+      if (spawned) { setSessionState(spawned, 'work'); spawned.classList.add('session--unread'); spawned.title = seed; }
       rollUpGroups();
     }
-    flashToast('done', 'On it', 'feedback/' + slug);
+    // The branch is the identity, "On it" is what happened, and the mark is the comment glyph:
+    // a check would say a session finished, and nothing finished here — something started.
+    raiseSystemNotif({
+      kind: 'done', tier: 'ambient', glyph: ICON_CHAT, life: NOTIF_DONE_MS,
+      who: { icon: ICON_BRANCH, text: 'feedback/' + slug }, what: 'On it',
+      act: spawned ? { label: 'Open', run: () => jumpTo(spawned) } : null,
+    });
   }
 
   // Everyone else: a pre-filled email, capped for mailto's practical body limit. No client → the
@@ -5588,28 +5692,9 @@
     const body = (text + (env ? '\n\n— — —\n' + env : '') + '\n\nSent from Synth').slice(0, 1600);
     const url = 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent('Synth feedback') + '&body=' + encodeURIComponent(body);
     try { location.href = url; } catch (e) {}
-    flashToast('mail', 'Handed to Mail', '');
-  }
-
-  const TOAST_MARK = {
-    done: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z"/></svg>',
-    mail: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,48H32a8,8,0,0,0-8,8V192a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A8,8,0,0,0,224,48ZM98.71,128,40,181.81V74.19Zm11.84,10.85,12,11.05a8,8,0,0,0,10.82,0l12-11.05,58,53.15H52.57ZM157.29,128,216,74.18V181.82ZM203.43,64,128,133.15,52.57,64Z"/></svg>',
-  };
-  let toastLayer = null;
-  function toastsLayer() {
-    if (!toastLayer) { toastLayer = document.createElement('div'); toastLayer.className = 'fb-toasts'; document.body.appendChild(toastLayer); }
-    return toastLayer;
-  }
-  // Each toast owns its life: it slides into the bottom-center stack and fades out on its own
-  // timer — a fresh one joins the deck rather than evicting whatever is still on screen.
-  function flashToast(kind, title, sub) {
-    const t = document.createElement('div');
-    t.className = 'fb-toast fb-toast--' + kind;
-    t.innerHTML = '<span class="fb-toast__glyph">' + (TOAST_MARK[kind] || TOAST_MARK.done) + '</span>'
-      + '<span><b>' + esc(title) + '</b>' + (sub ? '&nbsp;&nbsp;' + esc(sub) : '') + '</span>';
-    toastsLayer().appendChild(t);
-    requestAnimationFrame(() => t.classList.add('in'));
-    setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 260); }, 3400);
+    // One line: the old card's who-row carried the literal email subject, which is the one
+    // thing you had just typed. Neutral, not green — nothing of yours finished.
+    raiseSystemNotif({ kind: 'neutral', tier: 'ambient', glyph: MARK_MAIL, life: NOTIF_DONE_MS, what: 'Handed to Mail' });
   }
 
   // ===== Soft delete + undo =================================================
@@ -5652,6 +5737,10 @@
     const fallback = fallbackFor(unit);
     const reopen = openEl && unit.contains(openEl) ? openEl : null;
     const label = (opts && opts.label) || 'Removed';
+    // The chip shows the thing you acted on — a closed session wears its own kind icon, so a
+    // Claude row reads differently from a terminal at a glance.
+    const icon = (opts && opts.icon)
+      || (unit.matches && unit.matches('.session') ? (unit.querySelector('.session__icon') || {}).innerHTML : null);
 
     // exit animation, then detach (the refs keep the nodes alive) and let the tree settle
     targets.forEach((n) => n.classList.add('row-exit'));
@@ -5664,7 +5753,7 @@
     unit.addEventListener('animationend', detach, { once: true });
     setTimeout(detach, 260);
 
-    raiseUndo(label, () => {   // restore: slot every detached node back where it stood
+    const restore = () => {   // slot every detached node back where it stood
       detach();   // if undo lands mid-animation, finish the detach first so anchors are stable
       snap.forEach((s) => {
         const ref = (s.next && s.next.parentElement === s.parent) ? s.next : null;
@@ -5674,6 +5763,14 @@
       if (reopen && document.contains(reopen)) jumpTo(reopen);
       else if (snap[0].node.matches('.session')) jumpTo(snap[0].node);
       else select(snap[0].node.querySelector(':scope > [data-row]') || snap[0].node, true);
+    };
+    // The commit hook fires when the window drains, never on undo — so the 8 seconds change
+    // nothing, and a row the user pulled back is not sitting in the archived list.
+    raiseUndo(label, restore, {
+      icon,
+      sub: opts && opts.sub,
+      destructive: opts && opts.destructive,
+      onCommit: opts && opts.onCommit ? () => opts.onCommit(restore) : null,
     });
   }
 
@@ -5682,8 +5779,8 @@
   // other card. Several stack at once — every removal parks its own card and commits when that
   // card's countdown bar drains, so a fresh removal never evicts a pending undo.
   const pendingUndos = new Set();
-  function raiseUndo(label, restore) {
-    const key = { undo: true, label, restore };
+  function raiseUndo(label, restore, opts) {
+    const key = Object.assign({ undo: true, label, restore }, opts || {});
     pendingUndos.add(key);
     notifState.set(key, { kind: 'undo', order: ++notifSeq });
     renderNotifs();
@@ -5697,6 +5794,7 @@
   function commitPendingUndo(key) {
     if (!pendingUndos.delete(key)) return;
     clearNotif(key);   // detached nodes just fall away — nothing more to do in the mock
+    if (key.onCommit) key.onCommit();
   }
 
   // ===== Command palette (⌘K) — Linear-style fuzzy command + jump menu =====
@@ -5785,7 +5883,6 @@
   const ICON_ENTER  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M232,80v88a8,8,0,0,1-16,0V88H56.68l34.35,34.34a8,8,0,0,1-11.32,11.32l-48-48a8,8,0,0,1,0-11.32l48-48a8,8,0,0,1,11.32,11.32L56.68,72H224A8,8,0,0,1,232,80Z"/></svg>';
   const ICON_RENAME = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"/></svg>';
   const ICON_RESET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16h27.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,0,1,16,0Z"/></svg>';
-  const ICON_MINUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,128Z"/></svg>';
   // arrows-in — two panes collapsing back to one (Unsplit)
   const ICON_UNSPLIT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,104V56a8,8,0,0,1,16,0V84.69l34.34-34.35a8,8,0,0,1,11.32,11.32L171.31,96H200a8,8,0,0,1,0,16H152A8,8,0,0,1,144,104ZM104,144H56a8,8,0,0,0,0,16H84.69L50.34,194.34a8,8,0,0,0,11.32,11.32L96,171.31V200a8,8,0,0,0,16,0V152A8,8,0,0,0,104,144Z"/></svg>';
 
@@ -5865,7 +5962,7 @@
     if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
-    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_MINUS, label: 'Remove', danger: true, enter: () => pushFrame(removeWorktreeFrame(br)) });
+    if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_ARCHIVE, label: 'Archive', danger: true, enter: () => runAndClose(() => archiveBranch(br)) });
     if (head) items.push({ grp: 'Project', unit: wsName(head), icon: ICON_BRANCH, label: 'New branch', enter: () => pushFrame(worktreeFrame(head)) });
     return { items };
   }
@@ -5982,6 +6079,7 @@
           { sec: 'act', icon: ICON_GEAR,   label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) },
           { sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) },
           { sec: 'act', icon: ICON_MINUS,  label: 'Remove', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(head), { label: 'Removed ' + wsName(head) })) },
+          ...(archived.length ? [{ sec: 'act', icon: ICON_ARCHIVE, label: 'Archived · ' + archived.length, enter: () => pushFrame(archivedFrame()) }] : []),
         );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -6000,7 +6098,8 @@
           ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
           { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
-          { sec: 'act', icon: ICON_MINUS,    label: 'Remove', danger: true, enter: () => pushFrame(removeWorktreeFrame(row)) },
+          { sec: 'act', icon: ICON_ARCHIVE,  label: 'Archive', danger: true, enter: () => runAndClose(() => archiveBranch(row)) },
+          { sec: 'act', icon: ICON_TRASH,    label: 'Delete worktree now', danger: true, enter: () => pushFrame(deleteWorktreeNowFrame(row)) },
         ];
         if (row.classList.contains('branch--group'))
           row.closest('[data-repo]').querySelectorAll('.sessions .session').forEach((s) =>
@@ -6057,23 +6156,46 @@
 
   // Removing a worktree is the one delete that still asks first, because its two outcomes
   // differ irreversibly: drop it from the sidebar (folder + branch stay on disk, re-add
-  // anytime) or delete the worktree folder for real. Either arm then soft-deletes with an
-  // undo pill, so nothing is actually torn off disk until the window closes — the confirm
-  // picks the outcome; the undo pill guards the few seconds after. The git branch survives
-  // both. The destructive arm is danger-styled; the list-only one isn't — colour is the tell.
-  function removeWorktreeFrame(row) {
+  // Deleting the folder now is the one irreversible act in the whole flow, so it is the one
+  // thing that confirms — and it confirms from every surface, never only from ⌘K. A verb
+  // whose consequence depends on which input device summoned it is not one verb, and Apple's
+  // own apps bolt the dialog to irreversibility (Empty Trash), never to the entry point.
+  // Cancel is preselected, so a stray ↵ costs nothing.
+  function deleteWorktreeNowFrame(row) {
     const name = brName(row);
     return {
-      crumb: 'Remove ' + name + '?', mode: 'confirm',
-      note: 'Delete the worktree folder, or just drop it from the sidebar? The git branch itself stays either way — and you can undo for a few seconds after.', placeholder: '↵ select · esc cancel',
+      crumb: 'Delete ' + name + '?', mode: 'confirm',
+      note: 'Deletes the worktree folder now. The git branch stays, and you can undo for a few seconds after.', placeholder: '↵ select · esc cancel',
       build() {
         return [
-          { icon: ICON_MINUS, label: 'Remove from sidebar', ctx: 'folder and branch stay on disk', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(row), { label: 'Removed ' + name })) },
-          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(row), { label: 'Archived ' + name })) },
+          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(row), { label: 'Deleted ' + name, icon: ICON_TRASH, destructive: true, sub: 'the folder goes when the bar does' })) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },
     };
+  }
+
+  // Everything this project has archived, and why each folder is still there. Without this
+  // list the clean-up is a background process deleting folders the user cannot enumerate —
+  // and it is also the entire answer to "why hasn't this been cleaned up yet".
+  function archivedFrame() {
+    return {
+      crumb: 'Archived', placeholder: 'Restore a worktree, or delete one now…',
+      build() {
+        return archived.map((a) => ({
+          icon: ICON_ARCHIVE, label: a.name, ctx: archivedAge(a),
+          enter: () => runAndClose(() => { a.restore(); archived.splice(archived.indexOf(a), 1); }),
+        }));
+      },
+    };
+  }
+
+  function archivedAge(a) {
+    const mins = Math.floor((Date.now() - a.at) / 60000);
+    if (mins < 1) return 'archived just now';
+    if (mins < 60) return 'archived ' + mins + 'm ago';
+    if (mins < 1440) return 'archived ' + Math.floor(mins / 60) + 'h ago';
+    return 'archived ' + Math.floor(mins / 1440) + 'd ago';
   }
 
   // New branch via ⌘K: empty until you type, then fuzzy-match every local and remote

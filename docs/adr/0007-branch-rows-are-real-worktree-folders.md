@@ -24,3 +24,18 @@ Removing a workspace or branch row is **UI-only**: sessions are terminated, but 
 branch, and everything on disk stay untouched (ADR-0004's teardown is deferred until a real delete
 action exists). The action is labelled "Remove", never "Delete", to keep the promise visible.
 Sessions are the exception — deleting a session genuinely ends its process.
+
+## 2026-07-24 — superseded: a branch row's remove is now Archive, and it does eventually delete
+
+The paragraph above ("Removing a workspace or branch row is **UI-only** … labelled 'Remove', never
+'Delete'") no longer describes a branch. It still describes a project row exactly.
+
+A branch row now **archives**: the row leaves the sidebar, the folder and branch stay, and a
+background pass reclaims the folder once the work is provably recoverable from a remote. So the
+promise the old label protected — "nothing on disk is touched" — is now a promise about a *window*
+rather than forever, and a word that means "forever" would be dishonest. Hence a fourth verb rather
+than a re-pointed third one.
+
+What has not changed: the git branch is never deleted, by any path. And the deferred teardown this
+ADR describes finally has its "real delete action" — two of them, the eventual sweep and the
+immediate `Delete worktree now`.

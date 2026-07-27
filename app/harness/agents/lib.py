@@ -139,6 +139,14 @@ def wait(fn, secs=30, every=0.3):
         time.sleep(every)
     return None
 
+# Which Application Support sandbox the driven build uses. AppSupport keys it on the bundle's
+# CFBundleName, so the dev build lives under "Synth Dev" and never shares state with a stable
+# one — the harness has to follow the bundle it is actually driving rather than assume "Synth",
+# or it reads an instance file that was never written and sees every field as absent.
+def support_dir():
+    name = sh(f"/usr/libexec/PlistBuddy -c 'Print :CFBundleName' '{APP}/Contents/Info.plist'") or "Synth"
+    return pathlib.Path.home() / "Library/Application Support" / name
+
 def instance_json(pid):
-    p = pathlib.Path.home() / "Library/Application Support/Synth/instances" / f"{pid}.json"
+    p = support_dir() / "instances" / f"{pid}.json"
     return json.loads(p.read_text()) if p.exists() else {}

@@ -84,13 +84,38 @@ enum AgentPromptStart {
 /// any live session settling to idle — the green ✓ `done`, a transient toast that
 /// dismisses itself.
 enum NotifKind: Sendable {
-    case input, error, done, undo
+    /// `.neutral` is the app talking about its own work — a housekeeping digest, a
+    /// confirmation. It never wears a session's state colour, so green keeps meaning "your
+    /// agent finished" and blue keeps meaning "something is blocked on you".
+    case input, error, done, undo, neutral
 
     /// Deck precedence (front first): a fresh undo (you just acted, and it has a fuse) sits ahead
     /// of everything, then errors before needs-input before done.
     var rank: Int {
-        switch self { case .undo: return -1; case .error: return 0; case .input: return 1; case .done: return 2 }
+        switch self {
+        case .undo: return -1
+        case .error: return 0
+        case .input: return 1
+        case .done, .neutral: return 2
+        }
     }
+}
+
+/// Which of the three tiers a card belongs to. The tier decides *presence* — chip size, verb
+/// weight, padding — never the chassis: one glass card, one corner, one deck under all of them.
+/// It is about demand, not volume: colour is decided separately, so a housekeeping nudge can be
+/// sticky in neutral ink while a blocked agent is sticky in blue.
+enum NotifTier: String, Sendable {
+    /// Tier 1. Sticky — something is waiting on you.
+    case attention
+    /// Tier 3. Self-dismissing — a result you asked for. (Tier 2, the undo window, is `.undo`.)
+    case ambient
+}
+
+/// The card's one button. Nil means the card has nothing to offer but dismissal.
+struct NotifAction: Sendable, Equatable {
+    var label: String
+    var danger: Bool = false
 }
 
 /// One live in-app notification — a background session escalated to a glass toast. `seq` is
@@ -114,6 +139,19 @@ struct InAppNotif: Identifiable {
     /// both from the session. A system toast persists until clicked.
     var message: String? = nil
     var iconPath: String? = nil
+
+    var tier: NotifTier = .attention
+    /// Evidence under the verb line — an exit code, git's own message, a size. Never a
+    /// restatement of what the verb already said.
+    var sub: String? = nil
+    /// The button, and what ⌘↩ fires on the front card.
+    var action: NotifAction? = nil
+    /// The one undo whose expiry touches the disk: glyph and countdown both go red, so the
+    /// eight seconds read as a fuse rather than a receipt.
+    var destructive: Bool = false
+    /// Whether this card runs a countdown and dismisses itself. Kind alone can't say — an
+    /// archive nudge is `.neutral` and sticky, a sweep digest is `.neutral` and transient.
+    var drains: Bool = false
 
     /// A done toast's life, working.html `NOTIF_DONE_MS`. Sticky toasts (input / error)
     /// never read these.
@@ -273,6 +311,9 @@ enum FeedbackMode {
     static func loadBoolPref(_ key: String, default def: Bool) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? def
     }
+    static func loadIntPref(_ key: String, default def: Int) -> Int {
+        UserDefaults.standard.object(forKey: key) as? Int ?? def
+    }
 
     /// Which project the Settings project-tab last targeted (working.html's localStorage).
     static let settingsProjectKey = "synth-settings-project"
@@ -324,6 +365,41 @@ enum FeedbackMode {
         didSet { UserDefaults.standard.set(tabsMode, forKey: AppStore.tabsModeKey) }
     }
     static let tabsModeKey = "synth-tabs"
+
+    // MARK: Archive sweep settings
+
+    /// Whether the sweeper may reclaim archived worktrees at all. **Off by default for one
+    /// release**: archiving is useful on its own, and a background process that deletes folders
+    /// should be something a user turned on once they've seen the Archived list fill up.
+    /// `archive_sweeper_kill` is the separate emergency stop for after this flips true.
+    var archiveSweepEnabled = AppStore.loadBoolPref(AppStore.archiveSweepKey, default: false) {
+        didSet { UserDefaults.standard.set(archiveSweepEnabled, forKey: AppStore.archiveSweepKey) }
+    }
+    static let archiveSweepKey = "synth-archive-sweep"
+
+    /// Days an archived worktree sits untouched before the sweeper will consider it. 0 means
+    /// never — the sweeper is off but Archive still works, which is the point of keeping the
+    /// two settings apart. Offered as Never / 7 / 14 / 30.
+    var archiveGraceDays = AppStore.loadIntPref(AppStore.archiveGraceKey, default: 7) {
+        didSet { UserDefaults.standard.set(archiveGraceDays, forKey: AppStore.archiveGraceKey) }
+    }
+    static let archiveGraceKey = "synth-archive-grace-days"
+
+    /// Evaluate every condition, log the verdict, delete nothing. Defaults ON for the dev
+    /// channel, so the author's own worktrees are never the test subjects.
+    var archiveDryRun = AppStore.loadBoolPref(AppStore.archiveDryRunKey, default: isDevChannel) {
+        didSet { UserDefaults.standard.set(archiveDryRun, forKey: AppStore.archiveDryRunKey) }
+    }
+    static let archiveDryRunKey = "synth-archive-dry-run"
+
+    /// The grace, in seconds, with the harness override applied. Waiting seven days is not a
+    /// test, so `app/harness/` can compress the clock the same way `SYNTH_STATE_DIR` redirects
+    /// the snapshot. Read fresh so a test can set it between ticks.
+    var archiveGraceSeconds: TimeInterval {
+        if let raw = ProcessInfo.processInfo.environment["SYNTH_ARCHIVE_GRACE_SECONDS"],
+           let secs = TimeInterval(raw) { return secs }
+        return TimeInterval(archiveGraceDays) * 86_400
+    }
 
     /// Draggable sidebar width, clamped and persisted (working.html's `--sidebar-w`).
     var sidebarWidth: CGFloat = {
@@ -575,8 +651,16 @@ enum FeedbackMode {
     /// autosave model.
     private func syncAgentBridge() {
         let paths = workspaces.flatMap { $0.branches.map(\.worktreeURL.path) }
+        // The registry keeps ALL paths, archived included: it is how a sibling Synth learns
+        // this instance still manages that folder, and the sibling's sweeper refuses to touch
+        // anything another live instance claims. Dropping archived paths here would fail that
+        // check open in exactly the case it exists for.
         InstanceRegistry.shared.update(worktreePaths: paths)
-        MCPInstaller.syncWorktreeConfigs(paths, servers: [
+        // The config writer takes only live rows: an archived worktree is one the user has
+        // stopped working in, and writing into it every 4s would keep dirtying a folder the
+        // sweeper is trying to certify as clean.
+        let live = workspaces.flatMap { $0.branches.filter { !$0.isArchived }.map(\.worktreeURL.path) }
+        MCPInstaller.syncWorktreeConfigs(live, servers: [
             "synth-browser": mcpBrowserEnabled,
             "synth-app": mcpAppEnabled,
         ])
@@ -634,7 +718,7 @@ enum FeedbackMode {
                 // A failure keeps its row — the error should be seen and inspectable,
                 // not vanish with the process.
                 s.status = .error
-                routeTransition(id, prev: prev, next: .error)
+                routeTransition(id, prev: prev, next: .error, detail: "exit \(real)")
             }
         case let .kindChanged(id, kind):
             guard let s = session(id) else { break }
@@ -758,7 +842,10 @@ enum FeedbackMode {
     /// is otherwise untestable.
     @ObservationIgnored var automationNotifRoute: NotifRoute?
 
-    func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil, closing: Bool = false) {
+    /// `detail` is the evidence line the card carries under its verb — currently the real exit
+    /// status behind an error, which the app already knows and used to make you jump to find.
+    func routeTransition(_ id: UUID, prev: SessionStatus, next: SessionStatus, force: NotifRoute? = nil,
+                         closing: Bool = false, detail: String? = nil) {
         let route = force ?? automationNotifRoute
         let toNC = route.map { $0 == .notificationCenter } ?? !NSApp.isActive
         if openSessionID == id, !toNC { clearNotif(id); return }
@@ -767,7 +854,7 @@ enum FeedbackMode {
             let kind: NotifKind = next.rollup == .error ? .error : .input
             if openSessionID != id {
                 session(id)?.unread = true   // working.html notify() marks the row unread too
-                raiseInApp(id, kind)
+                raiseInApp(id, kind, sub: detail)
             }
             if toNC { NotificationService.shared.postAttention(store: self, id: id, kind: kind) }
         case .idle where prev.rollup != .idle:
@@ -788,7 +875,8 @@ enum FeedbackMode {
     /// Raise (or re-raise, bumping it to newest) a background session's toast. A done toast
     /// asks for nothing, so it dismisses itself; the seq check keeps the timer from killing
     /// a newer toast the same session raised in the meantime.
-    private func raiseInApp(_ id: UUID, _ kind: NotifKind, outlivesSession: Bool = false) {
+    private func raiseInApp(_ id: UUID, _ kind: NotifKind, outlivesSession: Bool = false,
+                            sub: String? = nil) {
         guard let s = session(id) else { return }
         notifSeq += 1
         cancelDismiss(id)   // the replaced toast's clock must not outlive it
@@ -796,7 +884,10 @@ enum FeedbackMode {
         notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq,
                                  sessionKind: s.kind, title: s.title,
                                  colorIndex: branch(of: s).flatMap { workspace(of: $0) }?.colorIndex,
-                                 outlivesSession: outlivesSession))
+                                 outlivesSession: outlivesSession,
+                                 tier: kind == .done ? .ambient : .attention,
+                                 sub: sub, action: NotifAction(label: "Open"),
+                                 drains: kind == .done))
         if kind == .done { armDoneToast(id) }   // re-raised done → the clock rewinds (fresh toast, full life)
     }
 
@@ -824,7 +915,7 @@ enum FeedbackMode {
     /// release arms it.
     private func armDoneToast(_ id: UUID) {
         cancelDismiss(id)
-        guard let i = notifs.firstIndex(where: { $0.id == id && ($0.kind == .done || $0.kind == .undo) }) else { return }
+        guard let i = notifs.firstIndex(where: { $0.id == id && $0.drains }) else { return }
         guard !drainHeld else { notifs[i].armedAt = nil; return }
         notifs[i].armedAt = Date()
         let remaining = notifs[i].remaining
@@ -841,10 +932,23 @@ enum FeedbackMode {
         }
     }
 
+    /// Commit every pending undo now, exactly as its window elapsing would. The drain is held
+    /// while the app is unfocused (`notifDrainUnfocused` starts true), which is right for a user
+    /// — an undo card should still be there when you come back — and means a headless harness
+    /// would otherwise wait forever for a soft-delete to become real.
+    func drainPendingUndos() {
+        for notif in notifs where notif.kind == .undo { commitUndo(notif.id) }
+    }
+
     func setNotifDrainPaused(_ paused: Bool) {
         guard paused != notifDrainPaused else { return }
         applyDrainBrake { notifDrainPaused = paused }
     }
+
+    /// The focus brake, drivable. A headless instance is never frontmost, so the drain is held
+    /// forever and no self-dismissing card can be observed dismissing itself — a harness has to
+    /// be able to say "focus came back" the same way it says "the undo window elapsed".
+    func setAutomationAppActive(_ active: Bool) { noteAppActive(active) }
 
     /// App (de)activation flips the focus brake through the same bank/arm transition as hover.
     private func noteAppActive(_ active: Bool) {
@@ -868,14 +972,48 @@ enum FeedbackMode {
                 cancelDismiss(notifs[i].id)
             }
         } else {
-            for n in notifs where n.kind == .done || n.kind == .undo { armDoneToast(n.id) }
+            for n in notifs where n.drains { armDoneToast(n.id) }
         }
     }
 
     /// Drop a session's toast (opening it, or a work/run/idle transition off it).
     func clearNotif(_ id: UUID) {
         cancelDismiss(id)
+        notifActions[id] = nil
         notifs.removeAll { $0.id == id }
+    }
+
+    /// What a system card's button does. Session cards jump and undo cards undo, both derivable;
+    /// these carry their own verb (Retry, Review, Open), so the closure rides alongside the card.
+    @ObservationIgnored private var notifActions: [UUID: @MainActor () -> Void] = [:]
+
+    /// The card's primary action — its button, a click on its body, and ⌘↩ on the front card all
+    /// land here, so the three can never mean different things.
+    func runNotifAction(_ id: UUID) {
+        guard let n = notifs.first(where: { $0.id == id }) else { return }
+        if n.kind == .undo { performUndo(id); return }
+        if let run = notifActions[id] { clearNotif(id); run(); return }
+        if let s = session(id) { jump(to: s); return }
+        clearNotif(id)
+    }
+
+    /// The × — always "drop this card", never the action. Until now a click on a session card
+    /// jumped and a click on a session-less one discarded: same gesture, opposite outcome, and
+    /// nothing on the card to tell them apart. On an undo card dismissing means "let it stand",
+    /// which is exactly what its countdown draining out already does.
+    func dismissNotif(_ id: UUID) {
+        guard let n = notifs.first(where: { $0.id == id }) else { return }
+        if n.kind == .undo { commitUndo(id); return }
+        clearNotif(id)
+    }
+
+    /// Commit one parked removal now, exactly as its window elapsing would.
+    private func commitUndo(_ id: UUID) {
+        cancelDismiss(id)
+        let action = undoActions[id]
+        undoActions[id] = nil
+        notifs.removeAll { $0.id == id }
+        action?.commit()
     }
 
     /// A background worktree op failed after its row already changed — raise a persistent
@@ -883,13 +1021,25 @@ enum FeedbackMode {
     /// Unfocused, Notification Center is alerted too, and the in-app card still waits so
     /// the failure is there when focus returns. The full git message goes to the log —
     /// the card is one line.
-    func raiseWorktreeError(_ verb: String, branch: String, workspace: String, details: String) {
+    func raiseWorktreeError(_ verb: String, branch: String, workspace: String, details: String,
+                            retry: (@MainActor () -> Void)? = nil) {
         NSLog("Synth: %@ (%@ · %@): %@", verb, branch, workspace, details)
         notifSeq += 1
-        notifs.append(InAppNotif(id: UUID(), kind: .error, seq: notifSeq,
+        let id = UUID()
+        // Git's reason goes on the card — the thing you would otherwise have gone to the log
+        // for. Not its *first* line: `git worktree add` narrates progress on stdout
+        // ("Preparing worktree…") and puts the reason on stderr, so the first line is chatter
+        // and the fatal is what matters. The full text still goes to the log.
+        let lines = details.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let reason = lines.first { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") } ?? lines.last
+        notifs.append(InAppNotif(id: id, kind: .error, seq: notifSeq,
                                  sessionKind: .terminal, title: "\(branch) · \(workspace)",
                                  colorIndex: nil, outlivesSession: true,
-                                 message: verb, iconPath: Phosphor.branch))
+                                 message: verb, iconPath: Phosphor.branch,
+                                 tier: .attention, sub: reason,
+                                 action: retry == nil ? nil : NotifAction(label: "Retry")))
+        if let retry { notifActions[id] = retry }
         if !NSApp.isActive {
             NotificationService.shared.postSystemError(title: verb,
                                                        body: "\(branch) · \(workspace)\n\(details)")
@@ -910,10 +1060,11 @@ enum FeedbackMode {
     /// stays free otherwise, working.html `notifTop`).
     var topNotif: InAppNotif? { notifOrder.first }
 
+    /// ⌘↩ fires whatever the front card's own button says — Undo, Open, Retry, Review — or, on a
+    /// card with nowhere to go, dismisses it.
     func jumpToTopNotif() {
         guard let n = topNotif else { return }
-        // A system toast has nowhere to jump — ⌘↩ acknowledges (dismisses) it instead.
-        if let s = session(n.id) { jump(to: s) } else { clearNotif(n.id) }
+        runNotifAction(n.id)
     }
 
     // MARK: Lookups
@@ -1379,20 +1530,35 @@ enum FeedbackMode {
     static let undoLife: TimeInterval = 8
     @ObservationIgnored private var undoActions: [UUID: (restore: () -> Void, commit: () -> Void)] = [:]
 
-    /// The front-most undo card (newest — undo outranks every other kind), or nil. ⌘↩ resolves
-    /// to undo whenever one is up, targeting this one (working.html: pendingUndo wins over notifTop).
-    var pendingUndoNotif: InAppNotif? { notifOrder.first { $0.kind == .undo } }
-
     /// Park a reversible removal as its own undo card. Several stack in the deck at once — each
     /// keeps its own countdown and commits when its own bar drains (`armDoneToast`), so a fresh
     /// removal never evicts a pending undo (working.html `pendingUndos`).
-    private func softDelete(_ label: String, restore: @escaping () -> Void, commit: @escaping () -> Void) {
+    /// What the undo card puts in its chip: the thing you just acted on. A session shows its
+    /// own mark (Claude, OpenCode, terminal, browser), everything else a glyph.
+    enum UndoSubject {
+        case session(SessionKind)
+        case glyph(String)
+    }
+
+    private func softDelete(_ label: String, subject: UndoSubject,
+                            destructive: Bool = false, sub: String? = nil,
+                            restore: @escaping () -> Void, commit: @escaping () -> Void) {
         notifSeq += 1
         let id = UUID()
         undoActions[id] = (restore, commit)
-        var n = InAppNotif(id: id, kind: .undo, seq: notifSeq, sessionKind: .terminal,
+        // A nil iconPath on an undo card means "render the session mark" — see NotifCard.glyph.
+        var kind = SessionKind.terminal
+        var path: String?
+        switch subject {
+        case .session(let k): kind = k
+        case .glyph(let g):   path = g
+        }
+        var n = InAppNotif(id: id, kind: .undo, seq: notifSeq, sessionKind: kind,
                            title: "", colorIndex: nil, outlivesSession: true,
-                           message: label, iconPath: Phosphor.reset)
+                           message: label, iconPath: path,
+                           tier: .attention, sub: sub,
+                           action: NotifAction(label: "Undo", danger: destructive),
+                           destructive: destructive, drains: true)
         n.life = Self.undoLife
         n.remaining = Self.undoLife
         notifs.append(n)
@@ -1427,7 +1593,7 @@ enum FeedbackMode {
         for br in workspaces.flatMap(\.branches) { br.sessions.removeAll { victimIDs.contains($0.id) } }
         pruneLayout(); syncActive(); restoreLastViewed()
 
-        softDelete("Closed \(session.title)", restore: { [weak self] in
+        softDelete("Closed \(session.title)", subject: .session(session.kind), restore: { [weak self] in
             guard let self else { return }
             for h in homes.sorted(by: { $0.index < $1.index }) {
                 h.branch.sessions.insert(h.session, at: min(h.index, h.branch.sessions.count))
@@ -1452,7 +1618,7 @@ enum FeedbackMode {
         expanded.remove(ws.id)
         pruneLayout(); syncActive(); restoreLastViewed()
 
-        softDelete("Removed \(ws.name)", restore: { [weak self] in
+        softDelete("Removed \(ws.name)", subject: .glyph(Phosphor.folder), restore: { [weak self] in
             guard let self else { return }
             self.workspaces.insert(ws, at: min(index, self.workspaces.count))
             if wasExpanded { self.expanded.insert(ws.id) }
@@ -1465,33 +1631,318 @@ enum FeedbackMode {
     /// Remove a worktree row instantly and reversibly. The disk delete (`deleteWorktree`) and
     /// the sessions' teardown are both deferred to the undo's commit, so an undo within the
     /// window leaves the checkout and its processes untouched (working.html archive-with-undo).
-    func softRemoveBranch(_ branch: Branch, deleteWorktree: Bool) {
+    /// Archive a branch row: it leaves the sidebar at once, its folder is untouched, and the
+    /// sweeper may reclaim the folder later once the work is provably recoverable from a
+    /// remote (see `ArchiveSweeper`). Restorable from ⌘K → Archived for as long as the folder
+    /// is still there.
+    ///
+    /// `archivedAt` is stamped in the *commit*, not here. The undo window must change nothing
+    /// — and stamping at the gesture would hide the row behind `visibleRows`' archive filter,
+    /// so undo would re-insert a branch the user then couldn't see.
+    func softArchiveBranch(_ branch: Branch) {
+        let homes = archiveDetach(branch)
+        softDelete("Archived \(branch.name)", subject: .glyph(Phosphor.archive),
+                   restore: { [weak self] in self?.archiveReattach(branch, to: homes, archived: false) },
+                   commit: { [weak self] in
+                       guard let self else { return }
+                       for s in branch.sessions { self.teardownSession(s) }
+                       branch.sessions = []
+                       self.archiveReattach(branch, to: homes, archived: true)
+                       Analytics.capture("worktree_archived", ["trigger": "gesture"])
+                   })
+    }
+
+    /// Delete a worktree's folder from disk now, skipping the archive hold entirely. The
+    /// deliberate path, reached only from ⌘K's confirm — the branch itself is never touched.
+    func deleteWorktreeNow(_ branch: Branch) {
+        let ownerWs = workspaces.first { $0.branches.contains { $0.id == branch.id } }
+        let homes = archiveDetach(branch)
+        softDelete("Deleted \(branch.name)", subject: .glyph(Phosphor.trash),
+                   destructive: true, sub: "the folder goes when the bar does",
+                   restore: { [weak self] in self?.archiveReattach(branch, to: homes, archived: false) },
+                   commit: { [weak self] in
+                       for s in branch.sessions { self?.teardownSession(s) }
+                       if let ownerWs, branch.worktreeURL != ownerWs.url {
+                           self?.deleteWorktreeFolder(repo: ownerWs.url, path: branch.worktreeURL,
+                                                      branchName: branch.name, workspaceName: ownerWs.name)
+                       }
+                   })
+    }
+
+    /// Lift a branch row out of the tree, remembering where it sat so undo can put it back.
+    private func archiveDetach(_ branch: Branch) -> [(ws: Workspace, index: Int)] {
         var homes: [(ws: Workspace, index: Int)] = []
         for ws in workspaces {
             if let i = ws.branches.firstIndex(where: { $0.id == branch.id }) { homes.append((ws, i)) }
         }
-        let wasExpanded = expanded.contains(branch.id)
         if cursorInside(.branch(branch)) { navCursor = workspace(of: branch)?.id }
         if openSetupBranchID == branch.id { openSetupBranchID = nil }
-        let ownerWs = workspaces.first { $0.branches.contains { $0.id == branch.id } }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)
         pruneLayout(); syncActive(); restoreLastViewed()
+        return homes
+    }
 
-        softDelete(deleteWorktree ? "Archived \(branch.name)" : "Removed \(branch.name)", restore: { [weak self] in
-            guard let self else { return }
-            for h in homes.sorted(by: { $0.index < $1.index }) {
-                h.ws.branches.insert(branch, at: min(h.index, h.ws.branches.count))
+    /// Put it back where it was — visible on undo, or archived (so the Archived list can
+    /// reach it, while `visibleRows` keeps it out of the tree) on commit.
+    private func archiveReattach(_ branch: Branch, to homes: [(ws: Workspace, index: Int)],
+                                 archived: Bool) {
+        branch.archivedAt = archived ? Date() : nil
+        branch.lastCleanSweepEval = nil
+        for h in homes.sorted(by: { $0.index < $1.index }) {
+            h.ws.branches.insert(branch, at: min(h.index, h.ws.branches.count))
+        }
+        pruneLayout(); syncActive()
+    }
+
+    /// Bring an archived row back into the sidebar, moving its folder back if the sweeper
+    /// already put it on hold. Returns false when the folder is gone for good.
+    @discardableResult
+    func restoreArchivedBranch(_ branch: Branch) -> Bool {
+        guard branch.isArchived else { return true }
+        if !FileManager.default.fileExists(atPath: branch.worktreeURL.path) {
+            guard let held = heldFolder(for: branch),
+                  GitService.releaseHeldWorktree(from: held, to: branch.worktreeURL)
+            else { return false }
+        }
+        let days = branch.archivedAt.map { Int(Date().timeIntervalSince($0) / 86_400) } ?? 0
+        branch.archivedAt = nil
+        branch.lastCleanSweepEval = nil
+        branch.markActivity()
+        syncActive()
+        Analytics.capture("worktree_restored", ["days_archived": days])
+        return true
+    }
+
+    /// The `.archived-…` sibling holding this branch's folder, if the sweeper has moved it.
+    func heldFolder(for branch: Branch) -> URL? {
+        let parent = branch.worktreeURL.deletingLastPathComponent()
+        let stem = GitService.archivePrefix + branch.worktreeURL.lastPathComponent + "-"
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: parent,
+                                                                        includingPropertiesForKeys: nil)
+        else { return nil }
+        return entries.first { $0.lastPathComponent.hasPrefix(stem) }
+    }
+
+    /// Every archived row in a workspace, most recently archived first.
+    func archivedBranches(in ws: Workspace) -> [Branch] {
+        ws.branches.filter(\.isArchived)
+            .sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) }
+    }
+
+    // MARK: Archive sweep
+
+    /// The last verdict the sweeper reached for each archived branch, so the ⌘K Archived list
+    /// can say *why* something is still on disk. Runtime-only — re-derived every tick.
+    @ObservationIgnored private var sweepVerdicts: [UUID: ArchiveSweeper.Verdict] = [:]
+    @ObservationIgnored private var sweepTask: Task<Void, Never>?
+    @ObservationIgnored private var sweepInFlight = false
+    @ObservationIgnored private var sweptThisLaunch = 0
+
+    /// The ⌘K Archived row's ctx line. Deliberately just "when", not "why".
+    ///
+    /// Archiving is one simple idea to the user: this row is put away, and it can come back.
+    /// Whether the folder has yet been reclaimed — and which of two dozen conditions is
+    /// currently holding it — is housekeeping, and narrating it here would make a simple
+    /// action read like a system report. The reasons still exist and are still logged; they
+    /// come out through `archiveReason` for the harness and `os.Logger` for debugging.
+    func archiveStatusLine(_ branch: Branch) -> String {
+        guard let at = branch.archivedAt else { return "" }
+        return "archived " + relativeAge(at, now: Date())
+    }
+
+    /// The sweeper's verdict as a stable slug — automation and logs only, never shown.
+    func archiveReason(_ branch: Branch) -> String {
+        switch sweepVerdicts[branch.id] {
+        case .eligible?:           return "eligible"
+        case .waiting?:            return "waiting"
+        case .needsSecondOpinion?: return "second-opinion"
+        case .blocked(let r)?:     return r.rawValue
+        case nil:                  return "unchecked"
+        }
+    }
+
+    /// Start the repeating sweep. Unlike `startAutosave` the handle is retained, so quit can
+    /// actually cancel it — autosave's discarded handle makes it permanently uncancellable,
+    /// which is a wart to copy from, not a pattern.
+    func startArchiveSweep() {
+        sweepTask?.cancel()
+        sweepTask = Task { [weak self] in
+            // Let a cold `gh`, the network, and MCPInstaller's npm install settle first.
+            try? await Task.sleep(for: .seconds(90))
+            while !Task.isCancelled {
+                await self?.sweepTick()
+                let interval = await self?.sweepInterval ?? 300
+                try? await Task.sleep(for: .seconds(interval))
             }
-            if wasExpanded { self.expanded.insert(branch.id) }
-            self.pruneLayout(); self.syncActive()
-        }, commit: { [weak self] in
-            for s in branch.sessions { self?.teardownSession(s) }
-            if deleteWorktree, let ownerWs, branch.worktreeURL != ownerWs.url {
-                self?.deleteWorktreeFolder(repo: ownerWs.url, path: branch.worktreeURL,
-                                           branchName: branch.name, workspaceName: ownerWs.name)
+        }
+    }
+
+    func stopArchiveSweep() {
+        sweepTask?.cancel()
+        sweepTask = nil
+    }
+
+    /// 300s foregrounded, 1800s behind an editor. Not foreground-only: the app's normal state
+    /// is "open behind something else". The tick is a gate, not a sweep — with nothing archived
+    /// it compares a few dates and costs less than one autosave.
+    private var sweepInterval: TimeInterval {
+        if let raw = ProcessInfo.processInfo.environment["SYNTH_ARCHIVE_TICK_SECONDS"],
+           let secs = TimeInterval(raw) { return secs }
+        return NSApp.isActive ? 300 : 1800
+    }
+
+    /// One pass. Evaluates every archived branch and holds the folders that clear every gate.
+    func sweepTick(force: Bool = false) async {
+        guard !sweepInFlight else { return }
+        // The kill flag is a KILL, never an ENABLE: `isEnabled` returns false when the user has
+        // opted out of analytics, so as an enable flag a privacy-conscious user would silently
+        // lose the feature. Absent ⇒ false ⇒ the sweeper runs.
+        guard !Analytics.isEnabled("archive_sweeper_kill") else { return }
+        guard force || (archiveSweepEnabled && archiveGraceDays > 0) else { return }
+        // Low Power Mode and thermal pressure gate the *tick*, not a candidate — a laptop
+        // permanently in Low Power Mode must not report every worktree as blocked forever.
+        let info = ProcessInfo.processInfo
+        guard force || (!info.isLowPowerModeEnabled && info.thermalState != .serious
+                        && info.thermalState != .critical) else { return }
+
+        sweepInFlight = true
+        defer { sweepInFlight = false }
+
+        // Fresh PR state before deciding anything — a stale read is what makes "no open PR"
+        // dangerous. Reaping first frees disk even when nothing new qualifies.
+        let hold = ArchiveSweeper.holdSeconds
+        await Task.detached(priority: .utility) { GitService.reapHeldWorktrees(hold: hold) }.value
+        await refreshPullRequestsAndWait()
+
+        guard let cwdPaths = await Task.detached(priority: .utility,
+                                                 operation: { ArchiveSweeper.processWorkingDirectories() }).value
+        else { return }   // a failed lsof blocks the whole tick rather than passing every candidate
+
+        let foreign = foreignInstanceWorktreePaths()
+        let grace = archiveGraceSeconds
+        var eligible: [(Workspace, Branch, Int?)] = []
+
+        for ws in workspaces {
+            for branch in archivedBranches(in: ws) {
+                // A clock that jumped backwards must never manufacture an expired grace.
+                if let at = branch.archivedAt, at > Date() { branch.archivedAt = Date() }
+                guard let archivedAt = branch.archivedAt else { continue }
+                let candidate = ArchiveSweeper.Candidate(
+                    branchID: branch.id, name: branch.name, repo: ws.url,
+                    worktree: branch.worktreeURL, archivedAt: archivedAt,
+                    lastCleanEval: branch.lastCleanSweepEval,
+                    hasSessions: !branch.sessions.isEmpty,
+                    foreignInstancePaths: foreign)
+                let verdict = await runGit(repo: ws.url) {
+                    ArchiveSweeper.evaluate(candidate, graceSeconds: grace, cwdPaths: cwdPaths)
+                }
+                // The row may have been restored or deleted while git was answering.
+                guard let live = workspaces.first(where: { $0.id == ws.id })?
+                        .branches.first(where: { $0.id == candidate.branchID }), live.isArchived
+                else { continue }
+                sweepVerdicts[live.id] = verdict
+                switch verdict {
+                case .needsSecondOpinion:
+                    if live.lastCleanSweepEval == nil { live.lastCleanSweepEval = Date() }
+                case .eligible(let pr):
+                    eligible.append((ws, live, pr))
+                case .waiting, .blocked:
+                    live.lastCleanSweepEval = nil
+                }
             }
-        })
+        }
+
+        logTick(eligible: eligible.count)
+        guard !eligible.isEmpty else { return }
+
+        // The bulk brake: reopening after a long absence with a dozen suddenly-eligible
+        // worktrees is exactly where a human belongs.
+        guard eligible.count <= ArchiveSweeper.bulkBrake else {
+            raiseArchiveReviewCard(count: eligible.count, in: eligible.first?.0)
+            return
+        }
+        guard !archiveDryRun else {
+            for (_, branch, _) in eligible {
+                ArchiveSweeper.log.info("dry-run: would hold \(branch.name, privacy: .public)")
+            }
+            return
+        }
+
+        var held: [String] = []
+        for (ws, branch, pr) in eligible.prefix(ArchiveSweeper.perTickCap) {
+            guard sweptThisLaunch < ArchiveSweeper.perLaunchCap else { break }
+            let path = branch.worktreeURL
+            let moved = await runGit(repo: ws.url) { () -> Bool in
+                guard ArchiveSweeper.isSettled(at: path) else { return false }
+                return GitService.holdWorktree(repo: ws.url, path: path) != nil
+            }
+            guard moved else { continue }
+            sweptThisLaunch += 1
+            held.append(branch.name)
+            ArchiveSweeper.log.info("held \(branch.name, privacy: .public) at \(path.path, privacy: .public)")
+            Analytics.capture("archive_swept", ["pr_state": pr == nil ? "ancestor" : "merged",
+                                                "grace_days": archiveGraceDays])
+        }
+        if !held.isEmpty { raiseSweepDigest(held) }
+    }
+
+    /// Worktree paths claimed by *other* live Synth instances. Archived paths deliberately stay
+    /// in our own registry entry (see `syncAgentBridge`) — that's what lets the other instance
+    /// see we still manage them.
+    private func foreignInstanceWorktreePaths() -> Set<String> {
+        InstanceRegistry.otherInstanceWorktreePaths()
+    }
+
+    private func raiseSweepDigest(_ names: [String]) {
+        raiseArchiveNotif(names.count == 1 ? "Cleaned up \(names[0])"
+                                           : "Cleaned up \(names.count) archived worktrees",
+                          tier: .ambient, drains: true)
+    }
+
+    /// A housekeeping nudge, not a question your agent is blocked on — so it stops wearing the
+    /// needs-input costume (blue, breathing, out-ranking a real done toast) and offers the place
+    /// it is pointing at instead. Still sticky: it is asking for a decision.
+    private func raiseArchiveReviewCard(count: Int, in ws: Workspace?) {
+        let what = count == 1 ? "1 worktree" : "\(count) worktrees"
+        raiseArchiveNotif("\(what) ready to clean up", tier: .attention, drains: false,
+                          action: ws == nil ? nil : NotifAction(label: "Review"),
+                          run: ws.map { w in { [weak self] in self?.openArchivedList(w) } })
+    }
+
+    /// Open ⌘K straight at a workspace's archived list — where the review card points.
+    func openArchivedList(_ ws: Workspace) {
+        openPalette()
+        if let p = palette { p.push(p.archivedFrame(ws)) }
+    }
+
+    /// One coalesced card per sweep that actually did something. Never per item — the deck's
+    /// drain pauses while the app is unfocused, so per-item cards pile up invisibly and then
+    /// arrive all at once. A blocked candidate is not a failure and raises nothing; it shows as
+    /// a ctx line in the Archived list.
+    private func raiseArchiveNotif(_ message: String, tier: NotifTier, drains: Bool,
+                                   action: NotifAction? = nil,
+                                   run: (@MainActor () -> Void)? = nil) {
+        notifSeq += 1
+        let id = UUID()
+        // `title` stays empty and NotifCard now drops the who-line entirely for it — rendering the
+        // identity row unconditionally floated a dot and a glyph over nothing at all.
+        notifs.append(InAppNotif(id: id, kind: .neutral, seq: notifSeq, sessionKind: .terminal,
+                                 title: "", colorIndex: nil, outlivesSession: true,
+                                 message: message, iconPath: Phosphor.archive,
+                                 tier: tier, action: action, drains: drains))
+        if let run { notifActions[id] = run }
+        if drains { armDoneToast(id) }
+    }
+
+    private func logTick(eligible: Int) {
+        var blocked: [String: Int] = [:]
+        for verdict in sweepVerdicts.values {
+            if let reason = verdict.block { blocked[reason.rawValue, default: 0] += 1 }
+        }
+        var props: [String: Any] = ["archived": sweepVerdicts.count, "eligible": eligible]
+        for (reason, n) in blocked { props["blocked_\(reason)"] = n }
+        Analytics.capture("archive_sweep_tick", props)
     }
 
     /// The comment ladder's spawn rung (CommentMode rung 3): an agent row created exactly
@@ -1554,7 +2005,10 @@ enum FeedbackMode {
         // The "On it" ack is instant; the collision-free branch name needs `git for-each-ref` over
         // heads + remotes, which blocks for hundreds of ms on a big/cold repo — so resolve it (and
         // add the pending row) off the main thread rather than freezing the submit.
-        raiseFeedbackToast(.done, message: "On it", title: "feedback/\(slug)")
+        // The branch is the identity, "On it" is what happened, and the mark is the comment
+        // glyph: a check would say a session finished, and nothing finished — something started.
+        raiseFeedbackToast(.done, message: "On it", title: "feedback/\(slug)",
+                           icon: Phosphor.commentMode)
         Task { [weak self] in
             guard let self else { return }
             let (branchName, planned) = await self.runGit(repo: repo) {
@@ -1627,11 +2081,18 @@ enum FeedbackMode {
         comps.queryItems = [URLQueryItem(name: "subject", value: "Synth feedback"),
                             URLQueryItem(name: "body", value: body)]
         if let url = comps.url, NSWorkspace.shared.open(url) {
-            raiseFeedbackToast(.done, message: "Handed to Mail", title: "Synth feedback")
+            // One line: the who-row used to carry the literal email subject, the one thing you
+            // had just typed yourself.
+            raiseFeedbackToast(.neutral, message: "Handed to Mail", title: "", icon: Phosphor.mail)
         } else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(body, forType: .string)
-            raiseFeedbackToast(.error, message: "No mail app — feedback copied", title: FeedbackMode.recipient)
+            // Nothing failed: the fallback worked and your text is on the clipboard. It used to
+            // raise a red, sticky error that sat in the deck until clicked, and led with the
+            // negative.
+            raiseFeedbackToast(.neutral, message: "Feedback copied to clipboard", title: "",
+                               icon: Phosphor.copy,
+                               sub: "no mail app — paste it to \(FeedbackMode.recipient)")
         }
     }
 
@@ -1694,14 +2155,17 @@ enum FeedbackMode {
         return slug.isEmpty ? "note" : slug
     }
 
-    /// A session-less confirmation toast (mirrors `raiseWorktreeError`); `.done` self-dismisses.
-    private func raiseFeedbackToast(_ kind: NotifKind, message: String, title: String) {
+    /// A session-less confirmation card (mirrors `raiseWorktreeError`). Every one of these is
+    /// ambient: a result, not a summons, and gone in six seconds.
+    private func raiseFeedbackToast(_ kind: NotifKind, message: String, title: String,
+                                    icon: String, sub: String? = nil) {
         notifSeq += 1
         let id = UUID()
         notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq, sessionKind: .terminal,
                                  title: title, colorIndex: nil, outlivesSession: true,
-                                 message: message, iconPath: Phosphor.commentMode))
-        if kind == .done { armDoneToast(id) }
+                                 message: message, iconPath: icon,
+                                 tier: .ambient, sub: sub, drains: true))
+        armDoneToast(id)
     }
 
     /// Folder picker → adds the repo with its default branch. Panel runs modally, so
@@ -1761,21 +2225,56 @@ enum FeedbackMode {
         for ws in workspaces { refreshPullRequests(in: ws) }
     }
 
+    /// In-flight and last-completed reads, keyed by workspace. `didBecomeActive` fires on
+    /// every ⌘-tab back, and without these a burst of activations spawns unbounded `gh`
+    /// subprocesses — two network calls each, per workspace.
+    @ObservationIgnored private var prRefreshInFlight: Set<UUID> = []
+    @ObservationIgnored private var lastPRRefresh: [UUID: Date] = [:]
+    private static let prRefreshFloor: TimeInterval = 60
+
     /// One workspace's read: the blocking `gh pr list` (a cold call hits the network) runs
     /// off the main thread; the result is folded back onto the branches on the main actor.
-    private func refreshPullRequests(in workspace: Workspace) {
-        guard PRService.ghPath != nil else { return }
-        let repo = workspace.url
+    @discardableResult
+    private func refreshPullRequests(in workspace: Workspace, force: Bool = false) -> Task<Void, Never>? {
+        guard PRService.ghPath != nil else { return nil }
         let id = workspace.id
-        Task { [weak self] in
+        guard !prRefreshInFlight.contains(id) else { return nil }
+        if !force, let last = lastPRRefresh[id], Date().timeIntervalSince(last) < Self.prRefreshFloor {
+            return nil
+        }
+        let repo = workspace.url
+        prRefreshInFlight.insert(id)
+        return Task { [weak self] in
             let prs = await Task.detached(priority: .utility) {
                 PRService.pullRequests(at: repo)
             }.value
-            guard let self, let ws = self.workspaces.first(where: { $0.id == id }) else { return }
+            guard let self else { return }
+            self.prRefreshInFlight.remove(id)
+            // nil is "couldn't ask" — offline, no `gh`, not a GitHub repo. Keep whatever we
+            // last knew rather than clearing every badge; a stale PR number is closer to the
+            // truth than none, and the sweeper reads this state.
+            guard let prs else { return }
+            self.lastPRRefresh[id] = Date()
+            guard let ws = self.workspaces.first(where: { $0.id == id }) else { return }
             for branch in ws.branches where branch.pr != prs[branch.name] {
                 branch.pr = prs[branch.name]
             }
         }
+    }
+
+    /// Refresh every workspace and wait for it, so a caller that needs fresh PR state —
+    /// the archive sweeper — reads it after the answer lands rather than beside it.
+    func refreshPullRequestsAndWait(force: Bool = false) async {
+        guard PRService.ghPath != nil else { return }
+        let tasks = workspaces.compactMap { refreshPullRequests(in: $0, force: force) }
+        for task in tasks { await task.value }
+    }
+
+    /// When each workspace's PR state was last successfully read. The sweeper refuses to act
+    /// on a workspace whose PR state it has never actually seen this session.
+    func prStateFresh(for workspace: Workspace, within: TimeInterval) -> Bool {
+        guard let last = lastPRRefresh[workspace.id] else { return false }
+        return Date().timeIntervalSince(last) <= within
     }
 
     // MARK: Worktrees (ADR-0007: every branch row is a real folder)
@@ -1822,7 +2321,11 @@ enum FeedbackMode {
     /// checkout lands — the Create-worktree flows opt in; adding a workspace doesn't
     /// (those rows import existing branches, and N rows fighting to open a session each
     /// would be noise).
+    /// `retry` is the one call that would repeat this create verbatim, offered on the failure
+    /// card. The flows that can't be repeated as a single call pass nil and the card carries no
+    /// button — an offer that can't be honoured is worse than none.
     private func materialize(_ row: Branch, in ws: Workspace, spawningTemplate: Bool = false,
+                             retry: (@MainActor () -> Void)? = nil,
                              onReady: ((Branch) -> Void)? = nil,
                              _ op: @escaping @Sendable () -> WorktreeOutcome) {
         let wsName = ws.name
@@ -1838,9 +2341,10 @@ enum FeedbackMode {
                 onReady?(row)
                 saveNow()
             case .failed(let err):
+                let name = row.name
                 removeBranch(row, deleteWorktree: false)
-                raiseWorktreeError("Couldn't create worktree", branch: row.name,
-                                   workspace: wsName, details: err)
+                raiseWorktreeError("Couldn't create worktree", branch: name,
+                                   workspace: wsName, details: err, retry: retry)
             }
         }
     }
@@ -1852,7 +2356,8 @@ enum FeedbackMode {
         let planned = GitService.plannedWorktreePath(repo: repo, branch: existingBranch)
         let row = addBranchRow(in: ws, name: existingBranch, worktreeURL: planned, pending: true)
         openWorktreeSetup(row)
-        materialize(row, in: ws, spawningTemplate: true) {
+        materialize(row, in: ws, spawningTemplate: true,
+                    retry: { [weak self] in self?.createWorktree(in: ws, existingBranch: existingBranch) }) {
             if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == existingBranch }) {
                 return .ready(wt.path)
             }
@@ -1868,7 +2373,8 @@ enum FeedbackMode {
         let planned = GitService.plannedWorktreePath(repo: repo, branch: newBranch)
         let row = addBranchRow(in: ws, name: newBranch, worktreeURL: planned, pending: true)
         openWorktreeSetup(row)
-        materialize(row, in: ws, spawningTemplate: true) {
+        materialize(row, in: ws, spawningTemplate: true,
+                    retry: { [weak self] in self?.createWorktree(in: ws, newBranch: newBranch, base: base) }) {
             GitService.addWorktree(repo: repo, path: planned, newBranch: newBranch, base: base)
                 .map { .failed($0) } ?? .ready(planned)
         }
@@ -2019,7 +2525,12 @@ enum FeedbackMode {
             }
             if let err {
                 raiseWorktreeError("Couldn't delete worktree", branch: branchName,
-                                   workspace: workspaceName, details: err)
+                                   workspace: workspaceName, details: err,
+                                   retry: { [weak self] in
+                                       self?.deleteWorktreeFolder(repo: repo, path: path,
+                                                                  branchName: branchName,
+                                                                  workspaceName: workspaceName)
+                                   })
             }
         }
     }
@@ -2096,7 +2607,9 @@ enum FeedbackMode {
                             browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents,
                             // The branch's remembered split, serialized to session identities;
                             // nil for a single pane (014). Leaves whose session is gone collapse.
-                            layout: serializeLayout(br.layout, valid: Set(br.sessions.map(\.id))))
+                            layout: serializeLayout(br.layout, valid: Set(br.sessions.map(\.id))),
+                            archivedAt: br.archivedAt,
+                            lastCleanSweepEval: br.lastCleanSweepEval)
                     },
                     setupScript: wsScripts[ws.id],
                     agentFlags: wsAgentFlags[ws.id].map { flags in
@@ -2145,7 +2658,8 @@ enum FeedbackMode {
                 let br = Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
                                 sessions: sessions, lastActivity: pb.lastActivity,
                                 lastActivityAt: pb.lastActivityAt,
-                                browserRecents: recents)
+                                browserRecents: recents, archivedAt: pb.archivedAt)
+                br.lastCleanSweepEval = pb.lastCleanSweepEval
                 // Restore the remembered split, resolving leaves against this branch's sessions;
                 // an unresolved leaf (e.g. a runtime browser that didn't come back) collapses (014).
                 br.layout = deserializeLayout(pb.layout, valid: Set(sessions.map(\.id)))
@@ -2209,6 +2723,7 @@ enum FeedbackMode {
                 // Synchronous flush, not the async saveNow(): willTerminate runs in the same stack
                 // as the imminent exit(), so a queued async write would never reach disk.
                 self?.flushSave()
+                self?.stopArchiveSweep()
                 // Engines must not outlive the app: a surviving instance owns the profile
                 // singleton and silently absorbs the next launch (BrowserEngine.shutdown docs).
                 BrowserManager.shared.shutdownAll()

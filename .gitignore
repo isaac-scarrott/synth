@@ -18,6 +18,9 @@ __pycache__/
 !docs/adr/
 !docs/adr/**
 
-# MCPInstaller writes this into every worktree, and its `SYNTH_WORKTREE` is an absolute path
-# to *that* worktree — unlike .mcp.json, which only names the shared server install.
+# MCPInstaller writes both of these into every managed worktree on the autosave cadence, so
+# a tracked copy is dirt in every checkout: the toggle state and the channel-dependent
+# install path both differ from whatever blob was committed. `opencode.json` additionally
+# carries a `SYNTH_WORKTREE` absolute path to *that* worktree.
 /opencode.json
+/.mcp.json

@@ -488,7 +488,16 @@ final class ControlServer: @unchecked Sendable {
                     "notifs": store.notifOrder.map { n -> [String: String] in
                         ["sessionId": n.id.uuidString,
                          "kind": String(describing: n.kind),
-                         "title": store.session(n.id)?.title ?? n.title]
+                         "title": store.session(n.id)?.title ?? n.title,
+                         // The rest of the card, so a harness can assert the tier system without
+                         // pixels: which tier it belongs to, its verb line, the evidence under it,
+                         // what its button offers, and whether it is running a countdown.
+                         "tier": n.tier.rawValue,
+                         "message": n.message ?? notifVerb(store.session(n.id)?.kind ?? n.sessionKind, n.kind),
+                         "sub": n.sub ?? "",
+                         "action": n.action?.label ?? "",
+                         "destructive": String(n.destructive),
+                         "drains": String(n.drains)]
                     }]
 
         // The sidebar tree as navigation sees it — rows, keyboard cursor, open session —
@@ -514,6 +523,78 @@ final class ControlServer: @unchecked Sendable {
             }
             store.requestDelete(.session(session))
             return ["ok": true]
+
+        // Archive a branch row by name, and force a sweep. Without these the sweeper is only
+        // testable by waiting a week — `SYNTH_ARCHIVE_*_SECONDS` compress the clocks, and this
+        // drives the rest. The evidence comes back per branch so a harness can assert on *why*
+        // something was kept, not just that nothing happened.
+        case "automation.archiveBranch" where automation:
+            guard let name = request["branch"] as? String,
+                  let target = store.workspaces.flatMap(\.branches).first(where: { $0.name == name })
+            else { return ["ok": false, "error": "no branch named \(request["branch"] ?? "")"] }
+            store.softArchiveBranch(target)
+            return ["ok": true]
+
+        // The one destructive undo — its expiry deletes the folder. Only reachable through ⌘K's
+        // confirm frame in the UI, which a headless harness can't drill to for a branch row.
+        case "automation.deleteWorktreeNow" where automation:
+            guard let name = request["branch"] as? String,
+                  let target = store.workspaces.flatMap(\.branches).first(where: { $0.name == name })
+            else { return ["ok": false, "error": "no branch named \(request["branch"] ?? "")"] }
+            store.deleteWorktreeNow(target)
+            return ["ok": true]
+
+        // The tick runs git off the main actor, so this kicks it off and returns; the harness
+        // polls `automation.archiveStatus` for the verdicts it settled on.
+        case "automation.archiveSweep" where automation:
+            Task { await store.sweepTick(force: true) }
+            return ["ok": true]
+
+        // Say "focus came back". Self-dismissing cards bank their remaining life while Synth
+        // isn't frontmost — right for a user, and a headless instance never is, so without this
+        // a harness can only observe that a card was raised, never that it goes away by itself.
+        case "automation.notifFocus" where automation:
+            store.setAutomationAppActive(request["active"] as? Bool ?? true)
+            return ["ok": true]
+
+        // A card's primary action — its button, a click on its body, and ⌘↩ all land here. Its
+        // twin is notifDismiss below; that the two do DIFFERENT things is the thing under test.
+        case "automation.notifAction" where automation:
+            guard let raw = request["sessionId"] as? String, let id = UUID(uuidString: raw) else {
+                return ["ok": false, "error": "need sessionId"]
+            }
+            store.runNotifAction(id)
+            return ["ok": true]
+
+        // The × on a card, addressable by the id the deck reports. Distinct from a click, which
+        // runs the card's action — that difference is the thing under test.
+        case "automation.notifDismiss" where automation:
+            guard let raw = request["sessionId"] as? String, let id = UUID(uuidString: raw) else {
+                return ["ok": false, "error": "need sessionId"]
+            }
+            store.dismissNotif(id)
+            return ["ok": true]
+
+        // Undo cards don't drain while the app is unfocused, and a headless one never is —
+        // so a harness has to say "the window elapsed" out loud.
+        case "automation.notifDrain" where automation:
+            store.drainPendingUndos()
+            return ["ok": true]
+
+        case "automation.archiveRestore" where automation:
+            guard let name = request["branch"] as? String,
+                  let target = store.workspaces.flatMap(\.branches)
+                    .first(where: { $0.name == name && $0.isArchived })
+            else { return ["ok": false, "error": "no archived branch named \(request["branch"] ?? "")"] }
+            return ["ok": store.restoreArchivedBranch(target)]
+
+        case "automation.archiveStatus" where automation:
+            return ["ok": true,
+                    "archived": store.workspaces.flatMap { store.archivedBranches(in: $0) }.map { br in
+                        ["branch": br.name, "status": store.archiveStatusLine(br),
+                         "reason": store.archiveReason(br),
+                         "held": String(store.heldFolder(for: br) != nil)]
+                    }]
 
         case "automation.paletteMove" where automation:
             guard let pal = store.palette else { return ["ok": false, "error": "palette closed"] }

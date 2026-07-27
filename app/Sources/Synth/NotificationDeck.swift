@@ -4,19 +4,25 @@ import SwiftUI
 /// quiet glass toasts, stacked bottom-left, hugging the sidebar. One toast reads plainly; two
 /// or more collapse into a deck — most-urgent in front, the two behind peeking, anything past
 /// three folded under a "+N" pill. Hovering the deck fans it into individually clickable cards
-/// and holds every done toast's countdown; a click jumps to that session, ⌘↩ to the front.
+/// and holds every draining toast's countdown; a click runs the card's action, ⌘↩ the front's.
 /// Mounted at the window root so it sits at the whole shell's bottom-left corner, over the
 /// sidebar (hidden in settings), and driven purely by `AppStore.notifOrder`.
+///
+/// Three tiers ride one chassis. Tier 1 (`.attention`) is sticky: a session asking, a session
+/// that broke, an app operation that failed, a decision waiting. Tier 2 is the undo window.
+/// Tier 3 (`.ambient`) is a result — smaller chip, tighter padding, lighter verb. The tier
+/// changes presence, never the shape, so a deck of mixed tiers still reads as one stack.
 struct NotificationDeck: View {
     @Environment(AppStore.self) private var store
     @State private var hovering = false
     @State private var cardHeights: [UUID: CGFloat] = [:]
 
-    // How far peeking cards rise / dim behind the front (working.html --i math): each step up
-    // 10.5px, scaled 0.045 smaller, at opacity 1 / 0.7 / 0.45; a fourth+ card hides behind "+N".
+    // How far each card behind the front rises, TOP edge to top edge (working.html --peek), and
+    // how the peeking cards shrink / dim; a fourth+ card hides behind "+N".
     fileprivate static let peekRise: CGFloat = 10.5
     fileprivate static let peekOpacity: [Double] = [1, 0.7, 0.45]
     fileprivate static let cardWidth: CGFloat = 320
+    fileprivate static let cornerRadius: CGFloat = 13
 
     // The hover-fan can't be driven headless (no pointer over an inactive window), so a
     // DEBUG-only flag forces the spread for screenshotting. Always false in release.
@@ -32,21 +38,23 @@ struct NotificationDeck: View {
         let order = store.notifOrder
         if !order.isEmpty {
             let spread = (hovering || debugSpread) && order.count > 1
-            let frontH = order.first.flatMap { cardHeights[$0.id] } ?? 56
-            let step = frontH + 9                       // fanned gap: card height + breathing room
+            let heights = order.map { cardHeights[$0.id] ?? 56 }
+            let frontH = heights[0]
             let peeks = min(order.count, Self.peekOpacity.count)
             let collapsedH = frontH + CGFloat(peeks - 1) * Self.peekRise + 6
-            let fannedH = CGFloat(order.count - 1) * step + frontH + 4
+            let offsets = Self.offsets(heights: heights, frontH: frontH, spread: spread)
+            let fannedH = heights.reduce(0) { $0 + $1 + 9 } - 9 + 4
 
             ZStack(alignment: .bottomLeading) {
                 ForEach(Array(order.enumerated()), id: \.element.id) { index, notif in
                     NotifCard(notif: notif, isFront: index == 0) { h in cardHeights[notif.id] = h }
-                        .modifier(DeckPlacement(index: index, spread: spread, count: order.count, step: step))
+                        .modifier(DeckPlacement(index: index, spread: spread, count: order.count,
+                                                offsetY: offsets[index]))
                         .zIndex(Double(100 - index))
                 }
                 if order.count > Self.peekOpacity.count, !spread {
                     MorePill(count: order.count - Self.peekOpacity.count)
-                        .offset(x: 13, y: -(frontH + 26))
+                        .offset(x: 13, y: -(frontH + CGFloat(Self.peekOpacity.count - 1) * Self.peekRise + 8))
                         .zIndex(200)
                         .transition(.opacity)
                 }
@@ -72,25 +80,42 @@ struct NotificationDeck: View {
             .padding(22)
         }
     }
+
+    /// Where each card sits, measured from the deck's shared bottom edge.
+    ///
+    /// Collapsed, cards are anchored by their **top** edge: card i's top sits `peekRise * i`
+    /// above the front card's top, whatever the two heights are. A flat rise off the shared
+    /// bottom edge only worked while every card was the same height — a 52pt card behind a 66pt
+    /// front vanishes under it completely, and heights vary the moment a card can carry a
+    /// sub-line. Fanned, cards stack by their own heights plus a gutter.
+    static func offsets(heights: [CGFloat], frontH: CGFloat, spread: Bool) -> [CGFloat] {
+        guard heights.count > 1 else { return heights.map { _ in 0 } }
+        var out: [CGFloat] = []
+        var fan: CGFloat = 0
+        for (i, h) in heights.enumerated() {
+            out.append(spread ? -fan : -(frontH + CGFloat(i) * peekRise - h))
+            fan += h + 9
+        }
+        return out
+    }
 }
 
 /// Places a card within the deck by its rank. A lone card sits flat; behind the front, cards
-/// rise + shrink + dim (collapsed) or fan to an even gap at full size (spread).
+/// rise + shrink + dim (collapsed) or fan to their own heights at full size (spread).
 private struct DeckPlacement: ViewModifier {
     let index: Int
     let spread: Bool
     let count: Int
-    let step: CGFloat
+    let offsetY: CGFloat
 
     func body(content: Content) -> some View {
         let single = count <= 1
         let i = CGFloat(index)
-        let offsetY: CGFloat = single ? 0 : (spread ? -i * step : -i * NotificationDeck.peekRise)
         let scale: CGFloat = single ? 1 : (spread ? 1 : max(0.5, 1 - i * 0.045))
         let opacity: Double = single ? 1 : (spread ? 1 : (index < NotificationDeck.peekOpacity.count ? NotificationDeck.peekOpacity[index] : 0))
         content
             .scaleEffect(scale, anchor: .bottom)
-            .offset(y: offsetY)
+            .offset(y: single ? 0 : offsetY)
             .opacity(opacity)
             // Cards folded behind "+N" ignore the pointer until the deck is fanned.
             .allowsHitTesting(spread || opacity > 0)
@@ -98,8 +123,9 @@ private struct DeckPlacement: ViewModifier {
 }
 
 /// One glass toast — the sidebar indicator escalated: the state glyph in a tinted chip, the
-/// row's identity (workspace colour · kind icon · title), a one-line verb, and — front only —
-/// the muted ⌘↩ hint. Entering with a calm rise (working.html `.notif.in`).
+/// row's identity (workspace colour · kind icon · title), a one-line verb, optional evidence
+/// under it, the card's own action button, and a dismiss × on hover. Entering with a calm rise
+/// (working.html `.notif.in`).
 private struct NotifCard: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -114,45 +140,53 @@ private struct NotifCard: View {
     // exit-close toast has outlived its row.
     private var displayKind: SessionKind { session?.kind ?? notif.sessionKind }
     private var displayTitle: String { session?.title ?? notif.title }
+    /// A card with nothing to name carries no who-line at all. The row used to render
+    /// unconditionally, so a message raised with an empty title floated a dot and a 12pt glyph
+    /// over nothing.
+    private var showsWho: Bool { notif.kind != .undo && !displayTitle.isEmpty }
     private var chipColor: Color {
         let idx = session.flatMap { s in store.branch(of: s).flatMap { store.workspace(of: $0) }?.colorIndex }
             ?? notif.colorIndex
         guard let idx else { return Theme.inkFaint }
         return Theme.chipColors[idx % Theme.chipColors.count]
     }
+    private var ambient: Bool { notif.tier == .ambient }
 
     var body: some View {
-        // A system toast (no session — a failed background worktree op) persists until
-        // this click; a session toast jumps as before.
-        Button {
-            if notif.kind == .undo { store.performUndo(notif.id) }
-            else if let s = session { store.jump(to: s) }
-            else { store.clearNotif(notif.id) }
-        } label: {
-            HStack(spacing: 11) {
-                glyph
-                VStack(alignment: .leading, spacing: 1) {
-                    if notif.kind != .undo { who }   // an undo card is a single line: just what happened
-                    Text(notif.message ?? notifVerb(displayKind, notif.kind))
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Theme.inkOpen)
+        HStack(spacing: ambient ? 10 : 11) {
+            glyph
+            VStack(alignment: .leading, spacing: 1) {
+                if showsWho { who }
+                Text(notif.message ?? notifVerb(displayKind, notif.kind))
+                    .font(.system(size: 12.5, weight: ambient ? .medium : .semibold))
+                    .foregroundStyle(ambient ? Theme.ink2 : Theme.inkOpen)
+                    .lineLimit(1).truncationMode(.tail)
+                if let sub = notif.sub {
+                    Text(sub)
+                        .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
                         .lineLimit(1).truncationMode(.tail)
                 }
-                if isFront {
-                    Spacer(minLength: 6)
-                    hint
-                }
             }
-            .padding(EdgeInsets(top: 11, leading: 13, bottom: 11, trailing: 12))
-            .frame(width: NotificationDeck.cardWidth, alignment: .leading)
-            .background(cardSurface)
-            // Done + undo drain a bar; sticky toasts (input / error) carry none and never self-dismiss.
-            .overlay(alignment: .bottom) {
-                if notif.kind == .done || notif.kind == .undo { NotifTimerBar(notif: notif) }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 13))
+            Spacer(minLength: 6)
+            if let action = notif.action { actionButton(action) }
         }
-        .buttonStyle(.plain)
+        .padding(ambient
+                 ? EdgeInsets(top: 9, leading: 11, bottom: 9, trailing: 12)
+                 : EdgeInsets(top: 11, leading: 13, bottom: 11, trailing: 12))
+        .frame(width: NotificationDeck.cardWidth, alignment: .leading)
+        .background(cardSurface)
+        // Attention cards ask for an answer, so they carry no bar and never self-dismiss.
+        .overlay(alignment: .bottom) { if notif.drains { NotifTimerBar(notif: notif) } }
+        // Clip before the shadow and before the ×: the bar is clipped by the card's own corner
+        // radius, the shadow stays outside it, and the × is free to sit over the corner.
+        .clipShape(RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius, style: .continuous))
+        .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+        .overlay(alignment: .topTrailing) { dismissButton.offset(x: 6, y: -6) }
+        // The body still carries the primary action, so the whole card stays a big target — the
+        // × and the button sit above it and consume their own clicks.
+        .contentShape(RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius))
+        .onTapGesture { store.runNotifAction(notif.id) }
         .onHover { hovering = $0 }
         .background(
             GeometryReader { g in
@@ -176,33 +210,46 @@ private struct NotifCard: View {
         case .error: return Theme.danger
         case .input: return Theme.input
         case .done:  return Theme.run
-        case .undo:  return Theme.inkMuted   // neither success nor error — a neutral action
+        case .undo:  return notif.destructive ? Theme.danger : Theme.inkMuted
+        // The app talking about its own work never wears a session's state colour.
+        case .neutral: return Theme.ink4
         }
     }
     private var glyphPath: String {
         switch notif.kind {
         case .error: return Phosphor.exclamation
         case .input: return Phosphor.question
-        case .done:  return Phosphor.check
-        case .undo:  return Phosphor.reset
+        case .done:  return notif.iconPath ?? Phosphor.check
+        case .undo:  return notif.iconPath ?? Phosphor.reset
+        case .neutral: return notif.iconPath ?? Phosphor.check
         }
     }
 
     // The escalated sidebar AttentionGlyph: same Phosphor path + state colour, breathing on
-    // needs-input, in a 26px chip tinted 13% of the state colour.
+    // needs-input. Attention wears it in a 26pt chip, ambient in 22 — a result, not a summons.
     private var glyph: some View {
-        Phos(path: glyphPath, size: 17)
+        let box: CGFloat = ambient ? 22 : 26
+        let mark: CGFloat = ambient ? 14 : 17
+        // An undo card for a closed session shows that session's own mark, so you can tell a
+        // Claude row from a terminal at a glance. Everything else uses a glyph.
+        return Group {
+            if notif.kind == .undo, notif.iconPath == nil {
+                SessionIcon(kind: notif.sessionKind, size: mark)
+            } else {
+                Phos(path: glyphPath, size: mark)
+            }
+        }
             .foregroundStyle(glyphColor)
             .modifier(BreatheIf(on: notif.kind == .input))
-            .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: 8).fill(glyphColor.opacity(0.13)))
+            .frame(width: box, height: box)
+            .background(RoundedRectangle(cornerRadius: ambient ? 7 : 8).fill(glyphColor.opacity(0.13)))
     }
 
     private var who: some View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 3).fill(chipColor).frame(width: 7, height: 7)
             Group {
-                if let path = notif.iconPath {
+                if let path = notif.iconPath, notif.kind != .undo {
                     Phos(path: path, size: 12).foregroundStyle(Theme.inkFaint)
                 } else {
                     SessionIcon(kind: displayKind, size: 12, tint: Theme.inkFaint)
@@ -215,43 +262,91 @@ private struct NotifCard: View {
         }
     }
 
-    private var hint: some View {
-        HStack(spacing: 5) {
-            KeyCaps(keys: ["⌘", "↩"])
-            // ⌘↩ undoes an undo card, jumps to a session toast, or acknowledges a system toast.
-            Text(notif.kind == .undo ? "undo" : (session == nil ? "dismiss" : "jump"))
-                .font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
+    /// The action is a real target with the chord printed inside it, not grey helper text beside
+    /// it. Only the front card shows the keys, because ⌘↩ only ever aims at the front card.
+    private func actionButton(_ action: NotifAction) -> some View {
+        Button { store.runNotifAction(notif.id) } label: {
+            HStack(spacing: 6) {
+                Text(action.label)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(action.danger ? Theme.danger : Theme.ink2)
+                if isFront { KeyCaps(keys: ["⌘", "↩"]) }
+            }
+            .padding(EdgeInsets(top: 5, leading: 9, bottom: 5, trailing: 8))
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Theme.raised)
+                    .overlay(RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(action.danger ? Theme.danger.opacity(0.28) : Theme.border, lineWidth: 0.5))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7))
         }
+        .buttonStyle(.plain)
+        .fixedSize()
+    }
+
+    /// Leaving is not acting. It fades in on hover so a resting deck stays quiet, and sits over
+    /// the corner so it never moves the layout.
+    private var dismissButton: some View {
+        Button { store.dismissNotif(notif.id) } label: {
+            Phos(path: Phosphor.close, size: 9)
+                .foregroundStyle(Theme.ink4)
+                .frame(width: 18, height: 18)
+                .background(
+                    Circle().fill(Theme.raised)
+                        .overlay(Circle().strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .opacity(hovering ? 1 : 0)
+        .animation(.easeOut(duration: 0.14), value: hovering)
     }
 
     private var cardSurface: some View {
-        RoundedRectangle(cornerRadius: 13)
+        RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius, style: .continuous)
             .fill(Theme.glass)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).fill(Theme.rowHover).opacity(hovering ? 1 : 0))
-            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
-            .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius, style: .continuous).fill(Theme.rowHover).opacity(hovering ? 1 : 0))
+            .overlay(RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius, style: .continuous).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
     }
 }
 
-/// working.html `.notif__timer` — a done toast's remaining life made visible: a 2px `--focus`
-/// bar along the card's bottom edge, inset to the card radius, draining left linearly. It renders
-/// the same store clock the dismissal task sleeps on, so bar and timer can never disagree; a
-/// paused deck shows it frozen at the banked fraction. Deliberately not gated on reduce-motion —
-/// the bar is the timer's display, not decoration.
+/// working.html `.notif__timer` — a self-dismissing card's remaining life made visible: a 2pt
+/// `--focus` bar along the bottom edge, draining left linearly.
+///
+/// The bar has two ends and they are not the same problem. The origin end is arbitrary, so it
+/// fades out over 20pt and nothing terminates it; the far end is where the corner is, so the
+/// card's own radius clips it (the caller applies `.clipShape` above this overlay) rather than
+/// the bar retreating 13pt and pretending the corner is not there. The live edge in between
+/// stays crisp, because nothing masks the middle — and the last moments of the drain dissolve
+/// into the taper instead of a 2pt stub snapping to zero.
+///
+/// It renders the same store clock the dismissal task sleeps on, so bar and timer can never
+/// disagree; a paused deck shows it frozen at the banked fraction. Deliberately not gated on
+/// reduce-motion — the bar is the timer's display, not decoration.
 private struct NotifTimerBar: View {
     let notif: InAppNotif
 
+    private var tint: Color { notif.destructive ? Theme.danger : Theme.focus }
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30, paused: notif.armedAt == nil)) { ctx in
-            UnevenRoundedRectangle(topLeadingRadius: 2, topTrailingRadius: 2)
-                .fill(Theme.focus)
+            Rectangle()
+                .fill(tint)
                 .frame(height: 2)
                 .scaleEffect(x: notif.timerFraction(at: ctx.date), anchor: .leading)
                 .opacity(0.85)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // The mask sits outside the scale, so the taper holds still while the fill
+                // drains through it.
+                .mask(
+                    LinearGradient(stops: [.init(color: .clear, location: 0),
+                                           .init(color: .black, location: 20 / NotificationDeck.cardWidth)],
+                                   startPoint: .leading, endPoint: .trailing)
+                )
         }
-        .padding(.horizontal, 13)
         .allowsHitTesting(false)
     }
 }

@@ -109,6 +109,25 @@ struct SettingsPane: View {
                     switchControl(bind(\.analyticsEnabled))
                 }
             }
+            SetSection(label: "Archived worktrees") {
+                switchRow("Clean up archived worktrees",
+                          "Deletes an archived worktree's folder once it's merged, clean, and old enough. The git branch is never deleted.",
+                          bind(\.archiveSweepEnabled))
+                if store.archiveSweepEnabled {
+                    SetDivider()
+                    SetEditorRow(label: "Wait before cleaning up",
+                                 desc: "How long an archived worktree sits untouched first. Its folder is then held aside for another two weeks before it is really deleted.") {
+                        Picker("", selection: bind(\.archiveGraceDays)) {
+                            Text("Never").tag(0)
+                            Text("7 days").tag(7)
+                            Text("14 days").tag(14)
+                            Text("30 days").tag(30)
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                }
+            }
             SetSection(label: "Experimental") {
                 switchRow("Tabs", "Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview.", bind(\.tabsMode))
             }

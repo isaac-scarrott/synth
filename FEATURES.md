@@ -937,3 +937,39 @@ disclosure to dive deeper.
   (zip + dmg), verified credential-less on the quarantined downloads; appcast newest `sparkle:version`
   376 / `0.13.0`, all 18 enclosures EdDSA-signed, deltas against 342/346/353/359/361. Clean run.
   Landing links unchanged (stable `Synth.dmg` alias), no site republish.
+
+- **Archive replaces Delete worktree, with a background clean-up behind it.** A branch row archives
+  (instant, undo card, folder untouched, restorable from ⌘K → `Archived`); the two-armed remove/delete
+  confirm fork is replaced by `Delete worktree now` one level down. Archive confirms nowhere and Delete
+  confirms everywhere — the dialog follows irreversibility, not the entry surface. A background pass
+  reclaims a folder only once the work is provably recoverable from a remote, and its terminal act is a
+  rename with a 14-day hold, never an `rm`. Both of the originally proposed conditions were unsafe as
+  stated: a tracked-only cleanliness check is blind to untracked source (`browser-phase-01` holds
+  seven untracked source paths in a 2.6 GB tree), and
+  "PR closed is fine" is backwards while `pr == nil` was indistinguishable from being offline.
+  Supersedes ADR-0007's "UI-only, labelled Remove never Delete" and this day's earlier no-archive-surface
+  entry. Also untracks `.mcp.json`, which an agent committed in `da7f902` against the 2026-07-05 entry.
+
+- **Toasts get three tiers, real buttons, and a dismiss that isn't the action.** All seventeen
+  transient messages audited onto one chassis: attention (sticky), reversible (8s undo), ambient
+  (6s result). Every card gains a real action button with ⌘↩ printed inside it and a hover ×, so
+  leaving stops being the same click as acting. A card with no identity drops its who-line (the
+  archive cards were floating a dot over an empty title); errors carry their evidence (exit code,
+  git's reason — not git's first line, which is progress chatter); saturated state colour becomes
+  a session's alone, with a new `.neutral` for the app's own housekeeping. The countdown stops
+  terminating in mid-air: it fades out at its origin end and is clipped by the card's own corner
+  at the far one. The deck re-anchors peeks by top edge, since card heights now vary. Deletes the
+  mock's second toast surface (`.fb-toast`). Standalone exploration in `toast-audit.html`.
+  Also makes the focus brake drivable, so the notification gate stops depending on which window
+  happened to be frontmost.
+
+- **Worktree creation works in repos with no `origin` again.** `GitService.originHead` checked
+  git's output for emptiness but not its exit status, so in a remote-less repo it returned
+  `fatal: ref refs/remotes/origin/HEAD is not a symbolic ref` *as the ref name* — every new
+  worktree tried to fork off that sentence, and the main/master fallbacks below were unreachable.
+  Pre-existing on `main`; found because the redesigned error card puts git's own reason on screen.
+
+- **The agent gate reads the instance file the driven build actually writes.** `AppSupport` puts
+  the dev build's registry under `Synth Dev`, but the harness hardcoded `Synth` — so `t4a`, `t4b`
+  and `t5` failed on an absent CDP port and empty worktree list while the browser engine was
+  demonstrably fine. Pre-existing since the channel split.

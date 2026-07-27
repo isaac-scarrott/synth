@@ -23,13 +23,17 @@ struct RowMenu: View {
     /// Workspaces and branches are *removed* — sidebar-only; worktrees and branches
     /// stay on disk. Sessions are closed for real (the process ends).
     private var deleteTitle: String {
-        level == .session ? "Close" : "Remove"
+        switch level {
+        case .session:   return "Close"
+        case .branch:    return "Archive"
+        case .workspace: return "Remove"
+        }
     }
     private var confirmLabel: String {
         if let confirmText { return confirmText }
         switch level {
         case .workspace: return "Remove this project from the sidebar? Nothing on disk is deleted."
-        case .branch:    return "Remove this branch from the sidebar? Its worktree stays on disk."
+        case .branch:    return "Archive this branch? Its worktree stays on disk."
         case .session:   return "Close this session?"
         }
     }

@@ -60,6 +60,15 @@ struct PersistedBranch: Codable {
     /// split to remember) so a pre-layout snapshot decodes and a lone-session branch adds no keys.
     /// On restore a leaf whose session no longer resolves collapses (the missing-session reflow).
     var layout: PersistedPaneNode?
+    /// When the row was archived — the grace clock the sweeper measures against, and the one
+    /// piece of archive state that must survive a quit. Optional/omitted so pre-archive
+    /// snapshots decode and an unarchived branch adds no keys (`version` stays 1: a bump
+    /// discards the snapshot outright, and this change is additive).
+    var archivedAt: Date?
+    /// Last time every sweep condition read clean for this branch. Persisted because the rule
+    /// is "two clean readings ≥24h apart", and a user who quits nightly would otherwise never
+    /// accumulate the second one.
+    var lastCleanSweepEval: Date?
 }
 
 /// The on-disk shape of a pane tree (ADR-0014): a leaf carries a `session` id; a split carries

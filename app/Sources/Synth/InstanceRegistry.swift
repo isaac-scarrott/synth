@@ -86,6 +86,29 @@ import Foundation
         try? FileManager.default.removeItem(at: fileURL)
     }
 
+    /// Worktree paths claimed by *other* live Synth instances (a Dev build alongside a stable
+    /// one is the normal case, and both can manage worktrees of the same repo).
+    ///
+    /// The archive sweeper refuses to touch these: `AppStore.runGit` serialises git per repo
+    /// within one process and cannot span apps, so two sweepers racing a `worktree prune` on
+    /// one repo is corruption rather than nuisance.
+    static func otherInstanceWorktreePaths() -> Set<String> {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        else { return [] }
+        var paths: Set<String> = []
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let pid = obj["pid"] as? Int, pid_t(pid) != getpid(),
+                  kill(pid_t(pid), 0) == 0 || errno == EPERM,   // still alive
+                  let claimed = obj["worktreePaths"] as? [String]
+            else { continue }
+            paths.formUnion(claimed)
+        }
+        return paths
+    }
+
     /// Reap session process trees orphaned by a previous Synth that crashed or was
     /// force-quit: its `login` children reparent to launchd (ppid 1) but keep running —
     /// the in-process quit teardown (TerminalManager.shutdownAll → killpg) never got to run,

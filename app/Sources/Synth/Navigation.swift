@@ -38,7 +38,10 @@ extension AppStore {
         for ws in workspaces {
             rows.append(.workspace(ws))
             if expanded.contains(ws.id) {
-                for br in ws.branches {
+                // Archived rows keep living in `ws.branches` — that's what the Archived list
+                // reads and what restore puts back — but they are out of the tree entirely. A
+                // row still visible in the sidebar is not archived.
+                for br in ws.branches where !br.isArchived {
                     rows.append(.branch(br))
                     if expanded.contains(br.id) {
                         for s in br.sessions { rows.append(.session(s)) }
@@ -388,51 +391,17 @@ extension AppStore {
     /// Esc — leave the name untouched.
     func cancelRename() { renamingRowID = nil }
 
-    // MARK: Row menu (shared by the kebab and the `d` shortcut)
-
-    /// The action menu for a row — the same card the kebab opens, centralised so the
-    /// `d` shortcut can raise it straight into its confirm step.
-    func rowMenu(for ref: RowRef) -> ActiveMenu {
-        switch ref {
-        case let .workspace(w):
-            return ActiveMenu(rowID: w.id, level: .workspace,
-                              creates: [MenuCreate(icon: Phosphor.branch, title: "Create worktree…",
-                                                   run: { [weak self] in self?.creatingWorktreeIn = w })],
-                              onDelete: { [weak self] in self?.removeWorkspace(w) })
-        case let .branch(b):
-            return ActiveMenu(rowID: b.id, level: .branch,
-                              creates: [MenuCreate(icon: Phosphor.terminal, title: "New terminal",
-                                                   run: { [weak self] in self?.newTerminal(in: b) })]
-                                + AgentRegistry.installed.map { agent in
-                                    MenuCreate(icon: Phosphor.sparkle, kind: .agent(agent.id),
-                                               title: "New \(agent.displayName)",
-                                               run: { [weak self] in self?.newAgent(agent.id, in: b) })
-                                }
-                                + [MenuCreate(icon: Phosphor.globe, title: "New browser",
-                                              run: { [weak self] in self?.newBrowser(in: b) })],
-                              onDelete: { [weak self] in self?.removeBranch(b, deleteWorktree: false) })
-        case let .session(s):
-            return ActiveMenu(rowID: s.id, level: .session, creates: [],
-                              onDelete: { [weak self] in self?.closeSession(s) },
-                              confirmText: deleteSessionHint(s),
-                              isDestructive: s.status.isBusy)
-        }
-    }
-
-    /// `d`, ⌘W, the row × / trash, and the tab close all land here. It just does it: the row
-    /// soft-deletes instantly and the undo pill parks it (working.html requestDelete → softRemove).
-    /// The sole exception is a worktree — deleting its folder on disk is irreversible, so a branch
-    /// still drops into the deliberate remove-from-sidebar / delete-worktree fork.
+    /// `d`, ⌘W, the row × / archive glyph, and the tab close all land here. It just does it: the
+    /// row soft-deletes instantly and the undo pill parks it (working.html requestDelete →
+    /// softRemove). A branch archives — nothing on disk is touched, so there is nothing here to
+    /// confirm; the irreversible act lives behind `Delete worktree now` in ⌘K, which confirms
+    /// from every surface.
     func requestDelete(_ ref: RowRef) {
         activeMenu = nil
         switch ref {
         case let .workspace(w): softRemoveWorkspace(w)
         case let .session(s):   softCloseSession(s)
-        case let .branch(b):
-            if palette == nil { palette = PaletteModel(store: self) }
-            guard let pal = palette else { return }
-            pal.stack = [pal.rootFrame()]
-            pal.push(pal.confirmRemoveBranch(b))
+        case let .branch(b):    softArchiveBranch(b)
         }
     }
 

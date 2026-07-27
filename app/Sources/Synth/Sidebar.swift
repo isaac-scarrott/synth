@@ -704,13 +704,13 @@ private struct RowActions: View {
                     store.openRowActions(ref)
                 }
             case .workspace:
-                RowActionButton(ref: ref, glyph: Phosphor.trash, size: 14, help: "Remove",
+                RowActionButton(ref: ref, glyph: Phosphor.minusCircle, size: 14, help: "Remove",
                                 danger: true) { store.requestDelete(ref) }
                 RowActionButton(ref: ref, glyph: Phosphor.plus, size: 14, help: "New worktree") {
                     store.addToRow(ref)
                 }
             case .branch:
-                RowActionButton(ref: ref, glyph: Phosphor.trash, size: 14, help: "Remove",
+                RowActionButton(ref: ref, glyph: Phosphor.archive, size: 14, help: "Archive",
                                 danger: true) { store.requestDelete(ref) }
                 RowActionButton(ref: ref, glyph: Phosphor.plus, size: 14, help: "New session") {
                     store.addToRow(ref)

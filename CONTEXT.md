@@ -22,6 +22,16 @@ a live status that drives the sidebar indicators.
 _Avoid_: Tab (a session is never *called* a tab — the tab is only its handle; see Tab), pane, process
 (a session may own a process but is not synonymous with one).
 
+**Scratch terminal**:
+A throwaway shell summoned by a keystroke, running in the context branch's worktree like any
+terminal, but deliberately *not* a Session: no sidebar row, no status, no roll-up, no place in the
+tree. It exists for the errand you finish and leave — `aws sso login`, a one-off script — and is
+killed the moment you dismiss it. Nothing survives to come back to; each summon is a fresh shell.
+Because it can be killed mid-command it obeys the Close rule (ADR-0013) and confirms while busy.
+_Avoid_: Ephemeral terminal (ephemeral describes the navigation cursor's ring), quick terminal,
+console, popup, drawer (all name the presentation, which may change, rather than the lifetime,
+which is the point). Never "scratch session" — the absence of a row is what makes it not one.
+
 **Agent**:
 The category of session that hosts a coding agent. Claude Code and OpenCode are agents; a third is a
 descriptor away. Say the category when Synth must speak generically ("Couldn't start an agent for

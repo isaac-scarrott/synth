@@ -453,6 +453,40 @@ final class ControlServer: @unchecked Sendable {
         // Post a real key event through the app's own queue, so the RootView key
         // monitor sees it exactly as a typed key — the window-wide-shortcut test
         // path where TCC swallows CGEvent postToPid entirely.
+        // The ⌘? sheet's live contents. Worth a verb of its own: the HTML design file shipped a
+        // shortcuts sheet that threw on every open — for months, silently — because nothing could
+        // assert it rendered. A binding that isn't listed here doesn't exist to the user.
+        case "automation.shortcuts" where automation:
+            return ["ok": true,
+                    "open": store.shortcutsOpen,
+                    "category": store.shortcutsCategory,
+                    "categories": ShortcutsSheet.categoryNames(tabsMode: store.tabsMode),
+                    "rows": ShortcutsSheet.rowLabels(tabsMode: store.tabsMode)]
+
+        // The scratch terminal (⌘⇧T) has no sidebar row by design, so `automation.sessions` and
+        // `automation.nav` can't see it — this is the only seam that can prove it exists, which
+        // branch it runs in, and whether a job is holding the foreground (the fact that decides
+        // whether Esc reaches the shell and whether dismissing confirms).
+        case "automation.scratch" where automation:
+            switch request["action"] as? String ?? "state" {
+            case "open":    store.openScratchTerminal()
+            case "close":   store.requestCloseScratchTerminal()
+            case "confirm": store.closeScratchTerminal()
+            case "cancel":  store.scratchConfirmOpen = false
+            case "run":
+                guard let s = store.scratch, let text = request["text"] as? String else {
+                    return ["ok": false, "error": "no scratch terminal / missing text"]
+                }
+                _ = TerminalManager.shared.submit(text, to: s.session.id)
+            default: break
+            }
+            return ["ok": true,
+                    "open": store.scratch != nil,
+                    "busy": store.scratch?.busy ?? false,
+                    "confirmOpen": store.scratchConfirmOpen,
+                    "branch": store.scratch?.branchName ?? "",
+                    "command": store.scratch?.runningCommand ?? ""]
+
         case "automation.key" where automation:
             guard let code = request["keyCode"] as? Int else {
                 return ["ok": false, "error": "missing keyCode"]

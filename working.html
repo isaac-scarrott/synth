@@ -2222,6 +2222,92 @@
   :root[data-theme="dark"] .cmdk__meta--work  { color: var(--work); }
   :root[data-theme="dark"] .cmdk__meta--input { color: var(--input); }
   :root[data-theme="dark"] .cmdk__meta--error { color: var(--error); }
+
+  /* ================================================================================
+     Scratch terminal (⌘⇧T). A throwaway shell over a dimmed app. No chrome beyond the
+     branch it's running in — the surface is the terminal, and everything a header
+     would have said is either obvious (it's a shell) or lives in ⌘? and ⌘K.
+     ================================================================================ */
+
+  .scr {
+    position: fixed;
+    z-index: 150;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--tui-bg);
+    color: var(--tui-fg);
+    font-family: var(--mono);
+  }
+
+  .scr__body {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 11px 14px 13px;
+    font-size: 12px; line-height: 1.55;
+    -webkit-font-smoothing: auto;
+  }
+  .scr__body:focus { outline: none; }
+  .scr__prompt { color: var(--tui-dim); }
+  .scr__note {
+    font-family: var(--font); font-size: 12.5px; line-height: 1.45;
+    color: var(--ink-3); margin: -6px 0 14px;
+  }
+  .scr__note code { font-family: var(--mono); font-size: 11.5px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
+
+  /* Foot — the branch the shell is running in, and nothing else. A scratch terminal has no
+     sidebar row, so this is the only place it says where it is. The busy dot is the one
+     non-text signal kept: with the key hints gone it's all that distinguishes a shell
+     waiting for you from a job holding the keyboard. */
+  .scr__foot {
+    flex-shrink: 0; height: 30px;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 14px 2px;
+    font-size: 11px; color: var(--tui-dim);
+  }
+  .scr__state { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .scr__dot {
+    display: none;
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    background: var(--work);
+  }
+  .scr.is-busy .scr__dot { display: block; animation: scr-pulse 1.4s ease-in-out infinite; }
+  @keyframes scr-pulse { 50% { opacity: 0.35; } }
+
+  /* A centred card over a dimmed app, in the same visual family as ⌘K and every dialog.
+     The dim runs deeper than a dialog's because this one is a detour out of the app
+     entirely, not a step within it — the work behind should read as parked, not adjacent. */
+  .scr-dim {
+    position: fixed; inset: 0; z-index: 149;
+    background: rgba(0,0,0,0.5);
+    opacity: 0; transition: opacity 160ms ease;
+  }
+  .scr-dim.is-in { opacity: 1; }
+  .scr--overlay {
+    position: fixed;
+    top: 50%; left: 50%;
+    width: min(680px, calc(100vw - 120px));
+    height: min(400px, calc(100vh - 200px));
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 0.5px var(--tui-hair), 0 12px 44px rgba(0,0,0,0.26);
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+    transition: transform 140ms cubic-bezier(0.4, 0, 1, 1), opacity 120ms ease;
+  }
+  .scr--overlay.is-in {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    transition: transform 200ms var(--ease-out), opacity 180ms ease;
+  }
+
+  /* The busy-close confirm (ADR-0013). Red primary, because Close is a negative action. */
+  .dialog__btn--danger { background: var(--error); color: #fff; border-color: transparent; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scr, .scr.is-in, .scr-dim { transition-duration: 1ms !important; }
+    .scr--overlay { transform: translate(-50%, -50%) scale(1); }
+    .scr.is-busy .scr__dot { animation: none; }
+  }
+
 </style>
   <script>
     // Stamp the theme before first paint so there's no light flash. System by default.
@@ -4550,6 +4636,13 @@
       else if (k === 'ArrowUp' || k === 'k') { e.preventDefault(); moveShortcutsCat(-1); }
       return;
     }
+    // ⌘⇧T — the scratch terminal: a throwaway shell in the context branch, summoned and
+    // dismissed on the same chord. Sits above everything else because while it is up it owns
+    // the keyboard outright: a fully fledged terminal can't share Esc, ⌃C or a bare letter.
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (k === 't' || k === 'T')) {
+      e.preventDefault(); toggleScratch(); return;
+    }
+    if (scrEl) { scratchKey(e); return; }
     // ⌘⇧F — send feedback from anywhere. One textbox; the author path spawns a fix, everyone else emails.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (k === 'f' || k === 'F')) {
       e.preventDefault();
@@ -5554,6 +5647,7 @@
       [['⌘', 'K'], 'Command menu'],
       [['⌘', 'N'], 'New session'],
       [['⌘', 'T'], 'New terminal'],
+      [['⌘', '⇧', 'T'], 'Scratch terminal'],
       [['⌘', 'W'], 'Close session'],
       [['⌘', 'B'], 'Toggle sidebar'],
       [['⌘', '⏎'], 'Jump to notification'],
@@ -5631,7 +5725,7 @@
   const ICON_TABS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V80H40V56ZM40,200V96H216V200Z"/></svg>';
   // Resolved lazily (at open time), not as a top-level const — ICON_SEARCH / ICON_SIDEBAR /
   // ICON_GLOBE are declared further down, so an eager map would hit their temporal dead zone.
-  const scIcon = (name) => ({ 'General': ICON_KEYS, 'Tabs': ICON_TABS, 'Command menu': ICON_SEARCH, 'Sidebar': ICON_SIDEBAR, 'Split layout': ICON_SQUARES, 'Browser': ICON_GLOBE }[name] || ICON_KEYS);
+  const scIcon = (name) => ({ 'General': ICON_KEYS, 'Tabs': ICON_TABS, 'Command menu': ICON_SEARCH, 'Sidebar': ICON_SIDEBAR, 'Split layout': ICON_SQUARES, 'Browser': ICON_BROWSER }[name] || ICON_KEYS);
   let shortcutsEl = null, shortcutsCat = 0;
   const scKeys = (ks) => ks.map((x) => '<kbd class="cmdk__key">' + x + '</kbd>').join('');
   // Rail (icon'd categories + a keyboard-first footer) beside the selected category's detail rows.
@@ -6111,6 +6205,7 @@
           { sec: 'nav', icon: ICON_FOLDER,  label: 'Projects', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
           { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },
+          { sec: 'act', icon: ICON_TERMINAL, label: 'Scratch terminal', kbd: ['⌘', '⇧', 'T'], enter: () => runAndClose(openScratch) },
           { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { sec: 'act', icon: ICON_GEAR,    label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
           { sec: 'act', icon: ICON_KEYS,    label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
@@ -6118,6 +6213,7 @@
         ];
         const items = [
           ...here.items.map((it) => ({ ...it, g: 'Actions', ctx: it.unit })),
+          { g: 'Actions', icon: ICON_TERMINAL, label: 'Scratch terminal', kbd: ['⌘', '⇧', 'T'], enter: () => runAndClose(openScratch) },
           { g: 'Actions', icon: ICON_PLUS,     label: 'Add project', enter: () => runAndClose(addProjectViaPicker) },
           { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
@@ -7093,6 +7189,225 @@
       seam.addEventListener('pointerup', onUp);
     });
   })();
+
+  /* ================================================================================
+     SCRATCH TERMINAL (⌘⇧T)
+
+     A throwaway shell in the context branch's worktree, for the errand you finish and
+     leave — `aws sso login`, a one-off script. Deliberately not a Session: no sidebar
+     row, no status, no roll-up, nothing in the tree. The rules:
+
+       • ⌘⇧T summons and dismisses (pure toggle). ⌘W closes too.
+       • Killed on dismiss. Nothing survives, every summon is a fresh shell — so
+         nothing is ever left running that the sidebar doesn't show.
+       • Closing while a job holds the foreground confirms (ADR-0013) and names
+         what it ends.
+       • Esc closes only at an idle, empty prompt. Otherwise it reaches the shell and
+         shows nothing for it, exactly as a real terminal would; the busy dot beside
+         the branch name is the only tell for which meaning is live.
+       • ⌃C and ⌃D are always the shell's. `exit` / ⌃D end it for real.
+       • cwd resolves through contextBranch(), exactly like ⌘T/⌘N. On a dormant branch
+         the summon is what lazily creates the worktree, the same as ⌘T (ADR-0004).
+
+     The surface carries no chrome but the branch it runs in: with no sidebar row, the
+     foot is the only place it can say where it is.
+     ================================================================================ */
+
+  let scrEl = null, scrDim = null;
+  let scrLine = '', scrJob = null, scrJobCmd = '';
+
+  function scrCtx() {
+    const br = contextBranch();
+    return { branch: br ? brName(br) : 'main' };
+  }
+  // A bare glyph, because the prompt belongs to the user's shell — Synth doesn't own PS1 and
+  // can't promise it names the branch. The foot is where Synth guarantees the branch.
+  const scrPrompt = () => '❯ ';
+
+  const SCR_CMDS = [
+    { m: /^aws sso login\b/, ms: 6400,
+      pre: [['dim', 'Attempting to automatically open the SSO authorization page in your default browser.'],
+            ['dim', 'If the browser does not open, open the following URL:'],
+            ['', '  https://device.sso.eu-west-1.amazonaws.com/'],
+            ['warn', '  Then enter the code: MXVT-KRWD'],
+            ['', ''],
+            ['dim', 'Waiting for browser authorization…']],
+      post: [['ok', 'Successfully logged into Start URL: https://holibob.awsapps.com/start']],
+      cancel: [['err', 'Login canceled.']] },
+    { m: /^npm run build\b/, ms: 4200,
+      pre: [['dim', '> synth@0.16.0 build'], ['dim', '> vite build'], ['', ''],
+            ['dim', 'vite v5.4.2 building for production…']],
+      post: [['ok', '✓ built in 3.91s'],
+             ['dim', 'dist/assets/index-4f2a1c.js   482.11 kB │ gzip: 142.60 kB']],
+      cancel: [['err', 'build interrupted']] },
+    { m: /^git status\b/, out: (c) => [['', 'On branch ' + c.branch],
+        ['', "Your branch is up to date with 'origin/" + c.branch + "'."], ['', ''],
+        ['ok', 'nothing to commit, working tree clean']] },
+    { m: /^git branch\b/, out: (c) => [['ok', '* ' + c.branch], ['', '  main']] },
+    { m: /^pwd$/, out: (c) => [['', c.cwd]] },
+    { m: /^ls$/, out: () => [['', 'CLAUDE.md   CONTEXT.md   FEATURES.md   app   docs   mcp   working.html']] },
+    { m: /^whoami$/, out: () => [['', 'isaac']] },
+    { m: /^echo\s*(.*)$/, out: (c, mm) => [['', mm[1]]] },
+    { m: /^clear$/, clear: true },
+    { m: /^(exit|logout)$/, quit: true },
+  ];
+
+  const scrBody = () => scrEl && scrEl.querySelector('[data-scr-body]');
+  function scrPrint(cls, text) {
+    const b = scrBody(); if (!b) return;
+    const d = document.createElement('div');
+    d.className = 'term__ln ' + (cls || '');
+    d.textContent = text;
+    b.insertBefore(d, b.querySelector('[data-scr-input]'));
+    b.scrollTop = b.scrollHeight;
+  }
+  function scrPaint() {
+    if (!scrEl) return;
+    const ctx = scrCtx();
+    const input = scrEl.querySelector('[data-scr-input]');
+    input.hidden = !!scrJob;
+    input.querySelector('[data-scr-typed]').textContent = scrLine;
+    scrEl.classList.toggle('is-busy', !!scrJob);
+    scrEl.querySelector('[data-scr-status]').textContent = ctx.branch;
+    const b = scrBody(); if (b) b.scrollTop = b.scrollHeight;
+  }
+
+  function scrRun(raw) {
+    const ctx = scrCtx();
+    scrPrint('cmd', scrPrompt() + raw);
+    scrLine = '';
+    const cmd = raw.trim();
+    if (!cmd) { scrPaint(); return; }
+    const hit = SCR_CMDS.find((c) => c.m.test(cmd));
+    if (!hit) { scrPrint('err', 'zsh: command not found: ' + cmd.split(/\s+/)[0]); scrPaint(); return; }
+    if (hit.quit) { closeScratch(); return; }
+    if (hit.clear) {
+      const b = scrBody();
+      [...b.querySelectorAll('.term__ln')].forEach((n) => { if (!n.hasAttribute('data-scr-input')) n.remove(); });
+      scrPaint(); return;
+    }
+    if (hit.out) { hit.out(ctx, cmd.match(hit.m)).forEach(([c, t]) => scrPrint(c, t)); scrPaint(); return; }
+    // A foreground job: this is the state that makes dismissal confirm.
+    (hit.pre || []).forEach(([c, t]) => scrPrint(c, t));
+    scrJobCmd = cmd;
+    scrJob = setTimeout(() => {
+      scrJob = null;
+      (hit.post || []).forEach(([c, t]) => scrPrint(c, t));
+      scrPaint();
+    }, hit.ms);
+    scrPaint();
+  }
+
+  function scrInterrupt() {
+    const hit = SCR_CMDS.find((c) => c.m.test(scrJobCmd));
+    clearTimeout(scrJob); scrJob = null;
+    scrPrint('', '^C');
+    ((hit && hit.cancel) || []).forEach(([c, t]) => scrPrint(c, t));
+    scrPaint();
+  }
+
+  // Every key while the scratch terminal is up. Esc is the only one with two meanings,
+  // and it resolves on (idle && empty line) — otherwise the shell keeps it.
+  function scratchKey(e) {
+    const k = e.key;
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && (k === 'w' || k === 'W')) { e.preventDefault(); requestCloseScratch(); return; }
+    if (e.metaKey) { e.preventDefault(); return; }          // scratch owns the keyboard
+    if (e.ctrlKey && (k === 'c' || k === 'C')) {
+      e.preventDefault();
+      if (scrJob) scrInterrupt();
+      else { scrPrint('cmd', scrPrompt() + scrLine + '^C'); scrLine = ''; scrPaint(); }
+      return;
+    }
+    if (e.ctrlKey && (k === 'd' || k === 'D')) {            // ⌃D at an empty prompt ends the shell
+      e.preventDefault();
+      if (!scrJob && scrLine === '') closeScratch();
+      return;
+    }
+    if (e.ctrlKey || e.altKey) { e.preventDefault(); return; }
+    if (k === 'Escape') {
+      e.preventDefault();
+      // Idle and empty, Esc dismisses. Otherwise it goes to the shell and, exactly like a
+      // real terminal, shows nothing for it — the busy dot is the only tell.
+      if (!scrJob && scrLine === '') closeScratch();
+      return;
+    }
+    if (scrJob) { e.preventDefault(); return; }             // the job owns stdin
+    if (k === 'Enter') { e.preventDefault(); scrRun(scrLine); return; }
+    if (k === 'Backspace') { e.preventDefault(); scrLine = scrLine.slice(0, -1); scrPaint(); return; }
+    if (k.length === 1) { e.preventDefault(); scrLine += k; scrPaint(); }
+  }
+
+  function scrMarkup(ctx) {
+    return '<div class="scr__body" data-scr-body>'
+      + '<div class="term__ln dim">Scratch terminal — closes when you leave. Nothing here is saved.</div>'
+      + '<div class="term__ln dim">Try: aws sso login · npm run build · git status · exit</div>'
+      + '<div class="term__ln">&nbsp;</div>'
+      + '<div class="term__ln" data-scr-input><span class="scr__prompt">' + esc(scrPrompt()) + '</span>'
+      + '<span data-scr-typed></span><span class="term__cursor"></span></div></div>'
+      + '<div class="scr__foot"><span class="scr__state"><span class="scr__dot"></span>'
+      + '<span data-scr-status></span></span></div>';
+  }
+
+  function openScratch() {
+    if (scrEl) return;
+    if (paletteOpen) closePalette();
+    const ctx = scrCtx();
+    scrLine = ''; scrJob = null; scrJobCmd = '';
+    scrDim = document.createElement('div');
+    scrDim.className = 'scr-dim';
+    scrEl = document.createElement('div');
+    scrEl.className = 'scr scr--overlay';
+    scrEl.innerHTML = scrMarkup(ctx);
+    document.body.appendChild(scrDim);
+    document.body.appendChild(scrEl);
+    requestAnimationFrame(() => { scrDim.classList.add('is-in'); scrEl.classList.add('is-in'); });
+    scrPaint();
+  }
+
+  function closeScratch() {
+    if (!scrEl) return;
+    clearTimeout(scrJob); scrJob = null;
+    const el = scrEl, dim = scrDim;
+    scrEl = null; scrDim = null;
+    el.classList.remove('is-in');
+    if (dim) dim.classList.remove('is-in');
+    setTimeout(() => { el.remove(); if (dim) dim.remove(); }, 180);
+  }
+
+  // ADR-0013: Close confirms while busy, and states the consequence.
+  function requestCloseScratch() {
+    if (!scrEl) return;
+    if (!scrJob) { closeScratch(); return; }
+    if (document.querySelector('.scr-confirm')) return;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop scr-confirm';
+    backdrop.innerHTML = '<div class="dialog" role="dialog" aria-modal="true" aria-label="Close scratch terminal">'
+      + '<div class="dialog__title">Close scratch terminal?</div>'
+      + '<div class="scr__note">Closing ends <code>' + esc(scrJobCmd) + '</code>. Nothing in a scratch terminal is saved.</div>'
+      + '<div class="dialog__actions">'
+      + '<span class="dialog__btn" data-scr-cancel>Cancel</span>'
+      + '<span class="dialog__btn dialog__btn--danger" data-scr-ok>Close</span></div></div>';
+    document.body.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+    const done = (ok) => {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKey, true);
+      if (ok) closeScratch(); else scrPaint();
+    };
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done(false); }
+      else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); done(true); }
+      else { ev.preventDefault(); ev.stopPropagation(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    backdrop.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-scr-ok]')) done(true);
+      else if (ev.target.closest('[data-scr-cancel]') || ev.target === backdrop) done(false);
+    });
+  }
+
+  function toggleScratch() { if (scrEl) requestCloseScratch(); else openScratch(); }
+
 })();
 </script>
 </body>

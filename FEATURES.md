@@ -1093,3 +1093,29 @@ disclosure to dive deeper.
   session teardown (nothing published; stable `Synth.dmg` never at risk) and a `nohup setsid` that
   did nothing because `setsid` isn't a macOS command. Launch long releases via python3 `os.setsid()`,
   and make the watcher emit on process-gone, not just on success.
+- **The scratch terminal (⌘⇧T) — a shell for the errand, not for the tree (both designs)** — a
+  throwaway full terminal in the context branch (`contextBranch()`, like ⌘T/⌘N; lazily creates a
+  dormant branch's worktree per ADR-0004), summoned and dismissed on the same chord. Deliberately
+  **not a Session**: no row, no status, no roll-up — its own glossary term, because "a session
+  that isn't in the sidebar" would split the central noun. **Dismissing kills it** (fresh shell
+  every summon) to hold the rule that nothing runs that the sidebar doesn't show, which is why
+  closing it while busy confirms and names what it ends (ADR-0013). **Esc closes only at an idle,
+  empty prompt** — otherwise it reaches the shell, so vim/TUIs work; ⌃C and ⌃D are never
+  intercepted; ⌘W closes too. A centred card over a 0.5 dim (deeper than a dialog's — a detour out
+  of the app, not a step within it), no chrome but the branch name bottom-left. Listed in ⌘? and
+  ⌘K. Overlay won over a curtain and a pane-inline panel, both built and driven first.
+- **⌘? had been dead in both design files** — `scIcon` asked for `ICON_GLOBE`, declared nowhere
+  (its own comment claimed it was "declared further down"), so `openShortcuts()` threw and the
+  shortcuts sheet never opened. Now `ICON_BROWSER`; every category renders.
+- **Native: the scratch terminal (⌘⇧T)** — the design above, running on a real PTY in the branch's
+  worktree. `ScratchTerminal` holds a real `Session` (the terminal stack is keyed by one) but never
+  appends it to `ws.branches` — that omission alone is what keeps it out of the sidebar, roll-up,
+  ⌘K and `state.json`. Consequence: `apply` resolves bus events via `session(id)`, so the scratch's
+  own events (including the `.exited` that fires on `exit`) would have been dropped — `applyScratch`
+  takes first refusal, driving the busy dot and closing the overlay. ⌘N's context ladder extracted
+  to one `contextBranchForNewSession()` so the two can't drift. Two forced divergences: Esc's
+  "idle *and empty* prompt" becomes just "no foreground job" (a PTY's line buffer isn't ours to
+  read), and the amber dot carries the whole busy signal since the foot hint was cut. New gate
+  `t12_scratch.py` (26 checks) runs a real `sleep 30` through the real zsh reporter and asserts the
+  absences *while it runs*; new `automation.shortcuts` verb makes the ⌘? sheet assertable — the
+  thing whose absence let the HTML sheet stay broken. 13/13 suites, 201 checks.

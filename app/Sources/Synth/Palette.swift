@@ -496,6 +496,9 @@ struct PaletteFrame {
                                 enter: { self.push(self.branchesFrame()) }),
                     PaletteItem(icon: .phosphor(Phosphor.squares), label: "Sessions", sec: "nav",
                                 enter: { self.push(self.sessionsFrame()) }),
+                    PaletteItem(icon: .phosphor(Phosphor.terminal), label: "Scratch terminal", sec: "act",
+                                kbd: ["⌘", "⇧", "T"],
+                                enter: { self.runAndClose { self.store.openScratchTerminal() } }),
                     PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", sec: "act",
                                 kbd: ["⌘", "B"],
                                 enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
@@ -515,6 +518,9 @@ struct PaletteFrame {
                 var it = item; it.group = "Actions"; return it
             }
             items += [
+                PaletteItem(icon: .phosphor(Phosphor.terminal), label: "Scratch terminal", group: "Actions",
+                            kbd: ["⌘", "⇧", "T"],
+                            enter: { self.runAndClose { self.store.openScratchTerminal() } }),
                 PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project", group: "Actions",
                             enter: { self.runAndClose { self.store.promptAddWorkspace() } }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",

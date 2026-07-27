@@ -67,6 +67,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "K"], label: "Command menu"),
             Shortcut(keys: ["⌘", "N"], label: "New session"),
             Shortcut(keys: ["⌘", "T"], label: "New terminal"),
+            Shortcut(keys: ["⌘", "⇧", "T"], label: "Scratch terminal"),
             Shortcut(keys: ["⌘", "W"], label: "Close session"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
             Shortcut(keys: ["⌘", "⏎"], label: "Jump to notification"),
@@ -114,6 +115,19 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
     ]
+
+    /// What the sheet lists, flattened for the harness (`automation.shortcuts`) — "General:
+    /// Scratch terminal ⌘⇧T" and every other row, exactly as the sheet renders them. A binding
+    /// missing from here is a binding the user has no way to find.
+    static func rowLabels(tabsMode: Bool) -> [String] {
+        categories(tabsMode: tabsMode).flatMap { cat in
+            cat.rows.map { "\(cat.name): \($0.label) \($0.keys.joined())" }
+        }
+    }
+
+    static func categoryNames(tabsMode: Bool) -> [String] {
+        categories(tabsMode: tabsMode).map(\.name)
+    }
 
     /// Tabs-off shows the base list. Tabs-on inserts a Tabs category and rewrites the two Split-
     /// layout rows tabs changes — ⌘⇧arrow becomes "Send tab" and ⌘⇧U becomes "Merge pane" — so the

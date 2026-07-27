@@ -263,6 +263,14 @@ struct RootView: View {
                 }
             }
         }
+        // Above every sheet: while a scratch terminal is up it owns the screen as well as the
+        // keyboard. No tap-to-dismiss — the dismissal is explicit, always (⌘⇧T / ⌘W / Esc / exit),
+        // because a stray click landing on the dim would kill a running command.
+        .overlay {
+            if let scratch = store.scratch {
+                ScratchTerminalOverlay(scratch: scratch).environment(store)
+            }
+        }
         .onAppear(perform: installKeyMonitor)
         .onAppear { NotificationService.shared.bootstrap(store: store) }
         // Refetch PR state whenever Synth comes forward — a branch merged or a PR opened
@@ -320,6 +328,36 @@ struct RootView: View {
                 return event   // ⌘↵ Send + typing pass through to the sheet
             }
             let key = event.charactersIgnoringModifiers?.lowercased()
+
+            // ⌘⇧T summons / dismisses the scratch terminal (working.html). It sits above every
+            // other binding because while it is up it owns the keyboard outright: a fully
+            // fledged terminal can't share Esc, ⌃C or a bare letter with the app around it.
+            if key == "t", event.modifierFlags.contains(.command), event.modifierFlags.contains(.shift) {
+                store.toggleScratchTerminal(); return nil
+            }
+            if store.scratch != nil {
+                // Its busy-close confirm owns the keyboard ahead of the shell.
+                if store.scratchConfirmOpen {
+                    switch event.keyCode {
+                    case 53:     store.scratchConfirmOpen = false        // Esc cancels
+                    case 36, 76: store.closeScratchTerminal()            // ⏎ confirms
+                    default:     break
+                    }
+                    return nil
+                }
+                // ⌘W closes it, like every other Close.
+                if key == "w", event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
+                    store.requestCloseScratchTerminal(); return nil
+                }
+                // Esc dismisses only at an idle prompt. With a job in the foreground it is the
+                // shell's, so vim, less and every TUI inside it behave — and the amber dot beside
+                // the branch name is what says which meaning is live.
+                if event.keyCode == 53, store.scratch?.busy == false {
+                    store.requestCloseScratchTerminal(); return nil
+                }
+                // Everything else — Esc while busy, ⌃C, ⌃D, every keystroke — is the PTY's.
+                return event
+            }
 
             // ⌘↩ fires the front card's own button — Undo, Open, Retry, Review — bound only
             // while the deck is non-empty, so the chord is never stolen otherwise. An undo card

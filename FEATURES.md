@@ -1078,3 +1078,15 @@ disclosure to dive deeper.
 - **⌘? had been dead in both design files** — `scIcon` asked for `ICON_GLOBE`, declared nowhere
   (its own comment claimed it was "declared further down"), so `openShortcuts()` threw and the
   shortcuts sheet never opened. Now `ICON_BROWSER`; every category renders.
+- **Native: the scratch terminal (⌘⇧T)** — the design above, running on a real PTY in the branch's
+  worktree. `ScratchTerminal` holds a real `Session` (the terminal stack is keyed by one) but never
+  appends it to `ws.branches` — that omission alone is what keeps it out of the sidebar, roll-up,
+  ⌘K and `state.json`. Consequence: `apply` resolves bus events via `session(id)`, so the scratch's
+  own events (including the `.exited` that fires on `exit`) would have been dropped — `applyScratch`
+  takes first refusal, driving the busy dot and closing the overlay. ⌘N's context ladder extracted
+  to one `contextBranchForNewSession()` so the two can't drift. Two forced divergences: Esc's
+  "idle *and empty* prompt" becomes just "no foreground job" (a PTY's line buffer isn't ours to
+  read), and the amber dot carries the whole busy signal since the foot hint was cut. New gate
+  `t12_scratch.py` (26 checks) runs a real `sleep 30` through the real zsh reporter and asserts the
+  absences *while it runs*; new `automation.shortcuts` verb makes the ⌘? sheet assertable — the
+  thing whose absence let the HTML sheet stay broken. 13/13 suites, 201 checks.

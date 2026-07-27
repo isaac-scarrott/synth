@@ -497,6 +497,11 @@ enum FeedbackMode {
 
     /// The ⌘? keyboard-shortcuts sheet (working.html's shortcutsEl).
     var shortcutsOpen = false
+    /// The scratch terminal (⌘⇧T) — a throwaway shell over the app, deliberately not a Session:
+    /// no row, no status, no roll-up, nothing persisted. Nil unless one is up. See ScratchTerminal.
+    var scratch: ScratchTerminal?
+    /// Dismissing it while a job holds the foreground confirms first (ADR-0013).
+    var scratchConfirmOpen = false
     /// The selected category in the shortcuts sheet's sidebar — driven by ↑/↓ / j/k while open.
     var shortcutsCategory = 0
 
@@ -669,6 +674,9 @@ enum FeedbackMode {
     // MARK: Bus → store
 
     private func apply(_ event: SessionEvent) {
+        // The scratch terminal's session is never in the tree, so every event it raises would
+        // fall through below as an unknown id. It gets first refusal.
+        if applyScratch(event) { return }
         switch event {
         case let .statusChanged(id, status):
             guard let s = session(id) else { break }
@@ -1302,6 +1310,18 @@ enum FeedbackMode {
     /// the focused sidebar row's branch when the keyboard owns the sidebar, else the open
     /// session's, else the first available (working.html contextBranch → newSessionFrame).
     func newSessionPicker() {
+        guard let br = contextBranchForNewSession() else { return }
+        activeMenu = nil
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        pal.stack = [pal.rootFrame()]
+        pal.push(pal.newSessionFrame(branch: br))
+    }
+
+    /// The branch a context-resolved action lands in: the focused sidebar row's when the keyboard
+    /// owns the sidebar, else the open session's, else the first available (working.html
+    /// `contextBranch`). Shared by ⌘N and ⌘⇧T so the two can't drift apart.
+    func contextBranchForNewSession() -> Branch? {
         let contextual: Branch? = {
             guard keyboardActive, let ref = cursorRef else { return nil }
             switch ref {
@@ -1310,12 +1330,7 @@ enum FeedbackMode {
             case let .workspace(w): return w.liveBranches.first { !$0.isPending }
             }
         }()
-        guard let br = contextual ?? defaultBranch() else { return }
-        activeMenu = nil
-        if palette == nil { palette = PaletteModel(store: self) }
-        guard let pal = palette else { return }
-        pal.stack = [pal.rootFrame()]
-        pal.push(pal.newSessionFrame(branch: br))
+        return contextual ?? defaultBranch()
     }
 
     private func defaultBranch() -> Branch? {

@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.17.1",
+    "date": "2026-07-27",
+    "changes": [
+      "Notifications now order by what it costs to miss them rather than by severity — a needs-input from ten seconds ago no longer lands behind an error you dealt with minutes ago, ⌘↩ included.",
+      "A notification folded away under \"+N\" pauses its countdown, so a card can no longer expire having never been on screen.",
+      "Sidebar branch names leave the monospace for the app's own font, and the branch you're checked out on is visibly the one you're on again.",
+      "Sidebar rows hold their height: expanding a branch, or a branch going busy, no longer nudged every row below it by a couple of pixels mid-click.",
+      "In Light, dim terminal text — spinners, hints, timestamps — is readable again; it had been rendering at roughly half the contrast the dark theme gives the same thing."
+    ]
+  },
+  {
     "version": "0.17.0",
     "date": "2026-07-27",
     "changes": [

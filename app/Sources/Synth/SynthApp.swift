@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (after bootstrap, so an `app_crashed` event has somewhere to go).
         CrashReporter.install()
         CrashReporter.reportPending()
+        // Start Sparkle here rather than leaving it to the first person who opens the app menu:
+        // the updater is what finds and stages a build in the background, and a build nobody
+        // ever staged is a card nobody ever sees. No-ops on the dev channel (Updates.controller).
+        _ = Updates.controller
         // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd),
         // and reap any archive hold whose window elapsed while Synth was shut.
         Task.detached(priority: .background) {
@@ -348,6 +352,11 @@ struct RootView: View {
                 default: store.debugClearNotifs()              // ⌥C
                 }
                 return nil
+            }
+            // ⌥U stages a build (working.html's ⌥U demo); pressing it again winds the clock on a
+            // day, so the daily reminder can be read as it will actually arrive.
+            if event.modifierFlags.contains(.option), event.keyCode == 32 {
+                store.debugStageUpdate(); return nil
             }
             #endif
 

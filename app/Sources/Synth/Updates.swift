@@ -7,15 +7,51 @@ import SwiftUI
 /// replace itself with a release build.
 @MainActor
 enum Updates {
+    /// Held here because `SPUStandardUpdaterController` keeps its delegates weakly.
+    static let bridge = UpdateBridge()
+
     static let controller: SPUStandardUpdaterController? = {
         guard !isDevChannel,
               Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
               Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") != nil
         else { return nil }
         return SPUStandardUpdaterController(
-            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+            startingUpdater: true, updaterDelegate: bridge, userDriverDelegate: bridge
         )
     }()
+}
+
+/// Sparkle speaks through the notification deck, not through its own window.
+///
+/// `SUEnableAutomaticChecks` + `SUAutomaticallyUpdate` mean a newer build finds and downloads
+/// itself in the background; this bridge is what turns that otherwise silent event into a card,
+/// and what hands the card the relaunch it offers. Nothing here starts a download or asks
+/// permission to — by the time we speak, the build is already on disk and installs itself on the
+/// next quit, which is exactly what makes the card's `Restart` a shortcut rather than a demand.
+final class UpdateBridge: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
+    /// Tells Sparkle we own the reminding, so it holds its own alert back for a scheduled find.
+    var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    /// A build Synth went looking for on its own is Synth's news to break. A check the user
+    /// asked for from the app menu is not scheduled, so Sparkle still shows its own window there
+    /// — they asked a question and deserve an answer in the place they asked it.
+    func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem,
+                                                              andInImmediateFocus immediateFocus: Bool) -> Bool {
+        false
+    }
+
+    /// The one hook that matters: the build is staged, so from here the only open question is
+    /// *when* it lands — and that question belongs to the card. Returning true takes the update
+    /// cycle off Sparkle's hands; it installs on quit regardless, so nothing is lost by holding
+    /// the handler until someone asks for it sooner.
+    func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
+                 immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        let version = item.displayVersionString
+        MainActor.assumeIsolated {
+            AppStore.shared?.updateStaged(version: version) { immediateInstallHandler() }
+        }
+        return true
+    }
 }
 
 /// Tracks Sparkle's own readiness — it refuses a second check while one is in flight.

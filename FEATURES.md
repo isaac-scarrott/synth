@@ -989,3 +989,22 @@ disclosure to dive deeper.
 - **The deck's ⌘↩ stops the chord it has claimed.** The palette's `Enter` handler runs later in the
   same dispatch, so ⌘↩ on a card whose action opens a confirm raised the dialog and then activated
   its preselected Cancel — one keystroke asking and answering. Found building the update card.
+
+- **Native: the update card.** The above, in the app. `UpdateBridge` takes Sparkle's
+  `willInstallUpdateOnQuit` and hands the staged version plus its relaunch closure to the store,
+  with Sparkle's own window suppressed for scheduled finds; the updater now starts at launch
+  instead of waiting for someone to open the app menu. The arrival date and last-spoken date live
+  in UserDefaults so the reminder ages and does not repeat every launch, while `stagedUpdate` is
+  never restored without a working installer — a Restart that cannot restart is worse than no card.
+  Gated by `t11_update.py` (22 checks).
+
+- **The deck stopped eating its own words.** Two pre-existing fidelity bugs, found because the
+  update card's copy was long enough to expose them: a `Spacer` between the text and the button
+  made the card pay its 11pt gap twice, and the button's ⌘↩ caps were the palette's larger
+  `.cmdk__key` rather than the card's own `.notif__act kbd`. Together they cost 30pt of a 320pt
+  card, and `Synth 0.13.1 is ready` rendered as `Synth 0.13.1 is r…`.
+
+- **Glossary: Update and Restart.** One noun for the newer build, one verb for what it costs you.
+  Both surfaces say `is ready` / `installs when you quit` because the build is already downloaded,
+  and nothing may frame `Restart` as the way to get it — it only accelerates an install that
+  happens on the next quit anyway.

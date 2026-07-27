@@ -109,6 +109,21 @@ focused app. Same noun for both: where it lands is a qualifier, not a different 
 _Avoid_: Toast (implementation jargon that leaked into Settings copy and marketing), alert, banner
 (both collide with macOS's own Notification Center styles).
 
+**Update**:
+A newer build of Synth. Sparkle finds and downloads it in the background, so by the time Synth says
+anything the build is already on disk and will install itself the next time Synth quits — which is
+why every surface says **is ready** and **installs when you quit**, never "available" or "download".
+The notification is the one attention card that never reaches Notification Center: a version you
+were not waiting for does not earn a banner over the app you were using.
+_Avoid_: Upgrade, new version, patch; "available" (it is past that — it is downloaded).
+
+**Restart**:
+Quit Synth and come back in the new build. It is the shortcut, never the price: it only ever
+accelerates an install that happens on the next quit regardless, so nothing may frame it as the way
+to get the update. It ends every live turn, so it confirms when — and only when — a session is busy,
+the same rule Close wears (ADR-0013).
+_Avoid_: Relaunch, reopen, update now, install (the install is not the part you feel).
+
 **Needs input**:
 A session has stopped and cannot continue until you answer it. The one status that is a request
 rather than a report, which is why it outranks every other in a roll-up and wears a glyph, not a dot.

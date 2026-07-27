@@ -976,6 +976,26 @@ disclosure to dive deeper.
 
 ## [2026-07-27](docs/features/2026-07-27.md)
 
+- **The light-mode terminal answers for colours it did not choose** — measured with a capture
+  harness that speaks OSC 10/11 and DEC 2031 plus real-build screenshots, not by reading tokens.
+  First finding was a harness artefact worth recording: with no 2031 answer Claude Code falls back
+  to its dark theme and renders code at **1.00:1**, but ghostty *does* answer, so both agents
+  already switch themselves — the `--settings {"theme":…}` injection that looked necessary would
+  only have overridden a user's own choice. One real fix: **faint (SGR 2) sat at 3.2:1 where dark
+  gets 5.3** from the identical halfway blend, since that mid grey is nearer white than black —
+  light now keeps 0.65 of the ink (`faint-opacity`), measuring **5.1:1**. Two general fixes were
+  tried and reverted: `minimum-contrast` (ghostty implements it by replacing the foreground with
+  black or white, so at 4.5 every colour on screen went black) and **mirroring the 256-colour
+  greyscale ramp** — which fixed foreground use (`38;5;250` 1.8:1 → 10.7:1) but made tmux's stock
+  powerline status bar unreadable, since a `bg=colour236` band under pinned white ink inverts.
+  The line that settles it: slots **0–15 are what a theme is for**, **16–255 are a fixed standard**
+  a tool addresses by absolute value. So `38;5;250` as body text stays 1.8:1 and fzf's selected row
+  stays a dark slab — a tool's own dark preset, answerable where the tool is configured. New
+  `t13_termcontrast` gates it in pixels (light 4.5:1, dark pinned at 4.2 because ghostty's default
+  red ships at 4.31), decoding PNGs with `zlib` so the gate stays dependency-free. Left standing as
+  a design call: the light terminal card barely reads as a surface (ΔL\* ≈ 1.0 from the pane,
+  against dark's 3.6).
+
 - **An MCP server now knows which channel installed it** — `shared.mjs` hardcoded
   `Application Support/Synth/instances`, so a dev build's agents discovered *no* Synth (empty
   `browser_list`, nothing to drive) or — with a stable Synth also running — discovered **that** one

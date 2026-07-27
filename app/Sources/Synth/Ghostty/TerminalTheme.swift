@@ -8,6 +8,13 @@ import GhosttyKit
 /// continuous dark card with the app frame; foreground and ANSI palette ride on Claude Code's
 /// own dark theme rather than fighting it. Everything else (font, padding, clipboard, the
 /// shell-integration=none used by the env scrub) is scheme-independent and lives here too.
+///
+/// The asymmetry is the whole point: dark is the terminal every TUI was written for, so it needs
+/// one line. Light has to answer for colours a tool picked while looking at a dark screen — which
+/// is what the palette and `lightFaintOpacity` below are for. It answers only where a terminal is
+/// entitled to: the sixteen themeable slots, and how strongly faint renders. The scheme itself is
+/// announced to the TUI by ghostty (DEC 2031), so anything that themes itself — Claude Code,
+/// opencode — has already switched by the time these apply.
 enum TerminalTheme {
     /// Colours for one appearance. Backgrounds/foreground plus a full 16-colour ANSI palette
     /// (0–7 normal, 8–15 bright), kept in step with the HTML design tokens.
@@ -27,6 +34,30 @@ enum TerminalTheme {
         bg: "f7f8fa", fg: "1c1e23", cursor: "1c1e23", selection: "d0d9e6",
         ansi: ["1c1e23", "a2241a", "106236", "754d09", "194eb7", "86289e", "075d6f", "9296a1",
                "5b5e68", "851d16", "0d4f2c", "5f3e07", "143f96", "6e2082", "064c5b", "ffffff"])
+
+    // The 256-colour ramp above slot 15 is deliberately left alone, and the reason is worth
+    // keeping: slots 0–15 are what a terminal theme is *for* — every theme redefines them and
+    // tools expect it — while 16–255 are a fixed standard a tool addresses by absolute value.
+    // Mirroring the greyscale ramp (232–255) so a light surface reads it the way its author
+    // meant was tried and reverted. It fixes the half of the usage where the ramp supplies the
+    // foreground alone (`38;5;250` as body text goes 1.8:1 → 10.7:1) and breaks every pairing
+    // where it supplies only the *background*: a status bar of `bg=colour236` under pinned white
+    // ink is a dark band with light text before, and a light band with white text after. tmux
+    // with a stock powerline config was unreadable. One palette cannot serve both sides, and the
+    // side that breaks is the one the tool nailed down.
+    //
+    // So `38;5;250` as body text stays at 1.8:1 here, and fzf's selected row stays a dark slab.
+    // Those are the tool's own dark preset resolving against a standard palette — answerable
+    // where the tool is configured (`fzf --color=light`), not by re-basing the palette underneath
+    // every other tool that reads it correctly.
+
+    /// How much of the foreground survives SGR 2 (faint), which ghostty renders by blending the
+    /// text toward the background. The default half-and-half is symmetric but its *result* is
+    /// not: the same mid grey it lands on reads at 5.3:1 over the dark card and 3.2:1 here,
+    /// because a mid grey is far nearer white than black. Faint is not decoration — it is what
+    /// spinners, hints and timestamps are written in — so light keeps more of the ink and buys
+    /// back the ratio dark gets for free. Dark keeps the default.
+    private static let lightFaintOpacity = 0.65
 
     static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -60,6 +91,7 @@ enum TerminalTheme {
         foreground = \(c.fg)
         cursor-color = \(c.cursor)
         selection-background = \(c.selection)
+        faint-opacity = \(Self.lightFaintOpacity)
         \(palette)
         """
     }

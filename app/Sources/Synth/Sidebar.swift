@@ -28,7 +28,10 @@ struct Sidebar: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
+                    // Projects chunk by air, not indent — a project name sits only 4px left of
+                    // the branch names under it, so without the gap the two tiers read as peers
+                    // (working.html `.nav > .repo { margin-bottom: 10px }` over its 6px group tail).
+                    LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
                     }
                     // 10pt side gutter floats the row pills off the edge; rows are full-width so
@@ -296,12 +299,14 @@ private struct BranchRow: View {
         if store.tabsMode { return true }
         return !(branch.isLive && isOpen)
     }
-    /// The active-group label goes bold only when it is the *sole* focus cue. Once its open
-    /// session shows below — expanded (all sessions) or peeking while collapsed (that one) —
-    /// the bold session carries the focus, so bolding the label too would double-encode. Only a
-    /// group with nothing to peek (a pending setup) keeps the bold (working.html
-    /// `.repo:not(.repo--open):has(> .collapse .session--open) > .branch--active`).
-    private var boldName: Bool { isActivePill && !peeking }
+    /// The branch the active pane is on, whatever its expansion state — the tier-2 "you are
+    /// here" (working.html `.branch--active`, applied by derivePill). Only the pill background
+    /// is gated on visibility (see activePillBackground); the name is not, so the branch you're
+    /// checked out on never renders identical to the ones around it.
+    private var isActiveBranch: Bool {
+        if store.openSetupBranchID == branch.id { return true }
+        return store.openSession.map { store.branch(of: $0)?.id == branch.id } == true
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -309,10 +314,10 @@ private struct BranchRow: View {
                 if renaming {
                     HStack(spacing: 6) {
                         Chevron(open: isOpen)
-                        RenameField(font: .system(size: 12, design: .monospaced))
+                        RenameField(font: .system(size: 12))
                         Spacer(minLength: 4)
                     }
-                    .padding(.leading, 37).padding(.trailing, 6).padding(.vertical, 7)
+                    .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 28)
                 } else {
                     Button {
                         guard !branch.isPending else { return }   // nothing to expand or open yet
@@ -331,9 +336,9 @@ private struct BranchRow: View {
                             // the chevron goes (working.html `.branch--group > .chev { display:none }`).
                             if !store.tabsMode { Chevron(open: isOpen) }
                             Text(branch.name)
-                                .font(.system(size: 12, design: .monospaced))
-                                .fontWeight(boldName ? .semibold : .medium)
-                                .foregroundStyle(isActivePill ? Theme.repoName : Theme.branchName)
+                                .font(.system(size: 12))
+                                .fontWeight(isActiveBranch ? .semibold : .medium)
+                                .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
                                 .lineLimit(1).truncationMode(.middle)
                             // The branch's PR rides beside the name — identity, not status, so it
                             // stays clear of the roll-up's reserved right axis. Colour is the state.
@@ -355,7 +360,10 @@ private struct BranchRow: View {
                         // Full-width row: 37pt leading holds the branch content at its indent
                         // while the hover band spans the sidebar; 6pt trailing keeps the branch
                         // indicator on the shared 24pt axis (working.html .nav .branch).
-                        .padding(.leading, 37).padding(.trailing, 6).padding(.vertical, 7)
+                        // Height is pinned rather than derived from the tallest child: BranchRollup
+                        // drops to EmptyView when expanded, so vertical padding alone made the row
+                        // 30pt holding a 16pt Ind and 28pt without — expanding shifted the tree.
+                        .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 28)
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
                         .opacity(branch.isPending ? 0.5 : 1)
@@ -486,7 +494,7 @@ private struct SessionRow: View {
                     RenameField(font: .system(size: 11.5))
                     Spacer(minLength: 4)
                 }
-                .padding(.leading, 61).padding(.trailing, 6).padding(.vertical, 6)
+                .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 28)
             } else {
                 Button { store.openFromSidebar(session) } label: {
                     HStack(spacing: 8) {
@@ -521,7 +529,7 @@ private struct SessionRow: View {
                         }
                         .opacity(revealed ? 0 : 1)
                     }
-                    .padding(.leading, 61).padding(.trailing, 6).padding(.vertical, 6)
+                    .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 28)
                     .rowContentFade(revealed)
                     // The open session's sticky tint (working.html .session--open), deepening
                     // on hover like every other accent wash.

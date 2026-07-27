@@ -1119,3 +1119,14 @@ disclosure to dive deeper.
   `t12_scratch.py` (26 checks) runs a real `sleep 30` through the real zsh reporter and asserts the
   absences *while it runs*; new `automation.shortcuts` verb makes the ⌘? sheet assertable — the
   thing whose absence let the HTML sheet stay broken. 13/13 suites, 201 checks.
+
+- **Branch names leave the monospace** — the sidebar's branch row goes to the UI sans, tracking to
+  0 (mono's fixed advance was what the `-0.01em` compensated) and ink up to `--ink-2` (`--ink-3`
+  was calibrated against mono's heavier stems). Mono elsewhere is untouched: it still means "the
+  machine owns this string" for crumbs, PR chips, URLs, keys and terminals. Two knock-ons, both
+  because mono had been load-bearing: the two rules that de-emphasised `.branch--active` are gone,
+  so the branch you're checked out on no longer renders identical to the ones you aren't (the
+  white pill still drops — a fill behind a fill double-encodes, a name at another level doesn't);
+  and top-level projects separate by a 10px margin rather than indent, since the chip already eats
+  the repo row's indent budget and sessions can't afford to move right. A leading branch glyph was
+  considered and rejected — it would sit in the session-icon column.

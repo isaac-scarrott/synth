@@ -326,8 +326,9 @@ enum FeedbackMode {
     }
 
     /// Per-machine MCP server toggles (Settings → MCP servers): which bundled servers are
-    /// registered in every managed worktree's agent config. The browser server ships on;
-    /// the app-control server (worktree creation behind a user prompt) is opt-in. A flip
+    /// registered in every managed worktree's agent config. Both ship on — the app-control
+    /// server's one mutating verb is approval-gated behind a native prompt, so an agent
+    /// holding the tool still can't create a worktree the user didn't click Create on. A flip
     /// re-syncs every worktree's config immediately — disabled means the entry is REMOVED,
     /// so agents don't even see the tools.
     var mcpBrowserEnabled = AppStore.loadBoolPref(AppStore.mcpBrowserKey, default: true) {
@@ -336,7 +337,7 @@ enum FeedbackMode {
             syncAgentBridge()
         }
     }
-    var mcpAppEnabled = AppStore.loadBoolPref(AppStore.mcpAppKey, default: false) {
+    var mcpAppEnabled = AppStore.loadBoolPref(AppStore.mcpAppKey, default: true) {
         didSet {
             UserDefaults.standard.set(mcpAppEnabled, forKey: AppStore.mcpAppKey)
             syncAgentBridge()
@@ -368,11 +369,12 @@ enum FeedbackMode {
 
     // MARK: Archive sweep settings
 
-    /// Whether the sweeper may reclaim archived worktrees at all. **Off by default for one
-    /// release**: archiving is useful on its own, and a background process that deletes folders
-    /// should be something a user turned on once they've seen the Archived list fill up.
-    /// `archive_sweeper_kill` is the separate emergency stop for after this flips true.
-    var archiveSweepEnabled = AppStore.loadBoolPref(AppStore.archiveSweepKey, default: false) {
+    /// Whether the sweeper may reclaim archived worktrees at all. On by default: an archived
+    /// worktree the user never returns to is dead disk, and the conditions are conservative
+    /// enough (merged, clean, past the grace, held aside another two weeks before real
+    /// deletion, branch never touched) to run unattended. `archive_sweeper_kill` is the
+    /// emergency stop.
+    var archiveSweepEnabled = AppStore.loadBoolPref(AppStore.archiveSweepKey, default: true) {
         didSet { UserDefaults.standard.set(archiveSweepEnabled, forKey: AppStore.archiveSweepKey) }
     }
     static let archiveSweepKey = "synth-archive-sweep"
@@ -522,12 +524,7 @@ enum FeedbackMode {
     /// base (globalScript). Empty = pure inheritance. `wsSkipScript` is the rare opt-out:
     /// run only the project's lines, not the shared base. Design surface only, no runner yet.
     var wsSkipScript: [UUID: Bool] = [:]
-    var globalScript = """
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    [ -f "$SYNTH_MAIN/.env" ] && cp "$SYNTH_MAIN/.env" .env
-    """
+    var globalScript = ""
     var wsScripts: [UUID: String] = [:]
     let wsScriptPlaceholder = """
     #!/usr/bin/env bash
@@ -540,10 +537,11 @@ enum FeedbackMode {
     /// flags are a TAIL appended after these shared ones (working.html's layered model), so the
     /// shell's last-wins resolves any repeat; an empty project tail runs the shared flags alone.
     ///
-    /// opencode needs none: it auto-approves by default, and the needs-input signal Synth
-    /// relies on rides the question tool (enabled by env), not a permission flag.
+    /// Both ship empty — each agent's own configured defaults are what a fresh install runs,
+    /// and skipping permission prompts is a choice the user makes here, not one Synth makes
+    /// for them.
     var globalAgentFlags: [AgentID: String] = [
-        .claudeCode: "--dangerously-skip-permissions",
+        .claudeCode: "",
         .opencode: "",
     ]
     var wsAgentFlags: [UUID: [AgentID: String]] = [:]

@@ -1063,3 +1063,22 @@ disclosure to dive deeper.
   which-branch-is-this-action-for fallbacks; reordering counts in drawn rows, not raw indices. New
   `automation.tree` verb, and `t9_archive` asserts the row leaves the tree — it only ever asserted
   it reached the Archived list.
+
+- **What a fresh install starts with.** Four defaults flipped toward "what you'd have turned on
+  anyway, and nothing you'd have to undo": the Synth-app MCP server is on (its one mutating verb was
+  already approval-gated, so opt-in bought a confirmation that already existed), archived-worktree
+  cleanup is on (held off one release by design; the refusals are asserted worktree by worktree and
+  the conditions are conservative on their own), and both the shared setup script and every agent's
+  default flags ship empty — a default script guesses about someone else's repo, and
+  `--dangerously-skip-permissions` should be a flag the user typed. Unchanged: system theme,
+  needs-input + command-failed sounds, browser MCP on, no template sessions, seven-day archive
+  grace, analytics on and opt-out, Tabs off. Stored values win, so only a user who never touched the
+  two toggles sees them switch on.
+
+- **Synth 0.15.1 shipped (build 390)** — patch carrying one user-facing fix: an archived worktree row
+  no longer walks back into the sidebar once its undo window commits (the tree now reads one
+  `Workspace.liveBranches` instead of raw `branches`). Notarized + stapled (zip + dmg), verified
+  credential-less on the quarantined downloads (both Notarized Developer ID, app inside the dmg
+  staples on its own); appcast newest `sparkle:version` 390 / `0.15.1`, every enclosure EdDSA-signed,
+  deltas against 359/361/376/380/386. Clean run; landing links unchanged (stable `Synth.dmg` alias),
+  no site republish.

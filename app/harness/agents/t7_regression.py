@@ -36,14 +36,22 @@ sid = ctl("automation.newAgent", agent="claudeCode")["sessionId"]
 check("3. Claude row kind", (ctl.row(sid) or {}).get("kind") == "claudeCode")
 # Claude gates a folder it has never seen behind "Yes, I trust this folder", and fires no
 # SessionStart until it is answered. Every freshly created worktree is such a folder, and
-# Synth's own .mcp.json is what makes the dialog appear. Accept it exactly as a user would —
-# one Return — and the hook lands immediately.
+# Synth's own .mcp.json is what makes the dialog appear.
+#
+# It is no longer ONE prompt. Since the 0.15.1 default flip (`mcpAppEnabled` → true) every
+# worktree's .mcp.json carries two servers, and Claude asks to approve them as well as the
+# folder — so a fresh worktree's first Claude now needs two Returns, not one. This answers
+# prompts until the hook lands rather than assuming a count, so the next thing that adds or
+# removes a gate doesn't read as "Claude stopped starting".
 check("4. new worktree: Claude waits at its trust prompt (not live yet)",
       not wait(lambda: (ctl.row(sid) or {}).get("liveAgent"), 8))
-time.sleep(1)
-ctl("automation.key", keyCode=36, chars="\r")
-check("5. after trusting, Claude goes live via its SessionStart hook",
-      bool(wait(lambda: (ctl.row(sid) or {}).get("liveAgent"), 60)))
+live = None
+for _ in range(4):
+    time.sleep(1.5)
+    ctl("automation.key", keyCode=36, chars="\r")
+    live = wait(lambda: (ctl.row(sid) or {}).get("liveAgent"), 20)
+    if live: break
+check("5. answering Claude's startup gates takes it live via its SessionStart hook", bool(live))
 check("6. Claude conversation id captured", bool(wait(lambda: (ctl.row(sid) or {}).get("agentSessionId"), 30)))
 check("7. both agents' shims installed side by side",
       "claude" in sh("ls /tmp/synth-shims-*/") and "opencode" in sh("ls /tmp/synth-shims-*/"))

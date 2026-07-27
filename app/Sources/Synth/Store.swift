@@ -1525,6 +1525,32 @@ enum FeedbackMode {
         workspaces.flatMap(\.branches).flatMap(\.sessions).filter { $0.status.isBusy }
     }
 
+    /// The command a scratch terminal is holding the foreground with, if any. `busySessions`
+    /// walks the tree and a scratch terminal is deliberately not in it — so without this, quit
+    /// and Restart would count zero busy work and kill a running `aws sso login` with the dialog
+    /// saying nothing about it. It has no row, so this is the only chance to name it.
+    var busyScratchCommand: String? {
+        guard let s = scratch, s.busy else { return nil }
+        return s.runningCommand.isEmpty ? "a command" : s.runningCommand
+    }
+
+    /// What "Quit Synth?" says under its title — everything the quit is about to end. Lives here
+    /// rather than inline in `applicationShouldTerminate` so the harness can read the sentence
+    /// without presenting a modal it would then have to answer.
+    var quitInformativeText: String {
+        let busy = busySessions.count
+        let sessions = switch busy {
+        case 0:  "This closes every session."
+        case 1:  "A session is still busy — quitting ends it and its work in progress is lost."
+        default: "\(busy) sessions are still busy — quitting ends them and their work in progress is lost."
+        }
+        // A scratch terminal has no row, so this dialog is the only thing that can tell you a
+        // command is about to die with it (features 2026-07-27).
+        return busyScratchCommand.map {
+            "\(sessions) The scratch terminal is running \($0) — quitting ends that too."
+        } ?? sessions
+    }
+
     /// Close-confirm copy for a session: closing an owning claude row cascades, so the
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
@@ -2093,12 +2119,15 @@ enum FeedbackMode {
     func restartForUpdate() {
         guard stagedUpdate != nil else { return }
         let busy = busySessions.count
-        guard busy > 0 else { applyUpdate(); return }
+        let scratchJob = busyScratchCommand
+        // "Something to lose" includes a scratch terminal mid-command: it has no row, so with
+        // only that running this used to restart with no confirm at all.
+        guard busy > 0 || scratchJob != nil else { applyUpdate(); return }
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         activeMenu = nil
         pal.stack = [pal.rootFrame()]
-        pal.push(pal.confirmRestartForUpdate(busy: busy))
+        pal.push(pal.confirmRestartForUpdate(busy: busy, scratchJob: scratchJob))
     }
 
     /// Sparkle installs and relaunches from here. Suppressing the quit confirm belongs to the

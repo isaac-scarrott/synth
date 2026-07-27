@@ -133,9 +133,38 @@ check("23. ⌘K offers it as an action", "Scratch terminal" in pal.get("items", 
       str(pal.get("items"))[:200])
 key(40, ("cmd",), "k")
 
+# --- It is a global surface, so Settings does not gate it ----------------------------------------
+# ⌘T/⌘N/⌘W are gated on Settings because they act on a tree you can't see. ⌘⇧T adds no row, so it
+# behaves like ⌘K / ⌘? / ⌘⇧F, which all work there too. Pinned because it reads like an omission.
+ctl("automation.key", keyCode=43, mods=["cmd"], chars=",")   # ⌘, into Settings
+time.sleep(0.5)
+key(17, ("cmd", "shift"), "t")
+check("24. Settings does not gate it — it is a surface, not a tree action",
+      scr().get("open") is True)
+key(17, ("cmd", "shift"), "t")
+ctl("automation.key", keyCode=53, mods=[], chars="")         # Esc out of Settings
+time.sleep(0.5)
+
+# --- Quitting mid-job says so ---------------------------------------------------------------------
+# The scratch terminal is in no branch, so `busySessions` cannot see it: without a clause of its
+# own, quit would have reported "This closes every session" while killing a running command, and
+# Restart would have skipped its confirm entirely.
+scr(action="open")
+time.sleep(0.6)
+scr(action="run", text="sleep 30")
+wait(lambda: scr().get("busy") is True, 15, 0.3)
+q = ctl("automation.quitPrompt")
+check("25. the quit confirm names the job it would kill",
+      "sleep 30" in q.get("informative", ""), q.get("informative"))
+scr(action="confirm")
+time.sleep(0.5)
+q = ctl("automation.quitPrompt")
+check("26. and says nothing about it once there is nothing running",
+      "scratch" not in q.get("informative", "").lower(), q.get("informative"))
+
 # --- The app is unharmed by all of that ----------------------------------------------------------
-check("24. the tree is intact afterwards", len(rows()) == baseline_rows)
-check("25. and nothing is left standing", scr().get("open") is False)
+check("27. the tree is intact afterwards", len(rows()) == baseline_rows)
+check("28. and nothing is left standing", scr().get("open") is False)
 
 p.terminate()
 sys.exit(result())

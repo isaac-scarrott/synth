@@ -772,9 +772,17 @@ struct PaletteFrame {
     /// The reason wraps in the note rather than the placeholder because it ends with the way out,
     /// and a way out clipped by an input field is not one. Cancel is preselected by
     /// `initialIndex(for:)`, so a stray ↵ costs nothing.
-    func confirmRestartForUpdate(busy: Int) -> PaletteFrame {
+    /// `scratchJob` is the command a scratch terminal is holding the foreground with. It has no
+    /// row, so if the note doesn't name it nothing else will — and with only that running, the
+    /// subject is the scratch terminal alone rather than a session count of zero.
+    func confirmRestartForUpdate(busy: Int, scratchJob: String? = nil) -> PaletteFrame {
         let version = store.stagedUpdate?.version ?? ""
-        let subject = busy == 1 ? "1 session is busy" : "\(busy) sessions are busy"
+        let sessions = busy == 1 ? "1 session is busy" : "\(busy) sessions are busy"
+        let subject = switch (busy, scratchJob) {
+        case (0, .some(let job)): "The scratch terminal is running \(job)"
+        case (_, .some(let job)): "\(sessions), and the scratch terminal is running \(job)"
+        default:                  sessions
+        }
         return PaletteFrame(crumb: "Restart Synth?",
                             placeholder: "↵ select · esc cancel",
                             mode: .confirm,

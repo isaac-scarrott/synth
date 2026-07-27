@@ -40,6 +40,11 @@ enum Theme {
     static let chrome       = dyn(0xF2F3F6, 0x22252B)   // browser toolbar (--chrome)
     static let tuiBg        = dyn(0xF7F8FA, 0x121317)   // terminal card: cool near-white (--tui-bg) / dark card
     static let tuiHair      = mono(0.13, 0.06)          // terminal card inset hairline
+    /// The scratch terminal's scrim — deeper than a dialog's 0.16, because that surface is a
+    /// detour out of the app rather than a step within it. Not one number in both themes: the
+    /// same 0.5 that reads as a firm shade over a near-black app crushes a light one to flat
+    /// grey, taking the sidebar's legibility with it. Equal *effect*, not equal alpha.
+    static let scratchScrim = shade(0.34, 0.5)
     static let paletteActive = accent                   // ⌘K active-row label
     /// Frosted popover fill layered over `.ultraThinMaterial` (⌘K / menus).
     static let glass = Color(nsColor: NSColor(name: nil) {
@@ -113,6 +118,13 @@ enum Theme {
     /// A colour that resolves light/dark against the effective appearance.
     static func dyn(_ light: UInt32, _ dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { $0.isDarkAqua ? NSColor(hex: dark) : NSColor(hex: light) })
+    }
+    /// A black overlay in both themes, at its own alpha in each — for scrims, where inverting to
+    /// white (as `mono` does) would lighten rather than dim.
+    static func shade(_ lightAlpha: Double, _ darkAlpha: Double) -> Color {
+        Color(nsColor: NSColor(name: nil) {
+            NSColor(white: 0, alpha: $0.isDarkAqua ? darkAlpha : lightAlpha)
+        })
     }
     /// A black overlay in light, inverted to a white overlay in dark (hovers, borders, dividers).
     static func mono(_ lightAlpha: Double, _ darkAlpha: Double) -> Color {

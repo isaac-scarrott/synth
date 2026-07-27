@@ -108,12 +108,13 @@ extension AppStore {
 /// foot is the only place it can say where it is.
 struct ScratchTerminalOverlay: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let scratch: ScratchTerminal
     @State private var shown = false
 
     var body: some View {
         ZStack {
-            Rectangle().fill(Color.black.opacity(0.5))
+            Rectangle().fill(Theme.scratchScrim)
                 .ignoresSafeArea()
                 .opacity(shown ? 1 : 0)
 
@@ -128,7 +129,12 @@ struct ScratchTerminalOverlay: View {
 
             if store.scratchConfirmOpen { confirm }
         }
-        .onAppear { withAnimation(.easeOut(duration: 0.2)) { shown = true } }
+        // Reduce Motion still gets the surface, just without the scale-in — the CSS honours the
+        // same preference, and a terminal you summoned should appear either way.
+        .onAppear {
+            if reduceMotion { shown = true }
+            else { withAnimation(.easeOut(duration: 0.2)) { shown = true } }
+        }
     }
 
     private var card: some View {
@@ -150,7 +156,6 @@ struct ScratchTerminalOverlay: View {
         HStack(spacing: 7) {
             if scratch.busy {
                 Circle().fill(Theme.working).frame(width: 6, height: 6)
-                    .opacity(shown ? 1 : 0.35)
             }
             Text(scratch.branchName)
                 .font(.system(size: 11, design: .monospaced))

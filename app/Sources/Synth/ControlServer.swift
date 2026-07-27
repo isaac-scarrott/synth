@@ -453,6 +453,16 @@ final class ControlServer: @unchecked Sendable {
         // Post a real key event through the app's own queue, so the RootView key
         // monitor sees it exactly as a typed key — the window-wide-shortcut test
         // path where TCC swallows CGEvent postToPid entirely.
+        // What "Quit Synth?" would say, without presenting it — a modal the harness answered would
+        // either kill the instance under test or hang waiting. The sentence is the assertion:
+        // it is the only place a running scratch terminal (no row, invisible to `busySessions`)
+        // can announce that quitting is about to end it.
+        case "automation.quitPrompt" where automation:
+            return ["ok": true,
+                    "informative": store.quitInformativeText,
+                    "busySessions": store.busySessions.count,
+                    "scratchCommand": store.busyScratchCommand ?? ""]
+
         // The ⌘? sheet's live contents. Worth a verb of its own: the HTML design file shipped a
         // shortcuts sheet that threw on every open — for months, silently — because nothing could
         // assert it rendered. A binding that isn't listed here doesn't exist to the user.

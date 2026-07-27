@@ -1119,3 +1119,22 @@ disclosure to dive deeper.
   `t12_scratch.py` (26 checks) runs a real `sleep 30` through the real zsh reporter and asserts the
   absences *while it runs*; new `automation.shortcuts` verb makes the ⌘? sheet assertable — the
   thing whose absence let the HTML sheet stay broken. 13/13 suites, 201 checks.
+- **Release-readiness pass on the scratch terminal — four real findings** — the 0.5 scrim had been
+  tuned in dark only and crushed a light app to flat grey, so it becomes `Theme.shade(0.34, 0.5)`
+  (a new helper, because `mono` inverts to white in dark and would lighten a scrim); **quit** could
+  end a running scratch command while reporting only "This closes every session" (`busySessions`
+  walks the tree, which a scratch terminal is deliberately not in) and now names it, with the copy
+  moved to `quitInformativeText` so a harness can read it without answering a modal; **Restart** was
+  worse — gating on `busySessions.count > 0`, it skipped its confirm entirely and installed over a
+  running scratch job; and Reduce Motion was honoured in the CSS but not the app. ⌘⇧T staying
+  ungated in Settings is confirmed as the rule (Settings gates tree actions; ⌘⇧T adds no row, like
+  ⌘K/⌘?/⌘⇧F) and pinned by a check. Both design files carry the theme-split scrim.
+- **Two suites had been asserting a default that shipped changed** — `t7`/`t8` failed on main and
+  identically on pre-merge main, both tracing to 0.15.1 flipping `mcpAppEnabled` to `true`. `t8`
+  asserted synth-app *absent* by default; it now forces the toggle explicitly in both directions
+  with a new first phase pinning the shipped default (phase C had the same latent bug). `t7`
+  answers Claude's startup gates until the hook lands instead of assuming one Return — because two
+  servers in `.mcp.json` means Claude asks to approve them *as well as* trusting the folder, so a
+  fresh worktree's first Claude now meets two prompts. That last part fell out of the default flip
+  rather than being decided; the gate now matches reality, the product question is still open.
+  13/13 suites, 205 checks.

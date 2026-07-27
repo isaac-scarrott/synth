@@ -92,15 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppTermination.confirming = true
         defer { AppTermination.confirming = false }
 
-        let busy = AppStore.shared?.busySessions.count ?? 0
-
         let alert = NSAlert()
         alert.messageText = "Quit Synth?"
-        alert.informativeText = switch busy {
-        case 0:  "This closes every session."
-        case 1:  "A session is still busy — quitting ends it and its work in progress is lost."
-        default: "\(busy) sessions are still busy — quitting ends them and their work in progress is lost."
-        }
+        alert.informativeText = AppStore.shared?.quitInformativeText ?? "This closes every session."
         alert.addButton(withTitle: "Quit Synth")   // default: Return quits
         alert.addButton(withTitle: "Cancel")        // Esc cancels
         return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
@@ -332,6 +326,10 @@ struct RootView: View {
             // ⌘⇧T summons / dismisses the scratch terminal (working.html). It sits above every
             // other binding because while it is up it owns the keyboard outright: a fully
             // fledged terminal can't share Esc, ⌃C or a bare letter with the app around it.
+            //
+            // Unlike ⌘T/⌘N/⌘W it is NOT gated on Settings mode, and that is the rule rather than
+            // an omission: what Settings gates is acting on a tree you can't see, and ⌘⇧T adds no
+            // row. It is a global surface like ⌘K, ⌘? and ⌘⇧F, all of which work in Settings too.
             if key == "t", event.modifierFlags.contains(.command), event.modifierFlags.contains(.shift) {
                 store.toggleScratchTerminal(); return nil
             }

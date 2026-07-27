@@ -2274,13 +2274,17 @@
   @keyframes scr-pulse { 50% { opacity: 0.35; } }
 
   /* A centred card over a dimmed app, in the same visual family as ⌘K and every dialog.
-     The dim runs deeper than a dialog's because this one is a detour out of the app
-     entirely, not a step within it — the work behind should read as parked, not adjacent. */
+     The dim runs deeper than a dialog's 0.16 because this one is a detour out of the app
+     entirely, not a step within it — the work behind should read as parked, not adjacent.
+     Not one number in both themes, though: the 0.5 that reads as a firm shade over a
+     near-black app crushes a light one to flat grey and takes the sidebar's legibility with
+     it. Equal effect, not equal alpha. */
   .scr-dim {
     position: fixed; inset: 0; z-index: 149;
-    background: rgba(0,0,0,0.5);
+    background: rgba(0,0,0,0.34);
     opacity: 0; transition: opacity 160ms ease;
   }
+  :root[data-theme="dark"] .scr-dim { background: rgba(0,0,0,0.5); }
   .scr-dim.is-in { opacity: 1; }
   .scr--overlay {
     position: fixed;

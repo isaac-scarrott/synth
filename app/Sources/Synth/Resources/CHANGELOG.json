@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.15.0",
+    "date": "2026-07-27",
+    "changes": [
+      "A new build now announces itself: once an update has downloaded, Synth raises a notification — and a quiet reminder once a day while it waits — telling you it installs the next time you quit, so Restart is a shortcut rather than something you have to do. Settings → About says the same and offers the same Restart.",
+      "Pressing ⌘↩ on a notification whose action opens a confirmation no longer instantly answers it — the card asks first, as it should.",
+      "A long notification no longer truncates its own text."
+    ]
+  },
+  {
     "version": "0.14.0",
     "date": "2026-07-27",
     "changes": [

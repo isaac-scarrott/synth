@@ -1045,3 +1045,11 @@ disclosure to dive deeper.
   sub-line divided by a hardcoded day while the reminder used an overridable one (so the gate could
   not watch a reminder age), Restart-from-Settings raised a card as a side effect of repairing one
   it never spent, and a stale record could announce the version you are already running.
+- **Synth 0.15.0 shipped (build 386)** — minor bump headlined by an available update announcing
+  itself (deck card on download + a once-a-day reminder, installs on next quit, mirrored in Settings
+  → About), plus the two deck fixes its longer copy exposed (⌘↩ no longer asks-and-answers in one
+  keystroke; long notifications no longer truncate); the native-port / audit / glossary work behind
+  it stayed internal. Notarized + stapled (zip + dmg), verified credential-less on the quarantined
+  downloads (both Notarized Developer ID, app inside the dmg staples on its own); appcast newest
+  `sparkle:version` 386 / `0.15.0`, all 18 enclosures EdDSA-signed, deltas against 353/359/361/376/380.
+  Clean run. Landing links unchanged (stable `Synth.dmg` alias), no site republish.

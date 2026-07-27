@@ -1148,3 +1148,12 @@ disclosure to dive deeper.
   so a receipt with no other surface (sweep digest, "Handed to Mail") could expire having never been
   on screen. Burial joins deck-hover and app-unfocused as a drain brake; the app reconciles in one
   place (`settleDrains()` off `notifs.didSet`), working.html in one selector.
+- **Synth 0.17.0 shipped (build 398).** The scratch terminal (⌘⇧T) reaches people, with the two
+  release-readiness fixes as their own changelog lines (quit/Restart name a running scratch job;
+  scrim tuned per theme). The ⌘? repair stayed out — design-file only, never shipped. Notarized +
+  stapled (zip + dmg), verified credential-less on the quarantined downloads, app inside the dmg
+  staples on its own; appcast newest `sparkle:version` 398 / `0.17.0`, all 18 enclosures
+  EdDSA-signed, 5 deltas against 376/380/386/390/392 (28M). Landing links unchanged, no site
+  republish. `generate_appcast` logged a "File exists" per archive failing to move into
+  `old_updates/` — non-fatal, and it leaves the previous zips where the next release's deltas need
+  them. Detached launch via python3 `os.setsid()` plus a watcher that exits on process-gone held up.

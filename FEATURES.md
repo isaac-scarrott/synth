@@ -1188,3 +1188,14 @@ disclosure to dive deeper.
   and top-level projects separate by a 10px margin rather than indent, since the chip already eats
   the repo row's indent budget and sessions can't afford to move right. A leading branch glyph was
   considered and rejected — it would sit in the session-icon column.
+
+- **Synth 0.17.1 shipped (build 407).** A patch: the notification deck's cost-to-miss ordering and
+  the burial drain-brake, branch names out of the monospace with the checked-out branch visible
+  again, sidebar rows pinned to a height that stops shifting under a click, and Light's faint
+  terminal text back to 5.1:1. Notarized + stapled (zip + dmg), verified credential-less on the
+  quarantined downloads (both Notarized Developer ID, app inside the dmg staples on its own, bundle
+  reads 0.17.1 / 407); appcast newest `sparkle:version` 407 / `0.17.1`, all 18 enclosures
+  EdDSA-signed, 5 deltas against 380/386/390/392/398 (4.2M against a 137M download). The 0.17.0
+  `generate_appcast` "File exists" noise is now understood — 16 archives moved cleanly, and it fails
+  only on the ones duplicated in `old_updates/` by an earlier bucket recovery. Landing links
+  unchanged, no site republish. Clean single-attempt run on the detached `os.setsid()` launch.

@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.15.1",
+    "date": "2026-07-27",
+    "changes": [
+      "Archiving a worktree now removes it from the sidebar for good — it no longer reappeared once the undo window passed. Restore it any time from ⌘K → Archived."
+    ]
+  },
+  {
     "version": "0.15.0",
     "date": "2026-07-27",
     "changes": [

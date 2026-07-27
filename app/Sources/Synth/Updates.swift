@@ -47,9 +47,18 @@ final class UpdateBridge: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDel
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
                  immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
         let version = item.displayVersionString
-        MainActor.assumeIsolated {
-            AppStore.shared?.updateStaged(version: version) { immediateInstallHandler() }
+        // The relaunch quits us, and the quit confirm must not fire on top of the answer the user
+        // just gave — one restart, one question. It rides with the installer rather than with the
+        // caller, so a stub installer can never leave the flag standing (Store.applyUpdate).
+        let stage = { @MainActor in
+            AppStore.shared?.updateStaged(version: version) {
+                AppTermination.forceQuit = true
+                immediateInstallHandler()
+            }
         }
+        // Sparkle calls this on the main thread today; hop rather than assume, because assuming
+        // is a fatalError if a future Sparkle ever changes its mind.
+        if Thread.isMainThread { MainActor.assumeIsolated { stage() } } else { Task { @MainActor in stage() } }
         return true
     }
 }

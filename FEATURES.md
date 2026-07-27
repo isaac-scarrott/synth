@@ -1008,3 +1008,10 @@ disclosure to dive deeper.
   Both surfaces say `is ready` / `installs when you quit` because the build is already downloaded,
   and nothing may frame `Restart` as the way to get it — it only accelerates an install that
   happens on the next quit anyway.
+
+- **The audit of the port, and what it caught.** `applyUpdate` armed `AppTermination.forceQuit`
+  before an installer that, on the demo and harness paths, returns instead of quitting — leaving
+  the flag set and the next real ⌘Q free to kill busy sessions with no confirm. Also: the ageing
+  sub-line divided by a hardcoded day while the reminder used an overridable one (so the gate could
+  not watch a reminder age), Restart-from-Settings raised a card as a side effect of repairing one
+  it never spent, and a stale record could announce the version you are already running.

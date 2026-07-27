@@ -896,15 +896,21 @@ private struct AboutRow: View {
                 aboutButton("Restart") { store.restartForUpdate() }
             }
         } else {
-            SetToggleRow(label: version,
-                         desc: checking ? "Checking…" : "Up to date · checked 2 hours ago") {
-                aboutButton("Check for updates") {
+            SetToggleRow(label: version, desc: "Up to date · checked 2 hours ago") {
+                // The button carries "Checking…", not the description: the row's one fact should
+                // not blink out while the check runs.
+                aboutButton(checking ? "Checking…" : "Check for updates") {
                     // A real build asks Sparkle, and a check you asked for answers in its own
-                    // window. A dev build has no updater at all, so it keeps the mock.
-                    if let updater = Updates.controller?.updater { updater.checkForUpdates() }
-                    else {
-                        checking = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { checking = false }
+                    // window. A dev build has no updater, so it stages a demo build instead —
+                    // checking by hand has to be able to end in the card, or the dev channel is
+                    // the one place this feature can never be seen.
+                    if let updater = Updates.controller?.updater { updater.checkForUpdates(); return }
+                    checking = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                        checking = false
+                        #if DEBUG
+                        store.stageStubUpdate(version: AppStore.debugNextVersion())
+                        #endif
                     }
                 }
             }

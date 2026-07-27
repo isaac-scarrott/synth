@@ -18,7 +18,7 @@ import lib
 from lib import *
 
 print("=== T11: the update card — what it says, how often, and what Restart costs ===")
-os.environ["SYNTH_UPDATE_REMIND_SECONDS"] = "3"   # a "day", compressed
+os.environ["SYNTH_UPDATE_REMIND_SECONDS"] = "5"   # a "day", compressed — the sub-line counts in these too
 kill_all()
 repo = fresh_repo()
 sd = seed_state(repo, sessions=[
@@ -72,17 +72,28 @@ ctl("automation.notifDismiss", sessionId=first_id)
 check("9. × drops the card", not update_card())
 check("10. dismissing does not throw the build away",
       ctl("automation.updateStatus").get("pending") is True)
-back = wait(lambda: update_card(), 15, 0.3)
+back = wait(lambda: update_card(), 20, 0.3)
 check("11. the reminder comes back on its own", bool(back))
 check("12. it comes back as a new card, at the front of the deck",
       back and back["sessionId"] != first_id)
-
 # --- The reminder ages, because that is the only thing that changed -----------------------------
+# Watched, not staged: this is the card the first one became a "day" later.
+check("13. and it wears the only fact that changed",
+      back and back["sub"] == "Downloaded yesterday", back and back["sub"])
 clear()
 ctl("automation.updateStage", version="9.9.9", daysAgo=3)
 aged = wait(lambda: update_card(), 10, 0.2)
-check("13. a reminder says how long it has been waiting",
-      aged and aged["sub"] == "Downloaded 3 days ago", aged and aged["sub"])
+check("14. which keeps counting", aged and aged["sub"] == "Downloaded 3 days ago", aged and aged["sub"])
+
+# --- Unfocused, it still waits in the deck rather than taking a system banner --------------------
+# Every other attention card escalates to Notification Center when Synth isn't frontmost. This one
+# never does, so pinning the route that way must change nothing about where it lands.
+clear()
+ctl("automation.notifRoute", route="nc")
+ctl("automation.updateStage", version="9.9.9")
+check("15. the route that sends other cards to Notification Center leaves this one in the deck",
+      bool(wait(lambda: update_card(), 10, 0.2)))
+ctl("automation.notifRoute", route="deck")
 
 # --- Restart asks first, but only when there is something to lose -------------------------------
 # An agent session starts mid-turn, which is exactly what a restart would kill.
@@ -92,17 +103,17 @@ ctl("automation.updateStage", version="9.9.9")
 c = wait(lambda: update_card(), 10, 0.2)
 ctl("automation.notifAction", sessionId=c["sessionId"])
 pal = wait(lambda: ctl("automation.palette").get("open") and ctl("automation.palette"), 10, 0.2)
-check("14. Restart with a live turn in flight asks first",
+check("16. Restart with a live turn in flight asks first",
       pal and pal["crumb"] == "Restart Synth?", pal and pal.get("crumb"))
-check("15. the restart is the red one — it ends things",
+check("17. the restart is the red one — it ends things",
       pal and pal["danger"] == [True, False], pal and pal.get("danger"))
-check("16. Cancel is preselected, so a stray ↵ costs nothing",
+check("18. Cancel is preselected, so a stray ↵ costs nothing",
       pal and pal["items"][pal["activeIndex"]] == "Cancel",
       pal and (pal.get("items"), pal.get("activeIndex")))
-check("17. asking has not installed anything",
+check("19. asking has not installed anything",
       ctl("automation.updateStatus").get("installRequested") is False)
 # The reason has to end with the way out, or the dialog reads as "restart or miss the update".
-check("18. it names what is at stake, and the way out",
+check("20. it names what is at stake, and the way out",
       pal and pal["note"] == "1 session is busy — restarting ends what they are doing. "
                              "Leave it and the update installs itself the next time you quit.",
       pal and pal.get("note"))
@@ -110,7 +121,7 @@ check("18. it names what is at stake, and the way out",
 # Answering "not now" must not also lose the reminder — the click that opened the dialog spent
 # the card, so it has to be standing again behind it.
 ctl("automation.paletteEnter")   # Cancel
-check("19. cancelling leaves the reminder standing", bool(wait(lambda: update_card(), 5, 0.2)))
+check("21. cancelling leaves the reminder standing", bool(wait(lambda: update_card(), 5, 0.2)))
 
 # --- With nothing to lose, Restart just restarts -------------------------------------------------
 for s in ctl.sessions():
@@ -121,9 +132,13 @@ clear()
 ctl("automation.updateStage", version="9.9.9")
 c = wait(lambda: update_card(), 10, 0.2)
 ctl("automation.notifAction", sessionId=c["sessionId"])
-check("20. with nothing busy, Restart goes straight to the install",
+check("22. with nothing busy, Restart goes straight to the install",
       wait(lambda: ctl("automation.updateStatus").get("installRequested") is True, 10, 0.2) is not None)
-check("21. and the card goes with it", not update_card())
+check("23. and the card goes with it", not update_card())
+# Nothing is left claiming a build is waiting — the About row falls back to "Up to date", and a
+# force-quit flag left standing by a stub installer would have disarmed the next real ⌘Q.
+check("24. the fact goes too, so nothing is still offering it",
+      ctl("automation.updateStatus").get("pending") is False)
 
 p.terminate()
 sys.exit(result())

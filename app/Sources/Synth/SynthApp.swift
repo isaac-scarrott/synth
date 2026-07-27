@@ -339,10 +339,13 @@ struct RootView: View {
             }
 
             #if DEBUG
+            // Typing ⌥u into the setup-script box must stage a character, not a build — the
+            // first-responder guard these keys sit above is 200 lines below them.
+            let editing = (event.window?.firstResponder).map { $0 is NSText || $0 is NSTextView } ?? false
             // Notification harness (working.html's ⌥N demo): ⌥N grows the deck, ⌥D fires an
             // ambient "done", ⌥C clears. Add ⇧ to force the unfocused rule (Notification Center
             // on top of the deck), so both layers are drivable when the instance isn't frontmost.
-            if event.modifierFlags.contains(.option), let code = Optional(event.keyCode),
+            if !editing, event.modifierFlags.contains(.option), let code = Optional(event.keyCode),
                code == 45 || code == 2 || code == 8 || code == 3 {
                 let route: NotifRoute = event.modifierFlags.contains(.shift) ? .notificationCenter : .inApp
                 switch code {
@@ -355,7 +358,7 @@ struct RootView: View {
             }
             // ⌥U stages a build (working.html's ⌥U demo); pressing it again winds the clock on a
             // day, so the daily reminder can be read as it will actually arrive.
-            if event.modifierFlags.contains(.option), event.keyCode == 32 {
+            if !editing, event.modifierFlags.contains(.option), event.keyCode == 32 {
                 store.debugStageUpdate(); return nil
             }
             #endif

@@ -1053,3 +1053,13 @@ disclosure to dive deeper.
   downloads (both Notarized Developer ID, app inside the dmg staples on its own); appcast newest
   `sparkle:version` 386 / `0.15.0`, all 18 enclosures EdDSA-signed, deltas against 353/359/361/376/380.
   Clean run. Landing links unchanged (stable `Synth.dmg` alias), no site republish.
+
+- **An archived row stopped walking back into the sidebar.** Archiving detaches the row at the
+  gesture and stamps `archivedAt` only when the undo window commits — so the disappearance was the
+  detach, and the commit's re-insert into `ws.branches` (what the Archived list reads and what
+  persists) put the row back on screen, because the SwiftUI sidebar rendered `branches` while
+  `visibleRows`, ⌘K and the config writer each open-coded the archive filter. One
+  `Workspace.liveBranches` now serves the tree, its empty hint, both counts, and the
+  which-branch-is-this-action-for fallbacks; reordering counts in drawn rows, not raw indices. New
+  `automation.tree` verb, and `t9_archive` asserts the row leaves the tree — it only ever asserted
+  it reached the Archived list.

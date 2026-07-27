@@ -438,7 +438,7 @@ extension AppStore {
     /// session to read a branch off): the open session's branch, else the first available.
     func contextBranchForSplit() -> Branch? {
         if let s = openSession, let b = branch(of: s) { return b }
-        return workspaces.first?.branches.first { !$0.isPending }
+        return workspaces.first?.liveBranches.first { !$0.isPending }
     }
 
     /// ⌘⇧+arrow / ⌘| / ⌘— open the pick-a-session frame that fills the new pane (007). No split

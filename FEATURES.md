@@ -1355,3 +1355,10 @@ disclosure to dive deeper.
   t18 asserts the
   full payload→signal table offline against a stub hook socket (plus the trap that an observing
   handler must print *nothing*, or agy denies the tool), and takes one live turn for the question.
+- **Synth 0.21.0 shipped (build 433).** A minor: an agent that quits parks its conversation on a
+  Reopen card, Ctrl-C interrupts an opencode row instead of quitting it, and Antigravity reports the
+  four states it stops in. Notarized + stapled (zip + dmg), verified credential-less on the
+  quarantined downloads (both Notarized Developer ID, the app inside the dmg staples on its own,
+  bundle reads 0.21.0 / 433, bundled changelog leads with 0.21.0); appcast newest `sparkle:version`
+  433 / `0.21.0`, all 18 enclosures EdDSA-signed, 5 deltas against 425/418/413/407/398 (721K from
+  the previous build against a 131M download). Landing links unchanged, no site republish.

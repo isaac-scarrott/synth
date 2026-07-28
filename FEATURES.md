@@ -1253,3 +1253,11 @@ disclosure to dive deeper.
   query; porting it surfaced that the native matcher lacked the exact/prefix label boosts the mock
   ranks by, so `itemScore` is ported exactly. `automation.screenshot` now prefers the ⌘K panel —
   it had been screenshotting the window under it. Verified over the control socket + screenshots.
+
+- **Synth 0.19.0 shipped (build 418).** A minor: ⌘K search ranks flat, so the best match is the top
+  row, with the native matcher's label boosts brought to parity so it ranks the same way. Notarized +
+  stapled (zip + dmg), verified credential-less on the quarantined downloads (both Notarized
+  Developer ID, the app inside the dmg staples on its own, bundle reads 0.19.0 / 418); appcast newest
+  `sparkle:version` 418 / `0.19.0`, all 18 enclosures EdDSA-signed, 5 deltas against
+  413/407/398/392/390 (666K from the previous build against a 137M download). Landing links
+  unchanged, no site republish.

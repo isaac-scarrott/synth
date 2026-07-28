@@ -3604,8 +3604,10 @@
   }
 
   // Deck precedence (front first) — not severity, but what it costs to miss the card.
-  //   0 fused    — an undo: actionable AND expiring. When the bar drains the option is gone for
-  //                good, so nothing sits in front of one while it burns.
+  //   0 fused    — an undo that expires: actionable AND on a clock. When the bar drains the
+  //                option is gone for good, so nothing sits in front of one while it burns. An
+  //                undo with no clock (an agent quit — agentQuit) is standing instead: it asks,
+  //                and it waits.
   //   1 standing — sticky and asking: needs-input, an error, a failed op, an update waiting. It
   //                never expires and the sidebar indicator still carries it, so nothing is lost
   //                by ordering these purely by recency.
@@ -3616,8 +3618,9 @@
   // both are "an agent stopped and wants you", neither is lost by waiting, and ranking them
   // buried the toast you were just nudged about behind one you had already seen — ⌘↩ included,
   // which fires the front card.
-  const notifDrains = (el) => (el.system ? !!el.life : notifState.get(el).kind === 'done');
-  const notifBand = (el) => (notifState.get(el).kind === 'undo' ? 0 : notifDrains(el) ? 2 : 1);
+  const notifDrains = (el) =>
+    (el.system ? !!el.life : el.undo ? !el.sticky : notifState.get(el).kind === 'done');
+  const notifBand = (el) => (el.undo && notifDrains(el) ? 0 : notifDrains(el) ? 2 : 1);
   function notifOrder() {
     // undo and system cards are session-less — they live in the deck with no row behind them
     return [...notifState.keys()].filter((el) => el.undo || el.system || (el !== openEl && document.contains(el))).sort((a, b) => {
@@ -3645,8 +3648,10 @@
     const kind = notifState.get(el).kind;
     if (el.undo) return {
       kind: 'undo', tier: el.destructive ? 'destructive' : '',
-      glyph: el.icon || MARK_UNDO, what: el.label, sub: el.sub, life: UNDO_MS,
-      act: { label: 'Undo', danger: !!el.destructive, run: () => performUndo(el) },
+      glyph: el.icon || MARK_UNDO, what: el.label, sub: el.sub,
+      // A sticky card carries no bar, because nothing about it expires (agentQuit).
+      life: el.sticky ? 0 : UNDO_MS,
+      act: { label: el.action || 'Undo', danger: !!el.destructive, run: () => performUndo(el) },
       // × on an undo card means "let it stand" — the same thing the countdown draining means.
       dismiss: () => commitPendingUndo(el),
       expire: () => commitPendingUndo(el),
@@ -3810,6 +3815,18 @@
     e.preventDefault();
     setSessionState(bg[notifDemo % bg.length], ['input', 'error', 'input', 'idle'][notifDemo % 4]);
     notifDemo++;
+  });
+
+  // Design demo: ⌥Q quits the agent in the open pane — deliberately the *open* one, because the
+  // row you are watching is the case the deck used to say nothing about at all. In the app this
+  // arrives as the session's process exiting cleanly with a conversation left to resume.
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.code !== 'KeyQ') return;
+    const a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    if (!openEl || !openEl.dataset.type || openEl.dataset.type === 'browser') return;
+    e.preventDefault();
+    agentQuit(openEl);
   });
 
   // ===== The update card ====================================================
@@ -6328,9 +6345,30 @@
     raiseUndo(label, restore, {
       icon,
       sub: opts && opts.sub,
+      action: opts && opts.action,
+      sticky: opts && opts.sticky,
       destructive: opts && opts.destructive,
       onCommit: opts && opts.onCommit ? () => opts.onCommit(restore) : null,
     });
+  }
+
+  // An agent quitting is not a close anyone asked for. opencode exits on ctrl+d, Claude on a
+  // doubled ctrl+c, each of them cleanly — and the row is the only handle the app keeps on that
+  // conversation, so dropping it spends the whole session on one keystroke. The row parks on an
+  // undo card instead: same chassis, same corner, same ⌘↩, and Reopen resumes the conversation
+  // where it stopped.
+  //
+  // This is the one undo card that never drains. Eight seconds is the right window for undoing
+  // your own gesture; this card is a notice about something you didn't do, which can just as
+  // easily land while you are away from the keyboard — the case that turns "gone for now" into
+  // "gone for good". It waits until Reopen, or until × says let it stand.
+  function agentQuit(el) {
+    const name = el.querySelector('.session__name').textContent.trim();
+    const agent = (TPL_KINDS[el.dataset.agent] || {}).label || 'The agent';
+    // The conversation's name is the evidence — but a row still wearing its stock name has none
+    // to give, and "OpenCode quit / OpenCode" is the verb line twice over.
+    softRemove(rowUnit(el), { label: agent + ' quit', sub: name === agent ? null : name,
+                              action: 'Reopen', sticky: true });
   }
 
   // Each undo is a card in the notification deck (working.html's own notif system, reused). The

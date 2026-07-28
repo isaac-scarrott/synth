@@ -1301,3 +1301,12 @@ disclosure to dive deeper.
   inherited `ANTIGRAVITY_CONVERSATION_ID`/`ANTIGRAVITY_PROJECT_ID` scrubbed so a nested agent isn't
   mistaken for the row's. Auth is Google sign-in, free tier sufficient, quota shared across the
   Antigravity surfaces; live harness gates skip until the machine is signed in.
+
+- **Synth 0.20.0 shipped (build 425).** A minor: Antigravity (`agy`) as a third hosted agent, and a
+  split's tabs restored to full tabs with the 8px pane map. Notarized + stapled (zip + dmg), verified
+  credential-less on the quarantined downloads (both Notarized Developer ID, the app inside the dmg
+  staples on its own, bundle reads 0.20.0 / 425, bundled changelog leads with 0.20.0); appcast newest
+  `sparkle:version` 425 / `0.20.0`, every enclosure EdDSA-signed, 5 deltas against 418/413/407/398/392
+  (850K from the previous build against a 137M download). `generate_appcast` swept 16 archives past
+  its retained window into `releases/old_updates/`, so the feed lists three items. Landing links
+  unchanged, no site republish.

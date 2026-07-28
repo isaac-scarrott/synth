@@ -156,7 +156,9 @@ struct InAppNotif: Identifiable {
     /// both are "an agent stopped and wants you", neither is lost by waiting, and ranking them
     /// buried the toast you were *just* nudged about behind one you had already seen — ⌘↩
     /// included, which fires the front card.
-    var band: Int { kind == .undo ? 0 : (drains ? 2 : 1) }
+    /// A *draining* undo is fused; one that never expires (an agent quit you didn't ask for,
+    /// which waits as long as it takes) is standing, and sits with the other cards that ask.
+    var band: Int { kind == .undo && drains ? 0 : (drains ? 2 : 1) }
 
     /// A done toast's life, working.html `NOTIF_DONE_MS`. Sticky toasts (input / error)
     /// never read these.
@@ -732,8 +734,16 @@ enum FeedbackMode {
                 // spawned claude (which execs, so this is its exit too). Notify first: both
                 // notification paths need the live row (features 2026-07-06).
                 s.status = .exited(real)
-                routeTransition(id, prev: prev, next: .exited(real), closing: true)
-                closeSession(s)
+                // …unless the row holds a conversation we know how to bring back. An agent can
+                // quit on one keystroke (opencode's ctrl+d, claude's ctrl+c ctrl+c) and exit 0
+                // doing it, and the row is the only handle Synth keeps on that conversation —
+                // so the close goes through the undo deck instead of straight to the floor.
+                if s.spawnedKind.isAgent, s.agentSessionID != nil {
+                    softReopenSession(s)
+                } else {
+                    routeTransition(id, prev: prev, next: .exited(real), closing: true)
+                    closeSession(s)
+                }
             } else {
                 // A failure keeps its row — the error should be seen and inspectable,
                 // not vanish with the process.
@@ -1616,6 +1626,7 @@ enum FeedbackMode {
 
     private func softDelete(_ label: String, subject: UndoSubject,
                             destructive: Bool = false, sub: String? = nil,
+                            actionLabel: String = "Undo", sticky: Bool = false,
                             restore: @escaping () -> Void, commit: @escaping () -> Void) {
         notifSeq += 1
         let id = UUID()
@@ -1631,10 +1642,12 @@ enum FeedbackMode {
                            title: "", colorIndex: nil, outlivesSession: true,
                            message: label, iconPath: path,
                            tier: .attention, sub: sub,
-                           action: NotifAction(label: "Undo", danger: destructive),
-                           destructive: destructive, drains: true)
-        n.life = Self.undoLife
-        n.remaining = Self.undoLife
+                           action: NotifAction(label: actionLabel, danger: destructive),
+                           destructive: destructive, drains: !sticky)
+        if !sticky {
+            n.life = Self.undoLife
+            n.remaining = Self.undoLife
+        }
         notifs.append(n)
     }
 
@@ -1676,6 +1689,48 @@ enum FeedbackMode {
         }, commit: { [weak self] in
             victims.forEach { self?.teardownSession($0) }
         })
+    }
+
+    /// An agent quit and took its row with it — park the row on an undo card instead of dropping
+    /// it. The gesture that gets here is not the user's: opencode exits on `ctrl+d`, Claude on a
+    /// doubled `ctrl+c`, each of them exit 0, and the row carries the only `agentSessionID` Synth
+    /// holds — so a silent close spends a whole conversation on one keystroke. Worse, it was
+    /// silent precisely when it mattered: `routeTransition` raises the closing card only for a
+    /// row you are *not* looking at, so the session you were watching vanished with nothing said.
+    ///
+    /// The card never drains. An 8-second fuse suits undoing your own gesture; this one is a
+    /// notice about something you didn't ask for, which may well have happened while you were
+    /// away from the keyboard — the case that makes the loss permanent. It waits until you say
+    /// Reopen (respawn, resuming the conversation) or × (let it stand).
+    ///
+    /// The dead surface is freed on the way in, not on commit: the process is already gone, and
+    /// dropping the view is what lets Reopen build a fresh one — which launches with `--resume`,
+    /// the same reconstruction a restored-after-quit row gets.
+    func softReopenSession(_ session: Session) {
+        guard let br = branch(of: session),
+              let index = br.sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        let wasOpen = openSessionID == session.id
+        let agent = session.spawnedKind.agentID.flatMap { AgentRegistry.descriptor($0) }
+
+        teardownSession(session)
+        if navCursor == session.id { navCursor = br.id }
+        br.sessions.remove(at: index)
+        pruneLayout(); syncActive(); restoreLastViewed()
+
+        // The conversation's name is the evidence under the verb line — but a row still wearing
+        // its stock name has none to give, and "OpenCode quit / OpenCode" says it twice.
+        let named = session.title == session.spawnedKind.tplStart ? nil : session.title
+        softDelete("\(agent?.displayName ?? "The agent") quit",
+                   subject: .session(session.spawnedKind),
+                   sub: named, actionLabel: "Reopen", sticky: true,
+                   restore: { [weak self] in
+            guard let self else { return }
+            session.status = .idle
+            session.unread = false
+            br.sessions.insert(session, at: min(index, br.sessions.count))
+            self.pruneLayout(); self.syncActive()
+            if wasOpen { self.jump(to: session) }
+        }, commit: {})
     }
 
     /// Remove a project from the sidebar instantly and reversibly — nothing on disk is touched

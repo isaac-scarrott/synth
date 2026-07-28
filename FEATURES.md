@@ -1301,6 +1301,37 @@ disclosure to dive deeper.
   inherited `ANTIGRAVITY_CONVERSATION_ID`/`ANTIGRAVITY_PROJECT_ID` scrubbed so a nested agent isn't
   mistaken for the row's. Auth is Google sign-in, free tier sufficient, quota shared across the
   Antigravity surfaces; live harness gates skip until the machine is signed in.
+- **Synth 0.20.0 shipped (build 425).** A minor: Antigravity (`agy`) as a third hosted agent, and a
+  split's tabs restored to full tabs with the 8px pane map. Notarized + stapled (zip + dmg), verified
+  credential-less on the quarantined downloads (both Notarized Developer ID, the app inside the dmg
+  staples on its own, bundle reads 0.20.0 / 425, bundled changelog leads with 0.20.0); appcast newest
+  `sparkle:version` 425 / `0.20.0`, every enclosure EdDSA-signed, 5 deltas against 418/413/407/398/392
+  (850K from the previous build against a 137M download). `generate_appcast` swept 16 archives past
+  its retained window into `releases/old_updates/`, so the feed lists three items. Landing links
+  unchanged, no site republish.
+
+- **Ctrl-C interrupts an opencode row, it doesn't quit it** — an opencode conversation 69 messages
+  deep disappeared mid-turn, twice in one afternoon. opencode binds `app_exit` to
+  `ctrl+c,ctrl+d,<leader>q` and `session_interrupt` to `escape` alone, so the universal *stop*
+  gesture quits the app, measured exit code **0** — the clean exit on which Synth ends a row
+  (features 2026-07-06), taking the captured `ses_…` id with it, and raising no toast at all because
+  the closing card is only for rows you aren't looking at. Claude Code interrupts on the same key,
+  so opencode is rebound inside Synth: `session_interrupt` gains `ctrl+c`, `app_exit` keeps `ctrl+d`
+  and `<leader>q`. The seam is `OPENCODE_TUI_CONFIG`, an extra TUI config file merged after the
+  user's own and before any project one, written to `<Application Support>/opencode-tui.json` and
+  named from `decorate` — no file of the user's is touched, and a project `.opencode/tui.json` still
+  overrides it. Keybinds are a TUI concern: `OPENCODE_CONFIG_CONTENT` has no `keybinds` key.
+- **An agent that quits parks its conversation on a Reopen card** — a clean exit no longer closes
+  an agent row that holds a conversation. The row still leaves the tree, but it lands on an undo
+  card — the agent's mark, "OpenCode quit", the conversation's name, **Reopen** — and Reopen slots
+  it back where it stood, the pane rebuilding its terminal with `--resume`. Unlike every other undo
+  the card **never drains**: a fuse is right for undoing your own gesture, wrong for something you
+  didn't do that can land while you're away, so `band` now asks whether an undo actually drains
+  rather than assuming it does. Nothing parks when there is nothing to resume (a shell's `exit`, an
+  agent quit before its first prompt) — the rule is never destroy a conversation Synth can restore,
+  not never close a row. And it is raised whatever is on screen: `routeTransition` escalated only
+  rows you weren't looking at, which is why the foreground case — the one that actually happened —
+  was silent. Gate: `t17_agent_quit`.
 - **Antigravity reports the states it stops in: a question, an interrupt, a cap, a failure** — the
   agent shipped with two self-moving statuses (working, idle) and a scraped permission prompt, so
   every other stop was reported as one of those and always the wrong one. `agy` publishes five hook

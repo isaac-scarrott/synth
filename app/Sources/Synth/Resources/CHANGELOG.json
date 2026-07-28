@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.20.0",
+    "date": "2026-07-28",
+    "changes": [
+      "Antigravity (`agy`) is Synth's third agent, alongside Claude Code and OpenCode — pick it when you start a session. It resumes where it left off, names its row from the conversation, and gets the browser tools like any other agent. A fresh worktree asks Antigravity's trust prompt first, so the row waits on you rather than swallowing what you typed.",
+      "A split's tabs are tabs again. Members had been shrunk to chips, which cost them the indicator dot — a pane needing input showed nothing — plus the active bar and hover. Each member is now a full tab, divided by a hairline, with an 8px map of the split in its corner showing which pane it is."
+    ]
+  },
+  {
     "version": "0.19.0",
     "date": "2026-07-28",
     "changes": [

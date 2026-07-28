@@ -1253,3 +1253,11 @@ disclosure to dive deeper.
   query; porting it surfaced that the native matcher lacked the exact/prefix label boosts the mock
   ranks by, so `itemScore` is ported exactly. `automation.screenshot` now prefers the ⌘K panel —
   it had been screenshotting the window under it. Verified over the control socket + screenshots.
+
+- **A split's tabs are tabs again, marked by an 8px map of the split** — split members had rendered
+  as 22px chips borrowed from the sidebar's split band, which cost them the indicator slot (a member
+  needing input showed nothing), the active bar, the hover wash and shrink-to-fit. A member is now a
+  full tab, divided from its siblings by an inset hairline instead of a full seam, and grouping rides
+  on one mark: an 8px map of the split in each member's icon corner with that tab's own pane filled,
+  computed from the real pane tree, so it says which pane as well as grouped.
+

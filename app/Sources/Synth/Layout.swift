@@ -434,6 +434,32 @@ extension AppStore {
         return ids.count >= 2 ? ids : []
     }
 
+    /// Every pane of `branch`'s split as a fraction rect of the whole surface — the shape a member
+    /// tab wears as its map (working.html `paneRects`). Splits subdivide in equal halves rather than
+    /// by their real `split` fraction: at 8pt a schematic reads and a true 62/38 does not. Same tree
+    /// (durable for the current branch, remembered otherwise) and same a-before-b order as
+    /// `echoMemberIDs`, so map order is strip order.
+    func paneRects(for branch: Branch) -> [UUID: CGRect] {
+        let tree = branch.id == currentBranchID ? durableLayout : branch.layout
+        var out: [UUID: CGRect] = [:]
+        func walk(_ node: PaneNode?, _ r: CGRect) {
+            guard let node else { return }
+            if node.isLeaf {
+                if let s = node.sessionID { out[s] = r }
+                return
+            }
+            if node.dir == .col {
+                walk(node.a, CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height / 2))
+                walk(node.b, CGRect(x: r.minX, y: r.midY, width: r.width, height: r.height / 2))
+            } else {
+                walk(node.a, CGRect(x: r.minX, y: r.minY, width: r.width / 2, height: r.height))
+                walk(node.b, CGRect(x: r.midX, y: r.minY, width: r.width / 2, height: r.height))
+            }
+        }
+        walk(tree, CGRect(x: 0, y: 0, width: 1, height: 1))
+        return out
+    }
+
     /// The branch a keyboard split lands on when the active pane is a bare setup skeleton (no
     /// session to read a branch off): the open session's branch, else the first available.
     func contextBranchForSplit() -> Branch? {

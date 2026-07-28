@@ -103,6 +103,21 @@ func fuzzyScore(_ query: String, _ text: String) -> Double? {
     return score - Double(first) * 0.5
 }
 
+/// Label-first item scoring (working.html's `itemScore`): typing a name must land on that
+/// name — an exact label beats everything (+1000), a label prefix beats a loose subsequence
+/// (+200) — and the context path is only a weak fallback (−6) so a bare-labelled action
+/// ("Rename") is still found by its target's name via `ctx` without outranking a label hit.
+/// nil = no match on either.
+func itemScore(_ query: String, _ item: PaletteItem) -> Double? {
+    let label = fuzzyScore(query, item.label).map { s -> Double in
+        let l = item.label.lowercased(), q = query.lowercased()
+        return s + (l == q ? 1000 : l.hasPrefix(q) ? 200 : 0)
+    }
+    guard let ctx = item.ctx else { return label }
+    let withCtx = fuzzyScore(query, "\(ctx) \(item.label)").map { $0 - 6 }
+    return [label, withCtx].compactMap { $0 }.max()
+}
+
 /// Branch names can't contain spaces — inputs that name a new branch turn each
 /// space into a dash as you type (working.html's `dashSpaces`: leading whitespace
 /// dropped, runs collapsed).
@@ -201,25 +216,24 @@ struct PaletteFrame {
     /// model is about to vanish, so a placeholder frame is harmless.
     var frame: PaletteFrame { stack.last ?? PaletteFrame(placeholder: "", build: { _ in [] }) }
 
-    /// The frame's items, fuzzy-filtered for `list` frames — section order preserved,
-    /// fuzzy-ranked within each section (working.html's renderFrame).
+    /// The frame's items, fuzzy-filtered for `list` frames. A query drops grouping entirely:
+    /// one flat list, every candidate scored against the same query, best match first, build
+    /// order (most-local-first) as the tiebreak — headings and dividers only exist cold
+    /// (working.html's renderFrame).
     var items: [PaletteItem] {
         let q = query.trimmingCharacters(in: .whitespaces)
         let built = frame.build(q)
         guard frame.mode == .list, !q.isEmpty else { return built }
-        var order: [String] = []
-        var byKey: [String: [(PaletteItem, Double)]] = [:]
-        for it in built {
-            // Fold the context chip into matching (working.html itemScore) so a bare-labelled
-            // action ("Rename") is still found by its target's name via `ctx`.
-            let base = fuzzyScore(q, it.label)
-            let withCtx = it.ctx.flatMap { c in fuzzyScore(q, "\(c) \(it.label)").map { $0 - 2 } }
-            guard let s = [base, withCtx].compactMap({ $0 }).max() else { continue }
-            let k = it.group ?? it.sec ?? ""
-            if byKey[k] == nil { byKey[k] = []; order.append(k) }
-            byKey[k]!.append((it, s))
-        }
-        return order.flatMap { byKey[$0]!.sorted { $0.1 > $1.1 }.map(\.0) }
+        return built.enumerated()
+            .compactMap { i, it -> (item: PaletteItem, score: Double, order: Int)? in
+                guard let s = itemScore(q, it) else { return nil }
+                var flat = it
+                flat.group = nil
+                flat.sec = nil
+                return (flat, s, i)
+            }
+            .sorted { $0.score == $1.score ? $0.order < $1.order : $0.score > $1.score }
+            .map(\.item)
     }
 
     /// The current frame's note text for the query (empty → nil), rendered faint above
@@ -514,44 +528,43 @@ struct PaletteFrame {
                 ]
                 return items
             }
-            var items = here.map { item -> PaletteItem in
-                var it = item; it.group = "Actions"; return it
-            }
+            var items = here
             items += [
-                PaletteItem(icon: .phosphor(Phosphor.terminal), label: "Scratch terminal", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.terminal), label: "Scratch terminal",
                             kbd: ["⌘", "⇧", "T"],
                             enter: { self.runAndClose { self.store.openScratchTerminal() } }),
-                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project",
                             enter: { self.runAndClose { self.store.promptAddWorkspace() } }),
-                PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar",
                             kbd: ["⌘", "B"],
                             enter: { self.runAndClose { self.store.sidebarCollapsed.toggle() } }),
-                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Settings", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.gear), label: "Settings",
                             kbd: ["⌘", ","],
                             enter: { self.runAndClose { self.store.enterSettings() } }),
-                PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.keys), label: "Keyboard shortcuts",
                             kbd: ["⌘", "?"],
                             enter: { self.runAndClose { self.store.shortcutsOpen = true } }),
-                PaletteItem(icon: .phosphor(Phosphor.commentMode), label: "Send feedback…", group: "Actions",
+                PaletteItem(icon: .phosphor(Phosphor.commentMode), label: "Send feedback…",
                             kbd: ["⌘", "⇧", "F"],
                             enter: { self.runAndClose { self.store.feedbackOpen = true } }),
             ]
-            // Search groups run most-local-first: Actions (above), then Sessions, Branches, Workspaces.
+            // Build order is the score tiebreak, most-local-first: actions (above), then
+            // sessions, branches, projects.
             for ws in store.workspaces {
                 for br in ws.branches {
                     let ctx = ctxString(ws, br)
-                    for s in br.sessions { items.append(sessionItem(s, ctx: ctx, group: "Sessions")) }
+                    for s in br.sessions { items.append(sessionItem(s, ctx: ctx)) }
                 }
             }
             for ws in store.workspaces {
                 for br in ws.liveBranches {
                     items.append(PaletteItem(icon: .phosphor(Phosphor.branch), label: br.name,
-                                             group: "Branches", ctx: ws.name,
+                                             ctx: ws.name,
                                              enter: { self.push(self.branchFrame(br)) }))
                 }
             }
             for ws in store.workspaces {
-                items.append(PaletteItem(icon: chipIcon(ws), label: ws.name, group: "Projects",
+                items.append(PaletteItem(icon: chipIcon(ws), label: ws.name,
                                          enter: { self.push(self.workspaceFrame(ws)) }))
             }
             return items

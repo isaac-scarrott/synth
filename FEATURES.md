@@ -1238,3 +1238,18 @@ disclosure to dive deeper.
   all 18 enclosures EdDSA-signed, 5 deltas against 386/390/392/398/407 (4.8M against a 137M
   download). The `generate_appcast` "File exists" noise recurred as understood at 0.17.1 and is
   harmless. Landing links unchanged, no site republish.
+
+- **⌘K search ranks flat — the best match is the top row** — typing used to bucket results into
+  Actions / Sessions / Branches / Projects, rank the buckets, then list the winning bucket whole, so
+  the best match in the palette could sit six rows down under weaker siblings that shared its
+  heading. A query now drops grouping entirely: one list, every candidate scored against the same
+  query, best first, ties falling back to most-local build order. The scoring is unchanged, just no
+  longer partitioned before it's applied. The icon and ctx path already say what each row is and
+  where it lives, so the headings were spending a row to repeat the row. Cold ⌘K — Recent plus the
+  context actions labelled by scope — keeps its groups.
+
+- **Native port: ⌘K search ranks flat, and scoring reaches label-boost parity** — the flat ranking
+  in the app: one scored list, `(score, build order)` sort key, `group`/`sec` stripped under a
+  query; porting it surfaced that the native matcher lacked the exact/prefix label boosts the mock
+  ranks by, so `itemScore` is ported exactly. `automation.screenshot` now prefers the ⌘K panel —
+  it had been screenshotting the window under it. Verified over the control socket + screenshots.

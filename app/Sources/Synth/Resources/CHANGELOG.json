@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.18.0",
+    "date": "2026-07-28",
+    "changes": [
+      "Device previews are drawn from real hardware — true bezels, corner radii, cutout and safe areas, laid out at the device's own viewport and scaled to fit, so proportions hold at any pane width and rotating moves every edge one place round.",
+      "A previewed page now looks the way the phone's browser would show it: Safari's bottom tab bar in portrait, a single top bar in landscape, Chrome and a gesture pill on Android, a home button on the SE, and a status-bar trio that parts around the island.",
+      "The simulator pane takes its device from the session's name and gets an app's chrome rather than a browser's. Device screens stay light in both themes — it's a separate machine showing a light page.",
+      "The first tab's fill now runs under the sidebar instead of stopping square against its rounded edge, so the open tab no longer reads as clipped."
+    ]
+  },
+  {
     "version": "0.17.1",
     "date": "2026-07-27",
     "changes": [

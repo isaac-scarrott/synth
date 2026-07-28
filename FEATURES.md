@@ -1228,3 +1228,13 @@ disclosure to dive deeper.
   home button on the SE, and a real status-bar trio parting around the island. The simulator runs an
   app, so it gets an app's chrome and takes its device from the session's name. Device screens stay
   light in both themes — a separate machine showing a light page.
+
+- **Synth 0.18.0 shipped (build 413).** A minor: device previews drawn from real hardware in both
+  the simulator pane and the browser's device mode, each showing the page inside the browser chrome
+  that device actually gives it — so the page gets the viewport a phone gets, not the whole screen —
+  plus the first tab's fill running under the sidebar. Notarized + stapled (zip + dmg), verified
+  credential-less on the quarantined downloads (both Notarized Developer ID, app inside the dmg
+  staples on its own, bundle reads 0.18.0 / 413); appcast newest `sparkle:version` 413 / `0.18.0`,
+  all 18 enclosures EdDSA-signed, 5 deltas against 386/390/392/398/407 (4.8M against a 137M
+  download). The `generate_appcast` "File exists" noise recurred as understood at 0.17.1 and is
+  harmless. Landing links unchanged, no site republish.

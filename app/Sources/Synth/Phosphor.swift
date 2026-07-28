@@ -56,6 +56,13 @@ enum Phosphor {
     static let deviceMobile = "M176,16H80A24,24,0,0,0,56,40V216a24,24,0,0,0,24,24h96a24,24,0,0,0,24-24V40A24,24,0,0,0,176,16ZM72,64H184V192H72Zm8-32h96a8,8,0,0,1,8,8v8H72V40A8,8,0,0,1,80,32Zm96,192H80a8,8,0,0,1-8-8v-8H184v8A8,8,0,0,1,176,224Z"
     // Comment mode (ADR-0011 stage three): phosphor chat-circle-dots.
     static let commentMode = "M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM84,116a12,12,0,1,0,12,12A12,12,0,0,0,84,116Zm88,0a12,12,0,1,0,12,12A12,12,0,0,0,172,116Zm60,12A104,104,0,0,1,79.12,219.82L45.07,231.17a16,16,0,0,1-20.24-20.24l11.35-34.05A104,104,0,1,1,232,128Zm-16,0A88,88,0,1,0,51.81,172.06a8,8,0,0,1,.66,6.54L40,216,77.4,203.53a7.85,7.85,0,0,1,2.53-.42,8,8,0,0,1,4,1.08A88,88,0,0,0,216,128Z"
+    // The controls a device draws in its own browser (working.html ICON_IOS_* / ICON_A_DOTS).
+    // `caret` is the right one; reload there is `reset`, tabs is `copy`, and the pill's lock,
+    // the iPad's sidebar and its new-tab plus reuse `lock` / `sidebar` / `plus`.
+    static let caretLeft = "M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"
+    static let export = "M208,112v96a16,16,0,0,1-16,16H64a16,16,0,0,1-16-16V112A16,16,0,0,1,64,96H88a8,8,0,0,1,0,16H64v96H192V112H168a8,8,0,0,1,0-16h24A16,16,0,0,1,208,112ZM93.66,69.66,120,43.31V136a8,8,0,0,0,16,0V43.31l26.34,26.35a8,8,0,0,0,11.32-11.32l-40-40a8,8,0,0,0-11.32,0l-40,40A8,8,0,0,0,93.66,69.66Z"
+    static let bookmark = "M184,32H72A16,16,0,0,0,56,48V224a8,8,0,0,0,12.24,6.78L128,193.43l59.77,37.35A8,8,0,0,0,200,224V48A16,16,0,0,0,184,32Zm0,177.57-51.77-32.35a8,8,0,0,0-8.48,0L72,209.57V48H184Z"
+    static let dotsVertical = "M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM128,72a12,12,0,1,0-12-12A12,12,0,0,0,128,72Zm0,112a12,12,0,1,0,12,12A12,12,0,0,0,128,184Z"
 }
 
 /// Renders a Phosphor path as a tintable template image.
@@ -80,9 +87,18 @@ final class PhosCache {
     func image(_ d: String) -> NSImage {
         if let hit = cache[d] { return hit }
         let svg = "<svg viewBox=\"0 0 256 256\" xmlns=\"http://www.w3.org/2000/svg\"><path fill=\"#000\" d=\"\(d)\"/></svg>"
+        return image(svg: svg, key: d)
+    }
+
+    /// A glyph that isn't Phosphor's, given as whole SVG markup — the device status bar's
+    /// cellular / wifi / battery carry their own viewBox and aren't square. Template
+    /// tinting still applies, so their partial opacities survive as alpha.
+    func image(svg: String, key: String? = nil) -> NSImage {
+        let k = key ?? svg
+        if let hit = cache[k] { return hit }
         let img = NSImage(data: Data(svg.utf8)) ?? NSImage()
         img.isTemplate = true
-        cache[d] = img
+        cache[k] = img
         return img
     }
 }

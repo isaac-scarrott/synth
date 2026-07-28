@@ -256,12 +256,16 @@ final class ControlServer: @unchecked Sendable {
                 // explicit on:false turns it off.
                 ctrl.setDeviceMode(on: request["on"] as? Bool ?? true)
             }
+            // `viewport` is what the page gets — the screen minus the device browser's
+            // own bars, which is the number a media query sees; `screen` is the hardware.
+            let page = ctrl.device.pageViewport(landscape: ctrl.deviceLandscape)
+            let screen = ctrl.device.screenSize(landscape: ctrl.deviceLandscape)
             return ["ok": true,
                     "on": ctrl.deviceModeOn,
                     "device": ctrl.device.id,
                     "landscape": ctrl.deviceLandscape,
-                    "viewport": ["width": Int(ctrl.deviceLandscape ? ctrl.device.height : ctrl.device.width),
-                                 "height": Int(ctrl.deviceLandscape ? ctrl.device.width : ctrl.device.height)],
+                    "viewport": ["width": Int(page.width), "height": Int(page.height)],
+                    "screen": ["width": Int(screen.width), "height": Int(screen.height)],
                     "devices": BrowserDevice.fleet.map {
                         ["id": $0.id, "name": $0.name,
                          "width": Int($0.width), "height": Int($0.height)]

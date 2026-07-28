@@ -9,6 +9,7 @@ struct AgentID: Hashable, Sendable, Codable, RawRepresentable {
 
     static let claudeCode = AgentID("claudeCode")
     static let opencode = AgentID("opencode")
+    static let antigravity = AgentID("antigravity")
 }
 
 /// Everything Synth needs to host one coding agent: how it's named, which binary a terminal
@@ -29,13 +30,19 @@ struct AgentDescriptor: Sendable {
     let mark: AgentMark
     /// Extra install locations to search when the launch PATH is bare (Dock / `open`).
     let installHints: [String]
+    /// Path fragments that disqualify a candidate the PATH search would otherwise accept, matched
+    /// against its fully resolved location. Antigravity is why this exists: the Nov-2025
+    /// Antigravity IDE ships an `agy` of its own — a launcher whose "chat" drives the GUI app, not
+    /// a terminal agent — and on a machine with both it sits ahead of homebrew on the login PATH,
+    /// so a name match alone would hand a session the wrong program entirely.
+    var rejectedPathFragments: [String] = []
 
     /// Where this agent is really installed, resolved on the original PATH (before the shim dir
     /// is prepended). Search order matters: the login-shell PATH first (what a launched agent
     /// actually resolves, and the only place a Dock launch sees version-manager shims), then the
     /// app process's PATH, then `installHints` as a last-ditch guess. A candidate that resolves
     /// to `synth-hook` is one of our own shims — exec'ing it would re-enter the launch role
-    /// forever (E2BIG), so skip it.
+    /// forever (E2BIG), so skip it, as with anything `rejectedPathFragments` rules out.
     var resolvedBinary: String? {
         let home = NSHomeDirectory()
         let processDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
@@ -45,8 +52,11 @@ struct AgentDescriptor: Sendable {
         for dir in searchDirs {
             let candidate = dir + "/" + binaryName
             guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
-            let resolved = (try? FileManager.default.destinationOfSymbolicLink(atPath: candidate)) ?? candidate
+            // Resolve the whole chain, not one link: an impostor can be reached through several
+            // hops (~/.antigravity/…/agy → /Applications/Antigravity.app/…/antigravity).
+            let resolved = URL(fileURLWithPath: candidate).resolvingSymlinksInPath().path
             if (resolved as NSString).lastPathComponent == "synth-hook" { continue }
+            if rejectedPathFragments.contains(where: { resolved.contains($0) }) { continue }
             return candidate
         }
         return nil
@@ -60,6 +70,7 @@ struct AgentDescriptor: Sendable {
         switch id {
         case .claudeCode: return "--dangerously-skip-permissions --model opus"
         case .opencode: return "--model anthropic/claude-opus-4-5 --agent build"
+        case .antigravity: return "--model gemini-3.6-flash-high --mode accept-edits"
         default: return "--help"
         }
     }
@@ -89,7 +100,17 @@ extension AgentDescriptor: Identifiable {}
                        "/usr/local/bin", "~/.npm-global/bin"]
     )
 
-    static let all: [AgentDescriptor] = [claudeCode, opencode]
+    static let antigravity = AgentDescriptor(
+        id: .antigravity,
+        displayName: "Antigravity",
+        shortName: "Antigravity",
+        binaryName: "agy",
+        mark: .antigravity,
+        installHints: ["/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin"],
+        rejectedPathFragments: [".app/"]
+    )
+
+    static let all: [AgentDescriptor] = [claudeCode, opencode, antigravity]
 
     static func descriptor(_ id: AgentID) -> AgentDescriptor? { all.first { $0.id == id } }
 
@@ -141,6 +162,7 @@ extension AgentDescriptor: Identifiable {}
         supervisors = [
             .claudeCode: ClaudeCodeSupervisor(bus: bus),
             .opencode: OpencodeSupervisor(bus: bus),
+            .antigravity: AntigravitySupervisor(bus: bus),
         ]
     }
 
@@ -149,8 +171,8 @@ extension AgentDescriptor: Identifiable {}
 
 /// The per-session watcher that consumes an agent's raw event firehose locally and emits only
 /// derived status facts onto the bus (CONTEXT.md "Supervisor", docs/adr/0001). Each agent
-/// brings its own transport — Claude Code pushes hook signals over a unix socket; opencode is
-/// polled over its own HTTP event stream — and both land on the same `SessionEvent` seam.
+/// brings its own transport — Claude Code and Antigravity push hook signals over a unix socket;
+/// opencode is read over its own HTTP event stream — and all land on the same `SessionEvent` seam.
 @MainActor protocol AgentSupervisor: AnyObject {
     var id: AgentID { get }
 

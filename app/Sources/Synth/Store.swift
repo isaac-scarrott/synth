@@ -552,12 +552,13 @@ enum FeedbackMode {
     /// flags are a TAIL appended after these shared ones (working.html's layered model), so the
     /// shell's last-wins resolves any repeat; an empty project tail runs the shared flags alone.
     ///
-    /// Both ship empty — each agent's own configured defaults are what a fresh install runs,
+    /// All ship empty — each agent's own configured defaults are what a fresh install runs,
     /// and skipping permission prompts is a choice the user makes here, not one Synth makes
     /// for them.
     var globalAgentFlags: [AgentID: String] = [
         .claudeCode: "",
         .opencode: "",
+        .antigravity: "",
     ]
     var wsAgentFlags: [UUID: [AgentID: String]] = [:]
 
@@ -695,8 +696,11 @@ enum FeedbackMode {
             // Requiring a still-live prior state drops the nudge once the turn has settled, so the
             // finish is order-independent: whichever of idle/needsInput lands last, the row ends
             // idle. Genuine blocks are preceded by UserPromptSubmit/PostToolUse→working, so the ?
-            // still lights.
-            if status == .needsInput, !s.status.isLive { break }
+            // still lights. Scoped to a row whose agent is already reachable, because that is the
+            // only place the race exists: an agent that has not yet reported ready and says it is
+            // blocked is blocked on the way IN — Antigravity's workspace trust prompt, which
+            // stands before the first turn and would otherwise read as a green idle row.
+            if status == .needsInput, !s.status.isLive, liveAgentIDs.contains(id) { break }
             let prev = s.status
             s.status = status
             routeTransition(id, prev: prev, next: status)

@@ -24,7 +24,11 @@ struct TabStrip: View {
             }
             ForEach(items) { item in
                 switch item {
-                case let .tab(s): TabChip(session: s)
+                // Only a lone tab leading the strip meets the sidebar seam — a leading cluster insets
+                // its chips, and a collapsed sidebar puts the toggle there first.
+                case let .tab(s):
+                    TabChip(session: s,
+                            bleedsUnderSidebar: !store.sidebarCollapsed && item.id == items.first?.id)
                 case let .cluster(members): TabCluster(members: members)
                 }
             }
@@ -88,9 +92,16 @@ private enum StripItem: Identifiable {
 private struct TabChip: View {
     @Environment(AppStore.self) private var store
     let session: Session
+    /// Set on the tab that meets the sidebar seam: its fill runs on underneath the sidebar (which
+    /// RootView stacks above the content), so the sidebar's rounded corner is what ends it rather
+    /// than the fill stopping in a hard square short of the curve (working.html `.tab-bleed`).
+    var bleedsUnderSidebar = false
     @State private var hovering = false
 
     private var isActive: Bool { store.openSessionID == session.id }
+    /// The tab's own fill — the open tab holds its raised fill under the pointer rather than washing
+    /// back down to the hover tint. The run-on under the sidebar reads this, so it can never disagree.
+    private var fill: Color { isActive ? Theme.raised : (hovering ? Theme.rowHover : .clear) }
     // Double-clicking the tab renames it in place, reusing the sidebar row's inline-rename machinery
     // keyed by session id (working.html `startTabRename`) — the field swaps in for the name label.
     private var renaming: Bool { store.renamingRowID == session.id }
@@ -109,7 +120,7 @@ private struct TabChip: View {
                 }
                 .padding(.leading, 11).padding(.trailing, 6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(isActive ? Theme.raised : Color.clear)
+                .background(fill)
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 0.5) }
             } else {
                 Button { store.open(session); focusContent(store) } label: {
@@ -125,7 +136,7 @@ private struct TabChip: View {
                     }
                     .padding(.leading, 11).padding(.trailing, 6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(isActive ? Theme.raised : (hovering ? Theme.rowHover : Color.clear))
+                    .background(fill)
                     .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 0.5) }
                     // The active-tab bar, echoing the active-pane focus bar.
                     .overlay(alignment: .bottom) {
@@ -145,6 +156,14 @@ private struct TabChip: View {
             }
         }
         .frame(maxWidth: 240, maxHeight: .infinity)
+        .background(alignment: .leading) {
+            if bleedsUnderSidebar {
+                Rectangle().fill(fill)
+                    .frame(width: Theme.radiusPanel)
+                    .offset(x: -Theme.radiusPanel)
+                    .allowsHitTesting(false)
+            }
+        }
         .onHover { hovering = $0 }
         .tabDrag(session)
         // Right-click opens the same ⌘K frame the sidebar row's ⋯ / right-click opens (openRowActions).

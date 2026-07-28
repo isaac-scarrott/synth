@@ -1199,3 +1199,19 @@ disclosure to dive deeper.
   `generate_appcast` "File exists" noise is now understood — 16 archives moved cleanly, and it fails
   only on the ones duplicated in `old_updates/` by an earlier bucket recovery. Landing links
   unchanged, no site republish. Clean single-attempt run on the detached `os.setsid()` launch.
+
+## [2026-07-28](docs/features/2026-07-28.md)
+
+- **The first tab's fill runs under the sidebar, not up against it** — in tabs mode the first tab's
+  fill stopped square at the sidebar's rounded edge, leaving a wedge of panel colour against the
+  curve so the tab read as clipped. Rounding the strip's own top-left was tried and rejected: two
+  curves with a gap between them still show where the fill ends. It shouldn't end — it continues
+  past the seam and the sidebar's corner occludes it, which is what the z-order already says. The
+  mock needs a separate `.tab-bleed` block for that (`.content` and `.tabstrip__tabs` both clip
+  their overflow, so the tab can't cross the seam itself), with `.sidebar` stacked over it; native
+  has no such clip, so the run-on hangs off the tab as a leading background and `TabChip` routes
+  active, hover and run-on through one `fill` property so they can't drift. Knock-on: `.tab:hover`
+  out-specified `.tab--active` in the mock, washing the open tab's fill down under the pointer where
+  Swift never did — settled in Swift's favour, since the wash means "you could open this" and
+  there's nothing to open. Native hover is structurally guaranteed rather than screenshotted: a
+  synthetic `mouseMoved` posted to the pid doesn't reach an inactive window's `NSTrackingArea`.

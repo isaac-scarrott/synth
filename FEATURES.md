@@ -1237,3 +1237,9 @@ disclosure to dive deeper.
   longer partitioned before it's applied. The icon and ctx path already say what each row is and
   where it lives, so the headings were spending a row to repeat the row. Cold ⌘K — Recent plus the
   context actions labelled by scope — keeps its groups.
+
+- **Native port: ⌘K search ranks flat, and scoring reaches label-boost parity** — the flat ranking
+  in the app: one scored list, `(score, build order)` sort key, `group`/`sec` stripped under a
+  query; porting it surfaced that the native matcher lacked the exact/prefix label boosts the mock
+  ranks by, so `itemScore` is ported exactly. `automation.screenshot` now prefers the ⌘K panel —
+  it had been screenshotting the window under it. Verified over the control socket + screenshots.

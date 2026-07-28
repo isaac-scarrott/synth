@@ -713,7 +713,11 @@ final class ControlServer: @unchecked Sendable {
             guard let path = request["path"] as? String else {
                 return ["ok": false, "error": "missing path"]
             }
-            guard let view = NSApp.windows.first(where: { $0.isVisible })?.contentView,
+            // The ⌘K palette floats in its own NSPanel above the main window, so a capture
+            // that always grabs the first visible window renders a palette-open moment with
+            // no palette in it. Prefer the panel — the front of what the user sees.
+            guard let view = (NSApp.windows.first(where: { $0.isVisible && $0 is NSPanel })
+                              ?? NSApp.windows.first(where: { $0.isVisible }))?.contentView,
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
                 return ["ok": false, "error": "no visible window to render"]
             }

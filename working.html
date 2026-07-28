@@ -6298,7 +6298,6 @@
   // ===== Command palette (⌘K) — Linear-style fuzzy command + jump menu =====
   const ICON_SEARCH = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/></svg>';
   const ICON_SIDEBAR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>';
-  const CMDK_GROUPS = ['Actions', 'Projects', 'Branches', 'Sessions'];
 
   let pal = null, palItems = [], palActive = 0;
 
@@ -6512,18 +6511,18 @@
           { sec: 'act', icon: ICON_CHAT,    label: 'Send feedback…', kbd: ['⌘', '⇧', 'F'], enter: () => runAndClose(openFeedback) },
         ];
         const items = [
-          ...here.items.map((it) => ({ ...it, g: 'Actions', ctx: it.unit })),
-          { g: 'Actions', icon: ICON_TERMINAL, label: 'Scratch terminal', kbd: ['⌘', '⇧', 'T'], enter: () => runAndClose(openScratch) },
-          { g: 'Actions', icon: ICON_PLUS,     label: 'Add project', enter: () => runAndClose(addProjectViaPicker) },
-          { g: 'Actions', icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
-          { g: 'Actions', icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
-          { g: 'Actions', icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
-          { g: 'Actions', icon: ICON_CHAT,     label: 'Send feedback…', kbd: ['⌘', '⇧', 'F'], enter: () => runAndClose(openFeedback) },
+          ...here.items.map((it) => ({ ...it, ctx: it.unit })),
+          { icon: ICON_TERMINAL, label: 'Scratch terminal', kbd: ['⌘', '⇧', 'T'], enter: () => runAndClose(openScratch) },
+          { icon: ICON_PLUS,     label: 'Add project', enter: () => runAndClose(addProjectViaPicker) },
+          { icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
+          { icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
+          { icon: ICON_KEYS,     label: 'Keyboard shortcuts', kbd: ['⌘', '?'], enter: () => runAndClose(openShortcuts) },
+          { icon: ICON_CHAT,     label: 'Send feedback…', kbd: ['⌘', '⇧', 'F'], enter: () => runAndClose(openFeedback) },
         ];
-        // Search groups run most-local-first: Actions (above), then Sessions, Branches, Projects.
-        allRows('.session').forEach((s) => items.push({ g: 'Sessions', icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }));
-        allRows('.branch').forEach((b) => items.push({ g: 'Branches', icon: ICON_BRANCH, label: brName(b), ctx: wsOf(b), enter: () => pushFrame(branchFrame(b)) }));
-        allRows('.repo__head').forEach((h) => items.push({ g: 'Projects', icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
+        // Build order is the score tiebreak, most-local-first: actions (above), then sessions, branches, projects.
+        allRows('.session').forEach((s) => items.push({ icon: seIcon(s), label: seName(s), ctx: seCtx(s), meta: seStatus(s), metaState: sessionState(s), enter: () => runAndClose(() => jumpTo(s)) }));
+        allRows('.branch').forEach((b) => items.push({ icon: ICON_BRANCH, label: brName(b), ctx: wsOf(b), enter: () => pushFrame(branchFrame(b)) }));
+        allRows('.repo__head').forEach((h) => items.push({ icon: wsChip(h), label: wsName(h), enter: () => pushFrame(workspaceFrame(h)) }));
         return items;
       },
     };
@@ -6772,16 +6771,10 @@
     renderCrumbs();
     let items = fr.build(q);
     if (!fr.mode && q) {   // 'list' frames fuzzy-filter by query; 'input'/'confirm' frames don't
-      const sectioned = items.some((it) => it.g || it.sec);
-      if (sectioned) {
-        const byK = new Map();
-        items.forEach((it) => { const s = itemScore(q, it); if (s === -Infinity) return; const k = it.g || it.sec || ''; if (!byK.has(k)) byK.set(k, []); byK.get(k).push({ it, s }); });
-        byK.forEach((arr) => arr.sort((a, b) => b.s - a.s));
-        const order = [...byK.keys()].sort((a, b) => byK.get(b)[0].s - byK.get(a)[0].s);   // group with the best match leads
-        items = order.flatMap((k) => byK.get(k).map((x) => x.it));
-      } else {
-        items = items.map((it) => ({ it, s: itemScore(q, it) })).filter((x) => x.s > -Infinity).sort((a, b) => b.s - a.s).map((x) => x.it);
-      }
+      // A query drops grouping entirely: one flat list, best match on top. Stable sort keeps the
+      // build order (most-local-first) as the tiebreak; headings and dividers only exist cold.
+      items = items.map((it) => ({ it, s: itemScore(q, it) })).filter((x) => x.s > -Infinity)
+        .sort((a, b) => b.s - a.s).map(({ it }) => ({ ...it, g: null, sec: null }));
     }
     paintList(items);
   }

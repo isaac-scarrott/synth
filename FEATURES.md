@@ -1228,3 +1228,12 @@ disclosure to dive deeper.
   home button on the SE, and a real status-bar trio parting around the island. The simulator runs an
   app, so it gets an app's chrome and takes its device from the session's name. Device screens stay
   light in both themes — a separate machine showing a light page.
+
+- **⌘K search ranks flat — the best match is the top row** — typing used to bucket results into
+  Actions / Sessions / Branches / Projects, rank the buckets, then list the winning bucket whole, so
+  the best match in the palette could sit six rows down under weaker siblings that shared its
+  heading. A query now drops grouping entirely: one list, every candidate scored against the same
+  query, best first, ties falling back to most-local build order. The scoring is unchanged, just no
+  longer partitioned before it's applied. The icon and ctx path already say what each row is and
+  where it lives, so the headings were spending a row to repeat the row. Cold ⌘K — Recent plus the
+  context actions labelled by scope — keeps its groups.

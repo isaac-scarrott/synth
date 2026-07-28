@@ -1261,3 +1261,9 @@ disclosure to dive deeper.
   on one mark: an 8px map of the split in each member's icon corner with that tab's own pane filled,
   computed from the real pane tree, so it says which pane as well as grouped.
 
+- **Native port: a split's tabs are tabs again, marked by the pane map** — `TabCluster`/`ClusterChip`
+  deleted; a member is an ordinary `TabChip` carrying `groupPosition` (seams) and `paneMap` (the
+  mark), fed by `AppStore.paneRects(for:)` walking the same tree `echoMemberIDs` flattens. The
+  sidebar bleed now passes down to a group's first member, which is full-bleed like any tab.
+  `automation.screenshot` gained `"window":"main"`, because a tooltip NSPanel had been hijacking
+  every capture.

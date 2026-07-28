@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.21.0",
+    "date": "2026-07-28",
+    "changes": [
+      "An agent that quits parks its conversation on a Reopen card. The row still leaves the tree, but it lands on an undo card — the agent's mark, the conversation's name, Reopen — and Reopen slots it back where it stood, rebuilding the pane with the conversation resumed. Unlike every other undo this card never drains: you didn't ask for it, and it can land while you're away.",
+      "Ctrl-C interrupts an opencode row, it doesn't quit it. opencode binds ctrl+c to app exit, so the universal stop gesture was ending the session outright and taking a long conversation with it. It's rebound inside Synth — ctrl+c interrupts, ctrl+d and the leader quit still quit — without touching any config file of yours.",
+      "Antigravity reports the states it stops in: a question, an interrupt, a cap, a failure. It shipped able to say only working or idle, so every other stop was reported as one of those and always the wrong one. A row blocked on a question now says so, a run you cancelled goes idle rather than red, and a hit limit reads as the error it is. Comments sent to a freshly-started Antigravity row also land reliably now, confirmed by the agent's own receipt rather than a guess at when its input was live."
+    ]
+  },
+  {
     "version": "0.20.0",
     "date": "2026-07-28",
     "changes": [

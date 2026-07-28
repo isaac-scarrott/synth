@@ -1253,3 +1253,29 @@ disclosure to dive deeper.
   query; porting it surfaced that the native matcher lacked the exact/prefix label boosts the mock
   ranks by, so `itemScore` is ported exactly. `automation.screenshot` now prefers the ⌘K panel —
   it had been screenshotting the window under it. Verified over the control socket + screenshots.
+- **Antigravity CLI (`agy`) is Synth's third hosted agent — ADR-0012's promise, cashed** — a session
+  can run **Antigravity** beside Claude Code and OpenCode, added as one `AgentDescriptor` plus one
+  `AgentSupervisor` and nothing else (persisted `AgentID` `antigravity`, binary `agy`). Google's I/O
+  2026 split matters here: the agent is the new Go TUI (v1.1.x, Claude Code's shape) replacing Gemini
+  CLI, *not* the Nov-2025 Antigravity IDE, which ships a same-named shell launcher into
+  `/Applications/Antigravity.app` that sits ahead of Homebrew on the login PATH — so detection
+  resolves symlinks and rejects any candidate inside an `.app` bundle. No event bus, so transport is
+  hook-driven like Claude's, but nothing of the user's is written: verified empirically that `agy`
+  loads `.agents/hooks.json` from `--add-dir` dirs too, so the shim writes hooks into a Synth-owned
+  per-session dir and appends `--add-dir`; `PreInvocation`/`PostToolUse` → working, `Stop` → idle +
+  unread. Readiness can't be Claude's "first hook" rule — agy's first hook is a *turn* start, so a
+  row would be undeliverable until someone typed — and it can't be a boot marker either: `agy`
+  announces "CLI mode" in milliseconds but shows a sign-in spinner for ~1.5s and keeps redrawing
+  for ~3s after, and a paste landing in any of that is lost silently. Readiness is therefore the
+  model resolving *and* the log going quiet, and — on a path agy has never seen, i.e. every fresh
+  worktree — the workspace trust prompt being answered: until it is, the row is needs-input and
+  never live, because a comment delivered there is swallowed and its Enter answers the *prompt*.
+  Synth reads that trust record and never writes it. needs-input has no hook either, so the shim
+  appends `--log-file` and the supervisor tails it for "Surfacing tool confirmation", cleared by
+  the next hook. `conversationId` from the hook payload gives true
+  resume (`agy --conversation <id>`) and `transcriptPath` the row's name; text is
+  a TUI paste; browser MCP lands in per-worktree `.agents/mcp_config.json`, never the global one.
+  `AGY_CLI_DISABLE_AUTO_UPDATE=1` (an embedded agent must not swap its binary mid-session) and
+  inherited `ANTIGRAVITY_CONVERSATION_ID`/`ANTIGRAVITY_PROJECT_ID` scrubbed so a nested agent isn't
+  mistaken for the row's. Auth is Google sign-in, free tier sufficient, quota shared across the
+  Antigravity surfaces; live harness gates skip until the machine is signed in.

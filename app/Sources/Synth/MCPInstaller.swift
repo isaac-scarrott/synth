@@ -122,9 +122,9 @@ import os.log
     /// worktree set (with unchanged toggles) costs nothing.
     private static var lastSynced: (paths: [String], servers: [String: Bool])?
 
-    /// Each agent discovers project MCP servers from its own file, with its own schema. Both
+    /// Each agent discovers project MCP servers from its own file, with its own schema. All
     /// are written into every worktree: whichever agent runs there finds the enabled servers
-    /// already registered, and the other's file is inert. `servers` is the Settings toggle
+    /// already registered, and the others' files are inert. `servers` is the Settings toggle
     /// state — a false entry actively REMOVES that server from the configs.
     static func syncWorktreeConfigs(_ worktreePaths: [String], servers: [String: Bool]) {
         guard lastSynced == nil || lastSynced! != (worktreePaths, servers) else { return }
@@ -132,16 +132,19 @@ import os.log
         for path in worktreePaths {
             writeClaudeConfig(atWorktree: path, servers: servers)
             writeOpencodeConfig(atWorktree: path, servers: servers)
+            writeAntigravityConfig(atWorktree: path, servers: servers)
         }
     }
 
-    /// True when `relative` is one of the two config files Synth writes into every managed
+    /// True when `relative` is one of the config files Synth writes into every managed
     /// worktree AND the user has put nothing of their own in it.
     ///
-    /// The archive sweeper needs this. Synth dirties every managed worktree with `.mcp.json`
-    /// and `opencode.json` on the autosave cadence, and no *user* repo gitignores them — so
-    /// they show up as untracked in every worktree, and a sweeper that blocks on untracked
-    /// files (as it must) would block on Synth's own droppings and never reclaim anything.
+    /// The archive sweeper needs this. Synth dirties every managed worktree with `.mcp.json`,
+    /// `opencode.json` and `.agents/mcp_config.json` on the autosave cadence, and no *user*
+    /// repo gitignores them — so they show up as untracked in every worktree (individually:
+    /// the sweeper's `status -uall` names the nested path, not a bare `.agents/`), and a sweeper
+    /// that blocks on untracked files (as it must) would block on Synth's own droppings and
+    /// never reclaim anything.
     /// Measured: with this carve-out absent, every scenario in the archive gate reported
     /// "untracked files — kept", including the ones that were merged, clean and fully pushed.
     ///
@@ -156,8 +159,9 @@ import os.log
         let container: String
         let allowedTopLevel: Set<String>
         switch relative {
-        case ".mcp.json":     container = "mcpServers"; allowedTopLevel = ["mcpServers"]
-        case "opencode.json": container = "mcp";        allowedTopLevel = ["mcp", "$schema"]
+        case ".mcp.json":               container = "mcpServers"; allowedTopLevel = ["mcpServers"]
+        case "opencode.json":           container = "mcp";        allowedTopLevel = ["mcp", "$schema"]
+        case ".agents/mcp_config.json": container = "mcpServers"; allowedTopLevel = ["mcpServers"]
         default: return false
         }
         let file = URL(fileURLWithPath: worktree).appendingPathComponent(relative)
@@ -215,6 +219,28 @@ import os.log
               extra: ["$schema": "https://opencode.ai/config.json"])
     }
 
+    /// Antigravity: `.agents/mcp_config.json` → `mcpServers.<name>.{command,args,env}` — Claude's
+    /// schema one directory down. The worktree still travels in the env: agy names no project dir
+    /// for its servers, and the language server that spawns them picks their cwd, so `process.cwd()`
+    /// is not the fallback it looks like. `.agents/` is agy's whole workspace-customization dir —
+    /// skills, rules and hooks live there too — hence a writer that reconciles this one file and
+    /// never enumerates the directory. Measured on agy 1.1.8: the file is read (and its stdio
+    /// server spawned) only once the workspace is trusted, which is agy's own first-run prompt —
+    /// an untrusted worktree silently discovers no workspace customizations at all.
+    private static func writeAntigravityConfig(atWorktree path: String, servers: [String: Bool]) {
+        var built: [String: [String: Any]?] = [:]
+        for (name, enabled) in servers {
+            let entry: [String: Any] = [
+                "command": "node",
+                "args": [serverPath(name)],
+                "env": channelEnv.merging(["SYNTH_WORKTREE": path]) { _, new in new },
+            ]
+            built.updateValue(enabled ? entry : nil, forKey: name)
+        }
+        merge(atWorktree: path, file: ".agents/mcp_config.json", container: "mcpServers",
+              entries: built)
+    }
+
     /// Reconcile Synth's servers under `container` in `file` — set enabled entries, drop
     /// disabled ones (an inner nil) — preserving whatever else the user keeps there. A
     /// no-op when everything is already correct: the worktree is the user's working tree,
@@ -251,6 +277,9 @@ import os.log
         for (k, v) in extra where root[k] == nil { root[k] = v }
         guard let data = try? JSONSerialization.data(
             withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) else { return }
+        // agy's config sits a directory down, and a worktree that has never run it has no `.agents/`.
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
         try? data.write(to: file, options: .atomic)
     }
 }

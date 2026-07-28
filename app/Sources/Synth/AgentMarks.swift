@@ -5,6 +5,7 @@ import SwiftUI
 enum AgentMark: Sendable {
     case clawd
     case openCode
+    case antigravity
     case sparkle
 }
 
@@ -96,6 +97,54 @@ struct OpenCodeMark: View {
     }
 }
 
+/// Antigravity's official mark: the arch — one closed swoosh that lifts off two rounded tips to a
+/// peak, its underside falling back to a second, lower peak, so the form reads as something held
+/// up rather than resting. Geometry is the brand's own, taken from the vector the Antigravity IDE
+/// ships (`Antigravity.app/.../out/media/jetski-logo-white.svg`, a 180-unit square) and translated
+/// here onto the curve's true bounds, which that square does not centre. Colours are the brand's
+/// own light/dark pair — Google grey-900 and white — not Synth's agent accent, for the same reason
+/// OpenCode keeps its greys: the glyph says "agent", the colour says which one.
+struct AntigravityMark: View {
+    var size: CGFloat = 16
+    /// Set to force the mark monochrome (a destructive palette row tints its icon red).
+    var monochrome: Color?
+
+    private static let box = CGSize(width: 134.335, height: 123.75)
+    private static let start = CGPoint(x: 121.748, y: 120.937)
+    /// Each cubic as (control1, control2, end). The first control of the fourth runs past the left
+    /// edge; only the curve it bends, not the box, stays inside.
+    private static let curves: [(c1: CGPoint, c2: CGPoint, to: CGPoint)] = [
+        (CGPoint(x: 129.248, y: 126.563), CGPoint(x: 140.498, y: 122.813), CGPoint(x: 130.185, y: 112.5)),
+        (CGPoint(x: 99.248, y: 82.5), CGPoint(x: 105.810, y: 0), CGPoint(x: 67.373, y: 0)),
+        (CGPoint(x: 28.935, y: 0), CGPoint(x: 35.498, y: 82.5), CGPoint(x: 4.560, y: 112.5)),
+        (CGPoint(x: -6.690, y: 123.75), CGPoint(x: 5.498, y: 126.563), CGPoint(x: 12.998, y: 120.937)),
+        (CGPoint(x: 42.060, y: 101.25), CGPoint(x: 40.185, y: 66.562), CGPoint(x: 67.373, y: 66.562)),
+        (CGPoint(x: 94.560, y: 66.562), CGPoint(x: 92.685, y: 101.25), CGPoint(x: 121.748, y: 120.937)),
+    ]
+
+    private var markColor: Color { monochrome ?? Theme.dyn(0x202124, 0xFFFFFF) }
+
+    var body: some View {
+        Canvas { ctx, canvas in
+            // The arch is a touch wider than tall. Fit its width, centre its height.
+            let unit = canvas.width / Self.box.width
+            let inset = (canvas.height - Self.box.height * unit) / 2
+            func point(_ p: CGPoint) -> CGPoint {
+                CGPoint(x: p.x * unit, y: inset + p.y * unit)
+            }
+            var path = Path()
+            path.move(to: point(Self.start))
+            for curve in Self.curves {
+                path.addCurve(to: point(curve.to), control1: point(curve.c1), control2: point(curve.c2))
+            }
+            path.closeSubpath()
+            ctx.fill(path, with: .color(markColor))
+        }
+        .frame(width: size, height: size)
+        .drawingGroup()
+    }
+}
+
 /// The one place a session's icon is chosen. Agents render their own mark; terminals and browsers
 /// keep their Phosphor glyph. `tint` overrides everything — a destructive row paints its icon red.
 struct SessionIcon: View {
@@ -110,6 +159,8 @@ struct SessionIcon: View {
             ClawdMark(size: size, color: tint ?? Theme.copper)
         case .openCode:
             OpenCodeMark(size: size, monochrome: tint)
+        case .antigravity:
+            AntigravityMark(size: size, monochrome: tint)
         case .sparkle:
             Phos(path: Phosphor.sparkle, size: size).foregroundStyle(tint ?? Theme.copper)
         case nil:

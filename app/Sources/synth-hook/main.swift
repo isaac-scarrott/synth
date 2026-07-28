@@ -6,18 +6,24 @@ import Glibc
 // synth-hook — the bridge between a coding-agent process and the Synth app.
 //
 // Roles, dispatched by how it's invoked:
-//   • as an agent's binary name (`claude`, `opencode` — symlinks Synth puts first on PATH):
-//     the LAUNCH role. An agent has no way to know it's inside Synth, so we intercept its
+//   • as an agent's binary name (`claude`, `opencode`, `agy` — symlinks Synth puts first on
+//     PATH): the LAUNCH role. An agent has no way to know it's inside Synth, so we intercept its
 //     command, inject whatever makes it observable, and hand control to the real binary.
 //       – claude:   inject our hook config (`--settings`) + a fresh `--session-id`. Status
 //                   then arrives as hook callbacks (the EVENT role below).
 //       – opencode: inject `--port <assigned>` so its built-in server listens where the app
 //                   already subscribes, and report agent-start/agent-end around it. opencode
 //                   publishes its own typed event stream, so no hooks are needed.
-//     Non-interactive invocations (`claude -p`, `opencode run`, subcommands) pass through.
-//   • as `synth-hook event <Event>`: the EVENT role. Claude fires this per hook; we read
-//     the event JSON on stdin, classify it to a status signal, and write one line to the
-//     app's unix socket (path in $SYNTH_SOCKET_PATH), tagged with $SYNTH_SESSION_ID.
+//       – agy:      inject `--add-dir <synth dir>` carrying a `.agents/hooks.json` (agy loads
+//                   one per workspace dir, added dirs included) so status arrives as hook
+//                   callbacks like Claude's, plus `--log-file` for the confirmation prompts
+//                   no hook covers. agent-start/agent-end are reported around it.
+//     Non-interactive invocations (`claude -p`, `opencode run`, `agy --print`, subcommands)
+//     pass through.
+//   • as `synth-hook event <Event>`: the EVENT role. Claude and agy fire this per hook (agy's
+//     events are namespaced `agy:<Event>`, since the two CLIs share event names for different
+//     meanings); we read the event JSON on stdin, classify it to a status signal, and write one
+//     line to the app's unix socket (path in $SYNTH_SOCKET_PATH), tagged with $SYNTH_SESSION_ID.
 //   • as `synth-hook report --signal <name>`: the REPORT role. Synth's injected zsh hooks
 //     fire this on a plain terminal's command start/finish, writing the same signal line to
 //     the same socket — so a bare shell reports its process lifecycle through the same pipe.
@@ -34,6 +40,8 @@ case "claude":
     runClaudeLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
 case "opencode":
     runOpencodeLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
+case "agy":
+    runAgyLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
 default:
     let sub = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
     switch sub {
@@ -129,11 +137,88 @@ func runOpencodeLaunch(userArgs: [String]) -> Never {
     spawnReportingExit(real, portArgs + userArgs, agent: AgentIDRaw.opencode)
 }
 
+/// agy (Antigravity CLI) is hook-driven like Claude Code, but it has no `--settings`: hooks are
+/// only ever read from `<workspace>/.agents/hooks.json`. Writing that into the user's repo would
+/// leave our instrumentation behind on disk, so the shim instead hands agy a Synth-owned dir
+/// holding nothing but the hooks — `--add-dir`'d dirs are workspaces too, and their hooks fire.
+///
+/// The one status agy has no hook for is a blocked permission prompt; it only surfaces in the
+/// CLI log, so `--log-file` points at the per-session path the supervisor tails (a user's own
+/// `--log-file` wins — theirs is where they're looking, and agy keeps only one).
+///
+/// `agent-start` is the shim's to report, as with opencode: agy's first hook fires at the first
+/// turn, which may be minutes after the TUI is up and ready for text.
+func runAgyLaunch(userArgs: [String]) -> Never {
+    guard let real = resolveAgentBinary("agy") else {
+        FileHandle.standardError.write(Data("synth: agy not found\n".utf8))
+        exit(127)
+    }
+
+    // Only the interactive TUI is a session. Note `agy version` is not a subcommand — it opens
+    // the TTY like a session would — so only `--version` passes through.
+    let subcommands: Set<String> = ["agent", "agents", "changelog", "help", "install", "models",
+                                    "plugin", "plugins", "update"]
+    // `--prompt-interactive`/`-i` is a session; only bare print mode is the one-shot.
+    let isOneShot = hasFlag(userArgs, ["-p", "--print", "--prompt", "--version", "-h", "--help"])
+    let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
+    let instrument = env["SYNTH_SESSION_ID"] != nil && !isOneShot && !isSubcommand
+
+    guard instrument else { execReal(real, userArgs) }
+
+    // A resume (`agy --conversation <id>`) needs no special case: the hooks ride the added dir,
+    // not the conversation, so the same injection instruments both.
+    var injected = writeAgyHooks().map { ["--add-dir", $0] } ?? []
+    if let log = env["SYNTH_ANTIGRAVITY_LOG"], !log.isEmpty, !hasFlag(userArgs, ["--log-file"]) {
+        injected += ["--log-file", log]
+    }
+    reportAgent("agent-start:\(AgentIDRaw.antigravity)")
+    spawnReportingExit(real, injected + userArgs, agent: AgentIDRaw.antigravity)
+}
+
+/// Materialise the Synth-owned workspace dir agy is handed via `--add-dir`, containing only
+/// `.agents/hooks.json` wired back to this binary's event role. Returns the dir, or nil when it
+/// can't be written — an uninstrumented session (no status, but running) beats no session.
+func writeAgyHooks() -> String? {
+    let session = env["SYNTH_SESSION_ID"] ?? String(getpid())
+    let dir = env["SYNTH_ANTIGRAVITY_HOOKS_DIR"].flatMap { $0.isEmpty ? nil : $0 }
+        ?? NSTemporaryDirectory() + "synth-agy-" + session
+    let bin = env["SYNTH_HOOK_BIN"] ?? CommandLine.arguments[0]
+    let q = shellQuote(bin)
+    // Every top-level key is a *named* hook whose events merge with any other config's, so ours
+    // adds to the user's rather than replacing them. The two event families take different
+    // shapes: tool events wrap their handlers in a `matcher` group (`*` — any tool, since it's
+    // tool traffic at all that re-asserts `working` after the supervisor's log tail saw a
+    // confirmation prompt), lifecycle events list handlers flat.
+    func handler(_ event: String) -> [String: Any] {
+        ["type": "command", "command": "\(q) event agy:\(event)", "timeout": 20]
+    }
+    func matchingAnyTool(_ event: String) -> [String: Any] {
+        ["matcher": "*", "hooks": [handler(event)]]
+    }
+    let config: [String: Any] = ["synth": [
+        "PreInvocation": [handler("PreInvocation")],
+        "PreToolUse":    [matchingAnyTool("PreToolUse")],
+        "PostToolUse":   [matchingAnyTool("PostToolUse")],
+        "Stop":          [handler("Stop")],
+    ]]
+    guard let data = try? JSONSerialization.data(withJSONObject: config) else { return nil }
+    let agents = dir + "/.agents"
+    guard (try? FileManager.default.createDirectory(atPath: agents, withIntermediateDirectories: true)) != nil,
+          FileManager.default.createFile(atPath: agents + "/hooks.json", contents: data) else { return nil }
+    return dir
+}
+
+/// True when any of `names` appears in `args`, as the bare flag or in `--flag=value` form.
+func hasFlag(_ args: [String], _ names: [String]) -> Bool {
+    args.contains { arg in names.contains { arg == $0 || arg.hasPrefix($0 + "=") } }
+}
+
 /// The `AgentID.rawValue`s the app persists and the shim reports. Duplicated (not shared) because
 /// synth-hook is a standalone Foundation-only executable that must not link the app target.
 enum AgentIDRaw {
     static let claudeCode = "claudeCode"
     static let opencode = "opencode"
+    static let antigravity = "antigravity"
 }
 
 /// Run the real agent as a child, then mirror its exit — reporting the true code over the
@@ -306,6 +391,11 @@ func runEvent(name: String) -> Never {
         let type = payload["notification_type"] as? String ?? ""
         // elicitation_dialog: an MCP server is prompting the user mid-tool — also a block.
         signal = ["permission_prompt", "idle_prompt", "agent_needs_input", "elicitation_dialog"].contains(type) ? "needsInput" : nil
+    // agy's four hooks, namespaced because it reuses Claude's event names for other meanings —
+    // its PreToolUse is every tool (Claude's is narrowed to the two that block on the user), so
+    // it means "working", and it doubles as what clears a `needsInput` the log tail spotted.
+    case "agy:PreInvocation", "agy:PreToolUse", "agy:PostToolUse": signal = "working"
+    case "agy:Stop":         signal = "idle"
     default:
         signal = nil
     }
@@ -316,13 +406,19 @@ func runEvent(name: String) -> Never {
     let resetTitle = name == "SessionStart"
         && ["startup", "clear"].contains(payload["source"] as? String ?? "")
 
-    // Claude Code writes an `ai-title` line into the transcript (a short, evolving title it
-    // generates) — read the latest and forward it so Synth can auto-name the row.
+    // The row's auto-name, out of whichever transcript the payload points at. Claude Code writes
+    // an `ai-title` line into its own (a short, evolving title it generates); agy generates
+    // nothing a hook can reach, so its transcript's opening request stands in.
     let title = (payload["transcript_path"] as? String).flatMap(readAITitle)
+        ?? (payload["transcriptPath"] as? String).flatMap(readRequestTitle)
 
-    // Claude's own session id (present on every hook payload) — forwarded so Synth can
-    // resume this conversation with `claude --resume <id>` after a restart.
-    let agentSession = (payload["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    // The agent's own conversation id (on every hook payload: Claude's `session_id`, agy's
+    // `conversationId`, which agy also exports to the hook process) — forwarded so Synth can
+    // resume the conversation after a restart with `claude --resume <id>` / `agy --conversation
+    // <id>`.
+    let agentSession = ["session_id", "conversationId"]
+        .compactMap { payload[$0] as? String }
+        .first { !$0.isEmpty } ?? env["ANTIGRAVITY_CONVERSATION_ID"].flatMap { $0.isEmpty ? nil : $0 }
 
     var lines = ""
     if let signal { lines += jsonLine(["session": sessionID, "signal": signal]) }
@@ -330,7 +426,10 @@ func runEvent(name: String) -> Never {
     if let title  { lines += jsonLine(["session": sessionID, "title": title]) }
     if let agentSession { lines += jsonLine(["session": sessionID, "agentSession": agentSession]) }
     if !lines.isEmpty { sendLines(socketPath: socketPath, lines) }
-    exit(0)   // never block Claude — we only observe
+    // Say nothing on stdout, ever. agy reads a PreToolUse handler's stdout as a verdict whose
+    // `decision` is required — even `{}` reads as an unknown decision and hard-denies the tool
+    // ("tool call denied by pre-tool hook"). Silence is the only "no opinion" both agents share.
+    exit(0)   // never block the agent — we only observe
 }
 
 // MARK: - Report role
@@ -383,6 +482,27 @@ func readAITitle(_ path: String) -> String? {
               let title = (obj["aiTitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else { continue }
         return title
+    }
+    return nil
+}
+
+/// The request that opened an agy conversation, shaped into a row name.
+///
+/// agy titles its conversations too, but only into a protobuf blob inside a SQLite file no hook
+/// can cheaply read, so the transcript's first step is the honest source: the user's own words,
+/// wrapped by agy in `<USER_REQUEST>` with the metadata it appends around them. It is the *first*
+/// request, not the latest, so the name a row settles on is the one it keeps — including across a
+/// `--conversation` resume, which reopens this same transcript.
+func readRequestTitle(_ path: String) -> String? {
+    guard let data = FileManager.default.contents(atPath: path),
+          let text = String(data: data, encoding: .utf8) else { return nil }
+    for line in text.split(separator: "\n") where line.contains("<USER_REQUEST>") {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              let content = obj["content"] as? String,
+              let open = content.range(of: "<USER_REQUEST>"),
+              let close = content.range(of: "</USER_REQUEST>", range: open.upperBound..<content.endIndex)
+        else { continue }
+        return rowTitle(fromCommand: String(content[open.upperBound..<close.lowerBound]))
     }
     return nil
 }

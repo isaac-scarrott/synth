@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Antigravity (`agy`): hosted as its own TUI in the session's PTY and supervised the way Claude
 /// Code is — by instrumenting it rather than subscribing to it. `agy` reads hooks from
@@ -8,19 +9,21 @@ import Foundation
 /// config is near Claude's but not it: each top-level key is a *named* hook (names from different
 /// configs merge, so ours never displaces the user's), and tool events group their handlers under
 /// a `matcher` while lifecycle events list them flat — see `writeAgyHooks` in synth-hook.
-/// PreInvocation / PreToolUse / PostToolUse / Stop then shell back over the hook socket exactly
-/// like Claude's, which is why this supervisor has no transport of its own.
+/// All five of its events then shell back over the hook socket exactly like Claude's, which is
+/// why this supervisor has no transport of its own.
 ///
-/// It has the jobs the hooks can't do, all of them the same shape — the TUI stopping for a human
-/// with no hook to say so. `agy`'s own CLI log does say so, so the shim points `--log-file` at a
+/// It has the jobs the hooks can't do, all of them the same shape — the session stopping with no
+/// hook to say so. `agy`'s own CLI log does say so, so the shim points `--log-file` at a
 /// Synth-owned path and this supervisor tails it, the one place a fact about Antigravity is
-/// scraped rather than pushed: a tool confirmation ("Surfacing tool confirmation", cleared by the
-/// next hook), and the two screens that stand between launch and an input box — the sign-in
-/// spinner and the workspace trust prompt, which together decide readiness (`considerReady`).
+/// scraped rather than pushed: a tool confirmation and its answer, an interrupted turn (whose
+/// `Stop` hook agy kills along with the turn), the receipt for a delivered paste (`deliver`), and
+/// the two screens that stand between launch and an input box — the sign-in spinner and the
+/// workspace trust prompt, which together decide readiness (`considerReady`).
 @MainActor final class AntigravitySupervisor: AgentSupervisor {
     let id = AgentID.antigravity
 
     private weak var bus: EventBus?
+    private static let log = Logger(subsystem: bundleIdentifier, category: "antigravity")
     /// The live log tail per session, cancelled on detach.
     private var tails: [UUID: AntigravityLogTail] = [:]
     /// Sessions already declared reachable, so the boot marker can't post `.agentReady` twice.
@@ -35,6 +38,9 @@ import Foundation
     private var lastLineAt: [UUID: Date] = [:]
     /// Sessions already reported as blocked on the trust prompt, so the re-check can't repost it.
     private var awaitingTrust: Set<UUID> = []
+    /// How many prompts each session's TUI has actually taken, counted off its own log — the only
+    /// acknowledgement `agy` gives that a paste became a turn (see `deliver`).
+    private var promptsTaken: [UUID: Int] = [:]
 
     init(bus: EventBus) { self.bus = bus }
 
@@ -112,21 +118,54 @@ import Foundation
         lastLineAt.removeValue(forKey: session)
         workspaces.removeValue(forKey: session)
         awaitingTrust.remove(session)
+        promptsTaken.removeValue(forKey: session)
     }
 
     // MARK: Delivery
 
     /// Like Claude Code, `agy` exposes no injection API: the text is pasted into the TUI and
     /// submitted a beat later, so the terminal finishes ingesting the paste before the Enter.
+    ///
+    /// Unlike Claude Code, that paste is not reliably taken. `considerReady` waits for the TUI to
+    /// stop redrawing, which is the closest thing agy publishes to "the input box is live", and it
+    /// is still only close: a paste in the seconds after it lands on the floor perhaps one time in
+    /// two, silently — the row works, the comment simply never happened. So the paste is confirmed
+    /// the way OpenCode's is, against the one acknowledgement agy gives (its own log naming the
+    /// text it took), and re-sent until it takes. Never blind-retried: a paste that *did* land and
+    /// is merely slow would be submitted twice, and the second copy is a whole extra turn.
     func deliver(_ text: String, to session: UUID) -> Bool {
-        TerminalManager.shared.submit(text, to: session)
+        guard TerminalManager.shared.submit(text, to: session) else { return false }
+        // No log to read the acknowledgement from (the user passed a `--log-file` of their own),
+        // so there is nothing to confirm against and a retry would be the blind kind.
+        guard lastLineAt[session] != nil else { return true }
+        let before = promptsTaken[session] ?? 0
+        Task { @MainActor [weak self] in
+            await self?.resubmitUntilTaken(text, session: session, after: before)
+        }
+        return true
     }
+
+    private func resubmitUntilTaken(_ text: String, session: UUID, after before: Int) async {
+        for _ in 0..<Self.deliveryAttempts {
+            // A submit's own Enter trails its paste by 0.35s, and agy logs the prompt as it takes
+            // it, so this is the whole round trip with room to spare.
+            for _ in 0..<10 {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                if (promptsTaken[session] ?? 0) > before { return }
+            }
+            guard tails[session] != nil else { return }   // the row went away mid-wait
+            _ = TerminalManager.shared.submit(text, to: session)
+        }
+        Self.log.error("Antigravity never took the delivered text")
+    }
+
+    private static let deliveryAttempts = 6
 
     // MARK: Log
 
-    /// The two facts worth reading out of `agy`'s log. Everything else — status, titles, the
-    /// conversation id on every turn — arrives as a hook signal through `HookServer` and never
-    /// reaches this supervisor.
+    /// The facts worth reading out of `agy`'s log — the ones none of its hooks carries. Everything
+    /// else, status included, arrives as a hook signal through `HookServer` and never reaches
+    /// this supervisor.
     private func handle(_ line: String, session: UUID) {
         if let range = line.range(of: Self.workspaceMarker) {
             let path = String(line[range.upperBound...])
@@ -136,8 +175,19 @@ import Foundation
         }
         lastLineAt[session] = Date()
         if line.contains(Self.bootMarker), bootedAt[session] == nil { bootedAt[session] = Date() }
-        // A permission prompt is the one stop with no hook behind it.
+        // The TUI naming a prompt it has taken — the receipt `deliver` waits on.
+        if line.contains(Self.promptTakenMarker) { promptsTaken[session, default: 0] += 1 }
+        // A permission prompt is the one stop with no hook behind it, and the answer to it is
+        // the resumption — both ends of the state live here because neither is an event agy
+        // publishes. (Auto-approved tools never surface, so `--mode accept-edits` and
+        // `--dangerously-skip-permissions` sessions raise none of this.)
         if line.contains(Self.confirmationMarker) { bus?.post(.statusChanged(session, .needsInput)) }
+        if line.contains(Self.confirmationAnsweredMarker) { bus?.post(.statusChanged(session, .working)) }
+        // An interrupted turn is the one *ending* with no hook behind it: agy calls its Stop hook
+        // with the cancelled context, which kills our handler before it can report ("failed to
+        // call custom stop hook … context canceled"). Without this the row keeps a turn's amber
+        // for as long as it sits there — the agent is idle and the sidebar says it is thinking.
+        if line.contains(Self.cancelMarker) { bus?.post(.statusChanged(session, .idle)) }
         // Backup for the conversation id the hook payloads carry: a session the user quits
         // before ever prompting still gets an id to resume from.
         if let id = Self.conversationID(line) { bus?.post(.agentSessionCaptured(session, id)) }
@@ -208,7 +258,10 @@ import Foundation
     /// point at which the TUI is showing an input box rather than a sign-in spinner.
     private static let bootMarker = "Propagating selected model override to backend"
     private static let workspaceMarker = "Initializing CLI store manager for workspace "
+    private static let promptTakenMarker = "HandleUserInput called with text:"
     private static let confirmationMarker = "Surfacing tool confirmation"
+    private static let confirmationAnsweredMarker = "Responding to tool confirmation"
+    private static let cancelMarker = "Cancelling in-progress response"
     private static let conversationMarker = "Created conversation "
 
     /// "…] Created conversation bb1abf61-…" → the uuid.

@@ -1301,3 +1301,26 @@ disclosure to dive deeper.
   inherited `ANTIGRAVITY_CONVERSATION_ID`/`ANTIGRAVITY_PROJECT_ID` scrubbed so a nested agent isn't
   mistaken for the row's. Auth is Google sign-in, free tier sufficient, quota shared across the
   Antigravity surfaces; live harness gates skip until the machine is signed in.
+- **Antigravity reports the states it stops in: a question, an interrupt, a cap, a failure** — the
+  agent shipped with two self-moving statuses (working, idle) and a scraped permission prompt, so
+  every other stop was reported as one of those and always the wrong one. `agy` publishes five hook
+  events and no more; all five are now wired and their *payloads* read. `ask_question` is a tool, so
+  a blocked agent is `PreToolUse` + `toolCall.name` — the strongest signal available, setting and
+  clearing itself on the matching `PostToolUse` — not a log scrape. `PostInvocation` joins, because
+  approving a permission prompt need not produce a `PostToolUse` at all (agy defers long commands to
+  a later status step). `Stop` is one event for every ending, so `terminationReason` decides: `ERROR`
+  and the caps (`MAX_*`) are error, `USER_CANCELED` is idle — agy's spelling of Claude's 130/143, and
+  a row the user stopped themselves never wears red. A cancel never gets that far, though: agy calls
+  the `Stop` hook with the cancelled context and kills it, so the log tail (already there for the
+  permission prompt) also carries `Cancelling in-progress response` → idle, and the prompt's own
+  answer, so both ends of that state are read in one place. Verified against live `agy` 1.1.8 in a
+  PTY, including the negative that matters: under `--dangerously-skip-permissions` nothing is ever
+  "surfaced", so the log-derived needs-input can't misfire on every tool call. Running the gates
+  turned up something older on the way: a comment delivered to a freshly-live row is dropped about
+  half the time, because readiness ("the TUI stopped redrawing") is close to but not the same as the
+  input box being live. Delivery is now confirmed the way OpenCode's is — agy logs each prompt it
+  takes, so the paste is re-sent until that receipt arrives (six tries), never blind-retried, and
+  stood down when the user supplied their own `--log-file` and there is no receipt to wait for. Gate
+  t18 asserts the
+  full payload→signal table offline against a stub hook socket (plus the trap that an observing
+  handler must print *nothing*, or agy denies the tool), and takes one live turn for the question.

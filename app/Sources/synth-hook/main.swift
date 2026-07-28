@@ -17,7 +17,7 @@ import Glibc
 //       – agy:      inject `--add-dir <synth dir>` carrying a `.agents/hooks.json` (agy loads
 //                   one per workspace dir, added dirs included) so status arrives as hook
 //                   callbacks like Claude's, plus `--log-file` for the confirmation prompts
-//                   no hook covers. agent-start/agent-end are reported around it.
+//                   and interrupts no hook covers. agent-start/agent-end are reported around it.
 //     Non-interactive invocations (`claude -p`, `opencode run`, `agy --print`, subcommands)
 //     pass through.
 //   • as `synth-hook event <Event>`: the EVENT role. Claude and agy fire this per hook (agy's
@@ -142,9 +142,9 @@ func runOpencodeLaunch(userArgs: [String]) -> Never {
 /// leave our instrumentation behind on disk, so the shim instead hands agy a Synth-owned dir
 /// holding nothing but the hooks — `--add-dir`'d dirs are workspaces too, and their hooks fire.
 ///
-/// The one status agy has no hook for is a blocked permission prompt; it only surfaces in the
-/// CLI log, so `--log-file` points at the per-session path the supervisor tails (a user's own
-/// `--log-file` wins — theirs is where they're looking, and agy keeps only one).
+/// What agy has no hook for is a blocked permission prompt and an interrupted turn; both only
+/// surface in the CLI log, so `--log-file` points at the per-session path the supervisor tails
+/// (a user's own `--log-file` wins — theirs is where they're looking, and agy keeps only one).
 ///
 /// `agent-start` is the shim's to report, as with opencode: agy's first hook fires at the first
 /// turn, which may be minutes after the TUI is up and ready for text.
@@ -186,9 +186,15 @@ func writeAgyHooks() -> String? {
     let q = shellQuote(bin)
     // Every top-level key is a *named* hook whose events merge with any other config's, so ours
     // adds to the user's rather than replacing them. The two event families take different
-    // shapes: tool events wrap their handlers in a `matcher` group (`*` — any tool, since it's
-    // tool traffic at all that re-asserts `working` after the supervisor's log tail saw a
-    // confirmation prompt), lifecycle events list handlers flat.
+    // shapes: tool events wrap their handlers in a `matcher` group, lifecycle events list
+    // handlers flat. The matcher is `*` because both jobs need every tool — reading the one
+    // tool name that means the agent has stopped for a human (`ask_question`), and re-asserting
+    // `working` on all the rest.
+    //
+    // All five of agy's events are wired. `PostInvocation` earns its place as the only reliable
+    // end of a *blocked* step: a tool the user approves at the permission prompt need not
+    // produce a `PostToolUse` at all (agy defers long-running commands to a later status step),
+    // so without it a `needsInput` the log tail set could stand until the turn ends.
     func handler(_ event: String) -> [String: Any] {
         ["type": "command", "command": "\(q) event agy:\(event)", "timeout": 20]
     }
@@ -196,10 +202,11 @@ func writeAgyHooks() -> String? {
         ["matcher": "*", "hooks": [handler(event)]]
     }
     let config: [String: Any] = ["synth": [
-        "PreInvocation": [handler("PreInvocation")],
-        "PreToolUse":    [matchingAnyTool("PreToolUse")],
-        "PostToolUse":   [matchingAnyTool("PostToolUse")],
-        "Stop":          [handler("Stop")],
+        "PreInvocation":  [handler("PreInvocation")],
+        "PostInvocation": [handler("PostInvocation")],
+        "PreToolUse":     [matchingAnyTool("PreToolUse")],
+        "PostToolUse":    [matchingAnyTool("PostToolUse")],
+        "Stop":           [handler("Stop")],
     ]]
     guard let data = try? JSONSerialization.data(withJSONObject: config) else { return nil }
     let agents = dir + "/.agents"
@@ -391,11 +398,15 @@ func runEvent(name: String) -> Never {
         let type = payload["notification_type"] as? String ?? ""
         // elicitation_dialog: an MCP server is prompting the user mid-tool — also a block.
         signal = ["permission_prompt", "idle_prompt", "agent_needs_input", "elicitation_dialog"].contains(type) ? "needsInput" : nil
-    // agy's four hooks, namespaced because it reuses Claude's event names for other meanings —
-    // its PreToolUse is every tool (Claude's is narrowed to the two that block on the user), so
-    // it means "working", and it doubles as what clears a `needsInput` the log tail spotted.
-    case "agy:PreInvocation", "agy:PreToolUse", "agy:PostToolUse": signal = "working"
-    case "agy:Stop":         signal = "idle"
+    // agy's five hooks, namespaced because it reuses Claude's event names for other meanings.
+    // Its PreToolUse is every tool, so it means "working" — except for the one tool that is the
+    // opposite of work: `ask_question` stops the loop dead until a human answers it, exactly as
+    // Claude's AskUserQuestion does, and it is the only blocked state agy gives a hook for.
+    // The matching PostToolUse (which fires when the answer lands) is what clears it.
+    case "agy:PreToolUse":
+        signal = agyToolName(payload) == "ask_question" ? "needsInput" : "working"
+    case "agy:PreInvocation", "agy:PostInvocation", "agy:PostToolUse": signal = "working"
+    case "agy:Stop":         signal = agyStopSignal(payload)
     default:
         signal = nil
     }
@@ -430,6 +441,29 @@ func runEvent(name: String) -> Never {
     // `decision` is required — even `{}` reads as an unknown decision and hard-denies the tool
     // ("tool call denied by pre-tool hook"). Silence is the only "no opinion" both agents share.
     exit(0)   // never block the agent — we only observe
+}
+
+/// The tool an agy `PreToolUse` / `PostToolUse` payload is about, or nil for the steps that
+/// carry no tool call (a user message, a deferred command's status).
+func agyToolName(_ payload: [String: Any]) -> String? {
+    (payload["toolCall"] as? [String: Any])?["name"] as? String
+}
+
+/// How an agy execution loop ended. Its `Stop` fires for every ending, successful or not, and
+/// `terminationReason` is the only place the difference is recorded — so unlike Claude, which
+/// splits the two across `Stop` and `StopFailure`, the payload has to be read.
+///
+/// A cancel is idle, not error: `USER_CANCELED` is agy's spelling of the interrupt Claude reports
+/// as 130/143 and opencode as `MessageAbortedError`, and a row the user stopped themselves must
+/// never wear red. A cap, though, is a turn that did not finish — reporting that as a clean idle
+/// would tell the user their work is done when the agent gave up.
+func agyStopSignal(_ payload: [String: Any]) -> String {
+    if let error = payload["error"] as? String, !error.isEmpty { return "error" }
+    let reason = (payload["terminationReason"] as? String ?? "")
+        .replacingOccurrences(of: "EXECUTOR_TERMINATION_REASON_", with: "")
+    let failures: Set<String> = ["ERROR", "MAX_INVOCATIONS", "MAX_FORCED_INVOCATIONS",
+                                 "MAX_TOKEN_BUDGET_EXCEEDED"]
+    return failures.contains(reason) ? "error" : "idle"
 }
 
 // MARK: - Report role

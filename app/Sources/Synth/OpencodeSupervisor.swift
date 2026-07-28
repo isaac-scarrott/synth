@@ -54,7 +54,31 @@ import OSLog
         // Synth derives the row name from.
         env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
         env["OPENCODE_DISABLE_TERMINAL_TITLE"] = "1"
+        if let overlay = Self.keybindOverlay { env["OPENCODE_TUI_CONFIG"] = overlay.path }
     }
+
+    /// opencode ships `app_exit` on `ctrl+c` and `session_interrupt` on `escape` alone, so the
+    /// one gesture every agent user reaches for mid-turn *quits opencode*. It exits 0 — a clean
+    /// exit, which ends the row (Store's `.exited`) — and the conversation goes with it: one
+    /// keystroke, no confirm, nothing on screen to say what happened. Claude Code interrupts on
+    /// the same key, and two agents in one app must not disagree about a stop gesture.
+    ///
+    /// `OPENCODE_TUI_CONFIG` names an extra TUI config file, merged after the user's own and
+    /// before any project one — so Synth changes the binding without writing to a file it
+    /// doesn't own, and a project `.opencode/tui.json` still overrides it. `ctrl+d` keeps
+    /// `app_exit`: EOF-quits-the-app is the shell convention Claude Code follows too.
+    private static let keybindOverlay: URL? = {
+        let url = AppSupport.root.appendingPathComponent("opencode-tui.json")
+        let overlay: [String: Any] = [
+            "$schema": "https://opencode.ai/tui.json",
+            "keybinds": ["app_exit": "ctrl+d,<leader>q", "session_interrupt": "escape,ctrl+c"],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: overlay, options: [.sortedKeys])
+        else { return nil }
+        try? FileManager.default.createDirectory(at: AppSupport.root, withIntermediateDirectories: true)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return nil }
+        return url
+    }()
 
     func launchCommand(resume: String?, flags: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags

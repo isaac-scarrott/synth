@@ -218,8 +218,10 @@ import AppKit
         let emulator = deviceEmulator
             ?? DeviceEmulator(sessionID: sessionID, cdpPort: engine.cdpPort)
         deviceEmulator = emulator
-        emulator.apply(width: Int(deviceLandscape ? device.height : device.width),
-                       height: Int(deviceLandscape ? device.width : device.height),
+        // The viewport the device's own browser leaves the page, not the whole screen —
+        // its bars are drawn, so the page is emulated at the height it really gets.
+        let page = device.pageViewport(landscape: deviceLandscape)
+        emulator.apply(width: Int(page.width), height: Int(page.height),
                        deviceScaleFactor: device.deviceScaleFactor,
                        scale: deviceFitScale, urlHint: address)
     }
@@ -427,12 +429,12 @@ private struct DeviceBar: View {
                     }
                 }
             }
-            let land = ctrl.deviceLandscape
-            let w = Int(land ? ctrl.device.height : ctrl.device.width)
-            let h = Int(land ? ctrl.device.width : ctrl.device.height)
+            // The page's viewport, not the screen's: with the device's own browser bars
+            // drawn, the height a media query sees is what's left under them.
+            let page = ctrl.device.pageViewport(landscape: ctrl.deviceLandscape)
             // verbatim: Text's Int interpolation adds locale grouping ("1,032") —
             // the readout is a CSS pixel count, not a quantity.
-            Text(verbatim: "\(w) × \(h)")
+            Text(verbatim: "\(Int(page.width)) × \(Int(page.height))")
                 .font(.system(size: 10.5, design: .monospaced))
                 .foregroundStyle(Theme.inkFaint)
                 .lineLimit(1).fixedSize()
@@ -474,10 +476,10 @@ private struct DeviceChip: View {
 }
 
 /// working.html `.devstage`: the chrome-grey stage centering the hardware frame. The
-/// frame lays out at true device points and scales DOWN to fit within a 24pt margin —
-/// never up, so small devices stay life-size. The fit scale is reported back to the
-/// controller: the engine view sits at (w·s)×(h·s) and the CDP override's `scale: s`
-/// renders the full w×h viewport into it.
+/// frame lays out at true device points — screen plus the hardware's own bezels — and
+/// scales DOWN to fit within a 24pt margin, never up, so small devices stay life-size.
+/// The fit scale is reported back to the controller: the engine view sits at the page
+/// viewport times s, and the CDP override's `scale: s` renders that viewport into it.
 private struct DeviceStage: View {
     let ctrl: BrowserSessionController
 
@@ -485,103 +487,20 @@ private struct DeviceStage: View {
         GeometryReader { geo in
             let d = ctrl.device
             let land = ctrl.deviceLandscape
-            let w = land ? d.height : d.width
-            let h = land ? d.width : d.height
-            let pad = d.chrome.padding
-            let s = max(0.05, min(1, (geo.size.width - 48) / (w + 2 * pad.h),
-                                     (geo.size.height - 48) / (h + 2 * pad.v)))
+            let screen = d.screenSize(landscape: land)
+            let bez = d.bezels(landscape: land)
+            let frameW = screen.width + bez.leading + bez.trailing
+            let frameH = screen.height + bez.top + bez.bottom
+            let s = max(0.05, min(1, (geo.size.width - 48) / frameW,
+                                     (geo.size.height - 48) / frameH))
             DeviceFrame(device: d, landscape: land,
-                        screen: CGSize(width: w * s, height: h * s), s: s,
+                        host: ctrl.address?.browserHostPath ?? "", s: s,
                         engineView: ctrl.engine.view)
                 .frame(width: geo.size.width, height: geo.size.height)
                 .onAppear { ctrl.reportDeviceFitScale(s) }
                 .onChange(of: s) { _, new in ctrl.reportDeviceFitScale(new) }
         }
         .background(Theme.chrome)
-    }
-}
-
-/// working.html `.devframe`: the hardware around the screen — fixed near-black bezel in
-/// both themes, island / punch / bezel / pad chrome per device, home indicator on
-/// phones. All metrics are device points multiplied by the fit scale, so the chrome
-/// draws crisp at any fit instead of rasterizing through scaleEffect.
-private struct DeviceFrame: View {
-    let device: BrowserDevice
-    let landscape: Bool
-    let screen: CGSize
-    let s: CGFloat
-    let engineView: NSView
-
-    private static let bezel = Color(hex: 0x0B0C0E)
-
-    var body: some View {
-        let pad = device.chrome.padding
-        DeviceScreenHost(engineView: engineView, radius: device.chrome.screenRadius * s)
-            .frame(width: screen.width, height: screen.height)
-            .background(RoundedRectangle(cornerRadius: device.chrome.screenRadius * s)
-                .fill(Theme.raised))
-            .overlay(alignment: landscape ? .leading : .top) { camera }
-            .overlay(alignment: .bottom) { homeIndicator }
-            .padding(.horizontal, pad.h * s)
-            .padding(.vertical, pad.v * s)
-            .background(RoundedRectangle(cornerRadius: device.chrome.frameRadius * s)
-                .fill(Self.bezel))
-            .overlay(RoundedRectangle(cornerRadius: device.chrome.frameRadius * s)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.26), radius: 17 * s, y: 12 * s)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// Dynamic island / punch-hole camera: top edge in portrait, left in landscape.
-    @ViewBuilder private var camera: some View {
-        switch device.chrome {
-        case .island:
-            Capsule().fill(Self.bezel)
-                .frame(width: (landscape ? 26 : 96) * s, height: (landscape ? 96 : 26) * s)
-                .padding(landscape ? .leading : .top, 10 * s)
-        case .punch:
-            Circle().fill(Self.bezel)
-                .frame(width: 13 * s, height: 13 * s)
-                .padding(landscape ? .leading : .top, 12 * s)
-        case .bezel, .pad:
-            EmptyView()
-        }
-    }
-
-    /// The phone home indicator — bottom edge in both orientations.
-    @ViewBuilder private var homeIndicator: some View {
-        if device.chrome == .island || device.chrome == .punch {
-            Capsule().fill(Color(white: 0.5).opacity(0.55))
-                .frame(width: 108 * s, height: 4 * s)
-                .padding(.bottom, 8 * s)
-        }
-    }
-}
-
-/// EngineHost with the screen's rounded clip applied on the AppKit side — SwiftUI's
-/// clipShape cannot reliably mask a hosted engine NSView's own layer tree.
-private struct DeviceScreenHost: NSViewRepresentable {
-    let engineView: NSView
-    let radius: CGFloat
-
-    func makeNSView(context: Context) -> NSView {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.masksToBounds = true
-        container.layer?.cornerCurve = .continuous
-        engineView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(engineView)
-        NSLayoutConstraint.activate([
-            engineView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            engineView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            engineView.topAnchor.constraint(equalTo: container.topAnchor),
-            engineView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        return container
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        nsView.layer?.cornerRadius = radius
     }
 }
 

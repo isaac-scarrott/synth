@@ -667,32 +667,156 @@
   .browser__btn--turned svg { transform: rotate(90deg); }
   .browser--device .browser__view { padding: 0; overflow: hidden; }
   .devstage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--chrome); }
-  .devframe__box { position: relative; flex-shrink: 0; }
-  .devframe { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: content-box; background: #0b0c0e; border-radius: 44px; padding: 14px; box-shadow: 0 12px 34px rgba(0,0,0,0.26), inset 0 0 0 0.5px rgba(255,255,255,0.12); }
-  .devframe__screen { position: relative; width: 100%; height: 100%; border-radius: 32px; background: var(--raised); overflow: hidden; display: flex; flex-direction: column; }
-  .devframe__status { flex-shrink: 0; display: flex; justify-content: space-between; padding: 16px 26px 0; font-size: 12px; font-weight: 600; color: var(--ink); }
-  .devframe__page { flex: 1; overflow: hidden; padding: 30px 22px 0; }
-  .devframe__page .skel--cards { grid-template-columns: 1fr 1fr; }
-  .devframe--bezel { border-radius: 40px; padding: 52px 16px; }
-  .devframe--bezel .devframe__screen { border-radius: 3px; }
-  .devframe--pad { border-radius: 34px; padding: 22px; }
-  .devframe--pad .devframe__screen { border-radius: 14px; }
-  .devframe--pad .devframe__page { padding: 34px 40px 0; }
-  .devframe--pad .devframe__page .skel--cards { grid-template-columns: repeat(3, 1fr); }
-  /* phone hardware: dynamic island / punch-hole camera up top, home indicator below */
-  .devframe--island .devframe__screen::before { content: ""; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 96px; height: 26px; border-radius: 999px; background: #0b0c0e; }
-  .devframe--punch .devframe__screen::before { content: ""; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 13px; height: 13px; border-radius: 50%; background: #0b0c0e; }
-  .devframe--island .devframe__screen::after, .devframe--punch .devframe__screen::after { content: ""; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 108px; height: 4px; border-radius: 999px; background: rgba(128,128,128,0.55); }
-  .devframe--island.devframe--land .devframe__screen::before { top: 50%; left: 10px; transform: translateY(-50%); width: 26px; height: 96px; }
-  .devframe--punch.devframe--land .devframe__screen::before { top: 50%; left: 12px; transform: translateY(-50%); }
+  .dev-box { position: relative; flex-shrink: 0; }
 
-  /* ----- Simulator ----- */
-  .sim { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; background: #eef0f3; }
-  .sim__device { width: 232px; height: 476px; border-radius: 36px; background: #0b0c0e; padding: 9px; box-shadow: 0 10px 30px rgba(0,0,0,0.24), inset 0 0 0 0.5px rgba(255,255,255,0.1); }
-  .sim__screen { width: 100%; height: 100%; border-radius: 28px; background: linear-gradient(160deg, #eef2ff, #fce7f3); overflow: hidden; }
-  .sim__status { display: flex; justify-content: space-between; padding: 12px 20px 0; font-size: 11px; font-weight: 600; color: var(--ink); }
-  .sim__hero { padding: 46px 22px 0; }
-  .sim__hero .skel--title { width: 62%; }
+  /* ---- Device hardware -----------------------------------------------------------------
+     One model behind every device we draw — the browser's device mode and the simulator pane.
+     Each number is a point the hardware itself reports (bezel per edge, screen corner radius,
+     status-bar and safe-area heights), carried in custom properties per device, so a frame
+     scaled down to fit a pane keeps the real proportions rather than reading as a generic
+     black rectangle. The bezel is asymmetric on purpose: rotating swaps the four edges. */
+  .dev {
+    position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: content-box;
+    padding: var(--bz-t) var(--bz-r) var(--bz-b) var(--bz-l);
+    border-radius: var(--frame-r);
+    background: #08090b;
+    /* the rail: a lit outer edge over the black band, the way brushed metal meets glass */
+    box-shadow: 0 18px 44px rgba(0,0,0,0.30), 0 2px 8px rgba(0,0,0,0.18),
+                inset 0 0 0 1px rgba(255,255,255,0.22), inset 0 0 0 2.5px rgba(0,0,0,0.55);
+  }
+  .dev__screen {
+    position: relative; width: 100%; height: 100%; overflow: hidden;
+    border-radius: var(--screen-r);
+    display: flex; flex-direction: column;
+    /* the device runs its own appearance, not the app's — a phone on the desk stays lit */
+    background: #ffffff; color: #0b0c0e;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  }
+  /* Cutouts are punched through the display, so they're placed in screen coordinates (the
+     bezel offsets them) and paint above whatever the page draws underneath. */
+  .dev__island, .dev__punch { position: absolute; z-index: 4; background: #000; left: 50%; transform: translateX(-50%); }
+  .dev__island { top: calc(var(--bz-t) + 11px); width: 125px; height: 37px; border-radius: 999px; }
+  .dev__punch { top: calc(var(--bz-t) + 13px); width: 12px; height: 12px; border-radius: 50%; }
+  /* the lens: a well with a single highlight, never a flat dot */
+  .dev__island::after, .dev__cam, .dev__punch::after {
+    background: radial-gradient(circle at 34% 30%, #2b4462, #05070a 64%);
+    box-shadow: 0 0 0 0.5px rgba(255,255,255,0.07);
+  }
+  .dev__island::after { content: ""; position: absolute; right: 9px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; border-radius: 50%; }
+  .dev__punch::after { content: ""; position: absolute; inset: 2.5px; border-radius: 50%; }
+  .dev--land .dev__island { top: 50%; left: calc(var(--bz-l) + 11px); transform: translateY(-50%); width: 37px; height: 125px; }
+  .dev--land .dev__island::after { right: 50%; top: 9px; transform: translateX(50%); }
+  .dev--land .dev__punch { top: 50%; left: calc(var(--bz-l) + 13px); transform: translateY(-50%); }
+  /* front camera + earpiece live in the bezel itself */
+  .dev__cam { position: absolute; z-index: 4; width: 9px; height: 9px; border-radius: 50%; top: calc(var(--bz-t) / 2); left: 50%; transform: translate(-50%, -50%); }
+  .dev--face-button .dev__cam { margin-left: -52px; }
+  .dev--cam-side .dev__cam { top: 50%; left: calc(var(--bz-l) / 2); }
+  .dev--cam-side.dev--land .dev__cam { top: calc(var(--bz-t) / 2); left: 50%; }
+  .dev--cam-top.dev--land .dev__cam { top: 50%; left: calc(var(--bz-l) / 2); margin-left: 0; }
+  .dev--face-button.dev--land .dev__cam { margin-left: 0; margin-top: -52px; }
+  .dev__speaker { position: absolute; z-index: 4; top: calc(var(--bz-t) / 2); left: 50%; transform: translate(-50%, -50%); width: 62px; height: 6px; border-radius: 999px; background: #16181c; box-shadow: inset 0 1px 1.5px rgba(0,0,0,0.9); }
+  .dev--land .dev__speaker { top: 50%; left: calc(var(--bz-l) / 2); width: 6px; height: 62px; }
+  .dev__homebtn { position: absolute; z-index: 4; bottom: calc(var(--bz-b) / 2); left: 50%; transform: translate(-50%, 50%); width: 46px; height: 46px; border-radius: 50%; background: #0b0d10; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.18); }
+  .dev--land .dev__homebtn { bottom: auto; left: auto; top: 50%; right: calc(var(--bz-r) / 2); transform: translate(50%, -50%); }
+  /* side buttons: the rail's own hardware, so they sit proud of the frame edge */
+  .dev__btn { position: absolute; z-index: 2; background: #32363c; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.22); }
+  .dev__btn--act, .dev__btn--vup, .dev__btn--vdn { left: -2px; width: 3px; border-radius: 2px 0 0 2px; }
+  .dev__btn--pwr { right: -2px; width: 3px; border-radius: 0 2px 2px 0; }
+  .dev__btn--act { top: 15%; height: 3%; }
+  .dev__btn--vup { top: 20.5%; height: 4.4%; }
+  .dev__btn--vdn { top: 26.4%; height: 4.4%; }
+  .dev__btn--pwr { top: 23.5%; height: 8%; }
+  /* Galaxy puts the whole cluster on the right; iPad puts power on the top edge. */
+  .dev--android .dev__btn--vup, .dev--android .dev__btn--vdn { left: auto; right: -2px; border-radius: 0 2px 2px 0; }
+  .dev--android .dev__btn--vup { top: 21%; }
+  .dev--android .dev__btn--vdn { top: 27%; }
+  .dev--android .dev__btn--pwr { top: 33.5%; height: 6%; }
+  .dev--pad .dev__btn--pwr { top: -2px; right: auto; left: 68%; width: 9%; height: 3px; border-radius: 2px 2px 0 0; }
+  .dev--pad .dev__btn--vup, .dev--pad .dev__btn--vdn { left: auto; right: -2px; border-radius: 0 2px 2px 0; }
+  .dev--pad .dev__btn--vup { top: 5%; height: 3.4%; }
+  .dev--pad .dev__btn--vdn { top: 9.4%; height: 3.4%; }
+  /* rotating counter-clockwise walks each button one edge round: right → top, left → bottom */
+  .dev--land .dev__btn--act, .dev--land .dev__btn--vup, .dev--land .dev__btn--vdn { left: auto; top: auto; bottom: -2px; width: auto; height: 3px; border-radius: 0 0 2px 2px; }
+  .dev--land .dev__btn--pwr { right: auto; top: -2px; width: auto; height: 3px; border-radius: 2px 2px 0 0; }
+  .dev--land .dev__btn--act { left: 15%; width: 3%; }
+  .dev--land .dev__btn--vup { left: 20.5%; width: 4.4%; }
+  .dev--land .dev__btn--vdn { left: 26.4%; width: 4.4%; }
+  .dev--land .dev__btn--pwr { left: 23.5%; width: 8%; }
+  .dev--android.dev--land .dev__btn--vup, .dev--android.dev--land .dev__btn--vdn { bottom: auto; top: -2px; border-radius: 2px 2px 0 0; }
+  .dev--android.dev--land .dev__btn--vup { left: 21%; }
+  .dev--android.dev--land .dev__btn--vdn { left: 27%; }
+  .dev--android.dev--land .dev__btn--pwr { left: 33.5%; width: 6%; }
+  .dev--pad.dev--land .dev__btn--pwr { left: -2px; top: auto; bottom: 68%; width: 3px; height: 9%; border-radius: 2px 0 0 2px; }
+  .dev--pad.dev--land .dev__btn--vup, .dev--pad.dev--land .dev__btn--vdn { right: auto; bottom: auto; top: -2px; border-radius: 2px 2px 0 0; }
+  .dev--pad.dev--land .dev__btn--vup { left: 5%; width: 3.4%; }
+  .dev--pad.dev--land .dev__btn--vdn { left: 9.4%; width: 3.4%; }
+
+  /* ---- What the device draws on its own display ----------------------------------------
+     The status bar and the browser's own bars are part of how a page renders on a phone, so
+     they're drawn to scale and the page gets only the room they leave. */
+  .devui__status { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; height: var(--sb-h); padding: var(--sb-top) var(--sb-r) 0 var(--sb-l); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .devui__ind { display: flex; align-items: center; gap: 5px; }
+  .devui__ic { display: block; height: 11px; width: auto; }
+  .devui__ic--batt { height: 12px; }
+  .dev--android .devui__status { font-size: 13px; font-weight: 500; }
+  .devui__page { flex: 1; overflow: hidden; padding: 20px 18px 0; }
+  .devui__page .skel--cards { grid-template-columns: 1fr 1fr; }
+  .dev--pad .devui__page { padding: 30px 34px 0; }
+  .dev--pad .devui__page .skel--cards { grid-template-columns: repeat(3, 1fr); }
+  /* landscape hands the island a whole edge, and iOS insets the page clear of it */
+  .dev--island.dev--land .devui__page, .dev--island.dev--land .devui__safari--top { padding-left: 50px; padding-right: 50px; }
+  /* the home indicator: software, so it rides over the page and the browser's bar alike */
+  .devui__home { flex-shrink: 0; height: var(--home-h); display: flex; align-items: center; justify-content: center; }
+  .devui__home::after { content: ""; width: 36%; max-width: 150px; height: 5px; border-radius: 999px; background: rgba(0,0,0,0.82); }
+  .dev--android .devui__home::after { width: 34%; height: 4px; background: #1f1f1f; }
+  .dev--face-button .devui__home::after { display: none; }   /* a home button leaves nothing to draw */
+
+  /* iOS Safari: the tab bar sits at the bottom in portrait and collapses to a single top bar
+     in landscape — the reason a page has less height than the viewport suggests. */
+  .devui__safari { flex-shrink: 0; background: #f6f6f8; border-top: 0.5px solid rgba(0,0,0,0.14); padding: 9px 12px 0; }
+  .devui__safari--top { border-top: 0; border-bottom: 0.5px solid rgba(0,0,0,0.14); padding: 6px 12px 8px; display: flex; align-items: center; gap: 14px; }
+  .devui__pill { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 12px; background: #e4e4e7; font-size: 15px; color: #1c1c1e; }
+  .devui__safari--top .devui__pill { flex: 1; min-width: 0; }
+  .devui__aa { flex-shrink: 0; font-size: 12px; font-weight: 600; color: #5c5c61; letter-spacing: -0.03em; }
+  .devui__aa b { font-size: 15px; font-weight: 600; }
+  .devui__host { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .devui__host svg { flex-shrink: 0; width: 11px; height: 11px; opacity: 0.45; }
+  .devui__hosttext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .devui__pill svg.devui__act { flex-shrink: 0; width: 16px; height: 16px; opacity: 0.8; }
+  .devui__tools { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 0; color: #0a84ff; }
+  .devui__tools svg { width: 22px; height: 22px; }
+  .devui__safari--top .devui__tools { padding: 0; gap: 18px; }
+  .devui__tools .is-dim { color: rgba(0,0,0,0.26); }
+  /* iPad Safari keeps its bar on top, with the tab strip under it */
+  .devui__ipadbar { flex-shrink: 0; background: #f4f4f6; border-bottom: 0.5px solid rgba(0,0,0,0.13); padding: 8px 16px 0; }
+  .devui__ipadrow { display: flex; align-items: center; gap: 16px; color: #0a84ff; }
+  .devui__ipadrow > svg { flex-shrink: 0; width: 20px; height: 20px; }
+  .devui__ipadrow .devui__pill { flex: 1; min-width: 0; height: 34px; border-radius: 10px; font-size: 14px; }
+  .devui__tabstrip { display: flex; align-items: flex-end; gap: 1px; padding: 8px 0 0; }
+  .devui__tab { flex: 1; max-width: 260px; height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 9px 9px 0 0; font-size: 12.5px; color: #55555b; }
+  .devui__tab svg { width: 11px; height: 11px; opacity: 0.45; }
+  .devui__tab.is-on { background: #fff; color: #1c1c1e; }
+  /* Android Chrome: one top bar, tab count and overflow on the right */
+  .devui__achrome { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 2px 12px 10px; background: #fff; }
+  .devui__apill { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px; background: #f1f3f4; font-size: 13.5px; color: #3c4043; }
+  .devui__apill svg { flex-shrink: 0; width: 12px; height: 12px; opacity: 0.5; }
+  .devui__acount { flex-shrink: 0; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: 2px solid #5f6368; border-radius: 5px; font-size: 11px; font-weight: 700; color: #5f6368; }
+  .devui__adots { flex-shrink: 0; width: 18px; color: #5f6368; }
+  .devui__adots svg { width: 18px; height: 18px; display: block; }
+
+  /* ----- Simulator: a booted device running the app, not a page in a browser ----- */
+  .devui__app { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #f2f2f7; }
+  .devui__appnav { flex-shrink: 0; padding: 6px 20px 12px; }
+  .devui__appnav .skel { height: 30px; width: 54%; border-radius: 8px; }
+  .devui__appbody { flex: 1; overflow: hidden; padding: 0 20px; }
+  .devui__appbody .skel--card { height: 88px; }
+  .devui__tabbar { flex-shrink: 0; background: #f6f6f8; border-top: 0.5px solid rgba(0,0,0,0.14); padding: 9px 8px 0; }
+  .devui__tabitems { display: flex; justify-content: space-around; }
+  .devui__tabitem { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .devui__tabicon { width: 22px; height: 22px; border-radius: 6px; background: rgba(0,0,0,0.17); }
+  .devui__tablabel { width: 26px; height: 5px; border-radius: 3px; background: rgba(0,0,0,0.14); }
+  .devui__tabitem.is-on .devui__tabicon { background: #0a84ff; }
+  .devui__tabitem.is-on .devui__tablabel { background: rgba(10,132,255,0.7); }
 
   /* ---- Sidebar nav: workspace → branches → sessions ---- */
   .nav {
@@ -2250,10 +2374,14 @@
   .seg--slide .seg__btn.is-on { background: none; box-shadow: none; color: var(--ink); }
   /* menu icons: brighter on the dark glass (danger keeps its red via its own rule) */
   :root[data-theme="dark"] .menu__item:not(.menu__item--danger) svg { color: var(--ink-4); }
-  /* big-picture-only surfaces: the simulator stage + browser skeleton must go dark too */
-  :root[data-theme="dark"] .sim { background: #0d0f13; }
+  /* the browser skeleton must go dark too — except on a device screen, which is a machine of
+     its own showing a light page and doesn't follow the app's appearance */
   :root[data-theme="dark"] .skel {
     background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.09), rgba(255,255,255,0.05));
+    background-size: 200% 100%;
+  }
+  :root[data-theme="dark"] .dev__screen .skel {
+    background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05));
     background-size: 200% 100%;
   }
   /* ⌘K palette: the active-row label + status meta were tuned for a white panel —
@@ -3827,16 +3955,113 @@
   const browserHost = (s) => (s || '').replace(/^https?:\/\//, '');
   const browserNorm = (s) => (s.includes('://') ? s : 'https://' + s);
 
+  // Glyphs a device draws for itself: the status-bar trio, then the controls Safari and Chrome
+  // put on screen. Kept apart from the app's own icon set — these belong to the simulated OS.
+  const SB_CELL = '<svg class="devui__ic" viewBox="0 0 20 12" fill="currentColor"><rect y="8" width="3" height="4" rx="1"/><rect x="4.7" y="5.6" width="3" height="6.4" rx="1"/><rect x="9.4" y="3.2" width="3" height="8.8" rx="1"/><rect x="14.1" y="0.8" width="3" height="11.2" rx="1"/></svg>';
+  const SB_WIFI = '<svg class="devui__ic" viewBox="0 0 16 12" fill="currentColor"><path d="M8,11.6,5.5,8.9a3.6,3.6,0,0,1,5,0Zm-3.9-4.2a6.4,6.4,0,0,1,7.8,0l1.5-1.6a8.6,8.6,0,0,0-10.8,0ZM1.1,4.1a10.7,10.7,0,0,1,13.8,0L16,2.5a12.8,12.8,0,0,0-16,0Z"/></svg>';
+  const SB_BATT = '<svg class="devui__ic devui__ic--batt" viewBox="0 0 27 12" fill="none"><rect x="0.6" y="0.6" width="22" height="10.8" rx="3.2" stroke="currentColor" stroke-opacity="0.38" stroke-width="1.2"/><rect x="2.2" y="2.2" width="18.8" height="7.6" rx="2" fill="currentColor"/><path d="M24.6,4.3v3.4a2,2,0,0,0,0-3.4Z" fill="currentColor" fill-opacity="0.38"/></svg>';
+  const ICON_LOCK_SM      = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208Z"/></svg>';
+  const ICON_IOS_CHEV_L   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"/></svg>';
+  const ICON_IOS_CHEV_R   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
+  const ICON_IOS_SHARE    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,112v96a16,16,0,0,1-16,16H64a16,16,0,0,1-16-16V112A16,16,0,0,1,64,96H88a8,8,0,0,1,0,16H64v96H192V112H168a8,8,0,0,1,0-16h24A16,16,0,0,1,208,112ZM93.66,69.66,120,43.31V136a8,8,0,0,0,16,0V43.31l26.34,26.35a8,8,0,0,0,11.32-11.32l-40-40a8,8,0,0,0-11.32,0l-40,40A8,8,0,0,0,93.66,69.66Z"/></svg>';
+  const ICON_IOS_BOOK     = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M184,32H72A16,16,0,0,0,56,48V224a8,8,0,0,0,12.24,6.78L128,193.43l59.77,37.35A8,8,0,0,0,200,224V48A16,16,0,0,0,184,32Zm0,177.57-51.77-32.35a8,8,0,0,0-8.48,0L72,209.57V48H184Z"/></svg>';
+  const ICON_IOS_TABS     = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg>';
+  const ICON_IOS_RELOAD   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16h27.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,0,1,16,0Z"/></svg>';
+  const ICON_IOS_SIDEBAR  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H92V200H40ZM216,200H108V56H216Z"/></svg>';
+  const ICON_IOS_PLUS     = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg>';
+  const ICON_A_DOTS       = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM128,72a12,12,0,1,0-12-12A12,12,0,0,0,128,72Zm0,112a12,12,0,1,0,12,12A12,12,0,0,0,128,184Z"/></svg>';
+
   // Device mode's fleet: the popular current devices, smallest viewport to biggest, so a page
-  // is checked at both extremes. Dimensions are CSS-viewport points, not hardware pixels.
+  // is checked at both extremes. Dimensions are CSS-viewport points, not hardware pixels — and
+  // so is every other number here: bezel per edge (top, right, bottom, left), body and screen
+  // corner radii, status-bar height and inset, home-indicator strip. Drawing the frame from the
+  // hardware's own measurements is what keeps it a device instead of a black rectangle.
   const DEVICES = [
-    { id: 'iphone-se',    name: 'iPhone SE',         w: 375,  h: 667,  chrome: 'bezel'  },
-    { id: 'iphone-16',    name: 'iPhone 16',         w: 393,  h: 852,  chrome: 'island' },
-    { id: 'iphone-16-pm', name: 'iPhone 16 Pro Max', w: 440,  h: 956,  chrome: 'island' },
-    { id: 'galaxy-s25u',  name: 'Galaxy S25 Ultra',  w: 412,  h: 952,  chrome: 'punch'  },
-    { id: 'ipad-mini',    name: 'iPad mini',         w: 744,  h: 1133, chrome: 'pad'    },
-    { id: 'ipad-pro-13',  name: 'iPad Pro 13″',      w: 1032, h: 1376, chrome: 'pad'    },
+    { id: 'iphone-se',    name: 'iPhone SE',         w: 375,  h: 667,  os: 'ios',     ui: 'safari',     face: 'button',
+      bz: [96, 28, 118, 28], frameR: 42, screenR: 3,  sb: 20, sbTop: 0, sbPad: [16, 16], home: 10 },
+    { id: 'iphone-16',    name: 'iPhone 16',         w: 393,  h: 852,  os: 'ios',     ui: 'safari',     face: 'island',
+      bz: [12, 12, 12, 12],  frameR: 62, screenR: 50, sb: 54, sbTop: 6, sbPad: [30, 22], home: 21 },
+    { id: 'iphone-16-pm', name: 'iPhone 16 Pro Max', w: 440,  h: 956,  os: 'ios',     ui: 'safari',     face: 'island',
+      bz: [12, 12, 12, 12],  frameR: 66, screenR: 54, sb: 56, sbTop: 6, sbPad: [34, 24], home: 21 },
+    { id: 'galaxy-s25u',  name: 'Galaxy S25 Ultra',  w: 412,  h: 952,  os: 'android', ui: 'chrome',     face: 'punch',
+      bz: [8, 8, 8, 8],      frameR: 32, screenR: 24, sb: 30, sbTop: 0, sbPad: [18, 16], home: 24 },
+    { id: 'ipad-mini',    name: 'iPad mini',         w: 744,  h: 1133, os: 'ios',     ui: 'safari-pad', face: 'cam-top',  kind: 'pad',
+      bz: [52, 52, 52, 52],  frameR: 74, screenR: 22, sb: 24, sbTop: 0, sbPad: [26, 26], home: 20 },
+    { id: 'ipad-pro-13',  name: 'iPad Pro 13″',      w: 1032, h: 1376, os: 'ios',     ui: 'safari-pad', face: 'cam-side', kind: 'pad',
+      bz: [44, 44, 44, 44],  frameR: 64, screenR: 22, sb: 24, sbTop: 0, sbPad: [28, 28], home: 20 },
   ];
+  // Rotating counter-clockwise walks every edge one place round, bezels included — which is why
+  // an iPhone SE's tall forehead ends up on the left, not still on top.
+  const devBezel = (d, land) => (land ? [d.bz[1], d.bz[2], d.bz[3], d.bz[0]] : d.bz);
+  function deviceClasses(d, land) {
+    const c = ['dev', 'dev--' + (d.face === 'button' ? 'face-button' : d.face)];
+    if (d.os === 'android') c.push('dev--android');
+    if (d.kind === 'pad') c.push('dev--pad');
+    if (land) c.push('dev--land');
+    return c.join(' ');
+  }
+  // The hardware you can see from the front: the cutout the display is punched around, and the
+  // side buttons standing proud of the rail.
+  function deviceHardwareHTML(d) {
+    const face = d.face === 'island' ? '<span class="dev__island"></span>'
+      : d.face === 'punch' ? '<span class="dev__punch"></span>'
+      : d.face === 'button' ? '<span class="dev__speaker"></span><span class="dev__cam"></span><span class="dev__homebtn"></span>'
+      : '<span class="dev__cam"></span>';
+    const keys = ['vup', 'vdn', 'pwr'];
+    if (d.face === 'island') keys.unshift('act');           // only the Pro-era iPhones carry one
+    return face + keys.map((k) => `<span class="dev__btn dev__btn--${k}"></span>`).join('');
+  }
+  // A device at true viewport size, inside a box that carries its scaled footprint so the stage
+  // can centre it before fitFrame() picks the scale.
+  function deviceHTML(d, land, screenHTML) {
+    const w = land ? d.h : d.w, h = land ? d.w : d.h;
+    const bz = devBezel(d, land);
+    const vars = `width:${w}px;height:${h}px;--bz-t:${bz[0]}px;--bz-r:${bz[1]}px;--bz-b:${bz[2]}px;--bz-l:${bz[3]}px;` +
+      `--frame-r:${d.frameR}px;--screen-r:${d.screenR}px;--sb-h:${d.sb}px;--sb-top:${d.sbTop}px;` +
+      `--sb-l:${d.sbPad[0]}px;--sb-r:${d.sbPad[1]}px;--home-h:${d.home}px`;
+    return `<div class="dev-box" data-framebox><div class="${deviceClasses(d, land)}" data-frame style="${vars}">
+      <div class="dev__screen">${screenHTML}</div>${deviceHardwareHTML(d)}
+    </div></div>`;
+  }
+  const svgClass = (svg, cls) => svg.replace('<svg ', `<svg class="${cls}" `);
+  const statusBarHTML = () => `<div class="devui__status"><span>9:41</span><span class="devui__ind">${SB_CELL}${SB_WIFI}${SB_BATT}</span></div>`;
+  // Safari's own chrome, because it is part of how a page renders on a phone: the tab bar takes
+  // the bottom in portrait, and in landscape iOS drops the status bar and folds every control
+  // into one top bar — so the page's usable height moves with the rotation, as it really does.
+  function safariPhoneHTML(host, land, homeHTML) {
+    const pill = `<div class="devui__pill"><span class="devui__aa">A<b>A</b></span>` +
+      `<span class="devui__host">${ICON_LOCK_SM}<span class="devui__hosttext">${esc(host)}</span></span>` +
+      `${svgClass(ICON_IOS_RELOAD, 'devui__act')}</div>`;
+    if (land) {
+      return `<div class="devui__safari devui__safari--top">` +
+        `<div class="devui__tools">${svgClass(ICON_IOS_CHEV_L, 'is-dim')}${svgClass(ICON_IOS_CHEV_R, 'is-dim')}</div>` +
+        `${pill}<div class="devui__tools">${ICON_IOS_SHARE}${ICON_IOS_TABS}</div></div>`;
+    }
+    return `<div class="devui__safari">${pill}<div class="devui__tools">` +
+      `${svgClass(ICON_IOS_CHEV_L, 'is-dim')}${svgClass(ICON_IOS_CHEV_R, 'is-dim')}${ICON_IOS_SHARE}${ICON_IOS_BOOK}${ICON_IOS_TABS}` +
+      `</div>${homeHTML}</div>`;
+  }
+  function safariPadHTML(host) {
+    return `<div class="devui__ipadbar"><div class="devui__ipadrow">` +
+      `${ICON_IOS_SIDEBAR}${svgClass(ICON_IOS_CHEV_L, 'is-dim')}${svgClass(ICON_IOS_CHEV_R, 'is-dim')}` +
+      `<div class="devui__pill"><span class="devui__aa">A<b>A</b></span>` +
+      `<span class="devui__host">${ICON_LOCK_SM}<span class="devui__hosttext">${esc(host)}</span></span>` +
+      `${svgClass(ICON_IOS_RELOAD, 'devui__act')}</div>${ICON_IOS_SHARE}${ICON_IOS_PLUS}${ICON_IOS_TABS}</div>` +
+      `<div class="devui__tabstrip"><div class="devui__tab is-on">${ICON_LOCK_SM}<span class="devui__hosttext">${esc(host)}</span></div>` +
+      `<div class="devui__tab"><span class="devui__hosttext">New Tab</span></div></div></div>`;
+  }
+  function chromeAndroidHTML(host) {
+    return `<div class="devui__achrome"><div class="devui__apill">${ICON_LOCK_SM}<span class="devui__hosttext">${esc(host)}</span></div>` +
+      `<span class="devui__acount">3</span><span class="devui__adots">${ICON_A_DOTS}</span></div>`;
+  }
+  function deviceScreenHTML(d, land, host) {
+    const home = d.home ? '<div class="devui__home"></div>' : '';
+    const page = `<div class="devui__page">${browserPageHTML()}</div>`;
+    if (d.ui === 'safari-pad') return statusBarHTML() + safariPadHTML(host) + page + home;
+    if (d.ui === 'chrome') return statusBarHTML() + chromeAndroidHTML(host) + page + home;
+    if (land) return safariPhoneHTML(host, true, '') + page + home;    // landscape iPhone hides the status bar
+    return statusBarHTML() + page + safariPhoneHTML(host, false, home);
+  }
   function devicebarHTML(deviceId, landscape) {
     const d = DEVICES.find((x) => x.id === deviceId);
     const w = landscape ? d.h : d.w, h = landscape ? d.w : d.h;
@@ -3846,14 +4071,23 @@
       <button class="browser__btn${landscape ? '' : ' browser__btn--turned'}" data-rotate aria-label="Rotate device">${ICON_DEVICE}</button>
     </div>`;
   }
-  function deviceFrameHTML(deviceId, landscape) {
+  function deviceFrameHTML(deviceId, landscape, host) {
     const d = DEVICES.find((x) => x.id === deviceId);
-    const w = landscape ? d.h : d.w, h = landscape ? d.w : d.h;
-    return `<div class="devstage" data-stage><div class="devframe__box" data-framebox>
-      <div class="devframe devframe--${d.chrome}${landscape ? ' devframe--land' : ''}" data-frame style="width:${w}px;height:${h}px">
-        <div class="devframe__screen"><div class="devframe__status"><span>9:41</span></div><div class="devframe__page">${browserPageHTML()}</div></div>
-      </div>
-    </div></div>`;
+    return `<div class="devstage" data-stage>${deviceHTML(d, landscape, deviceScreenHTML(d, landscape, host))}</div>`;
+  }
+  // The frame lays out at true viewport size, then scales down to fit its stage (never up, so a
+  // small device stays life-size). The box carries the scaled footprint for flex centring.
+  function fitFrame(stage) {
+    if (!stage) return;
+    const box = stage.querySelector('[data-framebox]');
+    const frame = stage.querySelector('[data-frame]');
+    if (!box || !frame) return;
+    const availW = stage.clientWidth - 48, availH = stage.clientHeight - 48;
+    if (availW <= 0 || availH <= 0) return;      // the pane hasn't been laid out yet; the observer will call back
+    const s = Math.min(1, availW / frame.offsetWidth, availH / frame.offsetHeight);
+    frame.style.transform = s < 1 ? `scale(${s})` : 'none';
+    box.style.width = Math.round(frame.offsetWidth * s) + 'px';
+    box.style.height = Math.round(frame.offsetHeight * s) + 'px';
   }
 
   function browserRecentsHTML() {
@@ -4021,26 +4255,15 @@
       }
       const strip = devicebarHTML(deviceId, deviceLand);
       if (bar) bar.outerHTML = strip; else view.insertAdjacentHTML('beforebegin', strip);
-      view.innerHTML = deviceFrameHTML(deviceId, deviceLand);
+      // the device runs its own browser, so it shows the page's address in its own address bar
+      view.innerHTML = deviceFrameHTML(deviceId, deviceLand, browserHost(hist[idx] || ''));
       const nb = host.querySelector('[data-devicebar]');
       nb.querySelectorAll('[data-device]').forEach((b) => b.onclick = () => { deviceId = b.dataset.device; updateDeviceUI(); });
       nb.querySelector('[data-rotate]').onclick = () => { deviceLand = !deviceLand; updateDeviceUI(); };
       if (deviceRO) deviceRO.disconnect();
-      deviceRO = new ResizeObserver(fitDeviceFrame);
+      deviceRO = new ResizeObserver(() => fitFrame(host.querySelector('[data-stage]')));
       deviceRO.observe(view.querySelector('[data-stage]'));
-      fitDeviceFrame();
-    }
-    // The frame lays out at true viewport size, then scales down to fit the stage (never up,
-    // so small devices stay life-size). The box carries the scaled footprint for flex centering.
-    function fitDeviceFrame() {
-      const stage = host.querySelector('[data-stage]');
-      const box = host.querySelector('[data-framebox]');
-      const frame = host.querySelector('[data-frame]');
-      if (!stage || !box || !frame) return;
-      const s = Math.min(1, (stage.clientWidth - 48) / frame.offsetWidth, (stage.clientHeight - 48) / frame.offsetHeight);
-      frame.style.transform = s < 1 ? `scale(${s})` : 'none';
-      box.style.width = Math.round(frame.offsetWidth * s) + 'px';
-      box.style.height = Math.round(frame.offsetHeight * s) + 'px';
+      fitFrame(host.querySelector('[data-stage]'));
     }
     // Page zoom (⌘+/⌘−): steps a fixed ladder, re-applied after every paint so it rides
     // through navigation and reload — real per-tab zoom. The badge shows only off 100%.
@@ -4146,7 +4369,7 @@
       const view = e.target.closest('.browser__view');
       if (!view || e.target.closest('.browser__ccard') || e.target.closest('.browser__notice')) return;
       // in device mode a comment lands on the device's screen, not the stage backdrop
-      if (view.querySelector('[data-stage]') && !e.target.closest('.devframe__screen')) return;
+      if (view.querySelector('[data-stage]') && !e.target.closest('.dev__screen')) return;
       openCard(e, view);
     });
     browserCommentAPI = { isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI };
@@ -4161,15 +4384,33 @@
       bindBar();
     }
   }
+  // A simulator session names its device, so the frame is that device's — an iPhone we don't
+  // carry in the fleet still boots on iPhone hardware rather than a guess.
+  function simDevice(name) {
+    const hit = DEVICES.find((d) => d.name.toLowerCase() === (name || '').trim().toLowerCase());
+    return hit || Object.assign({}, DEVICES.find((d) => d.id === 'iphone-16'), { name: name });
+  }
+  // The simulator is a booted device running the app, so its screen carries an app's chrome —
+  // status bar, large title, tab bar — where the browser's device mode carries Safari's.
   function renderSim(name) {
-    return `<div class="sim"><div class="sim__device"><div class="sim__screen">
-      <div class="sim__status"><span>9:41</span><span>${esc(name)}</span></div>
-      <div class="sim__hero">
-        <div class="skel skel--title"></div>
-        <div class="skel skel--line" style="width:80%"></div>
-        <div class="skel skel--line" style="width:64%"></div>
+    const d = simDevice(name);
+    const tabs = [0, 1, 2, 3, 4].map((i) => `<span class="devui__tabitem${i === 0 ? ' is-on' : ''}"><span class="devui__tabicon"></span><span class="devui__tablabel"></span></span>`).join('');
+    const screen = `${statusBarHTML()}<div class="devui__app">
+      <div class="devui__appnav"><div class="skel"></div></div>
+      <div class="devui__appbody">
+        <div class="skel skel--line" style="width:88%"></div>
+        <div class="skel skel--line" style="width:72%"></div>
         <div class="skel--cards" style="grid-template-columns:1fr 1fr"><div class="skel skel--card"></div><div class="skel skel--card"></div></div>
-      </div></div></div></div>`;
+      </div>
+      <div class="devui__tabbar"><div class="devui__tabitems">${tabs}</div>${d.home ? '<div class="devui__home"></div>' : ''}</div>
+    </div>`;
+    return `<div class="devstage" data-stage>${deviceHTML(d, false, screen)}</div>`;
+  }
+  // The simulator's device scales to its pane exactly like device mode's does.
+  function wireSim(scope) {
+    const stage = scope.querySelector('[data-stage]'); if (!stage) return;
+    new ResizeObserver(() => fitFrame(stage)).observe(stage);
+    fitFrame(stage);
   }
   function composerHTML(awaiting) {
     const ask = awaiting ? `<div class="chat__ask">${MARK_INPUT}Should the menu also surface recent files, or just commands and sessions for now?</div>` : '';
@@ -4371,6 +4612,7 @@
       const el = leaf.session, type = el.dataset.type || 'terminal', state = sessionState(el);
       if (type === 'ai') wireComposer(el, leaf.el);
       else if (type === 'browser') wireBrowser(el, leaf.el);
+      else if (type === 'simulator') wireSim(leaf.el);
       else if (type === 'terminal' && state === 'run' && !reduceMotion) startStream(leaf.el);
     });
   }

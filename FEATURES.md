@@ -1215,3 +1215,16 @@ disclosure to dive deeper.
   Swift never did — settled in Swift's favour, since the wash means "you could open this" and
   there's nothing to open. Native hover is structurally guaranteed rather than screenshotted: a
   synthetic `mouseMoved` posted to the pid doesn't reach an inactive window's `NSTrackingArea`.
+
+- **Device previews are drawn from real hardware, and show the page as the phone's browser would** —
+  the simulator pane and the browser's device mode both drew a generic black rectangle: a fixed
+  232×476 box with no cutout and the device's name where iOS puts the battery, and a frame whose
+  island was decoration the page ran straight under. Both now render from one device model whose
+  numbers are the hardware's own — bezel per edge, body and screen radii, status-bar and safe-area
+  insets, side buttons on the rail — laid out at true viewport size and scaled to the pane, so the
+  proportions hold at any width and rotating walks every edge one place round. The screen draws what
+  the device draws: Safari's tab bar at the bottom in portrait and one top bar in landscape with the
+  status bar dropped, iPad Safari on top with its tab strip, Chrome and a gesture pill on Android, a
+  home button on the SE, and a real status-bar trio parting around the island. The simulator runs an
+  app, so it gets an app's chrome and takes its device from the session's name. Device screens stay
+  light in both themes — a separate machine showing a light page.

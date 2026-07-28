@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.19.0",
+    "date": "2026-07-28",
+    "changes": [
+      "⌘K search ranks flat: typing gives one list scored against your query, best match on the top row. Results no longer bucket into Actions / Sessions / Branches / Projects, where the thing you wanted could sit six rows down under weaker siblings that shared its heading. Cold ⌘K keeps its groups.",
+      "Search scoring now gives exact and prefix label matches the boost they were meant to have, so typing a session or branch name lands it first."
+    ]
+  },
+  {
     "version": "0.18.0",
     "date": "2026-07-28",
     "changes": [

@@ -156,6 +156,10 @@
     grid-row: 1;
     min-width: 0;
     overflow: hidden;
+    /* stacked above the content column so anything the content runs on underneath — the tabs-mode
+       first-tab fill — is occluded by the sidebar's rounded corner rather than painting over it */
+    position: relative;
+    z-index: 1;
     background: var(--sidebar);
     border-right: 0.5px solid var(--border);
     border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
@@ -1059,7 +1063,9 @@
     transition: background-color 110ms ease, color 110ms ease;
   }
   @media (hover: hover) and (pointer: fine) {
-    .tab:hover { background: var(--hover); }
+    /* the open tab holds its raised fill under the pointer — hovering it must not wash it back down
+       (scoped to lone tabs: a cluster's chips carry their own fill and never took the wash) */
+    .tabstrip__tabs > .tab:not(.tab--active):hover { background: var(--hover); }
   }
   .tab--active { background: var(--raised); color: var(--ink); }
   .tab--active::after {   /* the active-tab bar, echoing the active-pane focus bar */
@@ -1140,9 +1146,27 @@
   /* tabs mode drops the per-pane title bar (the strip carries name + icon); its PR chip moves to the strip */
   html[data-tabs="on"] .pane__head { display: none; }
   .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; padding: 0 8px 0 6px; }
-  /* the strip's top-left rounds with the app corner so an active first tab's fill flows into the
-     radius instead of ending in a hard square against the rounded sidebar — no colour seam. */
-  html[data-tabs="on"] .tabstrip { border-top-left-radius: var(--radius-app); overflow: hidden; }
+  /* Whatever fill the first tab carries — raised when open, the wash under the pointer — runs on
+     under the sidebar, so the sidebar's rounded corner is what ends it and no fill ever stops in a
+     hard square short of the curve. .content clips its own overflow, so the run-on is a bare block
+     behind the sidebar rather than the tab itself bleeding past the seam; the two states below are
+     mutually exclusive, so they resolve exactly as the tab's own background does. */
+  .tab-bleed {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: calc(var(--sidebar-w, 260px) - var(--radius-panel));
+    width: var(--radius-panel);
+    height: 30px;
+  }
+  html[data-tabs="on"] .app:not(.collapsed):has(.tabstrip__tabs > .tab:first-child.tab--active) .tab-bleed {
+    display: block; background: var(--raised);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    html[data-tabs="on"] .app:not(.collapsed):has(.tabstrip__tabs > .tab:first-child:not(.tab--active):hover) .tab-bleed {
+      display: block; background: var(--hover);
+    }
+  }
   .tab-dropline::before {
     content: ""; position: absolute; left: -2px; top: -3px;
     width: 6px; height: 6px; border-radius: 50%;
@@ -2358,6 +2382,8 @@
       <i class="r"></i><i class="y"></i><i class="g"></i>
     </div>
     <div class="dev-tag" aria-label="Development build" title="Development build">DEV</div>
+
+    <div class="tab-bleed" aria-hidden="true"></div>
 
     <aside class="sidebar">
       <div class="sidebar__top">

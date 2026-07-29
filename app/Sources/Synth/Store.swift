@@ -769,11 +769,14 @@ enum FeedbackMode {
                 // spawned claude (which execs, so this is its exit too). Notify first: both
                 // notification paths need the live row (features 2026-07-06).
                 s.status = .exited(real)
-                // …unless the row holds a conversation we know how to bring back. An agent can
-                // quit on one keystroke (opencode's ctrl+d, claude's ctrl+c ctrl+c) and exit 0
-                // doing it, and the row is the only handle Synth keeps on that conversation —
-                // so the close goes through the undo deck instead of straight to the floor.
-                if s.spawnedKind.isAgent, s.agentSessionID != nil {
+                // …unless the row hosted an agent. An agent can quit on one keystroke
+                // (opencode's ctrl+d, claude's ctrl+c ctrl+c) and exit 0 doing it — and exit 0
+                // is not evidence of a gesture at all: opencode dies cleanly on its own (mid-
+                // boot, or minutes in, before any prompt is submitted), which silently deleted
+                // the row the user was looking at. So every clean agent exit goes through the
+                // undo deck: with a conversation captured, Reopen resumes it; without one,
+                // Reopen relaunches fresh — either way the quit is *said*, never silent.
+                if s.spawnedKind.isAgent {
                     softReopenSession(s)
                 } else {
                     routeTransition(id, prev: prev, next: .exited(real), closing: true)
@@ -1727,11 +1730,15 @@ enum FeedbackMode {
     }
 
     /// An agent quit and took its row with it — park the row on an undo card instead of dropping
-    /// it. The gesture that gets here is not the user's: opencode exits on `ctrl+d`, Claude on a
-    /// doubled `ctrl+c`, each of them exit 0, and the row carries the only `agentSessionID` Synth
-    /// holds — so a silent close spends a whole conversation on one keystroke. Worse, it was
-    /// silent precisely when it mattered: `routeTransition` raises the closing card only for a
-    /// row you are *not* looking at, so the session you were watching vanished with nothing said.
+    /// it. The gesture that gets here is often not the user's: opencode exits on `ctrl+d`, Claude
+    /// on a doubled `ctrl+c`, each of them exit 0 — and opencode also exits 0 dying on its own
+    /// (observed mid-boot and ten minutes into an idle row), so exit 0 cannot be read as intent.
+    /// A row with a captured `agentSessionID` carries the only handle Synth holds on that
+    /// conversation; a row without one (opencode creates its session lazily, so a just-opened row
+    /// still composing its first prompt has none) is still a row the user is looking at. Worse,
+    /// the plain close was silent precisely when it mattered: `routeTransition` raises the closing
+    /// card only for a row you are *not* looking at, so the session you were watching vanished
+    /// with nothing said.
     ///
     /// The card never drains. An 8-second fuse suits undoing your own gesture; this one is a
     /// notice about something you didn't ask for, which may well have happened while you were
@@ -1739,8 +1746,9 @@ enum FeedbackMode {
     /// Reopen (respawn, resuming the conversation) or × (let it stand).
     ///
     /// The dead surface is freed on the way in, not on commit: the process is already gone, and
-    /// dropping the view is what lets Reopen build a fresh one — which launches with `--resume`,
-    /// the same reconstruction a restored-after-quit row gets.
+    /// dropping the view is what lets Reopen build a fresh one — which launches with `--resume`
+    /// when a conversation id was captured (the same reconstruction a restored-after-quit row
+    /// gets), or the agent's bare launch when none was.
     func softReopenSession(_ session: Session) {
         guard let br = branch(of: session),
               let index = br.sessions.firstIndex(where: { $0.id == session.id }) else { return }

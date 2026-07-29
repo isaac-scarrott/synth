@@ -1402,6 +1402,13 @@ disclosure to dive deeper.
   element, not a coordinate (element + box-fraction, so pins survive scroll/resize/zoom), and the
   composer's path widens the target up the tree — which is what a drag-a-region mode was really for,
   except exact. Empty comments cannot exist; leaving the mode parks the batch rather than dropping it.
+- **Every clean agent exit parks on the quit card — exit 0 is not a gesture** — opencode exits 0
+  dying on its own (observed mid-boot and ten minutes into an idle row), and its session is created
+  lazily on the first submitted prompt, so the "nothing to resume → close outright" carve-out
+  silently deleted exactly the row you were watching. Every agent row's clean exit now parks the
+  "quit" card: Reopen resumes with `--session <id>` when one was captured, relaunches fresh when
+  not. A shell's `exit` still closes a terminal row outright — there, the clean exit *is* the
+  user's gesture. Gate: `t17_agent_quit`.
 - **A batch of comments is only gone once it has landed** — send holds the queue on the page until
   the host confirms delivery; a rejection hands back the pins, the text and the count with the reason,
   because the last rung of the ladder can refuse (the target agent never reports live) and a batch

@@ -576,8 +576,8 @@ private struct CommentCountBadge: View {
             // The negative padding grows the shape past the pill: the CSS ring sits outside it.
             .background(Capsule().fill(Theme.chrome).padding(-1.5))
             .offset(x: 2, y: -1)
-            .help(count == 1 ? "1 comment queued — ⌘⇧⏎ to send"
-                             : "\(count) comments queued — ⌘⇧⏎ to send")
+            .help(count == 1 ? "1 comment queued — ⌘⌥⏎ to send"
+                             : "\(count) comments queued — ⌘⌥⏎ to send")
     }
 }
 

@@ -29,7 +29,7 @@ import Observation
     /// overlay at injection.
     private(set) var targetTitle: String?
     /// Comments queued on the page and not yet sent — the toolbar's count badge, and the
-    /// gate on ⌘⇧⏎. Mirrored from the page's `batchCount`, never counted here.
+    /// gate on ⌘⌥⏎. Mirrored from the page's `batchCount`, never counted here.
     private(set) var pendingCount = 0
     /// Transient in-pane notice (delivery failures, attach errors). Auto-clears.
     private(set) var notice: String?
@@ -149,7 +149,7 @@ import Observation
         pendingCount = 0
     }
 
-    /// ⌘⇧⏎: the queue is the page's, so the send is the overlay's own verb — the batch comes
+    /// ⌘⌥⏎: the queue is the page's, so the send is the overlay's own verb — the batch comes
     /// back over the binding exactly as it does when the island's Send is clicked.
     func sendBatch() {
         guard active, let client else { return }

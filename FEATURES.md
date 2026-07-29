@@ -1378,3 +1378,10 @@ disclosure to dive deeper.
   is skipped, not deleted, and "opens" hands off to the first survivor. Every agent off is allowed —
   the paths with no user in front of them (browser comment, feedback, MCP handoff) say so up front
   instead of swallowing what was typed. The row keeps its height when it dims, so nothing jumps.
+- **Browser comments arrive as one batch, not one interruption each** — comment mode queues instead
+  of sending: numbered pins accumulate on the page, a floating island owns the batch (count, target,
+  one Send on ⌘⌥⏎ — not ⌘⇧⏎, which zooms a pane), and the host composes one numbered message with one
+  viewport screenshot plus a clip per comment, running the ownership ladder once. A comment names an
+  element, not a coordinate (element + box-fraction, so pins survive scroll/resize/zoom), and the
+  composer's path widens the target up the tree — which is what a drag-a-region mode was really for,
+  except exact. Empty comments cannot exist; leaving the mode parks the batch rather than dropping it.

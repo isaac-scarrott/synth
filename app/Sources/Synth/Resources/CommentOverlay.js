@@ -757,7 +757,7 @@
     island.innerHTML = '<div class="bar">' + head +
       '<div class="div"></div><span class="target">→ ' + label + '</span>' +
       '<button type="button" class="btn btn--pri" data-cm="send"' + (n ? '' : ' disabled') + '>Send ' +
-      (n || '') + '<span class="kbd">⌘⇧⏎</span></button>' +
+      (n || '') + '<span class="kbd">⌘⌥⏎</span></button>' +
       '<button type="button" class="x" data-cm="off" aria-label="Exit comment mode">' + ICON_X + '</button>' +
       '</div>' + (n ? listHTML() : '');
     wireIsland();
@@ -951,7 +951,7 @@
       else doExit(true);
       return;
     }
-    if (ev.key === 'Enter' && ev.shiftKey && (ev.metaKey || ev.ctrlKey)) {
+    if (ev.key === 'Enter' && ev.altKey && (ev.metaKey || ev.ctrlKey)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
       if (state === 'card') queueActive();

@@ -3893,8 +3893,11 @@
 
   // ⌘↩ undoes the last soft-delete while its pill is up, else jumps to the front
   // notification — inert when neither is pending, so the chord is never stolen otherwise.
+  // ⌥ is excluded deliberately: ⌘⌥↩ sends a browser's comment batch, and this handler spends
+  // the chord outright (stopImmediatePropagation), so without the guard a pending notification
+  // would quietly eat the send.
   document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key === 'Enter') {
       const top = notifTop();
       if (!top) return;
       e.preventDefault();

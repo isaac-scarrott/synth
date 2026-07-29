@@ -1402,3 +1402,8 @@ disclosure to dive deeper.
   element, not a coordinate (element + box-fraction, so pins survive scroll/resize/zoom), and the
   composer's path widens the target up the tree — which is what a drag-a-region mode was really for,
   except exact. Empty comments cannot exist; leaving the mode parks the batch rather than dropping it.
+- **A batch of comments is only gone once it has landed** — send holds the queue on the page until
+  the host confirms delivery; a rejection hands back the pins, the text and the count with the reason,
+  because the last rung of the ladder can refuse (the target agent never reports live) and a batch
+  cleared on the way out was lost from both sides. ⌥ is excluded from the ⌘↩ notification chord, which
+  was quietly eating ⌘⌥↩ whenever a toast was up.

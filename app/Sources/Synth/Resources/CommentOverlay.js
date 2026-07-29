@@ -334,7 +334,14 @@
     '.row__del svg { width: 12px; height: 12px; }',
     '.sent { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 12.5px;',
     '  font-weight: 500; color: #e8e8ea; }',
-    '.sent svg { width: 14px; height: 14px; color: #34c759; }'
+    '.sent svg { width: 14px; height: 14px; color: #34c759; }',
+    /* a rejected batch is a state, not a result — amber, and the bar comes straight back */
+    '.sent--warn { color: #f0c674; }',
+    '.spin { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%;',
+    '  border: 1.5px solid rgba(255,255,255,0.22); border-top-color: ' + COPPER_LIT + ';',
+    '  animation: synth-cm-spin 0.7s linear infinite; }',
+    '@keyframes synth-cm-spin { to { transform: rotate(360deg); } }',
+    '@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }'
   ].join('\n');
 
   /* ------------------------------------------------------------------ state */
@@ -750,7 +757,12 @@
     if (!island) return;
     var q = queued(), n = q.length;
     island.className = 'island' + (listOpen && n ? ' is-open' : '') + (activeId ? ' is-shy' : '');
-    if (sending) return;
+    if (sending) {
+      island.className = 'island';
+      island.innerHTML = '<div class="sent"><span class="spin"></span><span>Sending ' + n + ' ' +
+        (n === 1 ? 'comment' : 'comments') + '\u2026</span></div>';
+      return;
+    }
     var label = esc(cfg.targetLabel || 'Claude');
     var word = n === 1 ? 'comment' : 'comments';
     var head = n
@@ -857,22 +869,49 @@
       viewport: { width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio },
       comments: payload
     });
-    lastCount = 0;
-    send({ type: 'batchCount', n: 0 });
-
+    // The batch stays on the page — pins, text and all — until the host confirms it landed.
+    // A delivery can fail on the last rung (the target session never reports live), and a
+    // batch cleared on the way out would be gone from both sides. So no batchCount 0 here,
+    // no pins flying out, and no exit: doConfirm/doReject own that.
     sending = true;
     listOpen = false;
+    renderIsland();
+  }
+
+  /* Delivery landed. Now the batch may go. */
+  function doConfirm(label) {
+    if (state === 'off' || !hostEl || !sending) return;
+    sending = false;
     var count = comments.length;
-    renderPins();
-    layout();
+    if (!count) return;
+    lastCount = 0;
+    send({ type: 'batchCount', n: 0 });
     var pins = layerEl.querySelectorAll('.pin');
     for (var p = 0; p < pins.length; p++) {
       (function (pin, k) { setTimeout(function () { pin.classList.add('is-going'); }, k * 45); })(pins[p], p);
     }
     island.className = 'island';
     island.innerHTML = '<div class="sent">' + ICON_TICK + '<span>' + count + ' ' +
-      (count === 1 ? 'comment' : 'comments') + ' sent to ' + esc(cfg.targetLabel || 'Claude') + '</span></div>';
+      (count === 1 ? 'comment' : 'comments') + ' sent to ' + esc(label || cfg.targetLabel || 'Claude') + '</span></div>';
     sentTimer = setTimeout(function () { sentTimer = null; comments = []; doExit(true); }, SENT_MS);
+  }
+
+  /* Delivery never happened. Hand the batch back exactly as it was and say why — a comment
+     nobody received is still a comment somebody wrote. */
+  function doReject(why) {
+    if (state === 'off' || !hostEl || !sending) return;   // nothing in flight, nothing to hand back
+    sending = false;
+    renderPins();
+    layout();
+    if (!why) { renderIsland(); return; }
+    // Say why in the island itself — it is the thing that claimed to be sending — then hand
+    // the bar straight back with the batch still counted.
+    var n = comments.length;
+    island.className = 'island';
+    island.innerHTML = '<div class="sent sent--warn"><span>' + esc(why) + ' \u2014 ' + n + ' ' +
+      (n === 1 ? 'comment' : 'comments') + ' kept</span></div>';
+    if (sentTimer) clearTimeout(sentTimer);
+    sentTimer = setTimeout(function () { sentTimer = null; renderIsland(); }, 2600);
   }
 
   /* --------------------------------------------------------------- hit test */
@@ -1140,7 +1179,7 @@
       },
       get listOpen() { return listOpen; },
       get sending() { return sending; },
-      get sentToastVisible() { return sending; },
+      get inFlight() { return sending; },
       get queuedCount() { return queued().length; },
       get islandText() { return island ? island.textContent.replace(/\s+/g, ' ').trim() : null; },
       get comments() {
@@ -1162,6 +1201,9 @@
     __synthCommentOverlay: true,
     enter: function (config) { try { doEnter(config); } catch (e) { console.warn('[synth-overlay] enter failed:', e); } },
     exit: function () { try { doExit(true); } catch (e) { console.warn('[synth-overlay] exit failed:', e); } },
-    send: function () { try { doSend(); } catch (e) { console.warn('[synth-overlay] send failed:', e); } }
+    send: function () { try { doSend(); } catch (e) { console.warn('[synth-overlay] send failed:', e); } },
+    // The host's answer to a batch. Until one of these lands the comments stay on the page.
+    confirm: function (label) { try { doConfirm(label); } catch (e) { console.warn('[synth-overlay] confirm failed:', e); } },
+    reject: function (why) { try { doReject(why); } catch (e) { console.warn('[synth-overlay] reject failed:', e); } }
   };
 })();

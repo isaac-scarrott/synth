@@ -369,6 +369,8 @@ final class ControlServer: @unchecked Sendable {
                  "status": String(describing: s.status),
                  "unread": s.unread,
                  "liveAgent": store.isLiveAgent(s.id),
+                 // stage-four containment, so an adoption is assertable from outside
+                 "ownerSessionId": store.owner(of: s)?.id.uuidString ?? "",
                  "agentSessionId": s.agentSessionID ?? ""]
             }
             return ["ok": true, "sessions": rows]
@@ -382,6 +384,9 @@ final class ControlServer: @unchecked Sendable {
                     "commentModeActive": ctrl.commentMode?.active ?? false,
                     "targetTitle": ctrl.commentMode?.targetTitle ?? "",
                     "notice": ctrl.commentMode?.notice ?? "",
+                    // What the toolbar badge shows, and what survives the mode being left —
+                    // an unsent batch is otherwise invisible to a driven run.
+                    "pendingComments": ctrl.commentMode?.pendingCount ?? 0,
                     "address": ctrl.address?.absoluteString ?? "",
                     "isHome": ctrl.isHome,
                     "canGoBack": ctrl.canGoBack,

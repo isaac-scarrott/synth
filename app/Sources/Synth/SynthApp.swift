@@ -369,7 +369,11 @@ struct RootView: View {
             // while the deck is non-empty, so the chord is never stolen otherwise. An undo card
             // outranks every other kind, so "undo wins over jump" falls out of the ordering
             // rather than needing its own branch (working.html notifTop).
-            if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
+            // ⌥ is excluded deliberately: ⌘⌥↩ sends a browser's comment batch, and a deck is
+            // non-empty exactly when an agent just finished — the moment you are most likely to
+            // be sending comments — so without the guard the send would be eaten at random.
+            if event.modifierFlags.contains(.command), !event.modifierFlags.contains(.option),
+               event.keyCode == 36 || event.keyCode == 76,
                store.topNotif != nil {
                 store.jumpToTopNotif(); return nil
             }

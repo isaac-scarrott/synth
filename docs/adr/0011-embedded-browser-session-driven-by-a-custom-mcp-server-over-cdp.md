@@ -182,8 +182,14 @@ click-to-comment. Decisions that turned out to be load-bearing:
   **once**. The security boundary above is unchanged and is the reason the ladder must stay single-shot:
   one batch is one delivery to one hook-confirmed-live session, so a page can no more reach a fallback
   shell with ten comments than it could with one. An unwritten composer is not a comment — blanks never
-  count, never list, and are filtered before send — and a batch that reaches nobody discards *all* its
-  screenshots, the same orphan rule applied to the whole set.
+  count, never list, and are filtered before send.
+- **Send is a request, not a result (amended 2026-07-29).** The page holds its batch until the host
+  answers — `confirm(label)` empties it, `reject(why)` hands it straight back — because the last rung
+  can fail: the target session may never report live, and delivery is refused rather than pasted into
+  whatever shell is there. Clearing the queue optimistically meant a batch that never reached an agent
+  was lost from the page too, which is precisely what the parked island exists to prevent. So an
+  undelivered batch keeps its pins, its text and its count, and only its now-orphaned screenshots are
+  discarded. A comment nobody received is still a comment somebody wrote.
 - **The overlay runs in the MAIN world, injected via `Page.addScriptToEvaluateOnNewDocument`**, with the
   page→host channel a `Runtime.addBinding("__synthComment")`. Main world (not isolated) is required
   because React's `_debugSource` lives on DOM-node expando props an isolated world can't see. The picker

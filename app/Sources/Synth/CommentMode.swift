@@ -309,14 +309,12 @@ import Observation
         // Nothing owns this browser and every agent is switched off: there is no one to send
         // to. Say so, rather than swallowing what was typed.
         guard let agent = store.availableAgents.first?.id else {
-            showNotice("No agent enabled — turn one on in Settings")
-            Self.discard(screenshots)
+            failed("No agent enabled — turn one on in Settings", screenshots: screenshots)
             return
         }
         guard let branch = store.branch(of: browser),
               let spawned = store.spawnAgent(agent, in: branch) else {
-            showNotice("Couldn't start an agent session for \(Self.theComments(count))")
-            Self.discard(screenshots)
+            failed("Couldn't start an agent session", screenshots: screenshots)
             return
         }
         store.adopt(browser, by: spawned)
@@ -353,9 +351,8 @@ import Observation
                 }
             }
             // The agent never reported in (e.g. the resume failed and left a bare shell):
-            // drop the batch — and its now-orphaned screenshots — rather than paste.
-            self?.showNotice("Couldn't reach “\(row.title)” — \(Self.theComments(count)) not delivered")
-            Self.discard(screenshots)
+            // never paste. The batch goes back to the page rather than being lost with it.
+            self?.failed("Couldn't reach “\(row.title)”", screenshots: screenshots)
         }
     }
 
@@ -363,6 +360,26 @@ import Observation
     private func sent(_ count: Int, to title: String) {
         pendingCount = 0
         showNotice(count == 1 ? "Comment sent to \(title)" : "\(count) comments sent to \(title)")
+        answer("confirm", title)
+    }
+
+    /// Delivery never happened. The page is still holding the batch — that is deliberate, see
+    /// the overlay's doSend — so hand it back with the reason instead of leaving it "Sending…"
+    /// forever, and let the orphaned screenshots go. `pendingCount` is untouched: the comments
+    /// are still standing, and the toolbar should keep saying so.
+    private func failed(_ why: String, screenshots: [String]) {
+        showNotice(why)
+        Self.discard(screenshots)
+        answer("reject", why)
+    }
+
+    /// The host's half of the confirm/reject contract, evaluated on the page.
+    private func answer(_ verb: String, _ argument: String) {
+        guard let client else { return }
+        let arg = String(data: (try? JSONSerialization.data(withJSONObject: [argument], options: []))
+                         ?? Data("[\"\"]".utf8), encoding: .utf8) ?? "[\"\"]"
+        let expr = "window.__synthOverlay && window.__synthOverlay.\(verb) && window.__synthOverlay.\(verb).apply(null, \(arg))"
+        Task { _ = try? await client.send("Runtime.evaluate", ["expression": expr], timeout: 5) }
     }
 
     private static func theComments(_ count: Int) -> String {

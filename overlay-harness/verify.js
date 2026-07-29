@@ -40,7 +40,7 @@ const dbgOf = (pg) => pg.evaluate(() => {
   return d ? {
     state: d.state, hoveredTag: d.hoveredTag, highlightRect: d.highlightRect,
     cardOpen: d.cardOpen, cardRect: d.cardRect, listOpen: d.listOpen,
-    sending: d.sending, sentToastVisible: d.sentToastVisible,
+    sending: d.sending, inFlight: d.inFlight,
     queuedCount: d.queuedCount, islandText: d.islandText, comments: d.comments,
     pendingSendCount: d.pendingSendCount
   } : null;

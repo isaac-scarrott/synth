@@ -721,6 +721,11 @@
   .cm-parked { font-size: 12px; color: var(--ink-3); }
   .cm-sent { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
   .cm-sent svg { width: 14px; height: 14px; color: var(--run); }
+  /* in flight — the batch has not left the page yet, so this is a wait, not a result */
+  .cm-sent--wait { color: var(--ink-3); }
+  .cm-spin { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--line-2); border-top-color: var(--copper); animation: cm-spin 0.7s linear infinite; }
+  @keyframes cm-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .cm-spin { animation: none; } }
   .browser__notice { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; padding: 5px 12px; border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); box-shadow: var(--notif-shadow); font-size: 11.5px; font-weight: 500; color: var(--ink-3); white-space: nowrap; animation: browser-drop 160ms var(--ease-out); transition: opacity 240ms ease; }
   .browser__notice.out { opacity: 0; }
 
@@ -4640,7 +4645,14 @@
       const n = queuedCmts().length;
       if (!commentOn && !n) { if (isl) isl.remove(); return; }
       if (!isl) { isl = document.createElement('div'); isl.className = 'cm-island'; host.appendChild(isl); }
-      if (sendingCmts) return;
+      // In flight: the batch is still on the page and still counted, so say what is happening
+      // rather than showing a Send that would fire a second copy.
+      if (sendingCmts) {
+        isl.className = 'cm-island';
+        isl.innerHTML = '<div class="cm-sent cm-sent--wait"><span class="cm-spin"></span><span>Sending '
+          + n + ' ' + (n === 1 ? 'comment' : 'comments') + '\u2026</span></div>';
+        return;
+      }
       isl.className = 'cm-island' + (listOpen && n ? ' is-open' : '') + (!commentOn && n ? ' is-parked' : '') + (activeCmt ? ' is-shy' : '');
       const word = n === 1 ? 'comment' : 'comments';
       const count = '<button class="cm-count" data-cm="list"><span class="cm-count__n">' + n + '</span><span>' + word + '</span><span class="cm-count__chev">' + CM_CHEV + '</span></button>';
@@ -4693,27 +4705,49 @@
     // The mock of the stage-four ladder, now for a whole batch: owned → the owner receives it
     // (its dot goes amber); unowned → a fresh Claude session spawns *silently* — the row appears,
     // the browser re-nests under it, focus stays right here — and the island flips to the owner.
+    // Send is a request, not a result: the batch stays standing — pins, text and all — until
+    // delivery is confirmed. Clearing on the way out would mean a batch that never reached an
+    // agent (its session never reported live) was lost from the page too, and the whole point
+    // of the parked island is that unsent comments survive. So the island goes to "Sending…",
+    // and only confirmBatch() empties it; rejectBatch() hands it straight back.
     function sendBatch() {
       if (sendingCmts) return;
       cmts = queuedCmts();                       // a blank composer standing open is not the batch
       activeCmt = null;
       const count = cmts.length;
       if (!count) { updateCommentUI(); return; }
-      let o = ownerOf(openEl);
+      const o = ownerOf(openEl);
       // Nothing owns this browser and every agent is switched off: there is no one to send to.
       // Say so with the batch still standing, rather than swallowing what was typed.
       if (!o && !liveAgents().length) { notice('No agent enabled — turn one on in Settings'); updateCommentUI(); return; }
       sendingCmts = true; listOpen = false;
-      updateCommentUI();
+      renderIsland();
+      // The mock of the stage-four ladder: owned → the owner receives it; unowned → a fresh
+      // agent spawns and has to report live before anything is pasted, which is the rung that
+      // can fail. Either way the answer comes back through confirm/reject.
+      const target = o || spawnOwnerClaude(openEl);
+      if (!target) { rejectBatch('Couldn\u2019t start an agent'); return; }
+      if (o) setSessionState(o, 'work');
+      setTimeout(() => confirmBatch(sessionTitle(target)), 700);
+    }
+    // Delivery landed: now the batch may go.
+    function confirmBatch(title) {
+      const count = cmts.length;
       const layer = cmLayer();
       if (layer) layer.querySelectorAll('.cm-pin').forEach((p, i) => setTimeout(() => p.classList.add('is-going'), i * 45));
-      if (!o) o = spawnOwnerClaude(openEl); else setSessionState(o, 'work');
       const isl = host.querySelector('.cm-island');
       if (isl) {
         isl.className = 'cm-island';
-        isl.innerHTML = '<div class="cm-sent">' + CM_TICK + '<span>' + count + ' ' + (count === 1 ? 'comment' : 'comments') + ' sent to ' + esc(sessionTitle(o)) + '</span></div>';
+        isl.innerHTML = '<div class="cm-sent">' + CM_TICK + '<span>' + count + ' ' + (count === 1 ? 'comment' : 'comments') + ' sent to ' + esc(title) + '</span></div>';
       }
       setTimeout(() => { cmts = []; sendingCmts = false; commentOn = false; updateCommentUI(); }, 2600);
+    }
+    // Delivery never happened. Hand the batch back exactly as it was and say why — a comment
+    // nobody received is still a comment somebody wrote.
+    function rejectBatch(why) {
+      sendingCmts = false;
+      updateCommentUI();
+      notice(why + ' — ' + cmts.length + ' ' + (cmts.length === 1 ? 'comment' : 'comments') + ' kept');
     }
     function notice(text) {
       const view = host.querySelector('.browser__view'); if (!view) return;

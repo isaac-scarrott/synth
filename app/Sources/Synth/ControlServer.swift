@@ -284,6 +284,17 @@ final class ControlServer: @unchecked Sendable {
             }
             return ["ok": true, "sessionId": session.id.uuidString]
 
+        // The feedback sheet's Send (⌘⇧F → ⌘↵): fill the two fields the sheet binds and make
+        // its exact call. ⌘↵ is a SwiftUI keyboard shortcut, which a synthetic key event can't
+        // reach in a window that isn't key — so the author loop (worktree, seeded agent, and
+        // the email fallbacks when there is no workspace or no agent left on) is otherwise
+        // undrivable headlessly.
+        case "automation.feedback" where automation:
+            store.feedbackTitle = request["title"] as? String ?? ""
+            store.feedbackDraft = request["body"] as? String ?? ""
+            store.submitFeedback(store.feedbackDraft)
+            return ["ok": true, "mode": String(describing: store.feedbackMode)]
+
         case "automation.commentMode" where automation:
             guard let session = requestedSession(request, in: branch), session.kind == .browser,
                   let ctrl = BrowserManager.shared.controller(for: session) else {

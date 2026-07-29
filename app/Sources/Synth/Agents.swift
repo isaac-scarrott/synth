@@ -116,9 +116,8 @@ extension AgentDescriptor: Identifiable {}
 
     private static var installedCache: [AgentDescriptor]?
 
-    /// Posted on the main actor when the set of agents a "New …" surface should offer changes:
-    /// the login-shell PATH probe landed, or the user flipped an agent's switch. The seam for
-    /// a surface that must react rather than re-read on demand.
+    /// Posted on the main actor when `installed` changes because the login-shell PATH probe
+    /// landed — the seam for a surface that must react rather than re-read on demand.
     static let installedDidChange = Notification.Name("AgentRegistry.installedDidChange")
 
     /// Which agents are actually installed. Cached — rescanning PATH per ⌘K keystroke would stat
@@ -128,6 +127,11 @@ extension AgentDescriptor: Identifiable {}
     /// see appears in ⌘K / Settings and gets a hook shim. Surfaces that re-read on demand (⌘K,
     /// Settings when opened) pick the change up for free; an already-onscreen one observes
     /// `installedDidChange`.
+    ///
+    /// Unfiltered by the Settings switches on purpose — `AppStore.availableAgents` is the set
+    /// Synth may START. The PATH shims, `SYNTH_AGENT_BINS` and supervisor teardown have to keep
+    /// seeing every agent on the machine, or a session still running a switched-off one loses
+    /// its status seam mid-flight.
     static var installed: [AgentDescriptor] {
         if let installedCache { return installedCache }
         let snapshot = all.filter { $0.resolvedBinary != nil }
@@ -149,23 +153,6 @@ extension AgentDescriptor: Identifiable {}
     }
 
     static func isInstalled(_ id: AgentID) -> Bool { installed.contains { $0.id == id } }
-
-    /// Whether Synth may START this agent — the app-level switch in Settings ▸ Synth ▸ Agent
-    /// defaults. `AppStore` owns the preference and installs its reader here, so the static
-    /// registry every "New …" surface already reads can honour it without a store threaded
-    /// through. Before a store exists, every installed agent is on.
-    static var isEnabled: (AgentID) -> Bool = { _ in true }
-
-    /// `installed` minus the agents switched off — what every surface that would start an
-    /// agent offers. `installed` itself stays unfiltered on purpose: the PATH shims,
-    /// `SYNTH_AGENT_BINS` and supervisor teardown must keep seeing every agent on the machine,
-    /// or a session still running one loses its status seam mid-flight.
-    static var available: [AgentDescriptor] { installed.filter { isEnabled($0.id) } }
-
-    /// The agent a bare "new agent session" action means when the user hasn't picked one —
-    /// the first *enabled* installed agent, so a machine with only opencode still gets a
-    /// working ⌘K. Nil once every agent is switched off; every caller must tolerate that.
-    static var `default`: AgentDescriptor? { available.first }
 
     // MARK: Supervisors
 

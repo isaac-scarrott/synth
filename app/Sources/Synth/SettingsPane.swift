@@ -372,12 +372,17 @@ private struct SetEditorRow<Trailing: View, Body: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // One line each, always: the header shares its baseline with a switch, and a desc
+            // allowed to wrap in a narrow pane would grow the row and shove the rest of the
+            // section down. The label never gives up space; the desc truncates instead.
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(label).font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
                     .foregroundStyle(dimmed ? Theme.ink4 : Theme.ink)
+                    .lineLimit(1).fixedSize()
                 if let desc {
                     Text(desc).font(.system(size: 11.5))
                         .foregroundStyle(dimmed ? Theme.inkFaint : Theme.inkMuted)
+                        .lineLimit(1).truncationMode(.tail)
                 }
                 Spacer(minLength: 8)
                 trailing
@@ -558,22 +563,76 @@ private struct FlagField: View {
     /// drops out of the tab order (working.html `.set-row--off .set-code--flags`).
     var enabled: Bool = true
 
+    private var ink: Color { enabled ? Color(hex: 0xD4D6DC) : Color(hex: 0x8B8E96) }
+
     var body: some View {
         ZStack(alignment: .leading) {
             if text.isEmpty {
+                // The placeholder tracks the field's own ink: opencode and antigravity ship with
+                // no default flags, so on an unedited field it is the ONLY text in the row's
+                // body, and a placeholder that stayed bright would read as a field still live.
                 Text(placeholder).font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color(hex: 0xD4D6DC).opacity(0.30)).allowsHitTesting(false)
+                    .foregroundStyle(ink.opacity(0.30)).allowsHitTesting(false)
             }
-            TextField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(enabled ? Color(hex: 0xD4D6DC) : Color(hex: 0x8B8E96))
-                .disabled(!enabled)
+            MonoLineField(text: $text, editable: enabled, ink: ink)
         }
         .padding(.horizontal, 15).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Theme.termBg))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5))
+    }
+}
+
+/// One mono line that is always selectable and only sometimes editable — AppKit, because
+/// SwiftUI's `TextField` can only be `.disabled`, and disabled takes the field out of
+/// hit-testing altogether: the flags you would want to copy somewhere else can't even be
+/// selected, and AppKit greys the text a second time on top of the colour we set. Read-only
+/// is what "off" means here (working.html's `readonly` + `caret-color: transparent`).
+///
+/// The same view draws both states, so flipping the switch cannot move a pixel.
+private struct MonoLineField: NSViewRepresentable {
+    @Binding var text: String
+    let editable: Bool
+    let ink: Color
+
+    func makeNSView(context: Context) -> NSTextField {
+        let f = KeyLoopField(string: "")
+        f.isBordered = false
+        f.drawsBackground = false
+        f.focusRingType = .none
+        f.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        f.lineBreakMode = .byTruncatingTail
+        f.cell?.usesSingleLineMode = true
+        f.delegate = context.coordinator
+        f.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        f.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return f
+    }
+
+    func updateNSView(_ f: NSTextField, context: Context) {
+        context.coordinator.text = $text
+        f.isEditable = editable
+        f.isSelectable = true
+        f.textColor = NSColor(ink)
+        if f.stringValue != text { f.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+        func controlTextDidChange(_ obj: Notification) {
+            guard let f = obj.object as? NSTextField else { return }
+            text.wrappedValue = f.stringValue
+        }
+    }
+
+    /// Selection is a click; the tab loop is not. A read-only field keeps the first — you can
+    /// still reach in and copy — and leaves the key view loop, so tabbing through Settings
+    /// walks the switches and fields that still do something.
+    private final class KeyLoopField: NSTextField {
+        override var canBecomeKeyView: Bool { isEditable }
     }
 }
 

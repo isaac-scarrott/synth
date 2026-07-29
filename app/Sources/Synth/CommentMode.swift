@@ -53,7 +53,11 @@ import Observation
             return
         }
         self.store = store
-        targetTitle = prospectiveTarget()?.title ?? "New agent session"
+        // Where the next comment lands. Unowned means Synth would start an agent to take it —
+        // unless every agent is switched off, and then the chip says so before anything is
+        // typed rather than refusing it on send (working.html `commentTarget`).
+        targetTitle = prospectiveTarget()?.title
+            ?? (store.availableAgents.isEmpty ? "No agent enabled" : "New agent session")
         attachNonce += 1
         let nonce = attachNonce
         attachTask = Task { [weak self] in

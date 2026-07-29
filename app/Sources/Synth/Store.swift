@@ -386,22 +386,25 @@ enum FeedbackMode {
     /// starting NEW ones — a session already running that agent carries on untouched, which is
     /// why `AgentRegistry.installed` stays unfiltered. Turning every agent off is allowed.
     var agentEnabledPrefs: [String: Bool] = AppStore.loadAgentEnabledPrefs() {
-        didSet {
-            UserDefaults.standard.set(agentEnabledPrefs, forKey: AppStore.agentEnabledKey)
-            NotificationCenter.default.post(name: AgentRegistry.installedDidChange, object: nil)
-        }
+        didSet { UserDefaults.standard.set(agentEnabledPrefs, forKey: AppStore.agentEnabledKey) }
     }
     static let agentEnabledKey = "synth-agents-enabled"
     static func loadAgentEnabledPrefs() -> [String: Bool] {
         UserDefaults.standard.dictionary(forKey: agentEnabledKey) as? [String: Bool] ?? [:]
     }
 
-    func isAgentEnabled(_ id: AgentID) -> Bool { agentEnabledPrefs[id.rawValue] ?? true }
+    /// Switched on AND on this machine: a state.json carried over from a machine that had
+    /// opencode names an agent this one can't start, and Agent defaults — which lists what's
+    /// installed — offers no switch to turn it off.
+    func isAgentEnabled(_ id: AgentID) -> Bool {
+        AgentRegistry.isInstalled(id) && (agentEnabledPrefs[id.rawValue] ?? true)
+    }
     /// Terminals and browsers are never off.
     func isAgentEnabled(_ kind: SessionKind) -> Bool { kind.agentID.map(isAgentEnabled) ?? true }
 
-    /// The installed agents left switched on. Same list as `AgentRegistry.available`, read
-    /// through the observable preference so a SwiftUI surface re-renders when a switch flips.
+    /// The installed agents left switched on — what every surface that would START an agent
+    /// offers. Read through the observable preference, so a SwiftUI surface re-renders the
+    /// instant a switch flips.
     var availableAgents: [AgentDescriptor] { AgentRegistry.installed.filter { isAgentEnabled($0.id) } }
 
     /// Which template entry actually opens a new worktree: the first one whose agent is still
@@ -691,7 +694,6 @@ enum FeedbackMode {
             }
         }
         AppStore.shared = self
-        AgentRegistry.isEnabled = { [weak self] id in self?.isAgentEnabled(id) ?? true }
     }
 
     /// Keep the instance file's worktreePaths and every worktree's .mcp.json current.
@@ -2328,9 +2330,13 @@ enum FeedbackMode {
     /// branches, so a repeated gripe never collides `git worktree add` (its old failure mode).
     private func startFeedbackFix(title: String, body: String) {
         guard let ws = feedbackWorkspace() else { openFeedbackEmail(body.isEmpty ? title : body); return }
+        let gripe = body.isEmpty ? title : title + "\n\n" + body
+        // Every agent switched off: nobody can be handed the fix, so a worktree would be an
+        // empty folder and the text would be gone. Same fallback as having nowhere to host it —
+        // the words the author typed leave by the other door rather than vanishing behind "On it".
+        guard !availableAgents.isEmpty else { openFeedbackEmail(gripe); return }
         let repo = ws.url
         let slug = Self.feedbackSlug(from: title)
-        let gripe = body.isEmpty ? title : title + "\n\n" + body
         let seed = gripe + "\n\n" + captureFeedbackContext()
         // The "On it" ack is instant; the collision-free branch name needs `git for-each-ref` over
         // heads + remotes, which blocks for hundreds of ms on a big/cold repo — so resolve it (and
@@ -2346,7 +2352,10 @@ enum FeedbackMode {
             }
             let row = self.addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
             self.materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
-                self?.seedAgent(in: branch, seed: seed)
+                // The last switch can go off between "On it" and the checkout landing. The
+                // worktree is already cut by then, but the gripe still has somewhere to go.
+                guard let self, !self.seedAgent(in: branch, seed: seed) else { return }
+                self.openFeedbackEmail(gripe)
             }) {
                 GitService.addWorktree(repo: repo, path: planned, newBranch: branchName, base: nil)
                     .map { .failed($0) } ?? .ready(planned)
@@ -2374,9 +2383,13 @@ enum FeedbackMode {
     /// boots (GhosttySurfaceView spawns on window attach), bounce focus back, then boot-and-wait
     /// for the supervisor's liveness signal and hand it the seed — mirroring CommentMode rung 3.
     /// Serves both seeded-worktree flows: the feedback fix and the synth-app handoff.
-    private func seedAgent(in branch: Branch, seed: String) {
-        guard let agent = AgentRegistry.default?.id,
-              let session = spawnAgent(agent, in: branch) else { return }
+    ///
+    /// False when there is nothing to seed — every agent switched off, or the spawn failed.
+    /// Both callers carry text a human or an agent wrote, so neither may let it go quietly.
+    @discardableResult
+    private func seedAgent(in branch: Branch, seed: String) -> Bool {
+        guard let agent = availableAgents.first?.id,
+              let session = spawnAgent(agent, in: branch) else { return false }
         let previous = openSessionID
         open(session)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -2398,6 +2411,7 @@ enum FeedbackMode {
             }
             NSLog("Synth: seed never delivered (agent didn't report in)")
         }
+        return true
     }
 
     /// Other path: open the user's mail client with a pre-filled draft. The body attaches only
@@ -2740,6 +2754,16 @@ enum FeedbackMode {
             return .immediate(["ok": false, "error":
                 "a prompt for \(name) is already awaiting the user's answer"])
         }
+        let handoff = (request["handoff"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // A handoff is a brief written for someone to receive. With every agent switched off
+        // there is no one, and an approved create would leave an empty worktree and drop the
+        // brief — so refuse it here, before the user is asked, and say what would work instead.
+        guard handoff == nil || !availableAgents.isEmpty else {
+            return .immediate(["ok": false, "error":
+                "every agent is switched off in Synth Settings → Agent defaults, so nothing can "
+                + "receive the handoff — turn one on, or call again without `handoff` to create "
+                + "the worktree alone"])
+        }
         let requester = (request["ownerSessionId"] as? String)
             .flatMap(UUID.init(uuidString:))
             .flatMap { id in callerBranch.sessions.first { $0.id == id && $0.kind.isAgent } }
@@ -2747,7 +2771,7 @@ enum FeedbackMode {
             workspace: ws,
             branchName: name,
             base: (request["base"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            handoff: (request["handoff"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            handoff: handoff,
             requesterTitle: requester?.title,
             respond: respond)
         agentPrompts.append(prompt)
@@ -2788,6 +2812,14 @@ enum FeedbackMode {
             prompt.respond(["ok": true, "decision": "declined"])
             return
         }
+        // The prompt sits live for minutes, so the last switch can go off while it waits. A
+        // handoff with nobody left to take it creates an empty worktree and drops the brief.
+        guard prompt.handoff == nil || !availableAgents.isEmpty else {
+            prompt.respond(["ok": false, "error":
+                "every agent was switched off while this was waiting, so nothing can receive the "
+                + "handoff — nothing was created"])
+            return
+        }
         let planned = agentCreateWorktree(prompt)
         prompt.respond(["ok": true, "decision": "created",
                         "branch": prompt.branchName, "worktreePath": planned.path])
@@ -2818,7 +2850,15 @@ enum FeedbackMode {
         let row = addBranchRow(in: ws, name: name, worktreeURL: planned, pending: true)
         openWorktreeSetup(row)
         let onReady: ((Branch) -> Void)? = prompt.handoff.map { seed in
-            { [weak self] branch in self?.seedAgent(in: branch, seed: seed) }
+            { [weak self] branch in
+                // The MCP caller was answered on the approval click and is long gone by now, so
+                // a seed that can't start is only ever the user's to hear about — the worktree
+                // is there and holds nothing.
+                guard let self, !self.seedAgent(in: branch, seed: seed) else { return }
+                self.raiseWorktreeError("Couldn't start the handoff session", branch: name,
+                                        workspace: ws.name,
+                                        details: "no agent is switched on to receive it")
+            }
         }
         materialize(row, in: ws, spawningTemplate: prompt.handoff == nil, onReady: onReady) {
             if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == name }) {

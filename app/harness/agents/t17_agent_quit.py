@@ -13,8 +13,11 @@ So the claims worth proving against a running app are:
     exactly when a countdown would spend the conversation for you),
   - Reopen brings the row back with its conversation id intact, and the PTY relaunches with
     `--session <id>` — the conversation, not a fresh one,
-  - and a row with nothing to resume still closes outright, because the rule is "never destroy a
-    conversation Synth can restore", not "never close a row".
+  - and a row with nothing to resume parks too, its Reopen relaunching fresh. Exit 0 is not
+    evidence of a gesture: opencode dies cleanly on its own (observed mid-boot and ten minutes
+    into an idle row, all before a first prompt existed), and the silent close read every such
+    death as the user's — the row you were watching just vanished. The card is the difference
+    between "opencode quit" and "Synth lost my session".
 
 SIGTERM stands in for the keystroke: it is the same clean-exit path (143 is a user interrupt, as
 neutral as 0), and unlike a simulated keypress it lands on the process whether or not the TUI is
@@ -83,8 +86,8 @@ check("12. the reopened row relaunched opencode", bool(cmd), (cmd or "")[:90])
 check("13. resuming the conversation, not starting a fresh one",
       cmd and f"--session {conv}" in cmd, (cmd or "")[:120])
 
-# ------------------------------------------------ 4. nothing to resume → the row still closes
-# Clear the board first: quit the reopened row and let its card stand (× on an undo commits it,
+# -------------------------------- 4. nothing to resume → parks too, Reopen relaunches fresh
+# Clear the board first: quit the reopened row and dismiss its card (× on an undo commits it,
 # exactly as the drain would), so the next case starts with an empty deck.
 for pid in opencode_pids():
     os.kill(pid, signal.SIGTERM)
@@ -96,12 +99,21 @@ fresh = ctl("automation.newAgent", agent="opencode")["sessionId"]
 wait(lambda: (ctl.row(fresh) or {}).get("liveAgent"), 60)
 check("14. the fresh row has no conversation yet",
       not (ctl.row(fresh) or {}).get("agentSessionId"), (ctl.row(fresh) or {}).get("agentSessionId"))
+# The death that motivated this case is opencode's own — a clean exit the user never asked
+# for, on a row whose prompt was still in the composer. SIGTERM stands in for it as above.
 for pid in opencode_pids():
     os.kill(pid, signal.SIGTERM)
-closed = wait(lambda: ctl.row(fresh) is None, 30, 0.2)
-check("15. a row with nothing to resume closes outright", closed is not None)
-check("16. and parks no card — there is nothing to bring back",
-      not any(x["kind"] == "undo" for x in cards()), cards())
+wait(lambda: ctl.row(fresh) is None, 30, 0.2)
+c2 = wait(lambda: next((x for x in cards() if x["kind"] == "undo"), None), 15, 0.2)
+check("15. a row with nothing to resume parks too — a spontaneous death is never silent",
+      bool(c2), c2)
+ctl("automation.notifAction", sessionId=c2["sessionId"]) if c2 else None
+back2 = wait(lambda: ctl.row(fresh), 15, 0.2)
+check("16. Reopen brings the row back", bool(back2))
+ctl("automation.jump", sessionId=fresh)
+cmd2 = wait(lambda: (sh("ps -eo command= | grep 'opencode --port' | grep -v grep") or None), 60)
+check("17. relaunching fresh — no conversation, so no --session flag",
+      cmd2 and "--session" not in cmd2, (cmd2 or "")[:120])
 
 p.terminate()
 sys.exit(result())

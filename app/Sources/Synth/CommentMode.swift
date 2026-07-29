@@ -258,8 +258,14 @@ import Observation
         // pane mounts (GhosttySurfaceView creates the surface on window attach), so open
         // the row for one beat and come straight back to the browser; both views live
         // outside the SwiftUI tree (TerminalManager / BrowserManager) and survive the swap.
+        // Nothing owns this browser and every agent is switched off: there is no one to send
+        // to. Say so, rather than swallowing what was typed.
+        guard let agent = store.availableAgents.first?.id else {
+            showNotice("No agent enabled — turn one on in Settings")
+            Self.discard(screenshots)
+            return
+        }
         guard let branch = store.branch(of: browser),
-              let agent = AgentRegistry.default?.id,
               let spawned = store.spawnAgent(agent, in: branch) else {
             showNotice("Couldn't start an agent session for the comment")
             Self.discard(screenshots)

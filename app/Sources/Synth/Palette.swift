@@ -374,7 +374,7 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal",
                                      group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newTerminal(in: branch) } }))
-            items += AgentRegistry.installed.map { agent in
+            items += store.availableAgents.map { agent in
                 PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)",
                             group: g, ctx: branch.name,
                             enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
@@ -652,13 +652,13 @@ struct PaletteFrame {
         }
     }
 
-    /// The session creates on a branch — a terminal, one per installed agent, a browser —
+    /// The session creates on a branch — a terminal, one per enabled agent, a browser —
     /// shared by the branch frame and the workspace/session frames, which borrow them with a
-    /// ctx chip naming the branch.
+    /// ctx chip naming the branch. An agent switched off in Settings is simply not offered.
     private func sessionCreates(in branch: Branch, ctx: String? = nil) -> [PaletteItem] {
         [PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
                      ctx: ctx, enter: { self.runAndClose { self.store.newTerminal(in: branch) } })]
-        + AgentRegistry.installed.map { agent in
+        + store.availableAgents.map { agent in
             PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)", sec: "act",
                         ctx: ctx, enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
         }
@@ -867,14 +867,14 @@ struct PaletteFrame {
     }
 
     /// `a` on a branch/worktree (or a session leaf) jumps straight to the "add a session"
-    /// choice — a terminal, any installed agent, or a browser, created in `branch`
+    /// choice — a terminal, any enabled agent, or a browser, created in `branch`
     /// (working.html newSessionFrame). Order: create→navigate→modify→destroy, and within
     /// the creates, terminal first then the agents in registry order.
     func newSessionFrame(branch: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "New session", placeholder: "New session in \(branch.name)…") { [self] _ in
             var items = [PaletteItem(icon: .session(.terminal), label: "New terminal", ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newTerminal(in: branch) } })]
-            items += AgentRegistry.installed.map { agent in
+            items += store.availableAgents.map { agent in
                 PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)", ctx: branch.name,
                             enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
             }
@@ -900,7 +900,7 @@ struct PaletteFrame {
                 items.append(PaletteItem(icon: .session(.terminal), label: "New terminal", sec: "act",
                                          ctx: br.name, kbd: ["⌘", "T"],
                                          enter: { self.runAndClose { self.splitNew(.terminal, in: br, dir: dir, before: before, target: target) } }))
-                for agent in AgentRegistry.installed {
+                for agent in store.availableAgents {
                     items.append(PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)",
                                              sec: "act", ctx: br.name,
                                              enter: { self.runAndClose { self.splitNew(.agent(agent.id), in: br, dir: dir, before: before, target: target) } }))

@@ -91,17 +91,35 @@ struct SettingsPane: View {
                 SetEditorRow(label: "Sessions", desc: "Every new worktree opens with these. The first one opens.") {
                     VStack(alignment: .leading, spacing: 8) {
                         TplList(entries: bind(\.globalSessionTemplate),
-                                emptyText: "No sessions — new worktrees open empty.", firstOpens: true)
+                                emptyText: "No sessions — new worktrees open empty.",
+                                opensIndex: store.templateOpensAt(store.globalSessionTemplate))
                         TplAddBar(entries: bind(\.globalSessionTemplate))
                     }
                 }
             }
+            // The flags you'd set for an agent are exactly what you don't need once it's off, so
+            // the switch and the field live on one row: off greys the row and takes the field
+            // with it. The row itself stays, at the same height — the switch that brings the
+            // agent back has to be somewhere you can find it, and a collapsing row would shove
+            // everything below it.
             SetSection(label: "Agent defaults") {
                 ForEach(Array(AgentRegistry.installed.enumerated()), id: \.element.id) { i, agent in
                     if i > 0 { SetDivider() }
-                    SetEditorRow(label: agent.binaryName, desc: "Flags added to every \(agent.binaryName) launch.") {
-                        FlagField(text: globalFlagsBinding(agent), placeholder: agent.exampleFlags)
+                    let on = store.isAgentEnabled(agent.id)
+                    SetEditorRow(label: agent.binaryName,
+                                 desc: "Flags added to every \(agent.binaryName) launch.",
+                                 dimmed: !on,
+                                 // A switch has no text baseline, so the row's firstTextBaseline
+                                 // HStack would fall back to its bottom edge and sit it low —
+                                 // pin its centre to the label's baseline instead.
+                                 trailing: {
+                                     switchControl(agentEnabledBinding(agent))
+                                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                                 }) {
+                        FlagField(text: globalFlagsBinding(agent), placeholder: agent.exampleFlags,
+                                  enabled: on)
                     }
+                    .animation(.easeOut(duration: 0.15), value: on)
                 }
             }
             SetSection(label: "Privacy") {
@@ -164,15 +182,21 @@ struct SettingsPane: View {
                     LayeredSessions(shared: store.globalSessionTemplate, own: sessionsBinding(ws))
                 }
             }
-            SetSection(label: "Agents") {
-                ForEach(Array(AgentRegistry.installed.enumerated()), id: \.element.id) { i, agent in
-                    if i > 0 { SetDivider() }
-                    let shared = (store.globalAgentFlags[agent.id] ?? "").trimmingCharacters(in: .whitespaces)
-                    SetEditorRow(label: agent.binaryName,
-                                 desc: shared.isEmpty ? "Flags for \(agent.binaryName) launches." : "Added after the shared \(agent.binaryName) flags.",
-                                 trailing: { if hasFlagsDelta(ws, agent) { ClearButton { clearFlags(ws, agent) } } }) {
-                        FlagLineField(binary: agent.binaryName, shared: shared,
-                                      tail: wsFlagsBinding(ws, agent), placeholder: agent.exampleFlags)
+            // A switched-off agent drops out here entirely rather than greying: the switch is
+            // app-level, so repeating a dead row in every project is the clutter this removes.
+            // The project's flags for it stay in the delta, waiting.
+            let agents = store.availableAgents
+            if !agents.isEmpty {
+                SetSection(label: "Agents") {
+                    ForEach(Array(agents.enumerated()), id: \.element.id) { i, agent in
+                        if i > 0 { SetDivider() }
+                        let shared = (store.globalAgentFlags[agent.id] ?? "").trimmingCharacters(in: .whitespaces)
+                        SetEditorRow(label: agent.binaryName,
+                                     desc: shared.isEmpty ? "Flags for \(agent.binaryName) launches." : "Added after the shared \(agent.binaryName) flags.",
+                                     trailing: { if hasFlagsDelta(ws, agent) { ClearButton { clearFlags(ws, agent) } } }) {
+                            FlagLineField(binary: agent.binaryName, shared: shared,
+                                          tail: wsFlagsBinding(ws, agent), placeholder: agent.exampleFlags)
+                        }
                     }
                 }
             }
@@ -209,6 +233,11 @@ struct SettingsPane: View {
 
     private func bind<V>(_ key: ReferenceWritableKeyPath<AppStore, V>) -> Binding<V> {
         Binding(get: { store[keyPath: key] }, set: { store[keyPath: key] = $0 })
+    }
+
+    private func agentEnabledBinding(_ agent: AgentDescriptor) -> Binding<Bool> {
+        Binding(get: { store.isAgentEnabled(agent.id) },
+                set: { store.agentEnabledPrefs[agent.id.rawValue] = $0 })
     }
 
     private func globalFlagsBinding(_ agent: AgentDescriptor) -> Binding<String> {
@@ -324,24 +353,31 @@ private struct SetToggleRow<Control: View>: View {
 }
 
 /// A row whose control is a full-width body (editor, session list) beneath the label.
+/// `dimmed` greys the label and description (working.html `.set-row--off`) without changing
+/// a single metric — the body stays where it is, so a row that switches off doesn't move
+/// anything below it.
 private struct SetEditorRow<Trailing: View, Body: View>: View {
     let label: String
     var desc: String? = nil
+    var dimmed: Bool = false
     @ViewBuilder var trailing: Trailing
     @ViewBuilder var content: Body
 
-    init(label: String, desc: String? = nil,
+    init(label: String, desc: String? = nil, dimmed: Bool = false,
          @ViewBuilder trailing: () -> Trailing = { EmptyView() },
          @ViewBuilder content: () -> Body) {
-        self.label = label; self.desc = desc; self.trailing = trailing(); self.content = content()
+        self.label = label; self.desc = desc; self.dimmed = dimmed
+        self.trailing = trailing(); self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(label).font(.system(size: 12.5, weight: .medium)).kerning(-0.08).foregroundStyle(Theme.ink)
+                Text(label).font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+                    .foregroundStyle(dimmed ? Theme.ink4 : Theme.ink)
                 if let desc {
-                    Text(desc).font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted)
+                    Text(desc).font(.system(size: 11.5))
+                        .foregroundStyle(dimmed ? Theme.inkFaint : Theme.inkMuted)
                 }
                 Spacer(minLength: 8)
                 trailing
@@ -517,6 +553,10 @@ private struct SharedSetupStrip: View {
 private struct FlagField: View {
     @Binding var text: String
     let placeholder: String
+    /// Off keeps the field exactly where it is, at exactly its height — there is just nothing
+    /// to edit for an agent that will never launch, so it greys out, stops taking a caret and
+    /// drops out of the tab order (working.html `.set-row--off .set-code--flags`).
+    var enabled: Bool = true
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -527,7 +567,8 @@ private struct FlagField: View {
             TextField("", text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color(hex: 0xD4D6DC))
+                .foregroundStyle(enabled ? Color(hex: 0xD4D6DC) : Color(hex: 0x8B8E96))
+                .disabled(!enabled)
         }
         .padding(.horizontal, 15).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -594,18 +635,23 @@ private enum TplMetrics {
 /// .tpl-row--shared), the project's own added below and reorderable, then the add bar. The
 /// first row overall opens; numbering continues across the boundary.
 private struct LayeredSessions: View {
+    @Environment(AppStore.self) private var store
     let shared: [SessionTemplateEntry]
     @Binding var own: [SessionTemplateEntry]
 
     var body: some View {
+        // The opener can sit in either list — it's the first entry overall whose agent is
+        // still switched on, so a disabled shared row hands "opens" down to whatever follows.
+        let opens = store.templateOpensAt(shared + own)
         VStack(alignment: .leading, spacing: 8) {
             VStack(spacing: TplMetrics.gap) {
                 ForEach(Array(shared.enumerated()), id: \.element.id) { i, entry in
-                    SharedSessionRow(entry: entry, index: i, opens: i == 0)
+                    SharedSessionRow(entry: entry, index: i, opens: i == opens)
                 }
             }
             TplList(entries: $own, emptyText: "No extra sessions — opens with the shared set.",
-                    indexOffset: shared.count, firstOpens: shared.isEmpty)
+                    indexOffset: shared.count,
+                    opensIndex: opens.flatMap { $0 >= shared.count ? $0 - shared.count : nil })
             TplAddBar(entries: $own)
         }
     }
@@ -613,18 +659,24 @@ private struct LayeredSessions: View {
 
 /// A locked shared session row on a project scope — greyed, no grip/×, tagged "Synth".
 private struct SharedSessionRow: View {
+    @Environment(AppStore.self) private var store
     let entry: SessionTemplateEntry
     let index: Int
     let opens: Bool
 
+    private var off: Bool { !store.isAgentEnabled(entry.kind) }
+
     var body: some View {
         HStack(spacing: 8) {
             TplIndex(i: index)
-            TplKindIcon(kind: entry.kind)
+            TplKindIcon(kind: entry.kind, off: off)
             Text(entry.name)
                 .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
-                .foregroundStyle(Theme.inkMuted).lineLimit(1).padding(.horizontal, 5)
+                .foregroundStyle(off ? Theme.inkFaint : Theme.inkMuted)
+                .strikethrough(off, color: Theme.inkFaint)
+                .lineLimit(1).padding(.horizontal, 5)
             if opens { TplOpensTag() }
+            if off { TplOffPill() }
             Spacer(minLength: 4)
             TplKindPill(kind: entry.kind)
             Text("Synth")
@@ -648,16 +700,29 @@ private struct TplOpensTag: View {
     }
 }
 
+/// The "Off" pill on a template entry whose agent is switched off (working.html `.tpl-off`).
+/// The entry is skipped, not deleted — flipping the agent back on restores it as it was.
+private struct TplOffPill: View {
+    var body: some View {
+        Text("Off")
+            .font(.system(size: 9.5, weight: .semibold)).kerning(0.29)
+            .foregroundStyle(Theme.inkFaint)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(Capsule().fill(Theme.rowHover))
+    }
+}
+
 private struct TplDrop: Equatable { var from: Int; var target: Int }
 
 /// The editable template list (working.html .tpl-list[data-tpl]): reorderable rows with an
 /// inline name field, kind pill and remove button. `indexOffset` continues numbering past a
-/// locked shared block; `firstOpens` tags row 0 as the one that opens.
+/// locked shared block; `opensIndex` is the row that opens the worktree, or nil when the
+/// opener sits in the shared block above (or every entry is switched off).
 private struct TplList: View {
     @Binding var entries: [SessionTemplateEntry]
     let emptyText: String
     var indexOffset: Int = 0
-    var firstOpens: Bool = false
+    var opensIndex: Int?
     @State private var drop: TplDrop?
 
     var body: some View {
@@ -668,7 +733,7 @@ private struct TplList: View {
                 ForEach(entries) { entry in
                     let idx = entries.firstIndex(where: { $0.id == entry.id }) ?? 0
                     TplRow(entries: $entries, entry: entry, index: idx,
-                           displayIndex: idx + indexOffset, opens: firstOpens && idx == 0, drop: $drop)
+                           displayIndex: idx + indexOffset, opens: idx == opensIndex, drop: $drop)
                 }
             }
             .overlay(alignment: .top) {
@@ -711,6 +776,7 @@ private struct TplEmpty: View {
 }
 
 private struct TplRow: View {
+    @Environment(AppStore.self) private var store
     @Binding var entries: [SessionTemplateEntry]
     let entry: SessionTemplateEntry
     let index: Int
@@ -721,13 +787,16 @@ private struct TplRow: View {
     @State private var dragFrom = 0
     @State private var dragOffset: CGFloat = 0
 
+    private var off: Bool { !store.isAgentEnabled(entry.kind) }
+
     var body: some View {
         HStack(spacing: 8) {
             grip
             TplIndex(i: displayIndex)
-            TplKindIcon(kind: entry.kind)
-            TplNameField(text: nameBinding)
+            TplKindIcon(kind: entry.kind, off: off)
+            TplNameField(text: nameBinding, off: off)
             if opens { TplOpensTag() }
+            if off { TplOffPill() }
             TplKindPill(kind: entry.kind)
             removeButton
         }
@@ -796,7 +865,11 @@ private struct TplIndex: View {
 
 private struct TplKindIcon: View {
     let kind: SessionKind
-    var body: some View { Phos(path: kind.iconPath, size: 14).foregroundStyle(kind.tint).frame(width: 14) }
+    var off: Bool = false
+    var body: some View {
+        Phos(path: kind.iconPath, size: 14).foregroundStyle(kind.tint).frame(width: 14)
+            .opacity(off ? 0.45 : 1)
+    }
 }
 
 private struct TplKindPill: View {
@@ -809,24 +882,40 @@ private struct TplKindPill: View {
 
 private struct TplNameField: View {
     @Binding var text: String
+    /// A skipped entry stays editable — the template is a wish list you keep between flips.
+    var off: Bool = false
     @State private var hovering = false
     @FocusState private var focused: Bool
     var body: some View {
         TextField("", text: $text)
             .textFieldStyle(.plain).font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
-            .foregroundStyle(Theme.ink).focused($focused)
+            .foregroundStyle(off ? Theme.inkFaint : Theme.ink)
+            .focused($focused)
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(RoundedRectangle(cornerRadius: 5).fill(hovering || focused ? Theme.rowHover : Color.clear)
                 .overlay(focused ? RoundedRectangle(cornerRadius: 5).strokeBorder(Theme.selRing, lineWidth: 1.5) : nil))
+            // `.strikethrough` doesn't reach a TextField's own text, so the rule is drawn over a
+            // hidden copy of the string — same font, so it measures to exactly the same width.
+            .overlay(alignment: .leading) { if off { strike } }
             .onHover { hovering = $0 }
+    }
+
+    private var strike: some View {
+        Text(text)
+            .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+            .hidden()
+            .overlay(Rectangle().fill(Theme.inkFaint).frame(height: 1))
+            .padding(.horizontal, 5)
+            .allowsHitTesting(false)
     }
 }
 
 private struct TplAddBar: View {
+    @Environment(AppStore.self) private var store
     @Binding var entries: [SessionTemplateEntry]
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(AgentRegistry.installed.map { SessionKind.agent($0.id) } + [.terminal, .browser], id: \.self) { kind in
+            ForEach(store.availableAgents.map { SessionKind.agent($0.id) } + [.terminal, .browser], id: \.self) { kind in
                 TplHover { hovering in
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) {

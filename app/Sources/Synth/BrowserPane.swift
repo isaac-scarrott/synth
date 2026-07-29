@@ -518,7 +518,7 @@ private struct BrowserBar: View {
     private var commentHelp: String {
         guard commentOn else { return "Comment mode" }
         if let t = ctrl.commentMode?.targetTitle { return "Comment mode → \(t)" }
-        return "Comment mode (no Claude Code session in this branch)"
+        return "Comment mode (no agent session in this branch)"
     }
 
     var body: some View {

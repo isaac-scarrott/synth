@@ -379,6 +379,37 @@ enum FeedbackMode {
     }
     static let tabsModeKey = "synth-tabs"
 
+    /// Which agents Synth may START, keyed by `AgentID.rawValue`; a missing entry means on, so
+    /// a machine that has never touched the switches offers everything it has installed.
+    /// Whether you run a given agent CLI is a machine fact, not part of the durable tree, so it
+    /// rides UserDefaults beside `tabsMode` rather than state.json. Off only stops Synth
+    /// starting NEW ones — a session already running that agent carries on untouched, which is
+    /// why `AgentRegistry.installed` stays unfiltered. Turning every agent off is allowed.
+    var agentEnabledPrefs: [String: Bool] = AppStore.loadAgentEnabledPrefs() {
+        didSet {
+            UserDefaults.standard.set(agentEnabledPrefs, forKey: AppStore.agentEnabledKey)
+            NotificationCenter.default.post(name: AgentRegistry.installedDidChange, object: nil)
+        }
+    }
+    static let agentEnabledKey = "synth-agents-enabled"
+    static func loadAgentEnabledPrefs() -> [String: Bool] {
+        UserDefaults.standard.dictionary(forKey: agentEnabledKey) as? [String: Bool] ?? [:]
+    }
+
+    func isAgentEnabled(_ id: AgentID) -> Bool { agentEnabledPrefs[id.rawValue] ?? true }
+    /// Terminals and browsers are never off.
+    func isAgentEnabled(_ kind: SessionKind) -> Bool { kind.agentID.map(isAgentEnabled) ?? true }
+
+    /// The installed agents left switched on. Same list as `AgentRegistry.available`, read
+    /// through the observable preference so a SwiftUI surface re-renders when a switch flips.
+    var availableAgents: [AgentDescriptor] { AgentRegistry.installed.filter { isAgentEnabled($0.id) } }
+
+    /// Which template entry actually opens a new worktree: the first one whose agent is still
+    /// switched on (working.html `opensAt`). Nil when the whole list is switched off.
+    func templateOpensAt(_ entries: [SessionTemplateEntry]) -> Int? {
+        entries.firstIndex { isAgentEnabled($0.kind) }
+    }
+
     // MARK: Archive sweep settings
 
     /// Whether the sweeper may reclaim archived worktrees at all. On by default: an archived
@@ -581,7 +612,8 @@ enum FeedbackMode {
 
     /// The effective template for a project — the shared base sessions with the project's
     /// own added after (working.html's layered model). The first entry overall is the one
-    /// that opens; an empty project list means "just the shared set".
+    /// that opens; an empty project list means "just the shared set". Switched-off agents are
+    /// still in here: Settings draws them struck through, and only the spawn side skips them.
     func sessionTemplate(for workspace: Workspace?) -> [SessionTemplateEntry] {
         globalSessionTemplate + (workspace.flatMap { wsSessionTemplates[$0.id] } ?? [])
     }
@@ -659,6 +691,7 @@ enum FeedbackMode {
             }
         }
         AppStore.shared = self
+        AgentRegistry.isEnabled = { [weak self] id in self?.isAgentEnabled(id) ?? true }
     }
 
     /// Keep the instance file's worktreePaths and every worktree's .mcp.json current.
@@ -2848,17 +2881,25 @@ enum FeedbackMode {
     /// only the opened session touches the PTY layer. A name differing from the kind's
     /// stock start counts as hand-picked (titleIsCustom), so auto-naming — ai-title,
     /// running command, page title — never overwrites a template name the user chose.
+    ///
+    /// An entry whose agent is switched off is skipped, not deleted (working.html
+    /// `effectiveTpl`): the template is a wish list, and turning the agent back on restores
+    /// the row without retyping it. Skipping shifts "the one that opens" onto the first entry
+    /// that survives, so a template led by a disabled agent still opens something.
     private func applySessionTemplate(to branch: Branch, in ws: Workspace) {
         // Whether the user is still parked on this row's setup skeleton decides the whole
         // handoff: still here → resolve in place; moved on → don't touch the viewport.
         let watching = openSetupBranchID == branch.id
-        let entries = sessionTemplate(for: ws)
+        let entries = sessionTemplate(for: ws).filter { isAgentEnabled($0.kind) }
         guard !entries.isEmpty else {
-            // An emptied template means "start bare": nothing to open. If we're still on
-            // the skeleton, drop it so the pane settles onto the now-ready (empty) row.
+            // An emptied template — or one every switch has turned off — means "start bare":
+            // nothing to open. If we're still on the skeleton, drop it so the pane settles
+            // onto the now-ready (empty) row.
             if watching { openSetupBranchID = nil }
             return
         }
+        // i == 0 is the first entry that SURVIVED the filter — the one that opens, and the
+        // only agent that actually starts working.
         let sessions = entries.enumerated().map { i, entry in
             Session(kind: entry.kind, title: entry.name,
                     status: entry.kind.isAgent && i == 0 ? .working : .idle,

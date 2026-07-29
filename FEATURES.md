@@ -1355,9 +1355,23 @@ disclosure to dive deeper.
   t18 asserts the
   full payload→signal table offline against a stub hook socket (plus the trap that an observing
   handler must print *nothing*, or agy denies the tool), and takes one live turn for the question.
+- **Synth 0.21.0 shipped (build 433).** A minor: an agent that quits parks its conversation on a
+  Reopen card, Ctrl-C interrupts an opencode row instead of quitting it, and Antigravity reports the
+  four states it stops in. Notarized + stapled (zip + dmg), verified credential-less on the
+  quarantined downloads (both Notarized Developer ID, the app inside the dmg staples on its own,
+  bundle reads 0.21.0 / 433, bundled changelog leads with 0.21.0); appcast newest `sparkle:version`
+  433 / `0.21.0`, all 18 enclosures EdDSA-signed, 5 deltas against 425/418/413/407/398 (721K from
+  the previous build against a 131M download). Landing links unchanged, no site republish.
 
 ## [2026-07-29](docs/features/2026-07-29.md)
 
+- **The active-pane focus strip is gone** — the 2px mark-colour bar across an active split pane's
+  full top edge is removed. It was the heaviest rule in the window, spent on the least surprising
+  fact on screen, and in tabs mode it ran the full width of a pane's content a few pixels under a
+  tab strip already carrying the same 2px bar in the same colour. Which pane is active is still
+  named where you look for it — the sidebar echo's copper open-tile, and the active tab's own bar —
+  and the keyboard state `activePane` drives is untouched. `--focus` stays for the tab bar and the
+  toast countdown.
 - **An agent you don't use is switched off, and Synth stops offering it** — a switch per agent in
   Settings ▸ Synth ▸ Agent defaults; off drops it from every "New …" surface but never stops a
   session already running one. Enabled means enabled *and* installed; a switched-off template entry

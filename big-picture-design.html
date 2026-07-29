@@ -51,7 +51,7 @@
     --accent: #a86038;       /* structural brand accent — deep copper on light (clears 4.5:1 on white) */
     --accent-rgb: 168,96,56; /* drives every rgba(var(--accent-rgb),A) ring/wash so hue flips per-theme in one edit */
     --on-accent: #ffffff;    /* foreground on an --accent fill (never #fff on the dark champagne button) */
-    --focus: #1e2126;        /* active-pane focus bar — the mark's own pair: charcoal on light, champagne on dark */
+    --focus: #1e2126;        /* active-tab bar — the mark's own pair: charcoal on light, champagne on dark */
     --titlebar-h: 50px;
     --radius-app: 14px;
     --radius-panel: 20px;
@@ -382,21 +382,6 @@
   .content.pane-resizing--row { cursor: col-resize; }
   .content.pane-resizing--col { cursor: row-resize; }
   .pane-seam--active::after { opacity: 0.7 !important; }
-  /* Active pane — a 2px bar across the pane's top edge in the mark colour (--focus), superseding
-     the copper ring (004 §4). Only meaningful with a split open, so a single pane (today's
-     degenerate case) stays bare; the overlay never eats clicks. Both ends are inset by the app
-     radius with soft caps so the bar always clears the shell's rounded corners (top-right; also
-     top-left with the sidebar collapsed) — a constant inset, so every pane's bar is identical
-     wherever it sits. The bar lives on every split pane and only the active one shows it,
-     sweeping in from the left while the old pane's fades, instead of snapping (015). */
-  .split .pane::after {
-    content: ''; position: absolute; top: 0; left: var(--radius-app); right: var(--radius-app);
-    height: 2px; z-index: 5; pointer-events: none;
-    background: var(--focus); border-radius: 0 0 2px 2px;
-    opacity: 0; transform: scaleX(0); transform-origin: left;
-    transition: transform 200ms var(--ease-out), opacity 150ms ease;
-  }
-  .split .pane--active::after { opacity: 1; transform: scaleX(1); }
 
   /* ---- Drop-zones (content drag-to-split — 010) ---- */
   /* One reusable highlight painted over the region the dropped session will occupy as it's
@@ -1191,7 +1176,7 @@
     .tab:not(.tab--active):hover { background: var(--hover); }
   }
   .tab--active { background: var(--raised); color: var(--ink); }
-  .tab--active::after {   /* the active-tab bar, echoing the active-pane focus bar */
+  .tab--active::after {   /* the active-tab bar */
     content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
     background: var(--focus);
   }
@@ -1562,7 +1547,7 @@
   .notif__x svg { width: 9px; height: 9px; display: block; }
   .notif:hover .notif__x { opacity: 1; }
   .notif__x:hover { color: var(--ink-open); }
-  /* The countdown bar — the split focus bar's grammar reused as a clock, but the bar has two
+  /* The countdown bar — the active-tab bar's grammar reused as a clock, but the bar has two
      ends and they are not the same problem. The origin end is arbitrary, so it fades out over
      20px and nothing terminates it; the far end is where the corner is, so the card's own
      radius clips it (.notif__clip) rather than the bar retreating 13px and pretending the
@@ -3214,11 +3199,8 @@
       derivePill(null);
     }
   }
-  function applyActiveBar() {
-    content.querySelectorAll('.pane').forEach((p) => p.classList.toggle('pane--active', p._node === activePane));
-  }
-  // Click / keyboard activation — move the focus bar and the sidebar echo to `leaf`, in place.
-  function setActivePane(leaf) { activePane = leaf; syncActive(); applyActiveBar(); refreshEchoActive(); }
+  // Click / keyboard activation — move the sidebar echo to `leaf`, in place.
+  function setActivePane(leaf) { activePane = leaf; syncActive(); refreshEchoActive(); }
 
   // The sidebar's live echo of an on-screen split (012 / 003): when the layout holds more than
   // one session pane, the member rows pull together into a bare horizontal band of tiles — in
@@ -4805,7 +4787,6 @@
     content.appendChild(renderNode(layout));
     syncActive();   // sets openEl from the active pane — the strip below marks its active tab off it
     if (tabsMode) content.insertBefore(renderContentTabStrip(), content.firstChild);
-    applyActiveBar();
     renderSidebarEcho();
     wirePanes();
     syncBranchLayout();   // 014: keep the branch's remembered layout in step + persist

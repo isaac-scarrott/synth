@@ -4577,7 +4577,7 @@
       ta.addEventListener('keydown', (ev) => {
         ev.stopPropagation();                    // typing must not reach the app-level key handlers
         if (ev.key === 'Escape') closeCard();
-        else if (ev.key === 'Enter' && ev.shiftKey && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); addToBatch(c); sendBatch(); }
+        else if (ev.key === 'Enter' && ev.altKey && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); addToBatch(c); sendBatch(); }
         else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); addToBatch(c); }
         else if (ev.altKey && ev.key === 'ArrowUp' && c.level > 0) { ev.preventDefault(); cmRetarget(c, c.level - 1); }
         else if (ev.altKey && ev.key === 'ArrowDown' && c.level < c.chain.length - 1) { ev.preventDefault(); cmRetarget(c, c.level + 1); }
@@ -4637,7 +4637,7 @@
         : (n ? count : '<span class="cm-hint">' + CM_PIN + 'Click anything to comment</span>')
           + '<div class="cm-div"></div>'
           + '<span class="cm-target">→ ' + esc(commentTarget(ownerOf(openEl))) + '</span>'
-          + '<button class="cm-btn cm-btn--pri" data-cm="send"' + (n ? '' : ' disabled') + '>Send ' + (n || '') + '<span class="cm-kbd">⌘⇧⏎</span></button>'
+          + '<button class="cm-btn cm-btn--pri" data-cm="send"' + (n ? '' : ' disabled') + '>Send ' + (n || '') + '<span class="cm-kbd">⌘⌥⏎</span></button>'
           + '<button class="cm-x" data-cm="off" aria-label="Exit comment mode">' + CM_X + '</button>';
       isl.innerHTML = '<div class="cm-bar">' + bar + '</div>' + (n ? cmListHTML() : '');
       isl.querySelectorAll('[data-cm]').forEach((b) => b.onclick = (ev) => {
@@ -5373,9 +5373,10 @@
       e.preventDefault(); toggleScratch(); return;
     }
     if (scrEl) { scratchKey(e); return; }
-    // ⌘⇧⏎ — send the open browser's whole comment batch. Only ever fires when something is
-    // queued, so the chord stays free everywhere else.
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter' && browserCommentAPI.pending()) {
+    // ⌘⌥⏎ — send the open browser's whole comment batch. Deliberately not ⌘⇧⏎: that is the
+    // split layer's zoom-pane chord, and a parked batch outlives comment mode, so overloading it
+    // would mean ⌘⇧⏎ silently shipped feedback to an agent while you were only trying to zoom.
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === 'Enter' && browserCommentAPI.pending()) {
       e.preventDefault(); browserCommentAPI.send(); return;
     }
     // ⌘⇧F — send feedback from anywhere. One textbox; the author path spawns a fix, everyone else emails.
@@ -6446,7 +6447,7 @@
       [['⌘', '⇧', 'M'], 'Device mode'],
       [['⏎'], 'Add comment to batch'],
       [['⌥', '↑'], 'Widen comment target'],
-      [['⌘', '⇧', '⏎'], 'Send all comments'],
+      [['⌘', '⌥', '⏎'], 'Send all comments'],
       [['esc'], 'Exit comment mode'],
     ]],
   ];

@@ -3,25 +3,36 @@ from lib import *
 print("=== T7: regression — opencode lifecycle gate + Claude Code still hook-driven ===")
 
 def opencode_gate(n):
+    """One row from creation to a named, idle session. Every rung is timed and reported by name:
+    collapsed into a single boolean, a failure here says only that the lifecycle broke somewhere,
+    and the difference between "never went live" and "the turn outran the clock" is the difference
+    between a product bug and a slow model."""
     kill_all(); repo = fresh_repo(); sd = seed_state(repo)
     p, sock = launch(sd, f"{H}/t7-oc{n}.log"); ctl = Ctl(sock, repo)
     sid = ctl("automation.newAgent", agent="opencode")["sessionId"]
-    ok = True
-    ok &= (ctl.row(sid) or {}).get("kind") == "opencode"
-    ok &= bool(wait(lambda: (ctl.row(sid) or {}).get("liveAgent"), 45))
-    ok &= ctl("automation.deliver", sessionId=sid, text="Reply with exactly SYNTHOK and nothing else.").get("ok", False)
-    ok &= bool(wait(lambda: ((ctl.row(sid) or {}).get("status")=="working") or None, 45, 0.3))
-    ok &= bool(wait(lambda: ((ctl.row(sid) or {}).get("status")=="idle") or None, 120, 0.5))
-    ok &= bool(wait(lambda: (ctl.row(sid) or {}).get("agentSessionId"), 20))
-    # opencode's title agent runs alongside the turn, so the name can land after idle
-    ok &= bool(wait(lambda: ((ctl.row(sid) or {}).get("title") not in ("opencode","")) or None, 40, 0.5))
+    rungs = [
+        ("kind",     lambda: (ctl.row(sid) or {}).get("kind") == "opencode"),
+        ("live",     lambda: wait(lambda: (ctl.row(sid) or {}).get("liveAgent"), 45)),
+        ("deliver",  lambda: ctl("automation.deliver", sessionId=sid,
+                                 text="Reply with exactly SYNTHOK and nothing else.").get("ok", False)),
+        ("working",  lambda: wait(lambda: ((ctl.row(sid) or {}).get("status") == "working") or None, 45, 0.3)),
+        # A real turn against a real model: 60–95s is normal on a machine that is also running
+        # gates, so the ceiling is well clear of it rather than a coin toss against it.
+        ("idle",     lambda: wait(lambda: ((ctl.row(sid) or {}).get("status") == "idle") or None, 240, 0.5)),
+        ("agentSessionId", lambda: wait(lambda: (ctl.row(sid) or {}).get("agentSessionId"), 20)),
+        # opencode's title agent runs alongside the turn, so the name can land after idle
+        ("auto-title", lambda: wait(lambda: ((ctl.row(sid) or {}).get("title") not in ("opencode", "")) or None, 40, 0.5)),
+    ]
+    t0, failed = time.time(), []
+    for name, rung in rungs:
+        if not rung(): failed.append(f"{name} @{time.time() - t0:.0f}s")
     r = ctl.row(sid) or {}
     p.terminate()
-    return ok, r.get("title")
+    return not failed, (f"stalled at {', '.join(failed)}" if failed else f"auto-title={r.get('title')!r}")
 
 for i in (1,2):
-    ok, title = opencode_gate(i)
-    check(f"{i}. opencode full lifecycle gate (run {i})", ok, f"auto-title={title!r}")
+    ok, detail = opencode_gate(i)
+    check(f"{i}. opencode full lifecycle gate (run {i})", ok, detail)
 
 # Claude Code: startup only (no prompt -> no token spend beyond boot)
 kill_all(); repo = fresh_repo(); sd = seed_state(repo)

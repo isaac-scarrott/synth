@@ -45,8 +45,15 @@ struct SynthApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // A driven build shares a desktop with whoever is working on it: no Dock icon, no ⌘Tab
+        // slot, and never the keyboard. Coming front is the one thing a gate run must not do —
+        // it lands mid-sentence in someone else's window (Automation.park takes the screen half).
+        if Automation.isDriven {
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         // Kill the per-focus password-autofill key-view walk before any field can focus — it stalls
         // every native text field by 250–400ms on a loaded tree (see AutoFillSuppression).
         AutoFillSuppression.install()
@@ -308,8 +315,9 @@ struct RootView: View {
             // Typing hides the pointer until the mouse next moves — AppKit auto-reveals it on the
             // next movement, so the cursor stays out of the way while Synth is driven by keyboard
             // (terminal keystrokes route through this local monitor too). Bare modifiers fire
-            // flagsChanged, not keyDown, so a lone ⌘/⇧ never hides it.
-            NSCursor.setHiddenUntilMouseMoves(true)
+            // flagsChanged, not keyDown, so a lone ⌘/⇧ never hides it. The cursor is system-wide,
+            // so a synthetic `automation.key` would hide the cursor of whoever is at the keyboard.
+            if !Automation.isDriven { NSCursor.setHiddenUntilMouseMoves(true) }
             store.pointerStale = true
 
             // Modal Esc must win even while its text field is first responder.

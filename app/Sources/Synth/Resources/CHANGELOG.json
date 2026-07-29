@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.22.0",
+    "date": "2026-07-29",
+    "changes": [
+      "Browser comments arrive as one batch, not one interruption each. Comment mode queues: numbered pins accumulate on the page, a floating island owns the batch — count, target, one Send on ⌘⌥⏎ — and the agent receives a single numbered message with one viewport screenshot plus a clip per comment. A pin names an element rather than a coordinate, so it survives scrolling, resizing and zooming. Leaving the mode parks the batch instead of dropping it.",
+      "An agent you don't use is switched off, and Synth stops offering it. A switch per agent in Settings ▸ Synth ▸ Agent defaults drops it from every \"New …\" surface without touching a session already running one. Turning every agent off is allowed — the paths with no one in front of them say so up front rather than swallowing what you typed.",
+      "Every clean agent exit parks on the quit card. opencode exits 0 when it dies on its own, and the old \"nothing to resume → close outright\" rule silently deleted exactly the row you were watching. Any agent row that exits cleanly now lands on the Reopen card, resuming its session when one was captured. A shell's `exit` still closes a terminal row outright — there the clean exit is your gesture.",
+      "The 2px bar across an active split pane's top edge is gone. It was the heaviest rule in the window, spent on the least surprising fact on screen, and in tabs mode it sat a few pixels under a tab strip already drawing the same bar in the same colour. Which pane is active is still named where you look for it: the sidebar's copper tile and the active tab's own bar."
+    ]
+  },
+  {
     "version": "0.21.0",
     "date": "2026-07-28",
     "changes": [

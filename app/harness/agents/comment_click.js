@@ -10,13 +10,22 @@ const [port, needle, comment] = process.argv.slice(2);
   if (!page) { console.log('NOPAGE'); process.exit(2); }
   const has = await page.evaluate(() => typeof window.__synthComment === 'function');
   if (!has) { console.log('NOBINDING'); process.exit(3); }
+  // The overlay batches, so its delivery message is a commentBatch even for one comment —
+  // this stands in for the real one so the gate exercises the host's receive path, not a
+  // shape the page can no longer produce.
   await page.evaluate((text) => {
     const el = document.querySelector('#cta');
     const r = el.getBoundingClientRect();
     window.__synthComment(JSON.stringify({
-      type: 'comment', url: location.href, selector: '#cta',
-      rect: { x: r.x, y: r.y, width: r.width, height: r.height },
-      elementHTML: el.outerHTML, comment: text,
+      type: 'commentBatch', url: location.href, title: document.title,
+      viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+      comments: [{
+        n: 1, comment: text, url: location.href, onCurrentPage: true,
+        selector: '#cta', xpath: '', elementHTML: el.outerHTML, elementText: el.textContent,
+        reactSource: null,
+        rect: { x: r.x, y: r.y, width: r.width, height: r.height,
+                scrollX: scrollX, scrollY: scrollY, dpr: devicePixelRatio },
+      }],
     }));
   }, comment);
   console.log('SENT');

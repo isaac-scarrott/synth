@@ -1355,3 +1355,12 @@ disclosure to dive deeper.
   t18 asserts the
   full payload→signal table offline against a stub hook socket (plus the trap that an observing
   handler must print *nothing*, or agy denies the tool), and takes one live turn for the question.
+
+## [2026-07-29](docs/features/2026-07-29.md)
+
+- **An agent you don't use is switched off, and Synth stops offering it** — a switch per agent in
+  Settings ▸ Synth ▸ Agent defaults; off drops it from every "New …" surface but never stops a
+  session already running one. Enabled means enabled *and* installed; a switched-off template entry
+  is skipped, not deleted, and "opens" hands off to the first survivor. Every agent off is allowed —
+  the paths with no user in front of them (browser comment, feedback, MCP handoff) say so up front
+  instead of swallowing what was typed. The row keeps its height when it dims, so nothing jumps.

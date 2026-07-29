@@ -61,6 +61,25 @@ def drill(ctl, label):
     return ctl("automation.paletteQuery")
 
 
+def branch_frame(ctl, workspace, branch):
+    """The branch's own frame, whichever root this instance opened on.
+
+    The root leads with the context the store is already in, so which rows sit at the top is not
+    the gate's to choose: a cursor parked on the project opens a root offering that project, one
+    parked nowhere opens the nav groups. Both reach the branch — walk whichever is in front of us
+    rather than assuming, and report the trail when neither does, so a navigation miss can never
+    read as the feature dropping a row."""
+    fr, trail = palette(ctl), []
+    for _ in range(3):
+        items = fr.get("items", [])
+        trail.append(items)
+        if branch in items: return drill(ctl, branch)
+        step = next((s for s in ("Branches", workspace, "Projects") if s in items), None)
+        if step is None: return dict(fr, items=[], missing=branch, offered=trail)
+        fr = drill(ctl, step)
+    return dict(fr, items=[], missing=branch, offered=trail)
+
+
 def rows(frame):
     """A frame's rows plus the sentence to print if the check on them fails.
 
@@ -97,8 +116,7 @@ items, why = rows(palette(ctl))
 check("2. opencode off: ⌘K drops it and keeps the rest",
       "New OpenCode" not in items and "New Claude Code" in items, why)
 # A second surface, built from a different call site: the branch's own frame.
-drill(ctl, "Branches")
-bitems, bwhy = rows(drill(ctl, sh(f"git -C {repo} branch --show-current")))
+bitems, bwhy = rows(branch_frame(ctl, os.path.basename(repo), sh(f"git -C {repo} branch --show-current")))
 check("3. the branch frame's session creates drop it too",
       "New OpenCode" not in bitems and "New Claude Code" in bitems, bwhy)
 p.terminate(); time.sleep(1)

@@ -1355,3 +1355,13 @@ disclosure to dive deeper.
   t18 asserts the
   full payload→signal table offline against a stub hook socket (plus the trap that an observing
   handler must print *nothing*, or agy denies the tool), and takes one live turn for the question.
+
+## [2026-07-29](docs/features/2026-07-29.md)
+
+- **The active-pane focus strip is gone** — the 2px mark-colour bar across an active split pane's
+  full top edge is removed. It was the heaviest rule in the window, spent on the least surprising
+  fact on screen, and in tabs mode it ran the full width of a pane's content a few pixels under a
+  tab strip already carrying the same 2px bar in the same colour. Which pane is active is still
+  named where you look for it — the sidebar echo's copper open-tile, and the active tab's own bar —
+  and the keyboard state `activePane` drives is untouched. `--focus` stays for the tab bar and the
+  toast countdown.

@@ -89,7 +89,7 @@ struct ContentPane: View {
 
 /// Follows the content window's `firstResponder` (KVO): when a click lands inside an
 /// AppKit-hosted surface, the surface becomes first responder without the pane's tap gesture
-/// ever firing — the keyboard would move while the bar/sidebar stayed on the old pane. Map the
+/// ever firing — the keyboard would move while the sidebar echo stayed on the old pane. Map the
 /// new responder back to the session owning it (terminal or browser surface, or a subview) and
 /// activate that leaf. The `activePane` guard also breaks the loop the other direction sets up:
 /// setActivePane → focusSurface → makeFirstResponder → observer fires → same leaf → stop.
@@ -146,7 +146,7 @@ private struct PaneTreeView: View {
 
     var body: some View {
         if node.isLeaf {
-            // The bar is meaningful only inside a split, so a lone pane stays bare (004 §4).
+            // Activation is meaningful only inside a split — a lone pane has nothing to activate.
             LeafPane(node: node, inSplit: store.isSplit)
         } else {
             SplitContainer(node: node)
@@ -240,13 +240,10 @@ private struct PaneSeam: View {
     }
 }
 
-/// working.html `.pane`: one leaf hosting exactly one session (or a setup skeleton). Inside a
-/// split it carries the active-pane bar — a 2px line across the top edge in the mark colour,
-/// both ends inset by the app radius so it always clears the shell's rounded corners. It lives
-/// at zero alpha on every split pane and only the active one shows it, sweeping in from the
-/// left while the old pane's fades, instead of snapping (`.split .pane--active::after`, 015).
+/// working.html `.pane`: one leaf hosting exactly one session (or a setup skeleton).
 /// Clicking a pane body activates it in place, without tearing down the live surface
-/// (working.html:2230 setActivePane).
+/// (working.html:2230 setActivePane). Which pane is active is named by the sidebar echo's
+/// open tile and, in tabs mode, the active tab's bar — the pane itself stays bare.
 private struct LeafPane: View {
     @Environment(AppStore.self) private var store
     let node: PaneNode
@@ -262,25 +259,12 @@ private struct LeafPane: View {
             // Activate on click without consuming the event, so the terminal/browser/composer
             // still receives it (the mock's non-preventDefault content click).
             .simultaneousGesture(inSplit ? TapGesture().onEnded { store.setActivePane(node) } : nil)
-            .overlay(alignment: .top) {
-                if inSplit {
-                    UnevenRoundedRectangle(bottomLeadingRadius: 2, bottomTrailingRadius: 2)
-                        .fill(Theme.focus)
-                        .frame(height: 2)
-                        .padding(.horizontal, 14)   // --radius-app: clear the shell's rounded corners
-                        .scaleEffect(x: isActive ? 1 : 0, y: 1, anchor: .leading)
-                        .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.2), value: isActive)
-                        .opacity(isActive ? 1 : 0)
-                        .animation(.easeOut(duration: 0.15), value: isActive)
-                        .allowsHitTesting(false)
-                }
-            }
             // Report the pane's frame for the keyboard's spatial focus / resize.
             .background(GeometryReader { g in
                 Color.clear.preference(key: PaneFramesKey.self,
                                        value: [node.id: g.frame(in: .named(ContentPane.contentSpace))])
             })
-            // Keyboard focus follows the ring: when this pane becomes active, hand it first
+            // Keyboard focus follows activation: when this pane becomes active, hand it first
             // responder so the next keystroke reaches its surface, not the pane you left.
             .onChange(of: isActive) { _, active in
                 if active, let sid = node.sessionID { focusSurface(sid) }
@@ -288,7 +272,7 @@ private struct LeafPane: View {
     }
 
     /// Make the active leaf's live surface (terminal / browser) first responder — the keyboard
-    /// half of activation, so ⌘⌥+arrow moves both the ring and the caret.
+    /// half of activation, so ⌘⌥+arrow moves the caret with it.
     private func focusSurface(_ sessionID: UUID) {
         DispatchQueue.main.async {
             if let v = TerminalManager.shared.existingView(sessionID) {

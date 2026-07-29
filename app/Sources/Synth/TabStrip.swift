@@ -93,8 +93,8 @@ private enum StripItem: Identifiable {
 // MARK: - Lone tab
 
 /// A lone tab — the session's handle: icon (+ unread dot), name, its live/needs-input signal, and
-/// a hover-revealed close. Active (== the open session) lifts on a raised fill with the focus bar,
-/// echoing the active-pane bar (working.html `.tab` / `.tab--active`).
+/// a hover-revealed close. Active (== the open session) lifts on a raised fill with the mark bar
+/// (working.html `.tab` / `.tab--active`).
 private struct TabChip: View {
     @Environment(AppStore.self) private var store
     let session: Session
@@ -168,7 +168,7 @@ private struct TabChip: View {
                             Rectangle().fill(Theme.border).frame(width: 1).padding(.vertical, 8)
                         }
                     }
-                    // The active-tab bar, echoing the active-pane focus bar.
+                    // The active-tab bar.
                     .overlay(alignment: .bottom) {
                         Rectangle().fill(Theme.focus).frame(height: 2).opacity(isActive ? 1 : 0)
                     }

@@ -127,6 +127,11 @@ extension AgentDescriptor: Identifiable {}
     /// see appears in ⌘K / Settings and gets a hook shim. Surfaces that re-read on demand (⌘K,
     /// Settings when opened) pick the change up for free; an already-onscreen one observes
     /// `installedDidChange`.
+    ///
+    /// Unfiltered by the Settings switches on purpose — `AppStore.availableAgents` is the set
+    /// Synth may START. The PATH shims, `SYNTH_AGENT_BINS` and supervisor teardown have to keep
+    /// seeing every agent on the machine, or a session still running a switched-off one loses
+    /// its status seam mid-flight.
     static var installed: [AgentDescriptor] {
         if let installedCache { return installedCache }
         let snapshot = all.filter { $0.resolvedBinary != nil }
@@ -148,10 +153,6 @@ extension AgentDescriptor: Identifiable {}
     }
 
     static func isInstalled(_ id: AgentID) -> Bool { installed.contains { $0.id == id } }
-
-    /// The agent a bare "new agent session" action means when the user hasn't picked one —
-    /// the first installed agent, so a machine with only opencode still gets a working ⌘K.
-    static var `default`: AgentDescriptor? { installed.first }
 
     // MARK: Supervisors
 

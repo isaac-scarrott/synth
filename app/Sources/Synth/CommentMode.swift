@@ -53,7 +53,11 @@ import Observation
             return
         }
         self.store = store
-        targetTitle = prospectiveTarget()?.title ?? "New agent session"
+        // Where the next comment lands. Unowned means Synth would start an agent to take it —
+        // unless every agent is switched off, and then the chip says so before anything is
+        // typed rather than refusing it on send (working.html `commentTarget`).
+        targetTitle = prospectiveTarget()?.title
+            ?? (store.availableAgents.isEmpty ? "No agent enabled" : "New agent session")
         attachNonce += 1
         let nonce = attachNonce
         attachTask = Task { [weak self] in
@@ -258,8 +262,14 @@ import Observation
         // pane mounts (GhosttySurfaceView creates the surface on window attach), so open
         // the row for one beat and come straight back to the browser; both views live
         // outside the SwiftUI tree (TerminalManager / BrowserManager) and survive the swap.
+        // Nothing owns this browser and every agent is switched off: there is no one to send
+        // to. Say so, rather than swallowing what was typed.
+        guard let agent = store.availableAgents.first?.id else {
+            showNotice("No agent enabled — turn one on in Settings")
+            Self.discard(screenshots)
+            return
+        }
         guard let branch = store.branch(of: browser),
-              let agent = AgentRegistry.default?.id,
               let spawned = store.spawnAgent(agent, in: branch) else {
             showNotice("Couldn't start an agent session for the comment")
             Self.discard(screenshots)

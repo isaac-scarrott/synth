@@ -284,6 +284,17 @@ final class ControlServer: @unchecked Sendable {
             }
             return ["ok": true, "sessionId": session.id.uuidString]
 
+        // The feedback sheet's Send (⌘⇧F → ⌘↵): fill the two fields the sheet binds and make
+        // its exact call. ⌘↵ is a SwiftUI keyboard shortcut, which a synthetic key event can't
+        // reach in a window that isn't key — so the author loop (worktree, seeded agent, and
+        // the email fallbacks when there is no workspace or no agent left on) is otherwise
+        // undrivable headlessly.
+        case "automation.feedback" where automation:
+            store.feedbackTitle = request["title"] as? String ?? ""
+            store.feedbackDraft = request["body"] as? String ?? ""
+            store.submitFeedback(store.feedbackDraft)
+            return ["ok": true, "mode": String(describing: store.feedbackMode)]
+
         case "automation.commentMode" where automation:
             guard let session = requestedSession(request, in: branch), session.kind == .browser,
                   let ctrl = BrowserManager.shared.controller(for: session) else {
@@ -692,6 +703,24 @@ final class ControlServer: @unchecked Sendable {
             pal.runActive()
             return ["ok": true]
 
+        // Open ⌘K the way the shortcut does, without synthesizing a key event. A headless
+        // instance is never frontmost, so a posted ⌘K resolves against whichever window
+        // `NSApp.windows` happens to hand back first and may never reach the shortcut at all.
+        case "automation.paletteOpen" where automation:
+            if store.palette != nil { store.closePalette() }   // Esc, then ⌘K
+            store.openPalette()
+            fallthrough
+
+        // Say what the palette's search field holds. While the palette is open that field owns
+        // first responder, so any keystroke this machine delivers — the developer typing into
+        // their own Synth, another harness driving a sibling instance — lands in the query and
+        // silently re-filters the rows. A gate asserting on a frame has to be able to state the
+        // query rather than inherit whatever arrived, which is why this sets it and reports the
+        // frame in one round trip: nothing can drift in between.
+        case "automation.paletteQuery" where automation:
+            store.palette?.query = request["query"] as? String ?? ""
+            fallthrough
+
         case "automation.palette" where automation:
             guard let pal = store.palette else {
                 return ["ok": true, "open": false, "menuOpen": store.activeMenu != nil]
@@ -699,6 +728,9 @@ final class ControlServer: @unchecked Sendable {
             let frame = pal.stack.last
             return ["ok": true, "open": true,
                     "crumb": frame?.crumb ?? "",
+                    // What the rows were filtered by — the difference between "the feature
+                    // offered the wrong rows" and "something typed into the palette".
+                    "query": pal.query,
                     // The line above the rows — a confirm's reason, a new branch's base. It is
                     // copy, and copy is the thing these frames exist to get right.
                     "note": pal.noteText ?? "",

@@ -131,8 +131,12 @@ key(40, ("cmd",), "k")
 # A posted key is dispatched a runloop turn later and the palette builds a window of its own, so
 # read it when it's up rather than a fixed wait after asking (t11 reads it the same way).
 pal = wait(lambda: ctl("automation.palette").get("open") and ctl("automation.palette"), 10, 0.2) or {}
+# The binding is what's under test here, so this opens the palette the way a user does rather than
+# through automation.paletteOpen — but then the field owns first responder, and a stray keystroke
+# landing in the query re-filters the rows into something that reads like a missing action. Report
+# the query with the failure so the two can be told apart.
 check("23. ⌘K offers it as an action", "Scratch terminal" in pal.get("items", []),
-      str(pal.get("items"))[:200])
+      f"query={pal.get('query', '')!r} {str(pal.get('items'))[:160]}")
 key(40, ("cmd",), "k")
 
 # --- It is a global surface, so Settings does not gate it ----------------------------------------

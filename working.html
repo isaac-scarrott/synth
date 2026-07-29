@@ -2104,6 +2104,13 @@
   .set-row__desc-line { display: flex; align-items: baseline; gap: 12px; }
   .set-row__desc-line .set-row__desc { flex: 1; min-width: 0; }
 
+  /* Switched off: the whole row greys, field included, and the field goes read-only — there is
+     nothing left to launch with those flags. It keeps its place rather than folding away, so
+     flipping the switch never moves a pixel of what sits below it. */
+  .set-row--off .set-row__label { color: var(--ink-4); }
+  .set-row--off .set-row__desc { color: var(--text-faint); }
+  .set-row--off .set-code--flags { color: var(--set-inherit); caret-color: transparent; cursor: default; }
+
   /* caption above a field: real casing, plus the constraint text that used to be a footnote */
   .set-cap { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 6px; }
   .set-cap__name { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink-4); }
@@ -2233,7 +2240,16 @@
   /* the one that opens — the sidebar's own open tint, so the list needs no preview to say which */
   .tpl-row--first { background: rgba(var(--accent-rgb),0.10); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),0.26); border-color: transparent; }
   .tpl-row--first .tpl-name { color: var(--ink-open); font-weight: 600; }
-  .tpl-opens { flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+  /* every row carries the badge and only the opener shows it, so a switched-off agent can hand
+     "opens" to the next row by class alone — the list is never redrawn to move it */
+  .tpl-opens { display: none; flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+  .tpl-row--first .tpl-opens { display: block; }
+  /* an entry whose agent is switched off: struck, like the shared setup a project skips — it
+     keeps its slot and its name, it just doesn't run */
+  .tpl-row--off .tpl-name { color: var(--text-faint); text-decoration: line-through; }
+  .tpl-row--off .session__icon { opacity: 0.45; }
+  .tpl-off { flex-shrink: 0; padding: 2px 7px; border-radius: 999px; background: var(--hover); font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--text-faint); }
+  .tpl-row:not(.tpl-row--off) .tpl-off { display: none; }
   .tpl-x {
     flex-shrink: 0;
     width: 20px;
@@ -2268,8 +2284,12 @@
     font-weight: 550;
     color: var(--ink-3);
     cursor: pointer;
+    /* the bar is one fixed-height line: a squeezed label must overflow sideways, never wrap and
+       push everything under the card down */
+    white-space: nowrap;
     transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, transform 110ms var(--ease-out);
   }
+  .tpl-add__btn.is-off { display: none; }   /* a switched-off agent's button, kept for the flip back */
   .tpl-add__btn svg { width: 12px; height: 12px; display: block; color: var(--text-faint); }
   .tpl-add__btn:active { transform: scale(0.97); }
   @media (hover: hover) and (pointer: fine) {
@@ -3434,7 +3454,7 @@
         const items = [];
         if (br) {
           items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal', kbd: ['⌘', 'T'], enter: () => runAndClose(() => splitNew(br, 'terminal', dir, before, target)) });
-          AGENTS.forEach((kk) => items.push({ sec: 'act', icon: AGENT_ICON[kk], label: 'New ' + SESSION_KINDS[kk].name, enter: () => runAndClose(() => splitNew(br, kk, dir, before, target)) }));
+          liveAgents().forEach((kk) => items.push({ sec: 'act', icon: AGENT_ICON[kk], label: 'New ' + SESSION_KINDS[kk].name, enter: () => runAndClose(() => splitNew(br, kk, dir, before, target)) }));
           items.push({ sec: 'act', icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => splitNew(br, 'browser', dir, before, target)) });
         }
         allRows('.session').forEach((s) => {
@@ -4230,6 +4250,9 @@
       if (!commentOn) closeCard();
       updateCommentUI();
     }
+    // Where the next comment lands. Unowned means Synth would start an agent to take it — unless
+    // every agent is switched off, and then there is nowhere for it to go at all.
+    const commentTarget = (o) => o ? sessionTitle(o) : (liveAgents().length ? 'New agent session' : 'No agent enabled');
     function updateCommentUI() {
       host.classList.toggle('browser--commenting', commentOn);
       const btn = host.querySelector('[data-nav="comment"]');
@@ -4237,7 +4260,7 @@
       const chip = host.querySelector('[data-target]');
       if (chip) {
         chip.hidden = !commentOn;
-        if (commentOn) { const o = ownerOf(openEl); chip.textContent = '→ ' + (o ? sessionTitle(o) : 'New agent session'); }
+        if (commentOn) chip.textContent = '→ ' + commentTarget(ownerOf(openEl));
       }
     }
     // Device mode: the page reflowed at a real device viewport inside a hardware frame, with a
@@ -4292,7 +4315,7 @@
       const o = ownerOf(openEl);
       const card = document.createElement('div');
       card.className = 'browser__ccard';
-      card.innerHTML = `<div class="browser__ccard-target">→ ${esc(o ? sessionTitle(o) : 'New agent session')}</div>
+      card.innerHTML = `<div class="browser__ccard-target">→ ${esc(commentTarget(o))}</div>
         <textarea rows="2" placeholder="Leave a comment…"></textarea>
         <div class="browser__ccard-row"><span class="menu__btn" data-c="cancel">Cancel</span><span class="menu__btn menu__btn--send" data-c="send">Send</span></div>`;
       const r = view.getBoundingClientRect();
@@ -4317,9 +4340,12 @@
     // unowned → a fresh Claude session spawns *silently* — the row appears, the browser
     // re-nests under it, focus stays right here — and the chip flips to the new owner.
     function sendComment() {
-      closeCard();
       if (!openEl) return;
       let o = ownerOf(openEl);
+      // Nothing owns this browser and every agent is switched off: there is no one to send to.
+      // Say so with the card still up, rather than swallowing what was typed.
+      if (!o && !liveAgents().length) { notice('No agent enabled — turn one on in Settings'); return; }
+      closeCard();
       if (!o) { o = spawnOwnerClaude(openEl); updateCommentUI(); }
       else setSessionState(o, 'work');
       notice(`Comment sent to ${sessionTitle(o)}`);
@@ -5228,13 +5254,15 @@
   // The spawn moment: a comment from an unowned browser births this browser's own Claude —
   // silently. The row appears above it, already working on the comment; focus stays put.
   function spawnOwnerClaude(browserRow) {
-    const spec = SESSION_KINDS[AGENTS[0]];
+    const kind = liveAgents()[0];
+    if (!kind) return null;                    // every agent switched off — nothing to spawn
+    const spec = SESSION_KINDS[kind];
     const a = document.createElement('a');
     a.className = 'row session row-enter';
     a.setAttribute('data-row', '');
     a.setAttribute('data-session', '');
     a.setAttribute('data-type', spec.type);
-    a.setAttribute('data-agent', AGENTS[0]);
+    a.setAttribute('data-agent', kind);
     a.innerHTML = `<span class="session__bullet"></span>
       ${spec.icon}
       <span class="session__name">${spec.name}</span>
@@ -5511,7 +5539,7 @@
       groupRow.classList.remove('branch--pending');
       groupRow.querySelector('.branch__roll').innerHTML = '';
       const watching = setupEl === groupRow;
-      const tpl = effectiveTpl(false, wsName);
+      const tpl = effectiveTpl(wsName);
       if (watching && tpl.length === 0) { setupEl = null; renderEmpty(); return; }  // start bare
       tpl.forEach((s, i) => addSession(groupRow, s.kind, { name: s.name, open: watching && i === 0 }));
       if (!watching) {
@@ -5590,6 +5618,12 @@
   const addTerminal = (branchRow) => addSession(branchRow, 'terminal');
   // Every coding agent Synth can host, in creation order (Agents.swift AgentRegistry).
   const AGENTS = ['claude', 'opencode', 'antigravity'];
+  // Which of them you actually run is a machine fact, not a per-project one, so it's one
+  // app-level switch each (Settings ▸ Synth ▸ Agent defaults). Off means Synth never STARTS
+  // one — every "New …" surface drops it, and whatever is already running carries on.
+  const agentOn = { claude: true, opencode: true, antigravity: true };
+  const agentEnabled = (k) => !(k in agentOn) || agentOn[k];   // terminals and browsers are never off
+  const liveAgents = () => AGENTS.filter((k) => agentOn[k]);
   // Each agent's own mark. An agent with no artwork falls back to the generic sparkle.
   const AGENT_ICON = { claude: ICON_CLAWD, opencode: ICON_OPENCODE, antigravity: ICON_ANTIGRAVITY };
   const agentIcon = (k) => AGENT_ICON[k] || ICON_AI;
@@ -6522,7 +6556,7 @@
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_CLOSE, label: 'Close', kbd: ['⌘', 'W'], danger: true, enter: () => runAndClose(() => softRemove(rowUnit(open), { label: 'Closed ' + seName(open) })) });
     if (open && inSplit(open)) items.push({ grp: 'Session', unit: seName(open), icon: ICON_UNSPLIT, label: 'Unsplit', enter: () => runAndClose(() => unsplitSession(open)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_TERMINAL, label: 'New terminal', enter: () => runAndClose(() => addTerminal(br)) });
-    if (br) AGENTS.forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
+    if (br) liveAgents().forEach((k) => items.push({ grp: 'Branch', unit: brName(br), icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(br, k)) }));
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_BROWSER, label: 'New browser', enter: () => runAndClose(() => addBrowser(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(br)) });
     if (br) items.push({ grp: 'Branch', unit: brName(br), icon: ICON_ARCHIVE, label: 'Archive', danger: true, enter: () => runAndClose(() => archiveBranch(br)) });
@@ -6637,7 +6671,7 @@
         if (br) {
           const bn = brName(br);
           items.push({ sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: bn, enter: () => runAndClose(() => addTerminal(br)) });
-          AGENTS.forEach((k) => items.push({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: bn, enter: () => runAndClose(() => addAgent(br, k)) }));
+          liveAgents().forEach((k) => items.push({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: bn, enter: () => runAndClose(() => addAgent(br, k)) }));
           items.push({ sec: 'act', icon: ICON_BROWSER,  label: 'New browser',     ctx: bn, enter: () => runAndClose(() => addBrowser(br)) });
         }
         items.push(
@@ -6660,7 +6694,7 @@
       build() {
         const items = [
           { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    enter: () => runAndClose(() => addTerminal(row)) },
-          ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(row, k)) })),
+          ...liveAgents().map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     enter: () => runAndClose(() => addBrowser(row)) },
           { sec: 'act', icon: ICON_RENAME,   label: 'Rename', enter: () => pushFrame(renameFrame(row)) },
           { sec: 'act', icon: ICON_ARCHIVE,  label: 'Archive', danger: true, enter: () => runAndClose(() => archiveBranch(row)) },
@@ -6682,7 +6716,7 @@
       build() {
         return [
           { sec: 'act', icon: ICON_TERMINAL, label: 'New terminal',    ctx: name, enter: () => runAndClose(() => addTerminal(row)) },
-          ...AGENTS.map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: name, enter: () => runAndClose(() => addAgent(row, k)) })),
+          ...liveAgents().map((k) => ({ sec: 'act', icon: AGENT_ICON[k], label: 'New ' + SESSION_KINDS[k].name, ctx: name, enter: () => runAndClose(() => addAgent(row, k)) })),
           { sec: 'act', icon: ICON_BROWSER,   label: 'New browser',     ctx: name, enter: () => runAndClose(() => addBrowser(row)) },
         ];
       },
@@ -7030,6 +7064,12 @@
   };
   const projOf = (name) => PROJ[name] || (PROJ[name] = {});
 
+  // What a new worktree in this project actually opens: the shared base, then the project's own.
+  // An entry whose agent is switched off is skipped rather than deleted — the template is a
+  // wish list, and turning the agent back on restores the row without you retyping it.
+  const effectiveTpl = (projName) =>
+    [...DEF.sessions, ...(projOf(projName).sessions || [])].filter((s) => agentEnabled(s.kind));
+
   const flagToks = (s) => s.trim().split(/\s+/).filter(Boolean);
   const lineCount = (s) => s.trim() ? s.trim().split('\n').length : 0;
   const flagName = (t) => t.split('=')[0];   // --model=opus and --model collide
@@ -7038,7 +7078,7 @@
   const headByName = (name) => projectHeads().find((h) => wsName(h) === name) || null;
 
   // ---- Row primitives ----------------------------------------------------------------
-  const row = (label, desc, ctl, body) => `<div class="set-row" data-row>
+  const row = (label, desc, ctl, body, cls) => `<div class="set-row${cls ? ' ' + cls : ''}" data-row>
     <div class="set-row__head">
       <div class="set-row__label">${label}</div>
       ${ctl ? `<div class="set-row__ctl">${ctl}</div>` : ''}
@@ -7056,24 +7096,28 @@
   // project's own (or the base itself on the Synth tab) — draggable, renamable, removable.
   function tplRow(s, num, o) {
     const k = TPL_KINDS[s.kind];
-    return `<div class="tpl-row${o.first ? ' tpl-row--first' : ''}${o.shared ? ' tpl-row--shared' : ''}"${o.shared ? '' : ` data-i="${o.idx}"`}>
+    return `<div class="tpl-row${o.first ? ' tpl-row--first' : ''}${o.shared ? ' tpl-row--shared' : ''}${agentEnabled(s.kind) ? '' : ' tpl-row--off'}" data-kind="${s.kind}"${o.shared ? '' : ` data-i="${o.idx}"`}>
       ${o.shared ? '' : `<span class="tpl-grip" title="Drag to reorder">${ICON_GRIP}</span>`}
       <span class="tpl-idx">${num}</span>
       ${k.icon}
       ${o.shared ? `<span class="tpl-name">${esc(s.name)}</span>`
                  : `<input class="tpl-name" value="${esc(s.name)}" spellcheck="false" aria-label="Session name" />`}
-      ${o.first ? '<span class="tpl-opens">opens</span>' : ''}
+      <span class="tpl-opens">opens</span>
+      <span class="tpl-off">Off</span>
       <span class="tpl-kind">${k.label}</span>
       ${o.shared ? '<span class="tpl-syn">Synth</span>' : `<button class="tpl-x" title="Remove" aria-label="Remove session">${ICON_CLOSE}</button>`}
     </div>`;
   }
+  // Which entry actually opens the worktree: the first one whose agent is still switched on.
+  const opensAt = (list) => list.findIndex((s) => agentEnabled(s.kind));
   // the Synth tab's own session list — a plain editable list, first opens
   function tplRows(list) {
     if (!list.length) return `<div class="tpl-empty">No sessions — new worktrees open empty.</div>`;
-    return list.map((s, i) => tplRow(s, i + 1, { idx: i, first: i === 0 })).join('');
+    const first = opensAt(list);
+    return list.map((s, i) => tplRow(s, i + 1, { idx: i, first: i === first })).join('');
   }
   const tplAddBar = () => `<div class="tpl-add">${Object.keys(TPL_KINDS).map((k) =>
-    `<button class="tpl-add__btn" data-add="${k}">${ICON_PLUS}${TPL_KINDS[k].label}</button>`).join('')}</div>`;
+    `<button class="tpl-add__btn${agentEnabled(k) ? '' : ' is-off'}" data-add="${k}">${ICON_PLUS}${TPL_KINDS[k].label}</button>`).join('')}</div>`;
 
   // ---- Layered project controls: shared base shown in place, delta added after ----------
   // Setup script: the shared base collapses into a strip above the project's own steps, so the
@@ -7108,14 +7152,25 @@
   // Sessions: the shared base rows locked on top, the project's own added below and reorderable.
   function sessionsLayered(p) {
     const shared = DEF.sessions, mine = p.sessions || [];
-    const sharedRows = shared.map((s, i) => tplRow(s, i + 1, { shared: true, first: i === 0 })).join('');
+    const first = opensAt([...shared, ...mine]);   // the opener can sit in either list
+    const sharedRows = shared.map((s, i) => tplRow(s, i + 1, { shared: true, first: i === first })).join('');
     const mineRows = mine.length
-      ? mine.map((s, i) => tplRow(s, shared.length + i + 1, { idx: i, first: !shared.length && i === 0 })).join('')
+      ? mine.map((s, i) => tplRow(s, shared.length + i + 1, { idx: i, first: shared.length + i === first })).join('')
       : `<div class="tpl-empty">No extra sessions — opens with the shared set.</div>`;
     return `<div class="tpl-stack">
       ${shared.length ? `<div class="tpl-list tpl-list--ro">${sharedRows}</div>` : ''}
       <div class="tpl-list" data-tpl>${mineRows}</div>
     </div>` + tplAddBar();
+  }
+
+  // The flags you'd set for an agent are exactly what you don't need once it's off, so the switch
+  // and the field belong on one row: off greys the row and takes the field with it. The row itself
+  // stays — the switch that brings the agent back has to be somewhere you can find it.
+  function agentRow(a) {
+    const off = !agentOn[a];
+    return row(AGENT_BIN[a], desc(`Flags added to every ${AGENT_BIN[a]} launch.`), switchCtl(!off, 'agent.' + a),
+      `<textarea class="set-code set-code--flags" data-flags="${a}" spellcheck="false" placeholder="${esc(AGENT_EG[a])}"${off ? ' readonly tabindex="-1"' : ''}>${esc(DEF.flags[a] || '')}</textarea>`,
+      off ? 'set-row--off' : '');
   }
 
   // ---- The two tabs ------------------------------------------------------------------
@@ -7134,8 +7189,7 @@
           cap('setup.sh', SCRIPT_NOTE) + `<textarea class="set-code" data-edit="script" spellcheck="false" placeholder="# bash. Runs in the new worktree.">${esc(DEF.script)}</textarea>`)
       + row('Sessions', desc('Every new worktree opens with these. The first one opens.'), '',
           `<div class="tpl-list" data-tpl>${tplRows(DEF.sessions)}</div>` + tplAddBar()))
-    + sec('Agent defaults', AGENTS.map((a) => row(AGENT_BIN[a], desc(`Flags added to every ${AGENT_BIN[a]} launch.`), '',
-        `<textarea class="set-code set-code--flags" data-flags="${a}" spellcheck="false" placeholder="${esc(AGENT_EG[a])}">${esc(DEF.flags[a] || '')}</textarea>`)).join(''))
+    + sec('Agent defaults', AGENTS.map(agentRow).join(''))
     + sec('Privacy', row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics')))
     + sec('Experimental', row('Tabs', desc("Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview."), switchCtl(tabsMode, 'tabs')))
     // The row and the card are one fact seen twice, so About states the update outright and
@@ -7165,7 +7219,10 @@
     const sessDesc = desc('Opens after the shared sessions.') + (mine.length ? clearBtn('sessions') : '');
     const sessions = row('Sessions', sessDesc, '', sessionsLayered(p));
 
-    const agents = AGENTS.map((a) => {
+    // A switched-off agent drops out here entirely rather than greying: the switch is app-level,
+    // so repeating a dead row in every project is the clutter this is meant to remove. The
+    // project's flags for it stay in the delta, waiting.
+    const agents = liveAgents().map((a) => {
       const sharedFlags = (DEF.flags[a] || '').trim();
       const tail = (p.flags && p.flags[a]) || '';
       const d = desc(sharedFlags ? `Added after the shared ${AGENT_BIN[a]} flags.` : `Flags for ${AGENT_BIN[a]} launches.`)
@@ -7173,7 +7230,7 @@
       return row(AGENT_BIN[a], d, '', flagLine(a, sharedFlags, tail));
     }).join('');
 
-    return sec('New worktree', script + sessions) + sec('Agents', agents);
+    return sec('New worktree', script + sessions) + (agents ? sec('Agents', agents) : '');
   }
 
   function noProjectTab() {
@@ -7190,6 +7247,11 @@
     stopStream();
     // the pane is rebuilt wholesale, so remember where the keyboard cursor was sitting
     const keepRow = selEl && selEl.matches('.set-row') ? [...content.querySelectorAll('.set-row')].indexOf(selEl) : -1;
+    // ...and where the page was. Flipping a switch halfway down re-renders the whole list, and a
+    // list that jumps back to the top reads as the app reloading under you. A tab switch is a new
+    // list, so that one does start at the top.
+    const prevBody = content.querySelector('.set-body');
+    const keepScroll = prevBody && prevBody.dataset.tab === setTab ? prevBody.scrollTop : 0;
     if (setProject && !document.contains(setProject)) setProject = null;
     if (!setProject) setProject = restoreProject();
     if (!setProject && setTab === 'project') setTab = 'app';
@@ -7205,7 +7267,7 @@
         ${tabs}
         <div class="pane__spacer"></div>
       </div>
-      <div class="set-body"><div class="set-body__inner">${
+      <div class="set-body" data-tab="${setTab}"><div class="set-body__inner">${
         setTab === 'project' ? projectTab() : (projectHeads().length ? appTab() : appTab() + noProjectTab())
       }</div></div>
     </div>`;
@@ -7214,6 +7276,8 @@
       const rows = [...content.querySelectorAll('.set-row')];
       select(rows[Math.min(keepRow, rows.length - 1)] || null);
     }
+    // last, so it wins over any scrolling `select` did on the way
+    if (keepScroll) content.querySelector('.set-body').scrollTop = keepScroll;
   }
 
   // the script editor grows with its content rather than clipping or making you scroll a box
@@ -7231,6 +7295,29 @@
     });
   }
 
+  const setSwitch = (b, on) => { b.classList.toggle('is-on', on); b.setAttribute('aria-checked', String(on)); };
+
+  // Flipping an agent changes three things that are all on screen at once: its own row, the
+  // new-worktree template entries it would have opened, and the add bar's button for it. Every
+  // one of those states is a class the markup already carries, so this only ever toggles classes.
+  // Re-rendering for a switch flashes the pane, drops focus and throws away the scroll.
+  function syncAgentUI(k, on) {
+    const sw = content.querySelector(`[data-switch="agent.${k}"]`);
+    if (sw) sw.closest('.set-row').classList.toggle('set-row--off', !on);
+    const flags = content.querySelector(`.set-code--flags[data-flags="${k}"]`);
+    // the field keeps its place — height must not change — but there is nothing to edit for an
+    // agent that will never launch, so it goes read-only and drops out of the tab order
+    if (flags) { flags.readOnly = !on; flags.tabIndex = on ? 0 : -1; }
+    content.querySelectorAll(`.tpl-row[data-kind="${k}"]`).forEach((t) => t.classList.toggle('tpl-row--off', !on));
+    content.querySelectorAll(`.tpl-add__btn[data-add="${k}"]`).forEach((b) => b.classList.toggle('is-off', !on));
+    // "opens" belongs to the set, not to a row, so re-pick it wherever a session list is drawn
+    content.querySelectorAll('.set-row').forEach((sr) => {
+      const rows = [...sr.querySelectorAll('.tpl-row')];
+      const first = rows.find((t) => agentEnabled(t.dataset.kind));
+      rows.forEach((t) => t.classList.toggle('tpl-row--first', t === first));
+    });
+  }
+
   function wireSettings() {
     placeThumbs();
     requestAnimationFrame(placeThumbs);
@@ -7245,10 +7332,11 @@
     content.querySelectorAll('[data-theme-opt]').forEach((b) =>
       b.addEventListener('click', () => setTheme(b.dataset.themeOpt)));
     content.querySelectorAll('[data-switch]').forEach((b) => b.addEventListener('click', () => {
-      if (b.dataset.switch === 'tabs') { setTabsMode(!tabsMode); renderSettings(); return; }   // experimental view mode (not an appSet flag)
+      if (b.dataset.switch === 'tabs') { setTabsMode(!tabsMode); renderSettings(); return; }   // view mode: changes the shell, so it does rebuild
       const [grp, k] = b.dataset.switch.split('.');
-      if (k) appSet[grp][k] = !appSet[grp][k]; else appSet[grp] = !appSet[grp];
-      renderSettings();
+      // Nothing else here changes the shape of the pane, so nothing else rebuilds it.
+      if (grp === 'agent') { setSwitch(b, agentOn[k] = !agentOn[k]); syncAgentUI(k, agentOn[k]); return; }
+      setSwitch(b, k ? (appSet[grp][k] = !appSet[grp][k]) : (appSet[grp] = !appSet[grp]));
     }));
 
     // Clear a project's whole delta on a row — back to pure inheritance.
@@ -7421,9 +7509,12 @@
   function activateSetting(r) {
     const seg = r.querySelector('.seg--slide');
     if (seg) { stepSeg(seg, 1); return; }
+    // An agent row carries a switch AND a field. ↵ goes to the field, because h / l already
+    // works the switch — until the agent is off, where the field is hidden and ↵ turns it back on.
+    const f = r.classList.contains('set-row--off') ? null
+      : r.querySelector('.set-code:not([readonly]), .set-cmd__tail, input.tpl-name');
     const sw = r.querySelector('[data-switch]');
-    if (sw) { sw.click(); return; }
-    const f = r.querySelector('.set-code:not([readonly]), .set-cmd__tail, input.tpl-name');
+    if (!f && sw) { sw.click(); return; }
     if (f) { f.focus(); document.body.classList.remove('kbd'); return; }
     const btn = r.querySelector('.tpl-add__btn');
     if (btn) btn.click();

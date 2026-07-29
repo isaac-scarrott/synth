@@ -1372,6 +1372,12 @@ disclosure to dive deeper.
   named where you look for it — the sidebar echo's copper open-tile, and the active tab's own bar —
   and the keyboard state `activePane` drives is untouched. `--focus` stays for the tab bar and the
   toast countdown.
+- **An agent you don't use is switched off, and Synth stops offering it** — a switch per agent in
+  Settings ▸ Synth ▸ Agent defaults; off drops it from every "New …" surface but never stops a
+  session already running one. Enabled means enabled *and* installed; a switched-off template entry
+  is skipped, not deleted, and "opens" hands off to the first survivor. Every agent off is allowed —
+  the paths with no user in front of them (browser comment, feedback, MCP handoff) say so up front
+  instead of swallowing what was typed. The row keeps its height when it dims, so nothing jumps.
 - **A gate run happens on your machine without happening to you** — `SYNTH_AUTOMATION=1` now means
   invisible as well as drivable (`Automation.swift`): the app launches `.accessory` and never
   activates (no Dock icon, no ⌘Tab slot, no focus taken), its windows — its own and the ⌘K panel —
@@ -1379,9 +1385,9 @@ disclosure to dive deeper.
   Control and ⌘`) while staying ordered in at full size so `automation.screenshot` still renders
   them — moving them away doesn't hold, AppKit constrains a titled frame back onto a screen and
   parks a whole legible Synth on the second display. A synthetic keystroke no longer hides the
-  system-wide cursor, and a run no longer writes
-  the developer's saved window frame. Notification Center posts are recorded instead of delivered,
-  which makes the unfocused branch assertable (`automation.notifs` → `nc`) for the first time — t3
+  system-wide cursor, and a run no longer writes the developer's saved window frame. Notification
+  Center posts are recorded instead of delivered, which makes the unfocused branch assertable
+  (`automation.notifs` → `nc`) for the first time — t3
   proves a background needs-input reaches it, t11 that the update card never does. The porting
   skill's `TESTING.md`, which told agents to `osascript … frontmost` their instance to raise toasts
   and to fall back to `screencapture -l<WINID>`, is rewritten onto `notifRoute`/`notifFocus` and the

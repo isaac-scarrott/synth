@@ -105,7 +105,7 @@ def launch(state_dir, log, theme=None, extra_args=(), env_extra=None):
     sweep_dead_sockets()
     env = dict(os.environ)
     env["PATH"] = OPENCODE_PATH + ":" + env["PATH"]
-    env["SYNTH_AUTOMATION"] = "1"
+    env["SYNTH_AUTOMATION"] = "1"   # drivable and invisible, both (Automation.swift)
     env["SYNTH_STATE_DIR"] = str(state_dir)
     for k in ["CLAUDECODE","CLAUDE_CODE_SESSION_ID","CLAUDE_CODE_CHILD_SESSION","CLAUDE_CODE_ENTRYPOINT","CLAUDE_CODE_EXECPATH"]:
         env.pop(k, None)

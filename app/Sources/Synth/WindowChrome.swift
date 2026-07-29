@@ -44,6 +44,7 @@ struct WindowChrome: NSViewRepresentable {
             guard let window else { return }
             // Re-assert on every adopt (SwiftUI can reinstall its own delegate on an update).
             guardClose(window)
+            Automation.park(window)   // a driven build's window never reaches the desktop it runs on
             guard window !== self.window else { return }
             release()
             self.window = window

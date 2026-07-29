@@ -1372,3 +1372,20 @@ disclosure to dive deeper.
   named where you look for it — the sidebar echo's copper open-tile, and the active tab's own bar —
   and the keyboard state `activePane` drives is untouched. `--focus` stays for the tab bar and the
   toast countdown.
+- **A gate run happens on your machine without happening to you** — `SYNTH_AUTOMATION=1` now means
+  invisible as well as drivable (`Automation.swift`): the app launches `.accessory` and never
+  activates (no Dock icon, no ⌘Tab slot, no focus taken), its windows — its own and the ⌘K panel —
+  are made unseeable rather than moved (`alphaValue = 0`, pointer-deaf, desktop level, out of Mission
+  Control and ⌘`) while staying ordered in at full size so `automation.screenshot` still renders
+  them — moving them away doesn't hold, AppKit constrains a titled frame back onto a screen and
+  parks a whole legible Synth on the second display. A synthetic keystroke no longer hides the
+  system-wide cursor, and a run no longer writes
+  the developer's saved window frame. Notification Center posts are recorded instead of delivered,
+  which makes the unfocused branch assertable (`automation.notifs` → `nc`) for the first time — t3
+  proves a background needs-input reaches it, t11 that the update card never does. The porting
+  skill's `TESTING.md`, which told agents to `osascript … frontmost` their instance to raise toasts
+  and to fall back to `screencapture -l<WINID>`, is rewritten onto `notifRoute`/`notifFocus` and the
+  in-process shot; `drive.swift` + `findwin.swift` are gone (`automation.key` lands keys without the
+  app ever being frontmost). Running the gates against it surfaced a race of their own: t12 read the
+  palette a fixed 0.4s after posting ⌘K and now waits for it, as t11 already did. Every verb still
+  runs the exact product path — the run is quieter, not thinner.

@@ -128,7 +128,9 @@ check("21. and it lists the binding",
 key(ESC)
 check("22. Esc closes the sheet", ctl("automation.shortcuts").get("open") is False)
 key(40, ("cmd",), "k")
-pal = ctl("automation.palette")
+# A posted key is dispatched a runloop turn later and the palette builds a window of its own, so
+# read it when it's up rather than a fixed wait after asking (t11 reads it the same way).
+pal = wait(lambda: ctl("automation.palette").get("open") and ctl("automation.palette"), 10, 0.2) or {}
 check("23. ⌘K offers it as an action", "Scratch terminal" in pal.get("items", []),
       str(pal.get("items"))[:200])
 key(40, ("cmd",), "k")

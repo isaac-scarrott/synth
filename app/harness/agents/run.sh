@@ -4,6 +4,11 @@
 # click-to-comment, abort semantics, `agy`'s two-programs-one-name detection rule, and no
 # regression in Claude Code's hook path.
 #
+# A run is invisible. Every instance launches driven, and a driven Synth takes no Dock icon, no
+# ⌘Tab slot, no keyboard, no cursor and no screen, and records its Notification Center posts
+# instead of firing them (Automation.swift) — so a suite can run for an hour on the machine
+# someone is working on without landing in the middle of it.
+#
 # Needs: a CEF-enabled bundle (app/dev.sh builds one) whose path is in /tmp/synth-app-path.txt,
 # and `opencode` + `claude` on PATH. Antigravity additionally wants `agy` — the CLI, from
 # `brew install --cask antigravity-cli` or the official installer's ~/.local/bin — and, for the

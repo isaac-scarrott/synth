@@ -533,6 +533,9 @@ final class ControlServer: @unchecked Sendable {
         case "automation.notifs" where automation:
             return ["ok": true,
                     "active": NSApp.isActive,
+                    // Every Notification Center post this run would have made, recorded instead of
+                    // delivered (NotificationService.add) — the unfocused branch, assertable.
+                    "nc": NotificationService.shared.captured,
                     "notifs": store.notifOrder.map { n -> [String: String] in
                         ["sessionId": n.id.uuidString,
                          "kind": String(describing: n.kind),
@@ -740,9 +743,7 @@ final class ControlServer: @unchecked Sendable {
         }
     }
 
-    private static var automation: Bool {
-        ProcessInfo.processInfo.environment["SYNTH_AUTOMATION"] == "1"
-    }
+    private static var automation: Bool { Automation.isDriven }
 
     @MainActor private static func requestedSession(_ request: [String: Any],
                                                     in branch: Branch) -> Session? {

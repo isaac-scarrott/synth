@@ -33,21 +33,48 @@ def agents_off(*ids):
 
 
 def palette(ctl):
-    ctl("automation.key", keyCode=40, mods=["cmd"], chars="k")   # ⌘K
-    time.sleep(0.6)
-    return ctl("automation.palette")
+    """The ⌘K root, opened over the control socket rather than by a synthesized ⌘K.
+
+    Every check here reads rows out of a palette frame, so the frame has to be the one this gate
+    asked for. A posted key event can't promise that twice over: it resolves against whichever
+    window `NSApp.windows` hands back first, and a headless instance is never frontmost. Worse,
+    once the palette IS open its search field owns first responder, so any keystroke this machine
+    delivers lands in the query and re-filters the rows — a stray `h` turns the root into
+    ['Archive', 'Scratch terminal', 'New branch', 'Keyboard shortcuts'], which reads exactly like
+    the feature dropping the agent rows. `automation.paletteOpen` opens a fresh root with an empty
+    query and answers with the frame in the same round trip, leaving no interval for either to
+    drift."""
+    return ctl("automation.paletteOpen")
 
 
 def drill(ctl, label):
-    """Arrow onto `label` and press return. The palette's query field can't be typed into on a
-    window that isn't key, and every frame this gate needs is reachable by cursor alone."""
-    items = ctl("automation.palette").get("items", [])
-    if label not in items: return {"items": [], "missing": label}
+    """Arrow onto `label` and press return, and come back with the frame that opened. Cursor-only:
+    typing the label would race whatever else reaches the field. Each step clears the query first
+    — `palette`'s guard, applied to a palette that is already open — and needs no settle, because
+    the palette pushes its next frame on the main actor before the verb answers."""
+    fr = ctl("automation.paletteQuery")
+    items = fr.get("items", [])
+    if label not in items: return dict(fr, items=[], missing=label, offered=items)
     i = items.index(label)
     if i: ctl("automation.paletteMove", delta=i)
     ctl("automation.paletteEnter")
-    time.sleep(0.6)
-    return ctl("automation.palette")
+    return ctl("automation.paletteQuery")
+
+
+def rows(frame):
+    """A frame's rows plus the sentence to print if the check on them fails.
+
+    Rows only count when the frame is the frame under test: one that never opened, or one whose
+    query has filtered it, cannot answer "which sessions does Synth offer here?" — so it yields no
+    rows and says which of the two happened, rather than failing as though the feature were wrong."""
+    if frame.get("missing"):
+        return [], f"never reached {frame['missing']!r} — the frame before it offered {frame['offered']}"
+    if not frame.get("open"):
+        return [], f"the palette is not open — {frame}"
+    if frame.get("query"):
+        return [], (f"the palette was filtered by {frame['query']!r}, so these are not the frame's "
+                    f"own rows — {frame.get('items')}")
+    return frame.get("items", []), f"{frame.get('crumb') or 'root'}: {frame.get('items')}"
 
 
 AGENT_ROWS = ("New Claude Code", "New OpenCode", "New Antigravity")
@@ -59,30 +86,30 @@ sd = seed_state(repo)
 
 p, sock = launch(sd, f"{H}/t19a.log")
 ctl = Ctl(sock, repo)
-items = palette(ctl).get("items", [])
+items, why = rows(palette(ctl))
 check("1. with nothing switched off, ⌘K offers every installed agent",
-      "New Claude Code" in items and "New OpenCode" in items, items)
+      "New Claude Code" in items and "New OpenCode" in items, why)
 p.terminate(); time.sleep(1)
 
 p, sock = launch(sd, f"{H}/t19b.log", extra_args=agents_off("opencode"))
 ctl = Ctl(sock, repo)
-items = palette(ctl).get("items", [])
+items, why = rows(palette(ctl))
 check("2. opencode off: ⌘K drops it and keeps the rest",
-      "New OpenCode" not in items and "New Claude Code" in items, items)
+      "New OpenCode" not in items and "New Claude Code" in items, why)
 # A second surface, built from a different call site: the branch's own frame.
 drill(ctl, "Branches")
-bitems = drill(ctl, sh(f"git -C {repo} branch --show-current")).get("items", [])
+bitems, bwhy = rows(drill(ctl, sh(f"git -C {repo} branch --show-current")))
 check("3. the branch frame's session creates drop it too",
-      bool(bitems) and "New OpenCode" not in bitems and "New Claude Code" in bitems, bitems)
+      "New OpenCode" not in bitems and "New Claude Code" in bitems, bwhy)
 p.terminate(); time.sleep(1)
 
 p, sock = launch(sd, f"{H}/t19c.log",
                  extra_args=agents_off("claudeCode", "opencode", "antigravity"))
 ctl = Ctl(sock, repo)
-items = palette(ctl).get("items", [])
+items, why = rows(palette(ctl))
 check("4. every agent off is allowed: no agent rows, terminal and browser stay",
       not any(a in items for a in AGENT_ROWS)
-      and "New terminal" in items and "New browser" in items, items)
+      and "New terminal" in items and "New browser" in items, why)
 
 # The one caller with no user in front of it. A handoff is a brief written for someone to
 # receive; with nobody left to receive it, the MCP call must fail rather than approve into an

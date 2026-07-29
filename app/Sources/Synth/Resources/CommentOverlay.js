@@ -299,8 +299,11 @@
     '  transition: background-color 100ms ease, transform 110ms ' + EASE + '; }',
     '.btn:hover { background: rgba(255,255,255,0.13); }',
     '.btn:active { transform: scale(0.97); }',
-    '.btn--pri { background: #0a84ff; color: #fff; border-color: transparent; font-weight: 600; }',
-    '.btn--pri:hover { background: #2492ff; }',
+    /* The island is dark glass wherever it lands, so the primary carries the mark's own dark
+       pair (--accent / --on-accent) rather than system blue — nothing else here is blue, and
+       the page's CSS variables are not ours to read. */
+    '.btn--pri { background: #eee0cd; color: #191b1f; border-color: transparent; font-weight: 600; }',
+    '.btn--pri:hover { background: #f6ece0; }',
     '.btn--pri:disabled { opacity: 0.45; cursor: default; }',
     '.btn--ghost { background: transparent; border-color: transparent; color: #b9b9c0; }',
     '.kbd { margin-left: 5px; opacity: 0.7; font-size: 10.5px; }',

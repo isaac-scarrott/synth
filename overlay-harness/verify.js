@@ -1,6 +1,9 @@
 /*
  * Headless verification of CommentOverlay.js (batch flow) against harness.html + react-page.html.
  *
+ * The harness plays the host: a send is a request, so every send here is answered with
+ * confirm() (delivery landed — the queue may go) or reject() (it never did — the queue stays).
+ *
  * Usage:
  *   PW_CORE=/path/to/node_modules/playwright-core \
  *   CHROME_EXEC="/path/to/Google Chrome for Testing" \
@@ -375,7 +378,7 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
     msgs.length === beforeDelete + 1 && msgs[msgs.length - 1].type === 'batchCount' && msgs[msgs.length - 1].n === 3,
     JSON.stringify(msgs[msgs.length - 1]));
 
-  // ==== ASSERTION 5: Send delivers exactly one batch ================================
+  // ==== ASSERTION 5: Send asks, and the batch stands until the host answers ==========
   const sels = (await dbgOf(page)).comments.map((c) => c.selector);
   const live = await page.evaluate((ss) => ({
     scrollX: window.scrollX, scrollY: window.scrollY, dpr: window.devicePixelRatio,
@@ -386,15 +389,37 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
     })
   }), sels);
   const pinNumerals = (await pinsOf(page)).map((p) => p.numeral);
+  const pinsBeforeSend = await pinsOf(page);
   const beforeSend = (await msgsOf(page)).length;
   await shadowClick(page, '[data-cm="send"]');
-  await page.waitForTimeout(200);
+  await settle(page);
   msgs = await msgsOf(page);
   const batches = msgs.filter((m) => m.type === 'commentBatch');
-  check('Send emits exactly one commentBatch', batches.length === 1 && msgs.length === beforeSend + 2,
+  check('Send emits exactly one commentBatch and nothing else',
+    batches.length === 1 && msgs.length === beforeSend + 1 &&
+    msgs[msgs.length - 1].type === 'commentBatch',
     JSON.stringify(msgs.slice(beforeSend).map((m) => m.type)));
-  check('the batch drops back to a zero count',
-    msgs[msgs.length - 1].type === 'batchCount' && msgs[msgs.length - 1].n === 0);
+  check('send is a request, not a result — no zero count until the host answers',
+    !msgs.slice(beforeSend).some((m) => m.type === 'batchCount'),
+    JSON.stringify(msgs.slice(beforeSend).map((m) => m.type + (m.n === undefined ? '' : ':' + m.n))));
+  d = await dbgOf(page);
+  check('the queue still stands while the batch is in flight',
+    d.sending === true && d.queuedCount === 3 && d.comments.length === 3 &&
+    JSON.stringify(d.comments.map((c) => c.text)) === JSON.stringify([C1, C2, C4]),
+    'sending=' + d.sending + ' queued=' + d.queuedCount);
+  check('the pins stay on the page, still locked to their elements, while in flight',
+    JSON.stringify((await pinsOf(page)).map((p) => p.numeral)) === JSON.stringify(pinNumerals) &&
+    (await pinsOf(page)).every((p, i) =>
+      approx(p.cx, pinsBeforeSend[i].cx, 1) && approx(p.cy, pinsBeforeSend[i].cy, 1)) &&
+    locked(await pinDriftOf(page)),
+    JSON.stringify(await pinDriftOf(page)));
+  check('the island says it is sending, and spins while it waits',
+    d.islandText === 'Sending 3 comments…' &&
+    await page.evaluate(() => {
+      const r = window.__synthOverlayDebug.root;
+      return !!r.querySelector('.sent .spin') && !r.querySelector('.bar');
+    }), d.islandText);
+  await page.screenshot({ path: path.join(SHOT_DIR, 'overlay-sending.png') });
   const batch = batches[0];
   check('batch envelope has exactly the contract keys in order',
     JSON.stringify(Object.keys(batch)) === JSON.stringify(['type', 'url', 'title', 'viewport', 'comments']),
@@ -444,15 +469,120 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
     batch.comments.every((c) => c.elementText.length <= 500));
   check('reactSource is null on a non-React page', batch.comments.every((c) => c.reactSource === null));
 
+  // ---- the host answers: confirm() is what makes the send a result -----------------
+  const beforeConfirm = (await msgsOf(page)).length;
+  const CONFIRM_LABEL = 'claude · fix/browser-header (session 4)';
+  await page.evaluate((l) => window.__synthOverlay.confirm(l), CONFIRM_LABEL);
+  await settle(page);
+  msgs = await msgsOf(page);
+  check('confirm is what drops the queue back to a zero count',
+    msgs.length === beforeConfirm + 1 &&
+    msgs[msgs.length - 1].type === 'batchCount' && msgs[msgs.length - 1].n === 0,
+    JSON.stringify(msgs.slice(beforeConfirm)));
   d = await dbgOf(page);
-  check('the send confirmation stands before the mode closes',
-    d.sending === true && d.islandText.includes('sent to') && d.islandText.includes(LABEL), d.islandText);
+  check('the send confirmation names the label the host confirmed with',
+    d.sending === false && d.islandText === '3 comments sent to ' + CONFIRM_LABEL, d.islandText);
+  check('the pins are flying out on the confirmation',
+    await page.evaluate(() => {
+      const r = window.__synthOverlayDebug.root;
+      return r.querySelectorAll('.pin').length === 3 && !!r.querySelector('.pin.is-going');
+    }));
   await page.screenshot({ path: path.join(SHOT_DIR, 'overlay-sent.png') });
   await page.waitForTimeout(1700);
   check('the mode closes itself after the confirmation', (await hostsOf(page)) === 0);
+  check('the confirmed queue is gone with it', (await dbgOf(page)) === null);
   msgs = await msgsOf(page);
-  check('closing after a send emits exitMode last', msgs[msgs.length - 1].type === 'exitMode',
-    JSON.stringify(msgs.slice(-2)));
+  check('closing after a confirmed send emits exitMode last, with no second zero count',
+    msgs[msgs.length - 1].type === 'exitMode' &&
+    JSON.stringify(msgs.slice(beforeConfirm).map((m) => m.type)) ===
+      JSON.stringify(['batchCount', 'exitMode']),
+    JSON.stringify(msgs.slice(beforeConfirm)));
+
+  // ==== ASSERTION 5b: a rejected delivery hands the batch back, whole ================
+  // The safety property. A delivery can fail on its last rung — the target session never
+  // reports live — and the comments the user wrote must survive that intact.
+  await page.evaluate(() => window.__synthOverlay.enter({ targetLabel: 'claude · feat/retry', debug: true }));
+  await page.waitForTimeout(120);
+  await page.mouse.click(deepBox.x + deepBox.width / 2, deepBox.y + deepBox.height / 2);
+  await page.waitForTimeout(150);
+  await page.keyboard.type('keep me one');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const firstTwin = await page.locator('p.twin >> nth=0').boundingBox();
+  await page.mouse.click(firstTwin.x + 10, firstTwin.y + 8);
+  await page.waitForTimeout(150);
+  await page.keyboard.type('keep me two');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  await settle(page);
+  const rjPinsBefore = await pinsOf(page);
+  const rjSels = (await dbgOf(page)).comments.map((c) => c.selector);
+  check('reject setup: two comments queued, pinned and locked',
+    (await dbgOf(page)).queuedCount === 2 && rjPinsBefore.length === 2 &&
+    locked(await pinDriftOf(page)),
+    JSON.stringify(rjPinsBefore.map((p) => p.numeral)));
+
+  const beforeReject = (await msgsOf(page)).length;
+  await shadowClick(page, '[data-cm="send"]');
+  await settle(page);
+  await page.evaluate(() => window.__synthOverlay.reject("Couldn't reach Claude"));
+  await settle(page);
+  d = await dbgOf(page);
+  msgs = await msgsOf(page);
+  check('a rejected send emits the batch and nothing else — no zero count, nothing left',
+    JSON.stringify(msgs.slice(beforeReject).map((m) => m.type)) === JSON.stringify(['commentBatch']),
+    JSON.stringify(msgs.slice(beforeReject).map((m) => m.type + (m.n === undefined ? '' : ':' + m.n))));
+  check('reject keeps every comment the user wrote',
+    d.sending === false && d.queuedCount === 2 && (await hostsOf(page)) === 1 &&
+    JSON.stringify(d.comments.map((c) => c.text)) === JSON.stringify(['keep me one', 'keep me two']),
+    'sending=' + d.sending + ' queued=' + d.queuedCount);
+  const rjPinsAfter = await pinsOf(page);
+  check('both pins are still on the page, still anchored to their elements',
+    rjPinsAfter.length === 2 &&
+    JSON.stringify(rjPinsAfter.map((p) => p.numeral)) === JSON.stringify(['1', '2']) &&
+    rjPinsAfter.every((p, i) =>
+      approx(p.cx, rjPinsBefore[i].cx, 1) && approx(p.cy, rjPinsBefore[i].cy, 1)) &&
+    locked(await pinDriftOf(page)),
+    JSON.stringify(await pinDriftOf(page)));
+  check('the island says why, and that nothing was lost',
+    d.islandText === "Couldn't reach Claude — 2 comments kept" &&
+    await page.evaluate(() => {
+      const r = window.__synthOverlayDebug.root;
+      return !!r.querySelector('.sent.sent--warn') && !r.querySelector('.spin');
+    }), d.islandText);
+  await page.screenshot({ path: path.join(SHOT_DIR, 'overlay-rejected.png') });
+  await page.waitForTimeout(2800);
+  d = await dbgOf(page);
+  check('the normal bar comes back with the batch still counted',
+    d.queuedCount === 2 && d.islandText.includes('Send 2') && d.islandText.includes('comments') &&
+    !d.islandText.includes('kept') &&
+    (await rowsOf(page)).length === 2 &&
+    await page.evaluate(() => {
+      const r = window.__synthOverlayDebug.root;
+      return !!r.querySelector('.bar [data-cm="send"]:not([disabled])') && !r.querySelector('.sent');
+    }), d.islandText);
+
+  // the batch is still sendable after a rejection — that is the point of keeping it
+  const beforeResend = (await msgsOf(page)).length;
+  await shadowClick(page, '[data-cm="send"]');
+  await settle(page);
+  msgs = await msgsOf(page);
+  const resent = msgs.slice(beforeResend);
+  check('a rejected batch is still sendable, and resends whole',
+    JSON.stringify(resent.map((m) => m.type)) === JSON.stringify(['commentBatch']) &&
+    JSON.stringify(resent[0].comments.map((c) => c.comment)) ===
+      JSON.stringify(['keep me one', 'keep me two']) &&
+    JSON.stringify(resent[0].comments.map((c) => c.selector)) === JSON.stringify(rjSels),
+    JSON.stringify(resent.map((m) => m.type)));
+  await page.evaluate(() => window.__synthOverlay.confirm('claude · feat/retry'));
+  await settle(page);
+  await page.waitForTimeout(1700);
+  msgs = await msgsOf(page);
+  check('confirming the resend closes the mode with the queue emptied',
+    (await hostsOf(page)) === 0 &&
+    JSON.stringify(msgs.slice(beforeResend).map((m) => m.type + (m.n === undefined ? '' : ':' + m.n))) ===
+      JSON.stringify(['commentBatch', 'batchCount:0', 'exitMode']),
+    JSON.stringify(msgs.slice(beforeResend).map((m) => m.type)));
 
   // ==== ASSERTION 7: the Escape ladder — composer, then list, then the mode =========
   await page.evaluate(() => window.__synthOverlay.enter({ targetLabel: 'ladder', debug: true }));
@@ -461,7 +591,14 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
   await page.evaluate(() => window.__synthOverlay.send());
   await page.waitForTimeout(150);
   check('send() no-ops on an empty queue',
-    (await msgsOf(page)).length === ladderBase && (await dbgOf(page)).state === 'pick');
+    (await msgsOf(page)).length === ladderBase && (await dbgOf(page)).state === 'pick' &&
+    (await dbgOf(page)).sending === false);
+  await page.evaluate(() => window.__synthOverlay.confirm('nobody'));
+  await page.waitForTimeout(150);
+  check('confirm() with nothing in flight is a no-op, not a zero count',
+    (await msgsOf(page)).length === ladderBase && (await hostsOf(page)) === 1 &&
+    (await dbgOf(page)).islandText.includes('Click anything to comment'),
+    (await dbgOf(page)).islandText);
 
   await page.mouse.click(deepBox.x + deepBox.width / 2, deepBox.y + deepBox.height / 2);
   await page.waitForTimeout(150);
@@ -552,18 +689,27 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
     (await dbgOf(page)).pendingSendCount === 1 && (await msgsOf(page)).length === bufBefore);
   await page.keyboard.press('Meta+Alt+Enter');   // queue-and-send with no binding
   await page.waitForTimeout(200);
+  d = await dbgOf(page);
   check('the batch buffers too, rather than being dropped',
-    (await dbgOf(page)).pendingSendCount === 3 && (await msgsOf(page)).length === bufBefore,
-    'pending=' + (await dbgOf(page)).pendingSendCount);
+    d.pendingSendCount === 2 && (await msgsOf(page)).length === bufBefore,
+    'pending=' + d.pendingSendCount);
+  check('a send the host never heard still waits with the queue intact',
+    d.sending === true && d.queuedCount === 1 && d.islandText === 'Sending 1 comment…', d.islandText);
   await page.evaluate(() => { window.__synthComment = window.__realBinding; });
   await page.waitForTimeout(600);
   msgs = await msgsOf(page);
   const flushed = msgs.slice(bufBefore);
   check('buffered payloads flush in order once the binding appears',
-    JSON.stringify(flushed.map((m) => m.type)) === JSON.stringify(['batchCount', 'commentBatch', 'batchCount']) &&
+    JSON.stringify(flushed.map((m) => m.type)) === JSON.stringify(['batchCount', 'commentBatch']) &&
     flushed[1].comments.length === 1 && flushed[1].comments[0].comment === 'buffered comment',
     JSON.stringify(flushed.map((m) => m.type)));
+  await page.evaluate(() => window.__synthOverlay.confirm('buffered'));
   await page.waitForTimeout(1700);
+  check('a buffered send still ends where a live one does — confirmed, then closed',
+    (await hostsOf(page)) === 0 &&
+    JSON.stringify((await msgsOf(page)).slice(bufBefore).map((m) => m.type)) ===
+      JSON.stringify(['batchCount', 'commentBatch', 'batchCount', 'exitMode']),
+    JSON.stringify((await msgsOf(page)).slice(bufBefore).map((m) => m.type)));
   check('no page errors on harness', pageErrors.length === 0, pageErrors.join(' | '));
 
   // ================================ deferred mount ========================================
@@ -630,8 +776,18 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
     rBatches[0].comments[1].reactSource && rBatches[0].comments[1].reactSource.lineNumber === 15,
     JSON.stringify(rBatches[0].comments[1].reactSource));
   check('react click handler suppressed during pick', (await rp.evaluate(() => window.__reactClicks || 0)) === 0);
+  check('⌘⌥⏎ asks and waits — the batch is all the host hears',
+    JSON.stringify(rMsgs.slice(rBefore).map((m) => m.type)) === JSON.stringify(['commentBatch']) &&
+    (await dbgOf(rp)).sending === true && (await dbgOf(rp)).queuedCount === 2,
+    JSON.stringify(rMsgs.slice(rBefore).map((m) => m.type)));
+  await rp.evaluate(() => window.__synthOverlay.confirm('claude · feat/react-panel'));
+  await settle(rp);
+  rMsgs = await msgsOf(rp);
+  check('confirming on the react page drops the count to zero',
+    rMsgs[rMsgs.length - 1].type === 'batchCount' && rMsgs[rMsgs.length - 1].n === 0,
+    JSON.stringify(rMsgs.slice(-1)));
   await rp.waitForTimeout(1700);
-  check('react page returns to no overlay after the send', (await hostsOf(rp)) === 0);
+  check('react page returns to no overlay once the send is confirmed', (await hostsOf(rp)) === 0);
   check('no page errors on react page', rpErrors.length === 0, rpErrors.join(' | '));
 
   console.log(results.join('\n'));

@@ -112,6 +112,9 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "−"], label: "Zoom out"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "DevTools"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Device mode"),
+            Shortcut(keys: ["⏎"], label: "Add comment to batch"),
+            Shortcut(keys: ["⌥", "↑"], label: "Widen comment target"),
+            Shortcut(keys: ["⌘", "⇧", "⏎"], label: "Send all comments"),
             Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
     ]

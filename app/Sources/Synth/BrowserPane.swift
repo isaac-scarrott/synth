@@ -515,6 +515,7 @@ private struct BrowserBar: View {
     @Binding var homeFocusNonce: Int
 
     private var commentOn: Bool { ctrl.commentMode?.active ?? false }
+    private var pendingComments: Int { ctrl.commentMode?.pendingCount ?? 0 }
     private var commentHelp: String {
         guard commentOn else { return "Comment mode" }
         if let t = ctrl.commentMode?.targetTitle { return "Comment mode → \(t)" }
@@ -533,14 +534,14 @@ private struct BrowserBar: View {
             OmniPill(ctrl: ctrl, editing: dropOpen) {
                 if ctrl.isHome { homeFocusNonce += 1 } else { dropOpen = true }
             }
-            if commentOn, let target = ctrl.commentMode?.targetTitle {
-                CommentTargetChip(title: target)
-            }
             if ctrl.isZoomed {
                 ZoomBadge(percent: ctrl.zoomPercent) { ctrl.resetZoom() }
             }
             BarButton(icon: Phosphor.commentMode, help: commentHelp,
                       disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
+                .overlay(alignment: .topTrailing) {
+                    if pendingComments > 0 { CommentCountBadge(count: pendingComments) }
+                }
             BarButton(icon: Phosphor.deviceMobile, help: "Device mode",
                       disabled: ctrl.isHome, on: ctrl.deviceModeOn) { ctrl.toggleDeviceMode() }
             BarButton(icon: Phosphor.devtools, help: "DevTools",
@@ -558,21 +559,25 @@ private struct BrowserBar: View {
     }
 }
 
-/// While comment mode is on: the receiving Claude session, named right where comments
-/// are sent from ("→ fix palette focus").
-private struct CommentTargetChip: View {
-    let title: String
+/// working.html `.browser__cnt`: how many comments are queued on the page and waiting to be
+/// sent, as a copper pill notched into the comment button's top-right corner. Absent at 0.
+private struct CommentCountBadge: View {
+    let count: Int
 
     var body: some View {
-        Text("→ \(title)")
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(Theme.inkMuted)
-            .lineLimit(1).truncationMode(.tail)
-            .padding(.vertical, 3).padding(.horizontal, 8)
-            .background(Capsule().fill(Theme.rowSelected))
-            .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 0.5))
-            .frame(maxWidth: 180, alignment: .trailing)
-            .help("Comments go to \(title)")
+        // verbatim: a pin number, not a quantity to be grouped by locale.
+        Text(verbatim: "\(count)")
+            .font(.system(size: 9.5, weight: .bold))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4)
+            .frame(minWidth: 14, minHeight: 14)
+            .background(Capsule().fill(Theme.copper))
+            // The negative padding grows the shape past the pill: the CSS ring sits outside it.
+            .background(Capsule().fill(Theme.chrome).padding(-1.5))
+            .offset(x: 2, y: -1)
+            .help(count == 1 ? "1 comment queued — ⌘⇧⏎ to send"
+                             : "\(count) comments queued — ⌘⇧⏎ to send")
     }
 }
 

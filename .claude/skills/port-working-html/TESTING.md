@@ -3,18 +3,17 @@
 The only proof a change works is a screenshot / captured output of the **running** app. Tests and
 `swift build` are necessary but not sufficient — drive the actual flow.
 
+**Always launch with `SYNTH_AUTOMATION=1`.** This machine belongs to someone who is working on it
+while you verify. A driven build takes no Dock icon, no ⌘Tab slot, no keyboard focus and no screen —
+its window renders but is never visible, and Notification Center posts are recorded instead of
+delivered. Everything below is addressed to that instance over its control socket, so nothing you do
+appears on the desktop. Never `pkill Synth`; kill only your own PID.
+
 ## Screenshot your own instance
 
-Two ways to capture. Reach for the in-process one first — it's the only one that survives this
-machine's realities: several Synth instances at once, a tiling window manager (aerospace) that parks
-each window on its own Space, and permission popups that won't be granted. Never `pkill Synth`; kill
-only your own PID.
-
-### Preferred: let the app screenshot itself (WM-agnostic, no permission prompt)
-
-`automation.screenshot` renders the visible window's `contentView` via `cacheDisplay` from *inside*
-the app process, so it captures the exact SwiftUI hierarchy regardless of Space, occlusion, or
-display — and raises no screen-recording prompt. Launch with automation on, then ask over the socket:
+`automation.screenshot` renders the window's `contentView` via `cacheDisplay` from *inside* the app
+process, so it captures the exact SwiftUI hierarchy regardless of Space, occlusion, display, or the
+fact that nobody can see the window — and raises no screen-recording prompt:
 
 ```bash
 SYNTH_AUTOMATION=1 nohup .build/debug/Synth >/tmp/s.log 2>&1 & disown; MYPID=$!; sleep 4
@@ -24,44 +23,43 @@ printf '%s' '{"verb":"automation.screenshot","worktreePath":"<a branch worktree>
   | nc -U /tmp/synth-ctl-$MYPID.sock   # → {"ok":true,...}; read /tmp/shot.png
 ```
 
-Hover / selection / open-session chrome can't be produced by a real mouse on an inactive window —
-drive the store first, then screenshot: `automation.jump` opens a session so its full-width tint
-shows; `automation.nav` reports the tree so you know what to jump to. Kill your PID when done.
+`scripts/capture.sh` (set `APP_DIR`) is the same thing in one step: build, launch driven, screenshot,
+and leave it running with its PID, socket and worktree path printed for the next verb.
 
-### Fallback: capture the window buffer by ID
+Hover / selection / open-session chrome can't be produced by a real mouse on a window nobody is
+looking at — drive the store first, then screenshot: `automation.jump` opens a session so its
+full-width tint shows; `automation.nav` reports the tree so you know what to jump to. Kill your PID
+when done.
 
-`scripts/capture.sh` (set `APP_DIR`) builds, launches your instance, screenshots its CGWindowID, and
-leaves it running; re-capture with `screencapture -x -o -l<WINID> <out.png>` (WINID from
-`swift scripts/findwin.swift <PID>`). This only works when the window is on the **active** Space —
-under a tiling WM it usually isn't, so you get `could not create image from window` (and a full-display
-`screencapture` shows only the desktop). ScreenCaptureKit from an ad-hoc script hits a TCC prompt, and
-activating the app can't pull the window across Spaces (the debug binary has no bundle id). If by-ID
-capture fails, don't fight it — use the in-process path above.
+There is no window-buffer path any more: `screencapture -l<WINID>` and ScreenCaptureKit want a window
+on the active Space (which a tiling WM denies) plus a TCC grant that isn't coming, and a driven window
+isn't on screen for them to find in the first place.
 
-## Drive it by keyboard (no focus, no lock-screen dependency)
+## Drive it by keyboard
 
-`osascript … frontmost` targets the *wrong* same-named process and its clicks/keys can leak into
-another agent's app. Instead post CGEvents straight to your PID — reliable regardless of focus:
+`automation.key` posts the keystroke inside the app, addressed to its own window, so it lands whether
+or not the app is frontmost — which it never is:
 
 ```bash
-D="$APP_DIR/../.claude/skills/port-working-html/scripts/drive.swift"
-swift "$D" <PID> key 40 cmd     # ⌘K (command palette)
-swift "$D" <PID> key 125        # ↓   (nav down; also 126 ↑, 124 →, 123 ←)
-swift "$D" <PID> type feat/x    # type into a focused field
-swift "$D" <PID> key 36         # Return   (53 Esc, 49 Space, 51 Delete)
+K() { printf '{"verb":"automation.key","worktreePath":"%s","keyCode":%s,"mods":%s,"chars":"%s"}\n' \
+      "$WORKTREE" "$1" "${2:-[]}" "${3:-}" | nc -U "$SOCK"; }
+K 40 '["cmd"]' k     # ⌘K (command palette)
+K 125                # ↓   (nav down; also 126 ↑, 124 →, 123 ←)
+K 36 '[]' $'\r'      # Return   (53 Esc, 49 Space, 51 Delete)
 ```
 
-Mouse clicks do **not** land on inactive windows — drive the keyboard-first UI (global nav, ⌘K
-palette, sheets) by keys. The hover-reveal kebab is `pointer-events:none` until hovered, which
-osascript/clicks can't do; to verify a hover/menu-only state, set the store state in code
-(e.g. `activeMenu = …`), screenshot, then revert.
+Type a string by sending its characters in turn (`keyCode` + `chars`), the way the gates do. Mouse
+clicks have nowhere to land — drive the keyboard-first UI (global nav, ⌘K palette, sheets) by keys.
+The hover-reveal kebab is `pointer-events:none` until hovered, which no synthetic click reproduces;
+to verify a hover/menu-only state, set the store state in code (e.g. `activeMenu = …`), screenshot,
+then revert.
 
 ## Headless driving over the control socket
 
-The socket is the reliable way to drive *and* observe here — it doesn't care about Spaces, focus, or
-TCC, so it's the natural pair to the in-process screenshot above (and the only option when CGEvent
-posting and `screencapture -l` are both blocked). Talk to `/tmp/synth-ctl-<pid>.sock`, one JSON line
-in/out. Seed an isolated state so you never touch the user's real data:
+The socket is the way to drive *and* observe here — it doesn't care about Spaces, focus, or TCC, and
+it asks nothing of the desktop, which is why it pairs with the in-process screenshot above. Talk to
+`/tmp/synth-ctl-<pid>.sock`, one JSON line in/out. Seed an isolated state so you never touch the
+user's real data:
 
 ```bash
 # isolated instance — never touches the user's real state
@@ -77,11 +75,11 @@ echo '{"verb":"automation.nav","worktreePath":"…"}' | nc -U /tmp/synth-ctl-<pi
   + `paletteEnter` drive the delete flow. Global `claudeFlags` in the seeded state control what a
   spawned claude runs (`--help` exits 0 in ~2s; a bogus flag exits 1; omit the key for interactive
   claude that stays alive) — the headless stand-in for typing into a PTY.
-- In-app toasts only raise while `NSApp.isActive`; activate your instance with
-  `osascript -e 'tell application "System Events" to set frontmost of (first process whose
-  unix id is <pid>) to true'` (NSRunningApplication.activate is refused on macOS 14+).
-  Focus is contested on this machine — check `active` in `automation.notifs` at the moment
-  that matters.
+- Focus decides which notification surface a background transition takes, and a driven instance
+  never has focus — so say what focus is rather than taking it: `automation.notifRoute`
+  (`deck`|`nc`|`auto`) pins the branch, `automation.notifFocus` says focus came back so a transient
+  card drains. `automation.notifs` reports the standing deck, plus `nc` — every Notification Center
+  post the run would have made, recorded rather than fired at whoever is at the keyboard.
 - **Exit codes never ride the PTY**: libghostty wraps children in `/usr/bin/login`, which
   exits 0 regardless. The true code arrives over the hook socket (zshexit hook / claude
   shim) — test that seam directly with a `nc -lU` listener (socket path must be short:
@@ -95,9 +93,9 @@ echo '{"verb":"automation.nav","worktreePath":"…"}' | nc -U /tmp/synth-ctl-<pi
   missing: the code compiles but the link fails with `library '…/ghostty-internal.a' not found`.
   Symlink it from a sibling worktree that already has it (same pinned SHA) rather than re-fetching:
   `ln -s <other-worktree>/app/vendor/GhosttyKit.xcframework app/vendor/`.
-- **NSOpenPanel** (the add-workspace folder picker) is an out-of-process XPC window: the PID→window
-  screenshot can't see it, and it can't be driven while the screen is locked. Verify it with a
-  full-screen `screencapture` when the screen is unlocked, or note it as visually unverified.
+- **NSOpenPanel** (the add-workspace folder picker) is an out-of-process XPC window, so the in-process
+  screenshot can't see it and no verb can drive it. Note it as visually unverified — the one way to
+  photograph it is a full-screen capture of the user's own desktop, which isn't yours to take.
 - **Toolchain:** `swift-tools-version:5.10` (Swift 5 mode) — keep it; Swift 6 strict concurrency
   breaks the SwiftTerm delegate conformances. SwiftTerm is fetched via SPM (needs network on first build).
 - **Compare side by side:** serve the spec with `python3 -m http.server 8912` at the repo root and open

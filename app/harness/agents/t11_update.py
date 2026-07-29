@@ -90,9 +90,12 @@ check("14. which keeps counting", aged and aged["sub"] == "Downloaded 3 days ago
 # never does, so pinning the route that way must change nothing about where it lands.
 clear()
 ctl("automation.notifRoute", route="nc")
+before = len(ctl("automation.notifs").get("nc", []))
 ctl("automation.updateStage", version="9.9.9")
 check("15. the route that sends other cards to Notification Center leaves this one in the deck",
       bool(wait(lambda: update_card(), 10, 0.2)))
+check("15b. and nothing was posted to Notification Center",
+      len(ctl("automation.notifs").get("nc", [])) == before)
 ctl("automation.notifRoute", route="deck")
 
 # --- Restart asks first, but only when there is something to lose -------------------------------

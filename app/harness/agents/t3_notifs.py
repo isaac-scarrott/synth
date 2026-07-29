@@ -13,9 +13,7 @@ def notifs():
     return r.get("notifs", []), r.get("active")
 
 # Focus decides the surface: frontmost -> the in-app deck, unfocused -> Notification Center.
-# Bring the harness app frontmost so the deck is the surface under test.
-# Focus normally decides the surface; a driven instance never holds focus on a live desktop
-# (Arc/Teams take it straight back), so pin the route instead of stealing the user's focus.
+# A driven instance is never frontmost — it can't be — so pin the route instead of taking focus.
 check("0. deck route pinned", ctl("automation.notifRoute", route="deck").get("ok"))
 
 a = ctl("automation.newAgent", agent="opencode")["sessionId"]
@@ -45,6 +43,12 @@ check("6. done toast auto-dismisses once focus returns (transient)", bool(gone))
 ctl("automation.notifFocus", active=False)
 
 # --- needs-input toast: B stops and asks the user (the question channel) ---
+# Unfocused, the documented rule is BOTH surfaces: Notification Center catches the eye now, the
+# toast waits in the deck for focus to come back. Pin that route so the pair is asserted together.
+# The post itself is recorded rather than delivered (a gate must never banner the desktop it runs
+# on), which is the only reason the second half of the rule is observable at all.
+ctl("automation.notifRoute", route="nc")
+before = len(ctl("automation.notifs").get("nc", []))
 ctl("automation.deliver", sessionId=b, text=(
     "Before doing anything else you MUST call your interactive `question` tool to ask me "
     "one multiple-choice question: 'Which colour?' with options Red, Green, Blue. "
@@ -55,6 +59,10 @@ seen_in = wait(lambda: ([n for n in notifs()[0] if n["sessionId"] == b and n["ki
 check("8. background 'needs input' toast raised", bool(seen_in))
 still = wait(lambda: ([n for n in notifs()[0] if n["sessionId"] == b and n["kind"] == "input"] or None), 8, 0.5)
 check("9. needs-input toast persists (asks for something, so not transient)", bool(still))
+row_title = (ctl.row(b) or {}).get("title", "")
+posted = [n for n in ctl("automation.notifs").get("nc", [])[before:] if n["body"].startswith(row_title)]
+check("10. and the same transition reached Notification Center, naming the row",
+      bool(posted), posted[0] if posted else "nothing posted")
 
 p.terminate()
 sys.exit(result())

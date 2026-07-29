@@ -215,11 +215,20 @@ import Observation
             dh = Self.num(content, "height")
         }
 
+        // Device emulation reframes the page at another viewport and pixel ratio, and a
+        // `clip` in CSS pixels does not survive that — every strategy lands on a blank band
+        // (verified: viewport-relative, document-relative, and scroll-into-view all fail under
+        // setDeviceMetricsOverride). A blank PNG the message then points an agent at is worse
+        // than no PNG, so under device mode the batch carries the viewport shot alone and the
+        // comments lean on selector + position, which are unaffected. Cropping host-side from
+        // one full-page capture would fix this properly; until then it degrades honestly.
+        let emulating = BrowserManager.shared.existing(sessionID)?.deviceModeOn == true
+
         var elementPaths: [String?] = []
         for (i, comment) in comments.enumerated() {
             // A pin left on a page we have since navigated away from can't be re-shot; its
             // text, selector and React source still carry it.
-            guard comment["onCurrentPage"] as? Bool == true else {
+            guard comment["onCurrentPage"] as? Bool == true, !emulating else {
                 elementPaths.append(nil)
                 continue
             }

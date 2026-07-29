@@ -534,6 +534,16 @@ struct RootView: View {
                 Task { await cm.exit() }
                 return nil
             }
+            // ⌘⇧⏎ sends the browser's queued comments. It borrows the split layer's zoom-pane
+            // chord only while a batch is actually standing, so with nothing queued ⌘⇧⏎ still
+            // zooms — the browser never quietly owns a global chord.
+            if event.modifierFlags.contains(.command), event.modifierFlags.contains(.shift),
+               !event.modifierFlags.contains(.option), event.keyCode == 36 || event.keyCode == 76,
+               let open = store.openSession, open.kind == .browser,
+               let cm = BrowserManager.shared.existing(open.id)?.commentMode, cm.pendingCount > 0 {
+                cm.sendBatch()
+                return nil
+            }
             // ===== Split layout layer (007) — three arrow-families read as one grammar:
             // ⌘⌥ move · ⌘⌥⇧ resize · ⌘⇧ create; plus ⌘⇧⏎ zoom, ⌘⇧U unsplit, ⌘` cycle, ⌘2…9
             // focus-pane. Placed before the browser page-verbs so ⌘⌥L (focus-right alias) wins

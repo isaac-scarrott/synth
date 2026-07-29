@@ -1414,3 +1414,11 @@ disclosure to dive deeper.
   because the last rung of the ladder can refuse (the target agent never reports live) and a batch
   cleared on the way out was lost from both sides. ⌥ is excluded from the ⌘↩ notification chord, which
   was quietly eating ⌘⌥↩ whenever a toast was up.
+- **Synth 0.22.0 shipped (build 458).** A minor: browser comments arrive as one batch instead of an
+  interruption per pin, an agent switched off in Settings stops being offered, every clean agent exit
+  parks on the quit card (opencode exits 0 on its own, and the old carve-out deleted the row you were
+  watching), and the active-pane focus strip is gone. Notarized + stapled (zip + dmg), verified
+  credential-less on the quarantined downloads (both Notarized Developer ID, the app inside the dmg
+  staples on its own, bundle reads 0.22.0 / 458, bundled changelog leads with 0.22.0); appcast newest
+  `sparkle:version` 458 / `0.22.0`, all 18 enclosures EdDSA-signed, 5 deltas against 433/425/418/413/407
+  (937K from the previous build against a 131M download). Landing links unchanged, no site republish.

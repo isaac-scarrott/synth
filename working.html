@@ -610,17 +610,117 @@
   @keyframes browser-drop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
   .browser__btn.is-on { background: var(--hover); color: var(--ink); }
 
-  /* Comment mode (ADR-0011 stages three/four): the target chip names where a comment lands —
-     the owning Claude session, or the fresh one an unowned browser's comment will spawn. */
-  .browser__target { padding: 3px 9px; border-radius: 999px; background: rgba(var(--copper-rgb),0.12); color: var(--copper); font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; animation: browser-drop 150ms var(--ease-out); }
+  /* ---- Comment mode (ADR-0011 stages three/four, batched) ------------------------------
+     Comments accumulate on the page and leave together. Nothing reaches an agent until Send,
+     so a pass over a page is one delivery instead of one interruption per remark. Two surfaces:
+     quiet numbered pins on the page, and one floating island that owns the batch. */
   .browser__view { position: relative; }
   .browser--commenting .browser__view { cursor: crosshair; }
-  .browser__ccard { position: absolute; z-index: 20; width: 248px; padding: 8px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); border-radius: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.18); animation: browser-drop 150ms var(--ease-out); }
-  .browser__ccard textarea { width: 100%; resize: none; border: 0.5px solid var(--line); border-radius: 7px; background: var(--raised); padding: 6px 8px; font-family: inherit; font-size: 12px; color: var(--ink); outline: none; }
-  .browser__ccard textarea:focus { border-color: var(--line-2); }
-  .browser__ccard-row { display: flex; gap: 6px; margin-top: 7px; }
-  .browser__ccard-target { font-size: 10.5px; color: var(--ink-4); padding: 0 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .browser__ccard .menu__btn--send { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+  /* the queue stays legible from the toolbar even with the island collapsed */
+  .browser__btnwrap { position: relative; display: flex; }
+  .browser__cnt { position: absolute; top: -1px; right: -2px; min-width: 14px; height: 14px; padding: 0 4px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--copper); color: #fff; font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 1.5px var(--chrome); animation: cm-pop 220ms var(--ease-out); }
+  .browser__cnt[hidden] { display: none; }   /* the class's own display would outrank [hidden] */
+
+  /* Pins, the active comment's scope and the inspect outline share one non-interactive
+     overlay above the page; only the pins take the pointer back. */
+  .cm-layer { position: absolute; top: 0; left: 0; right: 0; z-index: 12; pointer-events: none; }
+  /* what a click would attach to, named before you commit to it */
+  .cm-hover { position: absolute; border: 1.5px solid var(--copper); border-radius: 3px; background: rgba(var(--copper-rgb),0.07); transition: all 90ms linear; }
+  .cm-hover__tag { position: absolute; left: 0; top: -19px; padding: 2px 6px; border-radius: 4px; background: var(--copper); color: #fff; font-family: var(--mono); font-size: 10px; white-space: nowrap; }
+  /* the comment's scope — the target element's own bounds, so it is exact by construction
+     and it moves as you widen up the tree */
+  .cm-scope { position: absolute; border: 1.5px solid var(--copper); border-radius: 3px; background: rgba(var(--copper-rgb),0.07); transition: left 160ms var(--ease-out), top 160ms var(--ease-out), width 160ms var(--ease-out), height 160ms var(--ease-out); }
+
+  /* The pin marks a place; it never competes with the page. Everything else about a comment
+     lives behind hover or the island. */
+  .cm-pin { position: absolute; pointer-events: auto; width: 22px; height: 22px; margin: -11px 0 0 -11px; display: flex; align-items: center; justify-content: center; border-radius: 999px; border: 0; cursor: pointer; background: var(--copper); color: #fff; font: 700 11px/1 var(--font); font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--raised), 0 2px 8px rgba(0,0,0,0.28); transition: transform 140ms var(--ease-out), opacity 140ms ease; animation: cm-pop 260ms var(--ease-out); }
+  @keyframes cm-pop { from { transform: scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+  .cm-pin:hover { transform: scale(1.14); }
+  /* unwritten: a composer someone opened, not a comment — hollow until it has words */
+  .cm-pin.is-draft { background: var(--raised); color: var(--copper); box-shadow: 0 0 0 1.5px var(--copper), 0 2px 8px rgba(0,0,0,0.22); }
+  .cm-pin.is-active { transform: scale(1.14); box-shadow: 0 0 0 2px var(--raised), 0 0 0 6px rgba(var(--copper-rgb),0.28), 0 2px 8px rgba(0,0,0,0.28); }
+  /* non-invasive by construction: working one comment recedes the others, rather than
+     dropping a scrim over the page */
+  .cm-layer.is-focused .cm-pin:not(.is-active) { opacity: 0.28; }
+  .cm-pin.is-lit { animation: cm-lit 620ms var(--ease-out); }
+  @keyframes cm-lit { 0%, 100% { transform: none; } 40% { transform: scale(1.45); } }
+  .cm-pin.is-going { transform: scale(0.3); opacity: 0; }
+
+  /* hover peek: the comment's own words, without opening anything */
+  .cm-peek { position: absolute; pointer-events: none; z-index: 3; max-width: 250px; padding: 7px 10px; border-radius: 9px; background: var(--glass); border: 0.5px solid var(--line); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: var(--notif-shadow); animation: browser-drop 130ms var(--ease-out); }
+  .cm-peek__sel { font-family: var(--mono); font-size: 10px; color: var(--text-faint); margin-bottom: 3px; }
+  .cm-peek__txt { font-size: 12px; line-height: 1.45; color: var(--ink-2); }
+
+  /* Composer — anchored to its pin, and it queues. Nothing here reaches an agent. */
+  .cm-card { position: absolute; z-index: 4; width: 300px; pointer-events: auto; padding: 9px; border-radius: 12px; background: var(--glass); border: 0.5px solid var(--line); -webkit-backdrop-filter: saturate(180%) blur(22px); backdrop-filter: saturate(180%) blur(22px); box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 14px 38px rgba(0,0,0,0.22); animation: browser-drop 150ms var(--ease-out); }
+  /* The path is the scope control, not a caption: each ancestor is a target you can promote
+     the comment to. Opens scrolled to the element you actually hit. */
+  .cm-card__sel { display: flex; align-items: center; gap: 6px; padding: 0 0 7px; }
+  .cm-card__no { flex-shrink: 0; width: 15px; height: 15px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--copper); color: #fff; font: 700 9.5px/1 var(--font); }
+  .cm-crumb { display: flex; align-items: center; gap: 1px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .cm-crumb::-webkit-scrollbar { display: none; }
+  .cm-crumb__seg { flex-shrink: 0; padding: 2px 5px; border: 0; border-radius: 5px; background: transparent; color: var(--text-faint); font-family: var(--mono); font-size: 10px; white-space: nowrap; cursor: pointer; transition: background-color 110ms ease, color 110ms ease; }
+  .cm-crumb__seg:hover { background: var(--hover); color: var(--ink-3); }
+  .cm-crumb__seg.is-on { background: rgba(var(--copper-rgb),0.16); color: var(--copper); cursor: default; }
+  .cm-crumb__sep { flex-shrink: 0; color: var(--text-faint); font-size: 9px; opacity: 0.55; }
+  .cm-card textarea { width: 100%; resize: none; min-height: 56px; border: 0.5px solid var(--line); border-radius: 8px; background: var(--raised); padding: 8px 9px; font-family: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); outline: none; }
+  .cm-card textarea:focus { border-color: var(--line-2); }
+  .cm-card__row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .cm-card__hint { flex: 1; font-size: 10.5px; color: var(--text-faint); }
+  .cm-card__hint kbd { font-family: var(--font); font-size: 10px; padding: 1px 4px; border-radius: 4px; background: var(--hover); color: var(--ink-4); }
+
+  /* ---- The island ---------------------------------------------------------------------
+     One floating home for the batch: how much is queued, where it lands, and the single send.
+     It steps back while you type, but it never disappears while comments are unsent. */
+  .cm-island { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 14; display: flex; flex-direction: column; width: max-content; max-width: calc(100% - 32px); border-radius: 15px; overflow: hidden; background: var(--glass); border: 0.5px solid var(--line); -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); box-shadow: var(--notif-shadow); animation: cm-island-in 260ms var(--ease-out); transition: opacity 180ms ease, transform 220ms var(--ease-out); }
+  @keyframes cm-island-in { from { opacity: 0; transform: translate(-50%, 14px) scale(0.96); } to { opacity: 1; transform: translateX(-50%); } }
+  .cm-island[hidden] { display: none; }
+  .cm-island.is-shy { opacity: 0.34; transform: translateX(-50%) scale(0.97); }
+  .cm-island.is-shy:hover { opacity: 1; transform: translateX(-50%); }
+  .cm-bar { display: flex; align-items: center; gap: 10px; padding: 7px 8px; }
+  .cm-div { width: 1px; align-self: stretch; margin: 2px 0; background: var(--line-soft); }
+  /* with nothing queued the island says what the mode is for, rather than showing a dead 0 */
+  .cm-hint { display: flex; align-items: center; gap: 7px; padding: 5px 4px 5px 8px; font-size: 12px; color: var(--ink-4); }
+  .cm-hint svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--text-faint); }
+  /* the count doubles as the disclosure for the list — one control, one place */
+  .cm-count { display: flex; align-items: center; gap: 7px; padding: 5px 9px 5px 6px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-2); font: 500 12px/1 var(--font); cursor: pointer; transition: background-color 120ms ease; }
+  .cm-count:hover { background: var(--hover-soft); }
+  .cm-count__n { min-width: 19px; height: 19px; padding: 0 5px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--copper); color: #fff; font: 700 11px/1 var(--font); font-variant-numeric: tabular-nums; }
+  .cm-count__chev { display: flex; width: 11px; height: 11px; color: var(--text-faint); transition: transform 200ms var(--ease-out); }
+  .cm-count__chev svg { width: 11px; height: 11px; }
+  .cm-island.is-open .cm-count__chev { transform: rotate(180deg); }
+  /* the target, said up front — the same promise comment mode has always made */
+  .cm-target { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(var(--copper-rgb),0.14); color: var(--copper); font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+  .cm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 11px; border-radius: 7px; border: 0.5px solid var(--line); background: var(--raised); color: var(--ink); font: 500 12px/1.2 var(--font); cursor: pointer; white-space: nowrap; transition: background-color 100ms ease, transform 110ms var(--ease-out); }
+  .cm-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+  .cm-btn:hover { background: var(--hover-soft); }
+  .cm-btn:active { transform: scale(0.97); }
+  .cm-btn--pri { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+  .cm-btn--ghost { background: transparent; border-color: transparent; color: var(--ink-4); }
+  .cm-kbd { margin-left: 5px; opacity: 0.7; font-size: 10.5px; }
+  .cm-x { width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-faint); cursor: pointer; }
+  .cm-x:hover { background: var(--hover); color: var(--ink-2); }
+  .cm-x svg { width: 13px; height: 13px; }
+  /* the batch as a document, in the order you left it */
+  .cm-list { max-height: 244px; overflow-y: auto; padding: 4px 6px 8px; border-top: 0.5px solid var(--line-soft); width: 100%; }
+  .cm-island:not(.is-open) .cm-list { display: none; }
+  .cm-row { display: flex; gap: 9px; padding: 8px; border-radius: 9px; cursor: pointer; transition: background-color 110ms ease; }
+  .cm-row:hover { background: var(--hover-soft); }
+  .cm-row__no { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--copper); color: #fff; font: 700 10.5px/1 var(--font); font-variant-numeric: tabular-nums; }
+  .cm-row__body { flex: 1; min-width: 0; }
+  /* the island is as wide as its bar; a comment's line length is not, so it caps for reading */
+  .cm-row__txt { max-width: 64ch; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); word-break: break-word; }
+  .cm-row__sel { margin-top: 3px; font-family: var(--mono); font-size: 10px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-row__del { flex-shrink: 0; width: 22px; height: 22px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-faint); cursor: pointer; opacity: 0; transition: opacity 110ms ease, background-color 110ms ease; }
+  .cm-row:hover .cm-row__del { opacity: 1; }
+  .cm-row__del:hover { background: var(--press); color: var(--ink-2); }
+  .cm-row__del svg { width: 12px; height: 12px; }
+  /* Mode off with a queue still standing: the island shrinks to a claim, never to nothing.
+     Unsent comments are the one thing that must not vanish quietly. */
+  .cm-island.is-parked .cm-bar { padding-left: 13px; }
+  .cm-parked { font-size: 12px; color: var(--ink-3); }
+  .cm-sent { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+  .cm-sent svg { width: 14px; height: 14px; color: var(--run); }
   .browser__notice { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; padding: 5px 12px; border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); box-shadow: var(--notif-shadow); font-size: 11.5px; font-weight: 500; color: var(--ink-3); white-space: nowrap; animation: browser-drop 160ms var(--ease-out); transition: opacity 240ms ease; }
   .browser__notice.out { opacity: 0; }
 
@@ -4153,9 +4253,8 @@
         <button class="browser__btn" data-nav="reload" aria-label="Reload">${ICON_NAV_RELOAD}</button>
       </div>
       <button class="browser__omni" data-omni><span class="browser__lock">${ICON_NAV_LOCK}</span><span class="browser__url">${esc(url)}</span></button>
-      <span class="browser__target" data-target hidden></span>
       <button class="browser__zoom" data-zoom aria-label="Reset zoom">100%</button>
-      <button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button>
+      <span class="browser__btnwrap"><button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button><span class="browser__cnt" data-cnt hidden></span></span>
       <button class="browser__btn" data-nav="device" aria-label="Device mode">${ICON_DEVICE}</button>
       <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
       <button class="browser__btn" data-nav="external" aria-label="Open in default browser">${ICON_EXTERNAL}</button>
@@ -4189,7 +4288,7 @@
   // The embedded browser is live: recents and the address bar navigate, history drives back/forward,
   // and the omnibox reopens the same "go to" surface floated over a loaded page.
   // The open browser pane's comment-mode controls, for ⌘K ("Enter/Exit comment mode").
-  let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {} };
+  let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {}, refresh: () => {}, pending: () => 0, send: () => {}, escape: () => {} };
   // The open browser pane's zoom controls, for ⌘+/⌘− and the ⌘K page verbs. Zoom steps a
   // fixed ladder; the omnibox %-badge appears off 100% and clicks back to it.
   let browserZoomAPI = { in: () => {}, out: () => {}, reset: () => {}, canReset: () => false };
@@ -4199,7 +4298,8 @@
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
     let devOpen = false, devTab = 'Elements';
-    let commentOn = false;
+    // Comment mode's batch: comments live here until one Send delivers all of them.
+    let commentOn = false, cmts = [], cmtSeq = 0, activeCmt = null, listOpen = false, sendingCmts = false;
     let deviceOn = false, deviceId = DEVICES[1].id, deviceLand = false, deviceRO = null;
     const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
     let zoom = 100;
@@ -4241,27 +4341,31 @@
       updateDeviceUI();
       applyZoom();
     }
-    // Comment mode (ADR-0011 stages three/four). The chip names the delivery target up front:
-    // the owning Claude session, or the fresh one this comment will spawn (which then adopts
-    // the browser — see sendComment). Mode survives navigation, exactly like the native app.
+    // Comment mode (ADR-0011 stages three/four, batched). Comments queue on the page and
+    // leave together; the island names the delivery target up front — the owning Claude
+    // session, or the fresh one this batch will spawn (which then adopts the browser, see
+    // sendBatch). Mode survives navigation, exactly like the native app.
     function toggleComment() {
       if (idx < 0) return;                       // the "go to" home has nothing to comment on
       commentOn = !commentOn;
-      if (!commentOn) closeCard();
+      if (!commentOn) closeCard();               // leaving the mode never drops the queue
       updateCommentUI();
     }
-    // Where the next comment lands. Unowned means Synth would start an agent to take it — unless
+    // Where the batch lands. Unowned means Synth would start an agent to take it — unless
     // every agent is switched off, and then there is nowhere for it to go at all.
     const commentTarget = (o) => o ? sessionTitle(o) : (liveAgents().length ? 'New agent session' : 'No agent enabled');
+    // An empty comment is not a comment — it is a composer someone opened. It holds a pin and
+    // a number while it's being written, but it never counts, never lists, and never sends.
+    const written = (c) => !!c.text.trim();
+    const queuedCmts = () => cmts.filter(written);
     function updateCommentUI() {
       host.classList.toggle('browser--commenting', commentOn);
       const btn = host.querySelector('[data-nav="comment"]');
       if (btn) btn.classList.toggle('is-on', commentOn);
-      const chip = host.querySelector('[data-target]');
-      if (chip) {
-        chip.hidden = !commentOn;
-        if (commentOn) chip.textContent = '→ ' + commentTarget(ownerOf(openEl));
-      }
+      renderPins();
+      renderIsland();
+      const cnt = host.querySelector('[data-cnt]'), q = queuedCmts().length;
+      if (cnt) { cnt.hidden = !q; cnt.textContent = q; }
     }
     // Device mode: the page reflowed at a real device viewport inside a hardware frame, with a
     // strip to hop across the fleet and rotate. Survives navigation, exactly like comment mode.
@@ -4309,46 +4413,293 @@
       applyZoom();
     }
     function resetZoom() { zoom = 100; applyZoom(); }
-    function closeCard() { const c = host.querySelector('.browser__ccard'); if (c) c.remove(); }
-    function openCard(e, view) {
-      closeCard();
-      const o = ownerOf(openEl);
+    // ---- The comment layer -------------------------------------------------------------
+    // A comment holds the element it was left on, plus where inside it the click landed as a
+    // fraction of that element's box — never a page coordinate. So the pin rides its own
+    // paragraph through a resize, a zoom, or a hop into device mode.
+    const CM_CHEV = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></svg>';
+    const CM_X    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
+    const CM_TICK = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
+    const CM_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128a95.38,95.38,0,0,1-65.94-26.21,8,8,0,1,1,11-11.63A80,80,0,1,0,71.43,72.62l-.36.35L44.7,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60,60A96,96,0,0,1,224,128Z"/></svg>';
+    const CM_PIN  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,64a40,40,0,1,0,40,40A40,40,0,0,0,128,64Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,128Zm0-112a88.1,88.1,0,0,0-88,88c0,31.4,14.51,64.68,42,96.25a254.19,254.19,0,0,0,41.45,38.3,8,8,0,0,0,9.18,0A254.19,254.19,0,0,0,174,200.25c27.45-31.57,42-64.85,42-96.25A88.1,88.1,0,0,0,128,16Zm0,206c-16.53-13-72-60.75-72-118a72,72,0,0,1,144,0C200,161.23,144.53,209,128,222Z"/></svg>';
+
+    const cmView = () => host.querySelector('.browser__view');
+    // in device mode a comment lands on the device's screen, not the stage backdrop
+    const cmRoot = () => { const v = cmView(); return v ? (v.querySelector('.dev__screen') || v) : null; };
+    const cmLayer = () => host.querySelector('.cm-layer');
+    // The view zooms the page (⌘+/⌘−), so getBoundingClientRect hands back *visual* pixels
+    // while the overlay is positioned in the page's own *layout* pixels. Everything measured
+    // off a rect comes back through this ratio, or the layer slides toward the origin the
+    // moment zoom leaves 100%.
+    const cmScale = () => zoom / 100;
+    function cmBox(el) {
+      const v = cmView(); if (!v) return { l: 0, t: 0, w: 1, h: 1 };
+      const r = el.getBoundingClientRect(), b = v.getBoundingClientRect(), k = cmScale();
+      return { l: (r.left - b.left) / k + v.scrollLeft, t: (r.top - b.top) / k + v.scrollTop, w: r.width / k, h: r.height / k };
+    }
+    function cmPt(e) {
+      const v = cmView(), b = v.getBoundingClientRect(), k = cmScale();
+      return { x: (e.clientX - b.left) / k + v.scrollLeft, y: (e.clientY - b.top) / k + v.scrollTop };
+    }
+    // The element's name as the page itself would give it — real Synth resolves this over CDP.
+    function cmName(el) {
+      const t = el.tagName.toLowerCase();
+      const cls = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean);
+      return cls.length ? t + '.' + cls[cls.length - 1] : t;
+    }
+    // Every named ancestor of the thing you hit, outermost first. This is a comment's whole
+    // vocabulary of scope: "this button", "the row of buttons", "the section".
+    function cmChain(el) {
+      const root = cmRoot(), chain = [];
+      for (let cur = el; cur && cur !== root; cur = cur.parentElement) chain.unshift(cur);
+      return chain.length ? chain : [root];
+    }
+    const cmEl = (c) => c.chain[c.level];
+    const cmSel = (c) => c.chain.slice(0, c.level + 1).map(cmName).join(' > ');
+    // In a 300px card the path gives up ancestors from the front, never the tail — the element
+    // you actually pointed at is the whole answer.
+    const cmShort = (s, keep) => { const p = s.split(' > '); return p.length > keep ? '… ' + p.slice(-keep).join(' > ') : s; };
+    const cmAnchor = (c) => { const b = cmBox(cmEl(c)); return { x: b.l + c.fx * b.w, y: b.t + c.fy * b.h }; };
+    const cmById = (id) => cmts.find((c) => c.id === id);
+    const cmNo = (id) => cmts.findIndex((c) => c.id === id) + 1;
+    const cmHere = (c) => c.url === hist[idx];
+
+    // A comment you opened and left blank was never a comment — dropping it on close keeps the
+    // queue honest about what will actually be sent.
+    function closeCard() {
+      if (activeCmt) { const c = cmById(activeCmt); if (c && !written(c)) cmts = cmts.filter((x) => x !== c); }
+      activeCmt = null;
+      updateCommentUI();
+    }
+    // Promote a comment to an ancestor (or back down). The pin must not move for it — you chose
+    // that spot — so its fractions are re-derived against the element it now belongs to.
+    function cmRetarget(c, level) {
+      const a = cmAnchor(c);
+      c.level = level;
+      const b = cmBox(cmEl(c));
+      c.fx = (a.x - b.l) / b.w; c.fy = (a.y - b.t) / b.h;
+      updateCommentUI(); focusCard();
+    }
+    function addComment(el, p) {
+      const chain = cmChain(el), b = cmBox(el);
+      cmts.push({ id: ++cmtSeq, chain, level: chain.length - 1, fx: (p.x - b.l) / b.w, fy: (p.y - b.t) / b.h, url: hist[idx], text: '', listed: false });
+      activeCmt = cmtSeq;
+      clearHover();
+      updateCommentUI(); focusCard();
+    }
+    function removeComment(id) {
+      const pin = cmLayer() && cmLayer().querySelector('.cm-pin[data-id="' + id + '"]');
+      if (pin) pin.classList.add('is-going');
+      cmts = cmts.filter((c) => c.id !== id);
+      if (activeCmt === id) activeCmt = null;
+      setTimeout(updateCommentUI, 120);
+    }
+
+    let hoverEl = null;
+    function clearHover() { if (hoverEl) { hoverEl.remove(); hoverEl = null; } }
+    function paintHover(el) {
+      const layer = cmLayer(); if (!layer) return;
+      const b = cmBox(el);
+      if (!hoverEl || !hoverEl.isConnected) { hoverEl = document.createElement('div'); hoverEl.className = 'cm-hover'; layer.appendChild(hoverEl); }
+      hoverEl.style.cssText = 'left:' + b.l + 'px;top:' + b.t + 'px;width:' + b.w + 'px;height:' + b.h + 'px';
+      hoverEl.innerHTML = '<span class="cm-hover__tag">' + esc(cmName(el)) + '</span>';
+    }
+
+    function renderPins() {
+      const v = cmView(); if (!v) return;
+      let layer = cmLayer();
+      if (!commentOn && !cmts.length) { if (layer) layer.remove(); hoverEl = null; return; }
+      if (!layer) { layer = document.createElement('div'); layer.className = 'cm-layer'; v.appendChild(layer); hoverEl = null; }
+      layer.innerHTML = '';
+      hoverEl = null;
+      layer.classList.toggle('is-focused', !!activeCmt);
+      const act = cmById(activeCmt);
+      if (act && cmHere(act)) {
+        const b = cmBox(cmEl(act));
+        const s = document.createElement('div');
+        s.className = 'cm-scope';
+        s.style.cssText = 'left:' + b.l + 'px;top:' + b.t + 'px;width:' + b.w + 'px;height:' + b.h + 'px';
+        layer.appendChild(s);
+      }
+      cmts.forEach((c, i) => {
+        if (!cmHere(c)) return;                  // a comment belongs to the page it was left on
+        const a = cmAnchor(c);
+        const p = document.createElement('button');
+        p.className = 'cm-pin' + (written(c) ? '' : ' is-draft') + (activeCmt === c.id ? ' is-active' : '');
+        p.dataset.id = c.id;
+        p.textContent = i + 1;
+        p.style.cssText = 'left:' + a.x + 'px;top:' + a.y + 'px';
+        p.onclick = (ev) => { ev.stopPropagation(); activeCmt = activeCmt === c.id ? null : c.id; updateCommentUI(); if (activeCmt) focusCard(); };
+        p.onmouseenter = () => { if (activeCmt !== c.id && written(c)) cmPeek(c, i + 1); };
+        p.onmouseleave = cmDropPeek;
+        layer.appendChild(p);
+      });
+      if (act && cmHere(act)) renderCard(act);
+    }
+    const cmDropPeek = () => { const l = cmLayer(); if (l) l.querySelectorAll('.cm-peek').forEach((p) => p.remove()); };
+    function cmPeek(c, no) {
+      cmDropPeek();
+      const layer = cmLayer(); if (!layer) return;
+      const a = cmAnchor(c);
+      const el = document.createElement('div');
+      el.className = 'cm-peek';
+      el.innerHTML = '<div class="cm-peek__sel">' + no + ' · ' + esc(cmShort(cmSel(c), 2)) + '</div><div class="cm-peek__txt">' + esc(c.text) + '</div>';
+      el.style.cssText = 'left:' + (a.x + 16) + 'px;top:' + (a.y - 6) + 'px';
+      layer.appendChild(el);
+      if (el.getBoundingClientRect().right > cmView().getBoundingClientRect().right - 8) el.style.left = (a.x - el.offsetWidth - 16) + 'px';
+    }
+
+    function renderCard(c) {
+      const layer = cmLayer(), v = cmView(); if (!layer || !v) return;
       const card = document.createElement('div');
-      card.className = 'browser__ccard';
-      card.innerHTML = `<div class="browser__ccard-target">→ ${esc(commentTarget(o))}</div>
-        <textarea rows="2" placeholder="Leave a comment…"></textarea>
-        <div class="browser__ccard-row"><span class="menu__btn" data-c="cancel">Cancel</span><span class="menu__btn menu__btn--send" data-c="send">Send</span></div>`;
-      const r = view.getBoundingClientRect();
-      card.style.left = Math.max(8, Math.min(e.clientX - r.left, r.width - 256)) + 'px';
-      card.style.top = Math.max(8, Math.min(e.clientY - r.top + 6, r.height - 130)) + 'px';
-      view.appendChild(card);
+      card.className = 'cm-card';
+      const crumb = c.chain.map((el, i) =>
+        (i ? '<span class="cm-crumb__sep">›</span>' : '') +
+        '<button class="cm-crumb__seg ' + (i === c.level ? 'is-on' : '') + '" data-level="' + i + '">' + esc(cmName(el)) + '</button>').join('');
+      card.innerHTML = '<div class="cm-card__sel"><span class="cm-card__no">' + cmNo(c.id) + '</span><div class="cm-crumb">' + crumb + '</div></div>'
+        + '<textarea placeholder="What\'s off here?" spellcheck="true"></textarea>'
+        + '<div class="cm-card__row"><span class="cm-card__hint"><kbd>⏎</kbd> add · <kbd>⌥↑</kbd> widen</span>'
+        + '<button class="cm-btn cm-btn--ghost" data-cm="drop">Discard</button>'
+        + '<button class="cm-btn" data-cm="add">Add</button></div>';
+      layer.appendChild(card);
+      // the card opens beside its pin, folding to the other side / above rather than running
+      // off the pane — and never over the island it is about to feed
+      const a = cmAnchor(c), w = 300, h = card.offsetHeight;
+      const floor = v.scrollTop + v.clientHeight - 74;
+      let left = a.x + 18, top = a.y - 10;
+      if (left + w > v.clientWidth - 12) left = a.x - w - 18;
+      if (top + h > floor) top = a.y - h - 12;
+      card.style.cssText = 'left:' + Math.max(10, left) + 'px;top:' + Math.max(v.scrollTop + 8, top) + 'px';
+
       const ta = card.querySelector('textarea');
+      ta.value = c.text;
+      ta.addEventListener('input', () => { c.text = ta.value; syncDraft(); });
       ta.addEventListener('keydown', (ev) => {
         ev.stopPropagation();                    // typing must not reach the app-level key handlers
         if (ev.key === 'Escape') closeCard();
-        else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); if (ta.value.trim()) sendComment(); }
+        else if (ev.key === 'Enter' && ev.shiftKey && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); addToBatch(c); sendBatch(); }
+        else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); addToBatch(c); }
+        else if (ev.altKey && ev.key === 'ArrowUp' && c.level > 0) { ev.preventDefault(); cmRetarget(c, c.level - 1); }
+        else if (ev.altKey && ev.key === 'ArrowDown' && c.level < c.chain.length - 1) { ev.preventDefault(); cmRetarget(c, c.level + 1); }
       });
       card.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        const b = ev.target.closest('.menu__btn'); if (!b) return;
-        if (b.dataset.c === 'cancel') closeCard();
-        else if (ta.value.trim()) sendComment();
+        const seg = ev.target.closest('[data-level]');
+        if (seg) { const l = Number(seg.dataset.level); if (l !== c.level) cmRetarget(c, l); return; }
+        const b = ev.target.closest('[data-cm]'); if (!b) return;
+        if (b.dataset.cm === 'drop') { c.text = ''; closeCard(); }
+        else addToBatch(c);
       });
-      ta.focus();
+      // the path scrolls the least it can to keep the current target in view — on open that is
+      // the element you hit, after widening it is wherever you climbed to
+      const cr = card.querySelector('.cm-crumb'), seg = cr.querySelector('.is-on');
+      cr.scrollLeft = Math.min(Math.max(cr.scrollLeft, seg.offsetLeft + seg.offsetWidth - cr.clientWidth + 4), seg.offsetLeft - 4);
     }
-    // The mock of the stage-four ladder: owned → the owner receives it (its dot goes amber);
-    // unowned → a fresh Claude session spawns *silently* — the row appears, the browser
-    // re-nests under it, focus stays right here — and the chip flips to the new owner.
-    function sendComment() {
-      if (!openEl) return;
+    function focusCard() {
+      const ta = cmLayer() && cmLayer().querySelector('.cm-card textarea');
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }
+    // ⏎ ends the comment and leaves the batch open — the whole point is that it does not send.
+    function addToBatch(c) { if (!written(c)) { closeCard(); return; } activeCmt = null; updateCommentUI(); }
+    // The first character makes a draft into a comment (and deleting the last takes it back).
+    // Only that transition redraws the island; the rest is an in-place text update, because a
+    // full render would tear out the textarea under the cursor.
+    function syncDraft() {
+      const c = cmById(activeCmt); if (!c) return;
+      const has = written(c), layer = cmLayer();
+      const pin = layer && layer.querySelector('.cm-pin[data-id="' + c.id + '"]');
+      if (pin) pin.classList.toggle('is-draft', !has);
+      if (has !== c.listed) {
+        c.listed = has;
+        renderIsland();
+        const cnt = host.querySelector('[data-cnt]'), q = queuedCmts().length;
+        if (cnt) { cnt.hidden = !q; cnt.textContent = q; }
+        return;
+      }
+      const row = host.querySelector('.cm-row[data-id="' + c.id + '"] .cm-row__txt');
+      if (row) row.textContent = c.text;
+    }
+
+    // ---- The island ---------------------------------------------------------------------
+    function renderIsland() {
+      let isl = host.querySelector('.cm-island');
+      const n = queuedCmts().length;
+      if (!commentOn && !n) { if (isl) isl.remove(); return; }
+      if (!isl) { isl = document.createElement('div'); isl.className = 'cm-island'; host.appendChild(isl); }
+      if (sendingCmts) return;
+      isl.className = 'cm-island' + (listOpen && n ? ' is-open' : '') + (!commentOn && n ? ' is-parked' : '') + (activeCmt ? ' is-shy' : '');
+      const word = n === 1 ? 'comment' : 'comments';
+      const count = '<button class="cm-count" data-cm="list"><span class="cm-count__n">' + n + '</span><span>' + word + '</span><span class="cm-count__chev">' + CM_CHEV + '</span></button>';
+      const bar = (!commentOn && n)
+        ? '<span class="cm-parked">' + n + ' ' + word + ' not sent</span><div class="cm-div"></div>' + count
+          + '<button class="cm-btn" data-cm="resume">' + CM_UNDO + 'Resume</button>'
+          + '<button class="cm-btn cm-btn--pri" data-cm="send">Send ' + n + '</button>'
+        : (n ? count : '<span class="cm-hint">' + CM_PIN + 'Click anything to comment</span>')
+          + '<div class="cm-div"></div>'
+          + '<span class="cm-target">→ ' + esc(commentTarget(ownerOf(openEl))) + '</span>'
+          + '<button class="cm-btn cm-btn--pri" data-cm="send"' + (n ? '' : ' disabled') + '>Send ' + (n || '') + '<span class="cm-kbd">⌘⇧⏎</span></button>'
+          + '<button class="cm-x" data-cm="off" aria-label="Exit comment mode">' + CM_X + '</button>';
+      isl.innerHTML = '<div class="cm-bar">' + bar + '</div>' + (n ? cmListHTML() : '');
+      isl.querySelectorAll('[data-cm]').forEach((b) => b.onclick = (ev) => {
+        ev.stopPropagation();
+        const a = b.dataset.cm;
+        if (a === 'list') { listOpen = !listOpen; updateCommentUI(); }
+        else if (a === 'send') sendBatch();
+        else if (a === 'off') toggleComment();
+        else if (a === 'resume') toggleComment();
+      });
+      isl.querySelectorAll('.cm-row').forEach((row) => {
+        const id = Number(row.dataset.id);
+        row.onmouseenter = () => {
+          const p = cmLayer() && cmLayer().querySelector('.cm-pin[data-id="' + id + '"]');
+          if (p) { p.classList.remove('is-lit'); void p.offsetWidth; p.classList.add('is-lit'); }
+        };
+        row.onclick = (ev) => {
+          if (ev.target.closest('.cm-row__del')) return;
+          const c = cmById(id); if (!c) return;
+          if (!commentOn) { commentOn = true; }
+          if (!cmHere(c)) { paint(c.url); }       // its page first, then its pin
+          activeCmt = id; updateCommentUI(); focusCard();
+        };
+        const del = row.querySelector('.cm-row__del');
+        if (del) del.onclick = (ev) => { ev.stopPropagation(); removeComment(id); };
+      });
+    }
+    // Numbered off the full array, so a row's number is the number on its pin even while an
+    // unwritten draft sits between them.
+    function cmListHTML() {
+      return '<div class="cm-list">' + cmts.map((c, i) => !written(c) ? '' :
+        '<div class="cm-row" data-id="' + c.id + '">'
+        + '<span class="cm-row__no">' + (i + 1) + '</span>'
+        + '<div class="cm-row__body"><div class="cm-row__txt">' + esc(c.text) + '</div>'
+        + '<div class="cm-row__sel">' + (cmHere(c) ? '' : esc(browserHost(c.url)) + ' · ') + esc(cmSel(c)) + '</div></div>'
+        + '<button class="cm-row__del" aria-label="Remove comment">' + CM_X + '</button></div>').join('') + '</div>';
+    }
+
+    // The mock of the stage-four ladder, now for a whole batch: owned → the owner receives it
+    // (its dot goes amber); unowned → a fresh Claude session spawns *silently* — the row appears,
+    // the browser re-nests under it, focus stays right here — and the island flips to the owner.
+    function sendBatch() {
+      if (sendingCmts) return;
+      cmts = queuedCmts();                       // a blank composer standing open is not the batch
+      activeCmt = null;
+      const count = cmts.length;
+      if (!count) { updateCommentUI(); return; }
       let o = ownerOf(openEl);
       // Nothing owns this browser and every agent is switched off: there is no one to send to.
-      // Say so with the card still up, rather than swallowing what was typed.
-      if (!o && !liveAgents().length) { notice('No agent enabled — turn one on in Settings'); return; }
-      closeCard();
-      if (!o) { o = spawnOwnerClaude(openEl); updateCommentUI(); }
-      else setSessionState(o, 'work');
-      notice(`Comment sent to ${sessionTitle(o)}`);
+      // Say so with the batch still standing, rather than swallowing what was typed.
+      if (!o && !liveAgents().length) { notice('No agent enabled — turn one on in Settings'); updateCommentUI(); return; }
+      sendingCmts = true; listOpen = false;
+      updateCommentUI();
+      const layer = cmLayer();
+      if (layer) layer.querySelectorAll('.cm-pin').forEach((p, i) => setTimeout(() => p.classList.add('is-going'), i * 45));
+      if (!o) o = spawnOwnerClaude(openEl); else setSessionState(o, 'work');
+      const isl = host.querySelector('.cm-island');
+      if (isl) {
+        isl.className = 'cm-island';
+        isl.innerHTML = '<div class="cm-sent">' + CM_TICK + '<span>' + count + ' ' + (count === 1 ? 'comment' : 'comments') + ' sent to ' + esc(sessionTitle(o)) + '</span></div>';
+      }
+      setTimeout(() => { cmts = []; sendingCmts = false; commentOn = false; updateCommentUI(); }, 2600);
     }
     function notice(text) {
       const view = host.querySelector('.browser__view'); if (!view) return;
@@ -4395,16 +4746,30 @@
       setTimeout(() => document.addEventListener('mousedown', onDoc), 0);
     }
 
-    // Picking an element in comment mode: any click on the page surface drops the comment card.
+    // Picking an element in comment mode: any click on the page surface drops a pin.
     host.addEventListener('click', (e) => {
       if (!commentOn) return;
       const view = e.target.closest('.browser__view');
-      if (!view || e.target.closest('.browser__ccard') || e.target.closest('.browser__notice')) return;
+      if (!view || e.target.closest('.cm-card') || e.target.closest('.cm-pin') || e.target.closest('.browser__notice')) return;
       // in device mode a comment lands on the device's screen, not the stage backdrop
       if (view.querySelector('[data-stage]') && !e.target.closest('.dev__screen')) return;
-      openCard(e, view);
+      addComment(e.target, cmPt(e));
     });
-    browserCommentAPI = { isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI };
+    // The inspect outline: what a click would attach to, named before you commit to it.
+    host.addEventListener('mousemove', (e) => {
+      if (!commentOn || activeCmt) return;
+      const view = e.target.closest('.browser__view');
+      if (!view || e.target.closest('.cm-card') || e.target.closest('.cm-pin')) return clearHover();
+      if (view.querySelector('[data-stage]') && !e.target.closest('.dev__screen')) return clearHover();
+      paintHover(e.target);
+    });
+    host.addEventListener('mouseleave', clearHover);
+    browserCommentAPI = {
+      isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI,
+      pending: () => queuedCmts().length, send: sendBatch,
+      // Esc unwinds one layer at a time: the open composer, then the batch list, then the mode.
+      escape: () => { if (activeCmt) closeCard(); else if (listOpen) { listOpen = false; updateCommentUI(); } else toggleComment(); },
+    };
     browserZoomAPI = { in: () => zoomStep(1), out: () => zoomStep(-1), reset: resetZoom, canReset: () => zoom !== 100 };
 
     if (host.hasAttribute('data-home')) {
@@ -5008,6 +5373,11 @@
       e.preventDefault(); toggleScratch(); return;
     }
     if (scrEl) { scratchKey(e); return; }
+    // ⌘⇧⏎ — send the open browser's whole comment batch. Only ever fires when something is
+    // queued, so the chord stays free everywhere else.
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter' && browserCommentAPI.pending()) {
+      e.preventDefault(); browserCommentAPI.send(); return;
+    }
     // ⌘⇧F — send feedback from anywhere. One textbox; the author path spawns a fix, everyone else emails.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (k === 'f' || k === 'F')) {
       e.preventDefault();
@@ -5136,6 +5506,9 @@
     // Esc hands focus from the sidebar back to the main window (the open session's surface).
     if (k === 'Escape') {
       if (document.querySelector('.backdrop')) return;   // a dialog owns Esc first
+      // Comment mode owns Esc while it is up, and unwinds a layer at a time. The queue is
+      // never what Esc discards — leaving the mode parks it, it does not drop it.
+      if (browserCommentAPI.isOn()) { e.preventDefault(); browserCommentAPI.escape(); return; }
       e.preventDefault();
       focusContent();
       return;
@@ -6071,6 +6444,9 @@
       [['⌘', '−'], 'Zoom out'],
       [['⌥', '⌘', 'I'], 'DevTools'],
       [['⌘', '⇧', 'M'], 'Device mode'],
+      [['⏎'], 'Add comment to batch'],
+      [['⌥', '↑'], 'Widen comment target'],
+      [['⌘', '⇧', '⏎'], 'Send all comments'],
       [['esc'], 'Exit comment mode'],
     ]],
   ];

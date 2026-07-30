@@ -1422,3 +1422,15 @@ disclosure to dive deeper.
   staples on its own, bundle reads 0.22.0 / 458, bundled changelog leads with 0.22.0); appcast newest
   `sparkle:version` 458 / `0.22.0`, all 18 enclosures EdDSA-signed, 5 deltas against 433/425/418/413/407
   (937K from the previous build against a 131M download). Landing links unchanged, no site republish.
+
+## [2026-07-30](docs/features/2026-07-30.md)
+
+- **A session reaps what left its process group** — `killpg` is the wrong unit for anything that
+  `setsid`s away (Claude Code's Bash tool detaches its background shells, so an agent's dev server is
+  outside the group from launch and reparents to launchd when its shell exits: 3.6 GB across 34
+  processes, measured). `SessionProcesses` reaps by the `SYNTH_SESSION_ID` stamp instead, which
+  survives leaving the group, reparenting, and the owning Synth exiting — recovering `setproctitle`
+  renamers (`next-server`) through their parent, and killing only processes whose cwd is inside a
+  folder Synth created, so the sixteen-day-old OrbStack carrying a dead session's id lives. Also at
+  launch (orphans of dead instances) and on memory pressure (orphans only, never a live row's
+  server). Entirely invisible: no UI, no setting. Gate: `t21_escaped_reap`.

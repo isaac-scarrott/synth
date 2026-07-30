@@ -74,6 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the updater is what finds and stages a build in the background, and a build nobody
         // ever staged is a card nobody ever sees. No-ops on the dev channel (Updates.controller).
         _ = Updates.controller
+        // Reclaim escaped session processes whenever the machine is tight (SessionProcesses) —
+        // only ever orphans of instances that are gone, never a live row's own dev server.
+        SessionProcesses.startPressureMonitor()
         // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd),
         // and reap any archive hold whose window elapsed while Synth was shut.
         Task.detached(priority: .background) {

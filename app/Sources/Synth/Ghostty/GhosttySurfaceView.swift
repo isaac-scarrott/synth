@@ -229,7 +229,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
             let leafPID = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
             ghostty_surface_free(surface)
             self.surface = nil
-            Self.reapProcessTree(leafPID: leafPID)
+            Self.reapProcessTree(leafPID: leafPID, sessionID: sessionID)
         }
         if let contextPtr { Unmanaged<GhosttySurfaceContext>.fromOpaque(contextPtr).release(); self.contextPtr = nil }
     }
@@ -239,7 +239,14 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Guarded so it can only ever hit that private, setsid'd group: never pid ≤ 1, never
     /// our own group, never the process-group-less case. A no-op if the shell already exited
     /// cleanly (killpg → ESRCH). Static so it survives this view's own deinit during quit.
-    static func reapProcessTree(leafPID: pid_t) {
+    ///
+    /// The group is the unit for everything the shell ran in the foreground, and misses anything
+    /// that `setsid`'d away from it — an agent's detached dev server is the case that matters,
+    /// and also the one holding the most memory. `SessionProcesses` sweeps those up afterwards by
+    /// their environment stamp, on its own queue: the group signal is instant and covers the
+    /// common case, so the slower, wider pass is never in the way of closing a row.
+    static func reapProcessTree(leafPID: pid_t, sessionID: UUID) {
+        SessionProcesses.reapEscaped(session: sessionID)
         guard leafPID > 1 else { return }
         let pgid = getpgid(leafPID)
         guard pgid > 1, pgid != getpgrp() else { return }

@@ -31,6 +31,11 @@ import Foundation
         try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
         sweepDeadInstances()
         Self.reapOrphanedSessionTrees()
+        // The same orphans, reached the other way: `reapOrphanedSessionTrees` finds trees that
+        // kept their process group, this finds the ones that left it. Neither subsumes the
+        // other — a `setsid`'d dev server has no login leader to match on, and a process that
+        // rewrote its argv has no environment stamp left to read.
+        SessionProcesses.reapOrphansOfDeadInstances()
         write()
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil

@@ -105,6 +105,10 @@ enum PRService {
 
     /// A `gh` invocation that distinguishes "it said nothing" from "it couldn't be asked".
     private static func run(_ args: [String], at repo: URL, ghPath: String) -> Data? {
+        // `Process.currentDirectoryURL` throws an uncaught NSException (crashing the app,
+        // not catchable by the `do`/`try` below) when the path doesn't exist on disk — a
+        // workspace whose folder has been moved or unmounted must fail quiet, not abort.
+        guard FileManager.default.fileExists(atPath: repo.path) else { return nil }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ghPath)
         process.arguments = args
@@ -128,6 +132,7 @@ enum PRService {
     /// so no extra `repo view`. Empty on any failure — merge queue absent, field unavailable,
     /// or the CLI unauthenticated — matching the rest of the service's fail-quiet contract.
     private static func mergeQueued(at repo: URL, ghPath: String, sample: PRInfo) -> Set<Int> {
+        guard FileManager.default.fileExists(atPath: repo.path) else { return [] }
         guard let url = URL(string: sample.url), url.pathComponents.count >= 3 else { return [] }
         let owner = url.pathComponents[1]
         let name = url.pathComponents[2]

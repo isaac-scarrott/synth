@@ -356,7 +356,8 @@ struct RootView: View {
                 }
                 // ⌘W closes it, like every other Close.
                 if key == "w", event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
-                    store.requestCloseScratchTerminal(); return nil
+                    if !event.isARepeat { store.requestCloseScratchTerminal() }
+                    return nil
                 }
                 // Esc dismisses only at an idle prompt. With a job in the foreground it is the
                 // shell's, so vim, less and every TUI inside it behave — and the amber dot beside
@@ -599,6 +600,9 @@ struct RootView: View {
                 // so it beats the stock ⌘W window-close; only a no-op close (nothing focused, or in
                 // Settings) falls through to let ⌘W close the window as usual.
                 if !shift, !opt, event.keyCode == 13 {
+                    // A held ⌘W is one gesture, not a reaper: auto-repeat is swallowed, so clearing
+                    // a branch takes one press per row and every press is a decision.
+                    if event.isARepeat { return nil }
                     if store.closeContext() { return nil }
                     return event
                 }

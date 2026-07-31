@@ -312,8 +312,9 @@ extension AppStore {
         for session in workspace.branches.flatMap(\.sessions) { teardownSession(session) }
         workspaces.removeAll { $0.id == workspace.id }
         expanded.remove(workspace.id)
-        pruneLayout(); syncActive()   // collapse any panes whose session just vanished (009)
-        restoreLastViewed()           // emptied the surface → back to the last session you viewed (016)
+        // Collapse any panes whose session just vanished (009). A whole group leaving nominates
+        // nobody: the surface it emptied belonged to a branch that is no longer there.
+        pruneLayout(); syncActive()
     }
 
     /// Remove a worktree row. The row vanishes instantly either way; `deleteWorktree`
@@ -331,8 +332,9 @@ extension AppStore {
         let ws = workspaces.first { $0.branches.contains { $0.id == branch.id } }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)
-        pruneLayout(); syncActive()   // collapse any panes whose session just vanished (009)
-        restoreLastViewed()           // emptied the surface → back to the last session you viewed (016)
+        // Collapse any panes whose session just vanished (009). A whole group leaving nominates
+        // nobody: the surface it emptied belonged to a branch that is no longer there.
+        pruneLayout(); syncActive()
         if deleteWorktree, let ws, branch.worktreeURL != ws.url {
             // Serialized per repo, so deleting a still-pending row queues behind its create.
             deleteWorktreeFolder(repo: ws.url, path: branch.worktreeURL,

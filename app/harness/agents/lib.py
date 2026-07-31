@@ -1,4 +1,4 @@
-import json, socket, subprocess, sys, time, os, pathlib, uuid, signal
+import json, socket, subprocess, sys, time, os, pathlib, uuid, signal, urllib.parse
 
 import tempfile
 # Scratch: repos, seeded state and logs for a run. Never the user's real Synth state.
@@ -70,15 +70,31 @@ def fresh_repo(name="repo", branches=()):
     return d
 
 def seed_state(repo, sessions=None, template=None, extra_branches=()):
+    branches = [{
+        "id": str(uuid.uuid4()), "name": sh(f"git -C {repo} branch --show-current"),
+        "worktreeURL": f"file://{repo}", "lastActivity": "now",
+        "sessions": sessions or [],
+    }]
+    # Each extra is a *real* worktree, checked out under the root the app looks in — a branch row
+    # pointing at a path that doesn't exist can't be opened, and a gate about navigation needs to
+    # open things. `{"name": ..., "sessions": [...]}`.
+    for extra in extra_branches:
+        name = extra["name"]
+        wt = pathlib.Path(WT_ROOT) / f"{repo.name}-{name}"
+        sh(f"rm -rf '{wt}'")
+        sh(f"git -C {repo} worktree add -q -b {name} '{wt}'")
+        branches.append({
+            "id": str(uuid.uuid4()), "name": name,
+            # The worktree root lives under "Application Support" — a space. Unescaped, the URL
+            # decodes to a path that doesn't exist and the branch drops on restore as missing.
+            "worktreeURL": "file://" + urllib.parse.quote(str(wt)),
+            "lastActivity": "now", "sessions": extra.get("sessions", []),
+        })
     st = {
         "version": 1,
         "workspaces": [{
             "id": str(uuid.uuid4()), "name": "repo", "url": f"file://{repo}", "colorIndex": 0,
-            "branches": [{
-                "id": str(uuid.uuid4()), "name": sh(f"git -C {repo} branch --show-current"),
-                "worktreeURL": f"file://{repo}", "lastActivity": "now",
-                "sessions": sessions or [],
-            }],
+            "branches": branches,
         }],
         "expanded": [],
     }

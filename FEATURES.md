@@ -1434,3 +1434,24 @@ disclosure to dive deeper.
   folder Synth created, so the sixteen-day-old OrbStack carrying a dead session's id lives. Also at
   launch (orphans of dead instances) and on memory pressure (orphans only, never a live row's
   server). Entirely invisible: no UI, no setting. Gate: `t21_escaped_reap`.
+
+## [2026-07-31](docs/features/2026-07-31.md)
+
+- **A close hands off to its neighbour, not to your history (supersedes 016)** — the MRU view stack
+  is gone. It popped to the last session you *viewed*, across a branch or workspace boundary, with
+  the sidebar expanding and scrolling to reveal it — so where ⌘W left you was decided by state that
+  appears nowhere on screen, and two identical closes landed in different repos. A five-lens panel
+  agreed, and the prior art settles it: no comparable tool has an *unscoped* MRU (VS Code's is on by
+  default but never leaves the editor group; tmux's never leaves the session; Chrome/Safari/Xcode/Zed
+  use adjacency; list apps fall back to the parent). One sentence now: **closing a session hands you
+  its neighbour in the same branch, and never takes you outside it** — the row below, else above;
+  in tabs mode the strip *is* the branch, so that is the neighbouring tab; a split still just reflows
+  its sibling (001); an owner's browsers can't be the successor (ADR-0011); an emptied branch stops
+  at the empty pane. Closing a row you aren't viewing moves nothing but the cursor. The empty pane
+  stops being a dead end (it names the branch and carries ⌘N), which is what made it worth routing
+  around. Two older keyboard hazards fall out with it: the cursor lands on the successor session
+  rather than falling up to the branch row (so a second ⌘W can't archive a branch), a close from the
+  content no longer throws the keyboard into the sidebar (⌘W was rewriting its own scope between
+  presses), and ⌘W ignores auto-repeat. *Rejected:* a setting, MRU merely scoped to the branch, a
+  "returned to X" toast, a recents-list empty state. Both designs + native app. Gate:
+  `t22_close_successor`.

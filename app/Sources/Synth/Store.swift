@@ -232,11 +232,6 @@ enum FeedbackMode {
     /// and otherwise lands as a quiet unread row instead of yanking the viewport
     /// (last-intent-wins). Never persisted; a pending row can't outlive a quit.
     var openSetupBranchID: UUID?
-    /// The view stack (016): every session you look at, most recent last, one entry each. A close
-    /// that would leave an empty surface pops it instead (Layout.swift restoreLastViewed) — closing
-    /// is an undo of an open, so it puts you back where you were. In-memory like working.html's:
-    /// the stack is about this sitting, not something to inherit from a previous launch.
-    @ObservationIgnored var viewStack: [UUID] = []
     var sidebarCollapsed = false
 
     /// The layout spine (009): the pane tree filling the content surface. A lone leaf is today's
@@ -1503,20 +1498,24 @@ enum FeedbackMode {
     }
 
     func closeSession(_ session: Session) {
+        let owned = ownedBrowsers(of: session)
+        // Taken before anything leaves the tree, and blind to the browsers going with it.
+        let successor = successorSession(for: session, alsoLeaving: Set(owned.map(\.id)))
+        // An open browser of this row's own is still "the surface you closed".
+        let wasOpen = openSessionID.map { id in ([session] + owned).contains { $0.id == id } } ?? false
         // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
         // live and die with it — the delete confirm names them before this runs.
-        for browser in ownedBrowsers(of: session) { closeSession(browser) }
-        // Cursor falls up the hierarchy to the branch row (working.html removeUnit fallback).
-        if navCursor == session.id { navCursor = branch(of: session)?.id }
+        for browser in owned { closeSession(browser) }
+        // The cursor follows the row that inherits, and only falls to the branch row when the
+        // branch is empty — a close never hands the next ⌘W a whole branch to archive.
+        if navCursor == session.id { navCursor = successor?.id ?? branch(of: session)?.id }
         teardownSession(session)
         for br in workspaces.flatMap(\.branches) {
             br.sessions.removeAll { $0.id == session.id }
         }
         // Layout spine (009): closing a live session collapses its pane and reflows the sibling —
         // the existing removeUnit → prune path, no new guard (004 §6).
-        pruneLayout()
-        syncActive()
-        restoreLastViewed()   // nothing left on screen → back to the session you were on before (016)
+        settleAfterClose(successor: successor, wasOpen: wasOpen)
     }
 
     /// Release everything a session holds *outside* the tree: its terminal + browser
@@ -1711,11 +1710,15 @@ enum FeedbackMode {
                 homes.append((br, i, v))
             }
         }
-        let wasOpen = openSessionID == session.id
-        if navCursor == session.id { navCursor = branch(of: session)?.id }
+        // An open browser of this row's own is still "the surface you closed" — for the handoff,
+        // and for the undo, which puts you back on the one you were actually looking at.
+        let openVictim = victims.first { $0.id == openSessionID }
         let victimIDs = Set(victims.map(\.id))
+        let successor = successorSession(for: session, alsoLeaving: victimIDs)
+        // Same for the cursor: a browser going with its owner is a row about to leave under it.
+        if let c = navCursor, victimIDs.contains(c) { navCursor = successor?.id ?? branch(of: session)?.id }
         for br in workspaces.flatMap(\.branches) { br.sessions.removeAll { victimIDs.contains($0.id) } }
-        pruneLayout(); syncActive(); restoreLastViewed()
+        settleAfterClose(successor: successor, wasOpen: openVictim != nil)
 
         softDelete("Closed \(session.title)", subject: .session(session.kind), restore: { [weak self] in
             guard let self else { return }
@@ -1723,7 +1726,7 @@ enum FeedbackMode {
                 h.branch.sessions.insert(h.session, at: min(h.index, h.branch.sessions.count))
             }
             self.pruneLayout(); self.syncActive()
-            if wasOpen { self.jump(to: session) }
+            if let openVictim { self.jump(to: openVictim) }
         }, commit: { [weak self] in
             victims.forEach { self?.teardownSession($0) }
         })
@@ -1755,10 +1758,11 @@ enum FeedbackMode {
         let wasOpen = openSessionID == session.id
         let agent = session.spawnedKind.agentID.flatMap { AgentRegistry.descriptor($0) }
 
+        let successor = successorSession(for: session)
         teardownSession(session)
-        if navCursor == session.id { navCursor = br.id }
+        if navCursor == session.id { navCursor = successor?.id ?? br.id }
         br.sessions.remove(at: index)
-        pruneLayout(); syncActive(); restoreLastViewed()
+        settleAfterClose(successor: successor, wasOpen: wasOpen)
 
         // The conversation's name is the evidence under the verb line — but a row still wearing
         // its stock name has none to give, and "OpenCode quit / OpenCode" says it twice.
@@ -1787,7 +1791,7 @@ enum FeedbackMode {
         }
         workspaces.remove(at: index)
         expanded.remove(ws.id)
-        pruneLayout(); syncActive(); restoreLastViewed()
+        pruneLayout(); syncActive()
 
         softDelete("Removed \(ws.name)", subject: .glyph(Phosphor.folder), restore: { [weak self] in
             guard let self else { return }
@@ -1850,7 +1854,7 @@ enum FeedbackMode {
         if openSetupBranchID == branch.id { openSetupBranchID = nil }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)
-        pruneLayout(); syncActive(); restoreLastViewed()
+        pruneLayout(); syncActive()
         return homes
     }
 

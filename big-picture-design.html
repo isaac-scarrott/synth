@@ -326,6 +326,8 @@
   .pane-empty__mark { width: 26px; height: 26px; opacity: 0.5; }
   .pane-empty__mark svg { width: 100%; height: 100%; display: block; }
   .pane-empty span { font-size: 12.5px; letter-spacing: -0.005em; }
+  .pane-empty b { font-weight: 600; color: var(--text-muted); }
+  .pane-empty__hint { display: inline-flex; align-items: center; gap: 4px; margin-top: -4px; }
 
   /* the optimistic "setting up worktree…" skeleton — same centred body as pane-empty,
      shown inside a normal .pane so the resolve into the first session is a cross-fade */
@@ -3180,6 +3182,12 @@
   // A branch's persistence identity — the sole scope unit (005). Workspace + branch name, so two
   // branches sharing a name across workspaces stay distinct; NUL-joined to never collide on text.
   function branchKeyOf(el) { return workspaceNameOf(el) + '\u0000' + branchNameOf(el); }
+  // The reverse: the group a key names. The empty pane holds a key and needs the row, so it can
+  // say which branch it is empty *of* instead of only that nothing is open.
+  function branchGroupByKey(key) {
+    if (key == null) return null;
+    return [...nav.querySelectorAll('.branch--group')].find((g) => branchKeyOf(g) === key) || null;
+  }
   // A split stays within one branch / worktree (003): a session may only join the on-screen layout
   // when it belongs to the branch that owns the surface. The guard the three split routes share —
   // drag-to-split, sidebar pair, and the ⌘⇧+arrow picker. A branchless setup skeleton owns nothing.
@@ -3242,11 +3250,20 @@
       if (node.leaf) {
         if (node.setup) { if (!document.contains(node.setup)) { changed = true; return null; } return node; }
         if (tabsMode) {   // drop closed tabs from the strip; the pane dies only when its last tab does
-          const before = leafSessions(node).length;
-          node.sessions = leafSessions(node).filter((s) => document.contains(s));
-          if (node.sessions.length !== before) changed = true;
-          if (!node.sessions.length) return null;
-          if (!node.session || !document.contains(node.session)) node.session = node.sessions[0];
+          const before = leafSessions(node);
+          const at = node.session ? before.indexOf(node.session) : -1;
+          const alive = before.filter((s) => document.contains(s));
+          if (alive.length !== before.length) changed = true;
+          node.sessions = alive;
+          if (!alive.length) return null;
+          // The active tab hands off to its neighbour — right, else left. Falling to the strip's
+          // head would move you a tab away from the one you closed.
+          if (!node.session || !document.contains(node.session)) {
+            let pick = null;
+            for (let i = at + 1; i < before.length && !pick; i++) if (document.contains(before[i])) pick = before[i];
+            for (let i = at - 1; i >= 0 && !pick; i--) if (document.contains(before[i])) pick = before[i];
+            node.session = pick || alive[0];
+          }
           return node;
         }
         const alive = node.session && document.contains(node.session);
@@ -3264,26 +3281,6 @@
     return changed;
   }
 
-  // ===== The view stack (016) =====
-  // Every session you look at goes on top, most recent last, one entry each. Closing the session
-  // you're viewing pops back to the one you were on before it instead of leaving an empty pane —
-  // the same "undo the open" a browser's tab history gives you. Dead rows are dropped lazily on
-  // read, so a session closed from anywhere just falls out of the stack.
-  const viewStack = [];
-  function noteView(el) {
-    const i = viewStack.indexOf(el);
-    if (i >= 0) viewStack.splice(i, 1);
-    viewStack.push(el);
-  }
-  function lastViewed() {
-    while (viewStack.length) {
-      const el = viewStack[viewStack.length - 1];
-      if (document.contains(el)) return el;
-      viewStack.pop();
-    }
-    return null;
-  }
-
   // Mirror the active pane into the sidebar (the sticky "you are here" tint) + the derived
   // pill, and keep openEl pointing at its session — the DOM-cheap half of activation, no
   // content re-render, so clicking between panes never tears down a live surface.
@@ -3296,7 +3293,6 @@
       s.classList.remove('session--unread');
       clearNotif(s);
       derivePill(s);
-      noteView(s);
     } else if (leaf && leaf.setup) {
       nav.querySelectorAll('.branch--active').forEach((b) => b.classList.remove('branch--active'));
       leaf.setup.classList.add('branch--active');   // the grayed pending row reads as "you are here"
@@ -4893,7 +4889,14 @@
     stopStream();
     layout = null; activePane = null; openEl = null;
     derivePill(null);
-    content.innerHTML = `<div class="pane-empty"><span class="pane-empty__mark">${ICON_EMPTY}</span><span>No session open</span></div>`;
+    // Nothing open is the honest end of a close, not a failure to recover from — so the pane
+    // says where you are still standing and how to start again. That is what made the old empty
+    // state expensive: not that it was empty, but that it was a dead end.
+    const br = branchGroupByKey(currentBranchKey);
+    const where = br ? ` in <b>${esc(workspaceNameOf(br))}</b> / ${esc(branchNameOf(br))}` : '';
+    content.innerHTML = `<div class="pane-empty"><span class="pane-empty__mark">${ICON_EMPTY}</span>`
+      + `<span>No session open${where}</span>`
+      + `<span class="pane-empty__hint"><kbd class="cmdk__key">⌘</kbd><kbd class="cmdk__key">N</kbd> new session</span></div>`;
     renderSidebarEcho();   // no split on screen → dissolve any band, rows back to full-width
   }
 
@@ -5486,6 +5489,7 @@
       }
       if (tabsMode && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey) {
         e.preventDefault();
+        if (e.repeat) return;   // a held ⌘W is one gesture, not a reaper — see the ⌘W below
         if (activePane && activePane.session) requestDelete(activePane.session);
         return;
       }
@@ -5533,7 +5537,7 @@
     // (In tabs mode the earlier ⌘W branch already closed the active tab and returned.)
     if ((e.metaKey || e.ctrlKey) && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
       const row = contextRow();
-      if (row) { e.preventDefault(); requestDelete(row); }
+      if (row) { e.preventDefault(); if (!e.repeat) requestDelete(row); }
       return;
     }
     // An open browser session claims the standard page verbs window-wide: ⌘L address,
@@ -6711,10 +6715,23 @@
   // deleting a worktree — its folder on disk is the only irreversible move.
   const UNDO_MS = 8000;
 
-  // The focus cursor falls up the hierarchy when the row it sits on leaves — the same rule
-  // the old hard-remove used, lifted out so soft-remove settles focus identically.
-  function fallbackFor(unit) {
-    if (!(selEl && unit.contains(selEl))) return null;
+  // Who inherits from a row that leaves: its neighbour, inside the same parent. A session hands
+  // off to the session below it, else the one above, and only an emptied branch falls up to the
+  // branch row — so a close never nominates anything outside the branch you were working in.
+  // (Supersedes the MRU view stack, 016: the destination has to be a row already on screen, or
+  // you cannot say where a ⌘W lands before you press it.) `going` is the whole removed set — an
+  // owner takes its browsers with it, and none of them may be the successor.
+  function successorFor(unit, going) {
+    if (unit.matches && unit.matches('.session')) {
+      const step = (dir) => {
+        let n = unit;
+        while ((n = dir > 0 ? n.nextElementSibling : n.previousElementSibling))
+          if (n.matches('.session') && going.indexOf(n) < 0) return n;
+        return null;
+      };
+      const sib = step(1) || step(-1);
+      if (sib) return sib;
+    }
     const up = unit.parentElement && unit.parentElement.closest('[data-repo]');
     const neighbour = up ? null : [unit.previousElementSibling, unit.nextElementSibling].find((el) => el && el.matches('[data-repo]'));
     return (up || neighbour) ? (up || neighbour).querySelector(':scope > [data-row]') : null;
@@ -6722,13 +6739,25 @@
 
   // Everything the tree reconciles once a unit leaves the DOM — shared by the detach and the
   // commit that follows if undo never comes. (Was the tail of the old hard removeUnit.)
-  function settleAfterRemoval(fallback) {
+  //
+  // Two independent moves, because they answer to two different gestures: the *view* only moves
+  // when the close emptied the surface, and the *cursor* only moves when it was standing on the
+  // row that left. Closing from the content pane therefore never throws the keyboard into the
+  // sidebar — which is what let two presses of ⌘W act on two levels of the tree.
+  function settleAfterRemoval(successor, cursorMoves, wasOpen) {
     rollUpGroups();
     if (setupEl && !document.contains(setupEl)) setupEl = null;
     if (pruneLayout()) renderLayout();
-    const back = layout ? null : lastViewed();
-    if (back) { jumpTo(back); return; }
-    if (fallback && document.contains(fallback)) select(fallback, true);
+    const alive = successor && document.contains(successor) ? successor : null;
+    // Only an emptied surface asks the tree for a session; a split or a tab strip has already
+    // handed off to a sibling on its own (001 reflow, the strip's neighbour), and re-opening
+    // over that would move the pane a second time.
+    if (!layout && alive && alive.matches('.session')) openSession(alive);
+    if (!cursorMoves) return;
+    // The cursor follows the surface when the surface was what you closed — so after a split
+    // collapse it lands on the pane that took the space, not on a row nobody is looking at.
+    const home = (wasOpen && openEl && document.contains(openEl)) ? openEl : alive;
+    if (home) select(home, true);
   }
 
   function softRemove(unit, opts) {
@@ -6739,8 +6768,11 @@
     const targets = [unit];
     if (unit.matches && unit.matches('.session[data-sid]')) ownedOf(unit).forEach((b) => targets.push(b));
     const snap = targets.map((n) => ({ node: n, parent: n.parentElement, next: n.nextElementSibling }));
-    const fallback = fallbackFor(unit);
-    const reopen = openEl && unit.contains(openEl) ? openEl : null;
+    const successor = successorFor(unit, targets);
+    // Both read the whole target set, not just the unit: closing an owner takes its browsers with
+    // it, so a cursor or a view sitting on one of those is standing on something about to leave.
+    const cursorMoves = !!(selEl && targets.some((t) => t.contains(selEl)));
+    const reopen = openEl && targets.some((t) => t.contains(openEl)) ? openEl : null;
     const label = (opts && opts.label) || 'Removed';
     // The chip shows the thing you acted on — a closed session wears its own kind icon, so a
     // Claude row reads differently from a terminal at a glance.
@@ -6753,7 +6785,7 @@
     const detach = () => {
       if (ran) return; ran = true;
       snap.forEach((s) => { if (s.node.parentElement) s.node.remove(); s.node.classList.remove('row-exit'); });
-      settleAfterRemoval(fallback);
+      settleAfterRemoval(successor, cursorMoves, !!reopen);
     };
     unit.addEventListener('animationend', detach, { once: true });
     setTimeout(detach, 260);

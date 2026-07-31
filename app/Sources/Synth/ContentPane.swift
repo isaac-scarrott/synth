@@ -503,15 +503,34 @@ private struct TermSurface: View {
 }
 
 /// working.html `.pane-empty`: centered terminal mark + "No session open".
+///
+/// Nothing open is the honest end of a close, not a failure to recover from — so the pane names the
+/// branch you are still standing in and the chord that starts again. That is what made the old empty
+/// state expensive enough to route around: not that it was empty, but that it was a dead end.
 private struct PaneEmpty: View {
+    @Environment(AppStore.self) private var store
+
     var body: some View {
         VStack(spacing: 12) {
             Phos(path: Phosphor.terminal, size: 26)
                 .foregroundStyle(Theme.inkFaint)
                 .opacity(0.5)
-            Text("No session open")
-                .font(.system(size: 12.5))
-                .foregroundStyle(Theme.inkFaint)
+            Group {
+                if let br = store.currentBranch, let ws = store.workspace(of: br) {
+                    Text("No session open in ") + Text(ws.name).fontWeight(.semibold) + Text(" / \(br.name)")
+                } else {
+                    Text("No session open")
+                }
+            }
+            .font(.system(size: 12.5))
+            .foregroundStyle(Theme.inkFaint)
+            HStack(spacing: 4) {
+                KeyCap(text: "⌘")
+                KeyCap(text: "N")
+                Text("new session")
+            }
+            .font(.system(size: 12.5))
+            .foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

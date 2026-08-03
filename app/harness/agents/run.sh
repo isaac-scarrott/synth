@@ -34,7 +34,7 @@ SUITES="t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t5_comme
         t7_regression t8_appmcp t9_archive t10_toasts t11_update t12_scratch t13_termcontrast
         t14_antigravity_detect t15_antigravity t16_antigravity_resume t17_agent_quit
         t18_antigravity_states t19_agent_disable t20_comment_batch
-        t21_escaped_reap t22_close_successor"
+        t21_escaped_reap t22_close_successor t23_projectgate"
 
 P=0; F=0; S=0
 for t in ${*:-$SUITES}; do

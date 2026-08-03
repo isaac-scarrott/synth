@@ -326,6 +326,17 @@ final class ControlServer: @unchecked Sendable {
             store.createWorktree(in: ws, newBranch: newBranch, base: request["base"] as? String)
             return ["ok": true, "worktreePath": planned.path]
 
+        // Add a project — the folder picker's exact call once a folder is chosen, minus the
+        // un-drivable modal panel. `path` stands in for what the panel returned, so a gate can
+        // hand it the folders a person would misclick (no repo, no commits, a subfolder, one
+        // already added) and assert what the app does with each.
+        case "automation.addProject" where automation:
+            guard let path = request["path"] as? String else {
+                return ["ok": false, "error": "need path"]
+            }
+            store.beginAddWorkspace(url: URL(fileURLWithPath: path, isDirectory: true))
+            return ["ok": true]
+
         // The synth-app approval prompt, drivable headless: list what's pending and
         // answer it — resolve is the ⌘K confirm frame's exact call.
         case "automation.agentPrompts" where automation:
@@ -686,7 +697,10 @@ final class ControlServer: @unchecked Sendable {
         case "automation.tree" where automation:
             return ["ok": true,
                     "workspaces": store.workspaces.map { ws -> [String: Any] in
+                        // The folder is the project's identity — what decides whether a second
+                        // Add is the same project, and what every git call is scoped to.
                         ["workspace": ws.name,
+                         "path": ws.url.path,
                          "count": ws.liveBranches.count,
                          "branches": ws.liveBranches.map(\.name)]
                     }]

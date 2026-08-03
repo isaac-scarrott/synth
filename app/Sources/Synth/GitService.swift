@@ -65,6 +65,36 @@ enum GitService {
         run(["-C", url.path, "rev-parse", "--is-inside-work-tree"]).trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
 
+    /// The nearest folder at or above `url` holding a `.git` entry, or nil when there is none.
+    /// A pure filesystem probe by design: `NSOpenPanel`'s `validate:` hook runs on the main
+    /// thread with the modal panel up, where one git spawn against a stale network mount would
+    /// beachball the app. Ancestors count because picking a subfolder of a repo means the repo,
+    /// and `repositoryRoot` resolves it. `.git` is a *file* inside a linked worktree, so
+    /// existence is the test — requiring a directory would reject every worktree Synth makes.
+    static func enclosingRepositoryMarker(_ url: URL) -> URL? {
+        var dir = url.standardizedFileURL
+        while true {
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) { return dir }
+            let parent = dir.deletingLastPathComponent().standardizedFileURL
+            if parent.path == dir.path { return nil }
+            dir = parent
+        }
+    }
+
+    /// The root of the working tree containing `url` — where a project gets added, so every
+    /// branch of the repo is reachable from it and one repo can't become two projects. Picking
+    /// a subfolder used to be accepted silently and was worse than a refusal: the row pointed at
+    /// the repo root while `worktreeRoot` hashed the subpath, so the same repo added at two
+    /// depths got two unrelated worktree roots. `--show-toplevel` also answers with the real
+    /// on-disk path, collapsing the symlink, `/tmp`-vs-`/private/tmp` and case-only variants
+    /// that would otherwise hash apart for one repo. Nil when `url` is in no working tree.
+    static func repositoryRoot(_ url: URL) -> URL? {
+        let (status, out) = runChecked(["-C", url.path, "rev-parse", "--show-toplevel"])
+        let path = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard status == 0, !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
     // MARK: Worktrees
 
     struct WorktreeInfo {

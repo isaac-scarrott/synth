@@ -232,7 +232,7 @@ private struct WorkspaceRow: View {
             Reveal(open: isOpen || peekBranchID != nil) {
                 VStack(alignment: .leading, spacing: 1) {
                     if workspace.liveBranches.isEmpty {
-                        EmptyGroupHint(text: "No worktrees yet", leading: 37)
+                        EmptyGroupHint(text: "No branches yet", leading: 37)
                     } else {
                         // Peeking a collapsed workspace shows only the branch that holds the
                         // open session; expanded, every branch shows.

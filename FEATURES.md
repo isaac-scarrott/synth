@@ -1482,3 +1482,25 @@ disclosure to dive deeper.
   6 overhang + 3 ring, leaving the disc on the design's -6/-6). Same invisible ring in both designs as
   `.notif__x::before`. Gate: synthetic clicks into the running app — centre dismisses without firing
   the action, 11pt out dismisses, 14pt out doesn't, Restart still works; pre-fix build fails at centre.
+- **A project is a git repository, or it isn't a project** — reported as a dead end: add a non-git
+  folder, it lands looking fine, then "New branch" fails on `fatal: not a git repository` with no way
+  to fix it from inside Synth. A panel of five was asked the open question and was unanimous: every
+  branch is a worktree, so a folder that can't host a branch can't be a project — a branchless row
+  can hold no session and does nothing. Two corrections came out of it. The test is **"does this
+  folder have a branch", not "is this a git repo"**: four folders produced the same branchless
+  project, and the likeliest is a repo — `git init` with no commit, where `refs/heads` is empty and
+  `worktree add -b x <path> HEAD` dies on `invalid reference: HEAD` — so a repo-ness check would have
+  shipped the bug again. And a **subdirectory** was accepted, which was worse than the dead end:
+  `--is-inside-work-tree` is true for any descendant, so one repo became two projects with two
+  `worktreeRoot`s; the pick resolves through `--show-toplevel` now, which also collapses symlink,
+  `/tmp` and case-only spellings, so re-adding a project reveals the one you have. The refusal lands
+  in `panel(_:validate:)` — once, on Add, leaving the panel on the folder you were looking at — as a
+  filesystem probe for `.git` *existing* (it is a file inside a linked worktree), never a git spawn on
+  the main thread under a modal; the same decision is made again where the project is created, for
+  callers with no panel. Also: **a Retry button is a claim that identical input could produce a
+  different output**, so the second identical failure withdraws it (a different reason is asked
+  afresh, a materialised branch earns it back), "No worktrees yet" → **"No branches yet"**, and the
+  Notification Center post carries the card's one line rather than the whole git dump. *Rejected:*
+  offering `git init` (4–1) — the usual mistake is the *wrong folder*, so one click makes a slip
+  permanent, and `init` alone leaves no branch, so Synth would have to author the first commit too;
+  plain folders as a second kind of project. Gate: `t23_projectgate`.

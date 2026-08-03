@@ -1116,17 +1116,41 @@ enum FeedbackMode {
         let lines = details.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let reason = lines.first { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") } ?? lines.last
+        // A Retry button is a claim that identical input could produce a different output. Some
+        // worktree failures earn it — a held index.lock, a post-checkout hook that couldn't
+        // resolve pnpm on a GUI launch PATH, a disk since freed. Others are deterministic and
+        // will fail the same way forever. Rather than classify git's whole vocabulary, let the
+        // second identical failure answer it: one branch failing one way twice running has
+        // shown that repeating the call isn't the fix, so the card stops inviting the click.
+        let streak = Self.failureKey(branch: branch, workspace: workspace, reason: reason ?? verb)
+        worktreeFailures[streak, default: 0] += 1
+        let offerRetry = retry != nil && worktreeFailures[streak] == 1
         notifs.append(InAppNotif(id: id, kind: .error, seq: notifSeq,
                                  sessionKind: .terminal, title: "\(branch) · \(workspace)",
                                  colorIndex: nil, outlivesSession: true,
                                  message: verb, iconPath: Phosphor.branch,
                                  tier: .attention, sub: reason,
-                                 action: retry == nil ? nil : NotifAction(label: "Retry")))
-        if let retry { notifActions[id] = retry }
+                                 action: offerRetry ? NotifAction(label: "Retry") : nil))
+        if offerRetry, let retry { notifActions[id] = retry }
         if !NSApp.isActive {
-            NotificationService.shared.postSystemError(title: verb,
-                                                       body: "\(branch) · \(workspace)\n\(details)")
+            // The same one line the card shows. Notification Center truncates a multi-line git
+            // dump and can't be copied from, so the full text stays in the log.
+            NotificationService.shared.postSystemError(
+                title: verb, body: "\(branch) · \(workspace)\n\(reason ?? verb)")
         }
+    }
+
+    /// Consecutive identical worktree failures, per project + branch + git's reason.
+    @ObservationIgnored private var worktreeFailures: [String: Int] = [:]
+
+    private static func failureKey(branch: String, workspace: String, reason: String) -> String {
+        "\(workspace)\u{1}\(branch)\u{1}\(reason)"
+    }
+
+    /// A branch that materialised has earned its Retry offer back, whatever it failed on before.
+    private func clearWorktreeFailures(branch: String, workspace: String) {
+        let prefix = Self.failureKey(branch: branch, workspace: workspace, reason: "")
+        worktreeFailures = worktreeFailures.filter { !$0.key.hasPrefix(prefix) }
     }
 
     /// Active toasts, most-urgent first: a burning undo, then standing asks, then receipts —
@@ -2378,8 +2402,8 @@ enum FeedbackMode {
         // add the pending row) off the main thread rather than freezing the submit.
         // The branch is the identity, "On it" is what happened, and the mark is the comment
         // glyph: a check would say a session finished, and nothing finished — something started.
-        raiseFeedbackToast(.done, message: "On it", title: "feedback/\(slug)",
-                           icon: Phosphor.commentMode)
+        raiseAmbientToast(.done, message: "On it", title: "feedback/\(slug)",
+                          icon: Phosphor.commentMode)
         Task { [weak self] in
             guard let self else { return }
             let (branchName, planned) = await self.runGit(repo: repo) {
@@ -2462,16 +2486,16 @@ enum FeedbackMode {
         if let url = comps.url, NSWorkspace.shared.open(url) {
             // One line: the who-row used to carry the literal email subject, the one thing you
             // had just typed yourself.
-            raiseFeedbackToast(.neutral, message: "Handed to Mail", title: "", icon: Phosphor.mail)
+            raiseAmbientToast(.neutral, message: "Handed to Mail", title: "", icon: Phosphor.mail)
         } else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(body, forType: .string)
             // Nothing failed: the fallback worked and your text is on the clipboard. It used to
             // raise a red, sticky error that sat in the deck until clicked, and led with the
             // negative.
-            raiseFeedbackToast(.neutral, message: "Feedback copied to clipboard", title: "",
-                               icon: Phosphor.copy,
-                               sub: "no mail app — paste it to \(FeedbackMode.recipient)")
+            raiseAmbientToast(.neutral, message: "Feedback copied to clipboard", title: "",
+                              icon: Phosphor.copy,
+                              sub: "no mail app — paste it to \(FeedbackMode.recipient)")
         }
     }
 
@@ -2534,10 +2558,10 @@ enum FeedbackMode {
         return slug.isEmpty ? "note" : slug
     }
 
-    /// A session-less confirmation card (mirrors `raiseWorktreeError`). Every one of these is
-    /// ambient: a result, not a summons, and gone in six seconds.
-    private func raiseFeedbackToast(_ kind: NotifKind, message: String, title: String,
-                                    icon: String, sub: String? = nil) {
+    /// A session-less card (mirrors `raiseWorktreeError`). Every one of these is ambient: a
+    /// result, not a summons, and gone in six seconds.
+    private func raiseAmbientToast(_ kind: NotifKind, message: String, title: String,
+                                   icon: String, sub: String? = nil) {
         notifSeq += 1
         let id = UUID()
         notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq, sessionKind: .terminal,
@@ -2555,32 +2579,128 @@ enum FeedbackMode {
         panel.allowsMultipleSelection = false
         panel.prompt = "Add"
         panel.message = "Choose a repository folder"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // NSOpenPanel holds its delegate weakly, and `gate`'s last use is this assignment.
+        let gate = RepositoryPickerGate()
+        panel.delegate = gate
+        let response = withExtendedLifetime(gate) { panel.runModal() }
+        guard response == .OK, let url = panel.url else { return }
         beginAddWorkspace(url: url)
+    }
+
+    /// Turns away a folder with no repository at or above it while the picker is still open, so
+    /// the correction — walk up a level, take the repo — is one click away with the panel still
+    /// on screen and the user's attention still on the choice. `shouldEnable` is the other hook
+    /// and is wrong twice over: every ancestor of a repo is itself a non-repo, so `~` and
+    /// `~/code` would grey out on the way to the thing you came for, and it re-probes every
+    /// listed folder on every scroll. `validate:` runs once, on Add.
+    private final class RepositoryPickerGate: NSObject, NSOpenSavePanelDelegate {
+        func panel(_ sender: Any, validate url: URL) throws {
+            guard GitService.enclosingRepositoryMarker(url) == nil else { return }
+            throw NSError(domain: "Synth", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "“\(url.lastPathComponent)” isn’t a git repository.",
+                NSLocalizedRecoverySuggestionErrorKey:
+                    "Synth works branch by branch, and every branch is a git worktree. "
+                    + "Choose the folder that holds your repository — the one with a .git inside it.",
+            ])
+        }
     }
 
     /// Add the repo with just its default branch — the checkout already at the repo
     /// root — as the sole worktree row. No branch picker: further branches are added
     /// later, one at a time, from the row's "New branch" action. The git read runs off
-    /// the main thread (`for-each-ref` on a large/cold repo can take a beat); a non-repo
-    /// folder yields a branchless workspace.
+    /// the main thread (`for-each-ref` on a large/cold repo can take a beat).
+    ///
+    /// A folder that can't host a branch is refused here instead of becoming a project.
+    /// The picker's own gate already turns away anything with no `.git` above it, so this
+    /// is the invariant behind it — the one place that decides, for every caller, that a
+    /// project always arrives with at least one branch.
     func beginAddWorkspace(url: URL) {
         Task { [weak self] in
             guard let self else { return }
-            let seed = await runGit(repo: url) { () -> (name: String, worktree: URL, age: String)? in
-                let branches = GitService.branches(at: url)
-                guard !branches.isEmpty else { return nil }
-                // git lists the main worktree first; the branch checked out there is the
-                // repo's default, and its folder (the repo root) is its worktree already.
-                let main = GitService.worktrees(at: url).first
-                let name = main?.branch ?? branches[0].name
-                let age = branches.first { $0.name == name }
-                    .map { GitService.compactAge($0.lastCommitUnix) } ?? ""
-                return (name, main?.path ?? url, age)
+            switch await runGit(repo: url, { Self.probeWorkspace(at: url) }) {
+            case .refuse(let why):
+                raiseAmbientToast(.error, message: why.message, title: url.lastPathComponent,
+                                  icon: Phosphor.branch, sub: why.sub)
+            case .seed(let seed):
+                // Two projects over one repo get two `worktreeRoot`s (it hashes the path), and
+                // the second `worktree add` for a branch the first already checked out dies on
+                // "already checked out". Show the one that's there instead of making the second.
+                if let existing = workspaces.first(where: { Self.sameFolder($0.url, seed.root) }) {
+                    revealWorkspace(existing)
+                    return
+                }
+                finishAddWorkspace(url: seed.root, branches: [
+                    Branch(name: seed.branch, worktreeURL: seed.worktree, lastActivity: seed.age)
+                ])
             }
-            let rows = seed.map { [Branch(name: $0.name, worktreeURL: $0.worktree, lastActivity: $0.age)] } ?? []
-            finishAddWorkspace(url: url, branches: rows)
         }
+    }
+
+    /// A picked folder resolved to a project, or the reason it can't be one.
+    private enum AddWorkspaceProbe: Sendable {
+        case seed(AddWorkspaceSeed)
+        case refuse(AddWorkspaceRefusal)
+    }
+
+    private struct AddWorkspaceSeed: Sendable {
+        let root: URL
+        let branch: String
+        let worktree: URL
+        let age: String
+    }
+
+    /// Why a folder can't become a project. Both were previously accepted and produced the
+    /// same branchless project: a row that can host no branch, therefore no session, and
+    /// whose "New branch" could only ever fail.
+    private enum AddWorkspaceRefusal: Sendable {
+        case notRepository
+        case noCommits
+
+        var message: String {
+            switch self {
+            case .notRepository: return "Not a git repository"
+            case .noCommits:     return "No commits yet"
+            }
+        }
+
+        var sub: String {
+            switch self {
+            case .notRepository: return "Synth adds repositories — pick a folder with a .git inside it."
+            case .noCommits:     return "Make the first commit, then add it again."
+            }
+        }
+    }
+
+    /// Off the main thread: resolve the pick to a repo root and read its default-branch row.
+    nonisolated private static func probeWorkspace(at url: URL) -> AddWorkspaceProbe {
+        guard let root = GitService.repositoryRoot(url) else { return .refuse(.notRepository) }
+        let branches = GitService.branches(at: root)
+        // No refs/heads inside a working tree means an unborn HEAD — a fresh `git init`, or a
+        // clone of an empty remote. `defaultBase` falls through to "HEAD" there and
+        // `worktree add -b <name> <path> HEAD` dies on "invalid reference: HEAD", so the
+        // folder is a dead end until it has a commit. This is the likelier way in than a
+        // folder with no repo at all: it's what starting a new project looks like.
+        guard !branches.isEmpty else { return .refuse(.noCommits) }
+        // git lists the main worktree first; the branch checked out there is the
+        // repo's default, and its folder (the repo root) is its worktree already.
+        let main = GitService.worktrees(at: root).first
+        let name = main?.branch ?? branches[0].name
+        let age = branches.first { $0.name == name }
+            .map { GitService.compactAge($0.lastCommitUnix) } ?? ""
+        return .seed(AddWorkspaceSeed(root: root, branch: name,
+                                      worktree: main?.path ?? root, age: age))
+    }
+
+    private static func sameFolder(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().standardizedFileURL.path
+            == b.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    /// Put the cursor on a project and open it — what re-adding one you already have means.
+    private func revealWorkspace(_ ws: Workspace) {
+        expanded.insert(ws.id)
+        navCursor = ws.id
+        retargetSettings(toWorkspace: ws.id)
     }
 
     private func finishAddWorkspace(url: URL, branches: [Branch]) {
@@ -2701,7 +2821,9 @@ enum FeedbackMode {
     /// would be noise).
     /// `retry` is the one call that would repeat this create verbatim, offered on the failure
     /// card. The flows that can't be repeated as a single call pass nil and the card carries no
-    /// button — an offer that can't be honoured is worse than none.
+    /// button — an offer that can't be honoured is worse than none. Repeatability is necessary
+    /// but not sufficient: `raiseWorktreeError` withholds the offer once the same failure has
+    /// repeated, since a call that can be made again isn't yet a call worth making again.
     private func materialize(_ row: Branch, in ws: Workspace, spawningTemplate: Bool = false,
                              retry: (@MainActor () -> Void)? = nil,
                              onReady: ((Branch) -> Void)? = nil,
@@ -2714,6 +2836,7 @@ enum FeedbackMode {
                 row.worktreeURL = url
                 row.isPending = false
                 row.markActivity()
+                clearWorktreeFailures(branch: row.name, workspace: wsName)
                 Analytics.capture("worktree_created", ["from_template": spawningTemplate])
                 if spawningTemplate { applySessionTemplate(to: row, in: ws) }
                 onReady?(row)

@@ -364,18 +364,18 @@ private struct PaneHead: View {
             SessionIcon(kind: session.kind, size: 15)
                 .frame(width: 15, height: 15)
             Text(session.title)
-                .font(.system(size: tightTitle ? 12.5 : 13, weight: .semibold))
-                .kerning(tightTitle ? -0.19 : -0.13)
+                // One size at any width now: the six-step scale collapsed the old 12.5/13 pair
+                // into 14, so `tightTitle` still drives the spacing but no longer the type.
+                .font(.sans(13, 600))
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)               // ellipsis-truncate, never wrap — a wrapped title is the bar growing
                 .truncationMode(.tail)
                 .layoutPriority(1)
             // Crumb: `<b>workspace</b> / branch` — mono 11, faint, workspace muted.
             if showCrumb, let ws = workspace, let br = branch {
-                (Text(ws.name).foregroundColor(Theme.inkMuted).fontWeight(.medium)
+                (Text(ws.name).foregroundColor(Theme.inkMuted).font(.mono(11, 500))
                     + Text(" / \(br.name)").foregroundColor(Theme.inkFaint))
-                    .font(.system(size: 11, design: .monospaced))
-                    .kerning(-0.11)
+                    .font(.mono(11))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 // Copy the branch name — hover-revealed on the header, like the sidebar kebab.
@@ -460,9 +460,7 @@ struct PRChip: View {
                 // Narrow, the number drops and only the state glyph remains (015).
                 if !bare {
                     Text(verbatim: "#\(pr.number)")
-                        .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                        .kerning(-0.11)
-                        .monospacedDigit()
+                        .font(.mono(12, 500))
                 }
             }
             .foregroundStyle(pr.state.tint)
@@ -517,19 +515,19 @@ private struct PaneEmpty: View {
                 .opacity(0.5)
             Group {
                 if let br = store.currentBranch, let ws = store.workspace(of: br) {
-                    Text("No session open in ") + Text(ws.name).fontWeight(.semibold) + Text(" / \(br.name)")
+                    Text("No session open in ") + Text(ws.name).font(.sans(13, 600)) + Text(" / \(br.name)")
                 } else {
                     Text("No session open")
                 }
             }
-            .font(.system(size: 12.5))
+            .font(.sans(13))
             .foregroundStyle(Theme.inkFaint)
             HStack(spacing: 4) {
                 KeyCap(text: "⌘")
                 KeyCap(text: "N")
                 Text("new session")
             }
-            .font(.system(size: 12.5))
+            .font(.sans(13))
             .foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -559,14 +557,12 @@ private struct WorktreeSetupPane: View {
                     .foregroundStyle(Theme.inkFaint)
                     .frame(width: 15, height: 15)
                 Text(branch.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .kerning(-0.13)
+                    .font(.sans(13, 600))
                     .foregroundStyle(Theme.ink)
                 if let ws = store.workspace(of: branch) {
-                    (Text(ws.name).foregroundColor(Theme.inkMuted).fontWeight(.medium)
+                    (Text(ws.name).foregroundColor(Theme.inkMuted).font(.mono(11, 500))
                         + Text(" / \(branch.name)").foregroundColor(Theme.inkFaint))
-                        .font(.system(size: 11, design: .monospaced))
-                        .kerning(-0.11)
+                        .font(.mono(11))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -582,7 +578,7 @@ private struct WorktreeSetupPane: View {
             VStack(spacing: 12) {
                 SetupSpinner()
                 Text("Setting up worktree…")
-                    .font(.system(size: 12.5))
+                    .font(.sans(13))
                     .foregroundStyle(Theme.inkFaint)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -652,10 +648,10 @@ private struct Placeholder: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "sparkle")
-                .font(.system(size: 34, weight: .light))
+                .font(.sans(34, 300))
                 .foregroundStyle(Theme.copper)
-            Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
-            Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
+            Text(title).font(.sans(13, 500)).foregroundStyle(Theme.ink)
+            Text(subtitle).font(.sans(11)).foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

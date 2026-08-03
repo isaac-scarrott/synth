@@ -1455,3 +1455,32 @@ disclosure to dive deeper.
   presses), and ⌘W ignores auto-repeat. *Rejected:* a setting, MRU merely scoped to the branch, a
   "returned to X" toast, a recents-list empty state. Both designs + native app. Gate:
   `t22_close_successor`.
+
+## [2026-08-03](docs/features/2026-08-03.md)
+
+- **Geist, and a type scale with six steps instead of twelve** — the system face gave way to Geist +
+  Geist Mono (variable TTFs, OFL), and the twelve sizes that lived between 9px and 15px, most half a
+  pixel apart, collapsed into six at least 1px apart: 10 · 11 · 12 · 13 · 14 · 15. Floor up from 9,
+  body from 11.5. All eighteen negative-tracking rules deleted — they were SF Pro calibration, and
+  Geist already sets ~2.3% narrower, so keeping them ran ~4% tighter than intended; positive tracking
+  on uppercase labels stays. Leading opened to 1.5–1.65 because Geist's line box is 10% taller than SF
+  Pro's at the same size (a deeper descender; cap and x-height are within a hair), and containers grew
+  to match. *Rejected:* retuning tracking on SF Pro alone, Geist sans with SF Mono kept, and Vercel's
+  own 12px floor / 16px body — that is a page you read, not chrome you work inside. Both designs +
+  native app.
+- **Weight is an axis, not seven names** — the fonts ship variable because working.html uses 450, 550
+  and 570, which `Font.Weight` cannot name; `.medium`/`.semibold` had been rounding all of them to the
+  wrong side, turning the notification title's 20-unit distinction from its ambient sibling into a
+  100-unit one. Call sites now pass the CSS number verbatim (`.sans(13, 550)`) and `Typography.swift`
+  instances the `wght` axis; verified against the built `.app` as five distinct widths, the odd ones
+  genuinely interpolated. Same file closes a trap: Geist's default figures are *proportional* (`'111'`
+  barely half the width of `'000'`), so `tabular:` applies `tnum` explicitly where seven sites had
+  leaned on `.monospacedDigit()`, which only knows the system face.
+- **Three defects the type audit turned up, unrelated to the typeface** — the device status bar hung
+  its size off `isTablet` but its weight off Android, where working.html keys both off Android alone
+  (so an iPad's bar was sized like Android's, and an Android phone's like iOS's); the scratch-terminal
+  confirm buttons carried `.dialog__btn`'s padding and fill but no font, leaving them in the system
+  face; and the pane header title sat a step behind its siblings because the rescale matched bare
+  literals and its size was a ternary. Also recorded: `.kerning()` and `.lineSpacing()` are absolute
+  points and follow no size change on their own, and SwiftUI gives a custom font its natural line box,
+  so the design's `line-height` never arrives for free.

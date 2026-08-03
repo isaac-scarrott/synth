@@ -22,7 +22,7 @@ struct PaletteQueryField: NSViewRepresentable {
         f.isBordered = false
         f.drawsBackground = false
         f.focusRingType = .none
-        f.font = .systemFont(ofSize: 15)
+        f.font = .sans(15)
         f.textColor = NSColor(Theme.repoName)
         f.lineBreakMode = .byTruncatingTail
         f.cell?.usesSingleLineMode = true
@@ -1109,7 +1109,7 @@ struct PaletteOverlay: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let note = model.noteText {
                         Text(note)
-                            .font(.system(size: 12))
+                            .font(.sans(12))
                             .foregroundStyle(Theme.inkFaint)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(EdgeInsets(top: 3, leading: 8, bottom: 5, trailing: 8))
@@ -1117,7 +1117,7 @@ struct PaletteOverlay: View {
                     if items.isEmpty {
                         if model.noteText == nil {
                             Text("No results")
-                                .font(.system(size: 13))
+                                .font(.sans(13))
                                 .foregroundStyle(Theme.navLabel)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 24)
@@ -1127,7 +1127,7 @@ struct PaletteOverlay: View {
                             switch row {
                             case let .header(g):
                                 Text(g.uppercased())
-                                    .font(.system(size: 10, weight: .semibold)).kerning(0.5)
+                                    .font(.sans(10, 600)).kerning(0.5)
                                     .foregroundStyle(Theme.navLabel)
                                     .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 4)
                             case .divider:
@@ -1167,7 +1167,7 @@ private struct CrumbChip: View {
     var body: some View {
         Button(action: action) {
             Text(text)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.sans(13, 500))
                 .foregroundStyle(Theme.ink2)
                 .lineLimit(1)
                 .padding(.horizontal, 8).padding(.vertical, 3)
@@ -1199,20 +1199,20 @@ private struct PaletteItemRow: View {
             iconView
                 .frame(width: 20)
             Text(item.label)
-                .font(.system(size: 13.5))
+                .font(.sans(14, 450))
                 .foregroundStyle(labelColor)
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
             if let ctx = item.ctx, !ctx.isEmpty {
                 Text(ctx)
-                    .font(.system(size: 11.5))
+                    .font(.sans(12))
                     .foregroundStyle(Theme.inkMeta)
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: 210, alignment: .trailing)
             }
             if let meta = item.meta {
                 Text(meta)
-                    .font(.system(size: 11)).kerning(0.1)
+                    .font(.sans(11)).kerning(0.11)
                     .foregroundStyle(item.metaColor ?? Theme.inkMeta)
             }
             if let kbd = item.kbd {
@@ -1241,7 +1241,7 @@ private struct PaletteItemRow: View {
             SessionIcon(kind: kind, size: 16, tint: item.danger ? Theme.danger : nil)
         case let .chip(text, color):
             RoundedRectangle(cornerRadius: 5).fill(color).frame(width: 16, height: 16)
-                .overlay(Text(text).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.white))
+                .overlay(Text(text).font(.sans(10, 600)).foregroundStyle(.white))
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
         }
     }

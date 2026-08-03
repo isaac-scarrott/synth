@@ -143,7 +143,7 @@ private struct DevTagBadge: View {
         HStack(spacing: 6) {
             Circle().fill(Theme.working).frame(width: 5, height: 5)
             Text("DEV")
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .font(.mono(11, 600))
                 .tracking(1.4)
                 .foregroundStyle(Theme.working)
         }

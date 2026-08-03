@@ -134,7 +134,7 @@ private struct TabChip: View {
             if renaming {
                 HStack(spacing: contentSpacing) {
                     TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
-                    RenameField(font: .system(size: 12, weight: .medium))
+                    RenameField(font: .sans(12, 500))
                     Spacer(minLength: 4)
                 }
                 .padding(.leading, 11).padding(.trailing, 6)
@@ -148,7 +148,7 @@ private struct TabChip: View {
                     HStack(spacing: contentSpacing) {
                         TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
                         Text(session.title)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.sans(12, 500))
                             .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
                             .lineLimit(1).truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)

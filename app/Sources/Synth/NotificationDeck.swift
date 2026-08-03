@@ -161,12 +161,12 @@ private struct NotifCard: View {
             VStack(alignment: .leading, spacing: 1) {
                 if showsWho { who }
                 Text(notif.message ?? notifVerb(displayKind, notif.kind))
-                    .font(.system(size: 12.5, weight: ambient ? .medium : .semibold))
+                    .font(.sans(13, ambient ? 550 : 570))
                     .foregroundStyle(ambient ? Theme.ink2 : Theme.inkOpen)
                     .lineLimit(1).truncationMode(.tail)
                 if let sub = notif.sub {
                     Text(sub)
-                        .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
+                        .font(.sans(11)).foregroundStyle(Theme.inkMuted)
                         .lineLimit(1).truncationMode(.tail)
                 }
             }
@@ -263,7 +263,7 @@ private struct NotifCard: View {
             }
             .frame(width: 12, height: 12)
             Text(displayTitle)
-                .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
+                .font(.sans(11)).foregroundStyle(Theme.inkMuted)
                 .lineLimit(1).truncationMode(.tail)
         }
     }
@@ -274,7 +274,7 @@ private struct NotifCard: View {
         Button { store.runNotifAction(notif.id) } label: {
             HStack(spacing: 6) {
                 Text(action.label)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.sans(12, 550))
                     .foregroundStyle(action.danger ? Theme.danger : Theme.ink2)
                 if isFront { NotifKeyCaps() }
             }
@@ -342,7 +342,7 @@ private struct NotifKeyCaps: View {
         HStack(spacing: 2) {
             ForEach(["⌘", "↩"], id: \.self) { key in
                 Text(key)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.mono(10))
                     .foregroundStyle(Theme.ink4)
                     .lineLimit(1).fixedSize()
                     .frame(minWidth: 15, minHeight: 15)
@@ -388,7 +388,7 @@ private struct MorePill: View {
     let count: Int
     var body: some View {
         Text("+\(count)")
-            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+            .font(.sans(11, 600, tabular: true))
             .foregroundStyle(Theme.inkMuted)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(

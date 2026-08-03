@@ -101,9 +101,12 @@ targets.append(
         // resource bundle into Contents/Resources so the bundled app finds it).
         // CHANGELOG.json (Synth → Changelog): the curated, version-grouped changelog,
         // read at runtime (the shipped .app has no git repo); rides the same bundle copy.
+        // Fonts (Typography.swift): the Geist + Geist Mono variable TTFs, registered with
+        // CoreText at first use. .copy so the `wght` axis data lands untouched.
         resources: [
             .copy("Resources/CommentOverlay.js"),
             .copy("Resources/CHANGELOG.json"),
+            .copy("Resources/Fonts"),
         ],
         linkerSettings: synthLinkerSettings
     )

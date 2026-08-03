@@ -363,9 +363,14 @@ private struct DeviceStatusBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // 15/600, dropping to 13/500 on Android — both axes keyed off the same condition,
+            // as working.html has it (`.devui__status` / `.dev--android .devui__status`). The size
+            // used to hang off `isTablet` instead, which sized an iPad's bar like Android's and
+            // an Android phone's like iOS's.
             Text(verbatim: "9:41")
-                .font(.system(size: (device.isTablet ? 13 : 15) * s,
-                              weight: device.onScreen == .chromeAndroid ? .medium : .semibold))
+                .font(.sans((device.onScreen == .chromeAndroid ? 13 : 15) * s,
+                            device.onScreen == .chromeAndroid ? 500 : 600))
+                .kerning(-0.01 * (device.onScreen == .chromeAndroid ? 13 : 15) * s)
             Spacer(minLength: 4 * s)
             HStack(spacing: 5 * s) {
                 StatusIcon(svg: StatusGlyph.cellular, width: 11 * s * 20 / 12, height: 11 * s)
@@ -409,13 +414,13 @@ private struct SafariPill: View {
 
     var body: some View {
         HStack(spacing: 8 * s) {
-            (Text(verbatim: "A").font(.system(size: 12 * s, weight: .semibold))
-                + Text(verbatim: "A").font(.system(size: 15 * s, weight: .semibold)))
+            (Text(verbatim: "A").font(.sans(12 * s, 600))
+                + Text(verbatim: "A").font(.sans(15 * s, 600)))
                 .foregroundStyle(Color(hex: 0x5C5C61))
             HStack(spacing: 4 * s) {
                 Phos(path: Phosphor.lock, size: 11 * s).foregroundStyle(DeviceInk.ink.opacity(0.45))
                 Text(host)
-                    .font(.system(size: 15 * s))
+                    .font(.sans(15 * s))
                     .foregroundStyle(DeviceInk.ink)
                     .lineLimit(1).truncationMode(.tail)
             }
@@ -526,12 +531,12 @@ private struct SafariPadBar: View {
 
     private var padPill: some View {
         HStack(spacing: 8 * s) {
-            (Text(verbatim: "A").font(.system(size: 11 * s, weight: .semibold))
-                + Text(verbatim: "A").font(.system(size: 14 * s, weight: .semibold)))
+            (Text(verbatim: "A").font(.sans(11 * s, 600))
+                + Text(verbatim: "A").font(.sans(14 * s, 600)))
                 .foregroundStyle(Color(hex: 0x5C5C61))
             HStack(spacing: 4 * s) {
                 Phos(path: Phosphor.lock, size: 10 * s).foregroundStyle(DeviceInk.ink.opacity(0.45))
-                Text(host).font(.system(size: 14 * s)).foregroundStyle(DeviceInk.ink)
+                Text(host).font(.sans(14 * s)).foregroundStyle(DeviceInk.ink)
                     .lineLimit(1).truncationMode(.tail)
             }
             .frame(maxWidth: .infinity)
@@ -549,7 +554,7 @@ private struct SafariPadBar: View {
                 Phos(path: Phosphor.lock, size: 11 * s).foregroundStyle(DeviceInk.ink.opacity(0.45))
             }
             Text(label)
-                .font(.system(size: 12.5 * s))
+                .font(.sans(12.5 * s))
                 .foregroundStyle(active ? DeviceInk.ink : DeviceInk.ink.opacity(0.6))
                 .lineLimit(1).truncationMode(.tail)
         }
@@ -574,7 +579,7 @@ private struct ChromeAndroidBar: View {
                 Phos(path: Phosphor.lock, size: 12 * s)
                     .foregroundStyle(DeviceInk.androidInk.opacity(0.5))
                 Text(host)
-                    .font(.system(size: 13.5 * s))
+                    .font(.sans(13.5 * s))
                     .foregroundStyle(DeviceInk.androidInk)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
@@ -583,7 +588,7 @@ private struct ChromeAndroidBar: View {
             .frame(height: 36 * s)
             .background(Capsule().fill(DeviceInk.androidPill))
             Text(verbatim: "3")
-                .font(.system(size: 11 * s, weight: .bold))
+                .font(.sans(11 * s, 700))
                 .foregroundStyle(DeviceInk.androidGrey)
                 .frame(width: 20 * s, height: 20 * s)
                 .overlay(RoundedRectangle(cornerRadius: 5 * s)

@@ -1455,3 +1455,19 @@ disclosure to dive deeper.
   presses), and ⌘W ignores auto-repeat. *Rejected:* a setting, MRU merely scoped to the branch, a
   "returned to X" toast, a recents-list empty state. Both designs + native app. Gate:
   `t22_close_successor`.
+
+## [2026-08-03](docs/features/2026-08-03.md)
+
+- **An archived branch always has a way back** — archive was reversible in principle and, in three
+  places, not in practice: reported on `hol-519-…` as "I can't add it back, it doesn't show up". An
+  archived row keeps its slot in `branches` (that is what lets the Archived list reach it), and every
+  other surface kept treating it as live. ⌘K → New branch filtered against *all* rows, so the name was
+  taken and the frame came back empty — the ref exists, so even the "New branch “x”" fallback stayed
+  away; it filters on `liveBranches` now and offers the archived match as a restore, with its age.
+  `restoreArchivedBranch` returned false once the reaper had taken the folder, and the caller
+  discarded the Bool — a silent no-op on the only route back; it can't decline any more, because **the
+  branch is a git ref and the checkout is derived from it**, so the worktree is cut again at its old
+  path and the row waits pending like a fresh create. And restore-from-disk dropped any archived row
+  whose folder was held aside or reaped, so a relaunch forgot the branch and orphaned the held folder
+  — only live rows are reconciled against disk now. The rule worth keeping: the branch is durable, the
+  folder is a cache, and no gate on the restore path may end in "can't". Gate: `t9_archive` (+9).

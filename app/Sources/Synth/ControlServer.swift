@@ -675,7 +675,8 @@ final class ControlServer: @unchecked Sendable {
                   let target = store.workspaces.flatMap(\.branches)
                     .first(where: { $0.name == name && $0.isArchived })
             else { return ["ok": false, "error": "no archived branch named \(request["branch"] ?? "")"] }
-            return ["ok": store.restoreArchivedBranch(target)]
+            store.restoreArchivedBranch(target)
+            return ["ok": true]
 
         // The branch rows the sidebar draws, workspace by workspace. `archiveStatus` proves a
         // row reached the Archived list; only this proves it left the tree. The two were assumed

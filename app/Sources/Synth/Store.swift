@@ -1871,22 +1871,45 @@ enum FeedbackMode {
     }
 
     /// Bring an archived row back into the sidebar, moving its folder back if the sweeper
-    /// already put it on hold. Returns false when the folder is gone for good.
-    @discardableResult
-    func restoreArchivedBranch(_ branch: Branch) -> Bool {
-        guard branch.isArchived else { return true }
-        if !FileManager.default.fileExists(atPath: branch.worktreeURL.path) {
-            guard let held = heldFolder(for: branch),
-                  GitService.releaseHeldWorktree(from: held, to: branch.worktreeURL)
-            else { return false }
-        }
+    /// already put it on hold.
+    ///
+    /// A row whose folder the reaper already reclaimed still comes back: the branch is a git
+    /// ref and the checkout is derived from it, so the worktree is cut again and the row waits
+    /// pending like a fresh create. Restore is the only way back — an archived row is out of
+    /// the sidebar and its name is taken in the New-branch picker — so a restore that declined
+    /// to act stranded the branch with no route to it at all.
+    func restoreArchivedBranch(_ branch: Branch) {
+        guard branch.isArchived else { return }
+        let onDisk = FileManager.default.fileExists(atPath: branch.worktreeURL.path)
+            || heldFolder(for: branch).map {
+                GitService.releaseHeldWorktree(from: $0, to: branch.worktreeURL)
+            } ?? false
         let days = branch.archivedAt.map { Int(Date().timeIntervalSince($0) / 86_400) } ?? 0
         branch.archivedAt = nil
         branch.lastCleanSweepEval = nil
-        branch.markActivity()
+        if onDisk { branch.markActivity() } else { recutWorktree(branch) }
         syncActive()
-        Analytics.capture("worktree_restored", ["days_archived": days])
-        return true
+        Analytics.capture("worktree_restored", ["days_archived": days, "recut": !onDisk])
+    }
+
+    /// Check the branch out again into the folder it used to occupy. The reaper prunes as it
+    /// deletes, so git holds no stale registration for the path and a plain `worktree add`
+    /// is enough. No session template runs: this is a restore, and a restore that spawned
+    /// sessions the archived row didn't have would be a create wearing its name.
+    private func recutWorktree(_ branch: Branch) {
+        guard let ws = workspace(of: branch) else { return }
+        let repo = ws.url
+        let path = branch.worktreeURL
+        let name = branch.name
+        branch.isPending = true
+        materialize(branch, in: ws,
+                    retry: { [weak self] in self?.createWorktree(in: ws, existingBranch: name) }) {
+            if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == name }) {
+                return .ready(wt.path)
+            }
+            return GitService.addWorktree(repo: repo, path: path, branch: name)
+                .map { .failed($0) } ?? .ready(path)
+        }
     }
 
     /// The `.archived-…` sibling holding this branch's folder, if the sweeper has moved it.
@@ -3035,7 +3058,12 @@ enum FeedbackMode {
         for pw in state.workspaces {
             guard !confirmedMissing(pw.url) else { continue }
             let branches: [Branch] = pw.branches.compactMap { pb -> Branch? in
-                guard !confirmedMissing(pb.worktreeURL) else { return nil }
+                // Only *live* rows are reconciled against disk. An archived row's folder is
+                // expected to be absent — the sweeper holds it aside and later reclaims it — so
+                // reading that absence as "deleted outside Synth" dropped the row on the next
+                // launch: the Archived list forgot the branch, and any folder still on hold was
+                // orphaned with nothing but the reaper's clock left to touch it.
+                guard pb.archivedAt != nil || !confirmedMissing(pb.worktreeURL) else { return nil }
                 let sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,

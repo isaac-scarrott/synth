@@ -935,7 +935,13 @@ struct PaletteFrame {
         // frame opens instantly and populates when branches arrive. Per-keystroke `build`
         // stays allocation-only.
         if let ws = workspace { loadBranches(for: ws) }
-        let shown = Set(workspace?.branches.map(\.name) ?? [])
+        // Only *live* rows are hidden. An archived row still holds its name here, so filtering
+        // on every row made an archived branch unofferable — and it isn't in the tree either,
+        // so the branch had no way back. It's offered, and picking it restores the row.
+        let shown = Set(workspace?.liveBranches.map(\.name) ?? [])
+        let archived = Dictionary(
+            (workspace?.branches.filter(\.isArchived) ?? []).map { ($0.name, $0) },
+            uniquingKeysWith: { a, _ in a })
         let note: ((String) -> String?)? = { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace,
@@ -955,11 +961,18 @@ struct PaletteFrame {
                 .sorted { $0.1 > $1.1 }
                 .prefix(5)
                 .map { b, _ in
-                    PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
-                                ctx: b.isRemote ? (b.remote ?? "origin") : "local",
-                                enter: { self.runAndClose {
-                                    self.store.createWorktree(in: ws, existingBranch: b.name)
-                                } })
+                    if let row = archived[b.name] {
+                        return PaletteItem(icon: .phosphor(Phosphor.archive), label: b.name,
+                                           ctx: self.store.archiveStatusLine(row),
+                                           enter: { self.runAndClose {
+                                               self.store.restoreArchivedBranch(row)
+                                           } })
+                    }
+                    return PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
+                                       ctx: b.isRemote ? (b.remote ?? "origin") : "local",
+                                       enter: { self.runAndClose {
+                                           self.store.createWorktree(in: ws, existingBranch: b.name)
+                                       } })
                 }
             // Fallback: the typed query isn't an existing branch → offer cutting a fresh one.
             if !all.contains(where: { $0.name == v }) {

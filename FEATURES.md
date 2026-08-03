@@ -1458,6 +1458,30 @@ disclosure to dive deeper.
 
 ## [2026-08-03](docs/features/2026-08-03.md)
 
+- **An archived branch always has a way back** — archive was reversible in principle and, in three
+  places, not in practice: reported on `hol-519-…` as "I can't add it back, it doesn't show up". An
+  archived row keeps its slot in `branches` (that is what lets the Archived list reach it), and every
+  other surface kept treating it as live. ⌘K → New branch filtered against *all* rows, so the name was
+  taken and the frame came back empty — the ref exists, so even the "New branch “x”" fallback stayed
+  away; it filters on `liveBranches` now and offers the archived match as a restore, with its age.
+  `restoreArchivedBranch` returned false once the reaper had taken the folder, and the caller
+  discarded the Bool — a silent no-op on the only route back; it can't decline any more, because **the
+  branch is a git ref and the checkout is derived from it**, so the worktree is cut again at its old
+  path and the row waits pending like a fresh create. And restore-from-disk dropped any archived row
+  whose folder was held aside or reaped, so a relaunch forgot the branch and orphaned the held folder
+  — only live rows are reconciled against disk now. The rule worth keeping: the branch is durable, the
+  folder is a cache, and no gate on the restore path may end in "can't". Gate: `t9_archive` (+9).
+- **A toast's × is where you aimed, not where the card ends** — reported against the update toast
+  ("there's a close icon if you hover, but clicking it does not close"), and it was every toast: they
+  share one `NotifCard`. The card's `contentShape` — there so the body is a big target for the primary
+  action — sat *above* the × overlay, and a content shape confines everything beneath it, so the only
+  live part of an 18pt disc hung 6pt off the corner was the crescent where it laps the 13pt radius.
+  The centre answered nothing; you had to aim at the inside edge. The card's hit shape and tap gesture
+  are pinned **under** the overlay now, and the target reaches 3pt past the disc it draws (real
+  padding — an overlaid wider circle isn't hit-tested outside its parent's frame — hence offset 9 =
+  6 overhang + 3 ring, leaving the disc on the design's -6/-6). Same invisible ring in both designs as
+  `.notif__x::before`. Gate: synthetic clicks into the running app — centre dismisses without firing
+  the action, 11pt out dismisses, 14pt out doesn't, Restart still works; pre-fix build fails at centre.
 - **Geist, and a type scale with six steps instead of twelve** — the system face gave way to Geist +
   Geist Mono (variable TTFs, OFL), and the twelve sizes that lived between 9px and 15px, most half a
   pixel apart, collapsed into six at least 1px apart: 10 · 11 · 12 · 13 · 14 · 15. Floor up from 9,

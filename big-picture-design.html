@@ -1667,6 +1667,9 @@
   .notif__x svg { width: 9px; height: 9px; display: block; }
   .notif:hover .notif__x { opacity: 1; }
   .notif__x:hover { color: var(--ink-open); }
+  /* An 18px disc half-hanging off a corner is a mean thing to ask a pointer to land on, so the
+     target reaches 3px past what it draws. Absolute, so it stays out of the grid it centres in. */
+  .notif__x::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; }
   /* The countdown bar — the active-tab bar's grammar reused as a clock, but the bar has two
      ends and they are not the same problem. The origin end is arbitrary, so it fades out over
      20px and nothing terminates it; the far end is where the corner is, so the card's own

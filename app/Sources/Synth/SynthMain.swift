@@ -12,6 +12,9 @@ enum SynthMain {
         // by connecting and disconnecting. Servers ignore it and read the failed write instead.
         signal(SIGPIPE, SIG_IGN)
 
+        // Before any glyph is drawn, and so before AppKit can cache the value.
+        Typography.matchDesignFontSmoothing()
+
         if CommandLine.arguments.contains("--browser-check") {
             BrowserCheck.run()
         }

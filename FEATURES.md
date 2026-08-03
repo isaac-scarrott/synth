@@ -1484,3 +1484,15 @@ disclosure to dive deeper.
   literals and its size was a ternary. Also recorded: `.kerning()` and `.lineSpacing()` are absolute
   points and follow no size change on their own, and SwiftUI gives a custom font its natural line box,
   so the design's `line-height` never arrives for free.
+- **Stem darkening off — the designs were never asking for heavier text** — `-webkit-font-smoothing:
+  antialiased` had been in the design files all along, and besides naming an antialiasing mode it also
+  switches off the dilation CoreGraphics applies on top of it. Both sides were already
+  grayscale-antialiasing identically (subpixel left macOS in Mojave), so the whole difference was
+  weight — and measured on the real AppKit path it is 11–15% more ink at our sizes, meaning identical
+  nominal weights rendered ~12% heavier in the app than in the design. That was the "chunkier" read
+  left over after the tracking, leading and pane-title fixes. `Typography.matchDesignFontSmoothing()`
+  sets `AppleFontSmoothing` to 0 from `SynthMain`, before the first glyph; it must be the persistent
+  domain, since CoreGraphics reads the key through CFPreferences and never sees
+  `register(defaults:)`. *Still open:* the designs run two tiers (chrome thin, `auto` on `.term` /
+  `.set-code` / `.scr__body`) and the app runs one — `.set-code` is a native `TextEditor` in the wrong
+  tier — and 12% less ink at the scale's new 10px floor is a legibility cost worth eyes on.

@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.23.0",
+    "date": "2026-08-03",
+    "changes": [
+      "Synth is set in Geist, and the twelve text sizes that lived between 9px and 15px — most half a pixel apart — are six that are at least a pixel apart. Tracking, leading and weights are now the designs' own numbers rather than a calibration for the system face, so text sits where it was drawn to sit and reads about 12% lighter than it did.",
+      "Closing a session hands you its neighbour in the same branch, and never takes you outside it. The old rule popped to the last session you happened to view, which could be another branch or another project entirely — so two identical closes landed in different repos. An emptied branch now stops at an empty pane that names it and offers ⌘N.",
+      "An archived branch always has a way back. Restoring one whose folder had already been reclaimed silently did nothing, ⌘K → New branch treated the archived name as taken and came back empty, and a relaunch could forget the branch outright. The branch is the git ref; the folder is a cache, cut again at its old path when you restore.",
+      "A project has to be a git repository with a branch. A plain folder used to land looking fine and then dead-end on \"New branch\", and picking a subdirectory quietly made a second project out of a repo you already had — that now resolves to the repository root, so re-adding reveals the project you have.",
+      "A notification's × closes it wherever you click the ×. Only a crescent of it was ever live; the middle answered nothing.",
+      "Closing a session takes its stray processes with it. A dev server an agent started in the background had been surviving the session, the app and reboots alike — measured at 3.6 GB across 34 processes.",
+      "Synth no longer crashes on launch when a project's folder has been moved, renamed or unmounted."
+    ]
+  },
+  {
     "version": "0.22.0",
     "date": "2026-07-29",
     "changes": [

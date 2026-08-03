@@ -40,7 +40,7 @@ struct SettingsPane: View {
             if store.sidebarCollapsed { SidebarToggle().padding(.trailing, 2) }
             Phos(path: Phosphor.gear, size: 16).foregroundStyle(Theme.inkMuted).frame(width: 18)
             Text("Settings")
-                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .font(.sans(13, 600))
                 .foregroundStyle(Theme.ink)
             tabStrip.padding(.leading, 8)
             Spacer(minLength: 0)
@@ -208,10 +208,10 @@ struct SettingsPane: View {
             VStack(spacing: 0) {
                 Phos(path: Phosphor.folder, size: 26).foregroundStyle(Theme.inkFaint)
                 Text("No projects yet")
-                    .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                    .font(.sans(13, 600))
                     .foregroundStyle(Theme.ink).padding(.top, 10)
                 Text("Add a project to set what its worktrees open with.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted).padding(.top, 4)
+                    .font(.sans(12)).foregroundStyle(Theme.inkMuted).padding(.top, 4)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 34).padding(.horizontal, 20)
@@ -287,7 +287,7 @@ private struct SetTab: View {
             HStack(spacing: 7) {
                 if let workspace { WsChip(workspace: workspace, size: 15) }
                 Text(label)
-                    .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+                    .font(.sans(13, 550))
                     .foregroundStyle(on ? Theme.ink : (hovering ? Theme.ink2 : Theme.ink4))
                     .lineLimit(1)
             }
@@ -313,7 +313,7 @@ private struct SetSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold)).kerning(0.6)
+                .font(.sans(10, 600)).kerning(0.6)
                 .foregroundStyle(Theme.navLabel)
                 .padding(.leading, 2).padding(.bottom, 10)
             VStack(spacing: 0) { content }
@@ -339,10 +339,10 @@ private struct SetToggleRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.system(size: 12.5, weight: .medium)).kerning(-0.08).foregroundStyle(Theme.ink)
+                Text(label).font(.sans(13, 550)).foregroundStyle(Theme.ink)
                 if let desc {
-                    Text(desc).font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted)
-                        .lineSpacing(1.5).fixedSize(horizontal: false, vertical: true)
+                    Text(desc).font(.sans(12)).foregroundStyle(Theme.inkMuted)
+                        .lineSpacing(2.4).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)
@@ -376,11 +376,11 @@ private struct SetEditorRow<Trailing: View, Body: View>: View {
             // allowed to wrap in a narrow pane would grow the row and shove the rest of the
             // section down. The label never gives up space; the desc truncates instead.
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(label).font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+                Text(label).font(.sans(13, 550))
                     .foregroundStyle(dimmed ? Theme.ink4 : Theme.ink)
                     .lineLimit(1).fixedSize()
                 if let desc {
-                    Text(desc).font(.system(size: 11.5))
+                    Text(desc).font(.sans(12))
                         .foregroundStyle(dimmed ? Theme.inkFaint : Theme.inkMuted)
                         .lineLimit(1).truncationMode(.tail)
                 }
@@ -400,7 +400,7 @@ private struct ClearButton: View {
     var body: some View {
         Button(action: action) {
             Text("Clear")
-                .font(.system(size: 11.5, weight: .medium))
+                .font(.sans(12, 500))
                 .foregroundStyle(hovering ? Theme.ink : Theme.ink4)
                 .underline(hovering)
         }
@@ -421,9 +421,9 @@ private struct ScriptEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                Text(caption).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(Theme.ink4)
+                Text(caption).font(.mono(11, 500)).foregroundStyle(Theme.ink4)
                 Spacer(minLength: 8)
-                if let note { Text(note).font(.system(size: 11)).foregroundStyle(Theme.inkFaint) }
+                if let note { Text(note).font(.sans(11)).foregroundStyle(Theme.inkFaint) }
             }
             CodeEditor(text: $text, placeholder: placeholder, minHeight: 96)
         }
@@ -453,13 +453,13 @@ private struct CodeEditor: View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
                 Text(placeholder)
-                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(Color(hex: 0xD4D6DC).opacity(0.30))
+                    .font(.mono(12)).foregroundStyle(Color(hex: 0xD4D6DC).opacity(0.30))
                     .padding(.horizontal, 15).padding(.vertical, 13).allowsHitTesting(false)
             }
             TextEditor(text: $text)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.mono(12))
                 .foregroundStyle(Color(hex: 0xD4D6DC))
-                .lineSpacing(3).scrollContentBackground(.hidden)
+                .lineSpacing(3.6).scrollContentBackground(.hidden)
                 .padding(.horizontal, 15).padding(.vertical, 13)
                 .frame(minHeight: minHeight)
         }
@@ -518,10 +518,10 @@ private struct SharedSetupStrip: View {
                 Phos(path: Phosphor.caret, size: 12).foregroundStyle(Theme.inkFaint)
                     .rotationEffect(.degrees(open ? 90 : 0))
                 Text("Shared Synth setup · \(lineCount) lines")
-                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.ink4)
+                    .font(.sans(12, 500)).foregroundStyle(Theme.ink4)
                 Spacer(minLength: 8)
                 Button(action: editInSynth) {
-                    Text("Edit in Synth").font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.input)
+                    Text("Edit in Synth").font(.sans(12, 500)).foregroundStyle(Theme.input)
                 }.buttonStyle(.plain)
             }
             .padding(.horizontal, 11).padding(.vertical, 8)
@@ -531,16 +531,16 @@ private struct SharedSetupStrip: View {
             if open {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(base)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.mono(11))
                         .foregroundStyle(Color(hex: 0x8B8E96))
                         .strikethrough(skip)
-                        .lineSpacing(2)
+                        .lineSpacing(2.75)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12).padding(.vertical, 10)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.termBg))
                     Toggle(isOn: $skip) {
                         Text("Don't run the shared setup in \(projectName)")
-                            .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
+                            .font(.sans(11)).foregroundStyle(Theme.inkMuted)
                     }
                     .toggleStyle(.checkbox).controlSize(.small)
                 }
@@ -571,7 +571,7 @@ private struct FlagField: View {
                 // The placeholder tracks the field's own ink: opencode and antigravity ship with
                 // no default flags, so on an unedited field it is the ONLY text in the row's
                 // body, and a placeholder that stayed bright would read as a field still live.
-                Text(placeholder).font(.system(size: 12, design: .monospaced))
+                Text(placeholder).font(.mono(12))
                     .foregroundStyle(ink.opacity(0.30)).allowsHitTesting(false)
             }
             MonoLineField(text: $text, editable: enabled, ink: ink)
@@ -600,7 +600,7 @@ private struct MonoLineField: NSViewRepresentable {
         f.isBordered = false
         f.drawsBackground = false
         f.focusRingType = .none
-        f.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        f.font = .mono(12)
         f.lineBreakMode = .byTruncatingTail
         f.cell?.usesSingleLineMode = true
         f.delegate = context.coordinator
@@ -664,7 +664,7 @@ private struct FlagLineField: View {
                 .textFieldStyle(.plain).foregroundStyle(blue)
                 .frame(minWidth: 90)
         }
-        .font(.system(size: 11.5, design: .monospaced))
+        .font(.mono(12))
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.tuiBg))
@@ -730,7 +730,7 @@ private struct SharedSessionRow: View {
             TplIndex(i: index)
             TplKindIcon(kind: entry.kind, off: off)
             Text(entry.name)
-                .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+                .font(.sans(13, 500))
                 .foregroundStyle(off ? Theme.inkFaint : Theme.inkMuted)
                 .strikethrough(off, color: Theme.inkFaint)
                 .lineLimit(1).padding(.horizontal, 5)
@@ -739,7 +739,7 @@ private struct SharedSessionRow: View {
             Spacer(minLength: 4)
             TplKindPill(kind: entry.kind)
             Text("Synth")
-                .font(.system(size: 9.5, weight: .semibold)).kerning(0.3)
+                .font(.sans(10, 600)).kerning(0.3)
                 .foregroundStyle(Theme.inkFaint)
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .background(Capsule().fill(Theme.rowSelected))
@@ -754,7 +754,7 @@ private struct SharedSessionRow: View {
 private struct TplOpensTag: View {
     var body: some View {
         Text("OPENS")
-            .font(.system(size: 9.5, weight: .bold)).kerning(0.5)
+            .font(.sans(10, 700)).kerning(0.6)
             .foregroundStyle(Theme.accent)
     }
 }
@@ -764,7 +764,7 @@ private struct TplOpensTag: View {
 private struct TplOffPill: View {
     var body: some View {
         Text("Off")
-            .font(.system(size: 9.5, weight: .semibold)).kerning(0.29)
+            .font(.sans(10, 600)).kerning(0.3)
             .foregroundStyle(Theme.inkFaint)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Capsule().fill(Theme.rowHover))
@@ -826,7 +826,7 @@ private struct TplEmpty: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.system(size: 12)).foregroundStyle(Theme.inkFaint)
+            .font(.sans(12)).foregroundStyle(Theme.inkFaint)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12).padding(.vertical, 10)
             .overlay(RoundedRectangle(cornerRadius: 9)
@@ -917,7 +917,7 @@ private struct TplRow: View {
 private struct TplIndex: View {
     let i: Int
     var body: some View {
-        Text("\(i + 1)").font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+        Text("\(i + 1)").font(.sans(11, 500, tabular: true))
             .foregroundStyle(Theme.inkFaint).frame(width: 13)
     }
 }
@@ -934,7 +934,7 @@ private struct TplKindIcon: View {
 private struct TplKindPill: View {
     let kind: SessionKind
     var body: some View {
-        Text(kind.tplLabel).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.inkMuted)
+        Text(kind.tplLabel).font(.sans(11, 550)).foregroundStyle(Theme.inkMuted)
             .padding(.horizontal, 8).padding(.vertical, 2).background(Capsule().fill(Theme.rowSelected))
     }
 }
@@ -947,7 +947,7 @@ private struct TplNameField: View {
     @FocusState private var focused: Bool
     var body: some View {
         TextField("", text: $text)
-            .textFieldStyle(.plain).font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+            .textFieldStyle(.plain).font(.sans(13, 500))
             .foregroundStyle(off ? Theme.inkFaint : Theme.ink)
             .focused($focused)
             .padding(.horizontal, 5).padding(.vertical, 2)
@@ -961,7 +961,7 @@ private struct TplNameField: View {
 
     private var strike: some View {
         Text(text)
-            .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+            .font(.sans(13, 500))
             .hidden()
             .overlay(Rectangle().fill(Theme.inkFaint).frame(height: 1))
             .padding(.horizontal, 5)
@@ -983,7 +983,7 @@ private struct TplAddBar: View {
                     } label: {
                         HStack(spacing: 5) {
                             Phos(path: Phosphor.plus, size: 12).foregroundStyle(Theme.inkFaint)
-                            Text(kind.tplLabel).font(.system(size: 11.5, weight: .medium)).foregroundStyle(hovering ? Theme.ink : Theme.ink3)
+                            Text(kind.tplLabel).font(.sans(12, 550)).foregroundStyle(hovering ? Theme.ink : Theme.ink3)
                         }
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : Theme.raised)
@@ -1012,7 +1012,7 @@ private struct ThemeSeg: View {
             ForEach(ThemePref.allCases) { pref in
                 let on = store.themePref == pref
                 Button { store.themePref = pref } label: {
-                    Text(pref.label).font(.system(size: 12, weight: .medium))
+                    Text(pref.label).font(.sans(12, 500))
                         .foregroundStyle(on ? Theme.repoName : Theme.inkMuted)
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .background(RoundedRectangle(cornerRadius: 6).fill(on ? Theme.raised : Color.clear)
@@ -1068,7 +1068,7 @@ private struct AboutRow: View {
     private func aboutButton(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.ink3)
+                .font(.sans(12, 500)).foregroundStyle(Theme.ink3)
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5)))
@@ -1084,7 +1084,7 @@ struct WsChip: View {
     var body: some View {
         let color = Theme.chipColors[workspace.colorIndex % Theme.chipColors.count]
         RoundedRectangle(cornerRadius: size * 0.32).fill(color).frame(width: size, height: size)
-            .overlay(Text(workspace.monogram).font(.system(size: size * 0.58, weight: .semibold)).foregroundStyle(.white))
+            .overlay(Text(workspace.monogram).font(.sans(size * 0.58, 600)).foregroundStyle(.white))
             .overlay(RoundedRectangle(cornerRadius: size * 0.32).strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.12), radius: 0.75, y: 1)
     }

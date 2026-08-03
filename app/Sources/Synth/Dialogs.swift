@@ -64,7 +64,7 @@ struct CreateWorktreeSheet: View {
                 Field(label: "Branch") {
                     if available.isEmpty {
                         Text("All branches are already shown")
-                            .font(.system(size: 11.5)).foregroundStyle(Theme.inkFaint)
+                            .font(.sans(12)).foregroundStyle(Theme.inkFaint)
                     } else {
                         Picker("", selection: $existing) {
                             ForEach(available, id: \.self) { Text($0).tag($0) }
@@ -84,7 +84,7 @@ struct CreateWorktreeSheet: View {
                         get: { name },
                         set: { name = dashSpaces($0) }))
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.mono(12))
                         .focused($nameFocused)
                         .onSubmit(submit)
                 }
@@ -158,7 +158,7 @@ struct FeedbackSheet: View {
             if isAuthor {
                 TextField("Name this fix", text: $store.feedbackTitle)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.sans(14, 500))
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .frame(width: 428, alignment: .leading)
                     .background(Theme.raised)
@@ -169,7 +169,7 @@ struct FeedbackSheet: View {
                     .onSubmit { focused = true }
             }
             TextEditor(text: $store.feedbackDraft)
-                .font(.system(size: 14))
+                .font(.sans(14))
                 .scrollContentBackground(.hidden)
                 // Horizontal 7 + the text view's own 5pt line-fragment padding lands the caret
                 // at 12, matching the placeholder and the title field.
@@ -182,7 +182,7 @@ struct FeedbackSheet: View {
                 .overlay(alignment: .topLeading) {
                     if store.feedbackDraft.isEmpty {
                         Text(isAuthor ? "Add detail (optional)" : "What's off?")
-                            .font(.system(size: 14)).foregroundStyle(Theme.inkFaint)
+                            .font(.sans(14)).foregroundStyle(Theme.inkFaint)
                             .padding(.horizontal, 12).padding(.vertical, 11)
                             .allowsHitTesting(false)
                     }
@@ -190,10 +190,11 @@ struct FeedbackSheet: View {
                 .focused($focused)
 
             HStack {
-                Text("esc to dismiss").font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
+                Text("esc to dismiss").font(.sans(11)).foregroundStyle(Theme.inkFaint)
                 Spacer()
                 Button(action: send) {
                     HStack(spacing: 6) { Text("Send"); Text("⌘↵").opacity(0.75) }
+                        .font(.sans(13, 550))
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
@@ -224,9 +225,13 @@ private struct DialogFrame<Content: View, Actions: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.ink)
+            Text(title).font(.sans(14, 600)).foregroundStyle(Theme.ink)
             content
+            // `.dialog__btn`'s 13/550. Set on the row rather than restyling the buttons: the
+            // design draws a flat pill, but these are the sheet's default and cancel actions, and
+            // the native styles carry the accent fill and focus ring that say so on macOS.
             HStack(spacing: 8) { Spacer(); actions }
+                .font(.sans(13, 550))
         }
         .padding(20)
         .frame(width: 340)
@@ -239,7 +244,14 @@ private struct Field<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.inkMuted)
+            // working.html `.field label` — 10/600 uppercase on 0.05em. It had been sentence-case
+            // 11/500, which read as a smaller version of the row label rather than the tracked
+            // micro-label every other section header in the app wears.
+            Text(label)
+                .font(.sans(10, 600))
+                .kerning(0.5)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.inkMeta)
             content
         }
     }

@@ -62,7 +62,7 @@ struct ChangelogSheet: View {
     private var rail: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("RELEASES")
-                .font(.system(size: 10, weight: .semibold)).kerning(0.6)
+                .font(.sans(10, 600)).kerning(0.6)
                 .foregroundStyle(Theme.navLabel)
                 .padding(.leading, 10).padding(.top, 4).padding(.bottom, 8)
             ScrollViewReader { proxy in
@@ -84,7 +84,7 @@ struct ChangelogSheet: View {
             // Keyboard-first affordance — this sheet is driven by the keyboard.
             HStack(spacing: 6) {
                 KeyCaps(keys: ["↑", "↓"])
-                Text("navigate").font(.system(size: 10.5)).foregroundStyle(Theme.inkMeta)
+                Text("navigate").font(.sans(11)).foregroundStyle(Theme.inkMeta)
                 Spacer(minLength: 0)
                 KeyCap(text: "esc")
             }
@@ -101,10 +101,10 @@ struct ChangelogSheet: View {
             if let release {
                 HStack(spacing: 9) {
                     Text(release.version)
-                        .font(.system(size: 14, weight: .semibold, design: .monospaced)).kerning(-0.1)
+                        .font(.mono(14, 600))
                         .foregroundStyle(Theme.copper)
                     Text(release.date)
-                        .font(.system(size: 11.5))
+                        .font(.sans(12))
                         .foregroundStyle(Theme.inkMeta)
                 }
                 .padding(.bottom, 16)
@@ -116,7 +116,8 @@ struct ChangelogSheet: View {
                                     .frame(width: 4, height: 4)
                                     .padding(.top, 6)
                                 Text(change)
-                                    .font(.system(size: 13))
+                                    .font(.sans(13))
+                                    .lineSpacing(2.6)
                                     .foregroundStyle(Theme.ink2)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -145,16 +146,16 @@ private struct ReleaseRow: View {
             HStack(spacing: 9) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(version)
-                        .font(.system(size: 12.5, weight: selected ? .semibold : .medium, design: .monospaced))
+                        .font(.mono(13, selected ? 600 : 500))
                         .foregroundStyle(selected ? Theme.inkOpen : Theme.sessionName)
                     Text(date)
-                        .font(.system(size: 10))
+                        .font(.sans(10))
                         .foregroundStyle(Theme.inkMeta)
                 }
                 Spacer(minLength: 0)
                 if latest {
                     Text("Latest")
-                        .font(.system(size: 9, weight: .semibold)).kerning(0.3)
+                        .font(.sans(10, 600)).kerning(0.3)
                         .foregroundStyle(Theme.copper)
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 4).fill(Theme.copper.opacity(0.12)))

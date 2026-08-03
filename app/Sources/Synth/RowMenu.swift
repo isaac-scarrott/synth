@@ -60,8 +60,8 @@ struct RowMenu: View {
     private var confirmPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(confirmLabel)
-                .font(.system(size: 11.5))
-                .lineSpacing(2)
+                .font(.sans(12))
+                .lineSpacing(2.4)
                 .foregroundStyle(Theme.ink4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 2).padding(.top, 2).padding(.bottom, 9)
@@ -112,7 +112,7 @@ private struct MenuItem: View {
                 }
                 .frame(width: 15)
                 Text(title)
-                    .font(.system(size: 12.5))
+                    .font(.sans(13))
                     .foregroundStyle(danger ? Theme.danger : Theme.repoName)
                 Spacer(minLength: 0)
             }
@@ -132,7 +132,7 @@ private struct ConfirmButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.sans(12, 500))
                 .foregroundStyle(danger ? .white : Theme.repoName)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 10).padding(.vertical, 6)

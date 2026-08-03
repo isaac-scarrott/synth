@@ -71,7 +71,7 @@ struct Sidebar: View {
     private var header: some View {
         HStack {
             Text("PROJECT")
-                .font(.system(size: 10.5, weight: .semibold)).kerning(0.6)
+                .font(.sans(11, 600)).kerning(0.55)
                 .foregroundStyle(Theme.navLabel)
             Spacer()
             IconButton(path: Phosphor.plus, size: 14, help: "Add project") {
@@ -88,10 +88,10 @@ private struct EmptySidebarHint: View {
     var body: some View {
         VStack(spacing: 6) {
             Text("No projects yet")
-                .font(.system(size: 12, weight: .medium))
+                .font(.sans(12, 500))
                 .foregroundStyle(Theme.inkMuted)
             Text("Click + to add a git repository")
-                .font(.system(size: 11))
+                .font(.sans(11))
                 .foregroundStyle(Theme.inkFaint)
                 .multilineTextAlignment(.center)
         }
@@ -133,12 +133,12 @@ private struct FootButton: View {
                 Phos(path: icon, size: 16)
                     .foregroundStyle(iconTint).frame(width: 16)
                 Text(title)
-                    .font(.system(size: 12.5, weight: active ? .semibold : .medium))
+                    .font(.sans(13, active ? 600 : 500))
                     .foregroundStyle(labelTint)
                 Spacer(minLength: 0)
                 if let kbd {
                     Text(kbd)
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .font(.mono(11))
                         .foregroundStyle(Theme.inkFaint)
                 }
             }
@@ -192,7 +192,7 @@ private struct WorkspaceRow: View {
                         Chevron(open: isOpen)
                         Monogram(text: workspace.monogram,
                                  color: Theme.chipColors[workspace.colorIndex % Theme.chipColors.count])
-                        RenameField(font: .system(size: 13, weight: .semibold))
+                        RenameField(font: .sans(13, 600))
                         Spacer(minLength: 4)
                     }
                     .padding(.horizontal, 6).padding(.vertical, 6)
@@ -206,7 +206,7 @@ private struct WorkspaceRow: View {
                             Monogram(text: workspace.monogram,
                                      color: Theme.chipColors[workspace.colorIndex % Theme.chipColors.count])
                             Text(workspace.name)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.sans(13, 600))
                                 .foregroundStyle(Theme.repoName)
                             Spacer(minLength: 4)
                             trailing.opacity(revealed ? 0 : 1)
@@ -258,8 +258,8 @@ private struct WorkspaceRow: View {
                 // slot identity on input↔error swaps to replay the entry pop.
                 if let a = workspace.attention { Ind { AttentionGlyph(state: a) }.id(a) }
                 Text("\(workspace.liveBranches.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.repoCount).monospacedDigit()
+                    .font(.sans(11, 500, tabular: true))
+                    .foregroundStyle(Theme.repoCount)
             }
         }
     }
@@ -314,10 +314,10 @@ private struct BranchRow: View {
                 if renaming {
                     HStack(spacing: 6) {
                         Chevron(open: isOpen)
-                        RenameField(font: .system(size: 12))
+                        RenameField(font: .sans(12))
                         Spacer(minLength: 4)
                     }
-                    .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 28)
+                    .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
                 } else {
                     Button {
                         guard !branch.isPending else { return }   // nothing to expand or open yet
@@ -336,8 +336,7 @@ private struct BranchRow: View {
                             // the chevron goes (working.html `.branch--group > .chev { display:none }`).
                             if !store.tabsMode { Chevron(open: isOpen) }
                             Text(branch.name)
-                                .font(.system(size: 12))
-                                .fontWeight(isActiveBranch ? .semibold : .medium)
+                                .font(.sans(12, isActiveBranch ? 600 : 500))
                                 .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
                                 .lineLimit(1).truncationMode(.middle)
                             // The branch's PR rides beside the name — identity, not status, so it
@@ -363,7 +362,7 @@ private struct BranchRow: View {
                         // Height is pinned rather than derived from the tallest child: BranchRollup
                         // drops to EmptyView when expanded, so vertical padding alone made the row
                         // 30pt holding a 16pt Ind and 28pt without — expanding shifted the tree.
-                        .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 28)
+                        .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
                         .opacity(branch.isPending ? 0.5 : 1)
@@ -491,10 +490,10 @@ private struct SessionRow: View {
             if renaming {
                 HStack(spacing: 8) {
                     SessionIcon(kind: session.kind, size: 14).frame(width: 14)
-                    RenameField(font: .system(size: 11.5))
+                    RenameField(font: .sans(12))
                     Spacer(minLength: 4)
                 }
-                .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 28)
+                .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 30)
             } else {
                 Button { store.openFromSidebar(session) } label: {
                     HStack(spacing: 8) {
@@ -503,15 +502,14 @@ private struct SessionRow: View {
                         // focus weight flip renders in place without nudging the row — the
                         // native mirror of working.html's flex:1 name box (.session--open).
                         Text(session.title)
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.sans(12, 600))
                             .lineLimit(1)
                             .hidden()
                             .overlay(alignment: .leading) {
                                 Text(session.title)
-                                    .font(.system(size: 11.5))
                                     // Only the focused session goes bold; unread surfaces via
                                     // colour + the gutter bullet, not weight.
-                                    .fontWeight(isOpen ? .semibold : .medium)
+                                    .font(.sans(12, isOpen ? 600 : 500))
                                     .foregroundStyle(nameColor)
                                     .lineLimit(1)
                             }
@@ -529,7 +527,7 @@ private struct SessionRow: View {
                         }
                         .opacity(revealed ? 0 : 1)
                     }
-                    .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 28)
+                    .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 30)
                     .rowContentFade(revealed)
                     // The open session's sticky tint (working.html .session--open), deepening
                     // on hover like every other accent wash.
@@ -641,7 +639,7 @@ private struct SessionTile: View {
                     SessionIcon(kind: session.kind, size: 13).frame(width: 13)
                     if showName {
                         Text(session.title)
-                            .font(.system(size: 10.5, weight: isOpen ? .semibold : .medium))
+                            .font(.sans(11, isOpen ? 600 : 500))
                             .foregroundStyle(isOpen ? Theme.inkOpen : Theme.sessionName)
                             .lineLimit(1).truncationMode(.tail)
                     }
@@ -685,7 +683,7 @@ private struct EmptyGroupHint: View {
     var leading: CGFloat = 8
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .font(.sans(12))
             .foregroundStyle(Theme.inkFaint)
             .padding(.leading, leading).padding(.trailing, 6).padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -836,8 +834,8 @@ private struct Monogram: View {
     let text: String
     let color: Color
     var body: some View {
-        RoundedRectangle(cornerRadius: 6).fill(color).frame(width: 19, height: 19)
-            .overlay(Text(text).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white))
+        RoundedRectangle(cornerRadius: 6).fill(color).frame(width: 20, height: 20)
+            .overlay(Text(text).font(.sans(11, 600)).foregroundStyle(.white))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.12), radius: 0.75, y: 1)
     }
@@ -926,7 +924,7 @@ private struct BranchRollup: View {
                 // Relative age, re-rendered each minute so it decays live ("now" → "5m" → "2h").
                 TimelineView(.periodic(from: Date(), by: 60)) { ctx in
                     Text(branch.activityLabel(now: ctx.date))
-                        .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.branchMeta).monospacedDigit()
+                        .font(.sans(11, 500, tabular: true)).foregroundStyle(Theme.branchMeta)
                 }
             }
         }
@@ -1335,7 +1333,7 @@ struct DragGhost: View {
             HStack(spacing: 7) {
                 SessionIcon(kind: s.kind, size: 14).frame(width: 14)
                 Text(s.title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.sans(12, 500))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
             }

@@ -1482,6 +1482,55 @@ disclosure to dive deeper.
   6 overhang + 3 ring, leaving the disc on the design's -6/-6). Same invisible ring in both designs as
   `.notif__x::before`. Gate: synthetic clicks into the running app — centre dismisses without firing
   the action, 11pt out dismisses, 14pt out doesn't, Restart still works; pre-fix build fails at centre.
+- **Geist, and a type scale with six steps instead of twelve** — the system face gave way to Geist +
+  Geist Mono (variable TTFs, OFL), and the twelve sizes that lived between 9px and 15px, most half a
+  pixel apart, collapsed into six at least 1px apart: 10 · 11 · 12 · 13 · 14 · 15. Floor up from 9,
+  body from 11.5. All eighteen negative-tracking rules deleted — they were SF Pro calibration, and
+  Geist already sets ~2.3% narrower, so keeping them ran ~4% tighter than intended; positive tracking
+  on uppercase labels stays. Leading opened to 1.5–1.65 because Geist's line box is 10% taller than SF
+  Pro's at the same size (a deeper descender; cap and x-height are within a hair), and containers grew
+  to match. *Rejected:* retuning tracking on SF Pro alone, Geist sans with SF Mono kept, and Vercel's
+  own 12px floor / 16px body — that is a page you read, not chrome you work inside. Both designs +
+  native app.
+- **Weight is an axis, not seven names** — the fonts ship variable because working.html uses 450, 550
+  and 570, which `Font.Weight` cannot name; `.medium`/`.semibold` had been rounding all of them to the
+  wrong side, turning the notification title's 20-unit distinction from its ambient sibling into a
+  100-unit one. Call sites now pass the CSS number verbatim (`.sans(13, 550)`) and `Typography.swift`
+  instances the `wght` axis; verified against the built `.app` as five distinct widths, the odd ones
+  genuinely interpolated. Same file closes a trap: Geist's default figures are *proportional* (`'111'`
+  barely half the width of `'000'`), so `tabular:` applies `tnum` explicitly where seven sites had
+  leaned on `.monospacedDigit()`, which only knows the system face.
+- **Three defects the type audit turned up, unrelated to the typeface** — the device status bar hung
+  its size off `isTablet` but its weight off Android, where working.html keys both off Android alone
+  (so an iPad's bar was sized like Android's, and an Android phone's like iOS's); the scratch-terminal
+  confirm buttons carried `.dialog__btn`'s padding and fill but no font, leaving them in the system
+  face; and the pane header title sat a step behind its siblings because the rescale matched bare
+  literals and its size was a ternary. Also recorded: `.kerning()` and `.lineSpacing()` are absolute
+  points and follow no size change on their own, and SwiftUI gives a custom font its natural line box,
+  so the design's `line-height` never arrives for free.
+- **Stem darkening off — the designs were never asking for heavier text** — `-webkit-font-smoothing:
+  antialiased` had been in the design files all along, and besides naming an antialiasing mode it also
+  switches off the dilation CoreGraphics applies on top of it. Both sides were already
+  grayscale-antialiasing identically (subpixel left macOS in Mojave), so the whole difference was
+  weight — and measured on the real AppKit path it is 11–15% more ink at our sizes, meaning identical
+  nominal weights rendered ~12% heavier in the app than in the design. That was the "chunkier" read
+  left over after the tracking, leading and pane-title fixes. `Typography.matchDesignFontSmoothing()`
+  sets `AppleFontSmoothing` to 0 from `SynthMain`, before the first glyph; it must be the persistent
+  domain, since CoreGraphics reads the key through CFPreferences and never sees
+  `register(defaults:)`. *Still open:* the designs run two tiers (chrome thin, `auto` on `.term` /
+  `.set-code` / `.scr__body`) and the app runs one — `.set-code` is a native `TextEditor` in the wrong
+  tier — and 12% less ink at the scale's new 10px floor is a legibility cost worth eyes on.
+- **The design files stop depending on the network** — Geist came from a Google Fonts `<link>`, which
+  made both design files conditional on connectivity: offline they fall through to SF Pro and still
+  render, just not as the design. Now an inline `@font-face` pair over vendored variable woff2s in
+  `fonts/`, `font-display: block` because a flash of the wrong typeface is the failure mode for a file
+  whose purpose is to be looked at. Verified: zero requests to Google, axis still interpolating.
+- **Two dialog surfaces that had never matched** — `.field label` was sentence-case 11/500 against the
+  design's 10/600 uppercase on 0.05em, and the dialog action buttons carried no font at all, leaving
+  them in the system face; they now take `.dialog__btn`'s 13/550, set on the actions row rather than by
+  restyling, so the native default/cancel affordances survive. *Not done:* a second smoothing tier for
+  `.set-code` — per-view stem darkening has no clean SwiftUI seam and the payoff is unverified, so it
+  is recorded rather than worked around.
 - **A project is a git repository, or it isn't a project** — reported as a dead end: add a non-git
   folder, it lands looking fine, then "New branch" fails on `fatal: not a git repository` with no way
   to fix it from inside Synth. A panel of five was asked the open question and was unanimous: every

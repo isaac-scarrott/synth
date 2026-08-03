@@ -1471,3 +1471,14 @@ disclosure to dive deeper.
   whose folder was held aside or reaped, so a relaunch forgot the branch and orphaned the held folder
   — only live rows are reconciled against disk now. The rule worth keeping: the branch is durable, the
   folder is a cache, and no gate on the restore path may end in "can't". Gate: `t9_archive` (+9).
+- **A toast's × is where you aimed, not where the card ends** — reported against the update toast
+  ("there's a close icon if you hover, but clicking it does not close"), and it was every toast: they
+  share one `NotifCard`. The card's `contentShape` — there so the body is a big target for the primary
+  action — sat *above* the × overlay, and a content shape confines everything beneath it, so the only
+  live part of an 18pt disc hung 6pt off the corner was the crescent where it laps the 13pt radius.
+  The centre answered nothing; you had to aim at the inside edge. The card's hit shape and tap gesture
+  are pinned **under** the overlay now, and the target reaches 3pt past the disc it draws (real
+  padding — an overlaid wider circle isn't hit-tested outside its parent's frame — hence offset 9 =
+  6 overhang + 3 ring, leaving the disc on the design's -6/-6). Same invisible ring in both designs as
+  `.notif__x::before`. Gate: synthetic clicks into the running app — centre dismisses without firing
+  the action, 11pt out dismisses, 14pt out doesn't, Restart still works; pre-fix build fails at centre.

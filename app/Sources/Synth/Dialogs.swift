@@ -194,6 +194,7 @@ struct FeedbackSheet: View {
                 Spacer()
                 Button(action: send) {
                     HStack(spacing: 6) { Text("Send"); Text("⌘↵").opacity(0.75) }
+                        .font(.sans(13, 550))
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
@@ -226,7 +227,11 @@ private struct DialogFrame<Content: View, Actions: View>: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(.sans(14, 600)).foregroundStyle(Theme.ink)
             content
+            // `.dialog__btn`'s 13/550. Set on the row rather than restyling the buttons: the
+            // design draws a flat pill, but these are the sheet's default and cancel actions, and
+            // the native styles carry the accent fill and focus ring that say so on macOS.
             HStack(spacing: 8) { Spacer(); actions }
+                .font(.sans(13, 550))
         }
         .padding(20)
         .frame(width: 340)
@@ -239,7 +244,14 @@ private struct Field<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.sans(11, 500)).foregroundStyle(Theme.inkMuted)
+            // working.html `.field label` — 10/600 uppercase on 0.05em. It had been sentence-case
+            // 11/500, which read as a smaller version of the row label rather than the tracked
+            // micro-label every other section header in the app wears.
+            Text(label)
+                .font(.sans(10, 600))
+                .kerning(0.5)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.inkMeta)
             content
         }
     }

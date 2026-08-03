@@ -1496,3 +1496,14 @@ disclosure to dive deeper.
   `register(defaults:)`. *Still open:* the designs run two tiers (chrome thin, `auto` on `.term` /
   `.set-code` / `.scr__body`) and the app runs one — `.set-code` is a native `TextEditor` in the wrong
   tier — and 12% less ink at the scale's new 10px floor is a legibility cost worth eyes on.
+- **The design files stop depending on the network** — Geist came from a Google Fonts `<link>`, which
+  made both design files conditional on connectivity: offline they fall through to SF Pro and still
+  render, just not as the design. Now an inline `@font-face` pair over vendored variable woff2s in
+  `fonts/`, `font-display: block` because a flash of the wrong typeface is the failure mode for a file
+  whose purpose is to be looked at. Verified: zero requests to Google, axis still interpolating.
+- **Two dialog surfaces that had never matched** — `.field label` was sentence-case 11/500 against the
+  design's 10/600 uppercase on 0.05em, and the dialog action buttons carried no font at all, leaving
+  them in the system face; they now take `.dialog__btn`'s 13/550, set on the actions row rather than by
+  restyling, so the native default/cancel affordances survive. *Not done:* a second smoothing tier for
+  `.set-code` — per-view stem darkening has no clean SwiftUI seam and the payoff is unverified, so it
+  is recorded rather than worked around.

@@ -3,9 +3,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Geist+Mono:wght@100..900&amp;display=swap" />
+<style>
+  /* Vendored beside these files (fonts/, OFL) rather than fetched: a design file that silently
+     falls back to SF Pro when the network is down is a design file you can review and be wrong
+     about. One variable face per family — the 100..900 range is what the 450/550/570 weights need. */
+  @font-face {
+    font-family: "Geist"; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url("fonts/Geist-Variable.woff2") format("woff2-variations"), url("fonts/Geist-Variable.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Geist Mono"; font-style: normal; font-weight: 100 900; font-display: block;
+    src: url("fonts/GeistMono-Variable.woff2") format("woff2-variations"), url("fonts/GeistMono-Variable.woff2") format("woff2");
+  }
+</style>
 <title>Synth — Working</title>
 <style>
   :root {

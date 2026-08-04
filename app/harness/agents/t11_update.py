@@ -1,24 +1,34 @@
-"""Update card gate: what an available update says, how often it says it, and what Restart costs.
+"""Update gate: a waiting build says nothing, waits to be found, and Restart still asks first.
 
-An update Synth never mentions is the bug this card exists to fix, so the assertions are about
-speech: that staging a build raises a card at all, that the card is the app talking about its own
-housekeeping (neutral, no who-line, sticky, no countdown) rather than a session's state, that the
-copy tells you the build installs itself if you do nothing, and that dismissing it is "not now"
-rather than "never" — the reminder comes back on its own.
+This suite used to prove the update card spoke. It now proves the opposite, because the card is
+gone: an update is housekeeping, and housekeeping does not interrupt. A staged build raises no
+toast when it lands, no toast a day later, and nothing in Notification Center — not even under the
+route that sends every other attention card there. The whole first half of the gate is that
+silence, asserted as an absence rather than inferred from one.
+
+Silence alone would also describe a build the app forgot about, so the rest is the two pull
+surfaces that replaced the card. The sidebar's `Restart to update` foot button is the one this
+suite can see headlessly: it joins the keyboard nav run directly above Settings while a build
+waits and leaves it again when none does, which is `automation.nav`'s `navRows` — the ordered
+row-id list the cursor walks. (Settings → About is the other surface; it is pixels, so
+`updateStatus` stands in for the fact it renders.)
 
 Sparkle is not in the loop. `automation.updateStage` runs the same store path the real
 `willInstallUpdateOnQuit` runs, with an installer that records the ask instead of relaunching —
-otherwise proving Restart works would mean killing the instance under test. The daily clock is
-compressed by `SYNTH_UPDATE_REMIND_SECONDS`, the same trick the archive suites use, so the
-reminder is a thing this suite can actually watch arrive.
+otherwise proving Restart works would mean killing the instance under test.
+
+Reaching Restart is now a keyboard drive, not a card click: no verb activates a foot button, so
+this posts ⌘0 to take the keyboard back off the terminal, walks the cursor to the bottom of the
+nav run and one back up onto the update foot, and presses ↵ — the exact keys a user has. Landing
+the cursor is asserted before it is used, so a drive that never arrived reads as its own failure
+rather than as a broken Restart.
 """
-import os, sys, uuid
+import sys, time, uuid
 sys.path.insert(0, ".")
 import lib
 from lib import *
 
-print("=== T11: the update card — what it says, how often, and what Restart costs ===")
-os.environ["SYNTH_UPDATE_REMIND_SECONDS"] = "5"   # a "day", compressed — the sub-line counts in these too
+print("=== T11: a waiting build — silent, findable, and Restart still asks first ===")
 kill_all()
 repo = fresh_repo()
 sd = seed_state(repo, sessions=[
@@ -27,14 +37,21 @@ sd = seed_state(repo, sessions=[
 p, sock = launch(sd, f"{lib.H}/t11.log")
 ctl = Ctl(sock, repo)
 
+# The two cursor targets that are not tree rows, addressed by the ids the app pins them to.
+SETTINGS_FOOT = "00000000-0000-0000-0000-0000000F0071"
+UPDATE_FOOT   = "00000000-0000-0000-0000-0000000F0072"
+
 
 def cards():
     return ctl("automation.notifs").get("notifs", [])
 
 
-def update_card():
-    return next((c for c in cards() if c["message"].startswith("Synth ")
-                 and c["message"].endswith("is ready")), None)
+def nc():
+    return ctl("automation.notifs").get("nc", [])
+
+
+def nav_rows():
+    return ctl("automation.nav").get("navRows", [])
 
 
 def clear():
@@ -42,106 +59,118 @@ def clear():
         ctl("automation.notifDismiss", sessionId=c["sessionId"])
 
 
+def key(code, mods=(), chars=""):
+    ctl("automation.key", keyCode=code, mods=list(mods), chars=chars)
+    time.sleep(0.15)   # posted events land on the app's own queue, one main-loop turn later
+
+
+def cursor_to_update_foot():
+    """Walk the keyboard cursor onto the update foot, the way a hand would.
+
+    ⌘0 first: a terminal pane holds first responder, and bare j/k are the shell's until the
+    sidebar takes the keyboard back. Then j past the end — movement clamps on the last row, the
+    Settings foot — and one k up, which is where the update foot has to be if it is there at all.
+    """
+    key(29, ("cmd",), "0")
+    for _ in range(len(nav_rows()) + 1):
+        key(38, (), "j")
+    key(40, (), "k")
+    return wait(lambda: ctl("automation.nav").get("navCursor") == UPDATE_FOOT, 5, 0.2)
+
+
+def busy_count():
+    return len([s for s in ctl.sessions() if s["status"] in ("running", "working")])
+
+
 check("0. deck route pinned", ctl("automation.notifRoute", route="deck").get("ok"))
 clear()
+# Read while nothing is staged, and hold it: this is the nav run 5 is a claim about, and there is
+# no way back to "no build waiting" once one has been installed.
+idle_rows = nav_rows()
+nc_before = len(nc())
 
-# --- A staged build speaks, in the deck, once ---------------------------------------------------
+# --- A staged build says nothing at all ----------------------------------------------------------
 ctl("automation.updateStage", version="9.9.9")
-c = wait(lambda: update_card(), 10, 0.2)
-check("1. staging a build raises a card", bool(c))
-check("2. it names the version waiting", c and c["message"] == "Synth 9.9.9 is ready",
-      c and c["message"])
-# The card is the app talking about itself: green stays "your agent finished", blue stays
-# "something is blocked on you".
-check("3. it is neutral, not a session's state colour", c and c["kind"] == "neutral", c and c["kind"])
-check("4. no identity to name, so no who-line", c and c["title"] == "", c and c["title"])
-# Attention tier: the decision is open until you make it, so nothing drains it away unread.
-check("5. it is sticky, with no countdown",
-      c and c["tier"] == "attention" and c["drains"] == "false",
-      c and (c["tier"], c["drains"]))
-check("6. it offers the shortcut, not a demand", c and c["action"] == "Restart", c and c["action"])
-# The whole argument for the × being a complete answer: doing nothing still installs the build.
-check("7. it says what happens if you ignore it",
-      c and c["sub"] == "Installs when you quit", c and c["sub"])
-check("8. exactly one update card, not one per check",
-      len([x for x in cards() if x["message"].startswith("Synth 9.9.9")]) == 1)
+time.sleep(3)   # long enough that a card would be standing — an absence needs the chance to fail
+check("1. a build landing raises no card at all", cards() == [],
+      str([c["message"] for c in cards()]))
 
-# --- × means "not now", and tomorrow it says so again -------------------------------------------
-first_id = c["sessionId"]
-ctl("automation.notifDismiss", sessionId=first_id)
-check("9. × drops the card", not update_card())
-check("10. dismissing does not throw the build away",
-      ctl("automation.updateStatus").get("pending") is True)
-back = wait(lambda: update_card(), 20, 0.3)
-check("11. the reminder comes back on its own", bool(back))
-check("12. it comes back as a new card, at the front of the deck",
-      back and back["sessionId"] != first_id)
-# --- The reminder ages, because that is the only thing that changed -----------------------------
-# Watched, not staged: this is the card the first one became a "day" later.
-check("13. and it wears the only fact that changed",
-      back and back["sub"] == "Downloaded yesterday", back and back["sub"])
-clear()
-ctl("automation.updateStage", version="9.9.9", daysAgo=3)
-aged = wait(lambda: update_card(), 10, 0.2)
-check("14. which keeps counting", aged and aged["sub"] == "Downloaded 3 days ago", aged and aged["sub"])
-
-# --- Unfocused, it still waits in the deck rather than taking a system banner --------------------
-# Every other attention card escalates to Notification Center when Synth isn't frontmost. This one
-# never does, so pinning the route that way must change nothing about where it lands.
-clear()
+# Every other attention card escalates to Notification Center when Synth isn't frontmost. Pinning
+# that route must still produce nothing: an update is not news, on any surface.
 ctl("automation.notifRoute", route="nc")
-before = len(ctl("automation.notifs").get("nc", []))
 ctl("automation.updateStage", version="9.9.9")
-check("15. the route that sends other cards to Notification Center leaves this one in the deck",
-      bool(wait(lambda: update_card(), 10, 0.2)))
-check("15b. and nothing was posted to Notification Center",
-      len(ctl("automation.notifs").get("nc", [])) == before)
+time.sleep(3)
+check("2. and nothing reaches Notification Center, even under the route that sends other cards there",
+      len(nc()) == nc_before and not any("9.9.9" in v for e in nc() for v in e.values())
+      and cards() == [],
+      f"nc={nc()} deck={[c['message'] for c in cards()]}")
 ctl("automation.notifRoute", route="deck")
 
+# --- Silent, but not forgotten -------------------------------------------------------------------
+st = ctl("automation.updateStatus")
+check("3. the build is still known, and named", st.get("pending") is True and st.get("version") == "9.9.9",
+      f'pending={st.get("pending")} version={st.get("version")!r}')
+
+# --- The foot button is the surface: it joins the keyboard run while a build waits ---------------
+rows = nav_rows()
+check("4. the update foot joins the nav run, directly above Settings and last but one",
+      rows[-2:] == [UPDATE_FOOT, SETTINGS_FOOT] and rows.count(UPDATE_FOOT) == 1,
+      str(rows[-3:]))
+check("5. with no build waiting the run ends at Settings, with no update foot in it",
+      idle_rows[-1:] == [SETTINGS_FOOT] and UPDATE_FOOT not in idle_rows,
+      str(idle_rows[-2:]))
+
 # --- Restart asks first, but only when there is something to lose -------------------------------
-# An agent session starts mid-turn, which is exactly what a restart would kill.
+# An agent session starts mid-turn, which is exactly what a restart would kill. One busy session,
+# so the note's subject is the sentence quoted below rather than a plural of it.
 ctl("automation.newClaude")
-clear()
-ctl("automation.updateStage", version="9.9.9")
-c = wait(lambda: update_card(), 10, 0.2)
-ctl("automation.notifAction", sessionId=c["sessionId"])
+wait(lambda: busy_count() == 1, 30, 0.3)
+check("6. the keyboard reaches the update foot", bool(cursor_to_update_foot()),
+      ctl("automation.nav").get("navCursor"))
+key(36, (), "\r")   # ↵ activates the row under the cursor
 pal = wait(lambda: ctl("automation.palette").get("open") and ctl("automation.palette"), 10, 0.2)
-check("16. Restart with a live turn in flight asks first",
+check("7. Restart with a live turn in flight asks first",
       pal and pal["crumb"] == "Restart Synth?", pal and pal.get("crumb"))
-check("17. the restart is the red one — it ends things",
+check("8. the restart is the red one — it ends things",
       pal and pal["danger"] == [True, False], pal and pal.get("danger"))
-check("18. Cancel is preselected, so a stray ↵ costs nothing",
+check("9. Cancel is preselected, so a stray ↵ costs nothing",
       pal and pal["items"][pal["activeIndex"]] == "Cancel",
       pal and (pal.get("items"), pal.get("activeIndex")))
-check("19. asking has not installed anything",
-      ctl("automation.updateStatus").get("installRequested") is False)
 # The reason has to end with the way out, or the dialog reads as "restart or miss the update".
-check("20. it names what is at stake, and the way out",
+check("10. it names what is at stake, and the way out",
       pal and pal["note"] == "1 session is busy — restarting ends what they are doing. "
                              "Leave it and the update installs itself the next time you quit.",
       pal and pal.get("note"))
+check("11. asking has not installed anything",
+      ctl("automation.updateStatus").get("installRequested") is False)
 
-# Answering "not now" must not also lose the reminder — the click that opened the dialog spent
-# the card, so it has to be standing again behind it.
+# Nothing was spent to open this dialog — there is no card any more — so cancelling has only one
+# thing left to get wrong: losing the build itself.
 ctl("automation.paletteEnter")   # Cancel
-check("21. cancelling leaves the reminder standing", bool(wait(lambda: update_card(), 5, 0.2)))
+check("12. cancelling leaves the build waiting",
+      ctl("automation.updateStatus").get("pending") is True)
 
 # --- With nothing to lose, Restart just restarts -------------------------------------------------
+# Cancel pops back to the palette's root frame, which owns the keyboard — Esc hands it back before
+# the next drive.
+key(53)
+wait(lambda: ctl("automation.palette").get("open") is False, 5, 0.2)
 for s in ctl.sessions():
     if s["kind"] != "terminal":
         ctl("automation.requestDelete", sessionId=s["sessionId"])
 ctl("automation.notifDrain")
+wait(lambda: busy_count() == 0, 30, 0.3)
 clear()
-ctl("automation.updateStage", version="9.9.9")
-c = wait(lambda: update_card(), 10, 0.2)
-ctl("automation.notifAction", sessionId=c["sessionId"])
-check("22. with nothing busy, Restart goes straight to the install",
+cursor_to_update_foot()
+key(36, (), "\r")
+check("13. with nothing busy, Restart goes straight to the install",
       wait(lambda: ctl("automation.updateStatus").get("installRequested") is True, 10, 0.2) is not None)
-check("23. and the card goes with it", not update_card())
-# Nothing is left claiming a build is waiting — the About row falls back to "Up to date", and a
-# force-quit flag left standing by a stub installer would have disarmed the next real ⌘Q.
-check("24. the fact goes too, so nothing is still offering it",
+# Nothing is left claiming a build is waiting — About falls back to "Up to date", and a force-quit
+# flag left standing by a stub installer would have disarmed the next real ⌘Q.
+check("14. the fact goes with it, so nothing is still offering a build",
       ctl("automation.updateStatus").get("pending") is False)
+check("15. and the foot button leaves the nav run with it",
+      wait(lambda: UPDATE_FOOT not in nav_rows(), 5, 0.2) is not None, str(nav_rows()[-2:]))
 
 p.terminate()
 sys.exit(result())

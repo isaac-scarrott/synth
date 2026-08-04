@@ -1,21 +1,39 @@
 """agy contrast gate: a tripwire, because Synth holds no lever here at all.
 
-The third agent, and the one where the answer is "nothing to ship". Measured, `agy` 1.1.x:
+The third agent, and the one where the answer is "nothing to ship" — but not for the reason it first
+appeared. Measured, `agy` 1.1.x:
 
   • asks the terminal **nothing** — no OSC 11 background query, no OSC 10, no DEC 2031 subscription,
     so it cannot know a light surface from a dark one and does not try
-  • has no theme setting — not in `--help`, not a subcommand, and not a key in its
-    `~/.gemini/antigravity-cli/settings.json` (which holds only `trustedWorkspaces`)
   • paints hard-coded truecolor (61 SGR sequences on the startup frame alone)
+  • **does have a colour-scheme setting**, with eight options and a live preview
 
-`GetThemeMode` and `THEME_DEVICE` do appear in the binary and are a red herring: they sit among Chrome
-DevTools-protocol and protobuf strings from the embedded browser, not the TUI. There is no
-`AppleInterfaceStyle` read and no `NSAppearance` either.
+That last point corrects an earlier reading of this. It is not in `--help`, not a subcommand, and
+absent from `settings.json` until it is changed, so it looks like it does not exist — it lives in the
+interactive `/config` panel as "Color Scheme" and persists as a plain `colorScheme` string. (The
+`GetThemeMode` and `THEME_DEVICE` strings in the binary remain a red herring: those sit among Chrome
+DevTools-protocol and protobuf strings from the embedded browser. There is no `AppleInterfaceStyle`
+read either.)
 
-So unlike Claude Code (`~/.claude/themes`, watched) and opencode (a theme file carrying both halves),
-there is no file to write and no setting to adopt. This suite exists to measure what that costs and
-to make the day it changes visible. Two failures on Synth's light surface, and they are different
-kinds of thing:
+So Synth *could* write that key, and deliberately does not, because **no option is accessible and the
+default is the best of them.** Measured on a real conversation, 168 runs, on Synth's light surface:
+
+    scheme                      failing   worst overall        worst text
+    terminal (default)                2   1.45                 1.45  code-fence ink
+    light                             4   1.29  separator      2.80
+    colorblind-friendly light         4   1.29  separator      2.80
+    solarized light                   5   1.15  separator      2.89
+
+The reason `terminal` wins is the finding worth keeping: in that mode agy draws most of its UI from
+the terminal's **ANSI palette**, which is the set `TerminalTheme` already tunes to 7:1 on the light
+surface. Synth's palette is simply better than agy's own light theme. Switching schemes throws it
+away — it does repair the code fence, and in exchange breaks the separator to 1.29:1 and adds two
+more failures in the high 2s. One bad value traded for four.
+
+(`solarized-light` with a hyphen is rejected: the valid string is `solarized light`. agy validates
+the key and shows a settings error, so a wrong write is at least loud rather than silent.)
+
+Which leaves two failures on the light surface, and they are different kinds of thing:
 
   • **`#d0d0d0` at 1.45:1** — the ink inside a fenced code block. Hard-coded truecolor in agy;
     only Google can move it.
@@ -47,6 +65,8 @@ recorded in this docstring rather than asserted.
 Recorded, not asserted:
   • that agy still makes no terminal queries. If that ever changes it is *good* news and a reason to
     revisit, which is why it is a note and not a failing check.
+  • the Color Scheme row from the settings panel, so the day agy ships an accessible scheme — or
+    changes which one is default — shows up in this suite's output rather than going unnoticed.
 """
 import os, re, sys
 
@@ -70,6 +90,9 @@ SCREENS = [
     ("banner", [], "Antigravity CLI"),
     ("shortcuts", ["?"], "Insert newline"),
     ("slash-commands", ["\x1b", "/"], "Add a directory to the workspace"),
+    # The backspaces matter: escaping the slash palette leaves the `/` it was opened with sitting in
+    # the input, so typing straight into it produces `//config` and matches nothing.
+    ("settings", ["\x1b", "\x7f\x7f\x7f\x7f", "/config", "\r"], "Color Scheme"),
 ]
 
 
@@ -124,6 +147,11 @@ for dark, label in ((False, "light"), (True, "dark")):
 
     check(f"[{label}] nothing renders below the recorded pin of {PIN}:1",
           worst is not None and worst.ratio >= PIN, f"worst {worst}" if worst else "no runs")
+    scheme = next((l.strip() for l in screen.split("\n") if l.strip().startswith("Color Scheme")), None)
+    if scheme:
+        print(f"  NOTE  [{label}] agy's settings panel reports: {scheme!r} — Synth writes this key "
+              f"deliberately not at all; see the module docstring for the four schemes measured",
+              flush=True)
     if under:
         print(f"  NOTE  [{label}] below WCAG, and not Synth's to move: "
               + "; ".join(f"{ccontrast.hexof(r.fg)} on {ccontrast.hexof(r.bg)} {r.ratio:.2f}:1 "
@@ -149,7 +177,7 @@ probes = {
     "DEC 2031 (theme changes)": len(re.findall(rb"\x1b\[\?2031h", bytes(seen))),
 }
 print(f"  NOTE  agy asked the terminal nothing about its colours: {probes} "
-      f"(answered {answered}) — no detection and no theme setting is why Synth ships no theme "
-      f"for it, so any non-zero here is a reason to revisit", flush=True)
+      f"(answered {answered}) — it cannot tell a light surface from a dark one, so any non-zero "
+      f"here is a reason to revisit", flush=True)
 
 sys.exit(result())

@@ -1674,3 +1674,29 @@ disclosure to dive deeper.
   Synth's own ANSI slot 7, a documented dead end: darkening it for agy's ink drops t13's
   slot-7-as-a-fill from 4.5 to 3.64. `ccontrast` gained a **fill** role (block elements are surfaces,
   not controls — reported, never gated), which retired the `clawd_body` override.
+- **Correction: `agy` does have a colour-scheme setting, and its default is still the right one** — the
+  entry above claims it has none. It has **Color Scheme**, eight options with a live preview, invisible
+  from outside (not in `--help`, not a subcommand, absent from `settings.json` until changed) because it
+  lives in the interactive `/config` panel and persists as a plain `colorScheme` string. Synth still
+  writes nothing, for a better reason: **no option is accessible and the default is the best of them**.
+  On a real conversation, 168 runs, light surface — `terminal` 2 failing / worst text **1.45** (code
+  fence); `light` and `colorblind-friendly light` 4 failing / worst text 2.80; `solarized light` 5
+  failing. `terminal` wins because it draws most of its UI from the **ANSI palette** `TerminalTheme`
+  already tunes to 7:1 — Synth's palette beats agy's own light theme, so switching schemes discards it,
+  repairing the code fence while breaking the separator to 1.29:1 and adding two more: one bad value
+  traded for four. `t26` gains a fourth screen (the settings panel) and prints the Color Scheme row, so
+  an accessible scheme appearing upstream shows up rather than going unnoticed.
+- **Two loose ends closed: the subagent hues are dual-use, and an ANSI light base was declined** — the
+  eight `*_FOR_SUBAGENTS_ONLY` overrides were unverified, which is how the `diffAddedWord` mistake
+  happened. They cannot be rendered from a transcript (a subagent tree never reaches for them; they are
+  assigned live), so the code settled it: `bht()` feeds them to a badge as **`bgColor`**, and the badge
+  resolves its foreground as `textColor ?? "inverseText"` — **white on the token** — while the same
+  token is ink for the rule beside it. Both uses want darker, so the overrides were right: as ink
+  2.75–3.53 → 4.60–4.64, as a fill under white **2.93–3.76 → 4.89–4.93**. `t24` now asserts the second
+  half, which is the `diffAddedWord` check generalised. Separately, `base: "light-ansi"` was measured:
+  Claude Code picks its syntax theme from the resolved base by substring, so an ANSI base routes the
+  highlighter, the diff renderer *and* the hard-coded `#5769f7` through the palette `t13` already gates
+  — **0 failing text runs** (2 chrome, worst 2.19) and no override table at all, versus 6 failing text
+  runs (worst 3.52) today. **Declined on appearance, not contrast**: sixteen colours would make light
+  read visibly flatter than dark, and light and dark ceasing to look like the same app is worse than
+  six legible-but-poor runs. Recorded with the numbers so it stays a decision taken, not one to redo.

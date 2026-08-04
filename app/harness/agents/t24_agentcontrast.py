@@ -52,6 +52,18 @@ AGENT_THEME = os.path.normpath(os.path.join(HERE, "../../Sources/Synth/Ghostty/A
 # in AgentTheme, and named here so a reader can see there are only three of them.
 NON_TEXT = {"promptBorder", "bashBorder", "rate_limit_fill"}
 
+# Tokens Claude Code hands to its badge component as a *background*, which then paints `inverseText`
+# — white — on them unless a caller says otherwise. So each of these has to clear the floor twice:
+# as ink on the surface, and as a fill under white.
+#
+# This is the check that would have caught `diffAddedWord`, where deepening a value as ink drove the
+# ink *on* it from ~17:1 to 4.28:1. It cuts the other way here, which is the point of measuring
+# rather than assuming: the subagent hues are a badge fill, and deepening them lifted white-on-them
+# from 2.93–3.76 (all failing) to 4.89–4.93.
+WHITE = (0xff, 0xff, 0xff)
+BADGE_FILLS = {k for k in ("red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan")}
+BADGE_FILLS = {f"{k}_FOR_SUBAGENTS_ONLY" for k in BADGE_FILLS} | {"professionalBlue", "permission"}
+
 # One colour on screen belongs to no theme at all. Forcing *every* token in the theme to magenta and
 # re-rendering left this one untouched, which is the proof: it is hard-coded in Claude Code, reaches
 # the file path in a `Bash(...)` header, and no override can move it. Recorded so the gate does not
@@ -137,6 +149,18 @@ for token, value in sorted(ov.items()):
 check("every light override clears the floor for its role on #f7f8fa",
       worst is not None and worst[0] >= 0,
       f"tightest {worst[1]} {worst[2]} = {worst[3]:.2f}:1 (needs {worst[4]})" if worst else "none")
+
+tight = None
+for token in sorted(BADGE_FILLS):
+    value = ov.get(token)
+    if value is None:
+        continue          # not overridden: Claude Code's own value, not Synth's claim to make
+    ratio = ccontrast.contrast(WHITE, ccontrast._hex(value.lstrip("#")))
+    if tight is None or ratio < tight[1]:
+        tight = (token, ratio, value)
+check("every overridden badge fill also carries white text at 4.5:1",
+      tight is not None and tight[1] >= ccontrast.TEXT_FLOOR,
+      f"tightest white on {tight[0]} {tight[2]} = {tight[1]:.2f}:1" if tight else "none overridden")
 
 print("\n--- light: Synth's claim, gated at WCAG ---", flush=True)
 gate("light", False, {"text": ccontrast.TEXT_FLOOR, "chrome": ccontrast.CHROME_FLOOR}, "light")

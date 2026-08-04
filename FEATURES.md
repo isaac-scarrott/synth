@@ -1605,3 +1605,7 @@ disclosure to dive deeper.
 - **Tabs-mode branches carry their session facts without growing a third tree level** — the branch
   row becomes a 46px two-line summary (`N sessions · activity`) with a fixed PR/status rail; classic
   sidebar mode keeps its original compact disclosure row. Both designs + native app.
+- **A waiting build gets a button in the sidebar foot, in the mark's own hue** — Settings drops its
+  `⌘,` hint (unchanged shortcut, still in ⌘? and ⌘K); a `Restart to update` row washed in the icon's
+  champagne stands above it for as long as a downloaded build sits unapplied. The update notification
+  card is gone — a waiting build never toasts, both its surfaces are pull. Both designs.

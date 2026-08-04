@@ -86,6 +86,10 @@
     --accent-rgb: 168,96,56; /* drives every rgba(var(--accent-rgb),A) ring/wash so hue flips per-theme in one edit */
     --on-accent: #ffffff;    /* foreground on an --accent fill (never #fff on the dark champagne button) */
     --focus: #1e2126;        /* active-tab bar — the mark's own pair: charcoal on light, champagne on dark */
+    /* The app icon's champagne mark, as a hue the shell can use. Worn only by the update button,
+       which is why it is not called an accent: the accents mean states, this means Synth itself. */
+    --update-ink: #7f6130;   /* the mark taken down far enough to read on a near-white panel (5.2:1) */
+    --update-rgb: 127,97,48; /* drives the wash + hairline, so the hue flips per theme in one edit */
     --titlebar-h: 50px;
     --radius-app: 14px;
     --radius-panel: 20px;
@@ -2262,7 +2266,50 @@
   @media (hover: hover) and (pointer: fine) {
     .foot-btn.is-on:hover { background: rgba(var(--accent-rgb),0.14); color: var(--ink-open); }
   }
-  .foot-btn__kbd { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-faint); font-family: var(--mono); }
+  .foot-btn__meta { margin-left: auto; font-size: 11px; font-weight: 500; font-family: var(--mono); }
+
+  /* ---- The waiting build, as a control ------------------------------------------------------
+     The update already speaks in the notification deck and in Settings → About, but both are
+     transient or buried: dismiss the card and the only standing trace of a downloaded build is
+     a row you have to go looking for. So the foot holds one while a build waits, directly above
+     Settings — the foot grows upward, so Settings never moves under the cursor.
+
+     A champagne wash rather than a champagne slab. A filled brand-coloured button here would be
+     the loudest thing in a shell built almost entirely out of hairlines and washes, and it would
+     be shouting on behalf of housekeeping — the build is already downloaded and installs itself
+     the next time you quit. So it takes the same shape the rest of the shell uses to say "this
+     row is in a state": a tinted fill and a hairline, one step up from Settings sitting beside
+     it (full-strength label, 600, against Settings' quieter tier).
+
+     The hue is the mark's, not a functional accent — which keeps it clear of every state that is
+     already spoken for (copper accent, slate-blue needs-input, green finished, red error). Like
+     `--accent` it flips per theme rather than holding one hex: the champagne itself over dark,
+     and on light the same hue taken down far enough to read on a near-white panel, because a
+     pale champagne tint over a pale panel is no tint at all. Tinting light with the champagne's
+     own value instead goes olive the moment it lands on the dark sidebar.
+
+     The version rides the slot ⌘, used to occupy. */
+  .foot-btn--update {
+    margin-bottom: 4px;
+    background: rgba(var(--update-rgb),0.13);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 0.5px rgba(var(--update-rgb),0.3);
+    animation: foot-in 220ms var(--ease-out);
+  }
+  @keyframes foot-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .foot-btn--update svg { color: var(--update-ink); }
+  .foot-btn--update span { font-weight: 600; }
+  .foot-btn--update .foot-btn__meta { color: var(--ink-4); }
+  @media (hover: hover) and (pointer: fine) {
+    .foot-btn--update:hover { background: rgba(var(--update-rgb),0.2); color: var(--ink); }
+    .foot-btn--update:hover svg { color: var(--update-ink); }
+  }
+  /* the shared cursor ring would swap the wash out for a neutral one; same ring, drawn in the
+     row's own hue so the wash survives being selected */
+  body.kbd .foot-btn--update.sel {
+    background: rgba(var(--update-rgb),0.2);
+    box-shadow: inset 0 0 0 1.5px rgba(var(--update-rgb),0.7);
+  }
 
   /* ---- Settings: a flat, fully-visible scrolling list rendered in the content pane.
      Two tabs in the pane header — Synth (app settings + the defaults every project starts
@@ -2586,6 +2633,8 @@
     --accent-rgb: 238,224,205;
     --on-accent: #191b1f;    /* charcoal on the dark champagne button (13.3:1) */
     --focus: #eee0cd;        /* the champagne mark */
+    --update-ink: #eee0cd;   /* on dark the glyph needs no taking down — it is the mark */
+    --update-rgb: 236,206,155; /* the mark's chroma restored: at 13% its own low saturation reads grey */
     --input: #7ea6dc;
     --input-rgb: 126,166,220;
     --copper: #c2724c;       /* keeps the copper here so it stays distinct from the pale champagne accent */
@@ -3011,10 +3060,14 @@
       </nav>
 
       <div class="sidebar__foot">
+        <button class="foot-btn foot-btn--update" id="applyUpdateBtn" hidden>
+          <svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm45.66-93.66a8,8,0,0,1,0,11.32l-40,40a8,8,0,0,1-11.32,0l-40-40a8,8,0,0,1,11.32-11.32L120,148.69V88a8,8,0,0,1,16,0v60.69l26.34-26.35A8,8,0,0,1,173.66,122.34Z"/></svg>
+          <span>Restart to update</span>
+          <span class="foot-btn__meta"></span>
+        </button>
         <button class="foot-btn" id="openSettings" aria-label="Settings">
           <svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.16,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.93l23.72,2.64q1.49,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L94.89,215.8a91.57,91.57,0,0,1-15-6.23L77.39,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L40.93,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L34.7,100.45a91.57,91.57,0,0,1,6.23-15L63.51,83a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,77.39,69l2.51-22.58a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.11,40.2a91.57,91.57,0,0,1,15,6.23L172.61,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.8,123.66Z"/></svg>
           <span>Settings</span>
-          <span class="foot-btn__kbd">⌘,</span>
         </button>
       </div>
     </aside>
@@ -3876,7 +3929,7 @@
   //                option is gone for good, so nothing sits in front of one while it burns. An
   //                undo with no clock (an agent quit — agentQuit) is standing instead: it asks,
   //                and it waits.
-  //   1 standing — sticky and asking: needs-input, an error, a failed op, an update waiting. It
+  //   1 standing — sticky and asking: needs-input, an error, a failed op. It
   //                never expires and the sidebar indicator still carries it, so nothing is lost
   //                by ordering these purely by recency.
   //   2 receipt  — self-dismissing and asking nothing: a done toast, a digest, a confirmation.
@@ -4062,9 +4115,8 @@
       const top = notifTop();
       if (!top) return;
       e.preventDefault();
-      // The chord is spent here. Without this, an action that opens a confirm — the update
-      // card's Restart — would watch the same keystroke reach the palette a moment later and
-      // answer the dialog it had just raised.
+      // The chord is spent here. Without this, a card action that opens a confirm would watch the
+      // same keystroke reach the palette a moment later and answer the dialog it had just raised.
       e.stopImmediatePropagation();
       // ⌘↩ fires whatever the front card's own button says: Undo, Open, or — on a card with
       // nowhere to go — dismiss.
@@ -4100,58 +4152,37 @@
     agentQuit(openEl);
   });
 
-  // ===== The update card ====================================================
-  // A new build used to announce itself in exactly one place — Settings → About — which is a
-  // place you only go once you already suspect there is an update. So the updater now speaks
-  // first, in the deck everything else already speaks in.
+  // ===== The waiting build =====================================================================
+  // A downloaded build never interrupts. It has exactly two surfaces, and both are pull: the foot
+  // button, which stands there for as long as the build sits unapplied, and Settings → About,
+  // which says the same thing to anyone who went looking. No toast, ever — not when the download
+  // lands, not once a day afterwards, and no Notification Center banner while Synth is unfocused.
   //
-  // It speaks twice at most: once when a download lands, then once a day for as long as that
-  // build sits unapplied. The card is attention-tier, so it is sticky and carries no countdown
-  // — the decision stays open until you make it — but neutral-inked, because this is the app
-  // talking about its own housekeeping and green still has to mean "your agent finished".
-  //
-  // It is the one attention card that never posts Notification Center while Synth is unfocused.
-  // A version you were not waiting for does not earn a system banner over the app you were
-  // actually using; it waits in the deck for you to come back.
-  //
-  // Nothing here is urgent, and the copy says so. The build is already downloaded and installs
-  // itself the next time you quit, so `Restart` is a shortcut rather than a price and the ×
-  // ("not now") is a complete answer. The reminder returns tomorrow wearing the only fact that
-  // changed by then: how long it has been waiting.
+  // The deck is where work speaks: an agent needs you, a run failed, an operation finished. A
+  // version you were not waiting for is not that, and putting it there taught you to read the
+  // deck as interruptible-by-housekeeping. Nothing here is urgent and the design now says so
+  // structurally rather than in copy — the build is already downloaded and installs itself the
+  // next time you quit, so `Restart to update` is a shortcut and ignoring it is a complete answer.
   const APP_VERSION = '0.9.1';        // the build this mock claims to be running
   const UPDATE_VERSION = '0.9.2';     // what the demo updater finds waiting
-  const UPDATE_REMIND_MS = 24 * 60 * 60 * 1000;
-  const update = { version: null, since: 0, card: null, timer: 0 };
+  const update = { version: null };
 
-  // Settings is the pull surface for the same fact, so it can never disagree with the card.
+  // Settings is the other surface for the same fact, so it can never disagree with the button.
   const refreshSettings = () => { if (content.querySelector('.set-body')) renderSettings(); };
+
+  const updateBtn = document.getElementById('applyUpdateBtn');
+  updateBtn.addEventListener('click', () => restartForUpdate());
+  function syncUpdateBtn() {
+    // a cursor parked on it would otherwise be stranded on a hidden button
+    if (!update.version && selEl === updateBtn) select(document.getElementById('openSettings'));
+    updateBtn.hidden = !update.version;
+    updateBtn.querySelector('.foot-btn__meta').textContent = update.version || '';
+  }
 
   function updateFound(version) {
     update.version = version;
-    update.since = Date.now();
-    showUpdateCard();
-  }
-
-  // Raising re-raises: a dismissed card comes back, and one still standing is rebuilt, so the
-  // daily reminder returns to the front of the deck instead of ageing quietly behind newer news.
-  function showUpdateCard() {
-    clearTimeout(update.timer);
-    if (update.card) clearNotif(update.card);
-    update.card = raiseSystemNotif({
-      kind: 'neutral', glyph: MARK_UPDATE,
-      what: 'Synth ' + update.version + ' is ready', sub: updateSub(),
-      act: { label: 'Restart', run: restartForUpdate },
-    });
-    update.timer = setTimeout(showUpdateCard, UPDATE_REMIND_MS);
     refreshSettings();
-  }
-
-  // The first card is news; every card after it is a reminder, and by then the only thing that
-  // has changed is how long you have been putting it off — so that is what the line says.
-  function updateSub() {
-    const days = Math.floor((Date.now() - update.since) / UPDATE_REMIND_MS);
-    if (!days) return 'Installs when you quit';
-    return days === 1 ? 'Downloaded yesterday' : 'Downloaded ' + days + ' days ago';
+    syncUpdateBtn();
   }
 
   // Restarting is the shortcut, not the price — but it ends every live turn, so it asks first
@@ -4177,26 +4208,21 @@
     };
   }
 
-  // The real app relaunches into the new build here; the mock says what would happen instead.
+  // The real app relaunches into the new build here, so there is nothing left on screen to tell.
   function applyUpdate() {
-    clearTimeout(update.timer);
-    if (update.card) clearNotif(update.card);
-    update.card = null;
     update.version = null;
-    raiseSystemNotif({ kind: 'neutral', tier: 'ambient', glyph: MARK_UPDATE, life: NOTIF_DONE_MS, what: 'Restarting to install' });
     refreshSettings();
+    syncUpdateBtn();
   }
 
-  // Design demo: ⌥U finds an update, and pressing it again winds the clock on a day so the
-  // daily reminder can be read as it will actually arrive. In the app Sparkle raises these.
+  // Design demo: ⌥U toggles a waiting build, so both foot states are readable side by side. In
+  // the app Sparkle sets this.
   document.addEventListener('keydown', (e) => {
     if (!e.altKey || e.code !== 'KeyU') return;
     const a = document.activeElement;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
     e.preventDefault();
-    if (!update.version) { updateFound(UPDATE_VERSION); return; }
-    update.since -= UPDATE_REMIND_MS;
-    showUpdateCard();
+    if (update.version) applyUpdate(); else updateFound(UPDATE_VERSION);
   });
 
   // ---- mock content, generated purely from (type, name, state) ----
@@ -5475,12 +5501,13 @@
   }
 
   // The single list the keyboard cursor walks. In the main view it's the tree
-  // followed by the Settings foot button — so ↓/j off the last worktree leaf
-  // flows straight into Settings. In Settings it's the settings rows. One list means
+  // followed by the foot buttons — so ↓/j off the last worktree leaf flows straight
+  // into them. In Settings it's the settings rows. One list means
   // every nav keybinding works identically on both screens.
   function activeRows() {
     if (app.classList.contains('settings')) return [...content.querySelectorAll('.set-row')];
-    return [...treeRows(), document.getElementById('openSettings')];
+    const foot = [...document.querySelectorAll('.sidebar__foot .foot-btn:not([hidden])')];
+    return [...treeRows(), ...foot];
   }
   // Where the cursor rests when nothing is explicitly selected: the open session
   // in the tree, or the expanded setting.
@@ -5531,6 +5558,7 @@
   function activateRow(row) {
     if (!row) return;
     if (row.id === 'openSettings') { enterSettings(); return; }
+    if (row === updateBtn) { restartForUpdate(); return; }
     if (row.matches('.set-row')) { activateSetting(row); return; }
     if (canDisclose(row)) { toggle(row.closest('[data-repo]')); return; }
     if (tabsMode && row.matches('.branch')) { openBranch(row); return; }
@@ -8044,8 +8072,8 @@
     const check = content.querySelector('[data-check]');
     if (check) check.addEventListener('click', () => {
       check.textContent = 'Checking…';
-      // Checking by hand lands in the same place as finding one on your own: the card rises,
-      // and this row is redrawn by it. One path, so the two surfaces cannot get out of step.
+      // Checking by hand lands in the same place as finding one on your own: the foot button
+      // appears and this row is redrawn. One path, so the two surfaces cannot get out of step.
       setTimeout(() => { if (update.version) refreshSettings(); else updateFound(UPDATE_VERSION); }, 1400);
     });
     const restart = content.querySelector('[data-restart]');

@@ -718,14 +718,28 @@ struct PaletteFrame {
         }
     }
 
+    /// When it was put away, and — once the sweeper has a verdict — why the folder is still
+    /// there. `ArchiveSweeper.Block.line` calls itself "the ⌘K ctx line" in its own doc, so the
+    /// reason rides here beside the age rather than living only in Settings: ⌘K is where you
+    /// meet an archived worktree first, and "why hasn't this gone yet" is asked where it is seen.
+    /// No verdict (sweep off, wait at Never, nothing evaluated yet) leaves the age alone.
+    private func archivedCtx(_ br: Branch) -> String {
+        let age = store.archiveStatusLine(br)
+        guard let line = store.archiveVerdictLine(br) else { return age }
+        return "\(age) · \(line)"
+    }
+
     /// Everything a project has archived, with why each one is still on disk. Without this the
     /// sweeper is a background process deleting folders the user can't enumerate — and it is
     /// also the whole answer to "why hasn't this been cleaned up yet".
+    /// A row drills in rather than restoring outright: Restore isn't the only thing you come here
+    /// to do — "stop waiting and delete it now" is the other, and a list whose ↵ silently picks
+    /// one of the two verbs can't offer the other at all.
     func archivedFrame(_ ws: Workspace) -> PaletteFrame {
         PaletteFrame(crumb: "Archived", placeholder: "Restore a worktree, or delete one now…") { [self] _ in
             store.archivedBranches(in: ws).map { br in
                 PaletteItem(icon: .phosphor(Phosphor.archive), label: br.name,
-                            ctx: self.store.archiveStatusLine(br),
+                            ctx: self.archivedCtx(br),
                             enter: { self.push(self.archivedBranchFrame(br)) })
             }
         }
@@ -766,17 +780,31 @@ struct PaletteFrame {
     // confirms from every surface, which is the invariant Apple's own apps hold (Mail archives
     // silently from swipe, toolbar and ⌘⌃A; the dialog is bolted to Empty Trash, not to the
     // input device). Cancel is preselected by `initialIndex(for:)`.
-    func confirmDeleteWorktree(_ br: Branch) -> PaletteFrame {
-        PaletteFrame(crumb: "Delete \(br.name)?",
-                     placeholder: "Deletes the worktree folder now. The git branch stays.  ↵ select · esc cancel",
-                     mode: .confirm) { [self] _ in
+    //
+    // One frame, whoever asks: "confirms from every surface" means every surface routes here, so
+    // Settings' trash opens this rather than growing a dialog of its own — which would only be a
+    // second wording of one promise to keep in step. Hence the name + closure form
+    // (`store.requestDeleteArchivedWorktree` is the way in from outside the palette).
+    // The consequence rides the note, not the placeholder, for the reason the restart confirm
+    // below already states: the placeholder ends with the way out, and a way out clipped by an
+    // input field is not one. That also buys room for the half this used to drop — the undo
+    // window, which is the difference between "gone" and "gone unless you say otherwise".
+    func confirmDeleteWorktree(name: String, run: @escaping () -> Void) -> PaletteFrame {
+        PaletteFrame(crumb: "Delete \(name)?",
+                     placeholder: "↵ select · esc cancel",
+                     mode: .confirm,
+                     note: { _ in "Deletes the worktree folder now. The git branch stays, and you can undo for a few seconds after." }) { [self] _ in
             [
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
                             ctx: "removes the folder from disk", danger: true,
-                            enter: { self.runAndClose { self.store.deleteWorktreeNow(br) } }),
+                            enter: { self.runAndClose(run) }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
         }
+    }
+
+    func confirmDeleteWorktree(_ br: Branch) -> PaletteFrame {
+        confirmDeleteWorktree(name: br.name) { [store] in store.deleteWorktreeNow(br) }
     }
 
     /// Restarting into a staged build is the shortcut, not the price — it installs itself on the
@@ -963,7 +991,7 @@ struct PaletteFrame {
                 .map { b, _ in
                     if let row = archived[b.name] {
                         return PaletteItem(icon: .phosphor(Phosphor.archive), label: b.name,
-                                           ctx: self.store.archiveStatusLine(row),
+                                           ctx: self.archivedCtx(row),
                                            enter: { self.runAndClose {
                                                self.store.restoreArchivedBranch(row)
                                            } })
@@ -983,6 +1011,21 @@ struct PaletteFrame {
             }
             return items
         }
+    }
+}
+
+extension AppStore {
+    /// Open the ⌘K confirm for deleting an archived worktree's folder. The Settings pane's trash
+    /// routes here rather than raising a dialog: the app has one confirm surface, and "confirms
+    /// from every surface" means every surface routes to it.
+    /// Rooted first (like `restartForUpdate`) so Cancel and Esc have somewhere to land when the
+    /// palette was closed until the button pressed it.
+    func requestDeleteArchivedWorktree(_ branch: Branch) {
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        activeMenu = nil
+        pal.stack = [pal.rootFrame()]
+        pal.push(pal.confirmDeleteWorktree(branch))
     }
 }
 

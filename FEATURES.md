@@ -1627,6 +1627,14 @@ disclosure to dive deeper.
   pinned where it ships, not gated. New `t24_agentcontrast` replays a real session through a small
   terminal emulator and measures every run of ink against its own background, parsing the override
   table out of the Swift so the gate cannot pass a theme the app does not write.
+- **The archive becomes a place you can stand, and the design files catch up to `ArchiveSweeper`** —
+  Settings gains the app's clean-up switch and grace picker plus two new disk-budget rows (25
+  worktrees, 50 GB), and a per-project list of what is still on disk carrying each folder's sweeper
+  verdict — `PR still open`, `6 days left` — with Restore and a permanent delete that confirms in
+  the ⌘K frame (one `deleteWorktreeFrame`, two callers — no dialog). The verdicts are the policy,
+  so the section states no rule in prose. A budget brings an unblocked folder's turn forward; it
+  never lets one past a gate. ⌘K's archived list is now project-scoped and drills in, and its
+  confirm is the one Settings' trash opens. Both designs + native app.
 - **A waiting build gets a button in the sidebar foot, in the mark's own hue** — Settings drops its
   `⌘,` hint (unchanged shortcut, still in ⌘? and ⌘K); a `Restart to update` row washed in the icon's
   champagne stands above it for as long as a downloaded build sits unapplied. The update notification

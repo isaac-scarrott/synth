@@ -2375,6 +2375,8 @@
   /* the control sits against the LABEL's line, not the description's */
   .set-row__ctl { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
   .set-row__ctl .set-seg { width: 216px; margin: 0; }
+  /* four options in the width built for three wraps every label onto two lines */
+  .set-row__ctl .set-seg--4 { width: 272px; }
   .set-override__word { font-size: 12px; font-weight: 500; color: var(--text-muted); transition: color 160ms ease; }
   .set-override.is-on .set-override__word { color: var(--ink-3); }
 
@@ -2583,6 +2585,61 @@
     .tpl-add__btn:hover { background: var(--hover-soft); border-color: var(--line-2); color: var(--ink); }
   }
 
+  /* ---- Archived worktrees: the folders this project still has on disk. The list is capped
+     and scrolls in place — a project with thirty archived branches would otherwise push
+     everything under it out of reach, and the rows below are settings you still need. ---- */
+  .arc-total { flex-shrink: 0; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .arc-body { margin-top: 8px; }
+  .arc-list {
+    display: flex; flex-direction: column; gap: 4px;
+    /* four rows and a visibly cut fifth — the cut is the only honest scroll cue on a list
+       with no scrollbar until you touch it */
+    max-height: 178px; overflow-y: auto; overscroll-behavior: contain;
+    /* the rows carry a ring; without the gutter the scrollbar sits on top of it */
+    padding-right: 4px;
+  }
+  .arc-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 6px 9px;
+    background: var(--raised);
+    border: 0.5px solid var(--border);
+    border-radius: 9px;
+    box-shadow: 0 1px 1.5px rgba(0,0,0,0.04);
+  }
+  .arc-icon { display: flex; flex-shrink: 0; color: var(--text-faint); }
+  .arc-icon svg { width: 14px; height: 14px; display: block; }
+  .arc-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .arc-meta { flex-shrink: 0; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .arc-btn {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border: 0.5px solid var(--line);
+    border-radius: 7px;
+    background: var(--raised);
+    font-family: inherit; font-size: 12px; font-weight: 550;
+    color: var(--ink-3);
+    cursor: pointer; white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, transform 110ms var(--ease-out);
+  }
+  /* Why this folder is still here. A blocked row is the normal, correct state — the sweeper
+     protecting work — so it stays a quiet neutral chip; only the row that is about to go gets
+     the accent, because that is the one worth catching before it does. */
+  .arc-why {
+    /* wide enough for the longest Block.line intact — a reason clipped to "commits not pushed
+       anywhere — k…" is worse than no reason, because it looks like the answer is elsewhere */
+    flex-shrink: 0; max-width: 232px;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--hover); color: var(--text-muted);
+    font-size: 10px; font-weight: 550; line-height: 15px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .arc-why--eligible { background: rgba(var(--accent-rgb),0.12); color: var(--ink-open); }
+  .arc-why--checking { font-style: italic; }
+  .arc-policy { margin-top: 9px; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .arc-btn:active { transform: scale(0.97); }
+  @media (hover: hover) and (pointer: fine) {
+    .arc-btn:hover { background: var(--hover-soft); border-color: var(--line-2); color: var(--ink); }
+  }
   /* ---- Empty state: centred icon, one heading, one caption, one button ---- */
   .set-empty { padding: 34px 20px; text-align: center; }
   .set-empty svg { width: 26px; height: 26px; color: var(--text-faint); }
@@ -6027,14 +6084,145 @@
 
   // Archived branches, most recent first. They keep their DOM node — restoring is slotting it
   // back where it stood — which is also why the ⌘K list can show one and put it back.
+  // Each entry carries the project it came from and the folder it is still occupying: the
+  // archive's whole promise is that the folder survives, so the list has to say whose disk
+  // it survives on and at what cost.
   const archived = [];
+  const fmtSize = (mb) => mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB';
+  const arcMb = (list) => list.reduce((n, a) => n + a.mb, 0);
+
+  // Why a given folder is still on disk — the question the list exists to answer. These are
+  // ArchiveSweeper.Block's own lines, minus its "— kept" suffix: on a chip sitting on a row that
+  // is plainly still there, "kept" is the one word the UI has already said. ⌘K puts it back,
+  // where the reason is flat text with no row under it to carry that.
+  const ARC_BLOCK = {
+    unpushed: 'commits not pushed',
+    untracked: 'untracked files',
+    prOpen: 'PR still open',
+    prClosed: 'PR closed, not merged',
+    noPR: 'never merged',
+    sessions: 'sessions attached',
+    precious: 'local-only config',
+    prUnknown: "can't reach GitHub",
+  };
+
+  // The sweeper's verdict for one entry, in the order the Swift one asks.
+  //
+  // The caps only decide WHEN a folder's turn comes; the blocks decide IF it can ever go. That
+  // split is not a nicety — ArchiveSweeper's whole invariant is that every byte it reclaims is
+  // reconstructible from a remote, so a disk budget that evicted the oldest folder regardless
+  // would be a hole straight through it. An over-budget archive full of unpushed work stays put
+  // and says so; the budget is a reason to look, not a licence to delete.
+  function arcVerdict(a) {
+    const p = appSet.archive;
+    if (!p.sweep || !p.graceDays) return { kind: 'off' };
+    if (a.block) return { kind: 'blocked', line: ARC_BLOCK[a.block] };
+    const days = Math.ceil((a.at + p.graceDays * 86400000 - Date.now()) / 86400000);
+    // Over budget, the oldest unblocked folders stop waiting out the rest of their grace.
+    if (days > 0 && !overBudget().has(a)) return { kind: 'waiting', line: days + (days === 1 ? ' day left' : ' days left') };
+    if (!a.secondOpinion) return { kind: 'checking', line: 'checking…' };
+    return { kind: 'eligible', line: 'held aside next sweep' };
+  }
+
+  // The unblocked oldest folders the count/size caps have called early, as a set. Blocked ones
+  // still count toward the budget — they are occupying the disk — they just can't pay it down.
+  function overBudget() {
+    const p = appSet.archive, called = new Set();
+    if (!p.sweep || !p.graceDays) return called;
+    const byAge = [...archived].sort((x, y) => x.at - y.at);
+    let n = archived.length, mb = arcMb(archived);
+    for (const a of byAge) {
+      if ((!p.maxCount || n <= p.maxCount) && (!p.maxGb || mb <= p.maxGb * 1024)) break;
+      if (a.block) continue;
+      called.add(a); n--; mb -= a.mb;
+    }
+    return called;
+  }
+
+  // Everything the sweeper would hold this tick. The bulk brake is the Swift one: past it the
+  // sweeper does nothing at all and asks for a human, because reopening after a long absence
+  // with a dozen suddenly-eligible worktrees is exactly where a human belongs.
+  const ARC_BULK_BRAKE = 5;
+  const arcEligible = () => archived.filter((a) => arcVerdict(a).kind === 'eligible');
+
+  function pruneArchived() {
+    const due = arcEligible();
+    if (!due.length || due.length > ARC_BULK_BRAKE) return;   // brake: a card, not a sweep
+    due.forEach((a) => archived.splice(archived.indexOf(a), 1));
+  }
+
+  // Every surface reads the archive through here, so none of them can show a folder the sweeper
+  // has already held aside — a stale Restore button is a promise the disk can't keep.
+  const liveArchive = (proj) => { pruneArchived(); return archived.filter((a) => a.project === proj); };
+
   function archiveBranch(row) {
-    const name = brName(row);
+    const name = brName(row), project = wsOf(row);
+    const mb = 180 + Math.round(Math.random() * 1400);
     softRemove(rowUnit(row), {
       label: 'Archived ' + name,
       icon: ICON_ARCHIVE,
-      onCommit: (restore) => archived.unshift({ name, restore, at: Date.now() }),
+      onCommit: (restore) => {
+        archived.unshift({ name, project, mb, restore, at: Date.now() });
+        pruneArchived();   // the new folder is what may have pushed the archive over budget
+        refreshSettings();
+      },
     });
+  }
+
+  // Worktrees archived in an earlier session. There is no detached node to slot back, so
+  // restoring one puts the branch row back from scratch — quietly, because you restore from
+  // Settings and the sidebar is right there to show it landing.
+  function reAdd(project, name, activity) {
+    return () => {
+      const head = headByName(project);
+      if (!head) return;
+      const repo = head.closest('[data-repo]');
+      repo.classList.add('repo--open');
+      const wrapper = branchGroupShell(name, activity);
+      wrapper.classList.add('row-enter');
+      repo.querySelector('.branches').appendChild(wrapper);
+      wrapper.querySelectorAll('[data-row]').forEach(addRowActions);
+      rollUpGroups();
+      wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
+    };
+  }
+  // The archive as it usually looks: a couple still inside their grace, and a long tail that has
+  // outlived it and is staying anyway. That tail is the point — an archive where everything old
+  // has already gone is an archive that never has to explain itself.
+  [
+    ['synth',       'fix/webhook-retry',    4, 1180, null],
+    ['synth',       'experiment/new-nav',  19,  640, 'unpushed'],
+    ['synth',       'chore/ci-cache',      44,  310, null],
+    ['synth',       'feat/search-v2',      70, 2460, 'prOpen'],
+    ['synth',       'spike/tabs-strip',   220,  890, 'noPR'],
+    ['synth',       'fix/pane-focus',     310,  410, 'untracked'],
+    ['synth',       'feat/agent-picker',  460, 1620, 'prClosed'],
+    ['aviator-api', 'chore/deps',          31,  520, 'prUnknown'],
+  ].forEach(([project, name, hours, mb, block]) => archived.push({
+    project, name, mb, block,
+    at: Date.now() - hours * 3600000,
+    secondOpinion: hours > 24,   // a cold launch never sweeps on day one
+    restore: reAdd(project, name, hours < 24 ? hours + 'h' : Math.floor(hours / 24) + 'd'),
+  }));
+
+  // Past the confirm it behaves like every other delete in the app: it just does it, and parks
+  // the folder on a destructive undo card for the seconds it takes to change your mind.
+  function deleteArchived(a) {
+    const i = archived.indexOf(a);
+    if (i < 0) return;
+    archived.splice(i, 1);
+    refreshSettings();
+    raiseUndo('Deleted ' + a.name, () => { archived.splice(i, 0, a); refreshSettings(); }, {
+      icon: ICON_TRASH, sub: 'the folder goes when the bar does', destructive: true,
+    });
+  }
+
+  function restoreArchived(a) {
+    const i = archived.indexOf(a);
+    if (i < 0) return;
+    archived.splice(i, 1);
+    a.restore();
+    refreshSettings();
   }
 
   function actionBtn(kind, icon, label, run) {
@@ -7320,7 +7508,7 @@
           { sec: 'act', icon: ICON_GEAR,   label: 'Settings', enter: () => runAndClose(() => enterSettings(head)) },
           { sec: 'act', icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(head)) },
           { sec: 'act', icon: ICON_MINUS,  label: 'Remove', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(head), { label: 'Removed ' + wsName(head) })) },
-          ...(archived.length ? [{ sec: 'act', icon: ICON_ARCHIVE, label: 'Archived · ' + archived.length, enter: () => pushFrame(archivedFrame()) }] : []),
+          ...(liveArchive(name).length ? [{ sec: 'act', icon: ICON_ARCHIVE, label: 'Archived · ' + liveArchive(name).length, enter: () => pushFrame(archivedFrame(head)) }] : []),
         );
         head.closest('[data-repo]').querySelectorAll('.branch').forEach((b) =>
           items.push({ sec: 'list', icon: ICON_BRANCH, label: brName(b), enter: () => pushFrame(branchFrame(b)) }));
@@ -7402,41 +7590,70 @@
   // whose consequence depends on which input device summoned it is not one verb, and Apple's
   // own apps bolt the dialog to irreversibility (Empty Trash), never to the entry point.
   // Cancel is preselected, so a stray ↵ costs nothing.
-  function deleteWorktreeNowFrame(row) {
-    const name = brName(row);
+  //
+  // One frame, whoever asks. "Confirms from every surface" means every surface routes here — the
+  // ⌘K confirm frame is the app's confirm surface, so Settings' trash opens it rather than growing
+  // a dialog of its own, which would only be a second wording of one promise to keep in step.
+  function deleteWorktreeFrame(name, run) {
     return {
       crumb: 'Delete ' + name + '?', mode: 'confirm',
       note: 'Deletes the worktree folder now. The git branch stays, and you can undo for a few seconds after.', placeholder: '↵ select · esc cancel',
       build() {
         return [
-          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(() => softRemove(rowUnit(row), { label: 'Deleted ' + name, icon: ICON_TRASH, destructive: true, sub: 'the folder goes when the bar does' })) },
+          { icon: ICON_TRASH, label: 'Delete worktree', ctx: 'removes the folder from disk', danger: true, enter: () => runAndClose(run) },
           { icon: ICON_CLOSE, label: 'Cancel', enter: () => popFrame() },
         ];
       },
     };
   }
+  const deleteWorktreeNowFrame = (row) => deleteWorktreeFrame(brName(row), () => softRemove(rowUnit(row), {
+    label: 'Deleted ' + brName(row), icon: ICON_TRASH, destructive: true, sub: 'the folder goes when the bar does',
+  }));
 
   // Everything this project has archived, and why each folder is still there. Without this
   // list the clean-up is a background process deleting folders the user cannot enumerate —
   // and it is also the entire answer to "why hasn't this been cleaned up yet".
-  function archivedFrame() {
+  // A row drills in rather than restoring outright, because Restore is not the only thing you
+  // come here to do — "stop waiting and delete it now" is the other, and a list whose ↵ silently
+  // picks one of the two verbs can't offer the other at all (Palette.swift: archivedBranchFrame).
+  function archivedFrame(head) {
+    const proj = wsName(head);
     return {
       crumb: 'Archived', placeholder: 'Restore a worktree, or delete one now…',
       build() {
-        return archived.map((a) => ({
-          icon: ICON_ARCHIVE, label: a.name, ctx: archivedAge(a),
-          enter: () => runAndClose(() => { a.restore(); archived.splice(archived.indexOf(a), 1); }),
+        return liveArchive(proj).map((a) => ({
+          icon: ICON_ARCHIVE, label: a.name, ctx: archivedCtx(a),
+          enter: () => pushFrame(archivedBranchFrame(a)),
         }));
       },
     };
   }
 
-  function archivedAge(a) {
+  function archivedBranchFrame(a) {
+    return {
+      crumb: a.name, placeholder: 'Restore or delete…',
+      build() {
+        return [
+          { icon: ICON_RESET, label: 'Restore', enter: () => runAndClose(() => restoreArchived(a)) },
+          { icon: ICON_TRASH, label: 'Delete worktree now', danger: true, enter: () => pushFrame(deleteWorktreeFrame(a.name, () => deleteArchived(a))) },
+        ];
+      },
+    };
+  }
+
+  function ageText(a) {
     const mins = Math.floor((Date.now() - a.at) / 60000);
-    if (mins < 1) return 'archived just now';
-    if (mins < 60) return 'archived ' + mins + 'm ago';
-    if (mins < 1440) return 'archived ' + Math.floor(mins / 60) + 'h ago';
-    return 'archived ' + Math.floor(mins / 1440) + 'd ago';
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    if (mins < 1440) return Math.floor(mins / 60) + 'h ago';
+    return Math.floor(mins / 1440) + 'd ago';
+  }
+  // Block.line's own doc calls itself "the ⌘K ctx line", so the reason rides here next to the
+  // age rather than only in Settings — the palette is where you meet an archived worktree first.
+  function archivedCtx(a) {
+    const v = arcVerdict(a);
+    if (!v.line) return 'archived ' + ageText(a);
+    return 'archived ' + ageText(a) + ' · ' + v.line + (v.kind === 'blocked' ? ' — kept' : '');
   }
 
   // New branch via ⌘K: empty until you type, then fuzzy-match every local and remote
@@ -7675,7 +7892,15 @@
     sounds: { done: true, input: true, fail: false },
     mcp: { browser: true, app: false },
     analytics: true,
+    // Mirrors SettingsPane.swift's Archived worktrees section and Store's defaults
+    // (archiveSweepEnabled = true, archiveGraceDays = 7). maxCount/maxGb are the disk budget
+    // the app doesn't have yet — see arcVerdict for why they can only bring a folder's turn
+    // forward, never skip the gates it still has to clear.
+    archive: { sweep: true, graceDays: 7, maxCount: 25, maxGb: 50 },
   };
+  const GRACE_OPTS = [[0, 'Never'], [7, '7 days'], [14, '14 days'], [30, '30 days']];
+  const COUNT_OPTS = [[10, '10'], [25, '25'], [50, '50'], [0, 'No cap']];
+  const GB_OPTS = [[20, '20 GB'], [50, '50 GB'], [100, '100 GB'], [0, 'No cap']];
   const SOUNDS = [
     ['done',  'Session finished', 'A background agent stopped working.'],
     ['input', 'Needs input',      'An agent is waiting on you.'],
@@ -7834,6 +8059,30 @@
   // ---- The two tabs ------------------------------------------------------------------
   const SCRIPT_NOTE = '$SYNTH_MAIN = primary checkout · 5 min limit';
 
+  // The clean-up the sweeper performs, and the three knobs on it. Only the switch carries a
+  // description, and only the half of SettingsPane.swift's line you can't read off the controls:
+  // that the sweep touches nothing unrecoverable and never deletes the branch. Each picker states
+  // its own rule — a sentence under "Never · 7 · 14 · 30 days" would only say it again, slower.
+  //
+  // Every row after the switch folds away when it's off: what remains has nothing to configure,
+  // and unlike the agent rows there's no field here whose absence would hide the way back.
+  function archivePolicyRows() {
+    const p = appSet.archive;
+    const pick = (key, opts, label) => `<div class="seg seg--slide set-seg set-seg--4" role="group" aria-label="${label}"><span class="seg__thumb" data-thumb></span>${
+      opts.map(([v, t]) => `<button class="seg__btn${p[key] === v ? ' is-on' : ''}" data-arc-opt="${key}" data-arc-val="${v}">${t}</button>`).join('')}</div>`;
+    const sweep = row('Clean up archived worktrees',
+      desc('Only once the work is safely on a remote. The git branch is never deleted.'),
+      switchCtl(p.sweep, 'archive.sweep'));
+    if (!p.sweep) return sweep;
+    // A budget can only bring an unblocked folder's turn forward — it never lets one through a
+    // gate. That's the load-bearing fact, and it is carried by the verdicts in the list rather
+    // than asserted here, where it would be a caption nobody reads twice.
+    return sweep
+      + row('Wait before cleaning up', '', pick('graceDays', GRACE_OPTS, 'Wait before cleaning up'))
+      + row('Most worktrees archived', '', pick('maxCount', COUNT_OPTS, 'Most worktrees archived'))
+      + row('Most disk archived', '', pick('maxGb', GB_OPTS, 'Most disk archived'));
+  }
+
   function appTab() {
     const sec = (label, cards) => `<section class="set-grp"><div class="set-grp__label">${label}</div><div class="set-card">${cards}</div></section>`;
     return sec('Appearance',
@@ -7849,6 +8098,7 @@
           `<div class="tpl-list" data-tpl>${tplRows(DEF.sessions)}</div>` + tplAddBar()))
     + sec('Agent defaults', AGENTS.map(agentRow).join(''))
     + sec('Privacy', row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics')))
+    + sec('Archived worktrees', archivePolicyRows())
     + sec('Experimental', row('Tabs', desc("Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview."), switchCtl(tabsMode, 'tabs')))
     // The row and the foot button are one fact seen twice, so About states the update outright and
     // offers the same Restart rather than a Check that would only re-find what is already here.
@@ -7888,8 +8138,52 @@
       return row(AGENT_BIN[a], d, '', flagLine(a, sharedFlags, tail));
     }).join('');
 
-    return sec('New worktree', script + sessions) + (agents ? sec('Agents', agents) : '');
+    return sec('New worktree', script + sessions)
+      + (agents ? sec('Agents', agents) : '')
+      + sec('Archived', archivedSection(name));
   }
+
+  // Archiving only means "reversible" if the archive is somewhere you can stand and look at it.
+  // ⌘K can restore one you remember the name of; this is the list you read when you don't — and
+  // it is the only place the disk cost is visible, which is the whole reason to delete one early.
+  function archivedSection(name) {
+    const list = liveArchive(name);
+    const body = list.length
+      ? `<div class="arc-list">${list.map(arcRow).join('')}</div>` + arcPolicy()
+      : `<div class="tpl-empty">Nothing archived.</div>`;
+    return row('Worktrees on disk', '',
+      list.length ? `<span class="arc-total">${list.length} · ${fmtSize(arcMb(list))}</span>` : '',
+      `<div class="arc-body">${body}</div>`);
+  }
+  // The budget is archive-wide but the list above is one project's, so the two numbers are shown
+  // apart — otherwise "6 · 7.0 GB" reads as the budget it is being measured against. Two ratios,
+  // no sentence: a cap you can't see coming is indistinguishable from folders vanishing at random,
+  // and which folders it has called early is already on their own rows.
+  function arcPolicy() {
+    const p = appSet.archive;
+    // A budget with nothing to spend it on is a number, not a fact — the caps can only bring a
+    // folder's turn forward, and with the sweep off or the wait at Never no turn ever comes.
+    if (!p.sweep || !p.graceDays) return '';
+    const parts = [];
+    if (p.maxCount) parts.push(`${archived.length} / ${p.maxCount} worktrees`);
+    // both sides of a ratio share one unit — "7.8 GB / 50 GB" says GB twice to say it once
+    if (p.maxGb) parts.push(`${(arcMb(archived) / 1024).toFixed(1)} / ${p.maxGb} GB`);
+    return parts.length ? `<div class="arc-policy">Archive-wide ${parts.join(' · ')}</div>` : '';
+  }
+  // Keyed by name, not index: a delete re-renders the list, and an index would then point at
+  // whichever row slid up into the gap. The verdict is the row's whole reason for existing —
+  // "why is this still here" is the question, and every row answers it in its own words.
+  const arcRow = (a) => {
+    const v = arcVerdict(a);
+    return `<div class="arc-row">
+    <span class="arc-icon">${ICON_ARCHIVE}</span>
+    <span class="arc-name">${esc(a.name)}</span>
+    <span class="arc-meta">${ageText(a)} · ${fmtSize(a.mb)}</span>
+    ${v.line ? `<span class="arc-why arc-why--${v.kind}">${esc(v.line)}</span>` : ''}
+    <button class="arc-btn" data-arc-restore="${esc(a.name)}">Restore</button>
+    <button class="tpl-x" data-arc-del="${esc(a.name)}" title="Delete permanently" aria-label="Delete ${esc(a.name)} permanently">${ICON_TRASH}</button>
+  </div>`;
+  };
 
   function noProjectTab() {
     return `<section class="set-grp"><div class="set-grp__label">New worktree defaults</div>
@@ -7989,11 +8283,20 @@
     }));
     content.querySelectorAll('[data-theme-opt]').forEach((b) =>
       b.addEventListener('click', () => setTheme(b.dataset.themeOpt)));
+    // Every archive knob changes which folders are due, so each one rebuilds — the verdict on
+    // every row in the project tab is downstream of these three numbers.
+    content.querySelectorAll('[data-arc-opt]').forEach((b) => b.addEventListener('click', () => {
+      appSet.archive[b.dataset.arcOpt] = +b.dataset.arcVal;
+      renderSettings();
+    }));
     content.querySelectorAll('[data-switch]').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.switch === 'tabs') { setTabsMode(!tabsMode); renderSettings(); return; }   // view mode: changes the shell, so it does rebuild
       const [grp, k] = b.dataset.switch.split('.');
       // Nothing else here changes the shape of the pane, so nothing else rebuilds it.
       if (grp === 'agent') { setSwitch(b, agentOn[k] = !agentOn[k]); syncAgentUI(k, agentOn[k]); return; }
+      // The sweep switch takes three rows with it and rewrites every verdict below, so it is the
+      // one switch here that does change the shape of the pane.
+      if (grp === 'archive') { appSet.archive.sweep = !appSet.archive.sweep; renderSettings(); return; }
       setSwitch(b, k ? (appSet[grp][k] = !appSet[grp][k]) : (appSet[grp] = !appSet[grp]));
     }));
 
@@ -8055,6 +8358,16 @@
       list().push({ kind: b.dataset.add, name: TPL_KINDS[b.dataset.add].start });
       renderSettings();
     }));
+    const arcBy = (n) => liveArchive(name).find((a) => a.name === n);
+    content.querySelectorAll('[data-arc-restore]').forEach((b) => b.addEventListener('click', () => {
+      const a = arcBy(b.dataset.arcRestore);
+      if (a) restoreArchived(a);
+    }));
+    content.querySelectorAll('[data-arc-del]').forEach((b) => b.addEventListener('click', () => {
+      const a = arcBy(b.dataset.arcDel);
+      if (a) openPaletteAt(deleteWorktreeFrame(a.name, () => deleteArchived(a)));
+    }));
+
     const addProj = content.querySelector('[data-add-project]');
     if (addProj) addProj.addEventListener('click', () => openPaletteAt(createFrame('workspace')));
     const check = content.querySelector('[data-check]');

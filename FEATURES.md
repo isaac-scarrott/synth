@@ -1605,3 +1605,10 @@ disclosure to dive deeper.
 - **Tabs-mode branches carry their session facts without growing a third tree level** — the branch
   row becomes a 46px two-line summary (`N sessions · activity`) with a fixed PR/status rail; classic
   sidebar mode keeps its original compact disclosure row. Both designs + native app.
+- **The archive becomes a place you can stand, and the design files catch up to `ArchiveSweeper`** —
+  Settings gains the app's clean-up switch and grace picker plus two new disk-budget rows (25
+  worktrees, 50 GB), and a per-project list of what is still on disk carrying each folder's sweeper
+  verdict — `PR still open`, `6 days left` — with Restore and a permanent delete that confirms in
+  the ⌘K frame (one `deleteWorktreeFrame`, two callers — no dialog). The verdicts are the policy,
+  so the section states no rule in prose. A budget brings an unblocked folder's turn forward; it
+  never lets one past a gate. ⌘K's archived list is now project-scoped and drills in. Both designs.

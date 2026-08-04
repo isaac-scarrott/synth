@@ -1700,3 +1700,14 @@ disclosure to dive deeper.
   runs (worst 3.52) today. **Declined on appearance, not contrast**: sixteen colours would make light
   read visibly flatter than dark, and light and dark ceasing to look like the same app is worse than
   six legible-but-poor runs. Recorded with the numbers so it stays a decision taken, not one to redo.
+- **0.26.0 ships** — the version boundary: the eight entries above this line are 0.26.0, `CFBundleVersion`
+  515, tag `v0.26.0`. Four reach the in-app changelog (the chip tab strip, agent light mode, Settings ▸
+  Archived, the update row in the sidebar foot); the other four are the measurement behind them and stay
+  ledger-only, because a decision the reader was never going to make is not a changelog line. The two
+  agent-theme entries collapse into one, since from outside they are one thing — light mode is legible
+  *inside* the agent now — and the line leads with the number a user can check (body text 1.06:1, 57 of 72
+  colours under threshold) rather than with which agent needed which fix. Both artifacts were re-verified
+  from the public bucket with no credentials and quarantine set: the `Synth.app` **inside** the dmg
+  staples on its own, not just the image around it, and every appcast enclosure including all 5 deltas
+  carries an `edSignature`. Landing page unchanged — its buttons point at the stable `Synth.dmg` alias,
+  so the alias moved under it and `synth-site` needed no push.

@@ -1138,11 +1138,12 @@ private struct ArcRow: View {
     private var deleteButton: some View {
         TplHover { hovering in
             Button {
-                // TODO(integrate): route through ⌘K's confirm frame
-                // (`store.requestDeleteArchivedWorktree`). Deleting the folder is the one thing
-                // on this row that doesn't come back, and its undo bar is a thinner brake than
-                // the confirmation this button is meant to open.
-                store.deleteWorktreeNow(branch)
+                // Deleting the folder is the one act on this row that doesn't come back, so it
+                // asks — in ⌘K's confirm frame, not a dialog of this pane's own. The app has one
+                // confirm surface and "confirms from every surface" means every surface routes
+                // to it; a second one here would be a second wording of one promise to keep in
+                // step. Cancel is preselected there, so a stray ↵ costs nothing.
+                store.requestDeleteArchivedWorktree(branch)
             } label: {
                 Phos(path: Phosphor.trash, size: 12)
                     .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)

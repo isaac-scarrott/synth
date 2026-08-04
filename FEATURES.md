@@ -1633,4 +1633,5 @@ disclosure to dive deeper.
   verdict — `PR still open`, `6 days left` — with Restore and a permanent delete that confirms in
   the ⌘K frame (one `deleteWorktreeFrame`, two callers — no dialog). The verdicts are the policy,
   so the section states no rule in prose. A budget brings an unblocked folder's turn forward; it
-  never lets one past a gate. ⌘K's archived list is now project-scoped and drills in. Both designs.
+  never lets one past a gate. ⌘K's archived list is now project-scoped and drills in, and its
+  confirm is the one Settings' trash opens. Both designs + native app.

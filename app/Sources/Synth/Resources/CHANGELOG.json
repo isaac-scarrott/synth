@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.24.0",
+    "date": "2026-08-04",
+    "changes": [
+      "The window is translucent, terminal included — your wallpaper blurs behind the whole shell rather than stopping at the chrome. The blur carries no tint of its own, so light mode stays light instead of going grey, and the terminal participates in the effect rather than sitting on it as an opaque slab. Dark carries a little more opacity than light, because the same amount of light landing on near-black reads far stronger than on near-white.",
+      "Menu bar text is back to the weight every other app draws it at. 0.23.0's lighter text was a setting read per process, so switching it off thinned Synth's own menu bar along with its chrome — the app's chrome now reads about 12% heavier than the design files, which is the price of the OS drawing that text."
+    ]
+  },
+  {
     "version": "0.23.0",
     "date": "2026-08-03",
     "changes": [

@@ -667,7 +667,7 @@ private struct FlagLineField: View {
         .font(.mono(12))
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.tuiBg))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.tuiSolid))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.tuiHair, lineWidth: 1))
     }
 }

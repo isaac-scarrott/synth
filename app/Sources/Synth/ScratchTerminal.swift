@@ -139,11 +139,14 @@ struct ScratchTerminalOverlay: View {
 
     private var card: some View {
         VStack(spacing: 0) {
+            // No inset of its own: ghostty's `window-padding-*` is one global config shared with the
+            // pane's terminal card, and it now carries that card's 15/13 — stacking 14/11 on top of
+            // it here put this surface at 37/30. Ghostty's own 23/19 stands in, 1–2pt off the design's
+            // 22/17, which is not worth a second per-surface config to reclaim.
             TerminalHost(terminal: TerminalManager.shared.view(for: scratch.session, cwd: scratch.cwd))
-                .padding(.top, 11).padding(.horizontal, 14)
             foot
         }
-        .background(Theme.tuiBg)
+        .background(Theme.tuiSolid)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.tuiHair, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.26), radius: 22, y: 12)

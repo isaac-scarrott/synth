@@ -1553,3 +1553,31 @@ disclosure to dive deeper.
   offering `git init` (4–1) — the usual mistake is the *wrong folder*, so one click makes a slip
   permanent, and `init` alone leaves no branch, so Synth would have to author the first commit too;
   plain folders as a second kind of project. Gate: `t23_projectgate`.
+
+## [2026-08-04](docs/features/2026-08-04.md)
+
+- **The window is translucent, terminal included** — the window server blurs the wallpaper behind the
+  window and every surface above it is a plain fill over that one sample. It is deliberately *not* an
+  `NSVisualEffectView`: every AppKit material tints as well as blurs, and that tint multiplies with the
+  surface alpha above it, so `.underWindowBackground` left ~4% of the wallpaper showing and greyed out
+  light mode. `CGSSetWindowBackgroundBlurRadius` (radius 60) adds no tint — what CSS `backdrop-filter`
+  does, and what Ghostty does. Private API, so it is `dlsym`'d once and treated as an enhancement: with
+  it missing the window stays opaque, because the failure to avoid is not "no blur" but a translucent
+  shell over a *sharp* desktop. One blur means one translucent coat (`Theme.windowCoat`), and anything
+  differing from it is a tint **on** it — two compound to near-opaque, so the desktop would show through
+  the pane but not the sidebar, and the sidebar's rounded corners cut a hole through to the wallpaper.
+  Hence `sidebarStep` as `mono(0.04, 0.025)`: a tint of the ink holds its step where a fixed colour
+  breathes with the wallpaper. Dark carries **0.11** more opacity than light (0.97 vs 0.86) and the gap
+  is the finding — the same light is a ~3% change on light's 250 and a ~28% lift on dark's 25, so a
+  near-equal pair read as too transparent in dark and too flat in light at once. Radius before opacity:
+  radius decides how recognisable the desktop is and costs nothing, the coat costs legibility. It cost
+  one grey — `--ink-meta` darkened 16 levels in light, because it cleared 4.5:1 with zero margin and no
+  coat value could hold both (the sidebar only clears again at a fully opaque 1.00). The terminal
+  participates rather than sitting on the effect as an opaque slab: chrome-only and
+  everything-but-terminal were rejected because half the effect costs nearly all the legibility risk and
+  buys none of the impression. Ghostty now paints the whole card, inset included, at 0.55/0.58 — a
+  SwiftUI fill behind the cells made them a second coat and the terminal read as more solid than its own
+  border. Three bugs surfaced, all the same shape — something quietly relying on an opaque surface to
+  occlude what was behind it: that double-coated terminal, the card's own `.shadow` (SwiftUI blurs
+  *alpha*, so it showed through the card it belonged to), and the tabs-mode first-tab bleed (a plain
+  rectangle that an opaque sidebar used to hide all but the corner of).

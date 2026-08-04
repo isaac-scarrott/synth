@@ -60,7 +60,11 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     override func makeBackingLayer() -> CALayer {
         let l = CAMetalLayer()
         l.pixelFormat = .bgra8Unorm
-        l.isOpaque = true
+        // Non-opaque so the cells' own alpha (TerminalTheme's `background-opacity`) reaches the
+        // compositor instead of being flattened here. This layer is usually short-lived —
+        // libghostty swaps in its own at surface creation — so `createSurface` clears opacity on
+        // the replacement too; setting it in both places is what makes it hold either way.
+        l.isOpaque = false
         l.framebufferOnly = false
         return l
     }
@@ -196,6 +200,10 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         }
 
         guard surface != nil else { NSLog("Synth: ghostty_surface_new failed"); return }
+        // The layer we handed AppKit in `makeBackingLayer` is gone: libghostty has replaced it with
+        // its own IOSurface-backed one, which arrives opaque. Clear it here, on the layer that
+        // actually reaches the screen, or the translucent cells composite against black.
+        layer?.isOpaque = false
         updateDisplayID()
         updateSurfaceSize()
         applyTheme()

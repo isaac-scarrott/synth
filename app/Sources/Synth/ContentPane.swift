@@ -78,7 +78,8 @@ struct ContentPane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.panel)
+        // No fill: the shell root already lays `Theme.windowCoat` under both columns, and a second
+        // coat here would compound to a near-opaque pane beside a translucent sidebar.
         // Clicks inside an AppKit-hosted surface (terminal / browser) never reach the pane's
         // tap gesture — the surface consumes the mouseDown — but they DO move first responder.
         // Follow the window's firstResponder so body clicks activate the pane (one observer
@@ -485,18 +486,57 @@ struct PRChip: View {
 private struct TermSurface: View {
     let terminal: GhosttySurfaceView
 
+    private let shape = RoundedRectangle(cornerRadius: 10)
+
+    /// No fill, and no inner padding: ghostty paints the card, including the inset, via
+    /// `window-padding-*` + `window-padding-color = background`. Both used to live here, and with a
+    /// translucent terminal that made the cells a *second* coat over this one — the padding band let
+    /// 45% of the desktop through while the cells let 20%, so the terminal read as more solid than
+    /// its own border. One painter, one coat, and the two numbers can no longer drift apart.
     var body: some View {
         TerminalHost(terminal: terminal)
-            .padding(.vertical, 13).padding(.horizontal, 15)
-            .background(Theme.tuiBg)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Theme.tuiHair, lineWidth: 0.5)
-            )
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Theme.tuiHair, lineWidth: 0.5))
+            .background(halo)
+            .padding(14)
+    }
+
+    /// The card's soft drop shadow, cast by an opaque stand-in with the card's own footprint
+    /// punched back out of it.
+    ///
+    /// `.shadow` blurs the view's *alpha*, so hanging it on the card — which is now translucent, so
+    /// the terminal participates in the window's translucency — laid the shadow underneath the whole
+    /// surface, where it showed straight back through as a grey smear across the cells. CSS never had
+    /// the problem: an outer `box-shadow` is clipped to outside the border-box, which is what the
+    /// `.destinationOut` punch reproduces here.
+    ///
+    /// Worth the trouble rather than dropping the shadow, because it carries more of the design than
+    /// it used to: on light the translucent card composites to within a shade of the pane behind it,
+    /// so this halo and the hairline are the only things left saying "card".
+    private var halo: some View {
+        shape
+            .fill(.black)
             .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
             .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
-            .padding(14)
+            .clipShape(OutsideRoundedRect(radius: 10, margin: 24), style: FillStyle(eoFill: true))
+    }
+}
+
+/// Everything within `margin` of the frame *except* a rounded rect the size of the frame — an
+/// even-odd path, so filling or clipping with `FillStyle(eoFill: true)` keeps only the outside.
+///
+/// A blend-mode knockout was the obvious way to do this and the wrong one: `.destinationOut` inside
+/// a `.background` punched straight through the window's translucent coat as well, so the card ended
+/// up sitting on the bare material. A path subtraction composites nothing and guesses nothing.
+private struct OutsideRoundedRect: Shape {
+    let radius: CGFloat
+    /// Has to clear the shadow's own reach (blur radius + offset), or the clip crops the halo.
+    let margin: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path(rect.insetBy(dx: -margin, dy: -margin))
+        p.addPath(Path(roundedRect: rect, cornerRadius: radius))
+        return p
     }
 }
 

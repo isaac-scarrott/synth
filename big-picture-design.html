@@ -19,15 +19,30 @@
 <title>Synth — Big Picture</title>
 <style>
   :root {
-    --canvas: #e9eaee;
-    --panel: #fafbfc;
-    --sidebar: #f0f1f4;
+    /* Translucency. One blur layer and one translucent coat, both on .app — the window. macOS
+       blur only samples what sits behind the *window*: an NSVisualEffectView cannot blur the
+       sibling app layers above it, so nested backdrop-filters would promise a look AppKit can't
+       build. Every surface that differs from the coat is a tint *on* it, never a second
+       translucent layer — two coats compound to near-opaque, so the desktop would show through
+       the pane but not the sidebar, and the sidebar's rounded corners would cut a hole clean
+       through to the wallpaper. The alphas err solid: the desktop is a wash under the app, never
+       a subject, and legibility outranks the effect everywhere the two disagree. */
+    --canvas: #e9eaee;                     /* the desktop the window sits on */
+    --panel: rgba(250,251,252,0.86);       /* the window's one translucent coat */
+    --sidebar: #f0f1f4;                    /* opaque — all that's left is the sidebar's echo inside ⌘? */
+    --sidebar-step: rgba(0,0,0,0.04);      /* the sidebar itself: the coat, one step down the ladder.
+                                              A tint of the ink, not a colour, so the step stays even
+                                              as the wallpaper drags the coat up and down under it. */
     --border: rgba(0, 0, 0, 0.07);
     --border-strong: rgba(0, 0, 0, 0.1);
     --text: #1c1e23;
     --text-muted: #7e808a;
     --text-faint: #a6a8b0;
-    --ink-meta: #6b6e76;     /* one home for meta labels/icons/chevrons — tokenised so they finally flip in dark */
+    --ink-meta: #5b5e66;     /* one home for meta labels/icons/chevrons — tokenised so they finally flip in dark.
+                                Darkened 16 levels when the shell went translucent: at #6b6e76 it cleared 4.5
+                                only just (4.52:1 on the opaque sidebar), so any coat at all dropped it under —
+                                3.56:1 over the wallpaper's dark end. No coat value could hold both; the ramp had
+                                no margin to spend. This buys it back and reads 6.26:1 on an opaque dialog. */
 
     /* themeable surfaces + ink tiers (dark values live in the theme block below) */
     --ink: #1c1e23;          /* primary label */
@@ -43,7 +58,13 @@
     --term-bg: #191b1f;      /* terminal / code surfaces */
     --set-inherit: #8b8e96;  /* an inherited settings field: dimmer INK on --term-bg (clears AA),
                                 never opacity — opacity reads as disabled, not inherited */
-    --tui-bg: #f7f8fa;       /* terminal surface — cool near-white; TUIs that ship their own light theme (Claude Code) build it for #fff, and warmth cost them contrast */
+    --tui-bg: rgba(247,248,250,0.55);  /* terminal surface — cool near-white; TUIs that ship their own light theme (Claude Code) build it for #fff, and warmth cost them contrast.
+                                Alpha is low because it stacks on --panel, which already carries the
+                                translucency: the two composite to a card that still shows the desktop
+                                but never lets the photo's texture into the cells. */
+    --tui-solid: #f7f8fa;    /* the same surface where it must read as raised, not as window: the
+                                scratch terminal is a card floating over a dimmed app, and a
+                                translucent one dissolves into the thing it's covering */
     --tui-fg: #1c1e23;       /* terminal default text — the app's own --ink, so terminal and chrome read as one surface */
     --tui-dim: #5b5e68;      /* terminal dim / comments */
     --tui-red: #a2241a;      /* terminal red — errors */
@@ -113,13 +134,71 @@
     padding: 22px;
   }
 
+  /* ---- Prototype only: the desktop behind the window ----------------------------------------
+     A browser can't sample the real desktop, so translucency gets judged against a fixed stand-in.
+     The photo is the actual wallpaper this was tuned against, vendored like the fonts for the same
+     reason: mid-tone sky over high-frequency slate, which stresses light and dark chrome at once.
+     Nothing here ports to the app, where the real desktop arrives through the window's material. */
+  .desk {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background: var(--canvas) url("img/desktop.webp") center / cover no-repeat;
+  }
+  /* the same photo graded down, rather than a second binary in the repo */
+  :root[data-desk="night"] .desk { filter: brightness(0.35) saturate(0.8); }
+  :root[data-desk="gradient"] .desk { background-image: radial-gradient(125% 95% at 18% 6%, #9fb2c4 0%, #5a6a7d 42%, #2b333f 72%, #14181e 100%); }
+
+  .desk-pick {
+    position: fixed;
+    right: 10px;
+    bottom: 8px;
+    z-index: 400;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.34);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    font-family: var(--mono);
+    font-size: 9px;
+    opacity: 0.3;
+    transition: opacity 140ms ease;
+  }
+  .desk-pick:hover { opacity: 1; }
+  .desk-pick button {
+    border: 0;
+    border-radius: 6px;
+    padding: 3px 7px;
+    background: none;
+    color: rgba(255,255,255,0.66);
+    font: inherit;
+    cursor: pointer;
+  }
+  .desk-pick button.is-on { background: rgba(255,255,255,0.22); color: #fff; }
+
   /* ---- App shell ---- */
   .app {
     position: relative;
+    z-index: 1;
     width: 100%;
     max-width: 1360px;
     height: calc(100vh - 44px);
     max-height: 880px;
+    /* The window: the one blur layer, and the one translucent coat over it.
+
+       The app does NOT get this from an NSVisualEffectView, and the difference decided the alphas
+       above. Every AppKit material tints as well as blurs, and that tint multiplies with the coat
+       exactly the way a second coat would — behind these same alphas, `.underWindowBackground` left
+       about 4% of the wallpaper showing and dragged light mode's near-white down to a flat grey. So
+       the app asks the window server to blur behind the window instead (CGSSetWindowBackgroundBlurRadius,
+       radius 60), which adds no tint at all. That is what `backdrop-filter: blur()` does, which is why
+       this file could be trusted to tune against — and what Ghostty does, which is where the look
+       came from. `saturate()` here has no counterpart in the app; the px radius and the server's are
+       not the same units, so treat 50px as "heavy", not as a number to port. */
+    -webkit-backdrop-filter: saturate(1.4) blur(50px);
+    backdrop-filter: saturate(1.4) blur(50px);
     background: var(--panel);
     border-radius: var(--radius-app);
     box-shadow: var(--shadow);
@@ -173,7 +252,7 @@
        first-tab fill — is occluded by the sidebar's rounded corner rather than painting over it */
     position: relative;
     z-index: 1;
-    background: var(--sidebar);
+    background: var(--sidebar-step);
     border-right: 0.5px solid var(--border);
     border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
     box-shadow:
@@ -283,7 +362,7 @@
     grid-column: 2;
     grid-row: 1;
     min-width: 0;
-    background: var(--panel);
+    /* no fill: .app already carries the coat, and a second one here would compound */
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1271,7 +1350,8 @@
     flex-shrink: 0;
     display: flex; align-items: stretch;
     height: 30px;
-    background: var(--panel);
+    /* no fill of its own: .content has already laid the translucent --panel down, and a second
+       coat of it composites to a near-opaque band across the top of every pane */
     border-bottom: 0.5px solid var(--border);
   }
   .tabstrip__tabs {
@@ -1396,13 +1476,21 @@
      hard square short of the curve. .content clips its own overflow, so the run-on is a bare block
      behind the sidebar rather than the tab itself bleeding past the seam; the two states below are
      mutually exclusive, so they resolve exactly as the tab's own background does. */
+  /* The first tab's fill carried into the wedge the sidebar's rounded top-right corner leaves
+     uncovered, so the fill follows that curve instead of stopping in a hard square short of it.
+     Masked to exactly the wedge, which it did not used to need: the sidebar was an opaque fill and
+     hid the rest of this box for free. It is a translucent tint now, so unmasked the whole
+     rectangle shows straight through the sidebar as a bright block. Height is the radius for the
+     same reason — below the curve the sidebar's edge runs straight, so there is nothing to fill. */
   .tab-bleed {
     display: none;
     position: absolute;
     top: 0;
     left: calc(var(--sidebar-w, 260px) - var(--radius-panel));
     width: var(--radius-panel);
-    height: 30px;
+    height: var(--radius-panel);
+    -webkit-mask: radial-gradient(circle var(--radius-panel) at 0 100%, transparent 99.5%, #000 100%);
+            mask: radial-gradient(circle var(--radius-panel) at 0 100%, transparent 99.5%, #000 100%);
   }
   html[data-tabs="on"] .app:not(.collapsed):has(.tabstrip__tabs > .tab:first-child.tab--active,
       .tabstrip__tabs > .tab-group:first-child > .tab:first-child.tab--active) .tab-bleed {
@@ -2452,8 +2540,15 @@
     --oc-inner: #4b4646;
     --ag-mark: #ffffff;
     --canvas: #0d0f13;
-    --panel: #191b1f;
+    /* Dark carries *far* more opacity than light — the 0.11 between them is the point, not a
+       rounding choice. The same wallpaper light lands completely differently depending on what it
+       lands on: against light's 250 it is a ~3% change and nearly invisible, against dark's 25 it is
+       a ~28% *lift* and the surface goes milky. These are the values tuned against a real desktop;
+       the near-equal pair they replaced read as too transparent in dark and too flat in light at
+       once. Equal effect, wildly unequal alpha. */
+    --panel: rgba(25,27,31,0.97);
     --sidebar: #1d1f24;
+    --sidebar-step: rgba(255,255,255,0.025);   /* the ladder runs the other way in dark */
     --border: rgba(255,255,255,0.09);
     --border-strong: rgba(255,255,255,0.13);
     --text: #e6e8ed;
@@ -2486,7 +2581,8 @@
     --glass: rgba(40,43,48,0.82);
     --chrome: #22252b;
     --term-bg: #121317;
-    --tui-bg: #121317;       /* terminal surface — dark card */
+    --tui-bg: rgba(18,19,23,0.58);   /* terminal surface — dark card, tinting the panel beneath it */
+    --tui-solid: #121317;
     --tui-fg: #e3e5ea;
     --tui-dim: #7e818c;
     --tui-red: #ff8a80;
@@ -2507,6 +2603,7 @@
   }
   /* the window itself: matte black behind the app, hairline seam in dark */
   :root[data-theme="dark"] body { background: #0a0b0d; }
+  :root[data-theme="dark"] .desk { background-color: #0a0b0d; }
   :root[data-theme="dark"] .app { border-color: rgba(255,255,255,0.09); }
   /* the ⌘K glass reads as frosted dark, not a white sheet */
   :root[data-theme="dark"] .cmdk__panel { background: rgba(31,34,40,0.86); }
@@ -2554,7 +2651,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--tui-bg);
+    background: var(--tui-solid);
     color: var(--tui-fg);
     font-family: var(--mono);
   }
@@ -2642,6 +2739,8 @@
         // Tabs is an opt-in view mode (off by default). Stamp it here too so the 2-deep sidebar
         // never flashes its full tree before the main script boots.
         document.documentElement.setAttribute('data-tabs', localStorage.getItem('synth-tabs') === 'on' ? 'on' : 'off');
+        // Prototype backdrop, stamped here for the same reason as the theme: no flash of the wrong one.
+        document.documentElement.setAttribute('data-desk', localStorage.getItem('synth-desk') || 'photo');
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'light');
       }
@@ -2649,6 +2748,13 @@
   </script>
 </head>
 <body>
+  <div class="desk" aria-hidden="true"></div>
+  <!-- Prototype affordance, not a Synth control: judge the translucency against more than one desktop. -->
+  <div class="desk-pick" role="group" aria-label="Prototype backdrop">
+    <button type="button" data-desk-opt="photo">photo</button>
+    <button type="button" data-desk-opt="night">night</button>
+    <button type="button" data-desk-opt="gradient">gradient</button>
+  </div>
   <main class="app is-dev" id="app">
     <div class="resize-handle" id="resizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize · double-click to reset"></div>
     <button class="icon-btn expand-btn" id="expandBtn" aria-label="Expand sidebar">
@@ -7487,6 +7593,22 @@
   }
   themeMql.addEventListener('change', () => { if (themePref === 'system') applyTheme(); });
   applyTheme();
+
+  // Prototype backdrop switcher. Lives with the theme because it's the same kind of knob:
+  // the thing the translucency is being judged against.
+  (() => {
+    const btns = [...document.querySelectorAll('[data-desk-opt]')];
+    const paint = () => {
+      const on = document.documentElement.getAttribute('data-desk');
+      btns.forEach((b) => b.classList.toggle('is-on', b.dataset.deskOpt === on));
+    };
+    btns.forEach((b) => b.addEventListener('click', () => {
+      document.documentElement.setAttribute('data-desk', b.dataset.deskOpt);
+      try { localStorage.setItem('synth-desk', b.dataset.deskOpt); } catch (e) {}
+      paint();
+    }));
+    paint();
+  })();
 
   // App settings. The native app reads these from disk; here they live in memory.
   const appSet = {

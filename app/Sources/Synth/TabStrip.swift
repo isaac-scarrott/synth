@@ -47,7 +47,8 @@ struct TabStrip: View {
             }
         }
         .frame(height: 30)
-        .background(Theme.panel)
+        // No fill of its own: the shell root's coat is already under it, and a second coat would
+        // read as a near-opaque band across the top of every pane.
         .background(GeometryReader { g in
             Color.clear
                 .onAppear { store.tabStripFrame = g.frame(in: .global) }
@@ -98,9 +99,9 @@ private enum StripItem: Identifiable {
 private struct TabChip: View {
     @Environment(AppStore.self) private var store
     let session: Session
-    /// Set on the tab that meets the sidebar seam: its fill runs on underneath the sidebar (which
-    /// RootView stacks above the content), so the sidebar's rounded corner is what ends it rather
-    /// than the fill stopping in a hard square short of the curve (working.html `.tab-bleed`).
+    /// Set on the tab that meets the sidebar seam: its fill runs on into the wedge the sidebar's
+    /// rounded corner leaves uncovered, so the fill follows that curve rather than stopping in a hard
+    /// square short of it (working.html `.tab-bleed`). Only the wedge — see `SidebarCornerWedge`.
     var bleedsUnderSidebar = false
     /// This tab's pane as a fraction rect of the split it belongs to — the map it wears. Nil on a
     /// lone tab, which has no split to map.
@@ -186,10 +187,10 @@ private struct TabChip: View {
             }
         }
         .frame(maxWidth: 240, maxHeight: .infinity)
-        .background(alignment: .leading) {
+        .background(alignment: .topLeading) {
             if bleedsUnderSidebar {
-                Rectangle().fill(fill)
-                    .frame(width: Theme.radiusPanel)
+                SidebarCornerWedge().fill(fill, style: FillStyle(eoFill: true))
+                    .frame(width: Theme.radiusPanel, height: Theme.radiusPanel)
                     .offset(x: -Theme.radiusPanel)
                     .allowsHitTesting(false)
             }
@@ -452,5 +453,23 @@ struct TabDropLine: View {
                 .allowsHitTesting(false)
                 .ignoresSafeArea()
         }
+    }
+}
+
+/// The sliver of tab strip that shows through the sidebar's rounded top-right corner: a
+/// `radiusPanel` square with the corner's own arc subtracted, filled even-odd.
+///
+/// The first tab used to bleed a plain rectangle under the sidebar and let an opaque sidebar hide
+/// all but this wedge. The sidebar is a translucent tint now (`Theme.sidebarStep`), so it hides
+/// nothing — unmasked, that rectangle read as a bright block in the sidebar's corner. The square is
+/// only as tall as the radius for the same reason: below the arc the sidebar's edge runs straight,
+/// so there is no gap left to fill.
+struct SidebarCornerWedge: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        // The corner's arc, centred on the square's bottom-leading corner with the square's radius.
+        path.addPath(Path(ellipseIn: CGRect(x: rect.minX - rect.width, y: rect.minY,
+                                            width: rect.width * 2, height: rect.height * 2)))
+        return path
     }
 }

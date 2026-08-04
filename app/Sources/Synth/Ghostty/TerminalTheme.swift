@@ -59,6 +59,24 @@ enum TerminalTheme {
     /// back the ratio dark gets for free. Dark keeps the default.
     private static let lightFaintOpacity = 0.65
 
+    /// How much of the cell background survives, so the terminal participates in the window's
+    /// translucency instead of sitting on it as an opaque slab. Ghostty paints the whole card — cells
+    /// *and* the `window-padding` inset that frames them — so this is the only alpha the terminal
+    /// surface has. `TermSurface` deliberately lays no fill of its own behind it: when it did, the
+    /// cells were a second coat over that one and the terminal read as more solid than its own border.
+    ///
+    /// Low, and deliberately so. What sits behind the cells is `Theme.windowCoat`, which has already
+    /// taken the wallpaper down to a wash: about 6% of the desktop reaches the cells in light and
+    /// barely 1% in dark, which is what keeps the photo's texture out of the text. Stacking the
+    /// chrome's own alpha here instead would leave a fraction of a percent and the terminal would be
+    /// opaque in all but name.
+    ///
+    /// Ghostty's `background-blur` is not the companion to this: that key asks the window server to
+    /// blur behind a *standalone* Ghostty window, and embedded here there is no such window. Synth
+    /// makes the same request for its own window (`WindowBlur`), and these cells are simply
+    /// translucent over the result.
+    private static let bgOpacity = (light: 0.55, dark: 0.58)
+
     static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
@@ -70,13 +88,14 @@ enum TerminalTheme {
         term = xterm-256color
         cursor-style = block
         mouse-hide-while-typing = true
-        window-padding-x = 8
-        window-padding-y = 6
+        window-padding-x = 23
+        window-padding-y = 19
         window-padding-color = background
         clipboard-read = allow
         clipboard-write = allow
         confirm-close-surface = false
         shell-integration = none
+        background-opacity = \(dark ? Self.bgOpacity.dark : Self.bgOpacity.light)
         """
         // Dark mode overrides only the background: `window-padding-color = background` fills the
         // padding band with it, so this keeps the surface flush with the app's near-black frame

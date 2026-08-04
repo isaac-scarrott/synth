@@ -157,6 +157,11 @@ private struct DevTagBadge: View {
     }
 }
 
+/// The blurred desktop behind the whole shell — working.html's `backdrop-filter` on `.app`, and the
+/// reason that file carries only one blur layer: `.behindWindow` blending samples what is behind the
+/// *window*, so this is the only place in the app where a blur can see the wallpaper at all. Every
+/// surface above it is a plain fill over this one sample.
+///
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -165,13 +170,11 @@ struct RootView: View {
     var body: some View {
         @Bindable var store = store
         ZStack(alignment: .topLeading) {
-            Theme.canvas.ignoresSafeArea()
-
             HStack(spacing: 0) {
                 if !store.sidebarCollapsed {
                     Sidebar()
                         .frame(width: store.sidebarWidth)
-                        .background(Theme.sidebar)
+                        .background(Theme.sidebarStep)
                         .clipShape(.rect(topLeadingRadius: 0, bottomLeadingRadius: 0,
                                          bottomTrailingRadius: Theme.radiusPanel,
                                          topTrailingRadius: Theme.radiusPanel))
@@ -183,7 +186,7 @@ struct RootView: View {
                 }
                 ContentPane()
             }
-            .background(Theme.panel)
+            .background(Theme.windowCoat)
             // Fill the native window edge-to-edge — the real window supplies the frame +
             // rounded corners, so the mock's floating-card inset/border/shadow (which read
             // as a grey margin) are dropped here.

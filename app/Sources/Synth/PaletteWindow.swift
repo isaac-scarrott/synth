@@ -44,6 +44,7 @@ final class PaletteHost {
         // takes key — so the parent's traffic lights stay active-coloured, as before. It just
         // needs to track the parent's frame by hand.
         p.order(.above, relativeTo: parent.windowNumber)
+        Automation.park(p)   // the panel is a window of its own — a driven ⌘K shows nobody a palette
         p.makeKeyAndOrderFront(nil)
         panel = p
         shownModel = id

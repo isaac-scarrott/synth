@@ -4,10 +4,17 @@ import SwiftUI
 ///
 /// ONE strip per branch — never one per pane — the horizontal twin of the sidebar's session
 /// rows (`renderSidebarEcho`). It mirrors the current branch's sessions in sidebar order; the
-/// sessions in the on-screen split bond into a contiguous **cluster** placed where their first
-/// member sits, exactly as the sidebar draws a split as a bonded band. The pane-tree spine
-/// (ADR-0014) is unchanged — a leaf still binds one session; the strip is pure presentation over
-/// the existing `open` / stash model. Only shown while `store.tabsMode` (ContentPane gates it).
+/// sessions in the on-screen split fold into a contiguous **group** placed where their first member
+/// sits — a hairline **tray** the members sit inside, with no fill of its own. A member is an ordinary
+/// tab, and it carries one added thing: an 8pt map of the split on its icon with that tab's own pane
+/// filled. The pane-tree spine (ADR-0014) is unchanged — a leaf still binds one session; the strip is
+/// pure presentation over the existing `open` / stash model. Only shown while `store.tabsMode`
+/// (ContentPane gates it).
+///
+/// Tabs are **chips on a rail**: 28pt rounded chips inset off every edge of a 36pt strip. Nothing is
+/// full-bleed, so there are no seams between tabs, no bar under the open one, and no fill reaching
+/// the sidebar's rounded corner — the open tab lifts off the rail as a card, and that elevation is
+/// the whole of "open". An unopened tab is its label and nothing else.
 struct TabStrip: View {
     @Environment(AppStore.self) private var store
 
@@ -16,38 +23,49 @@ struct TabStrip: View {
     var body: some View {
         HStack(spacing: 0) {
             // Collapsed sidebar: the strip stands in for the pane head that used to host the
-            // expand toggle, so carry it here, cleared past the traffic lights.
+            // expand toggle, so carry it here, cleared past the traffic lights. Its own clearance is
+            // measured from the window edge, so the rail's inset goes on the tab row, not out here.
             if store.sidebarCollapsed {
                 SidebarToggle()
                     .padding(.leading, Theme.trafficLightsClearance)
                     .padding(.trailing, 6)
             }
-            ForEach(items) { item in
-                switch item {
-                // Only a lone tab leading the strip meets the sidebar seam — a leading cluster insets
-                // its chips, and a collapsed sidebar puts the toggle there first.
-                case let .tab(s):
-                    TabChip(session: s,
-                            bleedsUnderSidebar: !store.sidebarCollapsed && item.id == items.first?.id)
-                case let .cluster(members): TabCluster(members: members)
+            FlexRow(spacing: 3) {
+                ForEach(items) { item in
+                    switch item {
+                    case let .tab(s):
+                        TabChip(session: s)
+                    case let .cluster(members):
+                        TabGroup(members: members, maps: branch.map { store.paneRects(for: $0) } ?? [:])
+                    }
                 }
+                NewTabButton()
             }
-            NewTabButton()
-            Spacer(minLength: 8)
+            .padding(.leading, store.sidebarCollapsed ? 0 : 8)
+            // Past the point where every tab is at its floor the row stops shrinking and simply
+            // overruns, exactly as the mock's `overflow: hidden` row does. Masked on the horizontal
+            // only — a plain clip would take the open chip's shadow off with it.
+            .mask { Rectangle().padding(.vertical, -24) }
+            // Served its full ask before the spacer and the PR chip, so the tabs get the room and the
+            // slack lands on the right — an even split would starve them the moment a PR chip appears.
+            .layoutPriority(1)
+            Spacer(minLength: 0)
             // The per-pane header is gone in tabs mode, so the branch's PR relocates here,
             // right-aligned (working.html `.tabstrip__pr`).
             if let pr = branch?.pr {
-                PRChip(pr: pr).padding(.leading, 6).padding(.trailing, 8)
+                PRChip(pr: pr).padding(.leading, 6).padding(.trailing, 12)
             }
         }
-        .frame(height: 30)
-        .background(Theme.panel)
+        // 36 = the 32pt split tray plus 2 — the same 2 the tray gives its own members, so the rail is
+        // no deeper than the run it holds (working.html `.tabstrip`).
+        .frame(height: 36)
+        // No fill and no bottom rule of its own: the shell root's coat is already under it, and the
+        // chips are inset far enough off every edge that nothing needs a seam to stop at.
         .background(GeometryReader { g in
             Color.clear
                 .onAppear { store.tabStripFrame = g.frame(in: .global) }
                 .onChange(of: g.frame(in: .global)) { _, f in store.tabStripFrame = f }
         })
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 
     /// The branch's sessions in sidebar order, with the on-screen split's members folded into one
@@ -86,25 +104,27 @@ private enum StripItem: Identifiable {
 
 // MARK: - Lone tab
 
-/// A lone tab — the session's handle: icon (+ unread dot), name, its live/needs-input signal, and
-/// a hover-revealed close. Active (== the open session) lifts on a raised fill with the focus bar,
-/// echoing the active-pane bar (working.html `.tab` / `.tab--active`).
+/// A tab — the session's handle: icon (+ unread dot), name, its live/needs-input signal, and a
+/// hover-revealed close, on a 28pt rounded chip. Active (== the open session) is the only thing on
+/// the strip carrying a fill, and it lifts: raised behind a hairline, over two soft shadows
+/// (working.html `.tab` / `.tab--active`).
 private struct TabChip: View {
     @Environment(AppStore.self) private var store
     let session: Session
-    /// Set on the tab that meets the sidebar seam: its fill runs on underneath the sidebar (which
-    /// RootView stacks above the content), so the sidebar's rounded corner is what ends it rather
-    /// than the fill stopping in a hard square short of the curve (working.html `.tab-bleed`).
-    var bleedsUnderSidebar = false
+    /// This tab's pane as a fraction rect of the split it belongs to — the map it wears. Nil on a
+    /// lone tab, which has no split to map.
+    var paneMap: CGRect?
     @State private var hovering = false
 
     private var isActive: Bool { store.openSessionID == session.id }
-    /// The tab's own fill — the open tab holds its raised fill under the pointer rather than washing
-    /// back down to the hover tint. The run-on under the sidebar reads this, so it can never disagree.
+    /// The chip's own fill — the open tab holds its raised fill under the pointer rather than washing
+    /// back down to the hover tint.
     private var fill: Color { isActive ? Theme.raised : (hovering ? Theme.rowHover : .clear) }
     // Double-clicking the tab renames it in place, reusing the sidebar row's inline-rename machinery
     // keyed by session id (working.html `startTabRename`) — the field swaps in for the name label.
     private var renaming: Bool { store.renamingRowID == session.id }
+    /// The map overhangs the icon, so a member's name starts further along than a lone tab's.
+    private var contentSpacing: CGFloat { paneMap == nil ? 6 : 9 }
 
     var body: some View {
         // A Button carries the tap (so the drag's highPriorityGesture never swallows the click —
@@ -113,62 +133,64 @@ private struct TabChip: View {
         // to the right edge; the tab fills to a 240pt cap and compresses when the strip is crowded.
         ZStack(alignment: .trailing) {
             if renaming {
-                HStack(spacing: 6) {
-                    TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel)
-                    RenameField(font: .system(size: 12, weight: .medium))
+                HStack(spacing: contentSpacing) {
+                    TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
+                    RenameField(font: .sans(12, 500))
                     Spacer(minLength: 4)
                 }
-                .padding(.leading, 11).padding(.trailing, 6)
+                .padding(.leading, 9).padding(.trailing, 5)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(fill)
-                .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 0.5) }
+                .background(shell)
             } else {
                 Button { store.open(session); focusContent(store) } label: {
-                    HStack(spacing: 6) {
-                        TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel)
+                    HStack(spacing: contentSpacing) {
+                        TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
                         Text(session.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
+                            .font(.sans(12, 500))
+                            .foregroundStyle(isActive ? Theme.ink : Theme.inkMuted)
                             .lineLimit(1).truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         indicator
                         Color.clear.frame(width: 16)   // reserve the close slot (overlaid below)
                     }
-                    .padding(.leading, 11).padding(.trailing, 6)
+                    .padding(.leading, 9).padding(.trailing, 5)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(fill)
-                    .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 0.5) }
-                    // The active-tab bar, echoing the active-pane focus bar.
-                    .overlay(alignment: .bottom) {
-                        Rectangle().fill(Theme.focus).frame(height: 2).opacity(isActive ? 1 : 0)
-                    }
-                    // Copper ring when a dragged tab is about to pair into a split with this one (012).
-                    .overlay {
-                        if store.pairTargetID == session.id {
-                            Rectangle().strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1.5)
-                        }
-                    }
-                    .contentShape(Rectangle())
+                    .background(shell)
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
                 .onDoubleClick { store.beginRename(.session(session)) }
-                TabCloseButton(session: session, visible: hovering || isActive).padding(.trailing, 6)
+                TabCloseButton(session: session, visible: hovering || isActive).padding(.trailing, 5)
             }
         }
-        .frame(maxWidth: 240, maxHeight: .infinity)
-        .background(alignment: .leading) {
-            if bleedsUnderSidebar {
-                Rectangle().fill(fill)
-                    .frame(width: Theme.radiusPanel)
-                    .offset(x: -Theme.radiusPanel)
-                    .allowsHitTesting(false)
-            }
-        }
+        .frame(minWidth: 34, maxWidth: 200)
+        .frame(height: 28)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.11), value: hovering)
         .tabDrag(session)
         // Right-click opens the same ⌘K frame the sidebar row's ⋯ / right-click opens (openRowActions).
         .onSecondaryClick { store.openRowActions(.session(session)) }
         .help(session.title)
+    }
+
+    /// The chip itself. Elevation is the only thing that says "open" here — a hairline plus two soft
+    /// shadows, and no fill at all when the tab is closed. Dark leans on the shadows harder because
+    /// the raised charcoal is a much smaller step off the coat than white is.
+    @ViewBuilder private var shell: some View {
+        let shape = RoundedRectangle(cornerRadius: 8)
+        shape.fill(fill)
+            .overlay {
+                if isActive { shape.strokeBorder(Theme.borderStrong, lineWidth: 0.5) }
+            }
+            .shadow(color: isActive ? Theme.shade(0.04, 0.24) : .clear, radius: 0.5, y: 1)
+            .shadow(color: isActive ? Theme.shade(0.06, 0.30) : .clear, radius: 4, y: 3)
+            // Copper ring + wash when a dragged tab is about to pair into a split with this one (012).
+            .overlay {
+                if store.pairTargetID == session.id {
+                    shape.fill(Theme.accent.opacity(0.12))
+                        .overlay { shape.strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1.5) }
+                }
+            }
     }
 
     // The same status/owner slot the sidebar row carries; a browser owned by an agent wears the
@@ -184,24 +206,61 @@ private struct TabChip: View {
     }
 }
 
-/// The session icon with a quiet blue unread dot at its top-right — coexists with an owned browser's
-/// owner-mark in the indicator slot, and survives inside a cluster (working.html only suppresses the
-/// cluster's status slot, not the unread dot: `.tab--unread .tab__icon::after` vs `.tab-group .tab__ind`).
+/// The session icon carrying up to two corner marks: the quiet blue unread dot at its top-right, and
+/// — on a split member — the pane map at its bottom-right. Opposite corners, each on a plate of the
+/// tab's own fill, so both fit on one 14pt icon without touching.
 private struct TabIcon: View {
     let session: Session
     var size: CGFloat = 14
     var ring: Color = Theme.panel
+    var paneMap: CGRect?
     var body: some View {
         SessionIcon(kind: session.kind, size: size)
             .frame(width: size, height: size)
             .overlay(alignment: .topTrailing) {
                 if session.unread {
+                    // 6pt of blue with the 1.5pt ring OUTSIDE it (working.html's box-shadow spread,
+                    // 9pt overall) — an inset strokeBorder would eat half the dot.
                     Circle().fill(Theme.input)
                         .frame(width: 6, height: 6)
-                        .overlay(Circle().strokeBorder(ring, lineWidth: 1.5))
+                        .background(Circle().fill(ring).frame(width: 9, height: 9))
                         .offset(x: 3, y: -2)
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if let paneMap {
+                    PaneMap(rect: paneMap, plate: ring).offset(x: 4, y: 3)
+                }
+            }
+    }
+}
+
+/// The split at 8pt with this tab's own pane filled — the whole of what marks a member as grouped.
+/// Two tabs wearing the same map are the same split, and the fill says *which* pane, so a member
+/// reads as a position before you look down at the surface (working.html `.tab__map` / `paneMapHTML`).
+///
+/// The 5.7pt inner box leaves the fill an even 0.2 margin inside the outline and a 0.4 gutter
+/// between panes; the plate is the tab's own fill, extended a point past the map so the mark reads
+/// clear of the session icon it sits on.
+private struct PaneMap: View {
+    /// This pane as a fraction rect of the whole surface.
+    let rect: CGRect
+    let plate: Color
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 1.6)
+                .strokeBorder(Theme.accent.opacity(0.45), lineWidth: 1)
+                .frame(width: 6.8, height: 6.8)
+                .offset(x: 0.6, y: 0.6)
+            RoundedRectangle(cornerRadius: 0.7)
+                .fill(Theme.accent)
+                .frame(width: rect.width * 5.7 - 0.4, height: rect.height * 5.7 - 0.4)
+                .offset(x: 1.35 + rect.minX * 5.7, y: 1.35 + rect.minY * 5.7)
+        }
+        .frame(width: 8, height: 8)
+        .background(RoundedRectangle(cornerRadius: 3).fill(plate).frame(width: 10, height: 10))
+        .allowsHitTesting(false)
     }
 }
 
@@ -215,9 +274,10 @@ private struct TabCloseButton: View {
         // × closes through the same confirm/close path as ⌘W (confirms while busy).
         Button { store.requestDelete(.session(session)) } label: {
             Phos(path: Phosphor.close, size: 11)
-                .foregroundStyle(hovering ? Theme.ink2 : Theme.inkFaint)
+                .foregroundStyle(hovering ? Theme.ink : Theme.inkFaint)
                 .frame(width: 16, height: 16)
                 .background(RoundedRectangle(cornerRadius: 4).fill(hovering ? Theme.rowHover : .clear))
+                .padding(.leading, 1)   // outside the pill, so the glyph stays centred in its 16pt
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -236,10 +296,10 @@ private struct NewTabButton: View {
         Button { if let branch = store.currentBranch { store.addToRow(.branch(branch)) } } label: {
             Phos(path: Phosphor.plus, size: 14)
                 .foregroundStyle(hovering ? Theme.ink : Theme.inkMuted)
-                .frame(width: 30)
-                .frame(maxHeight: .infinity)
-                .background(hovering ? Theme.rowHover : Color.clear)
-                .contentShape(Rectangle())
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : .clear))
+                .padding(.leading, 1)
+                .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -247,78 +307,100 @@ private struct NewTabButton: View {
     }
 }
 
-// MARK: - Bonded cluster (an on-screen split)
+// MARK: - The on-screen split's group of tabs
 
-/// The on-screen split's member tabs bonded into one unit — the horizontal echo of the sidebar's
-/// split band (ADR-0005/012): rounded chips on a raised fill with a hairline ring, a small gap
-/// between, the active member accent-ringed (working.html `.tab-group`).
-private struct TabCluster: View {
+/// The split's members, folded into one contiguous run at the first member's slot and enclosed in a
+/// **tray**: a hairline container with nothing behind it (working.html `.tab-group`).
+///
+/// The tray deliberately carries no fill. On this strip a background is what "open" means, so a
+/// filled tray would hand every unfocused member the one signal reserved for exactly one tab. Empty,
+/// a member sits on the bare rail like any other unopened tab and the active member stays the only
+/// card in the strip. Membership is the enclosure; *which* pane is the map each member wears, whose
+/// shape comes from the real pane tree.
+private struct TabGroup: View {
     let members: [Session]
+    /// Each member's pane as a fraction rect of the surface, keyed by session.
+    let maps: [UUID: CGRect]
+
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(members) { ClusterChip(session: $0) }
+        FlexRow(spacing: 2) {
+            ForEach(members) { session in
+                TabChip(session: session, paneMap: maps[session.id])
+            }
         }
-        .padding(.horizontal, 5)
+        .padding(2)
+        .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(Theme.borderStrong, lineWidth: 0.5) }
     }
 }
 
-private struct ClusterChip: View {
-    @Environment(AppStore.self) private var store
-    let session: Session
-    @State private var hovering = false
+// MARK: - The strip's row layout
 
-    private var isActive: Bool { store.openSessionID == session.id }
-    private var renaming: Bool { store.renamingRowID == session.id }
+/// A row that lays its children out the way the mock's flex row does: each at its ideal width when
+/// they all fit, and — when they don't — every child shrunk **in proportion to that ideal**, floored
+/// at its own minimum.
+///
+/// SwiftUI's own HStack divides the shortfall evenly between children, which is the wrong answer
+/// here for the same reason `min-width: auto` was on the web: a split's tray holds N tabs, so an even
+/// split squeezes each of its members N times as hard as the lone tab beside it. A member IS a tab,
+/// so it has to shrink and truncate on exactly the same terms as one.
+private struct FlexRow: Layout {
+    var spacing: CGFloat = 0
 
-    var body: some View {
-        // Button carries the tap (drag can't swallow it); close is a sibling, not nested. Cluster
-        // keeps the unread dot (only the status slot is dropped), and the active member is marked by
-        // the accent ring alone — no bold, matching the sidebar's split band.
-        ZStack(alignment: .trailing) {
-            if renaming {
-                HStack(spacing: 5) {
-                    TabIcon(session: session, size: 13, ring: Theme.raised)
-                    RenameField(font: .system(size: 12, weight: .medium))
-                }
-                .padding(.leading, 9).padding(.trailing, 4)
-                .frame(height: 22)
-                .background(RoundedRectangle(cornerRadius: 7)
-                    .fill(isActive ? Theme.accent.opacity(0.12) : Theme.raised))
-                .overlay(RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(isActive ? Theme.accent.opacity(0.34) : Theme.line, lineWidth: 1))
-            } else {
-                Button { store.open(session); focusContent(store) } label: {
-                    HStack(spacing: 5) {
-                        TabIcon(session: session, size: 13, ring: Theme.raised)
-                        Text(session.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
-                            .lineLimit(1).truncationMode(.tail)
-                        if hovering || isActive { Color.clear.frame(width: 14) }   // reserve close slot
-                    }
-                    .padding(.leading, 9).padding(.trailing, 4)
-                    .frame(height: 22)
-                    .background(RoundedRectangle(cornerRadius: 7)
-                        .fill(isActive ? Theme.accent.opacity(0.12) : Theme.raised))
-                    // Copper pair-to ring while a dragged tab hovers this member's centre (012); else the
-                    // active member is accent-ringed, the rest hairline.
-                    .overlay(RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(store.pairTargetID == session.id ? Theme.accent.opacity(0.7)
-                                      : (isActive ? Theme.accent.opacity(0.34) : Theme.line),
-                                      lineWidth: store.pairTargetID == session.id ? 1.5 : 1))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onDoubleClick { store.beginRename(.session(session)) }
-                if hovering || isActive {
-                    TabCloseButton(session: session, visible: true).padding(.trailing, 2)
-                }
-            }
+    struct Cache { var ideal: [CGFloat] = []; var floor: [CGFloat] = [] }
+
+    func makeCache(subviews: Subviews) -> Cache { measure(subviews) }
+    func updateCache(_ cache: inout Cache, subviews: Subviews) { cache = measure(subviews) }
+
+    private func measure(_ subviews: Subviews) -> Cache {
+        Cache(ideal: subviews.map { $0.sizeThatFits(.unspecified).width },
+              floor: subviews.map { $0.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width })
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        let ideal = cache.ideal.reduce(0, +) + gaps(subviews.count)
+        // Reporting the true floor for a zero proposal is what makes a NESTED row honest: a tray asked
+        // for nothing would otherwise answer nothing, and its members — which never shrink past their
+        // own 34pt floor — would spill out past the hairline enclosing them.
+        let floor = cache.floor.reduce(0, +) + gaps(subviews.count)
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        return CGSize(width: max(floor, min(ideal, proposal.width ?? ideal)),
+                      height: proposal.height ?? height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let widths = resolve(bounds.width, cache: cache, count: subviews.count)
+        var x = bounds.minX
+        for (i, sub) in subviews.enumerated() {
+            sub.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+                      proposal: ProposedViewSize(width: widths[i], height: bounds.height))
+            x += widths[i] + spacing
         }
-        .onHover { hovering = $0 }
-        .tabDrag(session)
-        .onSecondaryClick { store.openRowActions(.session(session)) }
-        .help(session.title)
+    }
+
+    private func gaps(_ count: Int) -> CGFloat { spacing * CGFloat(max(0, count - 1)) }
+
+    /// One pass per child that bottoms out: the overflow is shared in proportion to each remaining
+    /// child's current width, and anything a floored child could not absorb goes round again.
+    private func resolve(_ available: CGFloat, cache: Cache, count: Int) -> [CGFloat] {
+        var w = cache.ideal
+        var over = w.reduce(0, +) + gaps(count) - available
+        var elastic = (0..<count).filter { w[$0] - cache.floor[$0] > 0.5 }
+        while over > 0.5, !elastic.isEmpty {
+            // weighted by the IDEAL, not the already-shrunk width — flex re-runs against the base
+            // size every pass and only freezes items, it never re-bases on what it has taken
+            let basis = elastic.reduce(0.0) { $0 + cache.ideal[$1] }
+            guard basis > 0.5 else { break }
+            var spent: CGFloat = 0
+            for i in elastic {
+                let take = Swift.min(over * cache.ideal[i] / basis, w[i] - cache.floor[i])
+                w[i] -= take
+                spent += take
+            }
+            guard spent > 0.5 else { break }
+            over -= spent
+            elastic = elastic.filter { w[$0] - cache.floor[$0] > 0.5 }
+        }
+        return w
     }
 }
 

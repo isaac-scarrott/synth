@@ -44,6 +44,8 @@ struct WindowChrome: NSViewRepresentable {
             guard let window else { return }
             // Re-assert on every adopt (SwiftUI can reinstall its own delegate on an update).
             guardClose(window)
+            unseal(window)
+            Automation.park(window)   // a driven build's window never reaches the desktop it runs on
             guard window !== self.window else { return }
             release()
             self.window = window
@@ -85,6 +87,21 @@ struct WindowChrome: NSViewRepresentable {
             guard !(window.delegate is CloseGuard) else { return }
             closeGuard.forward = window.delegate
             window.delegate = closeGuard
+        }
+
+        /// Let the desktop reach the window, and ask the window server to blur it. AppKit fills an
+        /// opaque window with `backgroundColor` before the content view draws, which would block the
+        /// wallpaper however translucent `Theme.windowCoat` is — so both of these have to come off
+        /// before any of it means anything. Skipped entirely when the blur is unavailable: the window
+        /// stays opaque rather than showing a sharp desktop through the chrome.
+        ///
+        /// Re-asserted on every adopt, alongside the close guard, because SwiftUI resets window state
+        /// on its own schedule and the blur radius is per-window state the server loses with the window.
+        private func unseal(_ window: NSWindow) {
+            guard WindowBlur.isAvailable else { return }
+            if window.isOpaque { window.isOpaque = false }
+            if window.backgroundColor != .clear { window.backgroundColor = .clear }
+            WindowBlur.apply(to: window)
         }
 
         private static func titlebarContainer(of window: NSWindow) -> NSView? {

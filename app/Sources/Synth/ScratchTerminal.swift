@@ -139,11 +139,14 @@ struct ScratchTerminalOverlay: View {
 
     private var card: some View {
         VStack(spacing: 0) {
+            // No inset of its own: ghostty's `window-padding-*` is one global config shared with the
+            // pane's terminal card, and it now carries that card's 15/13 — stacking 14/11 on top of
+            // it here put this surface at 37/30. Ghostty's own 23/19 stands in, 1–2pt off the design's
+            // 22/17, which is not worth a second per-surface config to reclaim.
             TerminalHost(terminal: TerminalManager.shared.view(for: scratch.session, cwd: scratch.cwd))
-                .padding(.top, 11).padding(.horizontal, 14)
             foot
         }
-        .background(Theme.tuiBg)
+        .background(Theme.tuiSolid)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.tuiHair, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.26), radius: 22, y: 12)
@@ -158,12 +161,12 @@ struct ScratchTerminalOverlay: View {
                 Circle().fill(Theme.working).frame(width: 6, height: 6)
             }
             Text(scratch.branchName)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.mono(11))
                 .foregroundStyle(Theme.inkMuted)
                 .lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
         }
-        .frame(height: 30)
+        .frame(height: 32)
         .padding(.horizontal, 14)
         .padding(.bottom, 2)
     }
@@ -174,19 +177,24 @@ struct ScratchTerminalOverlay: View {
         ModalBackdrop(onDismiss: { store.scratchConfirmOpen = false }) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Close scratch terminal?")
-                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.ink)
+                    .font(.sans(14, 600)).foregroundStyle(Theme.ink)
                 consequence
-                    .font(.system(size: 12.5)).foregroundStyle(Theme.inkMuted)
+                    .font(.sans(13)).lineSpacing(2.6).foregroundStyle(Theme.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
+                // Both wear working.html's `.dialog__btn` — 12.5/550. They carried the padding and
+                // the fill but no font at all, so they were the one thing in this sheet still set
+                // in the system face.
                 HStack(spacing: 8) {
                     Spacer()
                     Button("Cancel") { store.scratchConfirmOpen = false }
                         .buttonStyle(.plain)
+                        .font(.sans(13, 550))
                         .padding(.horizontal, 15).padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised))
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border, lineWidth: 0.5))
                     Button("Close") { store.closeScratchTerminal() }
                         .buttonStyle(.plain)
+                        .font(.sans(13, 550))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 15).padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.danger))
@@ -202,7 +210,7 @@ struct ScratchTerminalOverlay: View {
     private var consequence: Text {
         let job = scratch.runningCommand.isEmpty ? "the running command" : scratch.runningCommand
         return Text("Closing ends ")
-            + Text(job).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.ink)
+            + Text(job).font(.mono(12)).foregroundStyle(Theme.ink)
             + Text(". Nothing in a scratch terminal is saved.")
     }
 }

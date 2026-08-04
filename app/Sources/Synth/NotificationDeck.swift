@@ -161,12 +161,12 @@ private struct NotifCard: View {
             VStack(alignment: .leading, spacing: 1) {
                 if showsWho { who }
                 Text(notif.message ?? notifVerb(displayKind, notif.kind))
-                    .font(.system(size: 12.5, weight: ambient ? .medium : .semibold))
+                    .font(.sans(13, ambient ? 550 : 570))
                     .foregroundStyle(ambient ? Theme.ink2 : Theme.inkOpen)
                     .lineLimit(1).truncationMode(.tail)
                 if let sub = notif.sub {
                     Text(sub)
-                        .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
+                        .font(.sans(11)).foregroundStyle(Theme.inkMuted)
                         .lineLimit(1).truncationMode(.tail)
                 }
             }
@@ -188,11 +188,20 @@ private struct NotifCard: View {
         .clipShape(RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius, style: .continuous))
         .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
         .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
-        .overlay(alignment: .topTrailing) { dismissButton.offset(x: 6, y: -6) }
         // The body still carries the primary action, so the whole card stays a big target — the
         // × and the button sit above it and consume their own clicks.
+        //
+        // Order is load-bearing: the card's hit shape must be pinned UNDER the × overlay, not
+        // over it. A `contentShape` above the × confines everything beneath it to that one
+        // rounded rect — and the × hangs 6pt past the top-right corner, so the only live part of
+        // it was the thin crescent where the disc laps the corner. Its centre, and the whole
+        // outer two thirds, answered nothing: a × that lit up on hover, took the pointer, and
+        // could not be clicked shut unless you happened to aim at its inside edge.
         .contentShape(RoundedRectangle(cornerRadius: NotificationDeck.cornerRadius))
         .onTapGesture { store.runNotifAction(notif.id) }
+        // 9 = the 6pt the disc overhangs the corner by, plus the 3pt of invisible target ring
+        // around it, so the disc itself still lands on working.html's -6/-6.
+        .overlay(alignment: .topTrailing) { dismissButton.offset(x: 9, y: -9) }
         .onHover { hovering = $0 }
         .background(
             GeometryReader { g in
@@ -263,7 +272,7 @@ private struct NotifCard: View {
             }
             .frame(width: 12, height: 12)
             Text(displayTitle)
-                .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
+                .font(.sans(11)).foregroundStyle(Theme.inkMuted)
                 .lineLimit(1).truncationMode(.tail)
         }
     }
@@ -274,7 +283,7 @@ private struct NotifCard: View {
         Button { store.runNotifAction(notif.id) } label: {
             HStack(spacing: 6) {
                 Text(action.label)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.sans(12, 550))
                     .foregroundStyle(action.danger ? Theme.danger : Theme.ink2)
                 if isFront { NotifKeyCaps() }
             }
@@ -303,6 +312,10 @@ private struct NotifCard: View {
                         .overlay(Circle().strokeBorder(Theme.borderStrong, lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 )
+                // An 18pt disc half-hanging off a corner is a mean thing to ask a pointer to
+                // land on, so the target reaches 3pt past what it draws — the ring is invisible
+                // and moves nothing (working.html `.notif__x::before`).
+                .padding(3)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -342,7 +355,7 @@ private struct NotifKeyCaps: View {
         HStack(spacing: 2) {
             ForEach(["⌘", "↩"], id: \.self) { key in
                 Text(key)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.mono(10))
                     .foregroundStyle(Theme.ink4)
                     .lineLimit(1).fixedSize()
                     .frame(minWidth: 15, minHeight: 15)
@@ -388,7 +401,7 @@ private struct MorePill: View {
     let count: Int
     var body: some View {
         Text("+\(count)")
-            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+            .font(.sans(11, 600, tabular: true))
             .foregroundStyle(Theme.inkMuted)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(

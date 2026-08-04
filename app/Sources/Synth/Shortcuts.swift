@@ -7,7 +7,7 @@ struct KeyCap: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .medium))
+            .font(.sans(11, 500))
             .foregroundStyle(Theme.inkMuted)
             .lineLimit(1).fixedSize()
             .frame(minWidth: 17)
@@ -112,6 +112,9 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "−"], label: "Zoom out"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "DevTools"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Device mode"),
+            Shortcut(keys: ["⏎"], label: "Add comment to batch"),
+            Shortcut(keys: ["⌥", "↑"], label: "Widen comment target"),
+            Shortcut(keys: ["⌘", "⌥", "⏎"], label: "Send all comments"),
             Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
         // Simulator sessions are behind the Experimental toggle (ADR-0015), but the sheet lists what
@@ -179,7 +182,7 @@ struct ShortcutsSheet: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("SHORTCUTS")
-                .font(.system(size: 10, weight: .semibold)).kerning(0.6)
+                .font(.sans(10, 600)).kerning(0.6)
                 .foregroundStyle(Theme.navLabel)
                 .padding(.leading, 10).padding(.top, 4).padding(.bottom, 8)
             ForEach(Array(cats.enumerated()), id: \.offset) { i, cat in
@@ -191,7 +194,7 @@ struct ShortcutsSheet: View {
             // Keyboard-first affordance — this sheet is driven by the keyboard.
             HStack(spacing: 6) {
                 KeyCaps(keys: ["↑", "↓"])
-                Text("navigate").font(.system(size: 10.5)).foregroundStyle(Theme.inkMeta)
+                Text("navigate").font(.sans(11)).foregroundStyle(Theme.inkMeta)
                 Spacer(minLength: 0)
                 KeyCap(text: "esc")
             }
@@ -208,7 +211,7 @@ struct ShortcutsSheet: View {
             HStack(spacing: 9) {
                 Phos(path: cat.icon, size: 15).foregroundStyle(Theme.copper).frame(width: 16)
                 Text(cat.name)
-                    .font(.system(size: 14, weight: .semibold)).kerning(-0.1)
+                    .font(.sans(14, 600))
                     .foregroundStyle(Theme.ink)
             }
             .padding(.bottom, 14)
@@ -218,13 +221,13 @@ struct ShortcutsSheet: View {
                         if idx > 0 { Rectangle().fill(Theme.border.opacity(0.6)).frame(height: 0.5) }
                         HStack(spacing: 12) {
                             Text(row.label)
-                                .font(.system(size: 12.5))
+                                .font(.sans(13))
                                 .foregroundStyle(Theme.ink2)
                             Spacer(minLength: 0)
                             HStack(spacing: 3) {
                                 KeyCaps(keys: row.keys)
                                 if let alt = row.alt {
-                                    Text("or").font(.system(size: 10.5))
+                                    Text("or").font(.sans(11))
                                         .foregroundStyle(Theme.inkMeta).padding(.horizontal, 3)
                                     KeyCaps(keys: alt)
                                 }
@@ -256,7 +259,7 @@ private struct CategoryRow: View {
                     .foregroundStyle(selected ? Theme.copper : Theme.inkMuted)
                     .frame(width: 15)
                 Text(name)
-                    .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
+                    .font(.sans(13, selected ? 600 : 500))
                     .foregroundStyle(selected ? Theme.inkOpen : Theme.sessionName)
                 Spacer(minLength: 0)
             }

@@ -45,8 +45,15 @@ struct SynthApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // A driven build shares a desktop with whoever is working on it: no Dock icon, no ⌘Tab
+        // slot, and never the keyboard. Coming front is the one thing a gate run must not do —
+        // it lands mid-sentence in someone else's window (Automation.park takes the screen half).
+        if Automation.isDriven {
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         // Kill the per-focus password-autofill key-view walk before any field can focus — it stalls
         // every native text field by 250–400ms on a loaded tree (see AutoFillSuppression).
         AutoFillSuppression.install()
@@ -67,6 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the updater is what finds and stages a build in the background, and a build nobody
         // ever staged is a card nobody ever sees. No-ops on the dev channel (Updates.controller).
         _ = Updates.controller
+        // Reclaim escaped session processes whenever the machine is tight (SessionProcesses) —
+        // only ever orphans of instances that are gone, never a live row's own dev server.
+        SessionProcesses.startPressureMonitor()
         // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd),
         // and reap any archive hold whose window elapsed while Synth was shut.
         Task.detached(priority: .background) {
@@ -133,7 +143,7 @@ private struct DevTagBadge: View {
         HStack(spacing: 6) {
             Circle().fill(Theme.working).frame(width: 5, height: 5)
             Text("DEV")
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .font(.mono(11, 600))
                 .tracking(1.4)
                 .foregroundStyle(Theme.working)
         }
@@ -147,6 +157,11 @@ private struct DevTagBadge: View {
     }
 }
 
+/// The blurred desktop behind the whole shell — working.html's `backdrop-filter` on `.app`, and the
+/// reason that file carries only one blur layer: `.behindWindow` blending samples what is behind the
+/// *window*, so this is the only place in the app where a blur can see the wallpaper at all. Every
+/// surface above it is a plain fill over this one sample.
+///
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -155,13 +170,11 @@ struct RootView: View {
     var body: some View {
         @Bindable var store = store
         ZStack(alignment: .topLeading) {
-            Theme.canvas.ignoresSafeArea()
-
             HStack(spacing: 0) {
                 if !store.sidebarCollapsed {
                     Sidebar()
                         .frame(width: store.sidebarWidth)
-                        .background(Theme.sidebar)
+                        .background(Theme.sidebarStep)
                         .clipShape(.rect(topLeadingRadius: 0, bottomLeadingRadius: 0,
                                          bottomTrailingRadius: Theme.radiusPanel,
                                          topTrailingRadius: Theme.radiusPanel))
@@ -173,7 +186,7 @@ struct RootView: View {
                 }
                 ContentPane()
             }
-            .background(Theme.panel)
+            .background(Theme.windowCoat)
             // Fill the native window edge-to-edge — the real window supplies the frame +
             // rounded corners, so the mock's floating-card inset/border/shadow (which read
             // as a grey margin) are dropped here.
@@ -308,8 +321,9 @@ struct RootView: View {
             // Typing hides the pointer until the mouse next moves — AppKit auto-reveals it on the
             // next movement, so the cursor stays out of the way while Synth is driven by keyboard
             // (terminal keystrokes route through this local monitor too). Bare modifiers fire
-            // flagsChanged, not keyDown, so a lone ⌘/⇧ never hides it.
-            NSCursor.setHiddenUntilMouseMoves(true)
+            // flagsChanged, not keyDown, so a lone ⌘/⇧ never hides it. The cursor is system-wide,
+            // so a synthetic `automation.key` would hide the cursor of whoever is at the keyboard.
+            if !Automation.isDriven { NSCursor.setHiddenUntilMouseMoves(true) }
             store.pointerStale = true
 
             // Modal Esc must win even while its text field is first responder.
@@ -345,7 +359,8 @@ struct RootView: View {
                 }
                 // ⌘W closes it, like every other Close.
                 if key == "w", event.modifierFlags.contains(.command), !event.modifierFlags.contains(.shift) {
-                    store.requestCloseScratchTerminal(); return nil
+                    if !event.isARepeat { store.requestCloseScratchTerminal() }
+                    return nil
                 }
                 // Esc dismisses only at an idle prompt. With a job in the foreground it is the
                 // shell's, so vim, less and every TUI inside it behave — and the amber dot beside
@@ -361,7 +376,11 @@ struct RootView: View {
             // while the deck is non-empty, so the chord is never stolen otherwise. An undo card
             // outranks every other kind, so "undo wins over jump" falls out of the ordering
             // rather than needing its own branch (working.html notifTop).
-            if event.modifierFlags.contains(.command), event.keyCode == 36 || event.keyCode == 76,
+            // ⌥ is excluded deliberately: ⌘⌥↩ sends a browser's comment batch, and a deck is
+            // non-empty exactly when an agent just finished — the moment you are most likely to
+            // be sending comments — so without the guard the send would be eaten at random.
+            if event.modifierFlags.contains(.command), !event.modifierFlags.contains(.option),
+               event.keyCode == 36 || event.keyCode == 76,
                store.topNotif != nil {
                 store.jumpToTopNotif(); return nil
             }
@@ -392,8 +411,8 @@ struct RootView: View {
                 }
                 return nil
             }
-            // ⌥U stages a build (working.html's ⌥U demo); pressing it again winds the clock on a
-            // day, so the daily reminder can be read as it will actually arrive.
+            // ⌥U toggles a waiting build (working.html's ⌥U demo), so both foot states — the
+            // update button standing above Settings, and Settings alone — are readable in turn.
             if !editing, event.modifierFlags.contains(.option), event.keyCode == 32 {
                 store.debugStageUpdate(); return nil
             }
@@ -534,6 +553,16 @@ struct RootView: View {
                 Task { await cm.exit() }
                 return nil
             }
+            // ⌘⌥⏎ sends the browser's queued comments. Deliberately not ⌘⇧⏎: that is the split
+            // layer's zoom-pane chord, and a parked batch outlives comment mode — overloading it
+            // would mean ⌘⇧⏎ silently shipped feedback to an agent while you were only zooming.
+            if event.modifierFlags.contains(.command), event.modifierFlags.contains(.option),
+               !event.modifierFlags.contains(.shift), event.keyCode == 36 || event.keyCode == 76,
+               let open = store.openSession, open.kind == .browser,
+               let cm = BrowserManager.shared.existing(open.id)?.commentMode, cm.pendingCount > 0 {
+                cm.sendBatch()
+                return nil
+            }
             // Esc exits simulator comment mode, and cancels a composer that is open — the same
             // grammar as the browser's, one row up. Checked before the pane's own key handling so it
             // works while the device has the keys (the pane forwards every character to the guest).
@@ -588,6 +617,9 @@ struct RootView: View {
                 // so it beats the stock ⌘W window-close; only a no-op close (nothing focused, or in
                 // Settings) falls through to let ⌘W close the window as usual.
                 if !shift, !opt, event.keyCode == 13 {
+                    // A held ⌘W is one gesture, not a reaper: auto-repeat is swallowed, so clearing
+                    // a branch takes one press per row and every press is a decision.
+                    if event.isARepeat { return nil }
                     if store.closeContext() { return nil }
                     return event
                 }

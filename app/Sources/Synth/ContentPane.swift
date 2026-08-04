@@ -78,7 +78,8 @@ struct ContentPane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.panel)
+        // No fill: the shell root already lays `Theme.windowCoat` under both columns, and a second
+        // coat here would compound to a near-opaque pane beside a translucent sidebar.
         // Clicks inside an AppKit-hosted surface (terminal / browser) never reach the pane's
         // tap gesture — the surface consumes the mouseDown — but they DO move first responder.
         // Follow the window's firstResponder so body clicks activate the pane (one observer
@@ -89,7 +90,7 @@ struct ContentPane: View {
 
 /// Follows the content window's `firstResponder` (KVO): when a click lands inside an
 /// AppKit-hosted surface, the surface becomes first responder without the pane's tap gesture
-/// ever firing — the keyboard would move while the bar/sidebar stayed on the old pane. Map the
+/// ever firing — the keyboard would move while the sidebar echo stayed on the old pane. Map the
 /// new responder back to the session owning it (terminal or browser surface, or a subview) and
 /// activate that leaf. The `activePane` guard also breaks the loop the other direction sets up:
 /// setActivePane → focusSurface → makeFirstResponder → observer fires → same leaf → stop.
@@ -146,7 +147,7 @@ private struct PaneTreeView: View {
 
     var body: some View {
         if node.isLeaf {
-            // The bar is meaningful only inside a split, so a lone pane stays bare (004 §4).
+            // Activation is meaningful only inside a split — a lone pane has nothing to activate.
             LeafPane(node: node, inSplit: store.isSplit)
         } else {
             SplitContainer(node: node)
@@ -240,13 +241,10 @@ private struct PaneSeam: View {
     }
 }
 
-/// working.html `.pane`: one leaf hosting exactly one session (or a setup skeleton). Inside a
-/// split it carries the active-pane bar — a 2px line across the top edge in the mark colour,
-/// both ends inset by the app radius so it always clears the shell's rounded corners. It lives
-/// at zero alpha on every split pane and only the active one shows it, sweeping in from the
-/// left while the old pane's fades, instead of snapping (`.split .pane--active::after`, 015).
+/// working.html `.pane`: one leaf hosting exactly one session (or a setup skeleton).
 /// Clicking a pane body activates it in place, without tearing down the live surface
-/// (working.html:2230 setActivePane).
+/// (working.html:2230 setActivePane). Which pane is active is named by the sidebar echo's
+/// open tile and, in tabs mode, the active tab's bar — the pane itself stays bare.
 private struct LeafPane: View {
     @Environment(AppStore.self) private var store
     let node: PaneNode
@@ -262,25 +260,12 @@ private struct LeafPane: View {
             // Activate on click without consuming the event, so the terminal/browser/composer
             // still receives it (the mock's non-preventDefault content click).
             .simultaneousGesture(inSplit ? TapGesture().onEnded { store.setActivePane(node) } : nil)
-            .overlay(alignment: .top) {
-                if inSplit {
-                    UnevenRoundedRectangle(bottomLeadingRadius: 2, bottomTrailingRadius: 2)
-                        .fill(Theme.focus)
-                        .frame(height: 2)
-                        .padding(.horizontal, 14)   // --radius-app: clear the shell's rounded corners
-                        .scaleEffect(x: isActive ? 1 : 0, y: 1, anchor: .leading)
-                        .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.2), value: isActive)
-                        .opacity(isActive ? 1 : 0)
-                        .animation(.easeOut(duration: 0.15), value: isActive)
-                        .allowsHitTesting(false)
-                }
-            }
             // Report the pane's frame for the keyboard's spatial focus / resize.
             .background(GeometryReader { g in
                 Color.clear.preference(key: PaneFramesKey.self,
                                        value: [node.id: g.frame(in: .named(ContentPane.contentSpace))])
             })
-            // Keyboard focus follows the ring: when this pane becomes active, hand it first
+            // Keyboard focus follows activation: when this pane becomes active, hand it first
             // responder so the next keystroke reaches its surface, not the pane you left.
             .onChange(of: isActive) { _, active in
                 if active, let sid = node.sessionID { focusSurface(sid) }
@@ -288,7 +273,7 @@ private struct LeafPane: View {
     }
 
     /// Make the active leaf's live surface (terminal / browser) first responder — the keyboard
-    /// half of activation, so ⌘⌥+arrow moves both the ring and the caret.
+    /// half of activation, so ⌘⌥+arrow moves the caret with it.
     private func focusSurface(_ sessionID: UUID) {
         DispatchQueue.main.async {
             if let v = TerminalManager.shared.existingView(sessionID) {
@@ -383,18 +368,18 @@ private struct PaneHead: View {
             SessionIcon(kind: session.kind, size: 15)
                 .frame(width: 15, height: 15)
             Text(session.title)
-                .font(.system(size: tightTitle ? 12.5 : 13, weight: .semibold))
-                .kerning(tightTitle ? -0.19 : -0.13)
+                // One size at any width now: the six-step scale collapsed the old 12.5/13 pair
+                // into 14, so `tightTitle` still drives the spacing but no longer the type.
+                .font(.sans(13, 600))
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)               // ellipsis-truncate, never wrap — a wrapped title is the bar growing
                 .truncationMode(.tail)
                 .layoutPriority(1)
             // Crumb: `<b>workspace</b> / branch` — mono 11, faint, workspace muted.
             if showCrumb, let ws = workspace, let br = branch {
-                (Text(ws.name).foregroundColor(Theme.inkMuted).fontWeight(.medium)
+                (Text(ws.name).foregroundColor(Theme.inkMuted).font(.mono(11, 500))
                     + Text(" / \(br.name)").foregroundColor(Theme.inkFaint))
-                    .font(.system(size: 11, design: .monospaced))
-                    .kerning(-0.11)
+                    .font(.mono(11))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 // Copy the branch name — hover-revealed on the header, like the sidebar kebab.
@@ -479,9 +464,7 @@ struct PRChip: View {
                 // Narrow, the number drops and only the state glyph remains (015).
                 if !bare {
                     Text(verbatim: "#\(pr.number)")
-                        .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                        .kerning(-0.11)
-                        .monospacedDigit()
+                        .font(.mono(12, 500))
                 }
             }
             .foregroundStyle(pr.state.tint)
@@ -506,31 +489,89 @@ struct PRChip: View {
 private struct TermSurface: View {
     let terminal: GhosttySurfaceView
 
+    private let shape = RoundedRectangle(cornerRadius: 10)
+
+    /// No fill, and no inner padding: ghostty paints the card, including the inset, via
+    /// `window-padding-*` + `window-padding-color = background`. Both used to live here, and with a
+    /// translucent terminal that made the cells a *second* coat over this one — the padding band let
+    /// 45% of the desktop through while the cells let 20%, so the terminal read as more solid than
+    /// its own border. One painter, one coat, and the two numbers can no longer drift apart.
     var body: some View {
         TerminalHost(terminal: terminal)
-            .padding(.vertical, 13).padding(.horizontal, 15)
-            .background(Theme.tuiBg)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Theme.tuiHair, lineWidth: 0.5)
-            )
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Theme.tuiHair, lineWidth: 0.5))
+            .background(halo)
+            .padding(14)
+    }
+
+    /// The card's soft drop shadow, cast by an opaque stand-in with the card's own footprint
+    /// punched back out of it.
+    ///
+    /// `.shadow` blurs the view's *alpha*, so hanging it on the card — which is now translucent, so
+    /// the terminal participates in the window's translucency — laid the shadow underneath the whole
+    /// surface, where it showed straight back through as a grey smear across the cells. CSS never had
+    /// the problem: an outer `box-shadow` is clipped to outside the border-box, which is what the
+    /// `.destinationOut` punch reproduces here.
+    ///
+    /// Worth the trouble rather than dropping the shadow, because it carries more of the design than
+    /// it used to: on light the translucent card composites to within a shade of the pane behind it,
+    /// so this halo and the hairline are the only things left saying "card".
+    private var halo: some View {
+        shape
+            .fill(.black)
             .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
             .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
-            .padding(14)
+            .clipShape(OutsideRoundedRect(radius: 10, margin: 24), style: FillStyle(eoFill: true))
+    }
+}
+
+/// Everything within `margin` of the frame *except* a rounded rect the size of the frame — an
+/// even-odd path, so filling or clipping with `FillStyle(eoFill: true)` keeps only the outside.
+///
+/// A blend-mode knockout was the obvious way to do this and the wrong one: `.destinationOut` inside
+/// a `.background` punched straight through the window's translucent coat as well, so the card ended
+/// up sitting on the bare material. A path subtraction composites nothing and guesses nothing.
+private struct OutsideRoundedRect: Shape {
+    let radius: CGFloat
+    /// Has to clear the shadow's own reach (blur radius + offset), or the clip crops the halo.
+    let margin: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path(rect.insetBy(dx: -margin, dy: -margin))
+        p.addPath(Path(roundedRect: rect, cornerRadius: radius))
+        return p
     }
 }
 
 /// working.html `.pane-empty`: centered terminal mark + "No session open".
+///
+/// Nothing open is the honest end of a close, not a failure to recover from — so the pane names the
+/// branch you are still standing in and the chord that starts again. That is what made the old empty
+/// state expensive enough to route around: not that it was empty, but that it was a dead end.
 private struct PaneEmpty: View {
+    @Environment(AppStore.self) private var store
+
     var body: some View {
         VStack(spacing: 12) {
             Phos(path: Phosphor.terminal, size: 26)
                 .foregroundStyle(Theme.inkFaint)
                 .opacity(0.5)
-            Text("No session open")
-                .font(.system(size: 12.5))
-                .foregroundStyle(Theme.inkFaint)
+            Group {
+                if let br = store.currentBranch, let ws = store.workspace(of: br) {
+                    Text("No session open in ") + Text(ws.name).font(.sans(13, 600)) + Text(" / \(br.name)")
+                } else {
+                    Text("No session open")
+                }
+            }
+            .font(.sans(13))
+            .foregroundStyle(Theme.inkFaint)
+            HStack(spacing: 4) {
+                KeyCap(text: "⌘")
+                KeyCap(text: "N")
+                Text("new session")
+            }
+            .font(.sans(13))
+            .foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -559,14 +600,12 @@ private struct WorktreeSetupPane: View {
                     .foregroundStyle(Theme.inkFaint)
                     .frame(width: 15, height: 15)
                 Text(branch.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .kerning(-0.13)
+                    .font(.sans(13, 600))
                     .foregroundStyle(Theme.ink)
                 if let ws = store.workspace(of: branch) {
-                    (Text(ws.name).foregroundColor(Theme.inkMuted).fontWeight(.medium)
+                    (Text(ws.name).foregroundColor(Theme.inkMuted).font(.mono(11, 500))
                         + Text(" / \(branch.name)").foregroundColor(Theme.inkFaint))
-                        .font(.system(size: 11, design: .monospaced))
-                        .kerning(-0.11)
+                        .font(.mono(11))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -582,7 +621,7 @@ private struct WorktreeSetupPane: View {
             VStack(spacing: 12) {
                 SetupSpinner()
                 Text("Setting up worktree…")
-                    .font(.system(size: 12.5))
+                    .font(.sans(13))
                     .foregroundStyle(Theme.inkFaint)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -652,10 +691,10 @@ private struct Placeholder: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "sparkle")
-                .font(.system(size: 34, weight: .light))
+                .font(.sans(34, 300))
                 .foregroundStyle(Theme.copper)
-            Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
-            Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.inkFaint)
+            Text(title).font(.sans(13, 500)).foregroundStyle(Theme.ink)
+            Text(subtitle).font(.sans(11)).foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

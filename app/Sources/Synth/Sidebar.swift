@@ -71,7 +71,7 @@ struct Sidebar: View {
     private var header: some View {
         HStack {
             Text("PROJECT")
-                .font(.system(size: 10.5, weight: .semibold)).kerning(0.6)
+                .font(.sans(11, 600)).kerning(0.55)
                 .foregroundStyle(Theme.navLabel)
             Spacer()
             IconButton(path: Phosphor.plus, size: 14, help: "Add project") {
@@ -88,10 +88,10 @@ private struct EmptySidebarHint: View {
     var body: some View {
         VStack(spacing: 6) {
             Text("No projects yet")
-                .font(.system(size: 12, weight: .medium))
+                .font(.sans(12, 500))
                 .foregroundStyle(Theme.inkMuted)
             Text("Click + to add a git repository")
-                .font(.system(size: 11))
+                .font(.sans(11))
                 .foregroundStyle(Theme.inkFaint)
                 .multilineTextAlignment(.center)
         }
@@ -101,64 +101,108 @@ private struct EmptySidebarHint: View {
     }
 }
 
-// MARK: - Sidebar foot (Settings entry)
+// MARK: - Sidebar foot (Settings entry, and the waiting build above it)
 
-/// working.html `.sidebar__foot` — pinned to the bottom of the left panel. Lights up while
-/// Settings is open (working.html `.foot-btn.is-on`); clicking it toggles Settings.
+/// working.html `.sidebar__foot` — pinned to the bottom of the left panel. Settings lights up
+/// while it is open (working.html `.foot-btn.is-on`); clicking it toggles Settings.
+///
+/// A staged build takes a button of its own directly ABOVE Settings: the foot is bottom-anchored,
+/// so it grows upward and Settings never moves out from under the cursor. The waiting build has
+/// no other standing surface — it never raises a toast — so this and Settings → About are both
+/// there is, and both are pull.
 private struct SidebarFoot: View {
     @Environment(AppStore.self) private var store
-    // The foot button is the last row of the navigable list, so it shows the same keyboard
-    // selection ring as a tree row when the cursor rests on it (F5).
-    private var selected: Bool { store.keyboardActive && store.navCursor == NavID.settingsFoot }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // A foot button is a row of the navigable list, so it shows the same keyboard selection
+    // ring as a tree row when the cursor rests on it (F5).
+    private func selected(_ id: UUID) -> Bool { store.keyboardActive && store.navCursor == id }
     var body: some View {
-        FootButton(icon: Phosphor.gear, title: "Settings", kbd: "⌘,",
-                   selected: selected, active: store.settingsOpen) { store.toggleSettings() }
-            .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
+        VStack(spacing: 4) {
+            if let update = store.stagedUpdate {
+                FootButton(icon: Phosphor.arrowCircleDown, title: "Restart to update",
+                           meta: update.version, selected: selected(NavID.updateFoot),
+                           waiting: true) { store.restartForUpdate() }
+                    // It rises in rather than appearing (working.html `foot-in`, 220ms ease-out
+                    // + 6px), the same entrance a notification card makes — a button that pops
+                    // into the one strip of chrome always on screen reads as a glitch.
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+            FootButton(icon: Phosphor.gear, title: "Settings",
+                       selected: selected(NavID.settingsFoot),
+                       active: store.settingsOpen) { store.toggleSettings() }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: store.stagedUpdate?.version)
+        .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 }
 
 private struct FootButton: View {
     let icon: String
     let title: String
-    var kbd: String? = nil
+    /// The trailing slot ⌘, used to occupy (working.html `.foot-btn__meta`) — now the version of
+    /// the build waiting. Settings dropped its hint: the shortcut is in ⌘? and the ⌘K row, and
+    /// spending the foot's one trailing slot on a reminder of it costs the fact that matters.
+    var meta: String? = nil
     let selected: Bool
     var active = false
+    /// The waiting build (working.html `.foot-btn--update`): a champagne wash and hairline rather
+    /// than a filled slab, which would be the loudest thing in a shell made of hairlines and
+    /// washes — and shouting on behalf of housekeeping that installs itself on the next quit.
+    var waiting = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
+        Group {
+            if waiting {
+                core
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(Theme.updateWash.opacity(hovering || selected ? 0.2 : 0.13)))
+                    // The shared `rowChrome` ring would swap the wash out for the neutral
+                    // selection fill; same primitive, drawn in the row's own hue so the tint
+                    // survives being selected.
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Theme.updateWash.opacity(selected ? 0.7 : 0.3),
+                                      lineWidth: selected ? 1.5 : 0.5))
+            } else {
+                core
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(Theme.accent.opacity(active ? (hovering ? 0.14 : 0.10) : 0)))
+                    .rowChrome(hovering: hovering && !active, selected: selected)
+            }
+        }
+        .onHover { hovering = $0 }
+    }
+
+    private var core: some View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Phos(path: icon, size: 16)
                     .foregroundStyle(iconTint).frame(width: 16)
                 Text(title)
-                    .font(.system(size: 12.5, weight: active ? .semibold : .medium))
+                    .font(.sans(13, active || waiting ? 600 : 500))
                     .foregroundStyle(labelTint)
                 Spacer(minLength: 0)
-                if let kbd {
-                    Text(kbd)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(Theme.inkFaint)
+                if let meta {
+                    Text(meta)
+                        .font(.mono(11, 500))
+                        .foregroundStyle(Theme.ink4)
                 }
             }
             .padding(.horizontal, 6).padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Theme.accent.opacity(active ? (hovering ? 0.14 : 0.10) : 0))
-        )
-        .rowChrome(hovering: hovering && !active, selected: selected)
-        .onHover { hovering = $0 }
     }
 
     private var iconTint: Color {
+        if waiting { return Theme.updateInk }
         if active { return Theme.accent }
         return hovering ? Theme.inkMuted : Theme.navLabel
     }
     private var labelTint: Color {
+        if waiting { return Theme.ink }
         if active { return Theme.inkOpen }
         return hovering ? Theme.repoName : Theme.branchName
     }
@@ -192,7 +236,7 @@ private struct WorkspaceRow: View {
                         Chevron(open: isOpen)
                         Monogram(text: workspace.monogram,
                                  color: Theme.chipColors[workspace.colorIndex % Theme.chipColors.count])
-                        RenameField(font: .system(size: 13, weight: .semibold))
+                        RenameField(font: .sans(13, 600))
                         Spacer(minLength: 4)
                     }
                     .padding(.horizontal, 6).padding(.vertical, 6)
@@ -206,7 +250,7 @@ private struct WorkspaceRow: View {
                             Monogram(text: workspace.monogram,
                                      color: Theme.chipColors[workspace.colorIndex % Theme.chipColors.count])
                             Text(workspace.name)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.sans(13, 600))
                                 .foregroundStyle(Theme.repoName)
                             Spacer(minLength: 4)
                             trailing.opacity(revealed ? 0 : 1)
@@ -232,7 +276,7 @@ private struct WorkspaceRow: View {
             Reveal(open: isOpen || peekBranchID != nil) {
                 VStack(alignment: .leading, spacing: 1) {
                     if workspace.liveBranches.isEmpty {
-                        EmptyGroupHint(text: "No worktrees yet", leading: 37)
+                        EmptyGroupHint(text: "No branches yet", leading: 37)
                     } else {
                         // Peeking a collapsed workspace shows only the branch that holds the
                         // open session; expanded, every branch shows.
@@ -258,8 +302,8 @@ private struct WorkspaceRow: View {
                 // slot identity on input↔error swaps to replay the entry pop.
                 if let a = workspace.attention { Ind { AttentionGlyph(state: a) }.id(a) }
                 Text("\(workspace.liveBranches.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.repoCount).monospacedDigit()
+                    .font(.sans(11, 500, tabular: true))
+                    .foregroundStyle(Theme.repoCount)
             }
         }
     }
@@ -312,12 +356,24 @@ private struct BranchRow: View {
         VStack(alignment: .leading, spacing: 1) {
             ZStack(alignment: .trailing) {
                 if renaming {
-                    HStack(spacing: 6) {
-                        Chevron(open: isOpen)
-                        RenameField(font: .system(size: 12))
-                        Spacer(minLength: 4)
+                    if store.tabsMode {
+                        HStack(spacing: 4) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                RenameField(font: .sans(13))
+                                tabsBranchFacts
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            tabsBranchRail
+                        }
+                        .padding(.leading, 26).padding(.trailing, 6).frame(minHeight: 46)
+                    } else {
+                        HStack(spacing: 6) {
+                            Chevron(open: isOpen)
+                            RenameField(font: .sans(12))
+                            Spacer(minLength: 4)
+                        }
+                        .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
                     }
-                    .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 28)
                 } else {
                     Button {
                         guard !branch.isPending else { return }   // nothing to expand or open yet
@@ -331,39 +387,7 @@ private struct BranchRow: View {
                         store.toggleExpanded(branch.id)
                         store.handToSidebar(branch.id)   // the keyboard stays on the tree
                     } label: {
-                        HStack(spacing: 6) {
-                            // Tabs: the branch is the deepest row — nothing left to disclose, so
-                            // the chevron goes (working.html `.branch--group > .chev { display:none }`).
-                            if !store.tabsMode { Chevron(open: isOpen) }
-                            Text(branch.name)
-                                .font(.system(size: 12))
-                                .fontWeight(isActiveBranch ? .semibold : .medium)
-                                .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
-                                .lineLimit(1).truncationMode(.middle)
-                            // The branch's PR rides beside the name — identity, not status, so it
-                            // stays clear of the roll-up's reserved right axis. Colour is the state.
-                            if let pr = branch.pr {
-                                Phos(path: pr.state.glyph, size: 11)
-                                    .foregroundStyle(pr.state.tint)
-                                    .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased())"))
-                            }
-                            Spacer(minLength: 4)
-                            if branch.isPending {
-                                Ind { PendingSpinner() }
-                            } else {
-                                // Tabs: sessions leave the tree, so the roll-up is the branch's only
-                                // per-session signal — force it visible even while nominally expanded
-                                // (working.html `html[data-tabs=on] .branch__roll .ind { display:flex }`).
-                                BranchRollup(branch: branch, collapsed: store.tabsMode || !isOpen).opacity(revealed ? 0 : 1)
-                            }
-                        }
-                        // Full-width row: 37pt leading holds the branch content at its indent
-                        // while the hover band spans the sidebar; 6pt trailing keeps the branch
-                        // indicator on the shared 24pt axis (working.html .nav .branch).
-                        // Height is pinned rather than derived from the tallest child: BranchRollup
-                        // drops to EmptyView when expanded, so vertical padding alone made the row
-                        // 30pt holding a 16pt Ind and 28pt without — expanding shifted the tree.
-                        .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 28)
+                        branchLabel
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
                         .opacity(branch.isPending ? 0.5 : 1)
@@ -417,6 +441,90 @@ private struct BranchRow: View {
             }
         }
         .reorderLift(.branch(branch))
+    }
+
+    @ViewBuilder private var branchLabel: some View {
+        if store.tabsMode {
+            HStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(branch.name)
+                        .font(.sans(13, isActiveBranch ? 600 : 500))
+                        .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
+                        .lineLimit(1).truncationMode(.tail)
+                    tabsBranchFacts
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                tabsBranchRail
+            }
+            .padding(.leading, 26).padding(.trailing, 6).frame(minHeight: 46)
+        } else {
+            HStack(spacing: 6) {
+                Chevron(open: isOpen)
+                Text(branch.name)
+                    .font(.sans(12, isActiveBranch ? 600 : 500))
+                    .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
+                    .lineLimit(1).truncationMode(.middle)
+                // The branch's PR rides beside the name — identity, not status, so it
+                // stays clear of the roll-up's reserved right axis. Colour is the state.
+                if let pr = branch.pr {
+                    Phos(path: pr.state.glyph, size: 11)
+                        .foregroundStyle(pr.state.tint)
+                        .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased())"))
+                }
+                Spacer(minLength: 4)
+                if branch.isPending {
+                    Ind { PendingSpinner() }
+                } else {
+                    BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
+                }
+            }
+            // Full-width row: 37pt leading holds the branch content at its indent
+            // while the hover band spans the sidebar; 6pt trailing keeps the branch
+            // indicator on the shared 24pt axis (working.html .nav .branch).
+            // Height is pinned rather than derived from the tallest child: BranchRollup
+            // drops to EmptyView when expanded, so vertical padding alone made the row
+            // 30pt holding a 16pt Ind and 28pt without — expanding shifted the tree.
+            .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
+        }
+    }
+
+    private var tabsBranchFacts: some View {
+        TimelineView(.periodic(from: Date(), by: 60)) { ctx in
+            Text(factsLabel(now: ctx.date))
+                .font(.sans(11, 500, tabular: true))
+                .foregroundStyle(Theme.inkMeta)
+                .lineLimit(1).truncationMode(.tail)
+        }
+    }
+
+    private var tabsBranchRail: some View {
+        HStack(spacing: 4) {
+            Color.clear.frame(width: 16, height: 16).overlay {
+                if let pr = branch.pr {
+                    Phos(path: pr.state.glyph, size: 11)
+                        .foregroundStyle(pr.state.tint)
+                        .accessibilityLabel("Pull request #\(pr.number), \(pr.state.rawValue.lowercased())")
+                        .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased())"))
+                }
+            }
+            Color.clear.frame(width: 16, height: 16).overlay {
+                if branch.isPending {
+                    Ind { PendingSpinner() }
+                        .accessibilityLabel("Creating worktree")
+                } else {
+                    BranchRollup(branch: branch, collapsed: true, showsActivity: false)
+                }
+            }
+        }
+        .opacity(revealed ? 0 : 1)
+        .animation(.easeOut(duration: 0.12), value: revealed)
+    }
+
+    private func factsLabel(now: Date) -> String {
+        let count = branch.sessions.count
+        let sessions = count == 0 ? "No sessions" : "\(count) session\(count == 1 ? "" : "s")"
+        let activity = branch.activityLabel(now: now)
+        return "\(sessions) · \(activity.isEmpty ? "now" : activity)"
     }
 
     /// The expanded session list, with the branch's split members folded into one band placed
@@ -491,10 +599,10 @@ private struct SessionRow: View {
             if renaming {
                 HStack(spacing: 8) {
                     SessionIcon(kind: session.kind, size: 14).frame(width: 14)
-                    RenameField(font: .system(size: 11.5))
+                    RenameField(font: .sans(12))
                     Spacer(minLength: 4)
                 }
-                .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 28)
+                .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 30)
             } else {
                 Button { store.openFromSidebar(session) } label: {
                     HStack(spacing: 8) {
@@ -503,15 +611,14 @@ private struct SessionRow: View {
                         // focus weight flip renders in place without nudging the row — the
                         // native mirror of working.html's flex:1 name box (.session--open).
                         Text(session.title)
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.sans(12, 600))
                             .lineLimit(1)
                             .hidden()
                             .overlay(alignment: .leading) {
                                 Text(session.title)
-                                    .font(.system(size: 11.5))
                                     // Only the focused session goes bold; unread surfaces via
                                     // colour + the gutter bullet, not weight.
-                                    .fontWeight(isOpen ? .semibold : .medium)
+                                    .font(.sans(12, isOpen ? 600 : 500))
                                     .foregroundStyle(nameColor)
                                     .lineLimit(1)
                             }
@@ -529,7 +636,7 @@ private struct SessionRow: View {
                         }
                         .opacity(revealed ? 0 : 1)
                     }
-                    .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 28)
+                    .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 30)
                     .rowContentFade(revealed)
                     // The open session's sticky tint (working.html .session--open), deepening
                     // on hover like every other accent wash.
@@ -641,7 +748,7 @@ private struct SessionTile: View {
                     SessionIcon(kind: session.kind, size: 13).frame(width: 13)
                     if showName {
                         Text(session.title)
-                            .font(.system(size: 10.5, weight: isOpen ? .semibold : .medium))
+                            .font(.sans(11, isOpen ? 600 : 500))
                             .foregroundStyle(isOpen ? Theme.inkOpen : Theme.sessionName)
                             .lineLimit(1).truncationMode(.tail)
                     }
@@ -685,7 +792,7 @@ private struct EmptyGroupHint: View {
     var leading: CGFloat = 8
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .font(.sans(12))
             .foregroundStyle(Theme.inkFaint)
             .padding(.leading, leading).padding(.trailing, 6).padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -836,8 +943,8 @@ private struct Monogram: View {
     let text: String
     let color: Color
     var body: some View {
-        RoundedRectangle(cornerRadius: 6).fill(color).frame(width: 19, height: 19)
-            .overlay(Text(text).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white))
+        RoundedRectangle(cornerRadius: 6).fill(color).frame(width: 20, height: 20)
+            .overlay(Text(text).font(.sans(11, 600)).foregroundStyle(.white))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.12), radius: 0.75, y: 1)
     }
@@ -905,14 +1012,19 @@ private struct BranchRollup: View {
     // Expanded, every session shows its own indicator inside, so the state roll-up
     // glyph beside the header is redundant and can read as out of sync — drop it
     // while expanded (working.html `.repo--open > .branch--group .branch__roll .ind`).
-    // The activity meta isn't an indicator and stays.
+    // The classic row keeps activity in this slot; tabs moves it into the facts line.
     var collapsed: Bool
+    var showsActivity = true
     var body: some View {
         switch branch.rollup {
-        case .input where collapsed: Ind { AttentionGlyph(state: .input) }
-        case .error where collapsed: Ind { AttentionGlyph(state: .error) }
-        case .work  where collapsed: Ind { Beat() }
-        case .run   where collapsed: Ind { Beat() }
+        case .input where collapsed:
+            Ind { AttentionGlyph(state: .input) }.accessibilityLabel("Needs input")
+        case .error where collapsed:
+            Ind { AttentionGlyph(state: .error) }.accessibilityLabel("Error")
+        case .work where collapsed:
+            Ind { Beat() }.accessibilityLabel("Working")
+        case .run where collapsed:
+            Ind { Beat() }.accessibilityLabel("Running")
         // A live state while expanded: the sessions carry their own indicators,
         // so nothing rolls up to the header.
         case .input, .error, .work, .run: EmptyView()
@@ -921,12 +1033,12 @@ private struct BranchRollup: View {
             // cue there's something to read in here (working.html rollUpGroups unread
             // fallback). Expanded, each session's own gutter bullet carries it instead.
             if collapsed && branch.hasUnread {
-                Ind { UnreadDot() }
-            } else if branch.lastActivityAt != nil || !branch.lastActivity.isEmpty {
+                Ind { UnreadDot() }.accessibilityLabel("Unread output")
+            } else if showsActivity && (branch.lastActivityAt != nil || !branch.lastActivity.isEmpty) {
                 // Relative age, re-rendered each minute so it decays live ("now" → "5m" → "2h").
                 TimelineView(.periodic(from: Date(), by: 60)) { ctx in
                     Text(branch.activityLabel(now: ctx.date))
-                        .font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.branchMeta).monospacedDigit()
+                        .font(.sans(11, 500, tabular: true)).foregroundStyle(Theme.branchMeta)
                 }
             }
         }
@@ -1335,7 +1447,7 @@ struct DragGhost: View {
             HStack(spacing: 7) {
                 SessionIcon(kind: s.kind, size: 14).frame(width: 14)
                 Text(s.title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.sans(12, 500))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
             }

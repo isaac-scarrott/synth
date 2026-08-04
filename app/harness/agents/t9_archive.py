@@ -45,6 +45,32 @@ def tree_branches(ctl):
     return [b for ws in ctl("automation.tree").get("workspaces", []) for b in ws["branches"]]
 
 
+def new_branch_frame(ctl, query):
+    """⌘K's New-branch picker, filtered to `query`, with the cursor on the first row.
+
+    Navigated by cursor over the socket rather than by typing: once the palette is open its
+    field owns first responder, so a keystroke this machine delivers lands in the query and
+    silently re-filters — a navigation miss would read as the picker dropping the row. The
+    root leads with whatever context the store is in, so walk to the project when the verb
+    isn't already on offer instead of assuming which root opened."""
+    fr, trail = ctl("automation.paletteOpen"), []
+    for _ in range(3):
+        items = fr.get("items", [])
+        trail.append(items)
+        if "New branch" in items:
+            i = items.index("New branch")
+            if i: ctl("automation.paletteMove", delta=i)
+            ctl("automation.paletteEnter")
+            return ctl("automation.paletteQuery", query=query)
+        step = next((s for s in ("demo-project", "Projects") if s in items), None)
+        if step is None: return dict(fr, items=[], missing="New branch", offered=trail)
+        i = items.index(step)
+        if i: ctl("automation.paletteMove", delta=i)
+        ctl("automation.paletteEnter")
+        fr = ctl("automation.paletteQuery")
+    return dict(fr, items=[], missing="New branch", offered=trail)
+
+
 def main():
     kill_all()
     repo, made = build_sandbox()
@@ -167,6 +193,33 @@ def main():
         check("restored worktree is registered again", bool(entry), porcelain[:200])
         check("restored worktree is not prunable", "prunable" not in entry, entry)
 
+        # --- the New-branch picker offers archived rows ----------------------------------
+        # An archived row is out of the tree but its name is still taken, so a picker that
+        # filtered on every row — not just the live ones — made the branch unreachable by
+        # either route: absent from the sidebar, and absent from the one frame that adds it.
+        frame = new_branch_frame(ctl, "has-untracked")
+        # The picker reads git off the main thread, so the frame opens with the fallback row
+        # alone and fills when the branch list lands. Re-ask rather than assert on the first.
+        wait(lambda: "has-untracked" in ctl("automation.palette").get("items", []), secs=20)
+        frame = ctl("automation.paletteQuery", query="has-untracked")
+        check("the New-branch picker offers an archived branch",
+              "has-untracked" in frame.get("items", []),
+              f"crumb={frame.get('crumb')!r} items={frame.get('items')} {frame.get('missing', '')}")
+        check("the archived row is offered as a restore, not a second create",
+              frame.get("items", []).count("has-untracked") == 1
+              and not frame.get("note"),
+              f"items={frame.get('items')} note={frame.get('note')!r}")
+        items = frame.get("items", [])
+        if "has-untracked" in items:
+            if items.index("has-untracked"):
+                ctl("automation.paletteMove", delta=items.index("has-untracked"))
+            ctl("automation.paletteEnter")
+            check("picking it puts the row back in the tree",
+                  bool(wait(lambda: "has-untracked" in tree_branches(ctl), secs=15)),
+                  str(tree_branches(ctl)))
+            check("and takes it out of the Archived list",
+                  "has-untracked" not in status_map(ctl), str(sorted(status_map(ctl))))
+
         # --- the reaper -----------------------------------------------------------------
         # It reads nothing but the epoch in the folder name, so no predicate bug can reach it.
         stale = held_path.parent / f".archived-reapme-{int(time.time())}-deadbeef"
@@ -185,6 +238,35 @@ def main():
         gone = wait(lambda: not stale.exists(), secs=30)
         check("reaper deletes a folder whose hold has expired", bool(gone),
               "still present" if stale.exists() else "")
+
+        # --- restore after the folder is gone for good -----------------------------------
+        # The same launch reaped with-stash's held folder. Its row is still archived, and
+        # restore is the only route to it — so restore has to cut the checkout again from the
+        # branch rather than decline. A restore that gave up here left the branch with no way
+        # back at all: hidden from the tree, and its name taken in the picker.
+        recut = made["with-stash"]
+        reaped = wait(lambda: not recut.exists()
+                      and not list(recut.parent.glob(".archived-with-stash-*")), secs=30)
+        check("the reaper took with-stash's folder", bool(reaped),
+              str(list(recut.parent.glob("*with-stash*"))))
+        check("the reaped row is still archived", "with-stash" in status_map(ctl),
+              str(sorted(status_map(ctl))))
+
+        again = ctl("automation.archiveRestore", branch="with-stash")
+        check("restore reports success with no folder to move back",
+              again.get("ok") is True, str(again))
+        check("the row comes back into the tree",
+              bool(wait(lambda: "with-stash" in tree_branches(ctl), secs=30)),
+              str(tree_branches(ctl)))
+        check("the checkout is cut again at its old path",
+              bool(wait(lambda: recut.exists(), secs=30)),
+              str(list(recut.parent.iterdir())[:12]))
+        check("the re-cut worktree is a real checkout of the branch",
+              git(recut, "rev-parse --abbrev-ref HEAD") == "with-stash",
+              git(recut, "rev-parse --abbrev-ref HEAD"))
+        porcelain = git(repo, "worktree list --porcelain")
+        entry = next((blk for blk in porcelain.split("\n\n") if str(recut) in blk), "")
+        check("the re-cut worktree is registered", bool(entry), porcelain[:200])
 
     finally:
         kill_all()

@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Synth — Split tabs</title>
+<style>
+  :root {
+    --canvas: #e9eaee;
+    --panel: #fafbfc;
+    --sidebar: #f0f1f4;
+    --border: rgba(0, 0, 0, 0.07);
+    --border-strong: rgba(0, 0, 0, 0.1);
+    --text: #1c1e23;
+    --text-muted: #7e808a;
+    --text-faint: #a6a8b0;
+    --ink-meta: #6b6e76;
+    --ink: #1c1e23;
+    --ink-open: #2b2d34;
+    --ink-3: #54565e;
+    --ink-4: #666971;
+    --raised: #ffffff;
+    --term-bg: #191b1f;
+    --tui-bg: #f7f8fa;
+    --tui-dim: #5b5e68;
+    --hover-soft: rgba(0,0,0,0.035);
+    --hover: rgba(0,0,0,0.05);
+    --line-soft: rgba(0,0,0,0.06);
+    --line: rgba(0,0,0,0.1);
+    --accent: #a86038;
+    --accent-rgb: 168,96,56;
+    --focus: #1e2126;
+    --input: #3a6db3;
+    --input-rgb: 58,109,179;
+    --copper: #a05633;
+    --error: #ff3b30;
+    --live-lift: #c4b5fd;
+    --live-deep: #4c1d95;
+    --live-rest: 0.28;
+    --radius-app: 14px;
+    --radius-panel: 20px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+  :root[data-theme="dark"] {
+    --canvas: #0d0f13;
+    --panel: #191b1f;
+    --sidebar: #1d1f24;
+    --border: rgba(255,255,255,0.09);
+    --border-strong: rgba(255,255,255,0.13);
+    --text: #e6e8ed;
+    --text-muted: #8d9099;
+    --text-faint: #666a72;
+    --ink-meta: #8d9099;
+    --ink: #e6e8ed;
+    --ink-open: #dcdee4;
+    --ink-3: #adb0b9;
+    --ink-4: #979aa3;
+    --raised: #282b30;
+    --tui-bg: #121317;
+    --tui-dim: #7e818c;
+    --hover-soft: rgba(255,255,255,0.045);
+    --hover: rgba(255,255,255,0.07);
+    --line-soft: rgba(255,255,255,0.08);
+    --line: rgba(255,255,255,0.12);
+    --accent: #eee0cd;
+    --accent-rgb: 238,224,205;
+    --focus: #eee0cd;
+    --input: #7ea6dc;
+    --input-rgb: 126,166,220;
+    --copper: #c2724c;
+    --live-lift: #ede9fe;
+    --live-deep: #6d28d9;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.55);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { font-family: var(--font); color: var(--text); background: var(--canvas); -webkit-font-smoothing: antialiased; }
+  body { padding: 40px 32px 90px; }
+  .page { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
+
+  /* ---- page chrome (mockup furniture, not app design) ---- */
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  h1 { font-size: 21px; font-weight: 620; letter-spacing: -0.015em; }
+  .sub { margin-top: 7px; font-size: 13px; line-height: 1.55; color: var(--text-muted); max-width: 62ch; }
+  .themes { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover-soft); flex-shrink: 0; }
+  .themes button {
+    padding: 5px 11px; border: 0; border-radius: 7px; background: none; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 550; color: var(--text-muted);
+  }
+  .themes button.on { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+  h2 { font-size: 12px; font-weight: 640; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-faint); }
+  .note { font-size: 12.5px; line-height: 1.6; color: var(--text-muted); max-width: 70ch; }
+  .note b { color: var(--ink-3); font-weight: 600; }
+  ul.note { padding-left: 17px; display: flex; flex-direction: column; gap: 4px; }
+  code { font-family: var(--mono); font-size: 11.5px; color: var(--ink-4); }
+
+  .variant { display: flex; flex-direction: column; gap: 11px; }
+  .variant__head { display: flex; align-items: baseline; gap: 10px; }
+  .variant__name { font-size: 15px; font-weight: 620; letter-spacing: -0.01em; }
+  .variant__tag {
+    font-size: 10.5px; font-weight: 620; letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 5px; color: var(--accent);
+    background: rgba(var(--accent-rgb),0.14); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),0.3);
+  }
+  :root[data-theme="dark"] .variant__tag { color: var(--ink); }
+
+  /* ---- the app frame each strip lives in (sidebar edge + strip + a real split under it) ---- */
+  .frame {
+    border-radius: var(--radius-app); overflow: hidden;
+    background: var(--panel); border: 0.5px solid var(--border-strong); box-shadow: var(--shadow);
+    display: grid; grid-template-columns: 118px 1fr;
+  }
+  .frame__side { background: var(--sidebar); border-right: 0.5px solid var(--border); padding: 11px 10px; display: flex; flex-direction: column; gap: 9px; }
+  .frame__row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+  .frame__row i { width: 6px; height: 6px; border-radius: 2px; background: var(--text-faint); opacity: 0.5; flex-shrink: 0; }
+  .frame__row--on { color: var(--ink); font-weight: 560; }
+  .frame__row--on i { background: var(--accent); opacity: 1; }
+  .frame__main { display: flex; flex-direction: column; min-width: 0; }
+  .frame--bare { grid-template-columns: 1fr; border-radius: 11px; }
+  .frame--bare .surface { height: 80px; }
+
+  /* the split surface below the strip, so the group in the strip has something to mean */
+  .surface { flex: 1; display: flex; height: 128px; background: var(--panel); }
+  .surface--col { flex-direction: column; }
+  .spane { flex: 1 1 0; min-width: 0; position: relative; display: flex; flex-direction: column; background: var(--tui-bg); border-right: 1px solid var(--border); overflow: hidden; }
+  .spane:last-child { border-right: 0; }
+  .surface--col .spane { border-right: 0; border-bottom: 1px solid var(--border); }
+  .surface--col .spane:last-child { border-bottom: 0; }
+  .spane__lines { padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; }
+  .spane__lines span { height: 5px; border-radius: 3px; background: var(--tui-dim); opacity: 0.24; }
+  .spane__lines span:nth-child(1) { width: 62%; }
+  .spane__lines span:nth-child(2) { width: 84%; }
+  .spane__lines span:nth-child(3) { width: 41%; }
+  .spane__lines span:nth-child(4) { width: 70%; }
+  .spane--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--focus); }
+
+  /* ================= real app CSS, lifted from working.html =================
+     .tabstrip / .tab / .ind are verbatim; everything under "GROUPING" is the new work. */
+  .tabstrip {
+    flex-shrink: 0;
+    display: flex; align-items: stretch;
+    height: 30px;
+    background: var(--panel);
+    border-bottom: 0.5px solid var(--border);
+  }
+  .tabstrip__tabs { flex: 1; min-width: 0; display: flex; align-items: stretch; overflow: hidden; }
+  .tab {
+    flex: 0 1 auto; min-width: 40px;
+    position: relative;
+    display: flex; align-items: center; gap: 6px;
+    max-width: 190px;
+    padding: 0 6px 0 11px;
+    border-right: 0.5px solid var(--border);
+    font-size: 12px; font-weight: 500;
+    color: var(--text-muted);
+    cursor: grab; white-space: nowrap;
+    transition: background-color 110ms ease, color 110ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .tab:not(.tab--active):hover { background: var(--hover); }
+  }
+  .tab--active { background: var(--raised); color: var(--ink); }
+  .tab--active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+    background: var(--focus);
+  }
+  .tab__icon { position: relative; flex-shrink: 0; display: flex; width: 14px; height: 14px; color: var(--ink-meta); }
+  .tab__icon svg { width: 14px; height: 14px; display: block; }
+  .tab--unread .tab__icon::after {
+    content: ''; position: absolute; top: -2px; right: -3px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--input); box-shadow: 0 0 0 1.5px var(--panel);
+  }
+  .tab--active.tab--unread .tab__icon::after { box-shadow: 0 0 0 1.5px var(--raised); }
+  .tab__name { overflow: hidden; text-overflow: ellipsis; }
+  .tab__ind { flex-shrink: 0; display: flex; align-items: center; }
+  .tab__close {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; padding: 0; margin-left: 1px;
+    border: 0; background: none; border-radius: 4px;
+    color: var(--text-faint); cursor: pointer;
+    opacity: 0;
+    transition: opacity 110ms ease, background-color 110ms ease, color 110ms ease;
+  }
+  .tab__close svg { width: 11px; height: 11px; display: block; }
+  @media (hover: hover) and (pointer: fine) {
+    .tab:hover .tab__close { opacity: 0.6; }
+    .tab__close:hover { opacity: 1; background: var(--hover); color: var(--ink); }
+  }
+  .tab--active .tab__close { opacity: 0.6; }
+  .tabstrip__new {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; padding: 0;
+    border: 0; background: none; color: var(--text-muted); cursor: pointer;
+    transition: background-color 110ms ease, color 110ms ease;
+  }
+  .tabstrip__new svg { width: 14px; height: 14px; display: block; }
+  @media (hover: hover) and (pointer: fine) { .tabstrip__new:hover { background: var(--hover); color: var(--ink); } }
+  .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; padding: 0 10px 0 6px; font-size: 11px; color: var(--text-faint); font-family: var(--mono); }
+
+  .ind { flex-shrink: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+  .ind svg { width: 15px; height: 15px; display: block; }
+  .beat { display: inline-grid; grid-template-columns: repeat(5, 2px); grid-auto-rows: 2px; gap: 1px; place-items: center; flex-shrink: 0; line-height: 0; }
+  .beat i { border-radius: 50%; opacity: var(--live-rest); animation: beat-pulse 1.15s ease-in-out infinite; }
+  .beat i:nth-child(13) { width: 2.5px; height: 2.5px; background: var(--live-lift); }
+  .beat i:nth-child(8), .beat i:nth-child(12), .beat i:nth-child(14), .beat i:nth-child(18) {
+    width: 2px; height: 2px; animation-delay: 118ms; background: color-mix(in oklab, var(--live-lift) 80%, var(--live-deep)); }
+  .beat i:nth-child(7), .beat i:nth-child(9), .beat i:nth-child(17), .beat i:nth-child(19) {
+    width: 1.8px; height: 1.8px; animation-delay: 167ms; background: color-mix(in oklab, var(--live-lift) 60%, var(--live-deep)); }
+  .beat i:nth-child(3), .beat i:nth-child(11), .beat i:nth-child(15), .beat i:nth-child(23) {
+    width: 1.5px; height: 1.5px; animation-delay: 236ms; background: color-mix(in oklab, var(--live-lift) 40%, var(--live-deep)); }
+  .beat i:nth-child(2), .beat i:nth-child(4), .beat i:nth-child(6), .beat i:nth-child(10),
+  .beat i:nth-child(16), .beat i:nth-child(20), .beat i:nth-child(22), .beat i:nth-child(24) {
+    width: 1.35px; height: 1.35px; animation-delay: 264ms; background: color-mix(in oklab, var(--live-lift) 20%, var(--live-deep)); }
+  .beat i:nth-child(1), .beat i:nth-child(5), .beat i:nth-child(21), .beat i:nth-child(25) { visibility: hidden; }
+  @keyframes beat-pulse { 0%, 100% { opacity: var(--live-rest); transform: scale(0.72); } 50% { opacity: 1; transform: scale(1); } }
+  .ind--input { color: var(--input); }
+  .ind--input svg { animation: attn-breathe 2s var(--ease-in-out) infinite; transform-origin: center; }
+  .ind--error { color: var(--error); }
+  @keyframes attn-breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.55; transform: scale(0.9); } }
+
+  /* ================= GROUPING — what today ships ================= */
+  /* chips: a second, smaller tab language. Loses the indicator slot, the active bar, the
+     hover wash, the 30px rhythm and the shrink-to-fit. */
+  .tg--today { display: flex; align-items: center; gap: 3px; padding: 0 5px; }
+  .tg--today .tab { flex: 0 0 auto; height: 22px; padding: 0 5px 0 9px; border: 0; border-radius: 7px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-soft); }
+  .tg--today .tab::after { display: none; }
+  .tg--today .tab__ind { display: none; }
+  .tg--today .tab--active { background: rgba(var(--accent-rgb),0.12); color: var(--ink); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),0.34); }
+
+  /* ================= GROUPING — the proposals =================
+     Shared spine for every proposal: a member IS a tab. Full 30px, same padding, same icon,
+     same indicator slot, same ×, same active bar, same hover wash, same shrink-to-fit.
+     Only the grouping mark differs below. */
+  .tg { display: flex; align-items: stretch; position: relative; }
+  .tg .tab { flex: 0 1 auto; }
+  /* interior seam: members are one unit, so the divider between them is lighter than the
+     seam that ends the group */
+  .tg .tab { border-right: 0; }
+  .tg .tab + .tab::before {
+    content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px;
+    background: rgba(var(--accent-rgb),0.28);
+  }
+  .tg > .tab:last-child { border-right: 0.5px solid var(--border); }
+  /* the group's own glyph: the split's orientation, at its leading edge. Doubles as the
+     grab handle for the whole group and the click target for "focus the split". */
+  .tg__glyph {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    width: 20px; padding-left: 6px;
+    color: var(--accent); opacity: 0.85;
+  }
+  .tg__glyph svg { width: 11px; height: 11px; display: block; }
+  :root[data-theme="dark"] .tg__glyph { opacity: 0.7; }
+
+  /* A — rail: a 2px accent rail along the group's top edge, the strip's twin of the pane
+     focus bar but on the opposite edge, so it never fights the active tab's bar. */
+  .tg--rail { background: rgba(var(--accent-rgb),0.06); }
+  .tg--rail::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 1;
+    background: rgba(var(--accent-rgb),0.75); border-radius: 0 0 2px 2px;
+  }
+  :root[data-theme="dark"] .tg--rail::before { background: rgba(var(--accent-rgb),0.6); }
+  .tg--rail .tab--active { background: var(--raised); }
+
+  /* B — bracket: a hairline accent outline around the group, open at the bottom so the
+     active member's focus bar still runs to the strip's edge. */
+  .tg--bracket { margin: 0; border-radius: 8px 8px 0 0; background: rgba(var(--accent-rgb),0.05); }
+  .tg--bracket::before {
+    content: ''; position: absolute; inset: 0; border-radius: 8px 8px 0 0; pointer-events: none; z-index: 1;
+    border: 1px solid rgba(var(--accent-rgb),0.42); border-bottom: 0;
+  }
+  .tg--bracket > .tab:first-of-type { border-top-left-radius: 8px; }
+  .tg--bracket > .tab:last-child { border-top-right-radius: 8px; border-right: 0; }
+  .tg--bracket + .tab { border-left: 0.5px solid var(--border); }
+  .tg--bracket .tab--active { background: var(--raised); }
+
+  /* C — field: no container and no rail. The members share a faint accent field, the seam
+     between them is accent, and the orientation glyph leads. Adjacency alone, the way the
+     sidebar's split band does it. */
+  .tg--field { background: rgba(var(--accent-rgb),0.09); }
+  .tg--field .tab--active { background: var(--raised); }
+
+  /* D — position badge: members are ordinary tabs, untouched. The only mark is a 2-cell
+     mini-map on each icon showing which half of the split that tab drives. */
+  .tg--badge .tab + .tab::before { background: var(--border); }
+  .tg--badge .tab { gap: 11px; }        /* the badge overhangs the icon — the name clears it */
+  .tg--badge .tab__icon::before {
+    content: ''; position: absolute; right: -4px; bottom: -3px;
+    width: 8px; height: 8px; border-radius: 2px;
+    background: var(--panel); box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.55);
+  }
+  .tab--active.tg-member .tab__icon::before,
+  .tg--badge .tab--active .tab__icon::before { background: var(--raised); }
+  .tg--badge .tab__icon::after { z-index: 2; }
+  .tg--badge .tab__pos {
+    position: absolute; right: -4px; bottom: -3px; width: 8px; height: 8px;
+    display: block; pointer-events: none;
+  }
+  .tg--badge .tab__pos b {
+    position: absolute; background: var(--accent); border-radius: 1px; opacity: 0.9;
+  }
+  .tg--badge .tab__pos.pos--row-a b { left: 1.5px; top: 1.5px; width: 2.5px; height: 5px; }
+  .tg--badge .tab__pos.pos--row-b b { right: 1.5px; top: 1.5px; width: 2.5px; height: 5px; }
+  .tg--badge .tab__pos.pos--col-a b { left: 1.5px; top: 1.5px; width: 5px; height: 2.5px; }
+  .tg--badge .tab__pos.pos--col-b b { left: 1.5px; bottom: 1.5px; width: 5px; height: 2.5px; }
+
+  /* "rested": nothing in the group is selected, so the mark steps back to a structural hairline —
+     still present, no longer competing with wherever the selection actually is */
+  .tg--rest { background: none; }
+  .tg--rest::before { background: rgba(var(--accent-rgb),0.34); }
+  .tg--rest .tab + .tab::before { background: var(--border); }
+  .tg--rest .tg__glyph { opacity: 0.45; color: var(--text-muted); }
+
+  /* the tab a dragged tab is about to pair into a split with (unchanged from today) */
+  .tab--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.7); background: rgba(var(--accent-rgb),0.12); }
+
+  /* ---- state gallery ---- */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 16px 18px; }
+  .cell { display: flex; flex-direction: column; gap: 7px; }
+  .cell__label { font-size: 11.5px; color: var(--text-faint); }
+  .cell__label b { color: var(--ink-4); font-weight: 600; }
+  .cell .tabstrip { border: 0.5px solid var(--border-strong); border-radius: 9px; overflow: hidden; height: 31px; }
+  .forcehover { background: var(--hover) !important; }
+  .forcehover .tab__close { opacity: 0.6; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="head">
+    <div>
+      <h1>Split tabs</h1>
+      <p class="sub">
+        Today a split's members leave the tab language entirely: they shrink to 22px chips, drop the
+        indicator slot, drop the active bar, drop the hover wash and stop shrinking to fit. Below, the
+        members go back to being <em>tabs</em> — every feature intact — and grouping is carried by one
+        added mark. Four candidates for that mark.
+      </p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+      <div class="themes">
+        <button data-theme-set="dark" class="on">Dark</button>
+        <button data-theme-set="light">Light</button>
+      </div>
+      <div class="themes">
+        <button data-sel-set="one" class="on">A member selected</button>
+        <button data-sel-set="none">None selected</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Two selection states.</b> With a member selected, that pane owns the surface and the tab takes the
+    raised fill + focus bar, exactly as a lone tab does. With <em>none</em> selected — a lone tab
+    full-screened over the split, which the layout keeps stashed underneath — every member is inert and
+    the group mark is the only thing still saying "there's a split waiting here". The toggle above flips
+    every strip on this page between the two.
+  </p>
+
+  <div class="variant">
+    <div class="variant__head"><span class="variant__name">Today</span></div>
+    <div class="frame" data-strip="today"></div>
+    <ul class="note">
+      <li><b>No status.</b> A member that needs input or errors shows nothing — the one signal the strip exists to carry.</li>
+      <li><b>Second visual language.</b> 22px pill vs 30px tab; the eye reads two kinds of thing in one strip.</li>
+      <li><b>No hover, no active bar</b> — the ring does double duty for active, and hover is silent.</li>
+      <li><b>Fixed width.</b> <code>flex: 0 0 auto</code>, so a wide split pushes the + off the strip instead of ellipsizing.</li>
+      <li><b>Cramped ×</b> at 5px right padding, and the unread dot's halo is drawn for the strip, not the chip.</li>
+      <li><b>The + can still be clipped.</b> The strip promises the + always stays visible, but a tab can't
+        shrink past its icon + indicator + × (~70px), so a crowded strip clips it — a group's extra chips
+        make that arrive sooner. Visible in the narrower cells below.</li>
+    </ul>
+  </div>
+
+  <div>
+    <h2>Candidates</h2>
+    <p class="note" style="margin-top:9px">
+      All four share the same fix: a member is a full tab again (30px, icon, name, indicator, ×,
+      active bar, hover, ellipsis), the seam between members lightens to an inset hairline, and the
+      seam that <em>ends</em> the group stays a normal strip seam. Only the group mark differs.
+    </p>
+  </div>
+
+  <div class="variant">
+    <div class="variant__head"><span class="variant__name">A · Rail</span><span class="variant__tag">Recommended</span></div>
+    <div class="frame" data-strip="rail"></div>
+    <p class="note">
+      A 2px accent rail along the group's top edge — the focus bar's grammar, moved to the opposite
+      edge so it never collides with the active tab's own bar. Reads instantly at a glance, survives a
+      3-member split, and the orientation glyph tells you the split is side-by-side before you look down.
+    </p>
+  </div>
+
+  <div class="variant">
+    <div class="variant__head"><span class="variant__name">B · Bracket</span></div>
+    <div class="frame" data-strip="bracket"></div>
+    <p class="note">
+      A hairline accent outline around the group, open at the bottom so the active member's focus bar
+      still runs clean to the strip edge. Strongest containment of the four; the rounded top corners
+      cost a little of the strip's flatness.
+    </p>
+  </div>
+
+  <div class="variant">
+    <div class="variant__name" style="font-size:15px;font-weight:620">C · Field</div>
+    <div class="frame" data-strip="field"></div>
+    <p class="note">
+      No container, no rail — the members simply share a faint accent field, with the orientation glyph
+      leading. Adjacency alone carries the grouping, the way the sidebar's split band does it. Quietest;
+      also the easiest to miss on a busy strip.
+    </p>
+  </div>
+
+  <div class="variant">
+    <div class="variant__name" style="font-size:15px;font-weight:620">D · Position badge</div>
+    <div class="frame" data-strip="badge"></div>
+    <p class="note">
+      Members stay ordinary tabs. The only mark is an 8px mini-map on each icon showing which half of
+      the split that tab drives — grouping is inferred from two tabs carrying the same map. Most
+      information per pixel (you learn <em>which pane</em>, not just <em>grouped</em>), least
+      glanceable grouping. Pairs well with A.
+    </p>
+  </div>
+
+  <div class="variant">
+    <div class="variant__name" style="font-size:15px;font-weight:620">Rail + badge, stacked</div>
+    <div class="frame" data-strip="rail-badge"></div>
+    <p class="note">Both marks together: the rail says <em>grouped</em>, the badge says <em>which half</em>.</p>
+  </div>
+
+  <div class="variant">
+    <h2>Selection states, side by side</h2>
+    <p class="note">
+      The decision the "none selected" case forces: does the group mark <b>hold</b> at full strength, or
+      <b>rest</b> back while nothing in it is selected? Held reads as structure — the split is a fact of
+      the layout whether or not you're looking at it. Rested reads as focus — the strip's accent tracks
+      where you are. Third column shows the same thing with the members' shared field dropped entirely.
+    </p>
+    <div class="gallery">
+      <div class="cell">
+        <div class="cell__label"><b>A member selected</b> — that pane owns the surface</div>
+        <div class="frame" data-pair="rail|one"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>None selected, mark held</b> — a lone tab is full-screen, the split stashed under it</div>
+        <div class="frame" data-pair="rail|none"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>None selected, mark rested</b> — rail at half, field dropped</div>
+        <div class="frame" data-pair="rail rest|none"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Bracket, none selected</b> — the outline alone carries it</div>
+        <div class="frame" data-pair="bracket|none"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Field, none selected</b> — nothing raised, wash only</div>
+        <div class="frame" data-pair="field|none"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Today, none selected</b> — the chips still read as raised, so the group looks selected when it isn't</div>
+        <div class="frame" data-pair="today|none"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="variant">
+    <h2>Feature parity (rail)</h2>
+    <div class="gallery">
+      <div class="cell">
+        <div class="cell__label"><b>Status indicators</b> — working, needs-input, error, all live inside the group</div>
+        <div data-cell="states"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Unread</b> — the blue dot rides a member's icon, halo matched to the tab fill</div>
+        <div data-cell="unread"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Hover + close</b> — wash and × appear on a member exactly as on a lone tab</div>
+        <div data-cell="hover"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Shrink to fit</b> — members ellipsize with everything else; the + never scrolls off</div>
+        <div data-cell="squeeze"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Drag to pair</b> — the copper pair-to ring lands on a member unchanged</div>
+        <div data-cell="pair"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>3-member split</b> — the rail spans however many panes the tree holds</div>
+        <div data-cell="three"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Stacked split</b> — the glyph flips to the column orientation</div>
+        <div data-cell="col"></div>
+      </div>
+      <div class="cell">
+        <div class="cell__label"><b>Group leads the strip</b> — the rail's left end meets the sidebar's rounded corner</div>
+        <div data-cell="first"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="variant">
+    <h2>What the code change is</h2>
+    <ul class="note">
+      <li>Members render through the same <code>makeTabEl</code> path with no size override — drop the
+        22px height, the chip radius/fill and the <code>.tab__ind { display:none }</code>.</li>
+      <li>Hover moves from <code>.tabstrip__tabs &gt; .tab:hover</code> to <code>.tab:hover</code>, so a
+        member washes like any other tab.</li>
+      <li>Members go back to <code>flex: 0 1 auto</code> — a wide split ellipsizes instead of shoving
+        the + off the strip.</li>
+      <li>The group wrapper keeps only the mark: rail / bracket / field, plus the orientation glyph.</li>
+      <li>The unread halo and the <code>.tab-bleed</code> first-child rules need to see through a group
+        wrapper (<code>.tabstrip__tabs &gt; :first-child</code> is a group now, not a tab).</li>
+    </ul>
+  </div>
+
+  <div class="variant">
+    <h2>Behaviour still open</h2>
+    <ul class="note">
+      <li>Does dragging the <b>glyph</b> move the whole group, or is it click-to-focus-the-split only?</li>
+      <li>Does reordering a member <i>inside</i> its group swap the two panes on screen?</li>
+      <li>⌘W on the last member — close the tab and collapse the split, or refuse?</li>
+      <li>Does a group ever collapse to one tab with a member count, past ~3 members on a narrow window?</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  const ICON = {
+    term: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>',
+    browser: '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg>',
+    claude: '<svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg>',
+  };
+  const ICON_CLOSE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
+  const ICON_PLUS = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></svg>';
+  const MARK_INPUT = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M192,96c0,28.51-24.47,52.11-56,55.56V160a8,8,0,0,1-16,0V144a8,8,0,0,1,8-8c26.47,0,48-17.94,48-40s-21.53-40-48-40S80,73.94,80,96a8,8,0,0,1-16,0c0-30.88,28.71-56,64-56S192,65.12,192,96Zm-64,96a16,16,0,1,0,16,16A16,16,0,0,0,128,192Z"/></svg>';
+  const MARK_ERROR = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M144,200a16,16,0,1,1-16-16A16,16,0,0,1,144,200Zm-16-40a8,8,0,0,0,8-8V48a8,8,0,0,0-16,0V152A8,8,0,0,0,128,160Z"/></svg>';
+  const dots = '<i></i>'.repeat(25);
+  const IND = {
+    idle:  '<span class="ind"></span>',
+    work:  '<span class="ind"><span class="beat">' + dots + '</span></span>',
+    run:   '<span class="ind"><span class="beat">' + dots + '</span></span>',
+    input: '<span class="ind ind--input">' + MARK_INPUT + '</span>',
+    error: '<span class="ind ind--error">' + MARK_ERROR + '</span>',
+  };
+  // the split's orientation, drawn as the tree itself: a rounded square divided the way the panes are
+  const GLYPH = (dir, n) => {
+    const cuts = dir === 'row'
+      ? (n === 3 ? ['M4.33 1V11', 'M7.67 1V11'] : ['M6 1V11'])
+      : (n === 3 ? ['M1 4.33H11', 'M1 7.67H11'] : ['M1 6H11']);
+    return '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1">'
+      + '<rect x="1" y="1" width="10" height="10" rx="2.2"/>'
+      + cuts.map((d) => '<path d="' + d + '"/>').join('') + '</svg>';
+  };
+  const POS = (dir, i, n) => {
+    if (n !== 2) return '';
+    const k = (dir === 'row' ? 'row-' : 'col-') + (i === 0 ? 'a' : 'b');
+    return '<span class="tab__pos pos--' + k + '"><b></b></span>';
+  };
+
+  function tab(t, opts) {
+    opts = opts || {};
+    const cls = ['tab'];
+    if (t.active) cls.push('tab--active');
+    if (t.unread) cls.push('tab--unread');
+    if (t.pair) cls.push('tab--pair-to');
+    if (t.hover) cls.push('forcehover');
+    return '<div class="' + cls.join(' ') + '"' + (t.w ? ' style="max-width:' + t.w + 'px"' : '') + '>'
+      + '<span class="tab__icon">' + ICON[t.icon] + (opts.pos || '') + '</span>'
+      + '<span class="tab__name">' + t.name + '</span>'
+      + '<span class="tab__ind">' + IND[t.ind || 'idle'] + '</span>'
+      + '<button class="tab__close" aria-label="Close ' + t.name + '">' + ICON_CLOSE + '</button>'
+      + '</div>';
+  }
+
+  function group(g, variant) {
+    const rested = / rest\b/.test(variant);
+    variant = variant.replace(/ rest\b/, '');
+    const badge = variant === 'badge' || variant === 'rail-badge';
+    const railed = variant === 'rail' || variant === 'rail-badge';
+    const cls = ['tg'];
+    if (variant === 'today') return '<div class="tg--today">' + g.members.map((m) => tab(m)).join('') + '</div>';
+    if (railed) cls.push('tg--rail');
+    if (variant === 'bracket') cls.push('tg--bracket');
+    if (variant === 'field') cls.push('tg--field');
+    if (badge) cls.push('tg--badge');
+    if (rested) cls.push('tg--rest');
+    const glyph = variant === 'badge' ? '' :
+      '<span class="tg__glyph" title="Split ' + (g.dir === 'col' ? 'stacked' : 'side by side') + '">' + GLYPH(g.dir, g.members.length) + '</span>';
+    return '<div class="' + cls.join(' ') + '">' + glyph
+      + g.members.map((m, i) => tab(m, { pos: badge ? POS(g.dir, i, g.members.length) : '' })).join('')
+      + '</div>';
+  }
+
+  function strip(items, variant) {
+    const body = items.map((it) => (it.members ? group(it, variant) : tab(it))).join('');
+    return '<div class="tabstrip"><div class="tabstrip__tabs">' + body
+      + '<button class="tabstrip__new" aria-label="New tab">' + ICON_PLUS + '</button></div>'
+      + '<div class="tabstrip__pr">#412</div></div>';
+  }
+
+  const pane = (active) => '<div class="spane' + (active ? ' spane--active' : '') + '"><div class="spane__lines"><span></span><span></span><span></span><span></span></div></div>';
+
+  const SIDE = '<div class="frame__side">'
+    + '<div class="frame__row"><i></i>synth</div>'
+    + '<div class="frame__row frame__row--on"><i></i>feedback/split</div>'
+    + '<div class="frame__row"><i></i>main</div>'
+    + '<div class="frame__row"><i></i>web-app</div>'
+    + '</div>';
+
+  // sel 'one'  — a member is selected: its pane owns the surface, its tab is raised + barred.
+  // sel 'none' — a lone tab is full-screen and the split is stashed underneath: no member is
+  //              selected, no member is raised, and the group mark is all that's left of it.
+  const splitFor = (sel) => ({ dir: 'row', members: [
+    { name: 'api server', icon: 'term', ind: 'run', active: sel === 'one' },
+    { name: 'localhost:3000', icon: 'browser', ind: 'idle' },
+  ]});
+  const itemsFor = (sel) => [
+    { name: 'Claude Code', icon: 'claude', ind: 'work', active: sel === 'none' },
+    splitFor(sel),
+    { name: 'tests', icon: 'term', ind: 'input', unread: true },
+  ];
+  const surfaceFor = (sel) => '<div class="surface">'
+    + (sel === 'none' ? pane(true) : splitFor(sel).members.map((m) => pane(m.active)).join(''))
+    + '</div>';
+  const frameHTML = (variant, sel, bare) =>
+    (bare ? '' : SIDE) + '<div class="frame__main">' + strip(itemsFor(sel), variant) + surfaceFor(sel) + '</div>';
+
+  let SEL = 'one';
+  const renderAll = () => document.querySelectorAll('[data-strip]').forEach((f) => {
+    f.innerHTML = frameHTML(f.dataset.strip, SEL);
+  });
+  renderAll();
+
+  document.querySelectorAll('[data-pair]').forEach((f) => {
+    const [v, sel] = f.dataset.pair.split('|');
+    f.classList.add('frame--bare');
+    f.innerHTML = frameHTML(v, sel, true);
+  });
+
+  // ---- parity gallery ----
+  const g2 = (members, dir) => ({ dir: dir || 'row', members });
+  const CELLS = {
+    states: [ g2([
+      { name: 'api server', icon: 'term', ind: 'input', active: true },
+      { name: 'worker', icon: 'term', ind: 'error' },
+    ]), { name: 'tests', icon: 'term', ind: 'work' } ],
+    unread: [ { name: 'Claude Code', icon: 'claude', ind: 'idle' }, g2([
+      { name: 'api server', icon: 'term', ind: 'run', active: true },
+      { name: 'localhost:3000', icon: 'browser', ind: 'idle', unread: true },
+    ]) ],
+    hover: [ g2([
+      { name: 'api server', icon: 'term', ind: 'run' },
+      { name: 'localhost:3000', icon: 'browser', ind: 'idle', hover: true },
+    ]), { name: 'tests', icon: 'term', ind: 'idle' } ],
+    squeeze: [ { name: 'Claude Code', icon: 'claude', ind: 'work', w: 92 }, g2([
+      { name: 'api server (staging)', icon: 'term', ind: 'run', active: true, w: 92 },
+      { name: 'localhost:3000/admin', icon: 'browser', ind: 'idle', w: 92 },
+    ]), { name: 'integration tests', icon: 'term', ind: 'idle', w: 92 } ],
+    pair: [ g2([
+      { name: 'api server', icon: 'term', ind: 'run', active: true },
+      { name: 'localhost:3000', icon: 'browser', ind: 'idle', pair: true },
+    ]), { name: 'tests', icon: 'term', ind: 'idle' } ],
+    three: [ g2([
+      { name: 'api', icon: 'term', ind: 'run', active: true },
+      { name: 'worker', icon: 'term', ind: 'work' },
+      { name: ':3000', icon: 'browser', ind: 'idle' },
+    ]) ],
+    col: [ { name: 'Claude Code', icon: 'claude', ind: 'idle' }, g2([
+      { name: 'api server', icon: 'term', ind: 'run', active: true },
+      { name: 'localhost:3000', icon: 'browser', ind: 'idle' },
+    ], 'col') ],
+    first: [ g2([
+      { name: 'api server', icon: 'term', ind: 'run', active: true },
+      { name: 'localhost:3000', icon: 'browser', ind: 'idle' },
+    ]), { name: 'tests', icon: 'term', ind: 'work' }, { name: 'notes', icon: 'claude', ind: 'idle' } ],
+  };
+  document.querySelectorAll('[data-cell]').forEach((host) => {
+    host.innerHTML = strip(CELLS[host.dataset.cell], 'rail');
+  });
+
+  document.querySelectorAll('[data-theme-set]').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.documentElement.dataset.theme = b.dataset.themeSet;
+      document.querySelectorAll('[data-theme-set]').forEach((o) => o.classList.toggle('on', o === b));
+    });
+  });
+  document.querySelectorAll('[data-sel-set]').forEach((b) => {
+    b.addEventListener('click', () => {
+      SEL = b.dataset.selSet;
+      document.querySelectorAll('[data-sel-set]').forEach((o) => o.classList.toggle('on', o === b));
+      renderAll();
+    });
+  });
+</script>
+</body>
+</html>

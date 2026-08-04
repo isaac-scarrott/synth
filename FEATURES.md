@@ -1254,6 +1254,473 @@ disclosure to dive deeper.
   ranks by, so `itemScore` is ported exactly. `automation.screenshot` now prefers the ⌘K panel —
   it had been screenshotting the window under it. Verified over the control socket + screenshots.
 
+- **Synth 0.19.0 shipped (build 418).** A minor: ⌘K search ranks flat, so the best match is the top
+  row, with the native matcher's label boosts brought to parity so it ranks the same way. Notarized +
+  stapled (zip + dmg), verified credential-less on the quarantined downloads (both Notarized
+  Developer ID, the app inside the dmg staples on its own, bundle reads 0.19.0 / 418); appcast newest
+  `sparkle:version` 418 / `0.19.0`, all 18 enclosures EdDSA-signed, 5 deltas against
+  413/407/398/392/390 (666K from the previous build against a 137M download). Landing links
+  unchanged, no site republish.
+
+- **A split's tabs are tabs again, marked by an 8px map of the split** — split members had rendered
+  as 22px chips borrowed from the sidebar's split band, which cost them the indicator slot (a member
+  needing input showed nothing), the active bar, the hover wash and shrink-to-fit. A member is now a
+  full tab, divided from its siblings by an inset hairline instead of a full seam, and grouping rides
+  on one mark: an 8px map of the split in each member's icon corner with that tab's own pane filled,
+  computed from the real pane tree, so it says which pane as well as grouped.
+
+- **Native port: a split's tabs are tabs again, marked by the pane map** — `TabCluster`/`ClusterChip`
+  deleted; a member is an ordinary `TabChip` carrying `groupPosition` (seams) and `paneMap` (the
+  mark), fed by `AppStore.paneRects(for:)` walking the same tree `echoMemberIDs` flattens. The
+  sidebar bleed now passes down to a group's first member, which is full-bleed like any tab.
+  `automation.screenshot` gained `"window":"main"`, because a tooltip NSPanel had been hijacking
+  every capture.
+- **Antigravity CLI (`agy`) is Synth's third hosted agent — ADR-0012's promise, cashed** — a session
+  can run **Antigravity** beside Claude Code and OpenCode, added as one `AgentDescriptor` plus one
+  `AgentSupervisor` and nothing else (persisted `AgentID` `antigravity`, binary `agy`). Google's I/O
+  2026 split matters here: the agent is the new Go TUI (v1.1.x, Claude Code's shape) replacing Gemini
+  CLI, *not* the Nov-2025 Antigravity IDE, which ships a same-named shell launcher into
+  `/Applications/Antigravity.app` that sits ahead of Homebrew on the login PATH — so detection
+  resolves symlinks and rejects any candidate inside an `.app` bundle. No event bus, so transport is
+  hook-driven like Claude's, but nothing of the user's is written: verified empirically that `agy`
+  loads `.agents/hooks.json` from `--add-dir` dirs too, so the shim writes hooks into a Synth-owned
+  per-session dir and appends `--add-dir`; `PreInvocation`/`PostToolUse` → working, `Stop` → idle +
+  unread. Readiness can't be Claude's "first hook" rule — agy's first hook is a *turn* start, so a
+  row would be undeliverable until someone typed — and it can't be a boot marker either: `agy`
+  announces "CLI mode" in milliseconds but shows a sign-in spinner for ~1.5s and keeps redrawing
+  for ~3s after, and a paste landing in any of that is lost silently. Readiness is therefore the
+  model resolving *and* the log going quiet, and — on a path agy has never seen, i.e. every fresh
+  worktree — the workspace trust prompt being answered: until it is, the row is needs-input and
+  never live, because a comment delivered there is swallowed and its Enter answers the *prompt*.
+  Synth reads that trust record and never writes it. needs-input has no hook either, so the shim
+  appends `--log-file` and the supervisor tails it for "Surfacing tool confirmation", cleared by
+  the next hook. `conversationId` from the hook payload gives true
+  resume (`agy --conversation <id>`) and `transcriptPath` the row's name; text is
+  a TUI paste; browser MCP lands in per-worktree `.agents/mcp_config.json`, never the global one.
+  `AGY_CLI_DISABLE_AUTO_UPDATE=1` (an embedded agent must not swap its binary mid-session) and
+  inherited `ANTIGRAVITY_CONVERSATION_ID`/`ANTIGRAVITY_PROJECT_ID` scrubbed so a nested agent isn't
+  mistaken for the row's. Auth is Google sign-in, free tier sufficient, quota shared across the
+  Antigravity surfaces; live harness gates skip until the machine is signed in.
+- **Synth 0.20.0 shipped (build 425).** A minor: Antigravity (`agy`) as a third hosted agent, and a
+  split's tabs restored to full tabs with the 8px pane map. Notarized + stapled (zip + dmg), verified
+  credential-less on the quarantined downloads (both Notarized Developer ID, the app inside the dmg
+  staples on its own, bundle reads 0.20.0 / 425, bundled changelog leads with 0.20.0); appcast newest
+  `sparkle:version` 425 / `0.20.0`, every enclosure EdDSA-signed, 5 deltas against 418/413/407/398/392
+  (850K from the previous build against a 137M download). `generate_appcast` swept 16 archives past
+  its retained window into `releases/old_updates/`, so the feed lists three items. Landing links
+  unchanged, no site republish.
+
+- **Ctrl-C interrupts an opencode row, it doesn't quit it** — an opencode conversation 69 messages
+  deep disappeared mid-turn, twice in one afternoon. opencode binds `app_exit` to
+  `ctrl+c,ctrl+d,<leader>q` and `session_interrupt` to `escape` alone, so the universal *stop*
+  gesture quits the app, measured exit code **0** — the clean exit on which Synth ends a row
+  (features 2026-07-06), taking the captured `ses_…` id with it, and raising no toast at all because
+  the closing card is only for rows you aren't looking at. Claude Code interrupts on the same key,
+  so opencode is rebound inside Synth: `session_interrupt` gains `ctrl+c`, `app_exit` keeps `ctrl+d`
+  and `<leader>q`. The seam is `OPENCODE_TUI_CONFIG`, an extra TUI config file merged after the
+  user's own and before any project one, written to `<Application Support>/opencode-tui.json` and
+  named from `decorate` — no file of the user's is touched, and a project `.opencode/tui.json` still
+  overrides it. Keybinds are a TUI concern: `OPENCODE_CONFIG_CONTENT` has no `keybinds` key.
+- **An agent that quits parks its conversation on a Reopen card** — a clean exit no longer closes
+  an agent row that holds a conversation. The row still leaves the tree, but it lands on an undo
+  card — the agent's mark, "OpenCode quit", the conversation's name, **Reopen** — and Reopen slots
+  it back where it stood, the pane rebuilding its terminal with `--resume`. Unlike every other undo
+  the card **never drains**: a fuse is right for undoing your own gesture, wrong for something you
+  didn't do that can land while you're away, so `band` now asks whether an undo actually drains
+  rather than assuming it does. Nothing parks when there is nothing to resume (a shell's `exit`, an
+  agent quit before its first prompt) — the rule is never destroy a conversation Synth can restore,
+  not never close a row. And it is raised whatever is on screen: `routeTransition` escalated only
+  rows you weren't looking at, which is why the foreground case — the one that actually happened —
+  was silent. Gate: `t17_agent_quit`.
+- **Antigravity reports the states it stops in: a question, an interrupt, a cap, a failure** — the
+  agent shipped with two self-moving statuses (working, idle) and a scraped permission prompt, so
+  every other stop was reported as one of those and always the wrong one. `agy` publishes five hook
+  events and no more; all five are now wired and their *payloads* read. `ask_question` is a tool, so
+  a blocked agent is `PreToolUse` + `toolCall.name` — the strongest signal available, setting and
+  clearing itself on the matching `PostToolUse` — not a log scrape. `PostInvocation` joins, because
+  approving a permission prompt need not produce a `PostToolUse` at all (agy defers long commands to
+  a later status step). `Stop` is one event for every ending, so `terminationReason` decides: `ERROR`
+  and the caps (`MAX_*`) are error, `USER_CANCELED` is idle — agy's spelling of Claude's 130/143, and
+  a row the user stopped themselves never wears red. A cancel never gets that far, though: agy calls
+  the `Stop` hook with the cancelled context and kills it, so the log tail (already there for the
+  permission prompt) also carries `Cancelling in-progress response` → idle, and the prompt's own
+  answer, so both ends of that state are read in one place. Verified against live `agy` 1.1.8 in a
+  PTY, including the negative that matters: under `--dangerously-skip-permissions` nothing is ever
+  "surfaced", so the log-derived needs-input can't misfire on every tool call. Running the gates
+  turned up something older on the way: a comment delivered to a freshly-live row is dropped about
+  half the time, because readiness ("the TUI stopped redrawing") is close to but not the same as the
+  input box being live. Delivery is now confirmed the way OpenCode's is — agy logs each prompt it
+  takes, so the paste is re-sent until that receipt arrives (six tries), never blind-retried, and
+  stood down when the user supplied their own `--log-file` and there is no receipt to wait for. Gate
+  t18 asserts the
+  full payload→signal table offline against a stub hook socket (plus the trap that an observing
+  handler must print *nothing*, or agy denies the tool), and takes one live turn for the question.
+- **Synth 0.21.0 shipped (build 433).** A minor: an agent that quits parks its conversation on a
+  Reopen card, Ctrl-C interrupts an opencode row instead of quitting it, and Antigravity reports the
+  four states it stops in. Notarized + stapled (zip + dmg), verified credential-less on the
+  quarantined downloads (both Notarized Developer ID, the app inside the dmg staples on its own,
+  bundle reads 0.21.0 / 433, bundled changelog leads with 0.21.0); appcast newest `sparkle:version`
+  433 / `0.21.0`, all 18 enclosures EdDSA-signed, 5 deltas against 425/418/413/407/398 (721K from
+  the previous build against a 131M download). Landing links unchanged, no site republish.
+
+## [2026-07-29](docs/features/2026-07-29.md)
+
+- **The active-pane focus strip is gone** — the 2px mark-colour bar across an active split pane's
+  full top edge is removed. It was the heaviest rule in the window, spent on the least surprising
+  fact on screen, and in tabs mode it ran the full width of a pane's content a few pixels under a
+  tab strip already carrying the same 2px bar in the same colour. Which pane is active is still
+  named where you look for it — the sidebar echo's copper open-tile, and the active tab's own bar —
+  and the keyboard state `activePane` drives is untouched. `--focus` stays for the tab bar and the
+  toast countdown.
+- **An agent you don't use is switched off, and Synth stops offering it** — a switch per agent in
+  Settings ▸ Synth ▸ Agent defaults; off drops it from every "New …" surface but never stops a
+  session already running one. Enabled means enabled *and* installed; a switched-off template entry
+  is skipped, not deleted, and "opens" hands off to the first survivor. Every agent off is allowed —
+  the paths with no user in front of them (browser comment, feedback, MCP handoff) say so up front
+  instead of swallowing what was typed. The row keeps its height when it dims, so nothing jumps.
+- **A gate run happens on your machine without happening to you** — `SYNTH_AUTOMATION=1` now means
+  invisible as well as drivable (`Automation.swift`): the app launches `.accessory` and never
+  activates (no Dock icon, no ⌘Tab slot, no focus taken), its windows — its own and the ⌘K panel —
+  are made unseeable rather than moved (`alphaValue = 0`, pointer-deaf, desktop level, out of Mission
+  Control and ⌘`) while staying ordered in at full size so `automation.screenshot` still renders
+  them — moving them away doesn't hold, AppKit constrains a titled frame back onto a screen and
+  parks a whole legible Synth on the second display. A synthetic keystroke no longer hides the
+  system-wide cursor, and a run no longer writes the developer's saved window frame. Notification
+  Center posts are recorded instead of delivered, which makes the unfocused branch assertable
+  (`automation.notifs` → `nc`) for the first time — t3
+  proves a background needs-input reaches it, t11 that the update card never does. The porting
+  skill's `TESTING.md`, which told agents to `osascript … frontmost` their instance to raise toasts
+  and to fall back to `screencapture -l<WINID>`, is rewritten onto `notifRoute`/`notifFocus` and the
+  in-process shot; `drive.swift` + `findwin.swift` are gone (`automation.key` lands keys without the
+  app ever being frontmost). Running the gates against it surfaced a race of their own: t12 read the
+  palette a fixed 0.4s after posting ⌘K and now waits for it, as t11 already did. Every verb still
+  runs the exact product path — the run is quieter, not thinner.
+- **Browser comments arrive as one batch, not one interruption each** — comment mode queues instead
+  of sending: numbered pins accumulate on the page, a floating island owns the batch (count, target,
+  one Send on ⌘⌥⏎ — not ⌘⇧⏎, which zooms a pane), and the host composes one numbered message with one
+  viewport screenshot plus a clip per comment, running the ownership ladder once. A comment names an
+  element, not a coordinate (element + box-fraction, so pins survive scroll/resize/zoom), and the
+  composer's path widens the target up the tree — which is what a drag-a-region mode was really for,
+  except exact. Empty comments cannot exist; leaving the mode parks the batch rather than dropping it.
+- **Every clean agent exit parks on the quit card — exit 0 is not a gesture** — opencode exits 0
+  dying on its own (observed mid-boot and ten minutes into an idle row), and its session is created
+  lazily on the first submitted prompt, so the "nothing to resume → close outright" carve-out
+  silently deleted exactly the row you were watching. Every agent row's clean exit now parks the
+  "quit" card: Reopen resumes with `--session <id>` when one was captured, relaunches fresh when
+  not. A shell's `exit` still closes a terminal row outright — there, the clean exit *is* the
+  user's gesture. Gate: `t17_agent_quit`.
+- **A batch of comments is only gone once it has landed** — send holds the queue on the page until
+  the host confirms delivery; a rejection hands back the pins, the text and the count with the reason,
+  because the last rung of the ladder can refuse (the target agent never reports live) and a batch
+  cleared on the way out was lost from both sides. ⌥ is excluded from the ⌘↩ notification chord, which
+  was quietly eating ⌘⌥↩ whenever a toast was up.
+- **Synth 0.22.0 shipped (build 458).** A minor: browser comments arrive as one batch instead of an
+  interruption per pin, an agent switched off in Settings stops being offered, every clean agent exit
+  parks on the quit card (opencode exits 0 on its own, and the old carve-out deleted the row you were
+  watching), and the active-pane focus strip is gone. Notarized + stapled (zip + dmg), verified
+  credential-less on the quarantined downloads (both Notarized Developer ID, the app inside the dmg
+  staples on its own, bundle reads 0.22.0 / 458, bundled changelog leads with 0.22.0); appcast newest
+  `sparkle:version` 458 / `0.22.0`, all 18 enclosures EdDSA-signed, 5 deltas against 433/425/418/413/407
+  (937K from the previous build against a 131M download). Landing links unchanged, no site republish.
+
+## [2026-07-30](docs/features/2026-07-30.md)
+
+- **A session reaps what left its process group** — `killpg` is the wrong unit for anything that
+  `setsid`s away (Claude Code's Bash tool detaches its background shells, so an agent's dev server is
+  outside the group from launch and reparents to launchd when its shell exits: 3.6 GB across 34
+  processes, measured). `SessionProcesses` reaps by the `SYNTH_SESSION_ID` stamp instead, which
+  survives leaving the group, reparenting, and the owning Synth exiting — recovering `setproctitle`
+  renamers (`next-server`) through their parent, and killing only processes whose cwd is inside a
+  folder Synth created, so the sixteen-day-old OrbStack carrying a dead session's id lives. Also at
+  launch (orphans of dead instances) and on memory pressure (orphans only, never a live row's
+  server). Entirely invisible: no UI, no setting. Gate: `t21_escaped_reap`.
+
+## [2026-07-31](docs/features/2026-07-31.md)
+
+- **A close hands off to its neighbour, not to your history (supersedes 016)** — the MRU view stack
+  is gone. It popped to the last session you *viewed*, across a branch or workspace boundary, with
+  the sidebar expanding and scrolling to reveal it — so where ⌘W left you was decided by state that
+  appears nowhere on screen, and two identical closes landed in different repos. A five-lens panel
+  agreed, and the prior art settles it: no comparable tool has an *unscoped* MRU (VS Code's is on by
+  default but never leaves the editor group; tmux's never leaves the session; Chrome/Safari/Xcode/Zed
+  use adjacency; list apps fall back to the parent). One sentence now: **closing a session hands you
+  its neighbour in the same branch, and never takes you outside it** — the row below, else above;
+  in tabs mode the strip *is* the branch, so that is the neighbouring tab; a split still just reflows
+  its sibling (001); an owner's browsers can't be the successor (ADR-0011); an emptied branch stops
+  at the empty pane. Closing a row you aren't viewing moves nothing but the cursor. The empty pane
+  stops being a dead end (it names the branch and carries ⌘N), which is what made it worth routing
+  around. Two older keyboard hazards fall out with it: the cursor lands on the successor session
+  rather than falling up to the branch row (so a second ⌘W can't archive a branch), a close from the
+  content no longer throws the keyboard into the sidebar (⌘W was rewriting its own scope between
+  presses), and ⌘W ignores auto-repeat. *Rejected:* a setting, MRU merely scoped to the branch, a
+  "returned to X" toast, a recents-list empty state. Both designs + native app. Gate:
+  `t22_close_successor`.
+
+## [2026-08-03](docs/features/2026-08-03.md)
+
+- **An archived branch always has a way back** — archive was reversible in principle and, in three
+  places, not in practice: reported on `hol-519-…` as "I can't add it back, it doesn't show up". An
+  archived row keeps its slot in `branches` (that is what lets the Archived list reach it), and every
+  other surface kept treating it as live. ⌘K → New branch filtered against *all* rows, so the name was
+  taken and the frame came back empty — the ref exists, so even the "New branch “x”" fallback stayed
+  away; it filters on `liveBranches` now and offers the archived match as a restore, with its age.
+  `restoreArchivedBranch` returned false once the reaper had taken the folder, and the caller
+  discarded the Bool — a silent no-op on the only route back; it can't decline any more, because **the
+  branch is a git ref and the checkout is derived from it**, so the worktree is cut again at its old
+  path and the row waits pending like a fresh create. And restore-from-disk dropped any archived row
+  whose folder was held aside or reaped, so a relaunch forgot the branch and orphaned the held folder
+  — only live rows are reconciled against disk now. The rule worth keeping: the branch is durable, the
+  folder is a cache, and no gate on the restore path may end in "can't". Gate: `t9_archive` (+9).
+- **A toast's × is where you aimed, not where the card ends** — reported against the update toast
+  ("there's a close icon if you hover, but clicking it does not close"), and it was every toast: they
+  share one `NotifCard`. The card's `contentShape` — there so the body is a big target for the primary
+  action — sat *above* the × overlay, and a content shape confines everything beneath it, so the only
+  live part of an 18pt disc hung 6pt off the corner was the crescent where it laps the 13pt radius.
+  The centre answered nothing; you had to aim at the inside edge. The card's hit shape and tap gesture
+  are pinned **under** the overlay now, and the target reaches 3pt past the disc it draws (real
+  padding — an overlaid wider circle isn't hit-tested outside its parent's frame — hence offset 9 =
+  6 overhang + 3 ring, leaving the disc on the design's -6/-6). Same invisible ring in both designs as
+  `.notif__x::before`. Gate: synthetic clicks into the running app — centre dismisses without firing
+  the action, 11pt out dismisses, 14pt out doesn't, Restart still works; pre-fix build fails at centre.
+- **Geist, and a type scale with six steps instead of twelve** — the system face gave way to Geist +
+  Geist Mono (variable TTFs, OFL), and the twelve sizes that lived between 9px and 15px, most half a
+  pixel apart, collapsed into six at least 1px apart: 10 · 11 · 12 · 13 · 14 · 15. Floor up from 9,
+  body from 11.5. All eighteen negative-tracking rules deleted — they were SF Pro calibration, and
+  Geist already sets ~2.3% narrower, so keeping them ran ~4% tighter than intended; positive tracking
+  on uppercase labels stays. Leading opened to 1.5–1.65 because Geist's line box is 10% taller than SF
+  Pro's at the same size (a deeper descender; cap and x-height are within a hair), and containers grew
+  to match. *Rejected:* retuning tracking on SF Pro alone, Geist sans with SF Mono kept, and Vercel's
+  own 12px floor / 16px body — that is a page you read, not chrome you work inside. Both designs +
+  native app.
+- **Weight is an axis, not seven names** — the fonts ship variable because working.html uses 450, 550
+  and 570, which `Font.Weight` cannot name; `.medium`/`.semibold` had been rounding all of them to the
+  wrong side, turning the notification title's 20-unit distinction from its ambient sibling into a
+  100-unit one. Call sites now pass the CSS number verbatim (`.sans(13, 550)`) and `Typography.swift`
+  instances the `wght` axis; verified against the built `.app` as five distinct widths, the odd ones
+  genuinely interpolated. Same file closes a trap: Geist's default figures are *proportional* (`'111'`
+  barely half the width of `'000'`), so `tabular:` applies `tnum` explicitly where seven sites had
+  leaned on `.monospacedDigit()`, which only knows the system face.
+- **Three defects the type audit turned up, unrelated to the typeface** — the device status bar hung
+  its size off `isTablet` but its weight off Android, where working.html keys both off Android alone
+  (so an iPad's bar was sized like Android's, and an Android phone's like iOS's); the scratch-terminal
+  confirm buttons carried `.dialog__btn`'s padding and fill but no font, leaving them in the system
+  face; and the pane header title sat a step behind its siblings because the rescale matched bare
+  literals and its size was a ternary. Also recorded: `.kerning()` and `.lineSpacing()` are absolute
+  points and follow no size change on their own, and SwiftUI gives a custom font its natural line box,
+  so the design's `line-height` never arrives for free.
+- **Stem darkening off — the designs were never asking for heavier text** — `-webkit-font-smoothing:
+  antialiased` had been in the design files all along, and besides naming an antialiasing mode it also
+  switches off the dilation CoreGraphics applies on top of it. Both sides were already
+  grayscale-antialiasing identically (subpixel left macOS in Mojave), so the whole difference was
+  weight — and measured on the real AppKit path it is 11–15% more ink at our sizes, meaning identical
+  nominal weights rendered ~12% heavier in the app than in the design. That was the "chunkier" read
+  left over after the tracking, leading and pane-title fixes. `Typography.matchDesignFontSmoothing()`
+  sets `AppleFontSmoothing` to 0 from `SynthMain`, before the first glyph; it must be the persistent
+  domain, since CoreGraphics reads the key through CFPreferences and never sees
+  `register(defaults:)`. *Still open:* the designs run two tiers (chrome thin, `auto` on `.term` /
+  `.set-code` / `.scr__body`) and the app runs one — `.set-code` is a native `TextEditor` in the wrong
+  tier — and 12% less ink at the scale's new 10px floor is a legibility cost worth eyes on.
+- **The design files stop depending on the network** — Geist came from a Google Fonts `<link>`, which
+  made both design files conditional on connectivity: offline they fall through to SF Pro and still
+  render, just not as the design. Now an inline `@font-face` pair over vendored variable woff2s in
+  `fonts/`, `font-display: block` because a flash of the wrong typeface is the failure mode for a file
+  whose purpose is to be looked at. Verified: zero requests to Google, axis still interpolating.
+- **Two dialog surfaces that had never matched** — `.field label` was sentence-case 11/500 against the
+  design's 10/600 uppercase on 0.05em, and the dialog action buttons carried no font at all, leaving
+  them in the system face; they now take `.dialog__btn`'s 13/550, set on the actions row rather than by
+  restyling, so the native default/cancel affordances survive. *Not done:* a second smoothing tier for
+  `.set-code` — per-view stem darkening has no clean SwiftUI seam and the payoff is unverified, so it
+  is recorded rather than worked around.
+- **A project is a git repository, or it isn't a project** — reported as a dead end: add a non-git
+  folder, it lands looking fine, then "New branch" fails on `fatal: not a git repository` with no way
+  to fix it from inside Synth. A panel of five was asked the open question and was unanimous: every
+  branch is a worktree, so a folder that can't host a branch can't be a project — a branchless row
+  can hold no session and does nothing. Two corrections came out of it. The test is **"does this
+  folder have a branch", not "is this a git repo"**: four folders produced the same branchless
+  project, and the likeliest is a repo — `git init` with no commit, where `refs/heads` is empty and
+  `worktree add -b x <path> HEAD` dies on `invalid reference: HEAD` — so a repo-ness check would have
+  shipped the bug again. And a **subdirectory** was accepted, which was worse than the dead end:
+  `--is-inside-work-tree` is true for any descendant, so one repo became two projects with two
+  `worktreeRoot`s; the pick resolves through `--show-toplevel` now, which also collapses symlink,
+  `/tmp` and case-only spellings, so re-adding a project reveals the one you have. The refusal lands
+  in `panel(_:validate:)` — once, on Add, leaving the panel on the folder you were looking at — as a
+  filesystem probe for `.git` *existing* (it is a file inside a linked worktree), never a git spawn on
+  the main thread under a modal; the same decision is made again where the project is created, for
+  callers with no panel. Also: **a Retry button is a claim that identical input could produce a
+  different output**, so the second identical failure withdraws it (a different reason is asked
+  afresh, a materialised branch earns it back), "No worktrees yet" → **"No branches yet"**, and the
+  Notification Center post carries the card's one line rather than the whole git dump. *Rejected:*
+  offering `git init` (4–1) — the usual mistake is the *wrong folder*, so one click makes a slip
+  permanent, and `init` alone leaves no branch, so Synth would have to author the first commit too;
+  plain folders as a second kind of project. Gate: `t23_projectgate`.
+- **Synth 0.23.0 shipped (build 478)** — a minor led by the typeface: Geist on a six-step scale with
+  the designs' own tracking, leading, weights and stem darkening. Plus four kept promises — a close
+  hands off to its neighbour in the same branch, an archived branch always has a way back, a project
+  must be a git repository with a branch (refused at the picker, subdirectories resolved to the
+  root), and a notification's × closes it wherever you click it — and two invisible fixes shipped as
+  changelog lines because their absence was noticed: escaped-process reaping and the launch crash on
+  a moved or unmounted project folder. Notarized + stapled (zip + dmg), verified credential-less on
+  the quarantined downloads (both Notarized Developer ID, the app inside the dmg staples on its own,
+  bundle reads 0.23.0 / 478, bundled changelog leads with 0.23.0); appcast newest `sparkle:version`
+  478 / `0.23.0`, all 18 enclosures EdDSA-signed, 5 deltas against 458/433/425/418/413 (1.1M from the
+  previous build against a 131M download). Landing links unchanged, no site republish.
+- **…and stem darkening back on: the menu bar is not ours to restyle** — reverses the entry above, same
+  day. `AppleFontSmoothing` is read per *process*, so switching it off thinned Synth's own menu bar
+  along with its chrome, and a menu ~12% lighter than every other app's is Synth failing to look like a
+  Mac app where the OS sets the vocabulary. `working.html` never modelled the menu bar;
+  `-webkit-font-smoothing: antialiased` spoke about Synth's surfaces, not the process. No seam exists to
+  scope it (the wall that also stopped `.set-code`), so the override is gone and the ~12% gap between
+  app chrome and the design files is an accepted divergence — the cost of AppKit rather than WebKit
+  drawing the text. Remember two things it cost: the preference *persists*, so deleting the code is not
+  a revert until the key is deleted too; and the domain is *shared across worktrees* via `CFBundleName`
+  "Synth Dev", so another checkout still carrying the override rewrites it for everyone.
+
+## [2026-08-04](docs/features/2026-08-04.md)
+
+- **The window is translucent, terminal included** — the window server blurs the wallpaper behind the
+  window and every surface above it is a plain fill over that one sample. It is deliberately *not* an
+  `NSVisualEffectView`: every AppKit material tints as well as blurs, and that tint multiplies with the
+  surface alpha above it, so `.underWindowBackground` left ~4% of the wallpaper showing and greyed out
+  light mode. `CGSSetWindowBackgroundBlurRadius` (radius 60) adds no tint — what CSS `backdrop-filter`
+  does, and what Ghostty does. Private API, so it is `dlsym`'d once and treated as an enhancement: with
+  it missing the window stays opaque, because the failure to avoid is not "no blur" but a translucent
+  shell over a *sharp* desktop. One blur means one translucent coat (`Theme.windowCoat`), and anything
+  differing from it is a tint **on** it — two compound to near-opaque, so the desktop would show through
+  the pane but not the sidebar, and the sidebar's rounded corners cut a hole through to the wallpaper.
+  Hence `sidebarStep` as `mono(0.04, 0.025)`: a tint of the ink holds its step where a fixed colour
+  breathes with the wallpaper. Dark carries **0.11** more opacity than light (0.97 vs 0.86) and the gap
+  is the finding — the same light is a ~3% change on light's 250 and a ~28% lift on dark's 25, so a
+  near-equal pair read as too transparent in dark and too flat in light at once. Radius before opacity:
+  radius decides how recognisable the desktop is and costs nothing, the coat costs legibility. It cost
+  one grey — `--ink-meta` darkened 16 levels in light, because it cleared 4.5:1 with zero margin and no
+  coat value could hold both (the sidebar only clears again at a fully opaque 1.00). The terminal
+  participates rather than sitting on the effect as an opaque slab: chrome-only and
+  everything-but-terminal were rejected because half the effect costs nearly all the legibility risk and
+  buys none of the impression. Ghostty now paints the whole card, inset included, at 0.55/0.58 — a
+  SwiftUI fill behind the cells made them a second coat and the terminal read as more solid than its own
+  border. Three bugs surfaced, all the same shape — something quietly relying on an opaque surface to
+  occlude what was behind it: that double-coated terminal, the card's own `.shadow` (SwiftUI blurs
+  *alpha*, so it showed through the card it belonged to), and the tabs-mode first-tab bleed (a plain
+  rectangle that an opaque sidebar used to hide all but the corner of).
+- **Tabs are chips on a rail, and a split is a hairline tray** — the strip stops being one solid band
+  welded to the window: each tab is a 28px chip on a 42px rail, and the open one lifts off it as a card,
+  which is the whole of "open" — no seam, no bottom bar, no fill reaching the window edge. Three chip
+  directions were built live in the shell (**inset** elevation, **track** recessed-well-and-thumb,
+  **focus** icon-only-unless-on-screen) and inset won; track truncates first because everything shares
+  one hugging container, and focus is unreadable at a glance when half the sessions share a terminal
+  icon. Because nothing reaches the seam, `.tab-bleed` — an element plus a `radial-gradient` mask plus
+  two `:has()` rules, existing only so the first tab's fill followed the sidebar's rounded corner — is
+  **deleted**. A split's run of members got its own round (**tray** / **bracket** / **lead** glyph /
+  **merged** into one chip); tray won, but its recessed *fill* was wrong and is gone: on this strip a
+  background is what open means, so filling the tray handed every unfocused member the one signal
+  reserved for one tab. It is a hairline container over the bare rail now. **Merged** is the direction
+  to keep in reserve — the only shell that gets cheaper as a split grows (a four-pane split leaves every
+  other tab its full name) — rejected on signal, not space: a non-active member loses its indicator, so
+  a pane going to needs-input behind the chip says nothing. The members' refusal to shrink was
+  `min-width: auto` on `.tab-group`: as a flex item its floor was its own min-content, where a lone
+  `.tab` escapes that by setting `min-width: 34px` explicitly. Zeroing it puts a member on the same
+  terms as every other tab, which is the premise — a member IS a tab.
+- **Tabs-mode branches carry their session facts without growing a third tree level** — the branch
+  row becomes a 46px two-line summary (`N sessions · activity`) with a fixed PR/status rail; classic
+  sidebar mode keeps its original compact disclosure row. Both designs + native app.
+- **The pre-notarization Gatekeeper check asserts *why*** — `spctl`'s expected `rejected` before
+  notarization was indistinguishable from a broken-build `rejected` because the line ended in
+  `|| true`; it now requires `source=Unnotarized Developer ID` and dies on anything else, and says
+  so in the log. Release skill also records: never edit `release.sh` mid-run.
+- **Claude Code answers for its own colours in light mode** — light mode was unreadable because
+  `theme` in `~/.claude.json` is read **once at startup**: measured, a running session ignores a rewrite,
+  so Synth's old sync only reached *new* sessions and every open one kept painting Claude Code's dark
+  theme onto a near-white surface — body text `#ffffff` at **1.06:1**, **57 of 72 tokens** under 4.5:1.
+  `theme: "auto"` is the trap: it enables DEC 2031 and then ignores every notification, so it resolves
+  to dark regardless, and the old guard deliberately *skipped* it. Synth now ships its own
+  `custom:synth` theme and re-themes by rewriting `~/.claude/themes/synth.json`, which Claude Code
+  watches — proven to re-theme a **running** session both ways. One file, not a pair, because the
+  tokens, the diff renderer *and* the syntax highlighter all follow the single `base`. **20 light
+  overrides**, hue kept and only lightness lowered, worst being `subtle` at **2.06:1** (the grey every
+  hint and timestamp uses). Left alone with reasons: `diffAddedWord`/`diffRemovedWord` are *fills* with
+  black painted on them (deepening them drove that ink 17:1 → 4.28:1 — reverted), `inverseText` is white
+  by design so its backing is fixed instead, `clawd_background` is the mascot. Recorded not fixed, no
+  lever: the syntax highlighter (a separate wholesale palette, `#0086b3` at 3.90) and one hard-coded
+  `#5769f7` (4.14) proven non-themeable by forcing every token magenta. Dark rides untouched and is
+  pinned where it ships, not gated. New `t24_agentcontrast` replays a real session through a small
+  terminal emulator and measures every run of ink against its own background, parsing the override
+  table out of the Swift so the gate cannot pass a theme the app does not write.
+- **The archive becomes a place you can stand, and the design files catch up to `ArchiveSweeper`** —
+  Settings gains the app's clean-up switch and grace picker plus two new disk-budget rows (25
+  worktrees, 50 GB), and a per-project list of what is still on disk carrying each folder's sweeper
+  verdict — `PR still open`, `6 days left` — with Restore and a permanent delete that confirms in
+  the ⌘K frame (one `deleteWorktreeFrame`, two callers — no dialog). The verdicts are the policy,
+  so the section states no rule in prose. A budget brings an unblocked folder's turn forward; it
+  never lets one past a gate. ⌘K's archived list is now project-scoped and drills in, and its
+  confirm is the one Settings' trash opens. Both designs + native app.
+- **A waiting build gets a button in the sidebar foot, in the mark's own hue** — Settings drops its
+  `⌘,` hint (unchanged shortcut, still in ⌘? and ⌘K); a `Restart to update` row washed in the icon's
+  champagne stands above it for as long as a downloaded build sits unapplied. The update notification
+  card is gone — a waiting build never toasts, both its surfaces are pull. Both designs.
+- **opencode's light half stops being too pale; `agy` has no lever at all** — the same measurement run
+  against the other two agents, finding three different problems. **opencode's machinery already
+  works**: it asks the terminal its colour (OSC 10/11), enables DEC 2031, and re-themes a *running*
+  session on notification — the first reading, that it painted `#0a0a0a` on a light surface, was the
+  2026-07-27 harness artefact again (a pty that records output without answering makes it fall back to
+  dark). Its *values* were wrong: against the surfaces opencode paints for itself (it never lets the
+  terminal's show through, so `#f5f5f5` is the reference) `textMuted` sat at **3.17:1** and
+  `accent`/`warning` at **2.52:1**. Synth now installs `~/.config/opencode/themes/synth.json` with
+  **11 values deepened**, hue kept, dark half copied through — which `t25` proves by extracting
+  opencode's own theme from its binary and comparing rather than claiming. A partial theme *crashes*
+  opencode, so this is a fork that will drift, and the gate renders a real opencode so a stale key
+  fails loudly. **`agy` gets nothing**: it asks the terminal nothing, has no theme setting anywhere,
+  and paints hard-coded truecolor (`GetThemeMode` in its binary is Chrome DevTools, a red herring), so
+  `t26` pins at 2.70:1 and records `#4285f4` 3.35, `#d0d0d0` 1.45, and `#9296a1` 2.78 — that last one
+  Synth's own ANSI slot 7, a documented dead end: darkening it for agy's ink drops t13's
+  slot-7-as-a-fill from 4.5 to 3.64. `ccontrast` gained a **fill** role (block elements are surfaces,
+  not controls — reported, never gated), which retired the `clawd_body` override.
+- **Correction: `agy` does have a colour-scheme setting, and its default is still the right one** — the
+  entry above claims it has none. It has **Color Scheme**, eight options with a live preview, invisible
+  from outside (not in `--help`, not a subcommand, absent from `settings.json` until changed) because it
+  lives in the interactive `/config` panel and persists as a plain `colorScheme` string. Synth still
+  writes nothing, for a better reason: **no option is accessible and the default is the best of them**.
+  On a real conversation, 168 runs, light surface — `terminal` 2 failing / worst text **1.45** (code
+  fence); `light` and `colorblind-friendly light` 4 failing / worst text 2.80; `solarized light` 5
+  failing. `terminal` wins because it draws most of its UI from the **ANSI palette** `TerminalTheme`
+  already tunes to 7:1 — Synth's palette beats agy's own light theme, so switching schemes discards it,
+  repairing the code fence while breaking the separator to 1.29:1 and adding two more: one bad value
+  traded for four. `t26` gains a fourth screen (the settings panel) and prints the Color Scheme row, so
+  an accessible scheme appearing upstream shows up rather than going unnoticed.
+- **Two loose ends closed: the subagent hues are dual-use, and an ANSI light base was declined** — the
+  eight `*_FOR_SUBAGENTS_ONLY` overrides were unverified, which is how the `diffAddedWord` mistake
+  happened. They cannot be rendered from a transcript (a subagent tree never reaches for them; they are
+  assigned live), so the code settled it: `bht()` feeds them to a badge as **`bgColor`**, and the badge
+  resolves its foreground as `textColor ?? "inverseText"` — **white on the token** — while the same
+  token is ink for the rule beside it. Both uses want darker, so the overrides were right: as ink
+  2.75–3.53 → 4.60–4.64, as a fill under white **2.93–3.76 → 4.89–4.93**. `t24` now asserts the second
+  half, which is the `diffAddedWord` check generalised. Separately, `base: "light-ansi"` was measured:
+  Claude Code picks its syntax theme from the resolved base by substring, so an ANSI base routes the
+  highlighter, the diff renderer *and* the hard-coded `#5769f7` through the palette `t13` already gates
+  — **0 failing text runs** (2 chrome, worst 2.19) and no override table at all, versus 6 failing text
+  runs (worst 3.52) today. **Declined on appearance, not contrast**: sixteen colours would make light
+  read visibly flatter than dark, and light and dark ceasing to look like the same app is worse than
+  six legible-but-poor runs. Recorded with the numbers so it stays a decision taken, not one to redo.
+- **0.26.0 ships** — the version boundary: the eight entries above this line are 0.26.0, `CFBundleVersion`
+  515, tag `v0.26.0`. Four reach the in-app changelog (the chip tab strip, agent light mode, Settings ▸
+  Archived, the update row in the sidebar foot); the other four are the measurement behind them and stay
+  ledger-only, because a decision the reader was never going to make is not a changelog line. The two
+  agent-theme entries collapse into one, since from outside they are one thing — light mode is legible
+  *inside* the agent now — and the line leads with the number a user can check (body text 1.06:1, 57 of 72
+  colours under threshold) rather than with which agent needed which fix. Both artifacts were re-verified
+  from the public bucket with no credentials and quarantine set: the `Synth.app` **inside** the dmg
+  staples on its own, not just the image around it, and every appcast enclosure including all 5 deltas
+  carries an `edSignature`. Landing page unchanged — its buttons point at the stable `Synth.dmg` alias,
+  so the alias moved under it and `synth-site` needed no push.
+- **The rail stops being deeper than the run it holds: 42px → 36px** — a split's tray sat in 5px of
+  vertical air top and bottom while the gap to the tab beside it was 3px, and that mismatch is what read
+  as too much space above the tab group. 36px is the 32px tray plus 2px — the same 2px the tray already
+  gives its own members, so the clearance around the run matches the clearance inside it. Nothing inside
+  the tray moved: 2px there is what keeps the tray's hairline off the active member's hairline, and taking
+  it to zero would leave the tray visible only in the 2px side gaps. **Cost, taken knowingly:** the chip
+  row is centred in the rail, so it rises 3px and now sits 7px (was 4px) above the centreline of the
+  traffic lights and the sidebar toggle. Those can't come up to meet it — AppKit fixes the lights'
+  vertical position — so the choice was a tight rail or an aligned top row, and tight won.
+
 ## [2026-08-03](docs/features/2026-08-03.md)
 
 - **The simulator is a session, and its screen comes from the device's framebuffer** — the simulator

@@ -40,7 +40,7 @@ struct SettingsPane: View {
             if store.sidebarCollapsed { SidebarToggle().padding(.trailing, 2) }
             Phos(path: Phosphor.gear, size: 16).foregroundStyle(Theme.inkMuted).frame(width: 18)
             Text("Settings")
-                .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                .font(.sans(13, 600))
                 .foregroundStyle(Theme.ink)
             tabStrip.padding(.leading, 8)
             Spacer(minLength: 0)
@@ -97,17 +97,35 @@ struct SettingsPane: View {
                 SetEditorRow(label: "Sessions", desc: "Every new worktree opens with these. The first one opens.") {
                     VStack(alignment: .leading, spacing: 8) {
                         TplList(entries: bind(\.globalSessionTemplate),
-                                emptyText: "No sessions — new worktrees open empty.", firstOpens: true)
+                                emptyText: "No sessions — new worktrees open empty.",
+                                opensIndex: store.templateOpensAt(store.globalSessionTemplate))
                         TplAddBar(entries: bind(\.globalSessionTemplate))
                     }
                 }
             }
+            // The flags you'd set for an agent are exactly what you don't need once it's off, so
+            // the switch and the field live on one row: off greys the row and takes the field
+            // with it. The row itself stays, at the same height — the switch that brings the
+            // agent back has to be somewhere you can find it, and a collapsing row would shove
+            // everything below it.
             SetSection(label: "Agent defaults") {
                 ForEach(Array(AgentRegistry.installed.enumerated()), id: \.element.id) { i, agent in
                     if i > 0 { SetDivider() }
-                    SetEditorRow(label: agent.binaryName, desc: "Flags added to every \(agent.binaryName) launch.") {
-                        FlagField(text: globalFlagsBinding(agent), placeholder: agent.exampleFlags)
+                    let on = store.isAgentEnabled(agent.id)
+                    SetEditorRow(label: agent.binaryName,
+                                 desc: "Flags added to every \(agent.binaryName) launch.",
+                                 dimmed: !on,
+                                 // A switch has no text baseline, so the row's firstTextBaseline
+                                 // HStack would fall back to its bottom edge and sit it low —
+                                 // pin its centre to the label's baseline instead.
+                                 trailing: {
+                                     switchControl(agentEnabledBinding(agent))
+                                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                                 }) {
+                        FlagField(text: globalFlagsBinding(agent), placeholder: agent.exampleFlags,
+                                  enabled: on)
                     }
+                    .animation(.easeOut(duration: 0.15), value: on)
                 }
             }
             SetSection(label: "Privacy") {
@@ -115,22 +133,36 @@ struct SettingsPane: View {
                     switchControl(bind(\.analyticsEnabled))
                 }
             }
+            // Only the switch carries a description, and only the half of it you can't read off
+            // the controls: that the sweep touches nothing unrecoverable. Each picker states its
+            // own rule — a sentence under "Never · 7 · 14 · 30 days" would say it again, slower.
+            //
+            // Every row after the switch folds away when it's off: what remains has nothing to
+            // configure, and unlike the agent rows there's no field here whose absence would hide
+            // the way back.
             SetSection(label: "Archived worktrees") {
                 switchRow("Clean up archived worktrees",
-                          "Deletes an archived worktree's folder once it's merged, clean, and old enough. The git branch is never deleted.",
+                          "Only once the work is safely on a remote. The git branch is never deleted.",
                           bind(\.archiveSweepEnabled))
                 if store.archiveSweepEnabled {
                     SetDivider()
-                    SetEditorRow(label: "Wait before cleaning up",
-                                 desc: "How long an archived worktree sits untouched first. Its folder is then held aside for another two weeks before it is really deleted.") {
-                        Picker("", selection: bind(\.archiveGraceDays)) {
-                            Text("Never").tag(0)
-                            Text("7 days").tag(7)
-                            Text("14 days").tag(14)
-                            Text("30 days").tag(30)
-                        }
-                        .labelsHidden()
-                        .frame(width: 120)
+                    SetToggleRow(label: "Wait before cleaning up") {
+                        SetSeg(options: [(0, "Never"), (7, "7 days"), (14, "14 days"), (30, "30 days")],
+                               selection: bind(\.archiveGraceDays), width: SegWidth.four)
+                    }
+                    SetDivider()
+                    // A budget can only bring an unblocked folder's turn forward — it never lets
+                    // one through a gate. That fact is carried by the verdicts on the Archived
+                    // rows, where it is about a folder you can see, rather than asserted here as
+                    // a caption nobody reads twice.
+                    SetToggleRow(label: "Most worktrees archived") {
+                        SetSeg(options: [(10, "10"), (25, "25"), (50, "50"), (0, "No cap")],
+                               selection: bind(\.archiveMaxCount), width: SegWidth.four)
+                    }
+                    SetDivider()
+                    SetToggleRow(label: "Most disk archived") {
+                        SetSeg(options: [(20, "20 GB"), (50, "50 GB"), (100, "100 GB"), (0, "No cap")],
+                               selection: bind(\.archiveMaxGB), width: SegWidth.four)
                     }
                 }
             }
@@ -173,18 +205,25 @@ struct SettingsPane: View {
                     LayeredSessions(shared: store.globalSessionTemplate, own: sessionsBinding(ws))
                 }
             }
-            SetSection(label: "Agents") {
-                ForEach(Array(AgentRegistry.installed.enumerated()), id: \.element.id) { i, agent in
-                    if i > 0 { SetDivider() }
-                    let shared = (store.globalAgentFlags[agent.id] ?? "").trimmingCharacters(in: .whitespaces)
-                    SetEditorRow(label: agent.binaryName,
-                                 desc: shared.isEmpty ? "Flags for \(agent.binaryName) launches." : "Added after the shared \(agent.binaryName) flags.",
-                                 trailing: { if hasFlagsDelta(ws, agent) { ClearButton { clearFlags(ws, agent) } } }) {
-                        FlagLineField(binary: agent.binaryName, shared: shared,
-                                      tail: wsFlagsBinding(ws, agent), placeholder: agent.exampleFlags)
+            // A switched-off agent drops out here entirely rather than greying: the switch is
+            // app-level, so repeating a dead row in every project is the clutter this removes.
+            // The project's flags for it stay in the delta, waiting.
+            let agents = store.availableAgents
+            if !agents.isEmpty {
+                SetSection(label: "Agents") {
+                    ForEach(Array(agents.enumerated()), id: \.element.id) { i, agent in
+                        if i > 0 { SetDivider() }
+                        let shared = (store.globalAgentFlags[agent.id] ?? "").trimmingCharacters(in: .whitespaces)
+                        SetEditorRow(label: agent.binaryName,
+                                     desc: shared.isEmpty ? "Flags for \(agent.binaryName) launches." : "Added after the shared \(agent.binaryName) flags.",
+                                     trailing: { if hasFlagsDelta(ws, agent) { ClearButton { clearFlags(ws, agent) } } }) {
+                            FlagLineField(binary: agent.binaryName, shared: shared,
+                                          tail: wsFlagsBinding(ws, agent), placeholder: agent.exampleFlags)
+                        }
                     }
                 }
             }
+            SetSection(label: "Archived") { ArchivedWorktrees(workspace: ws) }
         }
     }
 
@@ -193,10 +232,10 @@ struct SettingsPane: View {
             VStack(spacing: 0) {
                 Phos(path: Phosphor.folder, size: 26).foregroundStyle(Theme.inkFaint)
                 Text("No projects yet")
-                    .font(.system(size: 13, weight: .semibold)).kerning(-0.13)
+                    .font(.sans(13, 600))
                     .foregroundStyle(Theme.ink).padding(.top, 10)
                 Text("Add a project to set what its worktrees open with.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted).padding(.top, 4)
+                    .font(.sans(12)).foregroundStyle(Theme.inkMuted).padding(.top, 4)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 34).padding(.horizontal, 20)
@@ -218,6 +257,11 @@ struct SettingsPane: View {
 
     private func bind<V>(_ key: ReferenceWritableKeyPath<AppStore, V>) -> Binding<V> {
         Binding(get: { store[keyPath: key] }, set: { store[keyPath: key] = $0 })
+    }
+
+    private func agentEnabledBinding(_ agent: AgentDescriptor) -> Binding<Bool> {
+        Binding(get: { store.isAgentEnabled(agent.id) },
+                set: { store.agentEnabledPrefs[agent.id.rawValue] = $0 })
     }
 
     private func globalFlagsBinding(_ agent: AgentDescriptor) -> Binding<String> {
@@ -267,7 +311,7 @@ private struct SetTab: View {
             HStack(spacing: 7) {
                 if let workspace { WsChip(workspace: workspace, size: 15) }
                 Text(label)
-                    .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
+                    .font(.sans(13, 550))
                     .foregroundStyle(on ? Theme.ink : (hovering ? Theme.ink2 : Theme.ink4))
                     .lineLimit(1)
             }
@@ -293,7 +337,7 @@ private struct SetSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold)).kerning(0.6)
+                .font(.sans(10, 600)).kerning(0.6)
                 .foregroundStyle(Theme.navLabel)
                 .padding(.leading, 2).padding(.bottom, 10)
             VStack(spacing: 0) { content }
@@ -319,10 +363,10 @@ private struct SetToggleRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.system(size: 12.5, weight: .medium)).kerning(-0.08).foregroundStyle(Theme.ink)
+                Text(label).font(.sans(13, 550)).foregroundStyle(Theme.ink)
                 if let desc {
-                    Text(desc).font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted)
-                        .lineSpacing(1.5).fixedSize(horizontal: false, vertical: true)
+                    Text(desc).font(.sans(12)).foregroundStyle(Theme.inkMuted)
+                        .lineSpacing(2.4).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)
@@ -333,24 +377,36 @@ private struct SetToggleRow<Control: View>: View {
 }
 
 /// A row whose control is a full-width body (editor, session list) beneath the label.
+/// `dimmed` greys the label and description (working.html `.set-row--off`) without changing
+/// a single metric — the body stays where it is, so a row that switches off doesn't move
+/// anything below it.
 private struct SetEditorRow<Trailing: View, Body: View>: View {
     let label: String
     var desc: String? = nil
+    var dimmed: Bool = false
     @ViewBuilder var trailing: Trailing
     @ViewBuilder var content: Body
 
-    init(label: String, desc: String? = nil,
+    init(label: String, desc: String? = nil, dimmed: Bool = false,
          @ViewBuilder trailing: () -> Trailing = { EmptyView() },
          @ViewBuilder content: () -> Body) {
-        self.label = label; self.desc = desc; self.trailing = trailing(); self.content = content()
+        self.label = label; self.desc = desc; self.dimmed = dimmed
+        self.trailing = trailing(); self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // One line each, always: the header shares its baseline with a switch, and a desc
+            // allowed to wrap in a narrow pane would grow the row and shove the rest of the
+            // section down. The label never gives up space; the desc truncates instead.
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(label).font(.system(size: 12.5, weight: .medium)).kerning(-0.08).foregroundStyle(Theme.ink)
+                Text(label).font(.sans(13, 550))
+                    .foregroundStyle(dimmed ? Theme.ink4 : Theme.ink)
+                    .lineLimit(1).fixedSize()
                 if let desc {
-                    Text(desc).font(.system(size: 11.5)).foregroundStyle(Theme.inkMuted)
+                    Text(desc).font(.sans(12))
+                        .foregroundStyle(dimmed ? Theme.inkFaint : Theme.inkMuted)
+                        .lineLimit(1).truncationMode(.tail)
                 }
                 Spacer(minLength: 8)
                 trailing
@@ -368,7 +424,7 @@ private struct ClearButton: View {
     var body: some View {
         Button(action: action) {
             Text("Clear")
-                .font(.system(size: 11.5, weight: .medium))
+                .font(.sans(12, 500))
                 .foregroundStyle(hovering ? Theme.ink : Theme.ink4)
                 .underline(hovering)
         }
@@ -389,9 +445,9 @@ private struct ScriptEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                Text(caption).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(Theme.ink4)
+                Text(caption).font(.mono(11, 500)).foregroundStyle(Theme.ink4)
                 Spacer(minLength: 8)
-                if let note { Text(note).font(.system(size: 11)).foregroundStyle(Theme.inkFaint) }
+                if let note { Text(note).font(.sans(11)).foregroundStyle(Theme.inkFaint) }
             }
             CodeEditor(text: $text, placeholder: placeholder, minHeight: 96)
         }
@@ -421,13 +477,13 @@ private struct CodeEditor: View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
                 Text(placeholder)
-                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(Color(hex: 0xD4D6DC).opacity(0.30))
+                    .font(.mono(12)).foregroundStyle(Color(hex: 0xD4D6DC).opacity(0.30))
                     .padding(.horizontal, 15).padding(.vertical, 13).allowsHitTesting(false)
             }
             TextEditor(text: $text)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.mono(12))
                 .foregroundStyle(Color(hex: 0xD4D6DC))
-                .lineSpacing(3).scrollContentBackground(.hidden)
+                .lineSpacing(3.6).scrollContentBackground(.hidden)
                 .padding(.horizontal, 15).padding(.vertical, 13)
                 .frame(minHeight: minHeight)
         }
@@ -486,10 +542,10 @@ private struct SharedSetupStrip: View {
                 Phos(path: Phosphor.caret, size: 12).foregroundStyle(Theme.inkFaint)
                     .rotationEffect(.degrees(open ? 90 : 0))
                 Text("Shared Synth setup · \(lineCount) lines")
-                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.ink4)
+                    .font(.sans(12, 500)).foregroundStyle(Theme.ink4)
                 Spacer(minLength: 8)
                 Button(action: editInSynth) {
-                    Text("Edit in Synth").font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.input)
+                    Text("Edit in Synth").font(.sans(12, 500)).foregroundStyle(Theme.input)
                 }.buttonStyle(.plain)
             }
             .padding(.horizontal, 11).padding(.vertical, 8)
@@ -499,16 +555,16 @@ private struct SharedSetupStrip: View {
             if open {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(base)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.mono(11))
                         .foregroundStyle(Color(hex: 0x8B8E96))
                         .strikethrough(skip)
-                        .lineSpacing(2)
+                        .lineSpacing(2.75)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12).padding(.vertical, 10)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.termBg))
                     Toggle(isOn: $skip) {
                         Text("Don't run the shared setup in \(projectName)")
-                            .font(.system(size: 11)).foregroundStyle(Theme.inkMuted)
+                            .font(.sans(11)).foregroundStyle(Theme.inkMuted)
                     }
                     .toggleStyle(.checkbox).controlSize(.small)
                 }
@@ -526,22 +582,81 @@ private struct SharedSetupStrip: View {
 private struct FlagField: View {
     @Binding var text: String
     let placeholder: String
+    /// Off keeps the field exactly where it is, at exactly its height — there is just nothing
+    /// to edit for an agent that will never launch, so it greys out, stops taking a caret and
+    /// drops out of the tab order (working.html `.set-row--off .set-code--flags`).
+    var enabled: Bool = true
+
+    private var ink: Color { enabled ? Color(hex: 0xD4D6DC) : Color(hex: 0x8B8E96) }
 
     var body: some View {
         ZStack(alignment: .leading) {
             if text.isEmpty {
-                Text(placeholder).font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color(hex: 0xD4D6DC).opacity(0.30)).allowsHitTesting(false)
+                // The placeholder tracks the field's own ink: opencode and antigravity ship with
+                // no default flags, so on an unedited field it is the ONLY text in the row's
+                // body, and a placeholder that stayed bright would read as a field still live.
+                Text(placeholder).font(.mono(12))
+                    .foregroundStyle(ink.opacity(0.30)).allowsHitTesting(false)
             }
-            TextField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color(hex: 0xD4D6DC))
+            MonoLineField(text: $text, editable: enabled, ink: ink)
         }
         .padding(.horizontal, 15).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(Theme.termBg))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5))
+    }
+}
+
+/// One mono line that is always selectable and only sometimes editable — AppKit, because
+/// SwiftUI's `TextField` can only be `.disabled`, and disabled takes the field out of
+/// hit-testing altogether: the flags you would want to copy somewhere else can't even be
+/// selected, and AppKit greys the text a second time on top of the colour we set. Read-only
+/// is what "off" means here (working.html's `readonly` + `caret-color: transparent`).
+///
+/// The same view draws both states, so flipping the switch cannot move a pixel.
+private struct MonoLineField: NSViewRepresentable {
+    @Binding var text: String
+    let editable: Bool
+    let ink: Color
+
+    func makeNSView(context: Context) -> NSTextField {
+        let f = KeyLoopField(string: "")
+        f.isBordered = false
+        f.drawsBackground = false
+        f.focusRingType = .none
+        f.font = .mono(12)
+        f.lineBreakMode = .byTruncatingTail
+        f.cell?.usesSingleLineMode = true
+        f.delegate = context.coordinator
+        f.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        f.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return f
+    }
+
+    func updateNSView(_ f: NSTextField, context: Context) {
+        context.coordinator.text = $text
+        f.isEditable = editable
+        f.isSelectable = true
+        f.textColor = NSColor(ink)
+        if f.stringValue != text { f.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+        func controlTextDidChange(_ obj: Notification) {
+            guard let f = obj.object as? NSTextField else { return }
+            text.wrappedValue = f.stringValue
+        }
+    }
+
+    /// Selection is a click; the tab loop is not. A read-only field keeps the first — you can
+    /// still reach in and copy — and leaves the key view loop, so tabbing through Settings
+    /// walks the switches and fields that still do something.
+    private final class KeyLoopField: NSTextField {
+        override var canBecomeKeyView: Bool { isEditable }
     }
 }
 
@@ -573,10 +688,10 @@ private struct FlagLineField: View {
                 .textFieldStyle(.plain).foregroundStyle(blue)
                 .frame(minWidth: 90)
         }
-        .font(.system(size: 11.5, design: .monospaced))
+        .font(.mono(12))
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.tuiBg))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.tuiSolid))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.tuiHair, lineWidth: 1))
     }
 }
@@ -604,18 +719,23 @@ private enum TplMetrics {
 /// .tpl-row--shared), the project's own added below and reorderable, then the add bar. The
 /// first row overall opens; numbering continues across the boundary.
 private struct LayeredSessions: View {
+    @Environment(AppStore.self) private var store
     let shared: [SessionTemplateEntry]
     @Binding var own: [SessionTemplateEntry]
 
     var body: some View {
+        // The opener can sit in either list — it's the first entry overall whose agent is
+        // still switched on, so a disabled shared row hands "opens" down to whatever follows.
+        let opens = store.templateOpensAt(shared + own)
         VStack(alignment: .leading, spacing: 8) {
             VStack(spacing: TplMetrics.gap) {
                 ForEach(Array(shared.enumerated()), id: \.element.id) { i, entry in
-                    SharedSessionRow(entry: entry, index: i, opens: i == 0)
+                    SharedSessionRow(entry: entry, index: i, opens: i == opens)
                 }
             }
             TplList(entries: $own, emptyText: "No extra sessions — opens with the shared set.",
-                    indexOffset: shared.count, firstOpens: shared.isEmpty)
+                    indexOffset: shared.count,
+                    opensIndex: opens.flatMap { $0 >= shared.count ? $0 - shared.count : nil })
             TplAddBar(entries: $own)
         }
     }
@@ -623,22 +743,28 @@ private struct LayeredSessions: View {
 
 /// A locked shared session row on a project scope — greyed, no grip/×, tagged "Synth".
 private struct SharedSessionRow: View {
+    @Environment(AppStore.self) private var store
     let entry: SessionTemplateEntry
     let index: Int
     let opens: Bool
 
+    private var off: Bool { !store.isAgentEnabled(entry.kind) }
+
     var body: some View {
         HStack(spacing: 8) {
             TplIndex(i: index)
-            TplKindIcon(kind: entry.kind)
+            TplKindIcon(kind: entry.kind, off: off)
             Text(entry.name)
-                .font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
-                .foregroundStyle(Theme.inkMuted).lineLimit(1).padding(.horizontal, 5)
+                .font(.sans(13, 500))
+                .foregroundStyle(off ? Theme.inkFaint : Theme.inkMuted)
+                .strikethrough(off, color: Theme.inkFaint)
+                .lineLimit(1).padding(.horizontal, 5)
             if opens { TplOpensTag() }
+            if off { TplOffPill() }
             Spacer(minLength: 4)
             TplKindPill(kind: entry.kind)
             Text("Synth")
-                .font(.system(size: 9.5, weight: .semibold)).kerning(0.3)
+                .font(.sans(10, 600)).kerning(0.3)
                 .foregroundStyle(Theme.inkFaint)
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .background(Capsule().fill(Theme.rowSelected))
@@ -653,8 +779,20 @@ private struct SharedSessionRow: View {
 private struct TplOpensTag: View {
     var body: some View {
         Text("OPENS")
-            .font(.system(size: 9.5, weight: .bold)).kerning(0.5)
+            .font(.sans(10, 700)).kerning(0.6)
             .foregroundStyle(Theme.accent)
+    }
+}
+
+/// The "Off" pill on a template entry whose agent is switched off (working.html `.tpl-off`).
+/// The entry is skipped, not deleted — flipping the agent back on restores it as it was.
+private struct TplOffPill: View {
+    var body: some View {
+        Text("Off")
+            .font(.sans(10, 600)).kerning(0.3)
+            .foregroundStyle(Theme.inkFaint)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(Capsule().fill(Theme.rowHover))
     }
 }
 
@@ -662,12 +800,13 @@ private struct TplDrop: Equatable { var from: Int; var target: Int }
 
 /// The editable template list (working.html .tpl-list[data-tpl]): reorderable rows with an
 /// inline name field, kind pill and remove button. `indexOffset` continues numbering past a
-/// locked shared block; `firstOpens` tags row 0 as the one that opens.
+/// locked shared block; `opensIndex` is the row that opens the worktree, or nil when the
+/// opener sits in the shared block above (or every entry is switched off).
 private struct TplList: View {
     @Binding var entries: [SessionTemplateEntry]
     let emptyText: String
     var indexOffset: Int = 0
-    var firstOpens: Bool = false
+    var opensIndex: Int?
     @State private var drop: TplDrop?
 
     var body: some View {
@@ -678,7 +817,7 @@ private struct TplList: View {
                 ForEach(entries) { entry in
                     let idx = entries.firstIndex(where: { $0.id == entry.id }) ?? 0
                     TplRow(entries: $entries, entry: entry, index: idx,
-                           displayIndex: idx + indexOffset, opens: firstOpens && idx == 0, drop: $drop)
+                           displayIndex: idx + indexOffset, opens: idx == opensIndex, drop: $drop)
                 }
             }
             .overlay(alignment: .top) {
@@ -712,7 +851,7 @@ private struct TplEmpty: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.system(size: 12)).foregroundStyle(Theme.inkFaint)
+            .font(.sans(12)).foregroundStyle(Theme.inkFaint)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12).padding(.vertical, 10)
             .overlay(RoundedRectangle(cornerRadius: 9)
@@ -721,6 +860,7 @@ private struct TplEmpty: View {
 }
 
 private struct TplRow: View {
+    @Environment(AppStore.self) private var store
     @Binding var entries: [SessionTemplateEntry]
     let entry: SessionTemplateEntry
     let index: Int
@@ -731,13 +871,16 @@ private struct TplRow: View {
     @State private var dragFrom = 0
     @State private var dragOffset: CGFloat = 0
 
+    private var off: Bool { !store.isAgentEnabled(entry.kind) }
+
     var body: some View {
         HStack(spacing: 8) {
             grip
             TplIndex(i: displayIndex)
-            TplKindIcon(kind: entry.kind)
-            TplNameField(text: nameBinding)
+            TplKindIcon(kind: entry.kind, off: off)
+            TplNameField(text: nameBinding, off: off)
             if opens { TplOpensTag() }
+            if off { TplOffPill() }
             TplKindPill(kind: entry.kind)
             removeButton
         }
@@ -788,7 +931,7 @@ private struct TplRow: View {
                 Phos(path: Phosphor.close, size: 12)
                     .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)
                     .frame(width: 20, height: 20)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowSelected : Color.clear))
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowHover : Color.clear))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help("Remove")
@@ -799,47 +942,69 @@ private struct TplRow: View {
 private struct TplIndex: View {
     let i: Int
     var body: some View {
-        Text("\(i + 1)").font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+        Text("\(i + 1)").font(.sans(11, 500, tabular: true))
             .foregroundStyle(Theme.inkFaint).frame(width: 13)
     }
 }
 
 private struct TplKindIcon: View {
     let kind: SessionKind
-    var body: some View { Phos(path: kind.iconPath, size: 14).foregroundStyle(kind.tint).frame(width: 14) }
+    var off: Bool = false
+    var body: some View {
+        Phos(path: kind.iconPath, size: 14).foregroundStyle(kind.tint).frame(width: 14)
+            .opacity(off ? 0.45 : 1)
+    }
 }
 
 private struct TplKindPill: View {
     let kind: SessionKind
     var body: some View {
-        Text(kind.tplLabel).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Theme.inkMuted)
+        Text(kind.tplLabel).font(.sans(11, 550)).foregroundStyle(Theme.inkMuted)
             .padding(.horizontal, 8).padding(.vertical, 2).background(Capsule().fill(Theme.rowSelected))
     }
 }
 
 private struct TplNameField: View {
     @Binding var text: String
+    /// A skipped entry stays editable — the template is a wish list you keep between flips.
+    var off: Bool = false
     @State private var hovering = false
     @FocusState private var focused: Bool
     var body: some View {
         TextField("", text: $text)
-            .textFieldStyle(.plain).font(.system(size: 12.5, weight: .medium)).kerning(-0.08)
-            .foregroundStyle(Theme.ink).focused($focused)
+            .textFieldStyle(.plain).font(.sans(13, 500))
+            .foregroundStyle(off ? Theme.inkFaint : Theme.ink)
+            .focused($focused)
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(RoundedRectangle(cornerRadius: 5).fill(hovering || focused ? Theme.rowHover : Color.clear)
                 .overlay(focused ? RoundedRectangle(cornerRadius: 5).strokeBorder(Theme.selRing, lineWidth: 1.5) : nil))
+            // `.strikethrough` doesn't reach a TextField's own text, so the rule is drawn over a
+            // hidden copy of the string — same font, so it measures to exactly the same width.
+            .overlay(alignment: .leading) { if off { strike } }
             .onHover { hovering = $0 }
+    }
+
+    private var strike: some View {
+        Text(text)
+            .font(.sans(13, 500))
+            .hidden()
+            .overlay(Rectangle().fill(Theme.inkFaint).frame(height: 1))
+            .padding(.horizontal, 5)
+            .allowsHitTesting(false)
     }
 }
 
 private struct TplAddBar: View {
-    @Binding var entries: [SessionTemplateEntry]
     @Environment(AppStore.self) private var store
+    @Binding var entries: [SessionTemplateEntry]
     var body: some View {
         // A template that spawns a simulator row is only offerable while the experiment is on and
         // there is an Xcode to run it; otherwise every new worktree would come up with a row that
         // cannot attach to anything.
-        let kinds = AgentRegistry.installed.map { SessionKind.agent($0.id) }
+        // `availableAgents`, not every installed one: a switched-off agent is not offerable. Plus
+        // the simulator only while the experiment is on and there is an Xcode — otherwise a new
+        // worktree would come up with a row that cannot attach to anything.
+        let kinds = store.availableAgents.map { SessionKind.agent($0.id) }
             + [.terminal, .browser] + (store.simulatorsAvailable ? [.simulator] : [])
         HStack(spacing: 6) {
             ForEach(kinds, id: \.self) { kind in
@@ -851,7 +1016,7 @@ private struct TplAddBar: View {
                     } label: {
                         HStack(spacing: 5) {
                             Phos(path: Phosphor.plus, size: 12).foregroundStyle(Theme.inkFaint)
-                            Text(kind.tplLabel).font(.system(size: 11.5, weight: .medium)).foregroundStyle(hovering ? Theme.ink : Theme.ink3)
+                            Text(kind.tplLabel).font(.sans(12, 550)).foregroundStyle(hovering ? Theme.ink : Theme.ink3)
                         }
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : Theme.raised)
@@ -871,17 +1036,240 @@ private struct TplHover<Content: View>: View {
     var body: some View { content(hovering).onHover { hovering = $0 } }
 }
 
-// MARK: - Appearance segmented control (working.html .seg)
+// MARK: - Archived worktrees (working.html .arc-*)
 
-private struct ThemeSeg: View {
+private extension AppStore {
+    /// Measured bytes only: a folder still being walked contributes nothing rather than a guess.
+    func archivedBytes(_ branches: [Branch]) -> Int64 {
+        branches.reduce(0) { $0 + (FolderSizeCache.shared.bytes(for: archivedFolder($1)) ?? 0) }
+    }
+}
+
+/// Archiving only means "reversible" if the archive is somewhere you can stand and look at it.
+/// ⌘K can restore one you remember the name of; this is the list you read when you don't — and
+/// it is the only place the disk cost is visible, which is the whole reason to delete one early.
+private struct ArchivedWorktrees: View {
     @Environment(AppStore.self) private var store
+    let workspace: Workspace
+
+    var body: some View {
+        let branches = store.archivedBranches(in: workspace)
+        SetEditorRow(label: "Worktrees on disk",
+                     trailing: {
+                         if !branches.isEmpty {
+                             Text("\(branches.count) · \(FolderSize.format(store.archivedBytes(branches)))")
+                                 .font(.sans(12, tabular: true)).foregroundStyle(Theme.inkMuted)
+                         }
+                     }) {
+            if branches.isEmpty {
+                TplEmpty(text: "Nothing archived.")
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ArcList(branches: branches)
+                    ArcPolicy()
+                }
+            }
+        }
+        // Both land well after the pane is drawn and both dedupe themselves; the id re-runs them
+        // when a row is archived or restored while Settings is open.
+        .task(id: branches.map(\.id)) {
+            FolderSizeCache.shared.warm(branches.map { store.archivedFolder($0) })
+            store.refreshArchiveVerdicts()
+        }
+    }
+}
+
+private struct ArcList: View {
+    let branches: [Branch]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: TplMetrics.gap) {
+                ForEach(branches) { ArcRow(branch: $0) }
+            }
+            // the rows carry a ring; without the gutter the scrollbar sits on top of it
+            .padding(.trailing, 4)
+        }
+        // Four rows and a visibly cut fifth — the cut is the only honest scroll cue on a list
+        // whose scrollbar hides until you touch it.
+        .frame(maxHeight: TplMetrics.step * 4 + TplMetrics.rowHeight * 0.6)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct ArcRow: View {
+    @Environment(AppStore.self) private var store
+    let branch: Branch
+
+    private var eligible: Bool {
+        if case .eligible = store.archiveVerdict(branch) { return true }
+        return false
+    }
+
+    /// Read off the displayed verdict, not the stored one: a branch the budget has called early
+    /// reads as checking too, and the chip has to agree with the words in it.
+    private var checking: Bool { store.archiveVerdictChip(branch) == ArchiveSweeper.Block.secondOpinion.chip }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Phos(path: Phosphor.archive, size: 14).foregroundStyle(Theme.inkFaint).frame(width: 14)
+            // Everything to the right of the name is rigid, so the name is what gives up width:
+            // a reason clipped to "commits not pushed anywhe…" is worse than no reason at all,
+            // because it looks like the answer is somewhere else.
+            Text(branch.name)
+                .font(.sans(13, 500)).foregroundStyle(Theme.ink)
+                .lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(meta)
+                .font(.sans(11, tabular: true)).foregroundStyle(Theme.inkFaint).fixedSize()
+            if let chip = store.archiveVerdictChip(branch) { ArcWhy(text: chip, eligible: eligible, checking: checking) }
+            restoreButton
+            deleteButton
+        }
+        .padding(.horizontal, 9)
+        .frame(height: TplMetrics.rowHeight)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Theme.raised)
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.04), radius: 0.75, y: 1))
+    }
+
+    /// "4h ago · 1.2 GB" — the size only once the walk lands, because a folder claiming 0 MB is
+    /// worse than a folder claiming nothing.
+    private var meta: String {
+        let when = store.archivedAge(branch)
+        guard let bytes = FolderSizeCache.shared.bytes(for: store.archivedFolder(branch)) else { return when }
+        return "\(when) · \(FolderSize.format(bytes))"
+    }
+
+    /// `.arc-btn`, which is not quite `.tpl-add__btn`: tighter, and it answers to the pointer.
+    /// It is the one thing on this row you press on purpose, and a button that looks identical
+    /// under the cursor reads as a label until you happen to click it.
+    private var restoreButton: some View {
+        TplHover { hovering in
+            Button { store.restoreArchivedBranch(branch) } label: {
+                Text("Restore")
+                    .font(.sans(12, 550))
+                    .foregroundStyle(hovering ? Theme.ink : Theme.ink3)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : Theme.raised)
+                        .overlay(RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(hovering ? Theme.borderStrong : Theme.line, lineWidth: 0.5)))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(ArcPressStyle())
+        }
+    }
+
+    private var deleteButton: some View {
+        TplHover { hovering in
+            Button {
+                // Deleting the folder is the one act on this row that doesn't come back, so it
+                // asks — in ⌘K's confirm frame, not a dialog of this pane's own. The app has one
+                // confirm surface and "confirms from every surface" means every surface routes
+                // to it; a second one here would be a second wording of one promise to keep in
+                // step. Cancel is preselected there, so a stray ↵ costs nothing.
+                store.requestDeleteArchivedWorktree(branch)
+            } label: {
+                Phos(path: Phosphor.trash, size: 12)
+                    .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowHover : Color.clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("Delete permanently")
+        }
+    }
+}
+
+/// Why this folder is still on disk. A blocked row is the normal, correct state — the sweeper
+/// protecting work — so it stays a quiet neutral chip; only the row that is about to go gets the
+/// accent, because that is the one worth catching before it does.
+/// `.arc-btn:active`. Shallower than `IconPressStyle`'s 0.94, which is tuned for an icon with
+/// room to move — a text button that shrinks that far reads as a wobble rather than a press.
+private struct ArcPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.11), value: configuration.isPressed)
+    }
+}
+
+private struct ArcWhy: View {
+    let text: String
+    let eligible: Bool
+    /// The sweeper has read this one clean once and is waiting on a second reading a day later.
+    /// Italic because it is the only chip that is not a verdict — it is the absence of one, and
+    /// a reader who can't tell it from "PR still open" will read a pause as a decision.
+    let checking: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.sans(10, 550))
+            .italic(checking)
+            .foregroundStyle(eligible ? Theme.inkOpen : Theme.inkMuted)
+            .lineLimit(1).fixedSize()
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Capsule().fill(eligible ? Theme.accent.opacity(0.12) : Theme.rowHover))
+    }
+}
+
+/// The budget is archive-wide but the list above is one project's, so the two numbers are shown
+/// apart — otherwise the row's own "7 · 7.3 GB" reads as the budget it is being measured against.
+/// Two ratios, no sentence: a cap you can't see coming is indistinguishable from folders
+/// vanishing at random, and which folders it has called early is already on their own rows.
+private struct ArcPolicy: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        // A budget with nothing to spend it on is a number, not a fact — the caps can only bring
+        // a folder's turn forward, and with the sweep off or the wait at Never no turn ever comes.
+        if store.archiveSweepEnabled, store.archiveGraceDays > 0, !parts.isEmpty {
+            Text("Archive-wide " + parts.joined(separator: " · "))
+                .font(.sans(11, tabular: true))
+                .foregroundStyle(Theme.inkFaint)
+                .padding(.top, 9)
+        }
+    }
+
+    private var parts: [String] {
+        let archived = store.workspaces.flatMap { $0.branches.filter(\.isArchived) }
+        var parts: [String] = []
+        if store.archiveMaxCount > 0 { parts.append("\(archived.count) / \(store.archiveMaxCount) worktrees") }
+        // both sides of a ratio share one unit — "7.8 GB / 50 GB" says GB twice to say it once
+        if store.archiveMaxGB > 0 {
+            parts.append(String(format: "%.1f / %d GB",
+                                Double(store.archivedBytes(archived)) / 1_073_741_824,
+                                store.archiveMaxGB))
+        }
+        return parts
+    }
+}
+
+// MARK: - Segmented control (working.html .seg / .set-seg)
+
+/// The house segmented picker: every option visible, the chosen one raised. Generic over what
+/// it picks because the theme and the three archive knobs are the same control with different
+/// tags — a second implementation would drift on the raised state within a release.
+private enum SegWidth {
+    static let three: CGFloat = 216
+    /// Four options in the width built for three wraps every label onto two lines.
+    static let four: CGFloat = 272
+}
+
+private struct SetSeg<Value: Hashable>: View {
+    let options: [(Value, String)]
+    @Binding var selection: Value
+    var width: CGFloat = SegWidth.three
+
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(ThemePref.allCases) { pref in
-                let on = store.themePref == pref
-                Button { store.themePref = pref } label: {
-                    Text(pref.label).font(.system(size: 12, weight: .medium))
+            ForEach(options.indices, id: \.self) { i in
+                let (value, label) = options[i]
+                let on = selection == value
+                Button { selection = value } label: {
+                    Text(label).font(.sans(12, 500))
                         .foregroundStyle(on ? Theme.repoName : Theme.inkMuted)
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .background(RoundedRectangle(cornerRadius: 6).fill(on ? Theme.raised : Color.clear)
                             .shadow(color: on ? Color.black.opacity(0.12) : .clear, radius: 1, y: 1)
@@ -892,7 +1280,15 @@ private struct ThemeSeg: View {
             }
         }
         .padding(2).background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowSelected))
-        .frame(width: 216)
+        .frame(width: width)
+    }
+}
+
+private struct ThemeSeg: View {
+    @Environment(AppStore.self) private var store
+    var body: some View {
+        SetSeg(options: ThemePref.allCases.map { ($0, $0.label) },
+               selection: Binding(get: { store.themePref }, set: { store.themePref = $0 }))
     }
 }
 
@@ -903,9 +1299,9 @@ private struct AboutRow: View {
     let version: String
     @State private var checking = false
     var body: some View {
-        // The card and this row are one fact seen twice — pushed and pulled — so a staged build
-        // says so here too, and offers the same Restart rather than a Check that would only
-        // re-find what is already downloaded.
+        // The foot button and this row are the waiting build's only two surfaces, both pull — so a
+        // staged build says so here too, and offers the same Restart rather than a Check that
+        // would only re-find what is already downloaded.
         if let update = store.stagedUpdate {
             SetToggleRow(label: version,
                          desc: "Synth \(update.version) is ready · installs when you quit") {
@@ -918,8 +1314,9 @@ private struct AboutRow: View {
                 aboutButton(checking ? "Checking…" : "Check for updates") {
                     // A real build asks Sparkle, and a check you asked for answers in its own
                     // window. A dev build has no updater, so it stages a demo build instead —
-                    // checking by hand has to be able to end in the card, or the dev channel is
-                    // the one place this feature can never be seen.
+                    // checking by hand has to land where finding one on its own lands, the foot
+                    // button and this row flipping to Restart, or the dev channel is the one
+                    // place this feature can never be seen.
                     if let updater = Updates.controller?.updater { updater.checkForUpdates(); return }
                     checking = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
@@ -936,7 +1333,7 @@ private struct AboutRow: View {
     private func aboutButton(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.ink3)
+                .font(.sans(12, 500)).foregroundStyle(Theme.ink3)
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5)))
@@ -952,7 +1349,7 @@ struct WsChip: View {
     var body: some View {
         let color = Theme.chipColors[workspace.colorIndex % Theme.chipColors.count]
         RoundedRectangle(cornerRadius: size * 0.32).fill(color).frame(width: size, height: size)
-            .overlay(Text(workspace.monogram).font(.system(size: size * 0.58, weight: .semibold)).foregroundStyle(.white))
+            .overlay(Text(workspace.monogram).font(.sans(size * 0.58, 600)).foregroundStyle(.white))
             .overlay(RoundedRectangle(cornerRadius: size * 0.32).strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.12), radius: 0.75, y: 1)
     }

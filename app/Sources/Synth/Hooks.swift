@@ -141,14 +141,18 @@ final class HookServer: @unchecked Sendable {
     /// treat the session as a subagent — no transcript on disk (unresumable), no history — and
     /// `CLAUDECODE`/`OPENCODE`-aware tools misbehave in plain shells. opencode has no
     /// child-session contract (its subagents are in-process), so the whole prefix is the safe
-    /// superset rather than a known-bad list.
+    /// superset rather than a known-bad list. `agy` exports the conversation and project it is
+    /// running so its own children can find them — inherited, they name a conversation the
+    /// spawned agent has nothing to do with, so only those two are scrubbed (the rest of
+    /// `ANTIGRAVITY_*` is the IDE's, and a user's own env is not ours to strip).
     static let inheritedAgentMarkers = ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION",
                                         "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT",
                                         "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT",
                                         "OPENCODE", "AGENT", "OPENCODE_SESSION_ID",
                                         "OPENCODE_SESSION_TITLE", "OPENCODE_CONFIG_CONTENT",
                                         "OPENCODE_PERMISSION", "OPENCODE_SERVER_USERNAME",
-                                        "OPENCODE_SERVER_PASSWORD"]
+                                        "OPENCODE_SERVER_PASSWORD",
+                                        "ANTIGRAVITY_CONVERSATION_ID", "ANTIGRAVITY_PROJECT_ID"]
 
     /// Create the shim dir and (re)point one symlink per installed agent at `synth-hook`. When
     /// a terminal runs `claude` or `opencode`, the shim runs `synth-hook` in its launch role.
@@ -264,7 +268,8 @@ final class HookServer: @unchecked Sendable {
         try? (histfix + "_synth_source_user .zshrc\n" + shimfix + reporter).write(toFile: zdotDir + "/.zshrc", atomically: true, encoding: .utf8)
     }
 
-    /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts — keyed on a pid
+    /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts, the per-session
+    /// workspaces `agy` is handed via `--add-dir` (`AntigravitySupervisor.root`) — keyed on a pid
     /// that is no longer alive. Each Synth process names these `synth-*-<pid>`; a crash or
     /// `SIGKILL` skips cleanup, so without this they pile up and stale shim dirs pollute the
     /// PATH of any Synth launched from inside another Synth session.
@@ -278,6 +283,7 @@ final class HookServer: @unchecked Sendable {
                 let pid: String?
                 if name.hasPrefix("synth-shims-")        { pid = String(name.dropFirst("synth-shims-".count)) }
                 else if name.hasPrefix("synth-zdotdir-") { pid = String(name.dropFirst("synth-zdotdir-".count)) }
+                else if name.hasPrefix("synth-agy-")     { pid = String(name.dropFirst("synth-agy-".count)) }
                 else if name.hasPrefix("synth-hook-"), name.hasSuffix(".sock") {
                     pid = String(name.dropFirst("synth-hook-".count).dropLast(".sock".count))
                 } else if name.hasPrefix("synth-ctl-"), name.hasSuffix(".sock") {

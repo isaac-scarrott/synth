@@ -22,7 +22,7 @@ struct PaletteQueryField: NSViewRepresentable {
         f.isBordered = false
         f.drawsBackground = false
         f.focusRingType = .none
-        f.font = .systemFont(ofSize: 15)
+        f.font = .sans(15)
         f.textColor = NSColor(Theme.repoName)
         f.lineBreakMode = .byTruncatingTail
         f.cell?.usesSingleLineMode = true
@@ -374,7 +374,7 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal",
                                      group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newTerminal(in: branch) } }))
-            items += AgentRegistry.installed.map { agent in
+            items += store.availableAgents.map { agent in
                 PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)",
                             group: g, ctx: branch.name,
                             enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
@@ -659,13 +659,14 @@ struct PaletteFrame {
         }
     }
 
-    /// The session creates on a branch — a terminal, one per installed agent, a browser, a
-    /// simulator — shared by the branch frame and the workspace/session frames, which borrow
-    /// them with a ctx chip naming the branch.
+    /// The session creates on a branch — a terminal, one per enabled agent, a browser, and a
+    /// simulator while the experiment allows it — shared by the branch frame and the
+    /// workspace/session frames, which borrow them with a ctx chip naming the branch. An agent
+    /// switched off in Settings is simply not offered.
     private func sessionCreates(in branch: Branch, ctx: String? = nil) -> [PaletteItem] {
         [PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
                      ctx: ctx, enter: { self.runAndClose { self.store.newTerminal(in: branch) } })]
-        + AgentRegistry.installed.map { agent in
+        + store.availableAgents.map { agent in
             PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)", sec: "act",
                         ctx: ctx, enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
         }
@@ -754,14 +755,28 @@ struct PaletteFrame {
         }
     }
 
+    /// When it was put away, and — once the sweeper has a verdict — why the folder is still
+    /// there. `ArchiveSweeper.Block.line` calls itself "the ⌘K ctx line" in its own doc, so the
+    /// reason rides here beside the age rather than living only in Settings: ⌘K is where you
+    /// meet an archived worktree first, and "why hasn't this gone yet" is asked where it is seen.
+    /// No verdict (sweep off, wait at Never, nothing evaluated yet) leaves the age alone.
+    private func archivedCtx(_ br: Branch) -> String {
+        let age = store.archiveStatusLine(br)
+        guard let line = store.archiveVerdictLine(br) else { return age }
+        return "\(age) · \(line)"
+    }
+
     /// Everything a project has archived, with why each one is still on disk. Without this the
     /// sweeper is a background process deleting folders the user can't enumerate — and it is
     /// also the whole answer to "why hasn't this been cleaned up yet".
+    /// A row drills in rather than restoring outright: Restore isn't the only thing you come here
+    /// to do — "stop waiting and delete it now" is the other, and a list whose ↵ silently picks
+    /// one of the two verbs can't offer the other at all.
     func archivedFrame(_ ws: Workspace) -> PaletteFrame {
         PaletteFrame(crumb: "Archived", placeholder: "Restore a worktree, or delete one now…") { [self] _ in
             store.archivedBranches(in: ws).map { br in
                 PaletteItem(icon: .phosphor(Phosphor.archive), label: br.name,
-                            ctx: self.store.archiveStatusLine(br),
+                            ctx: self.archivedCtx(br),
                             enter: { self.push(self.archivedBranchFrame(br)) })
             }
         }
@@ -802,17 +817,31 @@ struct PaletteFrame {
     // confirms from every surface, which is the invariant Apple's own apps hold (Mail archives
     // silently from swipe, toolbar and ⌘⌃A; the dialog is bolted to Empty Trash, not to the
     // input device). Cancel is preselected by `initialIndex(for:)`.
-    func confirmDeleteWorktree(_ br: Branch) -> PaletteFrame {
-        PaletteFrame(crumb: "Delete \(br.name)?",
-                     placeholder: "Deletes the worktree folder now. The git branch stays.  ↵ select · esc cancel",
-                     mode: .confirm) { [self] _ in
+    //
+    // One frame, whoever asks: "confirms from every surface" means every surface routes here, so
+    // Settings' trash opens this rather than growing a dialog of its own — which would only be a
+    // second wording of one promise to keep in step. Hence the name + closure form
+    // (`store.requestDeleteArchivedWorktree` is the way in from outside the palette).
+    // The consequence rides the note, not the placeholder, for the reason the restart confirm
+    // below already states: the placeholder ends with the way out, and a way out clipped by an
+    // input field is not one. That also buys room for the half this used to drop — the undo
+    // window, which is the difference between "gone" and "gone unless you say otherwise".
+    func confirmDeleteWorktree(name: String, run: @escaping () -> Void) -> PaletteFrame {
+        PaletteFrame(crumb: "Delete \(name)?",
+                     placeholder: "↵ select · esc cancel",
+                     mode: .confirm,
+                     note: { _ in "Deletes the worktree folder now. The git branch stays, and you can undo for a few seconds after." }) { [self] _ in
             [
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
                             ctx: "removes the folder from disk", danger: true,
-                            enter: { self.runAndClose { self.store.deleteWorktreeNow(br) } }),
+                            enter: { self.runAndClose(run) }),
                 PaletteItem(icon: .phosphor(Phosphor.close), label: "Cancel", enter: { self.pop() }),
             ]
         }
+    }
+
+    func confirmDeleteWorktree(_ br: Branch) -> PaletteFrame {
+        confirmDeleteWorktree(name: br.name) { [store] in store.deleteWorktreeNow(br) }
     }
 
     /// Restarting into a staged build is the shortcut, not the price — it installs itself on the
@@ -903,14 +932,14 @@ struct PaletteFrame {
     }
 
     /// `a` on a branch/worktree (or a session leaf) jumps straight to the "add a session"
-    /// choice — a terminal, any installed agent, a browser, or a simulator, created in `branch`
+    /// choice — a terminal, any enabled agent, a browser, or a simulator, created in `branch`
     /// (working.html newSessionFrame). Order: create→navigate→modify→destroy, and within
     /// the creates, terminal first then the agents in registry order.
     func newSessionFrame(branch: Branch) -> PaletteFrame {
         PaletteFrame(crumb: "New session", placeholder: "New session in \(branch.name)…") { [self] _ in
             var items = [PaletteItem(icon: .session(.terminal), label: "New terminal", ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newTerminal(in: branch) } })]
-            items += AgentRegistry.installed.map { agent in
+            items += store.availableAgents.map { agent in
                 PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)", ctx: branch.name,
                             enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
             }
@@ -942,7 +971,7 @@ struct PaletteFrame {
                 items.append(PaletteItem(icon: .session(.terminal), label: "New terminal", sec: "act",
                                          ctx: br.name, kbd: ["⌘", "T"],
                                          enter: { self.runAndClose { self.splitNew(.terminal, in: br, dir: dir, before: before, target: target) } }))
-                for agent in AgentRegistry.installed {
+                for agent in store.availableAgents {
                     items.append(PaletteItem(icon: .session(.agent(agent.id)), label: "New \(agent.displayName)",
                                              sec: "act", ctx: br.name,
                                              enter: { self.runAndClose { self.splitNew(.agent(agent.id), in: br, dir: dir, before: before, target: target) } }))
@@ -984,7 +1013,13 @@ struct PaletteFrame {
         // frame opens instantly and populates when branches arrive. Per-keystroke `build`
         // stays allocation-only.
         if let ws = workspace { loadBranches(for: ws) }
-        let shown = Set(workspace?.branches.map(\.name) ?? [])
+        // Only *live* rows are hidden. An archived row still holds its name here, so filtering
+        // on every row made an archived branch unofferable — and it isn't in the tree either,
+        // so the branch had no way back. It's offered, and picking it restores the row.
+        let shown = Set(workspace?.liveBranches.map(\.name) ?? [])
+        let archived = Dictionary(
+            (workspace?.branches.filter(\.isArchived) ?? []).map { ($0.name, $0) },
+            uniquingKeysWith: { a, _ in a })
         let note: ((String) -> String?)? = { [self] q in
             let v = q.trimmingCharacters(in: .whitespaces)
             guard !v.isEmpty, let ws = workspace,
@@ -1004,11 +1039,18 @@ struct PaletteFrame {
                 .sorted { $0.1 > $1.1 }
                 .prefix(5)
                 .map { b, _ in
-                    PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
-                                ctx: b.isRemote ? (b.remote ?? "origin") : "local",
-                                enter: { self.runAndClose {
-                                    self.store.createWorktree(in: ws, existingBranch: b.name)
-                                } })
+                    if let row = archived[b.name] {
+                        return PaletteItem(icon: .phosphor(Phosphor.archive), label: b.name,
+                                           ctx: self.archivedCtx(row),
+                                           enter: { self.runAndClose {
+                                               self.store.restoreArchivedBranch(row)
+                                           } })
+                    }
+                    return PaletteItem(icon: .phosphor(Phosphor.branch), label: b.name,
+                                       ctx: b.isRemote ? (b.remote ?? "origin") : "local",
+                                       enter: { self.runAndClose {
+                                           self.store.createWorktree(in: ws, existingBranch: b.name)
+                                       } })
                 }
             // Fallback: the typed query isn't an existing branch → offer cutting a fresh one.
             if !all.contains(where: { $0.name == v }) {
@@ -1019,6 +1061,21 @@ struct PaletteFrame {
             }
             return items
         }
+    }
+}
+
+extension AppStore {
+    /// Open the ⌘K confirm for deleting an archived worktree's folder. The Settings pane's trash
+    /// routes here rather than raising a dialog: the app has one confirm surface, and "confirms
+    /// from every surface" means every surface routes to it.
+    /// Rooted first (like `restartForUpdate`) so Cancel and Esc have somewhere to land when the
+    /// palette was closed until the button pressed it.
+    func requestDeleteArchivedWorktree(_ branch: Branch) {
+        if palette == nil { palette = PaletteModel(store: self) }
+        guard let pal = palette else { return }
+        activeMenu = nil
+        pal.stack = [pal.rootFrame()]
+        pal.push(pal.confirmDeleteWorktree(branch))
     }
 }
 
@@ -1158,7 +1215,7 @@ struct PaletteOverlay: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let note = model.noteText {
                         Text(note)
-                            .font(.system(size: 12))
+                            .font(.sans(12))
                             .foregroundStyle(Theme.inkFaint)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(EdgeInsets(top: 3, leading: 8, bottom: 5, trailing: 8))
@@ -1166,7 +1223,7 @@ struct PaletteOverlay: View {
                     if items.isEmpty {
                         if model.noteText == nil {
                             Text("No results")
-                                .font(.system(size: 13))
+                                .font(.sans(13))
                                 .foregroundStyle(Theme.navLabel)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 24)
@@ -1176,7 +1233,7 @@ struct PaletteOverlay: View {
                             switch row {
                             case let .header(g):
                                 Text(g.uppercased())
-                                    .font(.system(size: 10, weight: .semibold)).kerning(0.5)
+                                    .font(.sans(10, 600)).kerning(0.5)
                                     .foregroundStyle(Theme.navLabel)
                                     .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 4)
                             case .divider:
@@ -1216,7 +1273,7 @@ private struct CrumbChip: View {
     var body: some View {
         Button(action: action) {
             Text(text)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.sans(13, 500))
                 .foregroundStyle(Theme.ink2)
                 .lineLimit(1)
                 .padding(.horizontal, 8).padding(.vertical, 3)
@@ -1248,20 +1305,20 @@ private struct PaletteItemRow: View {
             iconView
                 .frame(width: 20)
             Text(item.label)
-                .font(.system(size: 13.5))
+                .font(.sans(14, 450))
                 .foregroundStyle(labelColor)
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
             if let ctx = item.ctx, !ctx.isEmpty {
                 Text(ctx)
-                    .font(.system(size: 11.5))
+                    .font(.sans(12))
                     .foregroundStyle(Theme.inkMeta)
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: 210, alignment: .trailing)
             }
             if let meta = item.meta {
                 Text(meta)
-                    .font(.system(size: 11)).kerning(0.1)
+                    .font(.sans(11)).kerning(0.11)
                     .foregroundStyle(item.metaColor ?? Theme.inkMeta)
             }
             if let kbd = item.kbd {
@@ -1290,7 +1347,7 @@ private struct PaletteItemRow: View {
             SessionIcon(kind: kind, size: 16, tint: item.danger ? Theme.danger : nil)
         case let .chip(text, color):
             RoundedRectangle(cornerRadius: 5).fill(color).frame(width: 16, height: 16)
-                .overlay(Text(text).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.white))
+                .overlay(Text(text).font(.sans(10, 600)).foregroundStyle(.white))
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
         }
     }

@@ -55,7 +55,10 @@ final class CommentDelivery {
         return store.owner(of: session)
     }
 
-    func deliver(_ message: String, screenshots: [String]) {
+    /// `count` is how many comments this message carries — the browser batches, the simulator sends
+    /// one at a time. It only ever changes wording, but the wording is the whole feedback the user
+    /// gets that a batch went somewhere.
+    func deliver(_ message: String, count: Int = 1, screenshots: [String]) {
         guard let store, let subject = store.session(subjectID) else {
             Self.discard(screenshots)
             return
@@ -66,21 +69,28 @@ final class CommentDelivery {
             if let supervisor = store.liveSupervisor(for: owner), supervisor.deliver(message, to: owner.id) {
                 NSLog("Synth: %@ comment delivered to owning agent session %@ (%@)",
                       subjectKindLabel, owner.id.uuidString, owner.title)
-                onNotice?("Comment sent to \(owner.title)")
+                sent(count, to: owner.title)
                 return
             }
             // Rung 2: dormant owner — open it (mounts the pane, launches the agent / resumes), then
             // wait for the supervisor seam before delivering.
-            onNotice?("Opening \(owner.title) to deliver the comment…")
+            onNotice?("Opening \(owner.title) to deliver \(Self.theComments(count))…")
             store.open(owner)
-            bootAndSubmit(owner, message: message, screenshots: screenshots)
+            bootAndSubmit(owner, message: message, count: count, screenshots: screenshots)
             return
         }
         // Rung 3: unowned — spawn the subject's own agent. The PTY only boots when its pane mounts
         // (GhosttySurfaceView creates the surface on window attach), so open the row for one beat and
         // come straight back; both views live outside the SwiftUI tree and survive the swap.
+        // `availableAgents`, not the registry's installed set: an agent switched off in Settings is
+        // not one Synth may start, and "every agent is off" is a distinct thing to say — there is
+        // nobody to send this to, which the user can fix.
+        guard let agent = store.availableAgents.first?.id else {
+            onNotice?("No agent enabled — turn one on in Settings")
+            Self.discard(screenshots)
+            return
+        }
         guard let branch = store.branch(of: subject),
-              let agent = AgentRegistry.default?.id,
               let spawned = store.spawnAgent(agent, in: branch) else {
             onNotice?("Couldn't start an agent session for the comment")
             Self.discard(screenshots)
@@ -94,13 +104,14 @@ final class CommentDelivery {
                   let back = store.session(subjectID) else { return }
             store.open(back)
         }
-        onNotice?("Starting \(spawned.title) to deliver the comment…")
-        bootAndSubmit(spawned, message: message, screenshots: screenshots)
+        onNotice?("Starting \(spawned.title) to deliver \(Self.theComments(count))…")
+        bootAndSubmit(spawned, message: message, count: count, screenshots: screenshots)
     }
 
     /// Boot-and-wait delivery to `row`: poll the hook seam for its liveness signal (~20s), then
     /// submit — the security boundary above, shared by rungs 2 and 3.
-    private func bootAndSubmit(_ row: Session, message: String, screenshots: [String]) {
+    private func bootAndSubmit(_ row: Session, message: String, count: Int,
+                               screenshots: [String]) {
         deliveryTask?.cancel()
         deliveryTask = Task { [weak self] in
             for _ in 0..<40 {   // ~20s: the agent boots and reports in, or never will
@@ -115,15 +126,24 @@ final class CommentDelivery {
                 if supervisor.deliver(message, to: row.id) {
                     NSLog("Synth: %@ comment delivered to agent session %@ (%@) after booting it",
                           self.subjectKindLabel, row.id.uuidString, row.title)
-                    self.onNotice?("Comment sent to \(row.title)")
+                    self.sent(count, to: row.title)
                     return
                 }
             }
             // The agent never reported in (e.g. the resume failed and left a bare shell): drop the
             // comment — and its now-orphaned screenshots — rather than paste.
-            self?.onNotice?("Couldn't reach “\(row.title)” — comment not delivered")
+            self?.onNotice?("Couldn't reach “\(row.title)” — "
+                + (count == 1 ? "comment" : "comments") + " not delivered")
             Self.discard(screenshots)
         }
+    }
+
+    private func sent(_ count: Int, to title: String) {
+        onNotice?(count == 1 ? "Comment sent to \(title)" : "\(count) comments sent to \(title)")
+    }
+
+    private static func theComments(_ count: Int) -> String {
+        count == 1 ? "the comment" : "the \(count) comments"
     }
 
     /// Screenshots captured for a comment that was never delivered are orphans — remove.

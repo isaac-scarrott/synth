@@ -156,7 +156,9 @@ struct InAppNotif: Identifiable {
     /// both are "an agent stopped and wants you", neither is lost by waiting, and ranking them
     /// buried the toast you were *just* nudged about behind one you had already seen — ⌘↩
     /// included, which fires the front card.
-    var band: Int { kind == .undo ? 0 : (drains ? 2 : 1) }
+    /// A *draining* undo is fused; one that never expires (an agent quit you didn't ask for,
+    /// which waits as long as it takes) is standing, and sits with the other cards that ask.
+    var band: Int { kind == .undo && drains ? 0 : (drains ? 2 : 1) }
 
     /// A done toast's life, working.html `NOTIF_DONE_MS`. Sticky toasts (input / error)
     /// never read these.
@@ -285,11 +287,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// and otherwise lands as a quiet unread row instead of yanking the viewport
     /// (last-intent-wins). Never persisted; a pending row can't outlive a quit.
     var openSetupBranchID: UUID?
-    /// The view stack (016): every session you look at, most recent last, one entry each. A close
-    /// that would leave an empty surface pops it instead (Layout.swift restoreLastViewed) — closing
-    /// is an undo of an open, so it puts you back where you were. In-memory like working.html's:
-    /// the stack is about this sitting, not something to inherit from a previous launch.
-    @ObservationIgnored var viewStack: [UUID] = []
     var sidebarCollapsed = false
 
     /// The layout spine (009): the pane tree filling the content surface. A lone leaf is today's
@@ -467,6 +464,40 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         simulatorSessionsEnabled && SimulatorDeviceCatalog.isXcodeAvailable
     }
 
+    /// Which agents Synth may START, keyed by `AgentID.rawValue`; a missing entry means on, so
+    /// a machine that has never touched the switches offers everything it has installed.
+    /// Whether you run a given agent CLI is a machine fact, not part of the durable tree, so it
+    /// rides UserDefaults beside `tabsMode` rather than state.json. Off only stops Synth
+    /// starting NEW ones — a session already running that agent carries on untouched, which is
+    /// why `AgentRegistry.installed` stays unfiltered. Turning every agent off is allowed.
+    var agentEnabledPrefs: [String: Bool] = AppStore.loadAgentEnabledPrefs() {
+        didSet { UserDefaults.standard.set(agentEnabledPrefs, forKey: AppStore.agentEnabledKey) }
+    }
+    static let agentEnabledKey = "synth-agents-enabled"
+    static func loadAgentEnabledPrefs() -> [String: Bool] {
+        UserDefaults.standard.dictionary(forKey: agentEnabledKey) as? [String: Bool] ?? [:]
+    }
+
+    /// Switched on AND on this machine: a state.json carried over from a machine that had
+    /// opencode names an agent this one can't start, and Agent defaults — which lists what's
+    /// installed — offers no switch to turn it off.
+    func isAgentEnabled(_ id: AgentID) -> Bool {
+        AgentRegistry.isInstalled(id) && (agentEnabledPrefs[id.rawValue] ?? true)
+    }
+    /// Terminals and browsers are never off.
+    func isAgentEnabled(_ kind: SessionKind) -> Bool { kind.agentID.map(isAgentEnabled) ?? true }
+
+    /// The installed agents left switched on — what every surface that would START an agent
+    /// offers. Read through the observable preference, so a SwiftUI surface re-renders the
+    /// instant a switch flips.
+    var availableAgents: [AgentDescriptor] { AgentRegistry.installed.filter { isAgentEnabled($0.id) } }
+
+    /// Which template entry actually opens a new worktree: the first one whose agent is still
+    /// switched on (working.html `opensAt`). Nil when the whole list is switched off.
+    func templateOpensAt(_ entries: [SessionTemplateEntry]) -> Int? {
+        entries.firstIndex { isAgentEnabled($0.kind) }
+    }
+
     // MARK: Archive sweep settings
 
     /// Whether the sweeper may reclaim archived worktrees at all. On by default: an archived
@@ -486,6 +517,26 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         didSet { UserDefaults.standard.set(archiveGraceDays, forKey: AppStore.archiveGraceKey) }
     }
     static let archiveGraceKey = "synth-archive-grace-days"
+
+    /// How many archived worktrees may sit on disk at once, and how much disk they may occupy
+    /// between them. 0 is no cap on either.
+    ///
+    /// Archive-wide, not per project, because a disk is: three projects each politely under a
+    /// per-project cap still fill the same drive. And a cap is only ever a reason to look
+    /// sooner — over budget, the oldest UNBLOCKED folders stop waiting out the rest of their
+    /// grace and face the gate chain now. It cannot let one *through* a gate: `ArchiveSweeper`
+    /// promises every byte it reclaims is reconstructible from a remote, and a budget that
+    /// evicted the oldest folder regardless would be a hole straight through that. An archive
+    /// full of unpushed work stays over budget and says so on the rows.
+    var archiveMaxCount = AppStore.loadIntPref(AppStore.archiveMaxCountKey, default: 25) {
+        didSet { UserDefaults.standard.set(archiveMaxCount, forKey: AppStore.archiveMaxCountKey) }
+    }
+    static let archiveMaxCountKey = "synth-archive-max-count"
+
+    var archiveMaxGB = AppStore.loadIntPref(AppStore.archiveMaxGBKey, default: 50) {
+        didSet { UserDefaults.standard.set(archiveMaxGB, forKey: AppStore.archiveMaxGBKey) }
+    }
+    static let archiveMaxGBKey = "synth-archive-max-gb"
 
     /// Evaluate every condition, log the verdict, delete nothing. Defaults ON for the dev
     /// channel, so the author's own worktrees are never the test subjects.
@@ -642,12 +693,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// flags are a TAIL appended after these shared ones (working.html's layered model), so the
     /// shell's last-wins resolves any repeat; an empty project tail runs the shared flags alone.
     ///
-    /// Both ship empty — each agent's own configured defaults are what a fresh install runs,
+    /// All ship empty — each agent's own configured defaults are what a fresh install runs,
     /// and skipping permission prompts is a choice the user makes here, not one Synth makes
     /// for them.
     var globalAgentFlags: [AgentID: String] = [
         .claudeCode: "",
         .opencode: "",
+        .antigravity: "",
     ]
     var wsAgentFlags: [UUID: [AgentID: String]] = [:]
 
@@ -668,7 +720,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     /// The effective template for a project — the shared base sessions with the project's
     /// own added after (working.html's layered model). The first entry overall is the one
-    /// that opens; an empty project list means "just the shared set".
+    /// that opens; an empty project list means "just the shared set". Switched-off agents are
+    /// still in here: Settings draws them struck through, and only the spawn side skips them.
     func sessionTemplate(for workspace: Workspace?) -> [SessionTemplateEntry] {
         globalSessionTemplate + (workspace.flatMap { wsSessionTemplates[$0.id] } ?? [])
     }
@@ -797,8 +850,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             // Requiring a still-live prior state drops the nudge once the turn has settled, so the
             // finish is order-independent: whichever of idle/needsInput lands last, the row ends
             // idle. Genuine blocks are preceded by UserPromptSubmit/PostToolUse→working, so the ?
-            // still lights.
-            if status == .needsInput, !s.status.isLive { break }
+            // still lights. Scoped to a row whose agent is already reachable, because that is the
+            // only place the race exists: an agent that has not yet reported ready and says it is
+            // blocked is blocked on the way IN — Antigravity's workspace trust prompt, which
+            // stands before the first turn and would otherwise read as a green idle row.
+            if status == .needsInput, !s.status.isLive, liveAgentIDs.contains(id) { break }
             let prev = s.status
             s.status = status
             routeTransition(id, prev: prev, next: status)
@@ -830,8 +886,19 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 // spawned claude (which execs, so this is its exit too). Notify first: both
                 // notification paths need the live row (features 2026-07-06).
                 s.status = .exited(real)
-                routeTransition(id, prev: prev, next: .exited(real), closing: true)
-                closeSession(s)
+                // …unless the row hosted an agent. An agent can quit on one keystroke
+                // (opencode's ctrl+d, claude's ctrl+c ctrl+c) and exit 0 doing it — and exit 0
+                // is not evidence of a gesture at all: opencode dies cleanly on its own (mid-
+                // boot, or minutes in, before any prompt is submitted), which silently deleted
+                // the row the user was looking at. So every clean agent exit goes through the
+                // undo deck: with a conversation captured, Reopen resumes it; without one,
+                // Reopen relaunches fresh — either way the quit is *said*, never silent.
+                if s.spawnedKind.isAgent {
+                    softReopenSession(s)
+                } else {
+                    routeTransition(id, prev: prev, next: .exited(real), closing: true)
+                    closeSession(s)
+                }
             } else {
                 // A failure keeps its row — the error should be seen and inspectable,
                 // not vanish with the process.
@@ -1171,17 +1238,41 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let lines = details.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let reason = lines.first { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") } ?? lines.last
+        // A Retry button is a claim that identical input could produce a different output. Some
+        // worktree failures earn it — a held index.lock, a post-checkout hook that couldn't
+        // resolve pnpm on a GUI launch PATH, a disk since freed. Others are deterministic and
+        // will fail the same way forever. Rather than classify git's whole vocabulary, let the
+        // second identical failure answer it: one branch failing one way twice running has
+        // shown that repeating the call isn't the fix, so the card stops inviting the click.
+        let streak = Self.failureKey(branch: branch, workspace: workspace, reason: reason ?? verb)
+        worktreeFailures[streak, default: 0] += 1
+        let offerRetry = retry != nil && worktreeFailures[streak] == 1
         notifs.append(InAppNotif(id: id, kind: .error, seq: notifSeq,
                                  sessionKind: .terminal, title: "\(branch) · \(workspace)",
                                  colorIndex: nil, outlivesSession: true,
                                  message: verb, iconPath: Phosphor.branch,
                                  tier: .attention, sub: reason,
-                                 action: retry == nil ? nil : NotifAction(label: "Retry")))
-        if let retry { notifActions[id] = retry }
+                                 action: offerRetry ? NotifAction(label: "Retry") : nil))
+        if offerRetry, let retry { notifActions[id] = retry }
         if !NSApp.isActive {
-            NotificationService.shared.postSystemError(title: verb,
-                                                       body: "\(branch) · \(workspace)\n\(details)")
+            // The same one line the card shows. Notification Center truncates a multi-line git
+            // dump and can't be copied from, so the full text stays in the log.
+            NotificationService.shared.postSystemError(
+                title: verb, body: "\(branch) · \(workspace)\n\(reason ?? verb)")
         }
+    }
+
+    /// Consecutive identical worktree failures, per project + branch + git's reason.
+    @ObservationIgnored private var worktreeFailures: [String: Int] = [:]
+
+    private static func failureKey(branch: String, workspace: String, reason: String) -> String {
+        "\(workspace)\u{1}\(branch)\u{1}\(reason)"
+    }
+
+    /// A branch that materialised has earned its Retry offer back, whatever it failed on before.
+    private func clearWorktreeFailures(branch: String, workspace: String) {
+        let prefix = Self.failureKey(branch: branch, workspace: workspace, reason: "")
+        worktreeFailures = worktreeFailures.filter { !$0.key.hasPrefix(prefix) }
     }
 
     /// Active toasts, most-urgent first: a burning undo, then standing asks, then receipts —
@@ -1591,20 +1682,24 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     func closeSession(_ session: Session) {
+        let owned = ownedSessions(of: session)
+        // Taken before anything leaves the tree, and blind to the browsers going with it.
+        let successor = successorSession(for: session, alsoLeaving: Set(owned.map(\.id)))
+        // An open browser of this row's own is still "the surface you closed".
+        let wasOpen = openSessionID.map { id in ([session] + owned).contains { $0.id == id } } ?? false
         // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
         // live and die with it — the delete confirm names them before this runs.
-        for owned in ownedSessions(of: session) { closeSession(owned) }
-        // Cursor falls up the hierarchy to the branch row (working.html removeUnit fallback).
-        if navCursor == session.id { navCursor = branch(of: session)?.id }
+        for browser in owned { closeSession(browser) }
+        // The cursor follows the row that inherits, and only falls to the branch row when the
+        // branch is empty — a close never hands the next ⌘W a whole branch to archive.
+        if navCursor == session.id { navCursor = successor?.id ?? branch(of: session)?.id }
         teardownSession(session)
         for br in workspaces.flatMap(\.branches) {
             br.sessions.removeAll { $0.id == session.id }
         }
         // Layout spine (009): closing a live session collapses its pane and reflows the sibling —
         // the existing removeUnit → prune path, no new guard (004 §6).
-        pruneLayout()
-        syncActive()
-        restoreLastViewed()   // nothing left on screen → back to the session you were on before (016)
+        settleAfterClose(successor: successor, wasOpen: wasOpen)
     }
 
     /// Release everything a session holds *outside* the tree: its terminal + browser
@@ -1783,6 +1878,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     private func softDelete(_ label: String, subject: UndoSubject,
                             destructive: Bool = false, sub: String? = nil,
+                            actionLabel: String = "Undo", sticky: Bool = false,
                             restore: @escaping () -> Void, commit: @escaping () -> Void) {
         notifSeq += 1
         let id = UUID()
@@ -1798,10 +1894,12 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                            title: "", colorIndex: nil, outlivesSession: true,
                            message: label, iconPath: path,
                            tier: .attention, sub: sub,
-                           action: NotifAction(label: "Undo", danger: destructive),
-                           destructive: destructive, drains: true)
-        n.life = Self.undoLife
-        n.remaining = Self.undoLife
+                           action: NotifAction(label: actionLabel, danger: destructive),
+                           destructive: destructive, drains: !sticky)
+        if !sticky {
+            n.life = Self.undoLife
+            n.remaining = Self.undoLife
+        }
         notifs.append(n)
     }
 
@@ -1827,11 +1925,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 homes.append((br, i, v))
             }
         }
-        let wasOpen = openSessionID == session.id
-        if navCursor == session.id { navCursor = branch(of: session)?.id }
+        // An open browser of this row's own is still "the surface you closed" — for the handoff,
+        // and for the undo, which puts you back on the one you were actually looking at.
+        let openVictim = victims.first { $0.id == openSessionID }
         let victimIDs = Set(victims.map(\.id))
+        let successor = successorSession(for: session, alsoLeaving: victimIDs)
+        // Same for the cursor: a browser going with its owner is a row about to leave under it.
+        if let c = navCursor, victimIDs.contains(c) { navCursor = successor?.id ?? branch(of: session)?.id }
         for br in workspaces.flatMap(\.branches) { br.sessions.removeAll { victimIDs.contains($0.id) } }
-        pruneLayout(); syncActive(); restoreLastViewed()
+        settleAfterClose(successor: successor, wasOpen: openVictim != nil)
 
         softDelete("Closed \(session.title)", subject: .session(session.kind), restore: { [weak self] in
             guard let self else { return }
@@ -1839,10 +1941,58 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 h.branch.sessions.insert(h.session, at: min(h.index, h.branch.sessions.count))
             }
             self.pruneLayout(); self.syncActive()
-            if wasOpen { self.jump(to: session) }
+            if let openVictim { self.jump(to: openVictim) }
         }, commit: { [weak self] in
             victims.forEach { self?.teardownSession($0) }
         })
+    }
+
+    /// An agent quit and took its row with it — park the row on an undo card instead of dropping
+    /// it. The gesture that gets here is often not the user's: opencode exits on `ctrl+d`, Claude
+    /// on a doubled `ctrl+c`, each of them exit 0 — and opencode also exits 0 dying on its own
+    /// (observed mid-boot and ten minutes into an idle row), so exit 0 cannot be read as intent.
+    /// A row with a captured `agentSessionID` carries the only handle Synth holds on that
+    /// conversation; a row without one (opencode creates its session lazily, so a just-opened row
+    /// still composing its first prompt has none) is still a row the user is looking at. Worse,
+    /// the plain close was silent precisely when it mattered: `routeTransition` raises the closing
+    /// card only for a row you are *not* looking at, so the session you were watching vanished
+    /// with nothing said.
+    ///
+    /// The card never drains. An 8-second fuse suits undoing your own gesture; this one is a
+    /// notice about something you didn't ask for, which may well have happened while you were
+    /// away from the keyboard — the case that makes the loss permanent. It waits until you say
+    /// Reopen (respawn, resuming the conversation) or × (let it stand).
+    ///
+    /// The dead surface is freed on the way in, not on commit: the process is already gone, and
+    /// dropping the view is what lets Reopen build a fresh one — which launches with `--resume`
+    /// when a conversation id was captured (the same reconstruction a restored-after-quit row
+    /// gets), or the agent's bare launch when none was.
+    func softReopenSession(_ session: Session) {
+        guard let br = branch(of: session),
+              let index = br.sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        let wasOpen = openSessionID == session.id
+        let agent = session.spawnedKind.agentID.flatMap { AgentRegistry.descriptor($0) }
+
+        let successor = successorSession(for: session)
+        teardownSession(session)
+        if navCursor == session.id { navCursor = successor?.id ?? br.id }
+        br.sessions.remove(at: index)
+        settleAfterClose(successor: successor, wasOpen: wasOpen)
+
+        // The conversation's name is the evidence under the verb line — but a row still wearing
+        // its stock name has none to give, and "OpenCode quit / OpenCode" says it twice.
+        let named = session.title == session.spawnedKind.tplStart ? nil : session.title
+        softDelete("\(agent?.displayName ?? "The agent") quit",
+                   subject: .session(session.spawnedKind),
+                   sub: named, actionLabel: "Reopen", sticky: true,
+                   restore: { [weak self] in
+            guard let self else { return }
+            session.status = .idle
+            session.unread = false
+            br.sessions.insert(session, at: min(index, br.sessions.count))
+            self.pruneLayout(); self.syncActive()
+            if wasOpen { self.jump(to: session) }
+        }, commit: {})
     }
 
     /// Remove a project from the sidebar instantly and reversibly — nothing on disk is touched
@@ -1856,7 +2006,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         }
         workspaces.remove(at: index)
         expanded.remove(ws.id)
-        pruneLayout(); syncActive(); restoreLastViewed()
+        pruneLayout(); syncActive()
 
         softDelete("Removed \(ws.name)", subject: .glyph(Phosphor.folder), restore: { [weak self] in
             guard let self else { return }
@@ -1919,7 +2069,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         if openSetupBranchID == branch.id { openSetupBranchID = nil }
         for ws in workspaces { ws.branches.removeAll { $0.id == branch.id } }
         expanded.remove(branch.id)
-        pruneLayout(); syncActive(); restoreLastViewed()
+        pruneLayout(); syncActive()
         return homes
     }
 
@@ -1936,22 +2086,45 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     /// Bring an archived row back into the sidebar, moving its folder back if the sweeper
-    /// already put it on hold. Returns false when the folder is gone for good.
-    @discardableResult
-    func restoreArchivedBranch(_ branch: Branch) -> Bool {
-        guard branch.isArchived else { return true }
-        if !FileManager.default.fileExists(atPath: branch.worktreeURL.path) {
-            guard let held = heldFolder(for: branch),
-                  GitService.releaseHeldWorktree(from: held, to: branch.worktreeURL)
-            else { return false }
-        }
+    /// already put it on hold.
+    ///
+    /// A row whose folder the reaper already reclaimed still comes back: the branch is a git
+    /// ref and the checkout is derived from it, so the worktree is cut again and the row waits
+    /// pending like a fresh create. Restore is the only way back — an archived row is out of
+    /// the sidebar and its name is taken in the New-branch picker — so a restore that declined
+    /// to act stranded the branch with no route to it at all.
+    func restoreArchivedBranch(_ branch: Branch) {
+        guard branch.isArchived else { return }
+        let onDisk = FileManager.default.fileExists(atPath: branch.worktreeURL.path)
+            || heldFolder(for: branch).map {
+                GitService.releaseHeldWorktree(from: $0, to: branch.worktreeURL)
+            } ?? false
         let days = branch.archivedAt.map { Int(Date().timeIntervalSince($0) / 86_400) } ?? 0
         branch.archivedAt = nil
         branch.lastCleanSweepEval = nil
-        branch.markActivity()
+        if onDisk { branch.markActivity() } else { recutWorktree(branch) }
         syncActive()
-        Analytics.capture("worktree_restored", ["days_archived": days])
-        return true
+        Analytics.capture("worktree_restored", ["days_archived": days, "recut": !onDisk])
+    }
+
+    /// Check the branch out again into the folder it used to occupy. The reaper prunes as it
+    /// deletes, so git holds no stale registration for the path and a plain `worktree add`
+    /// is enough. No session template runs: this is a restore, and a restore that spawned
+    /// sessions the archived row didn't have would be a create wearing its name.
+    private func recutWorktree(_ branch: Branch) {
+        guard let ws = workspace(of: branch) else { return }
+        let repo = ws.url
+        let path = branch.worktreeURL
+        let name = branch.name
+        branch.isPending = true
+        materialize(branch, in: ws,
+                    retry: { [weak self] in self?.createWorktree(in: ws, existingBranch: name) }) {
+            if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == name }) {
+                return .ready(wt.path)
+            }
+            return GitService.addWorktree(repo: repo, path: path, branch: name)
+                .map { .failed($0) } ?? .ready(path)
+        }
     }
 
     /// The `.archived-…` sibling holding this branch's folder, if the sweeper has moved it.
@@ -1972,23 +2145,43 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     // MARK: Archive sweep
 
-    /// The last verdict the sweeper reached for each archived branch, so the ⌘K Archived list
-    /// can say *why* something is still on disk. Runtime-only — re-derived every tick.
-    @ObservationIgnored private var sweepVerdicts: [UUID: ArchiveSweeper.Verdict] = [:]
+    /// The last verdict the sweeper reached for each archived branch, so the Archived list can
+    /// say *why* something is still on disk. Runtime-only — re-derived every tick. Observed:
+    /// a tick lands minutes after the pane opened, and a verdict nothing re-renders for is a
+    /// verdict the user reads on their next visit.
+    private var sweepVerdicts: [UUID: ArchiveSweeper.Verdict] = [:]
     @ObservationIgnored private var sweepTask: Task<Void, Never>?
     @ObservationIgnored private var sweepInFlight = false
     @ObservationIgnored private var sweptThisLaunch = 0
+    @ObservationIgnored private var lastVerdictRefresh: Date?
 
-    /// The ⌘K Archived row's ctx line. Deliberately just "when", not "why".
-    ///
-    /// Archiving is one simple idea to the user: this row is put away, and it can come back.
-    /// Whether the folder has yet been reclaimed — and which of two dozen conditions is
-    /// currently holding it — is housekeeping, and narrating it here would make a simple
-    /// action read like a system report. The reasons still exist and are still logged; they
-    /// come out through `archiveReason` for the harness and `os.Logger` for debugging.
-    func archiveStatusLine(_ branch: Branch) -> String {
+    /// The folder an archived branch is actually costing. The sweeper renames a worktree aside
+    /// before the reaper deletes it, so bytes read off the original path would be nothing for
+    /// exactly the rows closest to going — which is also why the budget and every number the
+    /// pane shows have to read it through here rather than each picking a path.
+    func archivedFolder(_ branch: Branch) -> URL { heldFolder(for: branch) ?? branch.worktreeURL }
+
+    /// "4h ago" / "just now". `relativeAge` alone is a column heading — the sidebar's "2h" sits
+    /// under a header that says what it measures. On an archived row it is a sentence fragment
+    /// and has to read as one, in ⌘K and in Settings alike.
+    func archivedAge(_ branch: Branch) -> String {
         guard let at = branch.archivedAt else { return "" }
-        return "archived " + relativeAge(at, now: Date())
+        let age = relativeAge(at, now: Date())
+        return age == "now" ? "just now" : age + " ago"
+    }
+
+    /// The "when" half of an Archived row: how long ago it was put away.
+    ///
+    /// This used to be the whole ctx line, on the argument that which of two dozen conditions
+    /// is holding a folder is housekeeping, and narrating it would make a simple action read
+    /// like a system report. What that missed is that the folder outliving its grace is the
+    /// question users actually arrive with — "why hasn't this been cleaned up yet" — and with
+    /// no answer on the row, the sweeper is a process deleting folders nobody can enumerate.
+    /// So the "why" now rides alongside it (`archiveVerdictLine`, composed by the palette's
+    /// `archivedCtx`), and this returns its first half.
+    func archiveStatusLine(_ branch: Branch) -> String {
+        guard branch.archivedAt != nil else { return "" }
+        return "archived " + archivedAge(branch)
     }
 
     /// The sweeper's verdict as a stable slug — automation and logs only, never shown.
@@ -2000,6 +2193,68 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         case .blocked(let r)?:     return r.rawValue
         case nil:                  return "unchecked"
         }
+    }
+
+    /// The sweeper's own last word on a branch, unfiltered — the harness and the logs read it
+    /// through `archiveReason`, surfaces read the two below.
+    func archiveVerdict(_ branch: Branch) -> ArchiveSweeper.Verdict? { sweepVerdicts[branch.id] }
+
+    /// The Archived row's chip, and the ⌘K ctx line under the same name.
+    ///
+    /// Both nil with the sweep off or the wait at Never: no turn ever comes then, so a
+    /// countdown or a "held aside next sweep" would be a promise nothing is going to keep.
+    func archiveVerdictChip(_ branch: Branch) -> String? { displayVerdict(branch)?.chip }
+    func archiveVerdictLine(_ branch: Branch) -> String? { displayVerdict(branch)?.line }
+
+    /// The stored verdict as the UI should read it. One correction: a branch the budget has
+    /// already called early must not still count down a grace it will not wait out. Its next
+    /// evaluation runs with no grace at all, and since a `.waiting` verdict clears
+    /// `lastCleanSweepEval`, the honest thing to say meanwhile is what that evaluation is
+    /// about to say — it is being checked.
+    private func displayVerdict(_ branch: Branch) -> ArchiveSweeper.Verdict? {
+        guard archiveSweepEnabled, archiveGraceDays > 0,
+              let verdict = sweepVerdicts[branch.id] else { return nil }
+        if case .waiting = verdict, archiveOverBudget().contains(branch.id) {
+            return .needsSecondOpinion
+        }
+        return verdict
+    }
+
+    /// Archived branches the budget has called early: the oldest unblocked ones, enough to get
+    /// back under both caps. Blocked ones still count toward the budget — they occupy the disk
+    /// — they just can't pay it down.
+    ///
+    /// Blockedness is last tick's verdict, which on the very first tick nobody has: the oldest
+    /// folders are called early, meet their gates, and the set corrects itself from the
+    /// verdicts that produces. Being called early costs a folder nothing but its grace.
+    func archiveOverBudget() -> Set<UUID> {
+        guard archiveSweepEnabled, archiveGraceDays > 0 else { return [] }
+        let entries = workspaces.flatMap { ws in
+            ws.branches.filter(\.isArchived).compactMap { branch -> ArchiveSweeper.BudgetEntry? in
+                guard let at = branch.archivedAt else { return nil }
+                return ArchiveSweeper.BudgetEntry(
+                    id: branch.id, archivedAt: at,
+                    bytes: FolderSizeCache.shared.bytes(for: archivedFolder(branch)) ?? 0,
+                    blocked: sweepVerdicts[branch.id]?.block != nil)
+            }
+        }
+        return ArchiveSweeper.overBudget(entries, maxCount: archiveMaxCount,
+                                         maxBytes: Int64(archiveMaxGB) * 1_073_741_824)
+    }
+
+    /// Fill in the verdicts for a surface that has just opened, rather than making it wait out
+    /// the 90 seconds the repeating sweep spends letting `gh` and the network settle.
+    ///
+    /// Fire-and-forget, and debounced twice over: a tick is one `lsof` plus a `gh` per
+    /// candidate, and a SwiftUI pane asks for this on every re-render. Until one lands the
+    /// rows simply carry no chip, which is the right thing for "not measured yet" to look like.
+    func refreshArchiveVerdicts() {
+        guard archiveSweepEnabled, archiveGraceDays > 0, !sweepInFlight else { return }
+        if let last = lastVerdictRefresh, Date().timeIntervalSince(last) < 60 { return }
+        let archived = workspaces.flatMap { $0.branches.filter(\.isArchived) }
+        guard archived.contains(where: { sweepVerdicts[$0.id] == nil }) else { return }
+        lastVerdictRefresh = Date()
+        Task { [weak self] in await self?.sweepTick(force: true) }
     }
 
     /// Start the repeating sweep. Unlike `startAutosave` the handle is retained, so quit can
@@ -2063,6 +2318,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let grace = archiveGraceSeconds
         var eligible: [(Workspace, Branch, Int?)] = []
 
+        // The size cap has to work on a Synth whose owner never opened the Archived pane, so
+        // the tick warms the measurements itself. Deduped and off the main actor — the walk is
+        // paid once per folder per launch, and an archived folder's size doesn't move.
+        let archivedPaths = workspaces.flatMap { $0.branches.filter(\.isArchived).map(archivedFolder) }
+        FolderSizeCache.shared.warm(archivedPaths)
+        // Read once, before any verdict is rewritten, so every candidate this tick is judged
+        // against the same budget.
+        let calledEarly = archiveOverBudget()
+
         for ws in workspaces {
             for branch in archivedBranches(in: ws) {
                 // A clock that jumped backwards must never manufacture an expired grace.
@@ -2074,8 +2338,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                     lastCleanEval: branch.lastCleanSweepEval,
                     hasSessions: !branch.sessions.isEmpty,
                     foreignInstancePaths: foreign)
-                let verdict = await runGit(repo: ws.url) {
+                var verdict = await runGit(repo: ws.url) {
                     ArchiveSweeper.evaluate(candidate, graceSeconds: grace, cwdPaths: cwdPaths)
+                }
+                // Over budget, this one's turn comes now instead of when its grace runs out —
+                // and "now" means the same evidence pass with the grace at zero, so every gate
+                // and the second-opinion rule still stand between it and being held aside.
+                if case .waiting = verdict, calledEarly.contains(branch.id) {
+                    verdict = await runGit(repo: ws.url) {
+                        ArchiveSweeper.evaluate(candidate, graceSeconds: 0, cwdPaths: cwdPaths)
+                    }
                 }
                 // The row may have been restored or deleted while git was answering.
                 guard let live = workspaces.first(where: { $0.id == ws.id })?
@@ -2200,117 +2472,35 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         return session
     }
 
-    // MARK: The update card (working.html "The update card")
+    // MARK: The waiting build (working.html "The waiting build, as a control")
 
     /// A build Sparkle has already downloaded and staged. It installs itself the next time Synth
-    /// quits whatever anyone clicks — everything here is only about saying so.
+    /// quits whatever anyone clicks, so a waiting build never speaks: no toast when the download
+    /// lands, no daily reminder, no Notification Center post. It has two surfaces, both pull —
+    /// the sidebar foot button and Settings → About.
     struct StagedUpdate: Sendable, Equatable {
         var version: String
-        /// When the build arrived, which is what the reminder's sub-line counts from.
-        var stagedAt: Date
     }
 
-    /// Set only once we hold a working installer, so the card's `Restart` can never be a button
+    /// Set only once we hold a working installer, so `Restart to update` can never be a button
     /// that does nothing. A staged build restored from a previous launch is deliberately NOT
     /// enough — Sparkle has to offer it again first.
     var stagedUpdate: StagedUpdate?
     /// Sparkle's `immediateInstallationBlock`: install and relaunch, no UI.
     @ObservationIgnored private var updateInstall: (@MainActor () -> Void)?
-    @ObservationIgnored private var updateCardID: UUID?
-    @ObservationIgnored private var updateReminderTask: Task<Void, Never>?
     /// The stub installer records the ask instead of relaunching, so a harness can prove Restart
     /// reached Sparkle without the instance vanishing mid-suite.
     var updateInstallRequested = false
 
-    static let updateVersionKey  = "synth-update-version"
-    static let updateStagedKey   = "synth-update-staged-at"
-    static let updateRemindedKey = "synth-update-reminded-at"
-
-    /// Once a day. Waiting a day is not a test, so `app/harness/` can compress this clock the
-    /// same way it compresses the archive sweep's.
-    var updateRemindInterval: TimeInterval {
-        if let raw = ProcessInfo.processInfo.environment["SYNTH_UPDATE_REMIND_SECONDS"],
-           let secs = TimeInterval(raw) { return secs }
-        return 86_400
-    }
-
-    /// Sparkle staged a build. The card goes up now — that first one is news — unless we already
-    /// spoke about this same build within the last day: Sparkle re-offers a staged update on
-    /// every launch, and announcing it every launch is the nag this feature exists to avoid.
+    /// Sparkle staged a build. Nothing is announced — the foot button and About both read this,
+    /// and go on reading it for as long as it is true.
     func updateStaged(version: String, install: @escaping @MainActor () -> Void) {
-        // A build that IS this build is not an update. Sparkle should never offer one, but the
-        // record outlives the install it describes, so without this a re-signed or rolled-back
-        // appcast could resurface "Synth 0.13.1 is ready" to someone already running 0.13.1 —
-        // dated, for good measure, from before they installed it.
-        guard version != AppStore.currentShortVersion else { forgetUpdateRecord(); return }
+        // A build that IS this build is not an update. Sparkle should never offer one, but a
+        // re-signed or rolled-back appcast could, and offering to restart into the version
+        // already running is a button that does nothing.
+        guard version != AppStore.currentShortVersion else { return }
         updateInstall = install
-        let known = UserDefaults.standard.string(forKey: AppStore.updateVersionKey)
-        let stamped = UserDefaults.standard.object(forKey: AppStore.updateStagedKey) as? Date
-        // A build we already know keeps the date it arrived, so "Downloaded 3 days ago" survives
-        // a relaunch. A different version starts its own clock.
-        let stagedAt = (known == version ? stamped : nil) ?? Date()
-        UserDefaults.standard.set(version, forKey: AppStore.updateVersionKey)
-        UserDefaults.standard.set(stagedAt, forKey: AppStore.updateStagedKey)
-        stagedUpdate = StagedUpdate(version: version, stagedAt: stagedAt)
-        let spokenAt = UserDefaults.standard.object(forKey: AppStore.updateRemindedKey) as? Date
-        if known == version, let spokenAt, Date().timeIntervalSince(spokenAt) < updateRemindInterval {
-            armUpdateReminder()
-            return
-        }
-        showUpdateCard()
-    }
-
-    /// Raising re-raises: a dismissed card comes back and a card still standing is rebuilt, so the
-    /// daily reminder returns to the FRONT of the deck with its waiting time redrawn instead of
-    /// ageing quietly behind newer news (working.html `showUpdateCard`).
-    func showUpdateCard() {
-        guard let update = stagedUpdate else { return }
-        if let old = updateCardID { clearNotif(old) }
-        UserDefaults.standard.set(Date(), forKey: AppStore.updateRemindedKey)
-        notifSeq += 1
-        let id = UUID()
-        updateCardID = id
-        // Attention tier — sticky, no countdown — because the decision stays open until you make
-        // it. Neutral ink and no who-line because this is the app talking about its own
-        // housekeeping. And it is the one attention card that never posts Notification Center:
-        // a version you were not waiting for does not earn a banner over the app you were
-        // actually using, so it waits in the deck for focus to come back.
-        notifs.append(InAppNotif(id: id, kind: .neutral, seq: notifSeq, sessionKind: .terminal,
-                                 title: "", colorIndex: nil, outlivesSession: true,
-                                 message: "Synth \(update.version) is ready",
-                                 iconPath: Phosphor.arrowCircleDown,
-                                 tier: .attention, sub: updateSubline(),
-                                 action: NotifAction(label: "Restart"), drains: false))
-        notifActions[id] = { [weak self] in
-            guard let self else { return }
-            // `runNotifAction` spends the card before it runs this, and a restart that stops to
-            // ask must not also cost you the reminder — so it goes back up behind the frame.
-            // Only here: from Settings no card was spent, and repairing one would be conjuring it.
-            if self.busySessions.count > 0 { self.showUpdateCard() }
-            self.restartForUpdate()
-        }
-        armUpdateReminder()
-    }
-
-    /// The first card is news; every card after it is a reminder, and by then the only thing that
-    /// has changed is how long you have been putting it off — so that is what the line says.
-    func updateSubline() -> String {
-        guard let update = stagedUpdate else { return "" }
-        let days = Int(Date().timeIntervalSince(update.stagedAt) / updateRemindInterval)
-        if days < 1 { return "Installs when you quit" }
-        return days == 1 ? "Downloaded yesterday" : "Downloaded \(days) days ago"
-    }
-
-    private func armUpdateReminder() {
-        updateReminderTask?.cancel()
-        guard stagedUpdate != nil else { return }
-        let spokenAt = UserDefaults.standard.object(forKey: AppStore.updateRemindedKey) as? Date ?? Date()
-        let due = max(0, updateRemindInterval - Date().timeIntervalSince(spokenAt))
-        updateReminderTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(due))
-            guard !Task.isCancelled else { return }
-            await self?.showUpdateCard()
-        }
+        stagedUpdate = StagedUpdate(version: version)
     }
 
     /// Restarting is the shortcut, not the price — the staged build installs itself on the next
@@ -2337,22 +2527,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// build, or this one after a stub — is not still being told a build is waiting.
     func applyUpdate() {
         guard let install = updateInstall else {
-            NSLog("Synth: update Restart with no installer — the card should never have been up.")
+            NSLog("Synth: update Restart with no installer — the foot button should never have been up.")
             return
         }
-        if let id = updateCardID { clearNotif(id); updateCardID = nil }
-        updateReminderTask?.cancel()
         updateInstall = nil
         stagedUpdate = nil
-        forgetUpdateRecord()
+        releaseUpdateFootCursor()
         install()
-    }
-
-    /// The persisted record of a staged build, dropped once it stops describing anything.
-    private func forgetUpdateRecord() {
-        for key in [AppStore.updateVersionKey, AppStore.updateStagedKey, AppStore.updateRemindedKey] {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
     }
 
     static var currentShortVersion: String {
@@ -2360,14 +2541,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     /// Stage a build without Sparkle — the ⌥U demo and the harness. The installer records the ask
-    /// instead of relaunching, and `daysAgo` back-dates the arrival so the ageing reminder can be
-    /// read without waiting days for it. Deliberately does NOT go through `updateStaged`: a demo
-    /// must not overwrite the record of a real build this install is genuinely waiting on.
-    func stageStubUpdate(version: String, daysAgo: Double = 0) {
+    /// instead of relaunching, so Restart can be proven to reach the installer without the
+    /// instance under test vanishing.
+    func stageStubUpdate(version: String) {
         updateInstall = { [weak self] in self?.updateInstallRequested = true }
-        stagedUpdate = StagedUpdate(version: version,
-                                    stagedAt: Date().addingTimeInterval(-daysAgo * updateRemindInterval))
-        showUpdateCard()
+        // Cleared per staging, not per install: the flag records "Restart reached the installer",
+        // and a second stage-and-assert cycle in one instance would otherwise read the previous
+        // cycle's answer before Restart was pressed.
+        updateInstallRequested = false
+        stagedUpdate = StagedUpdate(version: version)
     }
 
     // MARK: Feedback (⌘⇧F)
@@ -2407,17 +2589,21 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// branches, so a repeated gripe never collides `git worktree add` (its old failure mode).
     private func startFeedbackFix(title: String, body: String) {
         guard let ws = feedbackWorkspace() else { openFeedbackEmail(body.isEmpty ? title : body); return }
+        let gripe = body.isEmpty ? title : title + "\n\n" + body
+        // Every agent switched off: nobody can be handed the fix, so a worktree would be an
+        // empty folder and the text would be gone. Same fallback as having nowhere to host it —
+        // the words the author typed leave by the other door rather than vanishing behind "On it".
+        guard !availableAgents.isEmpty else { openFeedbackEmail(gripe); return }
         let repo = ws.url
         let slug = Self.feedbackSlug(from: title)
-        let gripe = body.isEmpty ? title : title + "\n\n" + body
         let seed = gripe + "\n\n" + captureFeedbackContext()
         // The "On it" ack is instant; the collision-free branch name needs `git for-each-ref` over
         // heads + remotes, which blocks for hundreds of ms on a big/cold repo — so resolve it (and
         // add the pending row) off the main thread rather than freezing the submit.
         // The branch is the identity, "On it" is what happened, and the mark is the comment
         // glyph: a check would say a session finished, and nothing finished — something started.
-        raiseFeedbackToast(.done, message: "On it", title: "feedback/\(slug)",
-                           icon: Phosphor.commentMode)
+        raiseAmbientToast(.done, message: "On it", title: "feedback/\(slug)",
+                          icon: Phosphor.commentMode)
         Task { [weak self] in
             guard let self else { return }
             let (branchName, planned) = await self.runGit(repo: repo) {
@@ -2425,7 +2611,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             }
             let row = self.addBranchRow(in: ws, name: branchName, worktreeURL: planned, pending: true)
             self.materialize(row, in: ws, spawningTemplate: false, onReady: { [weak self] branch in
-                self?.seedAgent(in: branch, seed: seed)
+                // The last switch can go off between "On it" and the checkout landing. The
+                // worktree is already cut by then, but the gripe still has somewhere to go.
+                guard let self, !self.seedAgent(in: branch, seed: seed) else { return }
+                self.openFeedbackEmail(gripe)
             }) {
                 GitService.addWorktree(repo: repo, path: planned, newBranch: branchName, base: nil)
                     .map { .failed($0) } ?? .ready(planned)
@@ -2453,9 +2642,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// boots (GhosttySurfaceView spawns on window attach), bounce focus back, then boot-and-wait
     /// for the supervisor's liveness signal and hand it the seed — mirroring CommentMode rung 3.
     /// Serves both seeded-worktree flows: the feedback fix and the synth-app handoff.
-    private func seedAgent(in branch: Branch, seed: String) {
-        guard let agent = AgentRegistry.default?.id,
-              let session = spawnAgent(agent, in: branch) else { return }
+    ///
+    /// False when there is nothing to seed — every agent switched off, or the spawn failed.
+    /// Both callers carry text a human or an agent wrote, so neither may let it go quietly.
+    @discardableResult
+    private func seedAgent(in branch: Branch, seed: String) -> Bool {
+        guard let agent = availableAgents.first?.id,
+              let session = spawnAgent(agent, in: branch) else { return false }
         let previous = openSessionID
         open(session)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -2477,6 +2670,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             }
             NSLog("Synth: seed never delivered (agent didn't report in)")
         }
+        return true
     }
 
     /// Other path: open the user's mail client with a pre-filled draft. The body attaches only
@@ -2492,16 +2686,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         if let url = comps.url, NSWorkspace.shared.open(url) {
             // One line: the who-row used to carry the literal email subject, the one thing you
             // had just typed yourself.
-            raiseFeedbackToast(.neutral, message: "Handed to Mail", title: "", icon: Phosphor.mail)
+            raiseAmbientToast(.neutral, message: "Handed to Mail", title: "", icon: Phosphor.mail)
         } else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(body, forType: .string)
             // Nothing failed: the fallback worked and your text is on the clipboard. It used to
             // raise a red, sticky error that sat in the deck until clicked, and led with the
             // negative.
-            raiseFeedbackToast(.neutral, message: "Feedback copied to clipboard", title: "",
-                               icon: Phosphor.copy,
-                               sub: "no mail app — paste it to \(FeedbackMode.recipient)")
+            raiseAmbientToast(.neutral, message: "Feedback copied to clipboard", title: "",
+                              icon: Phosphor.copy,
+                              sub: "no mail app — paste it to \(FeedbackMode.recipient)")
         }
     }
 
@@ -2565,10 +2759,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         return slug.isEmpty ? "note" : slug
     }
 
-    /// A session-less confirmation card (mirrors `raiseWorktreeError`). Every one of these is
-    /// ambient: a result, not a summons, and gone in six seconds.
-    private func raiseFeedbackToast(_ kind: NotifKind, message: String, title: String,
-                                    icon: String, sub: String? = nil) {
+    /// A session-less card (mirrors `raiseWorktreeError`). Every one of these is ambient: a
+    /// result, not a summons, and gone in six seconds.
+    private func raiseAmbientToast(_ kind: NotifKind, message: String, title: String,
+                                   icon: String, sub: String? = nil) {
         notifSeq += 1
         let id = UUID()
         notifs.append(InAppNotif(id: id, kind: kind, seq: notifSeq, sessionKind: .terminal,
@@ -2586,32 +2780,128 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         panel.allowsMultipleSelection = false
         panel.prompt = "Add"
         panel.message = "Choose a repository folder"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // NSOpenPanel holds its delegate weakly, and `gate`'s last use is this assignment.
+        let gate = RepositoryPickerGate()
+        panel.delegate = gate
+        let response = withExtendedLifetime(gate) { panel.runModal() }
+        guard response == .OK, let url = panel.url else { return }
         beginAddWorkspace(url: url)
+    }
+
+    /// Turns away a folder with no repository at or above it while the picker is still open, so
+    /// the correction — walk up a level, take the repo — is one click away with the panel still
+    /// on screen and the user's attention still on the choice. `shouldEnable` is the other hook
+    /// and is wrong twice over: every ancestor of a repo is itself a non-repo, so `~` and
+    /// `~/code` would grey out on the way to the thing you came for, and it re-probes every
+    /// listed folder on every scroll. `validate:` runs once, on Add.
+    private final class RepositoryPickerGate: NSObject, NSOpenSavePanelDelegate {
+        func panel(_ sender: Any, validate url: URL) throws {
+            guard GitService.enclosingRepositoryMarker(url) == nil else { return }
+            throw NSError(domain: "Synth", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "“\(url.lastPathComponent)” isn’t a git repository.",
+                NSLocalizedRecoverySuggestionErrorKey:
+                    "Synth works branch by branch, and every branch is a git worktree. "
+                    + "Choose the folder that holds your repository — the one with a .git inside it.",
+            ])
+        }
     }
 
     /// Add the repo with just its default branch — the checkout already at the repo
     /// root — as the sole worktree row. No branch picker: further branches are added
     /// later, one at a time, from the row's "New branch" action. The git read runs off
-    /// the main thread (`for-each-ref` on a large/cold repo can take a beat); a non-repo
-    /// folder yields a branchless workspace.
+    /// the main thread (`for-each-ref` on a large/cold repo can take a beat).
+    ///
+    /// A folder that can't host a branch is refused here instead of becoming a project.
+    /// The picker's own gate already turns away anything with no `.git` above it, so this
+    /// is the invariant behind it — the one place that decides, for every caller, that a
+    /// project always arrives with at least one branch.
     func beginAddWorkspace(url: URL) {
         Task { [weak self] in
             guard let self else { return }
-            let seed = await runGit(repo: url) { () -> (name: String, worktree: URL, age: String)? in
-                let branches = GitService.branches(at: url)
-                guard !branches.isEmpty else { return nil }
-                // git lists the main worktree first; the branch checked out there is the
-                // repo's default, and its folder (the repo root) is its worktree already.
-                let main = GitService.worktrees(at: url).first
-                let name = main?.branch ?? branches[0].name
-                let age = branches.first { $0.name == name }
-                    .map { GitService.compactAge($0.lastCommitUnix) } ?? ""
-                return (name, main?.path ?? url, age)
+            switch await runGit(repo: url, { Self.probeWorkspace(at: url) }) {
+            case .refuse(let why):
+                raiseAmbientToast(.error, message: why.message, title: url.lastPathComponent,
+                                  icon: Phosphor.branch, sub: why.sub)
+            case .seed(let seed):
+                // Two projects over one repo get two `worktreeRoot`s (it hashes the path), and
+                // the second `worktree add` for a branch the first already checked out dies on
+                // "already checked out". Show the one that's there instead of making the second.
+                if let existing = workspaces.first(where: { Self.sameFolder($0.url, seed.root) }) {
+                    revealWorkspace(existing)
+                    return
+                }
+                finishAddWorkspace(url: seed.root, branches: [
+                    Branch(name: seed.branch, worktreeURL: seed.worktree, lastActivity: seed.age)
+                ])
             }
-            let rows = seed.map { [Branch(name: $0.name, worktreeURL: $0.worktree, lastActivity: $0.age)] } ?? []
-            finishAddWorkspace(url: url, branches: rows)
         }
+    }
+
+    /// A picked folder resolved to a project, or the reason it can't be one.
+    private enum AddWorkspaceProbe: Sendable {
+        case seed(AddWorkspaceSeed)
+        case refuse(AddWorkspaceRefusal)
+    }
+
+    private struct AddWorkspaceSeed: Sendable {
+        let root: URL
+        let branch: String
+        let worktree: URL
+        let age: String
+    }
+
+    /// Why a folder can't become a project. Both were previously accepted and produced the
+    /// same branchless project: a row that can host no branch, therefore no session, and
+    /// whose "New branch" could only ever fail.
+    private enum AddWorkspaceRefusal: Sendable {
+        case notRepository
+        case noCommits
+
+        var message: String {
+            switch self {
+            case .notRepository: return "Not a git repository"
+            case .noCommits:     return "No commits yet"
+            }
+        }
+
+        var sub: String {
+            switch self {
+            case .notRepository: return "Synth adds repositories — pick a folder with a .git inside it."
+            case .noCommits:     return "Make the first commit, then add it again."
+            }
+        }
+    }
+
+    /// Off the main thread: resolve the pick to a repo root and read its default-branch row.
+    nonisolated private static func probeWorkspace(at url: URL) -> AddWorkspaceProbe {
+        guard let root = GitService.repositoryRoot(url) else { return .refuse(.notRepository) }
+        let branches = GitService.branches(at: root)
+        // No refs/heads inside a working tree means an unborn HEAD — a fresh `git init`, or a
+        // clone of an empty remote. `defaultBase` falls through to "HEAD" there and
+        // `worktree add -b <name> <path> HEAD` dies on "invalid reference: HEAD", so the
+        // folder is a dead end until it has a commit. This is the likelier way in than a
+        // folder with no repo at all: it's what starting a new project looks like.
+        guard !branches.isEmpty else { return .refuse(.noCommits) }
+        // git lists the main worktree first; the branch checked out there is the
+        // repo's default, and its folder (the repo root) is its worktree already.
+        let main = GitService.worktrees(at: root).first
+        let name = main?.branch ?? branches[0].name
+        let age = branches.first { $0.name == name }
+            .map { GitService.compactAge($0.lastCommitUnix) } ?? ""
+        return .seed(AddWorkspaceSeed(root: root, branch: name,
+                                      worktree: main?.path ?? root, age: age))
+    }
+
+    private static func sameFolder(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().standardizedFileURL.path
+            == b.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    /// Put the cursor on a project and open it — what re-adding one you already have means.
+    private func revealWorkspace(_ ws: Workspace) {
+        expanded.insert(ws.id)
+        navCursor = ws.id
+        retargetSettings(toWorkspace: ws.id)
     }
 
     private func finishAddWorkspace(url: URL, branches: [Branch]) {
@@ -2732,7 +3022,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// would be noise).
     /// `retry` is the one call that would repeat this create verbatim, offered on the failure
     /// card. The flows that can't be repeated as a single call pass nil and the card carries no
-    /// button — an offer that can't be honoured is worse than none.
+    /// button — an offer that can't be honoured is worse than none. Repeatability is necessary
+    /// but not sufficient: `raiseWorktreeError` withholds the offer once the same failure has
+    /// repeated, since a call that can be made again isn't yet a call worth making again.
     private func materialize(_ row: Branch, in ws: Workspace, spawningTemplate: Bool = false,
                              retry: (@MainActor () -> Void)? = nil,
                              onReady: ((Branch) -> Void)? = nil,
@@ -2745,6 +3037,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 row.worktreeURL = url
                 row.isPending = false
                 row.markActivity()
+                clearWorktreeFailures(branch: row.name, workspace: wsName)
                 Analytics.capture("worktree_created", ["from_template": spawningTemplate])
                 if spawningTemplate { applySessionTemplate(to: row, in: ws) }
                 onReady?(row)
@@ -2820,6 +3113,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             return .immediate(["ok": false, "error":
                 "a prompt for \(name) is already awaiting the user's answer"])
         }
+        let handoff = (request["handoff"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // A handoff is a brief written for someone to receive. With every agent switched off
+        // there is no one, and an approved create would leave an empty worktree and drop the
+        // brief — so refuse it here, before the user is asked, and say what would work instead.
+        guard handoff == nil || !availableAgents.isEmpty else {
+            return .immediate(["ok": false, "error":
+                "every agent is switched off in Synth Settings → Agent defaults, so nothing can "
+                + "receive the handoff — turn one on, or call again without `handoff` to create "
+                + "the worktree alone"])
+        }
         let requester = (request["ownerSessionId"] as? String)
             .flatMap(UUID.init(uuidString:))
             .flatMap { id in callerBranch.sessions.first { $0.id == id && $0.kind.isAgent } }
@@ -2827,7 +3130,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             workspace: ws,
             branchName: name,
             base: (request["base"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            handoff: (request["handoff"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            handoff: handoff,
             requesterTitle: requester?.title,
             respond: respond)
         agentPrompts.append(prompt)
@@ -2868,6 +3171,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             prompt.respond(["ok": true, "decision": "declined"])
             return
         }
+        // The prompt sits live for minutes, so the last switch can go off while it waits. A
+        // handoff with nobody left to take it creates an empty worktree and drops the brief.
+        guard prompt.handoff == nil || !availableAgents.isEmpty else {
+            prompt.respond(["ok": false, "error":
+                "every agent was switched off while this was waiting, so nothing can receive the "
+                + "handoff — nothing was created"])
+            return
+        }
         let planned = agentCreateWorktree(prompt)
         prompt.respond(["ok": true, "decision": "created",
                         "branch": prompt.branchName, "worktreePath": planned.path])
@@ -2898,7 +3209,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let row = addBranchRow(in: ws, name: name, worktreeURL: planned, pending: true)
         openWorktreeSetup(row)
         let onReady: ((Branch) -> Void)? = prompt.handoff.map { seed in
-            { [weak self] branch in self?.seedAgent(in: branch, seed: seed) }
+            { [weak self] branch in
+                // The MCP caller was answered on the approval click and is long gone by now, so
+                // a seed that can't start is only ever the user's to hear about — the worktree
+                // is there and holds nothing.
+                guard let self, !self.seedAgent(in: branch, seed: seed) else { return }
+                self.raiseWorktreeError("Couldn't start the handoff session", branch: name,
+                                        workspace: ws.name,
+                                        details: "no agent is switched on to receive it")
+            }
         }
         materialize(row, in: ws, spawningTemplate: prompt.handoff == nil, onReady: onReady) {
             if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == name }) {
@@ -2961,17 +3280,25 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// only the opened session touches the PTY layer. A name differing from the kind's
     /// stock start counts as hand-picked (titleIsCustom), so auto-naming — ai-title,
     /// running command, page title — never overwrites a template name the user chose.
+    ///
+    /// An entry whose agent is switched off is skipped, not deleted (working.html
+    /// `effectiveTpl`): the template is a wish list, and turning the agent back on restores
+    /// the row without retyping it. Skipping shifts "the one that opens" onto the first entry
+    /// that survives, so a template led by a disabled agent still opens something.
     private func applySessionTemplate(to branch: Branch, in ws: Workspace) {
         // Whether the user is still parked on this row's setup skeleton decides the whole
         // handoff: still here → resolve in place; moved on → don't touch the viewport.
         let watching = openSetupBranchID == branch.id
-        let entries = sessionTemplate(for: ws)
+        let entries = sessionTemplate(for: ws).filter { isAgentEnabled($0.kind) }
         guard !entries.isEmpty else {
-            // An emptied template means "start bare": nothing to open. If we're still on
-            // the skeleton, drop it so the pane settles onto the now-ready (empty) row.
+            // An emptied template — or one every switch has turned off — means "start bare":
+            // nothing to open. If we're still on the skeleton, drop it so the pane settles
+            // onto the now-ready (empty) row.
             if watching { openSetupBranchID = nil }
             return
         }
+        // i == 0 is the first entry that SURVIVED the filter — the one that opens, and the
+        // only agent that actually starts working.
         let sessions = entries.enumerated().map { i, entry in
             Session(kind: entry.kind, title: entry.name,
                     status: entry.kind.isAgent && i == 0 ? .working : .idle,
@@ -3056,7 +3383,12 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         for pw in state.workspaces {
             guard !confirmedMissing(pw.url) else { continue }
             let branches: [Branch] = pw.branches.compactMap { pb -> Branch? in
-                guard !confirmedMissing(pb.worktreeURL) else { return nil }
+                // Only *live* rows are reconciled against disk. An archived row's folder is
+                // expected to be absent — the sweeper holds it aside and later reclaims it — so
+                // reading that absence as "deleted outside Synth" dropped the row on the next
+                // launch: the Archived list forgot the branch, and any folder still on hold was
+                // orphaned with nothing but the reaper's clock left to touch it.
+                guard pb.archivedAt != nil || !confirmedMissing(pb.worktreeURL) else { return nil }
                 let sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
@@ -3209,17 +3541,17 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// ⌥C — clear every standing toast (reset the deck).
     func debugClearNotifs() { notifs.removeAll() }
 
-    /// ⌥U — stage a build. Pressing it again winds the clock back a day and re-raises, so the
-    /// daily reminder can be read as it will actually arrive rather than a day from now.
+    /// ⌥U — toggle a waiting build, so both foot states can be read side by side. Clearing it
+    /// drops the fact rather than routing through the stub installer: the point is the foot in
+    /// both states, not the install path.
     func debugStageUpdate() {
-        guard var update = stagedUpdate else {
+        guard stagedUpdate != nil else {
             stageStubUpdate(version: AppStore.debugNextVersion())
             return
         }
-        update.stagedAt = update.stagedAt.addingTimeInterval(-86_400)
-        stagedUpdate = update
-        UserDefaults.standard.set(update.stagedAt, forKey: AppStore.updateStagedKey)
-        showUpdateCard()
+        stagedUpdate = nil
+        updateInstall = nil
+        releaseUpdateFootCursor()
     }
 
     /// This build's version with its last number bumped — a plausible next release to demo with,

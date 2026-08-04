@@ -1,4 +1,4 @@
-import json, socket, subprocess, time, os, pathlib, uuid, signal
+import json, socket, subprocess, sys, time, os, pathlib, uuid, signal, urllib.parse
 
 import tempfile
 # Scratch: repos, seeded state and logs for a run. Never the user's real Synth state.
@@ -16,6 +16,13 @@ def check(name, ok, detail=""):
 def result():
     print("\nRESULT: " + ("ALL PASS" if not FAILS else f"{len(FAILS)} FAILED: {FAILS}"), flush=True)
     return 1 if FAILS else 0
+
+def skip(reason):
+    """A gate this machine cannot run — an agent that isn't installed, one that isn't signed in.
+    One `SKIP:` line and a clean exit: run.sh counts it separately, so a missing prerequisite
+    never reads as a pass and never reads as a product failure."""
+    print(f"SKIP: {reason}", flush=True)
+    sys.exit(0)
 
 def sh(cmd, **kw):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, **kw).stdout.strip()
@@ -63,15 +70,31 @@ def fresh_repo(name="repo", branches=()):
     return d
 
 def seed_state(repo, sessions=None, template=None, extra_branches=()):
+    branches = [{
+        "id": str(uuid.uuid4()), "name": sh(f"git -C {repo} branch --show-current"),
+        "worktreeURL": f"file://{repo}", "lastActivity": "now",
+        "sessions": sessions or [],
+    }]
+    # Each extra is a *real* worktree, checked out under the root the app looks in — a branch row
+    # pointing at a path that doesn't exist can't be opened, and a gate about navigation needs to
+    # open things. `{"name": ..., "sessions": [...]}`.
+    for extra in extra_branches:
+        name = extra["name"]
+        wt = pathlib.Path(WT_ROOT) / f"{repo.name}-{name}"
+        sh(f"rm -rf '{wt}'")
+        sh(f"git -C {repo} worktree add -q -b {name} '{wt}'")
+        branches.append({
+            "id": str(uuid.uuid4()), "name": name,
+            # The worktree root lives under "Application Support" — a space. Unescaped, the URL
+            # decodes to a path that doesn't exist and the branch drops on restore as missing.
+            "worktreeURL": "file://" + urllib.parse.quote(str(wt)),
+            "lastActivity": "now", "sessions": extra.get("sessions", []),
+        })
     st = {
         "version": 1,
         "workspaces": [{
             "id": str(uuid.uuid4()), "name": "repo", "url": f"file://{repo}", "colorIndex": 0,
-            "branches": [{
-                "id": str(uuid.uuid4()), "name": sh(f"git -C {repo} branch --show-current"),
-                "worktreeURL": f"file://{repo}", "lastActivity": "now",
-                "sessions": sessions or [],
-            }],
+            "branches": branches,
         }],
         "expanded": [],
     }
@@ -94,14 +117,18 @@ def sweep_dead_sockets():
             try: os.unlink(path)
             except FileNotFoundError: pass
 
-def launch(state_dir, log, theme=None, extra_args=()):
+def launch(state_dir, log, theme=None, extra_args=(), env_extra=None):
     sweep_dead_sockets()
     env = dict(os.environ)
     env["PATH"] = OPENCODE_PATH + ":" + env["PATH"]
-    env["SYNTH_AUTOMATION"] = "1"
+    env["SYNTH_AUTOMATION"] = "1"   # drivable and invisible, both (Automation.swift)
     env["SYNTH_STATE_DIR"] = str(state_dir)
     for k in ["CLAUDECODE","CLAUDE_CODE_SESSION_ID","CLAUDE_CODE_CHILD_SESSION","CLAUDE_CODE_ENTRYPOINT","CLAUDE_CODE_EXECPATH"]:
         env.pop(k, None)
+    # Last word, because TerminalManager seeds every PTY from the app's own environ: a gate that
+    # must pin what a spawned agent sees (which SHELL answers the login-PATH probe, which
+    # browser opener it can reach) sets it here or not at all.
+    env.update(env_extra or {})
     f = open(log, "w")
     # NSArgumentDomain pins the theme (and any extra_args defaults, e.g. the MCP toggles)
     # for this process only — the developer's Synth is untouched.
@@ -150,3 +177,121 @@ def wait(fn, secs=30, every=0.3):
         if v: return v
         time.sleep(every)
     return None
+
+# --- Antigravity (`agy`) --------------------------------------------------------------------
+# Two different programs answer to `agy`: the Antigravity CLI (the terminal agent Synth hosts)
+# and the Nov-2025 Antigravity IDE's launcher, which only opens the GUI. Both live on a stock
+# login PATH, the IDE's first. Everything below resolves the CLI the way Synth's detection has
+# to — login-shell PATH, then this process's PATH, then the install hints, rejecting anything
+# that resolves inside an `.app` bundle.
+
+AGY_INSTALL_HINTS = ["~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+
+def login_path_dirs():
+    """The PATH a login shell really has (ShellEnvironment.probe's exact invocation, sentinel
+    and all, so rc-file chatter printed before the value can't be mistaken for it)."""
+    shell = os.environ.get("SHELL") or "/bin/zsh"
+    try:
+        out = subprocess.run([shell, "-l", "-i", "-c", 'printf "\\001%s\\001" "$PATH"'],
+                             capture_output=True, text=True, timeout=20,
+                             stdin=subprocess.DEVNULL).stdout
+    except Exception:
+        return []
+    parts = out.split("\001")
+    return parts[1].split(":") if len(parts) > 2 else []
+
+def in_app_bundle(path):
+    """The structural tell that separates the IDE launcher from the CLI: it symlinks into
+    /Applications/Antigravity.app. A GUI launcher is never the agent."""
+    return ".app/" in os.path.realpath(path)
+
+def agy_candidates():
+    """Every `agy` a detection pass would consider, in search order."""
+    dirs = login_path_dirs() + os.environ.get("PATH", "").split(":") \
+         + [os.path.expanduser(d) for d in AGY_INSTALL_HINTS]
+    seen, found = set(), []
+    for d in dirs:
+        c = os.path.join(d, "agy")
+        if not d or c in seen: continue
+        seen.add(c)
+        if os.path.isfile(c) and os.access(c, os.X_OK): found.append(c)
+    return found
+
+def agy_binary():
+    """The one Synth must land on: first candidate that isn't the IDE launcher."""
+    return next((c for c in agy_candidates() if not in_app_bundle(c)), None)
+
+def no_browser_env():
+    """The popup ban. An `agy` that decides it needs a sign-in shells out to `open`, and a
+    harness run must never spray browser tabs at whoever is at the keyboard — so every gate
+    that can start one hands the app (and through it every PTY) a no-op `open` first on PATH
+    and a BROWSER that does nothing."""
+    d = pathlib.Path(H) / "no-browser"
+    d.mkdir(parents=True, exist_ok=True)
+    opener = d / "open"
+    opener.write_text("#!/bin/sh\nexit 0\n")
+    opener.chmod(0o755)
+    return {"PATH": f"{d}:" + os.environ.get("PATH", ""), "BROWSER": "/usr/bin/true"}
+
+def agy_signed_in():
+    """`agy models` answers from the local session and fails signed out — the cheapest probe
+    that distinguishes "installed" from "can actually take a turn"."""
+    agy = agy_binary()
+    if not agy: return False
+    env = dict(os.environ); env.update(no_browser_env())
+    try:
+        r = subprocess.run([agy, "models"], capture_output=True, text=True, timeout=60,
+                           stdin=subprocess.DEVNULL, env=env)
+    except Exception:
+        return False
+    return r.returncode == 0 and bool(r.stdout.strip())
+
+def require_agy():
+    if not agy_binary():
+        skip("the Antigravity CLI is not installed — `brew install --cask antigravity-cli`")
+
+def require_agy_auth():
+    require_agy()
+    if not agy_signed_in():
+        skip("`agy` is installed but signed out (`agy models` failed) — run `agy` once and sign "
+             "in with a Google account; the live Antigravity gates take a real turn")
+
+def agy_process():
+    """The `ps` line of the Antigravity CLI a PTY is running. synth-hook exec's the real binary
+    with argv[0] set to the absolute path Synth resolved, so this line *is* the detection answer
+    — observed from outside rather than recomputed. Two exclusions: the shim wears the same name
+    from the shim dir while it waits on its child, and the newest match wins so an `agy` still
+    winding down from an earlier run in the same suite can't answer for this one."""
+    found = []
+    for pid in sh("pgrep -f '/agy'").split():
+        line = sh(f"ps -o command= -p {pid}")
+        if line.split(" ")[0].endswith("/agy") and "synth-shims-" not in line.split(" ")[0]:
+            found.append((int(pid), line))
+    return max(found)[1] if found else None
+
+AGY_SETTINGS = pathlib.Path.home() / ".gemini/antigravity-cli/settings.json"
+
+def agy_trust(path, trusted=True):
+    """Stand in for the human at the keyboard on `agy`'s workspace trust prompt.
+
+    On a path it has never seen, `agy` opens on a modal "do you trust the contents of this
+    project?" — every fresh worktree hits it, and until it is answered the TUI swallows anything
+    pasted at it. The answer is a keypress and lands in `agy`'s own settings; a gate that must
+    reach the *other* side of that prompt sets it here, and only ever for its own scratch repos,
+    so a run neither depends on what this machine happens to have trusted nor grants anything for
+    the user's real worktrees. Synth itself never writes this file — a row blocked on the prompt
+    is `needsInput`, which is what t15 asserts before granting."""
+    path = str(pathlib.Path(path).resolve())
+    st = json.loads(AGY_SETTINGS.read_text()) if AGY_SETTINGS.exists() else {}
+    entries = [p for p in st.get("trustedWorkspaces", []) if p != path]
+    if trusted: entries.append(path)
+    st["trustedWorkspaces"] = entries
+    AGY_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    AGY_SETTINGS.write_text(json.dumps(st, indent=2))
+
+def agy_transcript(conversation):
+    """Where a conversation's turns land under the CLI's app data dir. Reading it is the only
+    way to prove a resumed row is *inside* the old conversation rather than merely named after
+    it (agy has no queryable server the way opencode does)."""
+    return pathlib.Path.home() / ".gemini/antigravity-cli/brain" / conversation \
+         / ".system_generated/logs/transcript_full.jsonl"

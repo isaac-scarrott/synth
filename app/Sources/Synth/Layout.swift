@@ -112,7 +112,6 @@ extension AppStore {
         if let leaf = activePane, let sid = leaf.sessionID {
             openSessionID = sid
             openSetupBranchID = nil
-            noteView(sid)
             session(sid)?.unread = false
             clearNotif(sid)
         } else if let leaf = activePane, let bid = leaf.setupBranchID {
@@ -124,30 +123,37 @@ extension AppStore {
         }
     }
 
-    // MARK: The view stack (016)
+    // MARK: What a close hands off to (supersedes the view stack, 016)
 
-    /// Push a session onto the view stack — most recent last, one entry each.
-    func noteView(_ sessionID: UUID) {
-        viewStack.removeAll { $0 == sessionID }
-        viewStack.append(sessionID)
+    /// The session that inherits when `session` leaves: the next one below it in its own branch,
+    /// else the one above — skipping anything leaving alongside it (an owning claude row takes its
+    /// browsers with it, ADR-0011). Nothing outside the branch is ever a candidate.
+    ///
+    /// The view stack this replaces picked by recency instead, and recency lives nowhere on screen:
+    /// two identical-looking closes landed in different repos depending on browsing done ten minutes
+    /// earlier, with the sidebar expanding and scrolling under you to reveal the destination. A close
+    /// is a local edit to a list, not a switcher — so it hands off to a neighbour you can already see.
+    func successorSession(for session: Session, alsoLeaving: Set<UUID> = []) -> Session? {
+        guard let br = branch(of: session),
+              let i = br.sessions.firstIndex(where: { $0.id == session.id }) else { return nil }
+        var going = alsoLeaving
+        going.insert(session.id)
+        if let below = br.sessions[(i + 1)...].first(where: { !going.contains($0.id) }) { return below }
+        return br.sessions[..<i].last { !going.contains($0.id) }
     }
 
-    /// The last session you were viewing that still exists, dropping dead ids as it goes — so a
-    /// session closed from anywhere just falls out of the stack.
-    func lastViewed() -> Session? {
-        while let id = viewStack.last {
-            if let s = session(id) { return s }
-            viewStack.removeLast()
-        }
-        return nil
-    }
-
-    /// Called after a close: if it emptied the surface, pop the view stack and open the session you
-    /// were on before this one — across a branch or workspace boundary if that's where it lives. A
-    /// close inside a split never reaches here; the surviving sibling reflows into the space (001).
-    func restoreLastViewed() {
-        guard layout == nil, let back = lastViewed() else { return }
-        open(back)
+    /// Settle the surface after a session leaves the tree, having taken `successor` beforehand.
+    ///
+    /// The view moves only when the close emptied it. A split has already reflowed its sibling into
+    /// the space (001), and in tabs mode the strip is the branch — so the successor *is* the
+    /// neighbouring tab, and one rule covers both. When the branch has nothing left, the empty pane
+    /// stands: it is the honest end of a close, and jumping somewhere else to avoid it is what made
+    /// the gesture unpredictable.
+    func settleAfterClose(successor: Session?, wasOpen: Bool) {
+        pruneLayout()
+        syncActive()
+        guard layout == nil, wasOpen, let successor, session(successor.id) != nil else { return }
+        open(successor)
     }
 
     // MARK: Tree ops (the whole vocabulary — every gesture and chord funnels through these)
@@ -432,6 +438,32 @@ extension AppStore {
         var ids: [UUID] = []
         eachLeaf(tree) { if let s = $0.sessionID { ids.append(s) } }
         return ids.count >= 2 ? ids : []
+    }
+
+    /// Every pane of `branch`'s split as a fraction rect of the whole surface — the shape a member
+    /// tab wears as its map (working.html `paneRects`). Splits subdivide in equal halves rather than
+    /// by their real `split` fraction: at 8pt a schematic reads and a true 62/38 does not. Same tree
+    /// (durable for the current branch, remembered otherwise) and same a-before-b order as
+    /// `echoMemberIDs`, so map order is strip order.
+    func paneRects(for branch: Branch) -> [UUID: CGRect] {
+        let tree = branch.id == currentBranchID ? durableLayout : branch.layout
+        var out: [UUID: CGRect] = [:]
+        func walk(_ node: PaneNode?, _ r: CGRect) {
+            guard let node else { return }
+            if node.isLeaf {
+                if let s = node.sessionID { out[s] = r }
+                return
+            }
+            if node.dir == .col {
+                walk(node.a, CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height / 2))
+                walk(node.b, CGRect(x: r.minX, y: r.midY, width: r.width, height: r.height / 2))
+            } else {
+                walk(node.a, CGRect(x: r.minX, y: r.minY, width: r.width / 2, height: r.height))
+                walk(node.b, CGRect(x: r.midX, y: r.minY, width: r.width / 2, height: r.height))
+            }
+        }
+        walk(tree, CGRect(x: 0, y: 0, width: 1, height: 1))
+        return out
     }
 
     /// The branch a keyboard split lands on when the active pane is a bare setup skeleton (no

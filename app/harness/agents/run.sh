@@ -1,10 +1,22 @@
 #!/bin/bash
 # The coding-agent gate: drives a real Synth build over its control socket (SYNTH_AUTOMATION=1)
-# and proves both agents end to end — template spawn, resume, notifications, browser MCP,
-# click-to-comment, abort semantics, and no regression in Claude Code's hook path.
+# and proves every agent end to end — template spawn, resume, notifications, browser MCP,
+# click-to-comment, abort semantics, `agy`'s two-programs-one-name detection rule, and no
+# regression in Claude Code's hook path.
+#
+# A run is invisible. Every instance launches driven, and a driven Synth takes no Dock icon, no
+# ⌘Tab slot, no keyboard, no cursor and no screen, and records its Notification Center posts
+# instead of firing them (Automation.swift) — so a suite can run for an hour on the machine
+# someone is working on without landing in the middle of it.
 #
 # Needs: a CEF-enabled bundle (app/dev.sh builds one) whose path is in /tmp/synth-app-path.txt,
-# and `opencode` + `claude` on PATH.
+# and `opencode` + `claude` on PATH. Antigravity additionally wants `agy` — the CLI, from
+# `brew install --cask antigravity-cli` or the official installer's ~/.local/bin — and, for the
+# gates that take a real turn, a signed-in one (`agy models` must answer). Missing or signed out,
+# those gates print one SKIP line and are counted apart from passes: this stays green on a
+# machine that simply hasn't got the agent.
+#
+# Run a subset by naming suites: ./run.sh t14_antigravity_detect t15_antigravity
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -18,13 +30,23 @@ if ! SYNTH_AUTOMATION=1 "$APP/Contents/MacOS/Synth" --browser-check 2>&1 | grep 
   exit 1
 fi
 
-P=0; F=0
-for t in t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t5_comment t6_abort t7_regression t8_appmcp t9_archive t10_toasts t11_update t12_scratch t13_termcontrast; do
+SUITES="t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t5_comment t6_abort
+        t7_regression t8_appmcp t9_archive t10_toasts t11_update t12_scratch t13_termcontrast
+        t14_antigravity_detect t15_antigravity t16_antigravity_resume t17_agent_quit
+        t18_antigravity_states t19_agent_disable t20_comment_batch
+        t21_escaped_reap t22_close_successor t23_projectgate t24_agentcontrast t25_opencodecontrast t26_agycontrast"
+
+P=0; F=0; S=0
+for t in ${*:-$SUITES}; do
   if python3 "$t.py" > "/tmp/$t.out" 2>&1; then
-    echo "PASS $t ($(grep -c '  PASS' "/tmp/$t.out") checks)"; P=$((P+1))
+    if grep -q '^SKIP: ' "/tmp/$t.out"; then
+      echo "SKIP $t — $(sed -n 's/^SKIP: //p' "/tmp/$t.out" | head -1)"; S=$((S+1))
+    else
+      echo "PASS $t ($(grep -c '  PASS' "/tmp/$t.out") checks)"; P=$((P+1))
+    fi
   else
     echo "FAIL $t"; grep '  FAIL' "/tmp/$t.out" | head -5; F=$((F+1))
   fi
 done
-echo "suites: $P passed / $F failed"
+echo "suites: $P passed / $F failed / $S skipped"
 exit $((F > 0))

@@ -435,7 +435,7 @@ private struct DeviceBar: View {
             // verbatim: Text's Int interpolation adds locale grouping ("1,032") —
             // the readout is a CSS pixel count, not a quantity.
             Text(verbatim: "\(Int(page.width)) × \(Int(page.height))")
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(.mono(11))
                 .foregroundStyle(Theme.inkFaint)
                 .lineLimit(1).fixedSize()
             // The device glyph turned to the orientation a press would give — a
@@ -463,7 +463,7 @@ private struct DeviceChip: View {
     var body: some View {
         Button(action: action) {
             Text(name)
-                .font(.system(size: 11, weight: .medium))
+                .font(.sans(11, 500))
                 .foregroundStyle(active ? Theme.ink : Theme.inkMuted)
                 .lineLimit(1).fixedSize()
                 .padding(.vertical, 4).padding(.horizontal, 10)
@@ -517,10 +517,11 @@ private struct BrowserBar: View {
     @Binding var homeFocusNonce: Int
 
     private var commentOn: Bool { ctrl.commentMode?.active ?? false }
+    private var pendingComments: Int { ctrl.commentMode?.pendingCount ?? 0 }
     private var commentHelp: String {
         guard commentOn else { return "Comment mode" }
         if let t = ctrl.commentMode?.targetTitle { return "Comment mode → \(t)" }
-        return "Comment mode (no Claude Code session in this branch)"
+        return "Comment mode (no agent session in this branch)"
     }
 
     var body: some View {
@@ -535,14 +536,14 @@ private struct BrowserBar: View {
             OmniPill(ctrl: ctrl, editing: dropOpen) {
                 if ctrl.isHome { homeFocusNonce += 1 } else { dropOpen = true }
             }
-            if commentOn, let target = ctrl.commentMode?.targetTitle {
-                CommentTargetChip(title: target)
-            }
             if ctrl.isZoomed {
                 ZoomBadge(percent: ctrl.zoomPercent) { ctrl.resetZoom() }
             }
             BarButton(icon: Phosphor.commentMode, help: commentHelp,
                       disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
+                .overlay(alignment: .topTrailing) {
+                    if pendingComments > 0 { CommentCountBadge(count: pendingComments) }
+                }
             BarButton(icon: Phosphor.deviceMobile, help: "Device mode",
                       disabled: ctrl.isHome, on: ctrl.deviceModeOn) { ctrl.toggleDeviceMode() }
             BarButton(icon: Phosphor.devtools, help: "DevTools",
@@ -560,21 +561,24 @@ private struct BrowserBar: View {
     }
 }
 
-/// While comment mode is on: the receiving Claude session, named right where comments
-/// are sent from ("→ fix palette focus").
-private struct CommentTargetChip: View {
-    let title: String
+/// working.html `.browser__cnt`: how many comments are queued on the page and waiting to be
+/// sent, as a copper pill notched into the comment button's top-right corner. Absent at 0.
+private struct CommentCountBadge: View {
+    let count: Int
 
     var body: some View {
-        Text("→ \(title)")
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(Theme.inkMuted)
-            .lineLimit(1).truncationMode(.tail)
-            .padding(.vertical, 3).padding(.horizontal, 8)
-            .background(Capsule().fill(Theme.rowSelected))
-            .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 0.5))
-            .frame(maxWidth: 180, alignment: .trailing)
-            .help("Comments go to \(title)")
+        // verbatim: a pin number, not a quantity to be grouped by locale.
+        Text(verbatim: "\(count)")
+            .font(.sans(10, 700, tabular: true))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4)
+            .frame(minWidth: 14, minHeight: 14)
+            .background(Capsule().fill(Theme.copper))
+            // The negative padding grows the shape past the pill: the CSS ring sits outside it.
+            .background(Capsule().fill(Theme.chrome).padding(-1.5))
+            .offset(x: 2, y: -1)
+            .help(count == 1 ? "1 comment queued — ⌘⌥⏎ to send"
+                             : "\(count) comments queued — ⌘⌥⏎ to send")
     }
 }
 
@@ -590,11 +594,10 @@ private struct ZoomBadge: View {
         Button(action: reset) {
             // verbatim: the % is a zoom readout, not a quantity — no locale grouping.
             Text(verbatim: "\(percent)%")
-                .font(.system(size: 11, design: .monospaced))
-                .monospacedDigit()
+                .font(.mono(11))
                 .foregroundStyle(hovering ? Theme.ink : Theme.inkMuted)
                 .padding(.horizontal, 8)
-                .frame(height: 26)
+                .frame(height: 27)
                 .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : Theme.raised))
                 .overlay(RoundedRectangle(cornerRadius: 7)
                     .strokeBorder(hovering ? Theme.borderStrong : Theme.border, lineWidth: 0.5))
@@ -613,7 +616,7 @@ private struct CommentNotice: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .font(.sans(12))
             .foregroundStyle(Theme.ink)
             .lineLimit(2)
             .padding(.vertical, 6).padding(.horizontal, 12)
@@ -696,12 +699,12 @@ private struct OmniPill: View {
                 if let url = ctrl.address {
                     Phos(path: Phosphor.lock, size: 12).foregroundStyle(Theme.inkFaint)
                     Text(url.browserHostPath)
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .font(.mono(12))
                         .foregroundStyle(Theme.inkMuted)
                         .lineLimit(1).truncationMode(.tail)
                 } else {
                     Text("Search or enter address")
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .font(.mono(12))
                         .foregroundStyle(Theme.inkFaint)
                         .lineLimit(1)
                 }
@@ -755,7 +758,7 @@ private struct BrowserHome: View {
                     KeyCap(text: "K")
                     Text("for the command menu")
                 }
-                .font(.system(size: 11.5))
+                .font(.sans(12))
                 .foregroundStyle(Theme.inkFaint)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 26)
@@ -833,7 +836,7 @@ private struct GoToField: View {
             Phos(path: Phosphor.search, size: 16).foregroundStyle(Theme.inkFaint)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.mono(13))
                 .foregroundStyle(Theme.ink)
                 .focused($focused)
                 .onSubmit { onSubmit(text) }
@@ -875,7 +878,7 @@ private struct RecentsList: View {
     var body: some View {
         Text("Recent")
             .textCase(.uppercase)
-            .font(.system(size: 10.5, weight: .semibold)).kerning(0.42)
+            .font(.sans(11, 600)).kerning(0.44)
             .foregroundStyle(Theme.inkFaint)
             .padding(.top, labelTopPadding).padding(.horizontal, 4).padding(.bottom, 7)
         VStack(spacing: 1) {
@@ -901,13 +904,13 @@ private struct RecentRow: View {
             HStack(spacing: 10) {
                 Phos(path: Phosphor.globe, size: 15).foregroundStyle(Theme.inkFaint)
                 Text(display)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.mono(12))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 8)
                 if !recent.title.isEmpty {
                     Text(recent.title)
-                        .font(.system(size: 11.5))
+                        .font(.sans(12))
                         .foregroundStyle(Theme.inkFaint)
                         .lineLimit(1)
                 }

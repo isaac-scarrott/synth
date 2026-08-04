@@ -87,6 +87,13 @@ enum ArchiveSweeper {
             case .secondOpinion:   return "checking…"
             }
         }
+
+        /// The same reason on a chip, which sits on the row it is about: `line` minus its
+        /// "— kept", because a row that is plainly still there has already said that word.
+        var chip: String {
+            let kept = " — kept"
+            return line.hasSuffix(kept) ? String(line.dropLast(kept.count)) : line
+        }
     }
 
     enum Verdict {
@@ -99,6 +106,67 @@ enum ArchiveSweeper {
         case eligible(mergedPR: Int?)
 
         var block: Block? { if case .blocked(let b) = self { return b }; return nil }
+
+        /// Why this folder is still on disk, for the chip on its Archived row.
+        var chip: String? {
+            switch self {
+            case .waiting(let days):   return Verdict.countdown(days)
+            case .blocked(let b):      return b.chip
+            case .needsSecondOpinion:  return Block.secondOpinion.chip
+            case .eligible:            return "held aside next sweep"
+            }
+        }
+
+        /// The same for ⌘K, where the reason is flat text with no row under it to carry the
+        /// "kept" the chip can leave out.
+        var line: String? {
+            switch self {
+            case .waiting(let days):   return Verdict.countdown(days)
+            case .blocked(let b):      return b.line
+            case .needsSecondOpinion:  return Block.secondOpinion.line
+            case .eligible:            return "held aside next sweep"
+            }
+        }
+
+        private static func countdown(_ days: Int) -> String {
+            "\(days) day\(days == 1 ? "" : "s") left"
+        }
+    }
+
+    // MARK: Disk budget
+
+    /// One archived folder as the budget sees it: when it was put away, what it costs, and
+    /// whether anything is currently holding it.
+    struct BudgetEntry {
+        let id: UUID
+        let archivedAt: Date
+        /// Unmeasured folders arrive as 0 — a size nobody has walked yet must not be what
+        /// pushes the archive over its cap.
+        let bytes: Int64
+        let blocked: Bool
+    }
+
+    /// The oldest unblocked entries the caps have called early, as a set: enough of them to
+    /// bring the archive back under both. `maxCount` / `maxBytes` of 0 is no cap.
+    ///
+    /// Blocked entries still count toward the budget — they are occupying the disk — they just
+    /// can't pay it down, so the loop skips over them and keeps looking. That asymmetry is the
+    /// whole design: being called early only expires a folder's *grace*, and it still has to
+    /// clear every gate in `evaluate` afterwards. A cap that evicted the oldest folder
+    /// regardless would be a hole straight through this file's invariant, so an over-budget
+    /// archive full of unpushed work stays over budget and says so.
+    static func overBudget(_ entries: [BudgetEntry], maxCount: Int, maxBytes: Int64) -> Set<UUID> {
+        var called: Set<UUID> = []
+        var count = entries.count
+        var bytes = entries.reduce(0) { $0 + $1.bytes }
+        for entry in entries.sorted(by: { $0.archivedAt < $1.archivedAt }) {
+            if (maxCount == 0 || count <= maxCount) && (maxBytes == 0 || bytes <= maxBytes) { break }
+            if entry.blocked { continue }
+            called.insert(entry.id)
+            count -= 1
+            bytes -= entry.bytes
+        }
+        return called
     }
 
     /// Everything one candidate's evaluation needs, snapshotted on the main actor so the

@@ -321,6 +321,16 @@ final class ControlServer: @unchecked Sendable {
                     "composerOpen": mode.pendingPoint != nil,
                     "target": mode.targetTitle ?? "",
                     "notice": mode.notice ?? ""]
+        // The feedback sheet's Send (⌘⇧F → ⌘↵): fill the two fields the sheet binds and make
+        // its exact call. ⌘↵ is a SwiftUI keyboard shortcut, which a synthetic key event can't
+        // reach in a window that isn't key — so the author loop (worktree, seeded agent, and
+        // the email fallbacks when there is no workspace or no agent left on) is otherwise
+        // undrivable headlessly.
+        case "automation.feedback" where automation:
+            store.feedbackTitle = request["title"] as? String ?? ""
+            store.feedbackDraft = request["body"] as? String ?? ""
+            store.submitFeedback(store.feedbackDraft)
+            return ["ok": true, "mode": String(describing: store.feedbackMode)]
 
         case "automation.commentMode" where automation:
             guard let session = requestedSession(request, in: branch), session.kind == .browser,
@@ -352,6 +362,17 @@ final class ControlServer: @unchecked Sendable {
             let planned = GitService.plannedWorktreePath(repo: ws.url, branch: newBranch)
             store.createWorktree(in: ws, newBranch: newBranch, base: request["base"] as? String)
             return ["ok": true, "worktreePath": planned.path]
+
+        // Add a project — the folder picker's exact call once a folder is chosen, minus the
+        // un-drivable modal panel. `path` stands in for what the panel returned, so a gate can
+        // hand it the folders a person would misclick (no repo, no commits, a subfolder, one
+        // already added) and assert what the app does with each.
+        case "automation.addProject" where automation:
+            guard let path = request["path"] as? String else {
+                return ["ok": false, "error": "need path"]
+            }
+            store.beginAddWorkspace(url: URL(fileURLWithPath: path, isDirectory: true))
+            return ["ok": true]
 
         // The synth-app approval prompt, drivable headless: list what's pending and
         // answer it — resolve is the ⌘K confirm frame's exact call.
@@ -396,6 +417,8 @@ final class ControlServer: @unchecked Sendable {
                  "status": String(describing: s.status),
                  "unread": s.unread,
                  "liveAgent": store.isLiveAgent(s.id),
+                 // stage-four containment, so an adoption is assertable from outside
+                 "ownerSessionId": store.owner(of: s)?.id.uuidString ?? "",
                  "agentSessionId": s.agentSessionID ?? ""]
             }
             return ["ok": true, "sessions": rows]
@@ -409,6 +432,9 @@ final class ControlServer: @unchecked Sendable {
                     "commentModeActive": ctrl.commentMode?.active ?? false,
                     "targetTitle": ctrl.commentMode?.targetTitle ?? "",
                     "notice": ctrl.commentMode?.notice ?? "",
+                    // What the toolbar badge shows, and what survives the mode being left —
+                    // an unsent batch is otherwise invisible to a driven run.
+                    "pendingComments": ctrl.commentMode?.pendingCount ?? 0,
                     "address": ctrl.address?.absoluteString ?? "",
                     "isHome": ctrl.isHome,
                     "canGoBack": ctrl.canGoBack,
@@ -571,6 +597,9 @@ final class ControlServer: @unchecked Sendable {
         case "automation.notifs" where automation:
             return ["ok": true,
                     "active": NSApp.isActive,
+                    // Every Notification Center post this run would have made, recorded instead of
+                    // delivered (NotificationService.add) — the unfocused branch, assertable.
+                    "nc": NotificationService.shared.captured,
                     "notifs": store.notifOrder.map { n -> [String: String] in
                         ["sessionId": n.id.uuidString,
                          "kind": String(describing: n.kind),
@@ -592,6 +621,10 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true,
                     "openSessionId": store.openSessionID?.uuidString ?? "",
                     "navCursor": store.navCursor?.uuidString ?? "",
+                    // The whole run the cursor walks, in order — the tree plus the foot buttons.
+                    // `rows` is one branch's sessions, so it can't show that a foot button joined
+                    // or left the run, which is exactly what the update button does.
+                    "navRows": store.activeRows.map(\.uuidString),
                     "branchId": branch.id.uuidString,
                     "rows": branch.sessions.map { s -> [String: String] in
                         ["sessionId": s.id.uuidString,
@@ -600,6 +633,19 @@ final class ControlServer: @unchecked Sendable {
                          "status": String(describing: s.status),
                          "unread": String(s.unread)]
                     }]
+
+        // ↓/↑ and ↵ on the sidebar cursor, as the key handler calls them. Posted NSEvents do
+        // reach a driven window for the palette, but the sidebar cursor is only reachable once
+        // first responder has left the terminal — which a headless instance can't be relied on to
+        // arrange, and a foot button has no other route in: it is not a session, so no `jump`
+        // addresses it, and it no longer has a notification card to act on.
+        case "automation.navMove" where automation:
+            store.moveCursor((request["delta"] as? NSNumber)?.intValue ?? 1)
+            return ["ok": true, "navCursor": store.navCursor?.uuidString ?? ""]
+
+        case "automation.navActivate" where automation:
+            store.activateCursor()
+            return ["ok": true]
 
         // The `d` shortcut and the ⌘K palette keys, addressable where TCC blocks
         // synthetic keystrokes — each verb is the exact call the key handler makes.
@@ -669,24 +715,15 @@ final class ControlServer: @unchecked Sendable {
 
         // Stage a build without Sparkle: same path the real `willInstallUpdateOnQuit` takes, with
         // an installer that records the ask instead of relaunching (a harness can't assert on an
-        // instance that just quit). `daysAgo` back-dates the arrival so the reminder's ageing
-        // sub-line is readable without waiting days for it.
+        // instance that just quit).
         case "automation.updateStage" where automation:
-            let version = request["version"] as? String ?? "9.9.9"
-            store.stageStubUpdate(version: version,
-                                  daysAgo: (request["daysAgo"] as? NSNumber)?.doubleValue ?? 0)
-            return ["ok": true]
-
-        // "The day rolled over" — the daily reminder, without a day.
-        case "automation.updateRemind" where automation:
-            store.showUpdateCard()
+            store.stageStubUpdate(version: request["version"] as? String ?? "9.9.9")
             return ["ok": true]
 
         case "automation.updateStatus" where automation:
             return ["ok": true,
                     "pending": store.stagedUpdate != nil,
                     "version": store.stagedUpdate?.version ?? "",
-                    "sub": store.updateSubline(),
                     "installRequested": store.updateInstallRequested]
 
         case "automation.archiveRestore" where automation:
@@ -694,7 +731,8 @@ final class ControlServer: @unchecked Sendable {
                   let target = store.workspaces.flatMap(\.branches)
                     .first(where: { $0.name == name && $0.isArchived })
             else { return ["ok": false, "error": "no archived branch named \(request["branch"] ?? "")"] }
-            return ["ok": store.restoreArchivedBranch(target)]
+            store.restoreArchivedBranch(target)
+            return ["ok": true]
 
         // The branch rows the sidebar draws, workspace by workspace. `archiveStatus` proves a
         // row reached the Archived list; only this proves it left the tree. The two were assumed
@@ -704,7 +742,10 @@ final class ControlServer: @unchecked Sendable {
         case "automation.tree" where automation:
             return ["ok": true,
                     "workspaces": store.workspaces.map { ws -> [String: Any] in
+                        // The folder is the project's identity — what decides whether a second
+                        // Add is the same project, and what every git call is scoped to.
                         ["workspace": ws.name,
+                         "path": ws.url.path,
                          "count": ws.liveBranches.count,
                          "branches": ws.liveBranches.map(\.name)]
                     }]
@@ -727,6 +768,24 @@ final class ControlServer: @unchecked Sendable {
             pal.runActive()
             return ["ok": true]
 
+        // Open ⌘K the way the shortcut does, without synthesizing a key event. A headless
+        // instance is never frontmost, so a posted ⌘K resolves against whichever window
+        // `NSApp.windows` happens to hand back first and may never reach the shortcut at all.
+        case "automation.paletteOpen" where automation:
+            if store.palette != nil { store.closePalette() }   // Esc, then ⌘K
+            store.openPalette()
+            fallthrough
+
+        // Say what the palette's search field holds. While the palette is open that field owns
+        // first responder, so any keystroke this machine delivers — the developer typing into
+        // their own Synth, another harness driving a sibling instance — lands in the query and
+        // silently re-filters the rows. A gate asserting on a frame has to be able to state the
+        // query rather than inherit whatever arrived, which is why this sets it and reports the
+        // frame in one round trip: nothing can drift in between.
+        case "automation.paletteQuery" where automation:
+            store.palette?.query = request["query"] as? String ?? ""
+            fallthrough
+
         case "automation.palette" where automation:
             guard let pal = store.palette else {
                 return ["ok": true, "open": false, "menuOpen": store.activeMenu != nil]
@@ -734,6 +793,9 @@ final class ControlServer: @unchecked Sendable {
             let frame = pal.stack.last
             return ["ok": true, "open": true,
                     "crumb": frame?.crumb ?? "",
+                    // What the rows were filtered by — the difference between "the feature
+                    // offered the wrong rows" and "something typed into the palette".
+                    "query": pal.query,
                     // The line above the rows — a confirm's reason, a new branch's base. It is
                     // copy, and copy is the thing these frames exist to get right.
                     "note": pal.noteText ?? "",
@@ -751,11 +813,16 @@ final class ControlServer: @unchecked Sendable {
             guard let path = request["path"] as? String else {
                 return ["ok": false, "error": "missing path"]
             }
-            // The ⌘K palette floats in its own NSPanel above the main window, so a capture
-            // that always grabs the first visible window renders a palette-open moment with
-            // no palette in it. Prefer the panel — the front of what the user sees.
-            guard let view = (NSApp.windows.first(where: { $0.isVisible && $0 is NSPanel })
-                              ?? NSApp.windows.first(where: { $0.isVisible }))?.contentView,
+            // The ⌘K palette floats in its own NSPanel above the main window, so a capture that
+            // always grabs the first visible window renders a palette-open moment with no palette
+            // in it. Prefer the panel — the front of what the user sees. But a tooltip is an
+            // NSPanel too, and one resting over the window silently hijacks every capture, so
+            // `"window":"main"` asks for the app's own window and ignores whatever floats above it.
+            let visible = NSApp.windows.filter(\.isVisible)
+            let target = request["window"] as? String == "main"
+                ? visible.first { !($0 is NSPanel) }
+                : (visible.first { $0 is NSPanel } ?? visible.first)
+            guard let view = target?.contentView,
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
                 return ["ok": false, "error": "no visible window to render"]
             }
@@ -773,9 +840,7 @@ final class ControlServer: @unchecked Sendable {
         }
     }
 
-    private static var automation: Bool {
-        ProcessInfo.processInfo.environment["SYNTH_AUTOMATION"] == "1"
-    }
+    private static var automation: Bool { Automation.isDriven }
 
     @MainActor private static func requestedSession(_ request: [String: Any],
                                                     in branch: Branch) -> Session? {

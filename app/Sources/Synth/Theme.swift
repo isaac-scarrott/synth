@@ -8,11 +8,35 @@ import AppKit
 /// like working.html's `:root` / `:root[data-theme="dark"]`.
 enum Theme {
     // Surfaces + structure. The ramp is the app icon's own squircle gradient, read in the same
-    // direction: `raised` is its top stop (#282B30), `sidebar` its middle, `canvas` one step past
-    // its bottom. The charcoal is not neutral — it holds hue ~223° at ~10% saturation.
-    static let canvas      = dyn(0xE9EAEE, 0x0D0F13)   // grey backdrop / near-black desktop
+    // direction: `raised` is its top stop (#282B30), `sidebar` its middle, `panel` its bottom.
+    // The charcoal is not neutral — it holds hue ~223° at ~10% saturation. The step past that
+    // bottom used to be `canvas`, an opaque fill behind the whole shell; the window's material
+    // stands where it did, so the desktop itself is now the last stop on the ramp.
     static let panel       = dyn(0xFAFBFC, 0x191B1F)   // content surface
     static let sidebar     = dyn(0xF0F1F4, 0x1D1F24)   // sidebar surface
+
+    /// Translucency. The window's one translucent coat, over `WindowBlur`'s blurred desktop
+    /// (`--panel` on working.html's `.app`). The blur only samples what sits behind the *window*, so
+    /// this is the only translucent surface in the shell: everything that differs from it is a tint
+    /// *on* it, never a second coat. Two coats compound to near-opaque, so the desktop would show
+    /// through the pane but not the sidebar, and the sidebar's rounded corners would cut a hole
+    /// clean through to the wallpaper.
+    ///
+    /// The 0.11 between the themes is not a rounding choice, it is the point. The same amount of
+    /// wallpaper light lands completely differently depending on what it lands on: against light's
+    /// 250 it is a ~3% change and nearly invisible, against dark's 25 it is a ~28% *lift* and the
+    /// surface goes milky. Equal effect, wildly unequal alpha — and the earlier near-equal pair read
+    /// as too transparent in dark and too flat in light at the same time.
+    ///
+    /// Solid when `WindowBlur` can't blur the desktop: translucency is an enhancement, and a
+    /// translucent shell over a *sharp* wallpaper is worse than an opaque one.
+    static let windowCoat = WindowBlur.isAvailable ? dyn(0xFAFBFC, 0.86, 0x191B1F, 0.97)
+                                                  : dyn(0xFAFBFC, 0x191B1F)
+    /// The sidebar: the coat, one step down the ladder. A tint of the ink rather than a colour, so
+    /// the step holds even as the wallpaper drags the coat up and down beneath it — a fixed colour
+    /// breathes with it. `sidebar` above stays opaque; all that's left for it is the rails in ⌘?
+    /// and the changelog, which sit on a dialog rather than on the coat.
+    static let sidebarStep = mono(0.04, 0.025)
     static let raised      = dyn(0xFFFFFF, 0x282B30)   // raised fills: menus, pills, fields
     static let border      = mono(0.07, 0.09)          // hairline (black→white overlay)
     static let borderStrong = mono(0.10, 0.13)
@@ -33,12 +57,25 @@ enum Theme {
     static let ink5         = dyn(0x787B84, 0x83868F)   // branch / mono label
     static let inkOpen      = dyn(0x2B2D34, 0xDCDEE4)   // open session name
     /// One tier for every faint meta grey. The eight it replaced sat within 5% lightness of each
-    /// other — a hierarchy nobody could see — and several failed contrast; this clears 4.63:1.
-    static let inkMeta      = dyn(0x6B6E76, 0x8D9099)
+    /// other — a hierarchy nobody could see — and several failed contrast.
+    ///
+    /// Light darkened 16 levels when the shell went translucent. At #6B6E76 this tier cleared 4.5
+    /// with no margin at all (4.52:1 on the opaque sidebar), so *any* coat put it under — 3.56:1 over
+    /// the wallpaper's dark end. Raising the coat could not fix it: the sidebar only clears 4.5 again
+    /// at a fully opaque 1.00. So the ink moved instead, which also lifts it to 6.26:1 on the opaque
+    /// dialogs and rails that use it. Dark needed nothing: it holds 5.04:1 at the 0.97 coat.
+    static let inkMeta      = dyn(0x5B5E66, 0x8D9099)
     static let menuIcon     = dyn(0x7A7A80, 0x979AA3)   // popover item icons
     static let termBg       = dyn(0x191B1F, 0x121317)   // code editor surface (Settings)
     static let chrome       = dyn(0xF2F3F6, 0x22252B)   // browser toolbar (--chrome)
-    static let tuiBg        = dyn(0xF7F8FA, 0x121317)   // terminal card: cool near-white (--tui-bg) / dark card
+    /// The terminal card's own fill has no token here on purpose: ghostty paints it, colour *and*
+    /// alpha, from `TerminalTheme` — see `TermSurface`. A SwiftUI fill behind the cells was a second
+    /// coat over the same card, and a pair of numbers that had to be kept in step by hand.
+    ///
+    /// This one is the surface where the terminal has to read as raised rather than as window: the
+    /// scratch terminal is a card floating over a dimmed app, and a translucent one dissolves into
+    /// whatever it is covering.
+    static let tuiSolid     = dyn(0xF7F8FA, 0x121317)
     static let tuiHair      = mono(0.13, 0.06)          // terminal card inset hairline
     /// The scratch terminal's scrim — deeper than a dialog's 0.16, because that surface is a
     /// detour out of the app rather than a step within it. Not one number in both themes: the
@@ -68,8 +105,18 @@ enum Theme {
     /// it fails contrast on white — so light takes a copper of the same warm family (4.78:1).
     /// Spent only on focus, selection, the ⌘K active row and the open-session tint.
     static let accent      = dyn(0xA86038, 0xEEE0CD)
-    /// The mark's own pair — charcoal on light, champagne on dark (--focus): the active pane's bar.
+    /// The mark's own pair — charcoal on light, champagne on dark (--focus).
     static let focus       = dyn(0x1E2126, 0xEEE0CD)
+    /// The app icon's champagne, worn only by the waiting-build foot button — which is why it is
+    /// not an accent: the accents mean states, this means Synth itself. Like `accent` it flips per
+    /// theme rather than holding one hex — the mark on dark, and on light the same hue taken down
+    /// far enough to read on a near-white panel (5.2:1), because a pale champagne tint over a pale
+    /// panel is no tint at all and light's bronze goes olive on the dark sidebar (--update-ink).
+    static let updateInk   = dyn(0x7F6130, 0xEEE0CD)
+    /// The wash and its hairline both take their opacities off this (--update-rgb). Dark restores
+    /// the mark's chroma to do it: #EEE0CD's own low saturation reads grey at 13% alpha. The glyph
+    /// above stays the mark itself, which is why these two are not one token.
+    static let updateWash  = dyn(0x7F6130, 0xECCE9B)
     static let run         = Color(hex: 0x34C759)   // green liveness
     static let working     = Color(hex: 0xF5A623)   // amber (working) — 4° off champagne, so it
                                                     // stays put and the accent keeps clear of it
@@ -118,6 +165,14 @@ enum Theme {
     /// A colour that resolves light/dark against the effective appearance.
     static func dyn(_ light: UInt32, _ dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { $0.isDarkAqua ? NSColor(hex: dark) : NSColor(hex: light) })
+    }
+    /// The same, each theme carrying its own alpha — for the translucent surfaces, where the two
+    /// appearances disagree about how much wallpaper they can afford.
+    static func dyn(_ light: UInt32, _ lightAlpha: Double, _ dark: UInt32, _ darkAlpha: Double) -> Color {
+        Color(nsColor: NSColor(name: nil) {
+            $0.isDarkAqua ? NSColor(hex: dark).withAlphaComponent(darkAlpha)
+                          : NSColor(hex: light).withAlphaComponent(lightAlpha)
+        })
     }
     /// A black overlay in both themes, at its own alpha in each — for scrims, where inverting to
     /// white (as `mono` does) would lighten rather than dim.

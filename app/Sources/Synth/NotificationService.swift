@@ -76,10 +76,20 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
+    /// What a driven build would have posted, in order (`automation.notifs` hands it back).
+    @MainActor private(set) var captured: [[String: String]] = []
+
     /// NC accepts or refuses asynchronously; a dropped error here is a notification that
     /// vanishes with no trace, so both outcomes leave a log line.
-    private func add(_ req: UNNotificationRequest) {
+    @MainActor private func add(_ req: UNNotificationRequest) {
         let title = req.content.title
+        // A gate that pins the Notification Center route is asserting the routing rule, not asking
+        // for a banner and a sound on the desktop it happens to be running on. Record the post and
+        // make none: the branch is then assertable — which the banner never was — and silent.
+        if Automation.isDriven {
+            captured.append(["title": title, "body": req.content.body])
+            return
+        }
         UNUserNotificationCenter.current().add(req) { err in
             if let err { NSLog("Synth: notification refused (\(title)): \(err.localizedDescription)") }
             else { NSLog("Synth: notification posted (\(title))") }

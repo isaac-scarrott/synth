@@ -1,5 +1,78 @@
 [
   {
+    "version": "0.26.0",
+    "date": "2026-08-04",
+    "changes": [
+      "Tabs are chips on a rail. The strip stops being one solid band welded to the window — each tab is a chip sitting on the rail, and the open one lifts off it as a card, which is the whole of what open means: no seam, no bottom bar, no fill running to the window edge. A split's panes are a hairline tray around their chips rather than a filled well, because on this strip a background is what open means, so filling the tray handed every pane the one signal reserved for the open tab. Panes now shrink on the same terms as every other tab, which is the premise — a pane is a tab.",
+      "Light mode is legible inside the agents, not just around them. Claude Code was painting its dark theme onto a near-white surface — body text at 1.06:1, 57 of 72 colours under the readable threshold — because it reads its theme once at startup, so the old sync only ever reached new sessions. Synth now ships a theme it rewrites in place, which re-themes a session already running, with 20 light values deepened by lightness alone so the hues stay Claude Code's. opencode gets 11 values deepened the same way. agy paints hard-coded colour, so it is left on its default scheme — that one draws most of its interface from Synth's own ANSI palette, which is tuned further than agy's light theme is.",
+      "Settings ▸ Archived is somewhere you can stand. The clean-up switch and grace period move in beside two disk budgets (25 worktrees, 50 GB), and every project lists the folders still on disk carrying the sweeper's own verdict on each — \"PR still open\", \"6 days left\" — with Restore and a permanent delete beside them. A budget can bring an unblocked folder's turn forward; it never lets one past a gate. ⌘K's archived list is project-scoped now and drills in.",
+      "A downloaded update waits in the sidebar foot instead of interrupting you. A \"Restart to update\" row washed in the app icon's champagne stands above Settings for as long as a built update sits unapplied, and the notification card that used to announce it is gone — both surfaces are pull now. Settings also drops its ⌘, hint; the shortcut is unchanged, and still in ⌘? and ⌘K."
+    ]
+  },
+  {
+    "version": "0.25.0",
+    "date": "2026-08-04",
+    "changes": [
+      "In tabs mode a branch tells you what is inside it. Sessions live in the tab strip there, so the branch is the deepest row in the sidebar — it now spends the freed chevron space on a second line reading how many sessions it holds and what they are doing, instead of hiding the count in a tooltip. Pull-request state and the branch's most urgent session state sit in two fixed slots on the right, reserved even when empty, so nothing shifts as branches change. Classic sidebar mode is untouched."
+    ]
+  },
+  {
+    "version": "0.24.0",
+    "date": "2026-08-04",
+    "changes": [
+      "The window is translucent, terminal included — your wallpaper blurs behind the whole shell rather than stopping at the chrome. The blur carries no tint of its own, so light mode stays light instead of going grey, and the terminal participates in the effect rather than sitting on it as an opaque slab. Dark carries a little more opacity than light, because the same amount of light landing on near-black reads far stronger than on near-white.",
+      "Menu bar text is back to the weight every other app draws it at. 0.23.0's lighter text was a setting read per process, so switching it off thinned Synth's own menu bar along with its chrome — the app's chrome now reads about 12% heavier than the design files, which is the price of the OS drawing that text."
+    ]
+  },
+  {
+    "version": "0.23.0",
+    "date": "2026-08-03",
+    "changes": [
+      "Synth is set in Geist, and the twelve text sizes that lived between 9px and 15px — most half a pixel apart — are six that are at least a pixel apart. Tracking, leading and weights are now the designs' own numbers rather than a calibration for the system face, so text sits where it was drawn to sit and reads about 12% lighter than it did.",
+      "Closing a session hands you its neighbour in the same branch, and never takes you outside it. The old rule popped to the last session you happened to view, which could be another branch or another project entirely — so two identical closes landed in different repos. An emptied branch now stops at an empty pane that names it and offers ⌘N.",
+      "An archived branch always has a way back. Restoring one whose folder had already been reclaimed silently did nothing, ⌘K → New branch treated the archived name as taken and came back empty, and a relaunch could forget the branch outright. The branch is the git ref; the folder is a cache, cut again at its old path when you restore.",
+      "A project has to be a git repository with a branch. A plain folder used to land looking fine and then dead-end on \"New branch\", and picking a subdirectory quietly made a second project out of a repo you already had — that now resolves to the repository root, so re-adding reveals the project you have.",
+      "A notification's × closes it wherever you click the ×. Only a crescent of it was ever live; the middle answered nothing.",
+      "Closing a session takes its stray processes with it. A dev server an agent started in the background had been surviving the session, the app and reboots alike — measured at 3.6 GB across 34 processes.",
+      "Synth no longer crashes on launch when a project's folder has been moved, renamed or unmounted."
+    ]
+  },
+  {
+    "version": "0.22.0",
+    "date": "2026-07-29",
+    "changes": [
+      "Browser comments arrive as one batch, not one interruption each. Comment mode queues: numbered pins accumulate on the page, a floating island owns the batch — count, target, one Send on ⌘⌥⏎ — and the agent receives a single numbered message with one viewport screenshot plus a clip per comment. A pin names an element rather than a coordinate, so it survives scrolling, resizing and zooming. Leaving the mode parks the batch instead of dropping it.",
+      "An agent you don't use is switched off, and Synth stops offering it. A switch per agent in Settings ▸ Synth ▸ Agent defaults drops it from every \"New …\" surface without touching a session already running one. Turning every agent off is allowed — the paths with no one in front of them say so up front rather than swallowing what you typed.",
+      "Every clean agent exit parks on the quit card. opencode exits 0 when it dies on its own, and the old \"nothing to resume → close outright\" rule silently deleted exactly the row you were watching. Any agent row that exits cleanly now lands on the Reopen card, resuming its session when one was captured. A shell's `exit` still closes a terminal row outright — there the clean exit is your gesture.",
+      "The 2px bar across an active split pane's top edge is gone. It was the heaviest rule in the window, spent on the least surprising fact on screen, and in tabs mode it sat a few pixels under a tab strip already drawing the same bar in the same colour. Which pane is active is still named where you look for it: the sidebar's copper tile and the active tab's own bar."
+    ]
+  },
+  {
+    "version": "0.21.0",
+    "date": "2026-07-28",
+    "changes": [
+      "An agent that quits parks its conversation on a Reopen card. The row still leaves the tree, but it lands on an undo card — the agent's mark, the conversation's name, Reopen — and Reopen slots it back where it stood, rebuilding the pane with the conversation resumed. Unlike every other undo this card never drains: you didn't ask for it, and it can land while you're away.",
+      "Ctrl-C interrupts an opencode row, it doesn't quit it. opencode binds ctrl+c to app exit, so the universal stop gesture was ending the session outright and taking a long conversation with it. It's rebound inside Synth — ctrl+c interrupts, ctrl+d and the leader quit still quit — without touching any config file of yours.",
+      "Antigravity reports the states it stops in: a question, an interrupt, a cap, a failure. It shipped able to say only working or idle, so every other stop was reported as one of those and always the wrong one. A row blocked on a question now says so, a run you cancelled goes idle rather than red, and a hit limit reads as the error it is. Comments sent to a freshly-started Antigravity row also land reliably now, confirmed by the agent's own receipt rather than a guess at when its input was live."
+    ]
+  },
+  {
+    "version": "0.20.0",
+    "date": "2026-07-28",
+    "changes": [
+      "Antigravity (`agy`) is Synth's third agent, alongside Claude Code and OpenCode — pick it when you start a session. It resumes where it left off, names its row from the conversation, and gets the browser tools like any other agent. A fresh worktree asks Antigravity's trust prompt first, so the row waits on you rather than swallowing what you typed.",
+      "A split's tabs are tabs again. Members had been shrunk to chips, which cost them the indicator dot — a pane needing input showed nothing — plus the active bar and hover. Each member is now a full tab, divided by a hairline, with an 8px map of the split in its corner showing which pane it is."
+    ]
+  },
+  {
+    "version": "0.19.0",
+    "date": "2026-07-28",
+    "changes": [
+      "⌘K search ranks flat: typing gives one list scored against your query, best match on the top row. Results no longer bucket into Actions / Sessions / Branches / Projects, where the thing you wanted could sit six rows down under weaker siblings that shared its heading. Cold ⌘K keeps its groups.",
+      "Search scoring now gives exact and prefix label matches the boost they were meant to have, so typing a session or branch name lands it first."
+    ]
+  },
+  {
     "version": "0.18.0",
     "date": "2026-07-28",
     "changes": [

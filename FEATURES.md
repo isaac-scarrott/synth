@@ -1605,6 +1605,28 @@ disclosure to dive deeper.
 - **Tabs-mode branches carry their session facts without growing a third tree level** — the branch
   row becomes a 46px two-line summary (`N sessions · activity`) with a fixed PR/status rail; classic
   sidebar mode keeps its original compact disclosure row. Both designs + native app.
+- **The pre-notarization Gatekeeper check asserts *why*** — `spctl`'s expected `rejected` before
+  notarization was indistinguishable from a broken-build `rejected` because the line ended in
+  `|| true`; it now requires `source=Unnotarized Developer ID` and dies on anything else, and says
+  so in the log. Release skill also records: never edit `release.sh` mid-run.
+- **Claude Code answers for its own colours in light mode** — light mode was unreadable because
+  `theme` in `~/.claude.json` is read **once at startup**: measured, a running session ignores a rewrite,
+  so Synth's old sync only reached *new* sessions and every open one kept painting Claude Code's dark
+  theme onto a near-white surface — body text `#ffffff` at **1.06:1**, **57 of 72 tokens** under 4.5:1.
+  `theme: "auto"` is the trap: it enables DEC 2031 and then ignores every notification, so it resolves
+  to dark regardless, and the old guard deliberately *skipped* it. Synth now ships its own
+  `custom:synth` theme and re-themes by rewriting `~/.claude/themes/synth.json`, which Claude Code
+  watches — proven to re-theme a **running** session both ways. One file, not a pair, because the
+  tokens, the diff renderer *and* the syntax highlighter all follow the single `base`. **20 light
+  overrides**, hue kept and only lightness lowered, worst being `subtle` at **2.06:1** (the grey every
+  hint and timestamp uses). Left alone with reasons: `diffAddedWord`/`diffRemovedWord` are *fills* with
+  black painted on them (deepening them drove that ink 17:1 → 4.28:1 — reverted), `inverseText` is white
+  by design so its backing is fixed instead, `clawd_background` is the mascot. Recorded not fixed, no
+  lever: the syntax highlighter (a separate wholesale palette, `#0086b3` at 3.90) and one hard-coded
+  `#5769f7` (4.14) proven non-themeable by forcing every token magenta. Dark rides untouched and is
+  pinned where it ships, not gated. New `t24_agentcontrast` replays a real session through a small
+  terminal emulator and measures every run of ink against its own background, parsing the override
+  table out of the Swift so the gate cannot pass a theme the app does not write.
 - **The archive becomes a place you can stand, and the design files catch up to `ArchiveSweeper`** —
   Settings gains the app's clean-up switch and grace picker plus two new disk-budget rows (25
   worktrees, 50 GB), and a per-project list of what is still on disk carrying each folder's sweeper

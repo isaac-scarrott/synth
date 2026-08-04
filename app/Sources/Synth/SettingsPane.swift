@@ -921,7 +921,7 @@ private struct TplRow: View {
                 Phos(path: Phosphor.close, size: 12)
                     .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)
                     .frame(width: 20, height: 20)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowSelected : Color.clear))
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowHover : Color.clear))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help("Remove")
@@ -1021,11 +1021,6 @@ private struct TplHover<Content: View>: View {
 // MARK: - Archived worktrees (working.html .arc-*)
 
 private extension AppStore {
-    /// The folder an archived row is actually costing. The sweeper renames a worktree aside
-    /// before it deletes it, so bytes read off the original path would be nothing for exactly
-    /// the rows closest to going.
-    func archivedFolder(_ branch: Branch) -> URL { heldFolder(for: branch) ?? branch.worktreeURL }
-
     /// Measured bytes only: a folder still being walked contributes nothing rather than a guess.
     func archivedBytes(_ branches: [Branch]) -> Int64 {
         branches.reduce(0) { $0 + (FolderSizeCache.shared.bytes(for: archivedFolder($1)) ?? 0) }
@@ -1093,6 +1088,10 @@ private struct ArcRow: View {
         return false
     }
 
+    /// Read off the displayed verdict, not the stored one: a branch the budget has called early
+    /// reads as checking too, and the chip has to agree with the words in it.
+    private var checking: Bool { store.archiveVerdictChip(branch) == ArchiveSweeper.Block.secondOpinion.chip }
+
     var body: some View {
         HStack(spacing: 9) {
             Phos(path: Phosphor.archive, size: 14).foregroundStyle(Theme.inkFaint).frame(width: 14)
@@ -1105,7 +1104,7 @@ private struct ArcRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(meta)
                 .font(.sans(11, tabular: true)).foregroundStyle(Theme.inkFaint).fixedSize()
-            if let chip = store.archiveVerdictChip(branch) { ArcWhy(text: chip, eligible: eligible) }
+            if let chip = store.archiveVerdictChip(branch) { ArcWhy(text: chip, eligible: eligible, checking: checking) }
             restoreButton
             deleteButton
         }
@@ -1119,20 +1118,28 @@ private struct ArcRow: View {
     /// "4h ago · 1.2 GB" — the size only once the walk lands, because a folder claiming 0 MB is
     /// worse than a folder claiming nothing.
     private var meta: String {
-        let age = branch.archivedAt.map { relativeAge($0, now: Date()) } ?? ""
-        let when = age == "now" ? "just now" : "\(age) ago"
+        let when = store.archivedAge(branch)
         guard let bytes = FolderSizeCache.shared.bytes(for: store.archivedFolder(branch)) else { return when }
         return "\(when) · \(FolderSize.format(bytes))"
     }
 
+    /// `.arc-btn`, which is not quite `.tpl-add__btn`: tighter, and it answers to the pointer.
+    /// It is the one thing on this row you press on purpose, and a button that looks identical
+    /// under the cursor reads as a label until you happen to click it.
     private var restoreButton: some View {
-        Button { store.restoreArchivedBranch(branch) } label: {
-            Text("Restore")
-                .font(.sans(12, 500)).foregroundStyle(Theme.ink3)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5)))
-        }.buttonStyle(.plain)
+        TplHover { hovering in
+            Button { store.restoreArchivedBranch(branch) } label: {
+                Text("Restore")
+                    .font(.sans(12, 550))
+                    .foregroundStyle(hovering ? Theme.ink : Theme.ink3)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : Theme.raised)
+                        .overlay(RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(hovering ? Theme.borderStrong : Theme.line, lineWidth: 0.5)))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(ArcPressStyle())
+        }
     }
 
     private var deleteButton: some View {
@@ -1148,7 +1155,7 @@ private struct ArcRow: View {
                 Phos(path: Phosphor.trash, size: 12)
                     .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)
                     .frame(width: 20, height: 20)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowSelected : Color.clear))
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowHover : Color.clear))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help("Delete permanently")
@@ -1159,13 +1166,28 @@ private struct ArcRow: View {
 /// Why this folder is still on disk. A blocked row is the normal, correct state — the sweeper
 /// protecting work — so it stays a quiet neutral chip; only the row that is about to go gets the
 /// accent, because that is the one worth catching before it does.
+/// `.arc-btn:active`. Shallower than `IconPressStyle`'s 0.94, which is tuned for an icon with
+/// room to move — a text button that shrinks that far reads as a wobble rather than a press.
+private struct ArcPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.11), value: configuration.isPressed)
+    }
+}
+
 private struct ArcWhy: View {
     let text: String
     let eligible: Bool
+    /// The sweeper has read this one clean once and is waiting on a second reading a day later.
+    /// Italic because it is the only chip that is not a verdict — it is the absence of one, and
+    /// a reader who can't tell it from "PR still open" will read a pause as a decision.
+    let checking: Bool
 
     var body: some View {
         Text(text)
             .font(.sans(10, 550))
+            .italic(checking)
             .foregroundStyle(eligible ? Theme.inkOpen : Theme.inkMuted)
             .lineLimit(1).fixedSize()
             .padding(.horizontal, 8).padding(.vertical, 2)

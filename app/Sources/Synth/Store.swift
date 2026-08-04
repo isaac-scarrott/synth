@@ -1984,6 +1984,21 @@ enum FeedbackMode {
     @ObservationIgnored private var sweptThisLaunch = 0
     @ObservationIgnored private var lastVerdictRefresh: Date?
 
+    /// The folder an archived branch is actually costing. The sweeper renames a worktree aside
+    /// before the reaper deletes it, so bytes read off the original path would be nothing for
+    /// exactly the rows closest to going — which is also why the budget and every number the
+    /// pane shows have to read it through here rather than each picking a path.
+    func archivedFolder(_ branch: Branch) -> URL { heldFolder(for: branch) ?? branch.worktreeURL }
+
+    /// "4h ago" / "just now". `relativeAge` alone is a column heading — the sidebar's "2h" sits
+    /// under a header that says what it measures. On an archived row it is a sentence fragment
+    /// and has to read as one, in ⌘K and in Settings alike.
+    func archivedAge(_ branch: Branch) -> String {
+        guard let at = branch.archivedAt else { return "" }
+        let age = relativeAge(at, now: Date())
+        return age == "now" ? "just now" : age + " ago"
+    }
+
     /// The "when" half of an Archived row: how long ago it was put away.
     ///
     /// This used to be the whole ctx line, on the argument that which of two dozen conditions
@@ -1994,8 +2009,8 @@ enum FeedbackMode {
     /// So the "why" now rides alongside it (`archiveVerdictLine`, composed by the palette's
     /// `archivedCtx`), and this returns its first half.
     func archiveStatusLine(_ branch: Branch) -> String {
-        guard let at = branch.archivedAt else { return "" }
-        return "archived " + relativeAge(at, now: Date())
+        guard branch.archivedAt != nil else { return "" }
+        return "archived " + archivedAge(branch)
     }
 
     /// The sweeper's verdict as a stable slug — automation and logs only, never shown.
@@ -2048,7 +2063,7 @@ enum FeedbackMode {
                 guard let at = branch.archivedAt else { return nil }
                 return ArchiveSweeper.BudgetEntry(
                     id: branch.id, archivedAt: at,
-                    bytes: FolderSizeCache.shared.bytes(for: branch.worktreeURL) ?? 0,
+                    bytes: FolderSizeCache.shared.bytes(for: archivedFolder(branch)) ?? 0,
                     blocked: sweepVerdicts[branch.id]?.block != nil)
             }
         }
@@ -2135,7 +2150,7 @@ enum FeedbackMode {
         // The size cap has to work on a Synth whose owner never opened the Archived pane, so
         // the tick warms the measurements itself. Deduped and off the main actor — the walk is
         // paid once per folder per launch, and an archived folder's size doesn't move.
-        let archivedPaths = workspaces.flatMap { $0.branches.filter(\.isArchived).map(\.worktreeURL) }
+        let archivedPaths = workspaces.flatMap { $0.branches.filter(\.isArchived).map(archivedFolder) }
         FolderSizeCache.shared.warm(archivedPaths)
         // Read once, before any verdict is rewritten, so every candidate this tick is judged
         // against the same budget.

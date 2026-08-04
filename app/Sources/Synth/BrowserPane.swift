@@ -172,7 +172,7 @@ import AppKit
     // Device mode (working.html devframe): like devToolsOpen, controller state — it
     // survives navigating away and back, and page navigations (like comment mode).
     private(set) var deviceModeOn = false
-    private(set) var device: BrowserDevice = .initial
+    private(set) var device: HardwareDevice = .initial
     private(set) var deviceLandscape = false
     /// The stage's fit scale, reported by the pane — folded into the CDP override so
     /// the w×h viewport renders exactly into the (w·s)×(h·s) engine view.
@@ -184,7 +184,7 @@ import AppKit
         if deviceModeOn { applyDeviceEmulation() } else { deviceEmulator?.clear() }
     }
 
-    func setDevice(_ d: BrowserDevice) {
+    func setDevice(_ d: HardwareDevice) {
         guard d != device else { return }
         device = d
         applyDeviceEmulation()
@@ -422,7 +422,7 @@ private struct DeviceBar: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 3) {
-                    ForEach(BrowserDevice.fleet) { d in
+                    ForEach(HardwareDevice.fleet) { d in
                         DeviceChip(name: d.name, active: d == ctrl.device) {
                             ctrl.setDevice(d)
                         }
@@ -493,12 +493,14 @@ private struct DeviceStage: View {
             let frameH = screen.height + bez.top + bez.bottom
             let s = max(0.05, min(1, (geo.size.width - 48) / frameW,
                                      (geo.size.height - 48) / frameH))
-            DeviceFrame(device: d, landscape: land,
-                        host: ctrl.address?.browserHostPath ?? "", s: s,
-                        engineView: ctrl.engine.view)
-                .frame(width: geo.size.width, height: geo.size.height)
-                .onAppear { ctrl.reportDeviceFitScale(s) }
-                .onChange(of: s) { _, new in ctrl.reportDeviceFitScale(new) }
+            DeviceFrame(device: d, landscape: land, s: s) {
+                BrowserDeviceScreen(device: d, landscape: land,
+                                    host: ctrl.address?.browserHostPath ?? "", s: s,
+                                    engineView: ctrl.engine.view)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .onAppear { ctrl.reportDeviceFitScale(s) }
+            .onChange(of: s) { _, new in ctrl.reportDeviceFitScale(new) }
         }
         .background(Theme.chrome)
     }

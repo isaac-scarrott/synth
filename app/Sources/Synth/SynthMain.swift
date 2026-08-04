@@ -1,5 +1,5 @@
-// Process entry: `--browser-check` runs the engine self-check instead of the UI
-// (SynthApp keeps everything else).
+// Process entry: `--browser-check` and `--simulator-check` run the engine self-checks instead
+// of the UI (SynthApp keeps everything else).
 import Foundation
 
 @main
@@ -14,6 +14,9 @@ enum SynthMain {
 
         if CommandLine.arguments.contains("--browser-check") {
             BrowserCheck.run()
+        }
+        if CommandLine.arguments.contains("--simulator-check") {
+            SimulatorCheck.run()
         }
         SynthApp.main()
     }

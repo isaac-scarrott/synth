@@ -40,7 +40,6 @@ import Observation
     @ObservationIgnored private var attachNonce = 0
     @ObservationIgnored private var injectedScriptID: String?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
-    @ObservationIgnored private var deliveryTask: Task<Void, Never>?
 
     init(sessionID: UUID, cdpPort: UInt16) {
         self.sessionID = sessionID
@@ -266,140 +265,24 @@ import Observation
 
     /// The browser's owning agent row (stage four containment) — the deterministic
     /// comment target, replacing stage three's most-active-in-branch guess.
-    private func ownerRow() -> Session? {
-        guard let store, let session = store.session(sessionID) else { return nil }
-        return store.owner(of: session)
-    }
+    private func ownerRow() -> Session? { delivery.ownerRow() }
 
     /// The bar chip's label source: the owner when owned; nil for an unowned browser,
     /// whose comment always spawns a fresh agent ("New agent session" in the chip).
     private func prospectiveTarget() -> Session? { ownerRow() }
 
-    /// SECURITY: a comment embeds page-controlled text (title / selector / element HTML).
-    /// Claude Code has no injection API, so its delivery pastes the text and presses Enter —
-    /// into anything but a live Claude TUI (e.g. the bare shell left behind when a restored
-    /// row's `claude --resume` fails) that would hand a hostile page arbitrary shell
-    /// execution. So delivery runs ONLY against a session the supervisor seam has confirmed
-    /// live (agent-start / agentSessionCaptured, not since ended or exited): immediately when
-    /// one exists, else after booting the target row — including a freshly spawned one — and
-    /// WAITING for its liveness signal, never merely for its terminal view existing.
-    /// (opencode delivers over its message API instead, where there is no shell to fall back
-    /// to; the same gate applies, and costs nothing.)
-    ///
-    /// The ladder: owner live → deliver; owner dormant → boot it and wait; no owner →
-    /// spawn a fresh agent in the branch, adopt the browser under it (so the next
-    /// comment hits the first rung), and boot-and-wait. The spawn is silent — no
-    /// confirmation, focus returns to the browser pane.
-    private func deliver(_ message: String, count: Int, screenshots: [String]) {
-        guard let store, let browser = store.session(sessionID) else {
-            Self.discard(screenshots)
-            return
-        }
-        if let owner = ownerRow() {
-            targetTitle = owner.title
-            // Rung 1: live owner — hand it to the agent's supervisor now.
-            if let supervisor = store.liveSupervisor(for: owner), supervisor.deliver(message, to: owner.id) {
-                NSLog("Synth: %d browser comment(s) delivered to owning agent session %@ (%@)",
-                      count, owner.id.uuidString, owner.title)
-                sent(count, to: owner.title)
-                return
-            }
-            // Rung 2: dormant owner — open it (mounts the pane, launches the agent /
-            // resumes), then wait for the supervisor seam before delivering.
-            showNotice("Opening \(owner.title) to deliver \(Self.theComments(count))…")
-            store.open(owner)
-            bootAndSubmit(owner, message: message, count: count, screenshots: screenshots)
-            return
-        }
-        // Rung 3: unowned — spawn this browser's own agent. The PTY only boots when its
-        // pane mounts (GhosttySurfaceView creates the surface on window attach), so open
-        // the row for one beat and come straight back to the browser; both views live
-        // outside the SwiftUI tree (TerminalManager / BrowserManager) and survive the swap.
-        // Nothing owns this browser and every agent is switched off: there is no one to send
-        // to. Say so, rather than swallowing what was typed.
-        guard let agent = store.availableAgents.first?.id else {
-            failed("No agent enabled — turn one on in Settings", screenshots: screenshots)
-            return
-        }
-        guard let branch = store.branch(of: browser),
-              let spawned = store.spawnAgent(agent, in: branch) else {
-            failed("Couldn't start an agent session", screenshots: screenshots)
-            return
-        }
-        store.adopt(browser, by: spawned)
-        targetTitle = spawned.title
-        store.open(spawned)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak store, sessionID] in
-            guard let store, store.openSessionID == spawned.id,
-                  let back = store.session(sessionID) else { return }
-            store.open(back)
-        }
-        showNotice("Starting \(spawned.title) to deliver \(Self.theComments(count))…")
-        bootAndSubmit(spawned, message: message, count: count, screenshots: screenshots)
-    }
+    /// Delivery is `CommentDelivery` (shared with the simulator): the ladder and its security gate
+    /// are one implementation, not one per pane.
+    @ObservationIgnored private lazy var delivery: CommentDelivery = {
+        let delivery = CommentDelivery(sessionID: sessionID, store: store, subjectKindLabel: "browser")
+        delivery.onNotice = { [weak self] in self?.showNotice($0) }
+        delivery.onTarget = { [weak self] in self?.targetTitle = $0 }
+        return delivery
+    }()
 
-    /// Boot-and-wait delivery to `row`: poll the hook seam for its liveness signal
-    /// (~20s), then submit — the security boundary above, shared by rungs 2 and 3.
-    private func bootAndSubmit(_ row: Session, message: String, count: Int, screenshots: [String]) {
-        deliveryTask?.cancel()
-        deliveryTask = Task { [weak self] in
-            for _ in 0..<40 {   // ~20s: the agent boots and reports in, or never will
-                try? await Task.sleep(for: .seconds(0.5))
-                guard let self, !Task.isCancelled else { return }
-                guard let store = self.store, store.isLiveAgent(row.id) else { continue }
-                // Live confirmed — one more beat so a TUI is past its first paint and
-                // won't eat an early paste; re-check liveness after the beat.
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled, store.isLiveAgent(row.id),
-                      let supervisor = store.liveSupervisor(for: row) else { continue }
-                if supervisor.deliver(message, to: row.id) {
-                    NSLog("Synth: %d browser comment(s) delivered to agent session %@ (%@) after booting it",
-                          count, row.id.uuidString, row.title)
-                    self.sent(count, to: row.title)
-                    return
-                }
-            }
-            // The agent never reported in (e.g. the resume failed and left a bare shell):
-            // never paste. The batch goes back to the page rather than being lost with it.
-            self?.failed("Couldn't reach “\(row.title)”", screenshots: screenshots)
-        }
-    }
-
-    /// The batch is the agent's now; the page has already emptied its queue.
-    private func sent(_ count: Int, to title: String) {
-        pendingCount = 0
-        showNotice(count == 1 ? "Comment sent to \(title)" : "\(count) comments sent to \(title)")
-        answer("confirm", title)
-    }
-
-    /// Delivery never happened. The page is still holding the batch — that is deliberate, see
-    /// the overlay's doSend — so hand it back with the reason instead of leaving it "Sending…"
-    /// forever, and let the orphaned screenshots go. `pendingCount` is untouched: the comments
-    /// are still standing, and the toolbar should keep saying so.
-    private func failed(_ why: String, screenshots: [String]) {
-        showNotice(why)
-        Self.discard(screenshots)
-        answer("reject", why)
-    }
-
-    /// The host's half of the confirm/reject contract, evaluated on the page.
-    private func answer(_ verb: String, _ argument: String) {
-        guard let client else { return }
-        let arg = String(data: (try? JSONSerialization.data(withJSONObject: [argument], options: []))
-                         ?? Data("[\"\"]".utf8), encoding: .utf8) ?? "[\"\"]"
-        let expr = "window.__synthOverlay && window.__synthOverlay.\(verb) && window.__synthOverlay.\(verb).apply(null, \(arg))"
-        Task { _ = try? await client.send("Runtime.evaluate", ["expression": expr], timeout: 5) }
-    }
-
-    private static func theComments(_ count: Int) -> String {
-        count == 1 ? "the comment" : "the \(count) comments"
-    }
-
-    /// Screenshots captured for a batch that was never delivered are orphans — remove.
-    private static func discard(_ screenshots: [String]) {
-        for path in screenshots {
-            try? FileManager.default.removeItem(atPath: path)
-        }
+    /// `count` is the batch size, which only ever changes the wording the user sees.
+    private func deliver(_ message: String, count: Int = 1, screenshots: [String]) {
+        delivery.deliver(message, count: count, screenshots: screenshots)
     }
 
     // MARK: Helpers
@@ -461,17 +344,10 @@ import Observation
     }
 
     private static func commentsDir(sessionID: UUID) -> URL {
-        let dir = AppSupport.dir("comments/\(sessionID.uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        CommentDelivery.commentsDir(sessionID: sessionID)
     }
 
-    private static func timestamp() -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyyMMdd-HHmmss-SSS"
-        return f.string(from: Date())
-    }
+    private static func timestamp() -> String { CommentDelivery.timestamp() }
 
     private static func decodePNG(_ reply: [String: Any]) -> Data? {
         (reply["data"] as? String).flatMap { Data(base64Encoded: $0) }

@@ -1720,3 +1720,110 @@ disclosure to dive deeper.
   row is centred in the rail, so it rises 3px and now sits 7px (was 4px) above the centreline of the
   traffic lights and the sidebar toggle. Those can't come up to meet it — AppKit fixes the lights'
   vertical position — so the choice was a tight rail or an aligned top row, and tight won.
+
+## [2026-08-03](docs/features/2026-08-03.md)
+
+- **The simulator is a session, and its screen comes from the device's framebuffer** — the simulator
+  existed as vocabulary and a drawn frame in the designs with no Swift behind it. Now a session claims a
+  device from the installed fleet, boots it, streams its screen live into the pane, takes pointer and
+  keyboard input as Indigo HID, and exposes the same device to Claude through a 13-tool
+  `synth-simulator` MCP server. Pixels come from the device's own `IOSurface` off `SimDevice.io` into an
+  `AVSampleBufferDisplayLayer`; **Simulator.app is never launched**. ScreenCaptureKit window-mirroring was
+  rejected (dies when the window is minimised or on another Space, needs a Screen Recording grant, and
+  `CGEventPostToPid` silently drops mouse-move and scroll), and Xcode 27 replaces Simulator.app anyway.
+  Private API knowingly, as every shipping implementation does — Developer ID + notarized was tested and
+  needs zero entitlements, at the price of the Mac App Store. v1 attaches and drives; it does not build
+  your app. Devices are shared machine state, released by reference count, and carry no owner — an agent
+  must not shut down a device you are looking at. The live screen sits inside 0.18.0's hardware frame with
+  our drawn status bar removed, since iOS paints its own. Measured: 50.9 fps, gap p50 16.96ms, 22µs of our
+  own cost per frame, 59–70ms tap-to-visible-change. Full entry has the traps — the inert duplicate
+  display port, `UDID` vs `udid`, the boot race, and frames being live views rather than snapshots.
+
+- **The simulator's screen can be read as text** — `simulator_describe` reads the frontmost app's
+  accessibility tree off a booted device: role, label, `#identifier`, value and state, one element per
+  line, each with its frame's centre in the same normalised 0..1 coordinates `simulator_tap` takes.
+  Discovery through `describe`, action through `tap` at a centre. Settings' root is **1069 bytes against a
+  219 KB screenshot** — 205× on the wire, ~300 tokens against ~1,500 — and it carries the identifiers a
+  screenshot makes you guess at. No XCTest runner and no injected bundle: `SimDevice`'s
+  `sendAccessibilityRequestAsync` plus `AXPTranslator` with our own `bridgeTokenDelegate`, which is the
+  only reason the translator knows which device a request belongs to. Two request kinds, both needed — the
+  frontmost-app walk, and a point hit test that reaches what the walk cannot (childless SwiftUI tab bars,
+  and SpringBoard's status bar, which is not in the app's tree at all). A degraded session has no
+  accessibility and refuses with the reason, because `simctl` has no such verb and an empty tree would read
+  as an empty screen. Full entry has the traps — the single delegate slot, per-object token stamping,
+  `mainScreenScale` not being a `double`, and the framework that exists only in the dyld shared cache.
+
+- **The simulator session is finished — usable input, a fallback that has been run, and a type that stops
+  lying** — typing had no delete, escape or arrows, so backspace in the pane silently did nothing; there was
+  no scrolling at all, and trackpad phases now map onto a continuous touch drag rather than a burst of taps;
+  the pane gained device name, runtime and Home/Lock buttons, none of which were reachable since the frame's
+  side buttons are drawn hardware; and `simulator_terminate` completes the lifecycle set, because launching a
+  running app only foregrounds it, so an agent could not reach a known starting state (15 tools). The
+  designed `simctl` fallback is now exercised rather than assumed — one seam disables the framebuffer, Indigo
+  HID and accessibility together, since the failure it exists for is an Xcode release moving the private
+  frameworks, and running it found that input was not being declared degraded because opening the HID session
+  is asynchronous. `BrowserDevice` became `HardwareDevice` now that it frames simulators too. The self-check
+  guards persistence, including the `SessionKind` raw-value arm that would otherwise decode every persisted
+  simulator as a bogus agent. Verified end to end: the real ⌘K route, the live pane, and the agent path
+  running terminate → launch → describe → tap at the reported centre → describe, on one shared session id.
+
+- **An unbiased review said do not ship, and five gating findings later it does** — the private-API layer
+  survived the review (a simulated Xcode-27 framework relocation left screen and accessibility live, only
+  input degrading, no crash); everything serious was the app integration around it. Worst, measured: the
+  attach path shelled out to `simctl` on the main actor every retry tick, blocking 76% of it for the length
+  of a cold boot. Also fixed: input verbs answering `ok` for taps that never left the process, a dead device
+  serving its last frame as a fresh screenshot, devices never released, and an unsynchronised HID handle.
+  Three of the fixes had bugs of their own that tests caught: scrolling was inverted (AppKit's delta sign),
+  quit-time device release never ran (the signal path installs no handler without CEF — so claims are now
+  recorded and reconciled at launch, verified by `kill -9`), and gating a claim on a cached `isBooted` meant
+  nothing ever booted the device. 29 assertions pass live plus forced-degraded, memory flat over six minutes
+  of 60Hz streaming, behind an Experimental toggle that is off by default.
+
+- **The simulator rotates, and comment mode is written but withheld** — rotation goes through the device's
+  `PurpleWorkspacePort` with the wire format read out of Simulator.app's own disassembly, since `simctl` has
+  no orientation verb at any version; plus `simulator_shake`. Three assumptions died on contact: the
+  framebuffer does not resize when the device rotates (iOS draws sideways into the same surface), there is
+  no orientation read-back at all, and Settings is portrait-only so verifying against it would have proved
+  a working mechanism broken. It exposed a real bug above it — the accessibility tree normalised landscape
+  frames against the portrait profile, so describe→tap could not round-trip — and the assertion that shipped
+  with rotation had encoded that bug as expected behaviour. Comment mode (click an element, send it to the
+  owning agent, anchored on the accessibility identifier) is implemented, its delivery ladder now shared
+  with the browser rather than copied, and **not offered**: delivering from an unowned simulator
+  reproducibly exits the app and is not root-caused. 37 assertions pass live plus forced-degraded.
+
+## [2026-08-04](docs/features/2026-08-04.md)
+
+- **The simulator's comment mode is offered — the app-exit was one `%s`** — delivering a comment exited the
+  whole app because the log line on the delivery ladder's success path passed a Swift `String` to `%s`,
+  which hands `strlen` a tagged NSString pointer. It looked like nothing because libghostty's bundled
+  Breakpad owns the task's Mach exception ports, so the fault never became a signal: no crash report, no
+  marker, just `exit(1)`. Both rungs carried it, including the browser's shipped path. The toggle and its
+  target chip are restored, both rungs are driven end to end on a real device with the comment landing in
+  the agent's transcript, and the accessibility hit test moved off the main actor — it was a click that
+  could freeze the window for over a minute.
+
+- **`simulator_describe` answers in landscape, because the projection is confirmed rather than assumed** —
+  accessibility frames arrive in the interface's coordinate space and `tap` addresses a display that never
+  rotates, and nothing on this platform will say which way up an app laid itself out. The space is now
+  *confirmed* per read by hit-testing where an element's centre is predicted to land and requiring that
+  element back — possible only because frames come back in the interface's space while `objectAtPoint:`
+  goes in in the display's. Costs one round trip; a portrait-locked app reads as portrait however many
+  rotations it was sent. Three of the previous attempt's findings were corrected, and one new one found: a
+  tree can be in two coordinate spaces at once, with the landscape keyboard's keys reported in the
+  display's space as flat siblings of the app's own elements. The assertions now tap a reported centre and
+  require a named consequence, after `tap-changed-screen` was shown to pass while the tap hit the wrong row.
+
+
+- **Simulator sessions, verified across three independent reviews** — rotation, the landscape coordinate
+  projection, comment mode, and the honesty rules the reviews forced. The projection normalises by the
+  interface's own extent and then applies that orientation's transform, and rather than trusting arithmetic it
+  **confirms the space against the device per read** — predict a centre, hit-test it, accept only if the same
+  element answers. It also handles a screen in two coordinate spaces at once (with the keyboard up, app
+  elements come back in the interface's space and every key in the display's). Comment mode clicks an element
+  and sends it to the owning agent anchored on the accessibility identifier, sharing one delivery ladder with
+  the browser because it is a security boundary. Round three found the previous rounds' rule surviving on the
+  verb they each missed: against a device shut down underneath, `type` answered ok 4/4 and `tap` 3/8, because
+  readiness asked whether a HID client existed — and the client outlives the device. Every input verb, plus
+  `describe`, now asks the device; comment mode refuses to hand over a stale frame as evidence. The check's
+  own device handling had reintroduced an earlier fix's bug, and its coverage gap for the mixed-space case is
+  a failure now rather than a PASS that quietly meant "not run". 48 assertions plus forced degradation.

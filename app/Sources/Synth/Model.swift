@@ -7,6 +7,7 @@ enum SessionKind: Codable, Sendable, Hashable {
     case terminal
     case agent(AgentID)
     case browser
+    case simulator
 
     /// The agent hosted by this session, if it is one.
     var agentID: AgentID? {
@@ -24,14 +25,18 @@ extension SessionKind: RawRepresentable {
         switch self {
         case .terminal: return "terminal"
         case .browser: return "browser"
+        case .simulator: return "simulator"
         case .agent(let id): return id.rawValue
         }
     }
 
     init?(rawValue: String) {
+        // Every non-agent kind needs its own arm: the default is "anything unrecognised is an
+        // agent id", so a missing case doesn't fail loudly — it decodes the kind as a bogus agent.
         switch rawValue {
         case "terminal": self = .terminal
         case "browser": self = .browser
+        case "simulator": self = .simulator
         default: self = .agent(AgentID(rawValue))
         }
     }
@@ -110,8 +115,14 @@ enum SessionStatus: Equatable, Sendable {
     /// the Synth row's id, not Claude's own session id, so ownership survives claude exits
     /// and `--resume`. nil for unowned browsers and every non-browser session.
     var ownerSessionID: UUID?
+    /// The simulator device this session drives, by UDID — what a simulator session *is*
+    /// (ADR-0015), the analogue of a browser's `browserURL`. Persisted, so a restored row
+    /// reclaims the same device; a UDID rather than a model name so cloning a device per
+    /// branch stays possible later. nil for non-simulators and for a simulator session
+    /// spawned from a template, which has no device to name yet.
+    var simulatorUDID: String?
 
-    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, agentSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil) {
+    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, agentSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil, simulatorUDID: String? = nil) {
         self.id = id
         self.kind = kind
         self.spawnedKind = kind
@@ -122,6 +133,7 @@ enum SessionStatus: Equatable, Sendable {
         self.agentSessionID = agentSessionID
         self.browserURL = browserURL
         self.ownerSessionID = ownerSessionID
+        self.simulatorUDID = simulatorUDID
     }
 }
 
@@ -153,6 +165,7 @@ extension SessionKind {
         case .agent(let id): return AgentRegistry.descriptor(id)?.displayName ?? id.rawValue
         case .terminal:      return "shell"
         case .browser:       return "Browser"
+        case .simulator:     return "Simulator"
         }
     }
 }

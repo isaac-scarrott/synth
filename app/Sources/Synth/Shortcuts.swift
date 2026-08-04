@@ -117,6 +117,12 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "⌥", "⏎"], label: "Send all comments"),
             Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
+        // Simulator sessions are behind the Experimental toggle (ADR-0015), but the sheet lists what
+        // exists rather than what is switched on: a binding missing from here is a binding the user
+        // has no way to find.
+        ShortcutCategory(name: "Simulator", icon: Phosphor.deviceMobile, rows: [
+            Shortcut(keys: ["esc"], label: "Exit comment mode, or cancel a comment"),
+        ]),
     ]
 
     /// What the sheet lists, flattened for the harness (`automation.shortcuts`) — "General:

@@ -382,6 +382,13 @@ struct PaletteFrame {
             items.append(PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser",
                                      group: g, ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newBrowser(in: branch) } }))
+            if store.simulatorsAvailable {
+                items.append(PaletteItem(icon: .phosphor(Phosphor.deviceMobile), label: "New simulator",
+                                         group: g, ctx: branch.name,
+                                         enter: { self.push(self.simulatorDeviceFrame { d in
+                                             self.runAndClose { self.store.newSimulator(in: branch, device: d) }
+                                         }) }))
+            }
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
                                      group: g, ctx: branch.name,
                                      enter: { self.push(self.renameFrame(.branch(branch))) }))
@@ -652,9 +659,10 @@ struct PaletteFrame {
         }
     }
 
-    /// The session creates on a branch — a terminal, one per enabled agent, a browser —
-    /// shared by the branch frame and the workspace/session frames, which borrow them with a
-    /// ctx chip naming the branch. An agent switched off in Settings is simply not offered.
+    /// The session creates on a branch — a terminal, one per enabled agent, a browser, and a
+    /// simulator while the experiment allows it — shared by the branch frame and the
+    /// workspace/session frames, which borrow them with a ctx chip naming the branch. An agent
+    /// switched off in Settings is simply not offered.
     private func sessionCreates(in branch: Branch, ctx: String? = nil) -> [PaletteItem] {
         [PaletteItem(icon: .phosphor(Phosphor.terminal), label: "New terminal", sec: "act",
                      ctx: ctx, enter: { self.runAndClose { self.store.newTerminal(in: branch) } })]
@@ -663,7 +671,36 @@ struct PaletteFrame {
                         ctx: ctx, enter: { self.runAndClose { self.store.newAgent(agent.id, in: branch) } })
         }
         + [PaletteItem(icon: .phosphor(Phosphor.globe), label: "New browser", sec: "act",
-                       ctx: ctx, enter: { self.runAndClose { self.store.newBrowser(in: branch) } })]
+                       ctx: ctx, enter: { self.runAndClose { self.store.newBrowser(in: branch) } }),
+           PaletteItem(icon: .phosphor(Phosphor.deviceMobile), label: "New simulator", sec: "act",
+                       ctx: ctx, enter: { self.push(self.simulatorDeviceFrame { d in
+                           self.runAndClose { self.store.newSimulator(in: branch, device: d) }
+                       }) })]
+            // Experimental and Xcode-gated (ADR-0015): an offer the user cannot act on is worse
+            // than no offer, so it is not listed rather than listed-and-disabled.
+            .filter { $0.label != "New simulator" || store.simulatorsAvailable }
+    }
+
+    /// Picking a device *is* creating a simulator session (ADR-0015): the session's identity is
+    /// the device UDID, so every "New simulator" route drills here instead of guessing a device.
+    /// One frame, so the branch / workspace / ⌘N / split routes can't diverge on which devices
+    /// they offer. Reads the fleet on each build, which is also how it stays empty-and-honest
+    /// while the engine seam is unfilled.
+    func simulatorDeviceFrame(_ pick: @escaping (SimulatorDevice) -> Void) -> PaletteFrame {
+        PaletteFrame(crumb: "New simulator", placeholder: "Pick a device…") { _ in
+            let devices = Simulators.fleet.devices()
+            guard !devices.isEmpty else {
+                return [PaletteItem(icon: .phosphor(Phosphor.deviceMobile),
+                                    label: "No simulator devices available",
+                                    disabled: true, enter: {})]
+            }
+            return devices.map { device in
+                PaletteItem(icon: .phosphor(Phosphor.deviceMobile), label: device.name,
+                            ctx: device.runtime,
+                            meta: device.isBooted ? "booted" : nil,
+                            enter: { pick(device) })
+            }
+        }
     }
 
     /// The ⋯ kebab / right-click opens ⌘K with its context pinned to the clicked row, so it
@@ -895,7 +932,7 @@ struct PaletteFrame {
     }
 
     /// `a` on a branch/worktree (or a session leaf) jumps straight to the "add a session"
-    /// choice — a terminal, any enabled agent, or a browser, created in `branch`
+    /// choice — a terminal, any enabled agent, a browser, or a simulator, created in `branch`
     /// (working.html newSessionFrame). Order: create→navigate→modify→destroy, and within
     /// the creates, terminal first then the agents in registry order.
     func newSessionFrame(branch: Branch) -> PaletteFrame {
@@ -908,6 +945,12 @@ struct PaletteFrame {
             }
             items.append(PaletteItem(icon: .session(.browser), label: "New browser", ctx: branch.name,
                                      enter: { self.runAndClose { self.store.newBrowser(in: branch) } }))
+            if store.simulatorsAvailable {
+                items.append(PaletteItem(icon: .session(.simulator), label: "New simulator", ctx: branch.name,
+                                         enter: { self.push(self.simulatorDeviceFrame { d in
+                                             self.runAndClose { self.store.newSimulator(in: branch, device: d) }
+                                         }) }))
+            }
             return items
         }
     }
@@ -935,6 +978,12 @@ struct PaletteFrame {
                 }
                 items.append(PaletteItem(icon: .session(.browser), label: "New browser", sec: "act", ctx: br.name,
                                          enter: { self.runAndClose { self.splitNew(.browser, in: br, dir: dir, before: before, target: target) } }))
+                if store.simulatorsAvailable {
+                    items.append(PaletteItem(icon: .session(.simulator), label: "New simulator", sec: "act", ctx: br.name,
+                                             enter: { self.push(self.simulatorDeviceFrame { d in
+                                                 self.runAndClose { self.splitNew(.simulator, in: br, device: d, dir: dir, before: before, target: target) }
+                                             }) }))
+                }
             }
             // A split stays within one branch / worktree (003): only this branch's sessions can fill
             // the new pane — pulling in a foreign one would build a cross-worktree split.
@@ -949,8 +998,9 @@ struct PaletteFrame {
     }
 
     /// "New …" in the split frame: spawn the session unopened, then bind it into the fresh pane.
-    private func splitNew(_ kind: SessionKind, in branch: Branch, dir: SplitDir, before: Bool, target: PaneNode?) {
-        guard let s = store.newForSplit(kind, in: branch) else { return }
+    private func splitNew(_ kind: SessionKind, in branch: Branch, device: SimulatorDevice? = nil,
+                          dir: SplitDir, before: Bool, target: PaneNode?) {
+        guard let s = store.newForSplit(kind, in: branch, device: device) else { return }
         store.splitActiveWith(session: s.id, dir: dir, before: before, target: target)
     }
 

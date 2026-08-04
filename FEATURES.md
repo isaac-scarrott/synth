@@ -1602,3 +1602,6 @@ disclosure to dive deeper.
   occlude what was behind it: that double-coated terminal, the card's own `.shadow` (SwiftUI blurs
   *alpha*, so it showed through the card it belonged to), and the tabs-mode first-tab bleed (a plain
   rectangle that an opaque sidebar used to hide all but the corner of).
+- **Tabs-mode branches carry their session facts without growing a third tree level** — the branch
+  row becomes a 46px two-line summary (`N sessions · activity`) with a fixed PR/status rail; classic
+  sidebar mode keeps its original compact disclosure row. Both designs + native app.

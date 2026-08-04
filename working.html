@@ -1344,6 +1344,33 @@
      branch's only per-session signal in the 2-deep tree. */
   html[data-tabs="on"] .repo--open > .branch--group .branch__roll .ind { display: flex; }
 
+  /* Tabs-mode branch row: name over a facts line (N sessions · last activity), then a
+     reserved two-slot rail — PR status glyph, roll-up indicator outermost. Both slots
+     hold their 16px whether occupied or not, so the rail never shifts between rows.
+     The dead chevron indent drops to 26px, aligning names with the project chip's left
+     edge; the facts line reclaims the session count the 2-deep tree no longer shows. */
+  html[data-tabs="on"] .branch {
+    display: grid; grid-template-columns: 1fr 16px 16px; grid-template-rows: auto auto;
+    column-gap: 4px; align-items: center; align-content: center;
+    padding-top: 5px; padding-bottom: 5px; min-height: 46px;
+  }
+  html[data-tabs="on"] .nav .branch { padding-left: 26px; }
+  html[data-tabs="on"] .branch__name { grid-column: 1; grid-row: 1; font-size: 13px; }
+  .branch__facts { display: none; }
+  html[data-tabs="on"] .branch__facts {
+    display: block; grid-column: 1; grid-row: 2;
+    font-size: 11px; font-weight: 500; color: var(--ink-meta);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden;
+  }
+  html[data-tabs="on"] .branch__pr { grid-column: 2; grid-row: 1 / 3; width: 16px; min-width: 0; justify-content: center; transition: opacity 120ms ease; }
+  html[data-tabs="on"] .branch__roll { grid-column: 3; grid-row: 1 / 3; width: 16px; justify-content: center; }
+  /* the hover action cluster covers the rail — fade the PR glyph with the roll-up */
+  @media (hover: hover) and (pointer: fine) {
+    html[data-tabs="on"] .row:hover > .branch__pr { opacity: 0; }
+  }
+  html[data-tabs="on"] .row.menu-open > .branch__pr { opacity: 0; }
+
   /* Tab strip: the pane's hosted sessions, exactly one active, with a + new-tab and per-tab ×.
      Shows even for a lone tab. Uncapped — overflow scrolls horizontally. ~30px, compact, tabular. */
   .tabstrip {
@@ -2795,6 +2822,7 @@
               <a class="row branch branch--group" data-row data-toggle data-group data-activity="2h">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">main</span>
+                <span class="branch__facts"></span>
                 <span class="branch__roll"></span>
               </a>
               <div class="collapse"><div class="collapse__inner">
@@ -2806,6 +2834,7 @@
               <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="2m">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">feat/command-menu</span>
+                <span class="branch__facts"></span>
                 <span class="branch__pr pr--open" data-pr="482" title="PR #482 · open"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,64A32,32,0,1,0,64,95v66a32,32,0,1,0,16,0V95A32.06,32.06,0,0,0,104,64ZM56,64A16,16,0,1,1,72,80,16,16,0,0,1,56,64ZM88,192a16,16,0,1,1-16-16A16,16,0,0,1,88,192Zm120-31V110.63a23.85,23.85,0,0,0-7-17L163.31,56H192a8,8,0,0,0,0-16H144a8,8,0,0,0-8,8V96a8,8,0,0,0,16,0V67.31L189.66,105a8,8,0,0,1,2.34,5.66V161a32,32,0,1,0,16,0Zm-8,47a16,16,0,1,1,16-16A16,16,0,0,1,200,208Z"/></svg></span>
                 <span class="branch__roll"></span>
               </a>
@@ -2869,6 +2898,7 @@
               <a class="row branch branch--group" data-row data-toggle data-group data-activity="5h">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">fix/sidebar-shadow</span>
+                <span class="branch__facts"></span>
                 <span class="branch__pr pr--merged" data-pr="471" title="PR #471 · merged"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,112a32.05,32.05,0,0,0-30.69,23l-42.21-6a8,8,0,0,1-4.95-2.71L94.43,84.55A32,32,0,1,0,72,87v82a32,32,0,1,0,16,0V101.63l30,35a24,24,0,0,0,14.83,8.14l44,6.28A32,32,0,1,0,208,112ZM64,56A16,16,0,1,1,80,72,16,16,0,0,1,64,56ZM96,200a16,16,0,1,1-16-16A16,16,0,0,1,96,200Zm112-40a16,16,0,1,1,16-16A16,16,0,0,1,208,160Z"/></svg></span>
                 <span class="branch__roll"></span>
               </a>
@@ -2889,6 +2919,7 @@
               <a class="row branch branch--group" data-row data-toggle data-group data-activity="3d">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">release/0.4</span>
+                <span class="branch__facts"></span>
                 <span class="branch__pr pr--closed" data-pr="468" title="PR #468 · closed"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,64A32,32,0,1,0,64,95v66a32,32,0,1,0,16,0V95A32.06,32.06,0,0,0,104,64ZM56,64A16,16,0,1,1,72,80,16,16,0,0,1,56,64ZM88,192a16,16,0,1,1-16-16A16,16,0,0,1,88,192Zm120-31V110.63a23.85,23.85,0,0,0-7-17L163.31,56H192a8,8,0,0,0,0-16H144a8,8,0,0,0-8,8V96a8,8,0,0,0,16,0V67.31L189.66,105a8,8,0,0,1,2.34,5.66V161a32,32,0,1,0,16,0Zm-8,47a16,16,0,1,1,16-16A16,16,0,0,1,200,208Z"/></svg></span>
                 <span class="branch__roll"></span>
               </a>
@@ -2915,6 +2946,7 @@
               <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="now">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">main</span>
+                <span class="branch__facts"></span>
                 <span class="branch__roll"></span>
               </a>
               <div class="collapse"><div class="collapse__inner">
@@ -2925,6 +2957,7 @@
               <a class="row branch branch--group" data-row data-toggle data-group data-activity="1d">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">feat/rate-limiter</span>
+                <span class="branch__facts"></span>
                 <span class="branch__pr pr--queued" data-pr="455" title="PR #455 · queued"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M104,64A32,32,0,1,0,64,95v66a32,32,0,1,0,16,0V95A32.06,32.06,0,0,0,104,64ZM56,64A16,16,0,1,1,72,80,16,16,0,0,1,56,64ZM88,192a16,16,0,1,1-16-16A16,16,0,0,1,88,192Zm120-31V110.63a23.85,23.85,0,0,0-7-17L163.31,56H192a8,8,0,0,0,0-16H144a8,8,0,0,0-8,8V96a8,8,0,0,0,16,0V67.31L189.66,105a8,8,0,0,1,2.34,5.66V161a32,32,0,1,0,16,0Zm-8,47a16,16,0,1,1,16-16A16,16,0,0,1,200,208Z"/></svg></span>
                 <span class="branch__roll"></span>
               </a>
@@ -2951,6 +2984,7 @@
               <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="now">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">main</span>
+                <span class="branch__facts"></span>
                 <span class="branch__roll"></span>
               </a>
               <div class="collapse"><div class="collapse__inner">
@@ -3015,6 +3049,8 @@
     unread:() => `<span class="ind"><span class="udot"></span></span>`,
   };
   function rollUpGroups() {
+    // Read the attribute, not the variable — the first call runs before tabsMode initialises.
+    const inTabs = document.documentElement.dataset.tabs === 'on';
     nav.querySelectorAll('[data-group]').forEach((group) => {
       const repo = group.closest('[data-repo]');
       const sessions = [...repo.querySelectorAll('.sessions .session')];
@@ -3023,8 +3059,15 @@
       const slot = group.querySelector('.branch__roll');
       slot.innerHTML = worst !== 'idle' ? ROLL[worst]()
         : hasUnread ? ROLL.unread()  // all idle, but finished-and-unseen output waits inside
+        : inTabs ? ''                // tabs: the rail's indicator slot stays reserved but empty
         : group.classList.contains('branch--active') ? `<span class="ind"><span class="branch__dot"></span></span>`  // checked-out branch
         : `<span class="branch__meta">${group.dataset.activity}</span>`;  // all idle → last activity
+      // Tabs mode: the facts line — the session count the 2-deep tree no longer shows,
+      // plus last activity (which leaves the right slot to join the facts).
+      const facts = group.querySelector('.branch__facts');
+      if (facts) facts.textContent = inTabs
+        ? `${sessions.length ? `${sessions.length} session${sessions.length > 1 ? 's' : ''}` : 'No sessions'} · ${group.dataset.activity}`
+        : '';
     });
   }
   rollUpGroups();
@@ -6044,6 +6087,7 @@
     wrapper.innerHTML = `<a class="row branch branch--group" data-row data-toggle data-group data-activity="${esc(activity)}">
         <span class="chev">${ICON_CARET}</span>
         <span class="branch__name">${esc(name)}</span>
+        <span class="branch__facts"></span>
         <span class="branch__roll"></span>
       </a>
       <div class="collapse"><div class="collapse__inner"><div class="sessions"></div></div></div>`;

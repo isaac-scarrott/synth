@@ -312,12 +312,24 @@ private struct BranchRow: View {
         VStack(alignment: .leading, spacing: 1) {
             ZStack(alignment: .trailing) {
                 if renaming {
-                    HStack(spacing: 6) {
-                        Chevron(open: isOpen)
-                        RenameField(font: .sans(12))
-                        Spacer(minLength: 4)
+                    if store.tabsMode {
+                        HStack(spacing: 4) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                RenameField(font: .sans(13))
+                                tabsBranchFacts
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            tabsBranchRail
+                        }
+                        .padding(.leading, 26).padding(.trailing, 6).frame(minHeight: 46)
+                    } else {
+                        HStack(spacing: 6) {
+                            Chevron(open: isOpen)
+                            RenameField(font: .sans(12))
+                            Spacer(minLength: 4)
+                        }
+                        .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
                     }
-                    .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
                 } else {
                     Button {
                         guard !branch.isPending else { return }   // nothing to expand or open yet
@@ -331,38 +343,7 @@ private struct BranchRow: View {
                         store.toggleExpanded(branch.id)
                         store.handToSidebar(branch.id)   // the keyboard stays on the tree
                     } label: {
-                        HStack(spacing: 6) {
-                            // Tabs: the branch is the deepest row — nothing left to disclose, so
-                            // the chevron goes (working.html `.branch--group > .chev { display:none }`).
-                            if !store.tabsMode { Chevron(open: isOpen) }
-                            Text(branch.name)
-                                .font(.sans(12, isActiveBranch ? 600 : 500))
-                                .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
-                                .lineLimit(1).truncationMode(.middle)
-                            // The branch's PR rides beside the name — identity, not status, so it
-                            // stays clear of the roll-up's reserved right axis. Colour is the state.
-                            if let pr = branch.pr {
-                                Phos(path: pr.state.glyph, size: 11)
-                                    .foregroundStyle(pr.state.tint)
-                                    .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased())"))
-                            }
-                            Spacer(minLength: 4)
-                            if branch.isPending {
-                                Ind { PendingSpinner() }
-                            } else {
-                                // Tabs: sessions leave the tree, so the roll-up is the branch's only
-                                // per-session signal — force it visible even while nominally expanded
-                                // (working.html `html[data-tabs=on] .branch__roll .ind { display:flex }`).
-                                BranchRollup(branch: branch, collapsed: store.tabsMode || !isOpen).opacity(revealed ? 0 : 1)
-                            }
-                        }
-                        // Full-width row: 37pt leading holds the branch content at its indent
-                        // while the hover band spans the sidebar; 6pt trailing keeps the branch
-                        // indicator on the shared 24pt axis (working.html .nav .branch).
-                        // Height is pinned rather than derived from the tallest child: BranchRollup
-                        // drops to EmptyView when expanded, so vertical padding alone made the row
-                        // 30pt holding a 16pt Ind and 28pt without — expanding shifted the tree.
-                        .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
+                        branchLabel
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
                         .opacity(branch.isPending ? 0.5 : 1)
@@ -416,6 +397,90 @@ private struct BranchRow: View {
             }
         }
         .reorderLift(.branch(branch))
+    }
+
+    @ViewBuilder private var branchLabel: some View {
+        if store.tabsMode {
+            HStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(branch.name)
+                        .font(.sans(13, isActiveBranch ? 600 : 500))
+                        .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
+                        .lineLimit(1).truncationMode(.tail)
+                    tabsBranchFacts
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                tabsBranchRail
+            }
+            .padding(.leading, 26).padding(.trailing, 6).frame(minHeight: 46)
+        } else {
+            HStack(spacing: 6) {
+                Chevron(open: isOpen)
+                Text(branch.name)
+                    .font(.sans(12, isActiveBranch ? 600 : 500))
+                    .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
+                    .lineLimit(1).truncationMode(.middle)
+                // The branch's PR rides beside the name — identity, not status, so it
+                // stays clear of the roll-up's reserved right axis. Colour is the state.
+                if let pr = branch.pr {
+                    Phos(path: pr.state.glyph, size: 11)
+                        .foregroundStyle(pr.state.tint)
+                        .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased())"))
+                }
+                Spacer(minLength: 4)
+                if branch.isPending {
+                    Ind { PendingSpinner() }
+                } else {
+                    BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
+                }
+            }
+            // Full-width row: 37pt leading holds the branch content at its indent
+            // while the hover band spans the sidebar; 6pt trailing keeps the branch
+            // indicator on the shared 24pt axis (working.html .nav .branch).
+            // Height is pinned rather than derived from the tallest child: BranchRollup
+            // drops to EmptyView when expanded, so vertical padding alone made the row
+            // 30pt holding a 16pt Ind and 28pt without — expanding shifted the tree.
+            .padding(.leading, 37).padding(.trailing, 6).frame(minHeight: 30)
+        }
+    }
+
+    private var tabsBranchFacts: some View {
+        TimelineView(.periodic(from: Date(), by: 60)) { ctx in
+            Text(factsLabel(now: ctx.date))
+                .font(.sans(11, 500, tabular: true))
+                .foregroundStyle(Theme.inkMeta)
+                .lineLimit(1).truncationMode(.tail)
+        }
+    }
+
+    private var tabsBranchRail: some View {
+        HStack(spacing: 4) {
+            Color.clear.frame(width: 16, height: 16).overlay {
+                if let pr = branch.pr {
+                    Phos(path: pr.state.glyph, size: 11)
+                        .foregroundStyle(pr.state.tint)
+                        .accessibilityLabel("Pull request #\(pr.number), \(pr.state.rawValue.lowercased())")
+                        .help(Text(verbatim: "PR #\(pr.number) · \(pr.state.rawValue.lowercased())"))
+                }
+            }
+            Color.clear.frame(width: 16, height: 16).overlay {
+                if branch.isPending {
+                    Ind { PendingSpinner() }
+                        .accessibilityLabel("Creating worktree")
+                } else {
+                    BranchRollup(branch: branch, collapsed: true, showsActivity: false)
+                }
+            }
+        }
+        .opacity(revealed ? 0 : 1)
+        .animation(.easeOut(duration: 0.12), value: revealed)
+    }
+
+    private func factsLabel(now: Date) -> String {
+        let count = branch.sessions.count
+        let sessions = count == 0 ? "No sessions" : "\(count) session\(count == 1 ? "" : "s")"
+        let activity = branch.activityLabel(now: now)
+        return "\(sessions) · \(activity.isEmpty ? "now" : activity)"
     }
 
     /// The expanded session list, with the branch's split members folded into one band placed
@@ -903,14 +968,19 @@ private struct BranchRollup: View {
     // Expanded, every session shows its own indicator inside, so the state roll-up
     // glyph beside the header is redundant and can read as out of sync — drop it
     // while expanded (working.html `.repo--open > .branch--group .branch__roll .ind`).
-    // The activity meta isn't an indicator and stays.
+    // The classic row keeps activity in this slot; tabs moves it into the facts line.
     var collapsed: Bool
+    var showsActivity = true
     var body: some View {
         switch branch.rollup {
-        case .input where collapsed: Ind { AttentionGlyph(state: .input) }
-        case .error where collapsed: Ind { AttentionGlyph(state: .error) }
-        case .work  where collapsed: Ind { Beat() }
-        case .run   where collapsed: Ind { Beat() }
+        case .input where collapsed:
+            Ind { AttentionGlyph(state: .input) }.accessibilityLabel("Needs input")
+        case .error where collapsed:
+            Ind { AttentionGlyph(state: .error) }.accessibilityLabel("Error")
+        case .work where collapsed:
+            Ind { Beat() }.accessibilityLabel("Working")
+        case .run where collapsed:
+            Ind { Beat() }.accessibilityLabel("Running")
         // A live state while expanded: the sessions carry their own indicators,
         // so nothing rolls up to the header.
         case .input, .error, .work, .run: EmptyView()
@@ -919,8 +989,8 @@ private struct BranchRollup: View {
             // cue there's something to read in here (working.html rollUpGroups unread
             // fallback). Expanded, each session's own gutter bullet carries it instead.
             if collapsed && branch.hasUnread {
-                Ind { UnreadDot() }
-            } else if branch.lastActivityAt != nil || !branch.lastActivity.isEmpty {
+                Ind { UnreadDot() }.accessibilityLabel("Unread output")
+            } else if showsActivity && (branch.lastActivityAt != nil || !branch.lastActivity.isEmpty) {
                 // Relative age, re-rendered each minute so it decays live ("now" → "5m" → "2h").
                 TimelineView(.periodic(from: Date(), by: 60)) { ctx in
                     Text(branch.activityLabel(now: ctx.date))

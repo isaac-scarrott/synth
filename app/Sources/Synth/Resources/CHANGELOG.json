@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.26.0",
+    "date": "2026-08-04",
+    "changes": [
+      "Tabs are chips on a rail. The strip stops being one solid band welded to the window — each tab is a chip sitting on the rail, and the open one lifts off it as a card, which is the whole of what open means: no seam, no bottom bar, no fill running to the window edge. A split's panes are a hairline tray around their chips rather than a filled well, because on this strip a background is what open means, so filling the tray handed every pane the one signal reserved for the open tab. Panes now shrink on the same terms as every other tab, which is the premise — a pane is a tab.",
+      "Light mode is legible inside the agents, not just around them. Claude Code was painting its dark theme onto a near-white surface — body text at 1.06:1, 57 of 72 colours under the readable threshold — because it reads its theme once at startup, so the old sync only ever reached new sessions. Synth now ships a theme it rewrites in place, which re-themes a session already running, with 20 light values deepened by lightness alone so the hues stay Claude Code's. opencode gets 11 values deepened the same way. agy paints hard-coded colour, so it is left on its default scheme — that one draws most of its interface from Synth's own ANSI palette, which is tuned further than agy's light theme is.",
+      "Settings ▸ Archived is somewhere you can stand. The clean-up switch and grace period move in beside two disk budgets (25 worktrees, 50 GB), and every project lists the folders still on disk carrying the sweeper's own verdict on each — \"PR still open\", \"6 days left\" — with Restore and a permanent delete beside them. A budget can bring an unblocked folder's turn forward; it never lets one past a gate. ⌘K's archived list is project-scoped now and drills in.",
+      "A downloaded update waits in the sidebar foot instead of interrupting you. A \"Restart to update\" row washed in the app icon's champagne stands above Settings for as long as a built update sits unapplied, and the notification card that used to announce it is gone — both surfaces are pull now. Settings also drops its ⌘, hint; the shortcut is unchanged, and still in ⌘? and ⌘K."
+    ]
+  },
+  {
     "version": "0.25.0",
     "date": "2026-08-04",
     "changes": [

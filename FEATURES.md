@@ -1564,3 +1564,13 @@ disclosure to dive deeper.
   bundle reads 0.23.0 / 478, bundled changelog leads with 0.23.0); appcast newest `sparkle:version`
   478 / `0.23.0`, all 18 enclosures EdDSA-signed, 5 deltas against 458/433/425/418/413 (1.1M from the
   previous build against a 131M download). Landing links unchanged, no site republish.
+- **…and stem darkening back on: the menu bar is not ours to restyle** — reverses the entry above, same
+  day. `AppleFontSmoothing` is read per *process*, so switching it off thinned Synth's own menu bar
+  along with its chrome, and a menu ~12% lighter than every other app's is Synth failing to look like a
+  Mac app where the OS sets the vocabulary. `working.html` never modelled the menu bar;
+  `-webkit-font-smoothing: antialiased` spoke about Synth's surfaces, not the process. No seam exists to
+  scope it (the wall that also stopped `.set-code`), so the override is gone and the ~12% gap between
+  app chrome and the design files is an accepted divergence — the cost of AppKit rather than WebKit
+  drawing the text. Remember two things it cost: the preference *persists*, so deleting the code is not
+  a revert until the key is deleted too; and the domain is *shared across worktrees* via `CFBundleName`
+  "Synth Dev", so another checkout still carrying the override rewrites it for everyone.

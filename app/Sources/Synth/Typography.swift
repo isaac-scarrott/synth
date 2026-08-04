@@ -50,22 +50,6 @@ enum Typography {
         return false
     }()
 
-    /// Matches the designs' `-webkit-font-smoothing: antialiased` by switching off **stem
-    /// darkening** — the dilation CoreGraphics applies on top of grayscale antialiasing. Both
-    /// sides were already antialiasing the same way (subpixel left macOS in Mojave); the
-    /// difference was purely weight, and it was not subtle: measured on the real AppKit drawing
-    /// path, darkening adds 11–15% more ink at our sizes, so identical nominal weights rendered
-    /// ~12% heavier in the app than in the design.
-    ///
-    /// Must run before the first glyph is drawn — `SynthMain` calls it ahead of `SynthApp.main()`.
-    /// It has to be the persistent domain, not `register(defaults:)`: CoreGraphics reads this key
-    /// through CFPreferences, which never consults NSUserDefaults' volatile registration domain.
-    static func matchDesignFontSmoothing() {
-        let key = "AppleFontSmoothing"
-        guard UserDefaults.standard.object(forKey: key) as? Int != 0 else { return }
-        UserDefaults.standard.set(0, forKey: key)
-    }
-
     static func nsFont(_ family: String, _ size: CGFloat, _ weight: Double, tabular: Bool = false) -> NSFont {
         guard available else {
             let fallback: NSFont = family == monoFamily

@@ -64,6 +64,20 @@ each one exists because the failure it catches is silent (see `docs/features/202
 
 Notarization waits on Apple, typically 5–10 minutes. That is normal; do not kill it.
 
+Two things in a healthy run look like failures and are not. `==> Verifying signature` prints
+Gatekeeper's verdict on a signed-but-not-yet-notarized app, which is `rejected` with
+`source=Unnotarized Developer ID` — that is the pass at that stage, and the script aborts if the
+rejection says anything else. The `spctl` after `==> Stapling` is the one that must be `accepted`.
+And `generate_appcast` emits a wall of `Warning: failed to move Synth-X.Y.Z.zip to old_updates …
+File exists` — it retires zips past its retention window into `releases/old_updates/` and a copy is
+already there from a previous run. Harmless. The recovery `sync` above is what puts them back, since
+it pulls every `Synth-*.zip` the bucket has, retired ones included.
+
+**Do not edit `release.sh` while it is running.** Bash reads a script incrementally as it executes,
+so rewriting the file mid-run resumes it at a byte offset that now lands in the middle of a
+different line. A ~20 minute run is mostly waiting on Apple, which is exactly when editing it is
+tempting. Wait for it to exit.
+
 ## Prove it landed
 
 The script's exit code is not proof. Verify as an outsider would — no credentials, quarantine set,

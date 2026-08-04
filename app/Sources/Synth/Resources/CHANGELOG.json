@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.25.0",
+    "date": "2026-08-04",
+    "changes": [
+      "In tabs mode a branch tells you what is inside it. Sessions live in the tab strip there, so the branch is the deepest row in the sidebar — it now spends the freed chevron space on a second line reading how many sessions it holds and what they are doing, instead of hiding the count in a tooltip. Pull-request state and the branch's most urgent session state sit in two fixed slots on the right, reserved even when empty, so nothing shifts as branches change. Classic sidebar mode is untouched."
+    ]
+  },
+  {
     "version": "0.24.0",
     "date": "2026-08-04",
     "changes": [

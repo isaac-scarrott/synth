@@ -127,22 +127,36 @@ struct SettingsPane: View {
                     switchControl(bind(\.analyticsEnabled))
                 }
             }
+            // Only the switch carries a description, and only the half of it you can't read off
+            // the controls: that the sweep touches nothing unrecoverable. Each picker states its
+            // own rule — a sentence under "Never · 7 · 14 · 30 days" would say it again, slower.
+            //
+            // Every row after the switch folds away when it's off: what remains has nothing to
+            // configure, and unlike the agent rows there's no field here whose absence would hide
+            // the way back.
             SetSection(label: "Archived worktrees") {
                 switchRow("Clean up archived worktrees",
-                          "Deletes an archived worktree's folder once it's merged, clean, and old enough. The git branch is never deleted.",
+                          "Only once the work is safely on a remote. The git branch is never deleted.",
                           bind(\.archiveSweepEnabled))
                 if store.archiveSweepEnabled {
                     SetDivider()
-                    SetEditorRow(label: "Wait before cleaning up",
-                                 desc: "How long an archived worktree sits untouched first. Its folder is then held aside for another two weeks before it is really deleted.") {
-                        Picker("", selection: bind(\.archiveGraceDays)) {
-                            Text("Never").tag(0)
-                            Text("7 days").tag(7)
-                            Text("14 days").tag(14)
-                            Text("30 days").tag(30)
-                        }
-                        .labelsHidden()
-                        .frame(width: 120)
+                    SetToggleRow(label: "Wait before cleaning up") {
+                        SetSeg(options: [(0, "Never"), (7, "7 days"), (14, "14 days"), (30, "30 days")],
+                               selection: bind(\.archiveGraceDays), width: SegWidth.four)
+                    }
+                    SetDivider()
+                    // A budget can only bring an unblocked folder's turn forward — it never lets
+                    // one through a gate. That fact is carried by the verdicts on the Archived
+                    // rows, where it is about a folder you can see, rather than asserted here as
+                    // a caption nobody reads twice.
+                    SetToggleRow(label: "Most worktrees archived") {
+                        SetSeg(options: [(10, "10"), (25, "25"), (50, "50"), (0, "No cap")],
+                               selection: bind(\.archiveMaxCount), width: SegWidth.four)
+                    }
+                    SetDivider()
+                    SetToggleRow(label: "Most disk archived") {
+                        SetSeg(options: [(20, "20 GB"), (50, "50 GB"), (100, "100 GB"), (0, "No cap")],
+                               selection: bind(\.archiveMaxGB), width: SegWidth.four)
                     }
                 }
             }
@@ -200,6 +214,7 @@ struct SettingsPane: View {
                     }
                 }
             }
+            SetSection(label: "Archived") { ArchivedWorktrees(workspace: ws) }
         }
     }
 
@@ -1003,17 +1018,217 @@ private struct TplHover<Content: View>: View {
     var body: some View { content(hovering).onHover { hovering = $0 } }
 }
 
-// MARK: - Appearance segmented control (working.html .seg)
+// MARK: - Archived worktrees (working.html .arc-*)
 
-private struct ThemeSeg: View {
+private extension AppStore {
+    /// The folder an archived row is actually costing. The sweeper renames a worktree aside
+    /// before it deletes it, so bytes read off the original path would be nothing for exactly
+    /// the rows closest to going.
+    func archivedFolder(_ branch: Branch) -> URL { heldFolder(for: branch) ?? branch.worktreeURL }
+
+    /// Measured bytes only: a folder still being walked contributes nothing rather than a guess.
+    func archivedBytes(_ branches: [Branch]) -> Int64 {
+        branches.reduce(0) { $0 + (FolderSizeCache.shared.bytes(for: archivedFolder($1)) ?? 0) }
+    }
+}
+
+/// Archiving only means "reversible" if the archive is somewhere you can stand and look at it.
+/// ⌘K can restore one you remember the name of; this is the list you read when you don't — and
+/// it is the only place the disk cost is visible, which is the whole reason to delete one early.
+private struct ArchivedWorktrees: View {
     @Environment(AppStore.self) private var store
+    let workspace: Workspace
+
+    var body: some View {
+        let branches = store.archivedBranches(in: workspace)
+        SetEditorRow(label: "Worktrees on disk",
+                     trailing: {
+                         if !branches.isEmpty {
+                             Text("\(branches.count) · \(FolderSize.format(store.archivedBytes(branches)))")
+                                 .font(.sans(12, tabular: true)).foregroundStyle(Theme.inkMuted)
+                         }
+                     }) {
+            if branches.isEmpty {
+                TplEmpty(text: "Nothing archived.")
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ArcList(branches: branches)
+                    ArcPolicy()
+                }
+            }
+        }
+        // Both land well after the pane is drawn and both dedupe themselves; the id re-runs them
+        // when a row is archived or restored while Settings is open.
+        .task(id: branches.map(\.id)) {
+            FolderSizeCache.shared.warm(branches.map { store.archivedFolder($0) })
+            store.refreshArchiveVerdicts()
+        }
+    }
+}
+
+private struct ArcList: View {
+    let branches: [Branch]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: TplMetrics.gap) {
+                ForEach(branches) { ArcRow(branch: $0) }
+            }
+            // the rows carry a ring; without the gutter the scrollbar sits on top of it
+            .padding(.trailing, 4)
+        }
+        // Four rows and a visibly cut fifth — the cut is the only honest scroll cue on a list
+        // whose scrollbar hides until you touch it.
+        .frame(maxHeight: TplMetrics.step * 4 + TplMetrics.rowHeight * 0.6)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct ArcRow: View {
+    @Environment(AppStore.self) private var store
+    let branch: Branch
+
+    private var eligible: Bool {
+        if case .eligible = store.archiveVerdict(branch) { return true }
+        return false
+    }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Phos(path: Phosphor.archive, size: 14).foregroundStyle(Theme.inkFaint).frame(width: 14)
+            // Everything to the right of the name is rigid, so the name is what gives up width:
+            // a reason clipped to "commits not pushed anywhe…" is worse than no reason at all,
+            // because it looks like the answer is somewhere else.
+            Text(branch.name)
+                .font(.sans(13, 500)).foregroundStyle(Theme.ink)
+                .lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(meta)
+                .font(.sans(11, tabular: true)).foregroundStyle(Theme.inkFaint).fixedSize()
+            if let chip = store.archiveVerdictChip(branch) { ArcWhy(text: chip, eligible: eligible) }
+            restoreButton
+            deleteButton
+        }
+        .padding(.horizontal, 9)
+        .frame(height: TplMetrics.rowHeight)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Theme.raised)
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.04), radius: 0.75, y: 1))
+    }
+
+    /// "4h ago · 1.2 GB" — the size only once the walk lands, because a folder claiming 0 MB is
+    /// worse than a folder claiming nothing.
+    private var meta: String {
+        let age = branch.archivedAt.map { relativeAge($0, now: Date()) } ?? ""
+        let when = age == "now" ? "just now" : "\(age) ago"
+        guard let bytes = FolderSizeCache.shared.bytes(for: store.archivedFolder(branch)) else { return when }
+        return "\(when) · \(FolderSize.format(bytes))"
+    }
+
+    private var restoreButton: some View {
+        Button { store.restoreArchivedBranch(branch) } label: {
+            Text("Restore")
+                .font(.sans(12, 500)).foregroundStyle(Theme.ink3)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5)))
+        }.buttonStyle(.plain)
+    }
+
+    private var deleteButton: some View {
+        TplHover { hovering in
+            Button {
+                // TODO(integrate): route through ⌘K's confirm frame
+                // (`store.requestDeleteArchivedWorktree`). Deleting the folder is the one thing
+                // on this row that doesn't come back, and its undo bar is a thinner brake than
+                // the confirmation this button is meant to open.
+                store.deleteWorktreeNow(branch)
+            } label: {
+                Phos(path: Phosphor.trash, size: 12)
+                    .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowSelected : Color.clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("Delete permanently")
+        }
+    }
+}
+
+/// Why this folder is still on disk. A blocked row is the normal, correct state — the sweeper
+/// protecting work — so it stays a quiet neutral chip; only the row that is about to go gets the
+/// accent, because that is the one worth catching before it does.
+private struct ArcWhy: View {
+    let text: String
+    let eligible: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.sans(10, 550))
+            .foregroundStyle(eligible ? Theme.inkOpen : Theme.inkMuted)
+            .lineLimit(1).fixedSize()
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Capsule().fill(eligible ? Theme.accent.opacity(0.12) : Theme.rowHover))
+    }
+}
+
+/// The budget is archive-wide but the list above is one project's, so the two numbers are shown
+/// apart — otherwise the row's own "7 · 7.3 GB" reads as the budget it is being measured against.
+/// Two ratios, no sentence: a cap you can't see coming is indistinguishable from folders
+/// vanishing at random, and which folders it has called early is already on their own rows.
+private struct ArcPolicy: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        // A budget with nothing to spend it on is a number, not a fact — the caps can only bring
+        // a folder's turn forward, and with the sweep off or the wait at Never no turn ever comes.
+        if store.archiveSweepEnabled, store.archiveGraceDays > 0, !parts.isEmpty {
+            Text("Archive-wide " + parts.joined(separator: " · "))
+                .font(.sans(11, tabular: true))
+                .foregroundStyle(Theme.inkFaint)
+                .padding(.top, 9)
+        }
+    }
+
+    private var parts: [String] {
+        let archived = store.workspaces.flatMap { $0.branches.filter(\.isArchived) }
+        var parts: [String] = []
+        if store.archiveMaxCount > 0 { parts.append("\(archived.count) / \(store.archiveMaxCount) worktrees") }
+        // both sides of a ratio share one unit — "7.8 GB / 50 GB" says GB twice to say it once
+        if store.archiveMaxGB > 0 {
+            parts.append(String(format: "%.1f / %d GB",
+                                Double(store.archivedBytes(archived)) / 1_073_741_824,
+                                store.archiveMaxGB))
+        }
+        return parts
+    }
+}
+
+// MARK: - Segmented control (working.html .seg / .set-seg)
+
+/// The house segmented picker: every option visible, the chosen one raised. Generic over what
+/// it picks because the theme and the three archive knobs are the same control with different
+/// tags — a second implementation would drift on the raised state within a release.
+private enum SegWidth {
+    static let three: CGFloat = 216
+    /// Four options in the width built for three wraps every label onto two lines.
+    static let four: CGFloat = 272
+}
+
+private struct SetSeg<Value: Hashable>: View {
+    let options: [(Value, String)]
+    @Binding var selection: Value
+    var width: CGFloat = SegWidth.three
+
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(ThemePref.allCases) { pref in
-                let on = store.themePref == pref
-                Button { store.themePref = pref } label: {
-                    Text(pref.label).font(.sans(12, 500))
+            ForEach(options.indices, id: \.self) { i in
+                let (value, label) = options[i]
+                let on = selection == value
+                Button { selection = value } label: {
+                    Text(label).font(.sans(12, 500))
                         .foregroundStyle(on ? Theme.repoName : Theme.inkMuted)
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .background(RoundedRectangle(cornerRadius: 6).fill(on ? Theme.raised : Color.clear)
                             .shadow(color: on ? Color.black.opacity(0.12) : .clear, radius: 1, y: 1)
@@ -1024,7 +1239,15 @@ private struct ThemeSeg: View {
             }
         }
         .padding(2).background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowSelected))
-        .frame(width: 216)
+        .frame(width: width)
+    }
+}
+
+private struct ThemeSeg: View {
+    @Environment(AppStore.self) private var store
+    var body: some View {
+        SetSeg(options: ThemePref.allCases.map { ($0, $0.label) },
+               selection: Binding(get: { store.themePref }, set: { store.themePref = $0 }))
     }
 }
 

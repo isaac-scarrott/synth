@@ -17,11 +17,13 @@ Sparkle is not in the loop. `automation.updateStage` runs the same store path th
 `willInstallUpdateOnQuit` runs, with an installer that records the ask instead of relaunching —
 otherwise proving Restart works would mean killing the instance under test.
 
-Reaching Restart is now a keyboard drive, not a card click: no verb activates a foot button, so
-this posts ⌘0 to take the keyboard back off the terminal, walks the cursor to the bottom of the
-nav run and one back up onto the update foot, and presses ↵ — the exact keys a user has. Landing
-the cursor is asserted before it is used, so a drive that never arrived reads as its own failure
-rather than as a broken Restart.
+Reaching Restart is a cursor drive, not a card click. `automation.navMove` / `navActivate` are the
+calls ↓/↑/↵ make, addressed directly: posted keys were tried first and never arrive, because bare
+j/k only reach the sidebar cursor once first responder has left the terminal, which a headless
+instance cannot be relied on to arrange. A foot button has no other way in either — it is not a
+session, so no `jump` addresses it, and it no longer has a card to act on. Landing the cursor is
+asserted before it is used, so a drive that never arrived reads as its own failure rather than as
+a broken Restart.
 """
 import sys, time, uuid
 sys.path.insert(0, ".")
@@ -65,16 +67,18 @@ def key(code, mods=(), chars=""):
 
 
 def cursor_to_update_foot():
-    """Walk the keyboard cursor onto the update foot, the way a hand would.
+    """Walk the keyboard cursor onto the update foot: down past the end, then one back up.
 
-    ⌘0 first: a terminal pane holds first responder, and bare j/k are the shell's until the
-    sidebar takes the keyboard back. Then j past the end — movement clamps on the last row, the
-    Settings foot — and one k up, which is where the update foot has to be if it is there at all.
+    `navMove` is the call ↓/↑ make, not a shortcut around them — movement clamps on the last row
+    (the Settings foot), so overshooting and stepping back up is exactly where the update foot has
+    to be if it is drawn at all. Posted keys were tried first and do not arrive: the sidebar cursor
+    only takes bare j/k once first responder has left the terminal, which a headless instance
+    cannot be relied on to arrange, and a foot button has no other way in — it is not a session, so
+    no `jump` addresses it, and it no longer has a card to act on.
     """
-    key(29, ("cmd",), "0")
     for _ in range(len(nav_rows()) + 1):
-        key(38, (), "j")
-    key(40, (), "k")
+        ctl("automation.navMove", delta=1)
+    ctl("automation.navMove", delta=-1)
     return wait(lambda: ctl("automation.nav").get("navCursor") == UPDATE_FOOT, 5, 0.2)
 
 
@@ -127,7 +131,7 @@ ctl("automation.newClaude")
 wait(lambda: busy_count() == 1, 30, 0.3)
 check("6. the keyboard reaches the update foot", bool(cursor_to_update_foot()),
       ctl("automation.nav").get("navCursor"))
-key(36, (), "\r")   # ↵ activates the row under the cursor
+ctl("automation.navActivate")   # ↵ activates the row under the cursor
 pal = wait(lambda: ctl("automation.palette").get("open") and ctl("automation.palette"), 10, 0.2)
 check("7. Restart with a live turn in flight asks first",
       pal and pal["crumb"] == "Restart Synth?", pal and pal.get("crumb"))
@@ -162,7 +166,7 @@ ctl("automation.notifDrain")
 wait(lambda: busy_count() == 0, 30, 0.3)
 clear()
 cursor_to_update_foot()
-key(36, (), "\r")
+ctl("automation.navActivate")
 check("13. with nothing busy, Restart goes straight to the install",
       wait(lambda: ctl("automation.updateStatus").get("installRequested") is True, 10, 0.2) is not None)
 # Nothing is left claiming a build is waiting — About falls back to "Up to date", and a force-quit

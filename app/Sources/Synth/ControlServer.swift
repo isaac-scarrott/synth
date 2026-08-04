@@ -597,6 +597,19 @@ final class ControlServer: @unchecked Sendable {
                          "unread": String(s.unread)]
                     }]
 
+        // ↓/↑ and ↵ on the sidebar cursor, as the key handler calls them. Posted NSEvents do
+        // reach a driven window for the palette, but the sidebar cursor is only reachable once
+        // first responder has left the terminal — which a headless instance can't be relied on to
+        // arrange, and a foot button has no other route in: it is not a session, so no `jump`
+        // addresses it, and it no longer has a notification card to act on.
+        case "automation.navMove" where automation:
+            store.moveCursor((request["delta"] as? NSNumber)?.intValue ?? 1)
+            return ["ok": true, "navCursor": store.navCursor?.uuidString ?? ""]
+
+        case "automation.navActivate" where automation:
+            store.activateCursor()
+            return ["ok": true]
+
         // The `d` shortcut and the ⌘K palette keys, addressable where TCC blocks
         // synthetic keystrokes — each verb is the exact call the key handler makes.
         case "automation.requestDelete" where automation:

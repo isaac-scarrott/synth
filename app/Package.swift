@@ -103,9 +103,12 @@ targets.append(
         // read at runtime (the shipped .app has no git repo); rides the same bundle copy.
         // Fonts (Typography.swift): the Geist + Geist Mono variable TTFs, registered with
         // CoreText at first use. .copy so the `wght` axis data lands untouched.
+        // opencode-theme.json (OpencodeTheme.swift): copied into the user's opencode config so its
+        // light half clears 4.5:1. .copy — opencode parses it, so it must land byte-identical.
         resources: [
             .copy("Resources/CommentOverlay.js"),
             .copy("Resources/CHANGELOG.json"),
+            .copy("Resources/opencode-theme.json"),
             .copy("Resources/Fonts"),
         ],
         linkerSettings: synthLinkerSettings

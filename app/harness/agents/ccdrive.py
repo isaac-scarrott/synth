@@ -20,6 +20,10 @@ import fcntl, json, os, pty, re, select, shutil, struct, termios, time, uuid
 
 CONFIG = os.path.expanduser("~/.claude.json")
 COLS, ROWS = 100, 44
+# Claude Code, started with no MCP servers so a gate measures the agent and not whatever the machine
+# happens to have connected. Passed by the caller, because they are Claude Code's flags alone —
+# opencode exits with a usage error on them.
+CLAUDE_ISOLATION = ["--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
 SESSION_ID = "5e17b0ad-0000-4000-8000-5ec70a1e0001"
 
 
@@ -39,19 +43,36 @@ def _is_shim(path):
     return ".app/" in real or "synth" in os.path.basename(real).lower()
 
 
-def claude_binary():
-    """The first `claude` on a login shell's PATH that is the CLI rather than Synth's shim."""
+def agent_binary(name, extra_dirs=()):
+    """The first `name` on PATH that is the real CLI rather than Synth's shim."""
     dirs = ([d for d in os.environ.get("PATH", "").split(":") if d]
-            + [os.path.expanduser(d) for d in INSTALL_HINTS])
+            + [os.path.expanduser(d) for d in list(INSTALL_HINTS) + list(extra_dirs)])
     seen = set()
     for d in dirs:
-        c = os.path.join(d, "claude")
+        c = os.path.join(d, name)
         if c in seen:
             continue
         seen.add(c)
         if os.path.isfile(c) and os.access(c, os.X_OK) and not _is_shim(c):
             return os.path.realpath(c)
     return ""
+
+
+def claude_binary():
+    return agent_binary("claude")
+
+
+def opencode_binary():
+    """opencode's own install first, then PATH.
+
+    Order matters twice over: a package-manager `opencode` on PATH is often a launcher script, which
+    runs the TUI fine but has no theme table inside it — and `t25` reads opencode's own theme out of
+    the binary to prove Synth only changed the light half.
+    """
+    native = os.path.expanduser("~/.opencode/bin/opencode")
+    if os.path.isfile(native) and os.access(native, os.X_OK):
+        return os.path.realpath(native)
+    return agent_binary("opencode", extra_dirs=["~/.npm-global/bin"])
 
 
 # ---------------------------------------------------------------------------- transcript fixture
@@ -173,15 +194,37 @@ def fixture_transcript(cwd, session_id=SESSION_ID):
 
 # ---------------------------------------------------------------------------- driven session
 
+Q_BG = re.compile(rb"\x1b\]11;\?(\x07|\x1b\\)")
+Q_FG = re.compile(rb"\x1b\]10;\?(\x07|\x1b\\)")
+# Ghostty's "the appearance changed" notification, which an app subscribes to with DEC mode 2031.
+NOTIFY_DARK = b"\x1b[?997;1n"
+NOTIFY_LIGHT = b"\x1b[?997;2n"
+
+
+def osc_colour(index, rgb):
+    """An OSC 10/11 reply in ghostty's form: 16-bit components, ST-terminated."""
+    r, g, b = rgb
+    return f"\x1b]{index};rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}\x1b\\".encode()
+
+
 class Session:
-    """A live claude under a pty, with the emulator fed as bytes arrive."""
+    """A live agent under a pty, with the emulator fed as bytes arrive.
+
+    Pass `surface` to answer the colour queries a real ghostty answers. This is not optional
+    politeness: opencode asks the terminal what colour it is (OSC 10/11) and falls back to its *dark*
+    theme when nothing replies, so a harness that only records output measures a screen no user ever
+    sees. That artefact is on record for Claude Code too (2026-07-27) — it is the single easiest way
+    to draw the wrong conclusion here.
+    """
 
     def __init__(self, home, args=(), env_extra=None, cols=COLS, rows=ROWS, emulator=None,
-                 cwd=None):
+                 cwd=None, binary=None, surface=None):
         self.home = home
         self.cols, self.rows = cols, rows
         self.em = emulator
-        binary = claude_binary()
+        self.surface = surface
+        self.answered = {"fg": 0, "bg": 0}
+        binary = binary or claude_binary()
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             # The working directory is not cosmetic: it is the key `seed_home` files the transcript
@@ -205,8 +248,7 @@ class Session:
                 env.pop(k, None)
             if env_extra:
                 env.update(env_extra)
-            os.execvpe(binary, [binary, "--strict-mcp-config",
-                                "--mcp-config", '{"mcpServers":{}}', *args], env)
+            os.execvpe(binary, [binary, *args], env)
         self.resize(cols)
 
     def resize(self, cols):
@@ -223,8 +265,26 @@ class Session:
                     return
                 if not b:
                     return
+                self._answer(b)
                 if self.em is not None:
                     self.em.feed(b)
+
+    def _answer(self, chunk):
+        """Reply to colour queries in this chunk, before the app gives up waiting on them."""
+        if self.surface is None:
+            return
+        for pattern, index, key, colour in ((Q_BG, 11, "bg", self.surface.bg),
+                                            (Q_FG, 10, "fg", self.surface.fg)):
+            for _ in pattern.findall(chunk):
+                try:
+                    os.write(self.fd, osc_colour(index, colour))
+                except OSError:
+                    return
+                self.answered[key] += 1
+
+    def notify_theme(self, dark):
+        """Announce an appearance change the way ghostty does, for apps that subscribe to 2031."""
+        os.write(self.fd, NOTIFY_DARK if dark else NOTIFY_LIGHT)
 
     def send(self, s, wait=0.6):
         os.write(self.fd, s.encode() if isinstance(s, str) else s)

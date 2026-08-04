@@ -18,9 +18,17 @@ pixels. Two suites, two questions; this one would lose its determinism the momen
 the wallpaper.
 
 Thresholds follow WCAG 2.1 by role, because holding a box-drawing border to the same floor as body
-text would fail every panel Claude Code draws and teach everyone to ignore the gate:
+text would fail every panel these agents draw and teach everyone to ignore the gate:
   • text — 4.5:1 (1.4.3, normal-size)
-  • chrome (box drawing, blocks, separators, spinner frames) — 3:1 (1.4.11, non-text contrast)
+  • chrome (box drawing, separators, arrows, markers, spinner frames) — 3:1 (1.4.11, non-text)
+  • fill — measured and reported, never gated
+
+`fill` is the role worth explaining. A block element (`█ ▀ ▐ ░`) painted in a flat colour is not a
+control or a boundary — it *is* a surface, and the contrast between two adjacent surfaces is not
+something WCAG asks for. opencode draws its input panel as a band of `▀` one shade off its own
+background (1.09:1) and reads perfectly well; Claude Code's mascot is a `▐███▌` silhouette. Gating
+those means either failing on accepted design or inventing per-glyph exemptions, so they are
+reported instead — and the same rule then covers both agents rather than one having a special case.
 """
 
 # Synth's light terminal surface, from TerminalTheme.swift. Kept as literals rather than parsed out
@@ -108,24 +116,30 @@ def contrast(a, b):
     return (hi + 0.05) / (lo + 0.05)
 
 
-# Glyphs that draw the interface rather than say anything: box drawing, block elements, geometric
-# shapes, braille spinners, and the arrows and bullets Claude Code uses as markers.
+# Glyphs that draw the interface rather than say anything: box drawing, geometric shapes, braille
+# spinners, and the arrows and bullets these agents use as markers.
 _CHROME_RANGES = [
     (0x2190, 0x21FF),   # arrows
     (0x2500, 0x257F),   # box drawing
-    (0x2580, 0x259F),   # block elements
     (0x25A0, 0x25FF),   # geometric shapes
     (0x2800, 0x28FF),   # braille (spinners)
     (0x2b00, 0x2bff),   # misc symbols and arrows
 ]
-_CHROME_EXTRA = set("─│┌┐└┘├┤┬┴┼╭╮╯╰╌╍┄┅━┃▔▁▏▕·•◦※⎿⏵⏸⧉✔✗✳❯❮…")
+_CHROME_EXTRA = set("─│┌┐└┘├┤┬┴┼╭╮╯╰╌╍┄┅━┃·•◦※⎿⏵⏸⧉✔✗✳❯❮…")
+
+# Block elements: a flat area of colour, which is a surface rather than a control. `▔▁▏▕` sit in
+# this range too and are used the same way — a hairline band of fill along one edge.
+_FILL_RANGE = (0x2580, 0x259F)
 
 
-def is_chrome(ch):
+def role(ch):
+    """Which floor this glyph answers to: "text", "chrome", or "fill" (reported, never gated)."""
     o = ord(ch)
-    if ch in _CHROME_EXTRA:
-        return True
-    return any(a <= o <= b for a, b in _CHROME_RANGES)
+    if _FILL_RANGE[0] <= o <= _FILL_RANGE[1]:
+        return "fill"
+    if ch in _CHROME_EXTRA or any(a <= o <= b for a, b in _CHROME_RANGES):
+        return "chrome"
+    return "text"
 
 
 class Run:
@@ -137,11 +151,12 @@ class Run:
 
     @property
     def floor(self):
-        return CHROME_FLOOR if self.kind == "chrome" else TEXT_FLOOR
+        """None for a fill — there is no ratio a surface owes the surface beside it."""
+        return {"text": TEXT_FLOOR, "chrome": CHROME_FLOOR}.get(self.kind)
 
     @property
     def ok(self):
-        return self.ratio >= self.floor
+        return self.floor is None or self.ratio >= self.floor
 
     def __str__(self):
         """Deliberately without the floor: the caller states which floor it is applying, and dark is
@@ -170,7 +185,7 @@ def runs(emulator, surface):
                     cur = None
                 continue
             fg, bg = surface.resolve(cell)
-            kind = "chrome" if is_chrome(cell.ch) else "text"
+            kind = role(cell.ch)
             key = (fg, bg, kind)
             if cur and cur[0] == key and cur[1] + len(cur[2]) == x:
                 cur[2].append(cell.ch)

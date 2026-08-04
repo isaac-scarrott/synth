@@ -57,8 +57,8 @@ enum AgentTheme {
     ///
     /// Every value keeps its token's hue and saturation and lowers only its lightness — the least
     /// change that clears the floor, so Claude Code still looks like Claude Code. Text is held to
-    /// 4.5:1 (WCAG 1.4.3) and the four non-text tokens to 3:1 (1.4.11): `promptBorder` and
-    /// `bashBorder` draw panels, `rate_limit_fill` is a bar, `clawd_body` is the mascot silhouette.
+    /// 4.5:1 (WCAG 1.4.3) and the non-text tokens to 3:1 (1.4.11): `promptBorder` and `bashBorder`
+    /// draw panels, `rate_limit_fill` is a bar.
     ///
     /// The worst offender is `subtle` at **2.06:1** — the dim grey every hint, timestamp and token
     /// count is written in, which is what "grey text on a white background" turns out to be.
@@ -69,7 +69,8 @@ enum AgentTheme {
     ///   • `*Shimmer` is the bright frame of a sweep across text already measured at rest
     ///   • `rainbow_*` is decoration that never carries meaning alone
     ///   • the background tokens are judged by what gets painted on them, not against the surface
-    ///   • `clawd_background` is the mascot's silhouette — brand artwork, not a contrast decision
+    ///   • `clawd_background` and `clawd_body` are the mascot — brand artwork, not a contrast
+    ///     decision, and a block-element silhouette is a surface rather than a control anyway
     ///   • `diffAddedWord` / `diffRemovedWord` read like foregrounds and are not: they are the fill
     ///     behind a changed *word* inside a diff line, and Claude Code paints black on them.
     ///     Deepening them to clear 4.5:1 as ink drove the ink *on* them from ~17:1 down to 4.28:1 —
@@ -81,7 +82,6 @@ enum AgentTheme {
         "chromeYellow": "#8f6b02",                      // 1.61 → 4.63
         "claude": "#ba502c",                            // 2.96 → 4.63
         "claudeBlue_FOR_SYSTEM_SPINNER": "#4c5ff6",     // 4.14 → 4.62
-        "clawd_body": "#d57251",                        // 2.96 → 3.11 (non-text)
         "cyan_FOR_SUBAGENTS_ONLY": "#077b97",           // 3.47 → 4.61
         "fastMode": "#bd4f00",                          // 2.70 → 4.62
         "green_FOR_SUBAGENTS_ONLY": "#12823b",          // 3.10 → 4.62
@@ -105,6 +105,10 @@ enum AgentTheme {
     /// each needless write to `~/.claude.json` is a chance to land on top of the agent's own save,
     /// while each needless write to the theme file wakes every running session's watcher.
     static func sync(dark: Bool, home: URL = defaultHome()) {
+        // opencode rides along here, but only for the ergonomics of one call site: its theme file
+        // carries both halves and opencode picks between them itself, so it has nothing to do with
+        // `dark` and nothing to redo when the appearance flips. See `OpencodeTheme`.
+        OpencodeTheme.sync(home: home)
         guard adopt(home: home) else { return }
         writeTheme(dark: dark, home: home)
     }

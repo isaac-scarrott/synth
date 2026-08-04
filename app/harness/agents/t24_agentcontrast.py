@@ -49,8 +49,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 AGENT_THEME = os.path.normpath(os.path.join(HERE, "../../Sources/Synth/Ghostty/AgentTheme.swift"))
 
 # Roles that are not text, and so answer to 3:1 rather than 4.5:1. Kept in step with the same split
-# in AgentTheme, and named here so a reader can see there are only four of them.
-NON_TEXT = {"promptBorder", "bashBorder", "clawd_body", "rate_limit_fill"}
+# in AgentTheme, and named here so a reader can see there are only three of them.
+NON_TEXT = {"promptBorder", "bashBorder", "rate_limit_fill"}
 
 # One colour on screen belongs to no theme at all. Forcing *every* token in the theme to magenta and
 # re-rendering left this one untouched, which is the proof: it is hard-coded in Claude Code, reaches
@@ -85,8 +85,8 @@ def render(base, overrides, tag, highlight=False):
     ccdrive.write_theme(home, base, overrides)
     em = ttygrid.Emulator(ccdrive.COLS, ccdrive.ROWS)
     env = {} if highlight else {"CLAUDE_CODE_SYNTAX_HIGHLIGHT": "0"}
-    s = ccdrive.Session(home, args=["--resume", ccdrive.SESSION_ID], emulator=em, env_extra=env,
-                       cwd=cwd)
+    s = ccdrive.Session(home, args=[*ccdrive.CLAUDE_ISOLATION, "--resume", ccdrive.SESSION_ID],
+                        emulator=em, env_extra=env, cwd=cwd)
     s.pump(SETTLE)
     return em, s, home
 

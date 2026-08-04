@@ -1639,3 +1639,20 @@ disclosure to dive deeper.
   `⌘,` hint (unchanged shortcut, still in ⌘? and ⌘K); a `Restart to update` row washed in the icon's
   champagne stands above it for as long as a downloaded build sits unapplied. The update notification
   card is gone — a waiting build never toasts, both its surfaces are pull. Both designs.
+- **opencode's light half stops being too pale; `agy` has no lever at all** — the same measurement run
+  against the other two agents, finding three different problems. **opencode's machinery already
+  works**: it asks the terminal its colour (OSC 10/11), enables DEC 2031, and re-themes a *running*
+  session on notification — the first reading, that it painted `#0a0a0a` on a light surface, was the
+  2026-07-27 harness artefact again (a pty that records output without answering makes it fall back to
+  dark). Its *values* were wrong: against the surfaces opencode paints for itself (it never lets the
+  terminal's show through, so `#f5f5f5` is the reference) `textMuted` sat at **3.17:1** and
+  `accent`/`warning` at **2.52:1**. Synth now installs `~/.config/opencode/themes/synth.json` with
+  **11 values deepened**, hue kept, dark half copied through — which `t25` proves by extracting
+  opencode's own theme from its binary and comparing rather than claiming. A partial theme *crashes*
+  opencode, so this is a fork that will drift, and the gate renders a real opencode so a stale key
+  fails loudly. **`agy` gets nothing**: it asks the terminal nothing, has no theme setting anywhere,
+  and paints hard-coded truecolor (`GetThemeMode` in its binary is Chrome DevTools, a red herring), so
+  `t26` pins at 2.70:1 and records `#4285f4` 3.35, `#d0d0d0` 1.45, and `#9296a1` 2.78 — that last one
+  Synth's own ANSI slot 7, a documented dead end: darkening it for agy's ink drops t13's
+  slot-7-as-a-fill from 4.5 to 3.64. `ccontrast` gained a **fill** role (block elements are surfaces,
+  not controls — reported, never gated), which retired the `clawd_body` override.

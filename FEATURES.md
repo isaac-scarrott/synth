@@ -1656,3 +1656,15 @@ disclosure to dive deeper.
   Synth's own ANSI slot 7, a documented dead end: darkening it for agy's ink drops t13's
   slot-7-as-a-fill from 4.5 to 3.64. `ccontrast` gained a **fill** role (block elements are surfaces,
   not controls — reported, never gated), which retired the `clawd_body` override.
+- **Correction: `agy` does have a colour-scheme setting, and its default is still the right one** — the
+  entry above claims it has none. It has **Color Scheme**, eight options with a live preview, invisible
+  from outside (not in `--help`, not a subcommand, absent from `settings.json` until changed) because it
+  lives in the interactive `/config` panel and persists as a plain `colorScheme` string. Synth still
+  writes nothing, for a better reason: **no option is accessible and the default is the best of them**.
+  On a real conversation, 168 runs, light surface — `terminal` 2 failing / worst text **1.45** (code
+  fence); `light` and `colorblind-friendly light` 4 failing / worst text 2.80; `solarized light` 5
+  failing. `terminal` wins because it draws most of its UI from the **ANSI palette** `TerminalTheme`
+  already tunes to 7:1 — Synth's palette beats agy's own light theme, so switching schemes discards it,
+  repairing the code fence while breaking the separator to 1.29:1 and adding two more: one bad value
+  traded for four. `t26` gains a fourth screen (the settings panel) and prints the Color Scheme row, so
+  an accessible scheme appearing upstream shows up rather than going unnoticed.

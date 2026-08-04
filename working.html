@@ -1384,7 +1384,10 @@
   .tabstrip {
     flex-shrink: 0;
     display: flex; align-items: center;
-    height: 42px;
+    /* 36px = the 32px split tray plus 2px — the same 2px the tray gives its own members, so the
+       strip is no deeper than the run it holds. At 42px the tray sat in 5px of vertical air against
+       a 3px gap to the tab beside it, and that mismatch is what read as "too much space up there". */
+    height: 36px;
     padding: 0 8px;
     /* no fill of its own, and no bottom rule: .content has already laid the translucent --panel
        down, and the chips are inset far enough off every edge that nothing needs a seam to stop at */

@@ -1711,3 +1711,12 @@ disclosure to dive deeper.
   staples on its own, not just the image around it, and every appcast enclosure including all 5 deltas
   carries an `edSignature`. Landing page unchanged — its buttons point at the stable `Synth.dmg` alias,
   so the alias moved under it and `synth-site` needed no push.
+- **The rail stops being deeper than the run it holds: 42px → 36px** — a split's tray sat in 5px of
+  vertical air top and bottom while the gap to the tab beside it was 3px, and that mismatch is what read
+  as too much space above the tab group. 36px is the 32px tray plus 2px — the same 2px the tray already
+  gives its own members, so the clearance around the run matches the clearance inside it. Nothing inside
+  the tray moved: 2px there is what keeps the tray's hairline off the active member's hairline, and taking
+  it to zero would leave the tray visible only in the 2px side gaps. **Cost, taken knowingly:** the chip
+  row is centred in the rail, so it rises 3px and now sits 7px (was 4px) above the centreline of the
+  traffic lights and the sidebar toggle. Those can't come up to meet it — AppKit fixes the lights'
+  vertical position — so the choice was a tight rail or an aligned top row, and tight won.

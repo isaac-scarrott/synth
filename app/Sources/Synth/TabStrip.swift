@@ -11,7 +11,7 @@ import SwiftUI
 /// pure presentation over the existing `open` / stash model. Only shown while `store.tabsMode`
 /// (ContentPane gates it).
 ///
-/// Tabs are **chips on a rail**: 28pt rounded chips inset off every edge of a 42pt strip. Nothing is
+/// Tabs are **chips on a rail**: 28pt rounded chips inset off every edge of a 36pt strip. Nothing is
 /// full-bleed, so there are no seams between tabs, no bar under the open one, and no fill reaching
 /// the sidebar's rounded corner — the open tab lifts off the rail as a card, and that elevation is
 /// the whole of "open". An unopened tab is its label and nothing else.
@@ -56,7 +56,9 @@ struct TabStrip: View {
                 PRChip(pr: pr).padding(.leading, 6).padding(.trailing, 12)
             }
         }
-        .frame(height: 42)
+        // 36 = the 32pt split tray plus 2 — the same 2 the tray gives its own members, so the rail is
+        // no deeper than the run it holds (working.html `.tabstrip`).
+        .frame(height: 36)
         // No fill and no bottom rule of its own: the shell root's coat is already under it, and the
         // chips are inset far enough off every edge that nothing needs a seam to stop at.
         .background(GeometryReader { g in

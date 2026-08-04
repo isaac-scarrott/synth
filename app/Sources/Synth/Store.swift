@@ -428,6 +428,26 @@ enum FeedbackMode {
     }
     static let archiveGraceKey = "synth-archive-grace-days"
 
+    /// How many archived worktrees may sit on disk at once, and how much disk they may occupy
+    /// between them. 0 is no cap on either.
+    ///
+    /// Archive-wide, not per project, because a disk is: three projects each politely under a
+    /// per-project cap still fill the same drive. And a cap is only ever a reason to look
+    /// sooner — over budget, the oldest UNBLOCKED folders stop waiting out the rest of their
+    /// grace and face the gate chain now. It cannot let one *through* a gate: `ArchiveSweeper`
+    /// promises every byte it reclaims is reconstructible from a remote, and a budget that
+    /// evicted the oldest folder regardless would be a hole straight through that. An archive
+    /// full of unpushed work stays over budget and says so on the rows.
+    var archiveMaxCount = AppStore.loadIntPref(AppStore.archiveMaxCountKey, default: 25) {
+        didSet { UserDefaults.standard.set(archiveMaxCount, forKey: AppStore.archiveMaxCountKey) }
+    }
+    static let archiveMaxCountKey = "synth-archive-max-count"
+
+    var archiveMaxGB = AppStore.loadIntPref(AppStore.archiveMaxGBKey, default: 50) {
+        didSet { UserDefaults.standard.set(archiveMaxGB, forKey: AppStore.archiveMaxGBKey) }
+    }
+    static let archiveMaxGBKey = "synth-archive-max-gb"
+
     /// Evaluate every condition, log the verdict, delete nothing. Defaults ON for the dev
     /// channel, so the author's own worktrees are never the test subjects.
     var archiveDryRun = AppStore.loadBoolPref(AppStore.archiveDryRunKey, default: isDevChannel) {
@@ -1954,12 +1974,15 @@ enum FeedbackMode {
 
     // MARK: Archive sweep
 
-    /// The last verdict the sweeper reached for each archived branch, so the ⌘K Archived list
-    /// can say *why* something is still on disk. Runtime-only — re-derived every tick.
-    @ObservationIgnored private var sweepVerdicts: [UUID: ArchiveSweeper.Verdict] = [:]
+    /// The last verdict the sweeper reached for each archived branch, so the Archived list can
+    /// say *why* something is still on disk. Runtime-only — re-derived every tick. Observed:
+    /// a tick lands minutes after the pane opened, and a verdict nothing re-renders for is a
+    /// verdict the user reads on their next visit.
+    private var sweepVerdicts: [UUID: ArchiveSweeper.Verdict] = [:]
     @ObservationIgnored private var sweepTask: Task<Void, Never>?
     @ObservationIgnored private var sweepInFlight = false
     @ObservationIgnored private var sweptThisLaunch = 0
+    @ObservationIgnored private var lastVerdictRefresh: Date?
 
     /// The ⌘K Archived row's ctx line. Deliberately just "when", not "why".
     ///
@@ -1982,6 +2005,68 @@ enum FeedbackMode {
         case .blocked(let r)?:     return r.rawValue
         case nil:                  return "unchecked"
         }
+    }
+
+    /// The sweeper's own last word on a branch, unfiltered — the harness and the logs read it
+    /// through `archiveReason`, surfaces read the two below.
+    func archiveVerdict(_ branch: Branch) -> ArchiveSweeper.Verdict? { sweepVerdicts[branch.id] }
+
+    /// The Archived row's chip, and the ⌘K ctx line under the same name.
+    ///
+    /// Both nil with the sweep off or the wait at Never: no turn ever comes then, so a
+    /// countdown or a "held aside next sweep" would be a promise nothing is going to keep.
+    func archiveVerdictChip(_ branch: Branch) -> String? { displayVerdict(branch)?.chip }
+    func archiveVerdictLine(_ branch: Branch) -> String? { displayVerdict(branch)?.line }
+
+    /// The stored verdict as the UI should read it. One correction: a branch the budget has
+    /// already called early must not still count down a grace it will not wait out. Its next
+    /// evaluation runs with no grace at all, and since a `.waiting` verdict clears
+    /// `lastCleanSweepEval`, the honest thing to say meanwhile is what that evaluation is
+    /// about to say — it is being checked.
+    private func displayVerdict(_ branch: Branch) -> ArchiveSweeper.Verdict? {
+        guard archiveSweepEnabled, archiveGraceDays > 0,
+              let verdict = sweepVerdicts[branch.id] else { return nil }
+        if case .waiting = verdict, archiveOverBudget().contains(branch.id) {
+            return .needsSecondOpinion
+        }
+        return verdict
+    }
+
+    /// Archived branches the budget has called early: the oldest unblocked ones, enough to get
+    /// back under both caps. Blocked ones still count toward the budget — they occupy the disk
+    /// — they just can't pay it down.
+    ///
+    /// Blockedness is last tick's verdict, which on the very first tick nobody has: the oldest
+    /// folders are called early, meet their gates, and the set corrects itself from the
+    /// verdicts that produces. Being called early costs a folder nothing but its grace.
+    func archiveOverBudget() -> Set<UUID> {
+        guard archiveSweepEnabled, archiveGraceDays > 0 else { return [] }
+        let entries = workspaces.flatMap { ws in
+            ws.branches.filter(\.isArchived).compactMap { branch -> ArchiveSweeper.BudgetEntry? in
+                guard let at = branch.archivedAt else { return nil }
+                return ArchiveSweeper.BudgetEntry(
+                    id: branch.id, archivedAt: at,
+                    bytes: FolderSizeCache.shared.bytes(for: branch.worktreeURL) ?? 0,
+                    blocked: sweepVerdicts[branch.id]?.block != nil)
+            }
+        }
+        return ArchiveSweeper.overBudget(entries, maxCount: archiveMaxCount,
+                                         maxBytes: Int64(archiveMaxGB) * 1_073_741_824)
+    }
+
+    /// Fill in the verdicts for a surface that has just opened, rather than making it wait out
+    /// the 90 seconds the repeating sweep spends letting `gh` and the network settle.
+    ///
+    /// Fire-and-forget, and debounced twice over: a tick is one `lsof` plus a `gh` per
+    /// candidate, and a SwiftUI pane asks for this on every re-render. Until one lands the
+    /// rows simply carry no chip, which is the right thing for "not measured yet" to look like.
+    func refreshArchiveVerdicts() {
+        guard archiveSweepEnabled, archiveGraceDays > 0, !sweepInFlight else { return }
+        if let last = lastVerdictRefresh, Date().timeIntervalSince(last) < 60 { return }
+        let archived = workspaces.flatMap { $0.branches.filter(\.isArchived) }
+        guard archived.contains(where: { sweepVerdicts[$0.id] == nil }) else { return }
+        lastVerdictRefresh = Date()
+        Task { [weak self] in await self?.sweepTick(force: true) }
     }
 
     /// Start the repeating sweep. Unlike `startAutosave` the handle is retained, so quit can
@@ -2045,6 +2130,15 @@ enum FeedbackMode {
         let grace = archiveGraceSeconds
         var eligible: [(Workspace, Branch, Int?)] = []
 
+        // The size cap has to work on a Synth whose owner never opened the Archived pane, so
+        // the tick warms the measurements itself. Deduped and off the main actor — the walk is
+        // paid once per folder per launch, and an archived folder's size doesn't move.
+        let archivedPaths = workspaces.flatMap { $0.branches.filter(\.isArchived).map(\.worktreeURL) }
+        FolderSizeCache.shared.warm(archivedPaths)
+        // Read once, before any verdict is rewritten, so every candidate this tick is judged
+        // against the same budget.
+        let calledEarly = archiveOverBudget()
+
         for ws in workspaces {
             for branch in archivedBranches(in: ws) {
                 // A clock that jumped backwards must never manufacture an expired grace.
@@ -2056,8 +2150,16 @@ enum FeedbackMode {
                     lastCleanEval: branch.lastCleanSweepEval,
                     hasSessions: !branch.sessions.isEmpty,
                     foreignInstancePaths: foreign)
-                let verdict = await runGit(repo: ws.url) {
+                var verdict = await runGit(repo: ws.url) {
                     ArchiveSweeper.evaluate(candidate, graceSeconds: grace, cwdPaths: cwdPaths)
+                }
+                // Over budget, this one's turn comes now instead of when its grace runs out —
+                // and "now" means the same evidence pass with the grace at zero, so every gate
+                // and the second-opinion rule still stand between it and being held aside.
+                if case .waiting = verdict, calledEarly.contains(branch.id) {
+                    verdict = await runGit(repo: ws.url) {
+                        ArchiveSweeper.evaluate(candidate, graceSeconds: 0, cwdPaths: cwdPaths)
+                    }
                 }
                 // The row may have been restored or deleted while git was answering.
                 guard let live = workspaces.first(where: { $0.id == ws.id })?

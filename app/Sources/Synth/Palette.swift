@@ -785,10 +785,15 @@ struct PaletteFrame {
     // Settings' trash opens this rather than growing a dialog of its own — which would only be a
     // second wording of one promise to keep in step. Hence the name + closure form
     // (`store.requestDeleteArchivedWorktree` is the way in from outside the palette).
+    // The consequence rides the note, not the placeholder, for the reason the restart confirm
+    // below already states: the placeholder ends with the way out, and a way out clipped by an
+    // input field is not one. That also buys room for the half this used to drop — the undo
+    // window, which is the difference between "gone" and "gone unless you say otherwise".
     func confirmDeleteWorktree(name: String, run: @escaping () -> Void) -> PaletteFrame {
         PaletteFrame(crumb: "Delete \(name)?",
-                     placeholder: "Deletes the worktree folder now. The git branch stays.  ↵ select · esc cancel",
-                     mode: .confirm) { [self] _ in
+                     placeholder: "↵ select · esc cancel",
+                     mode: .confirm,
+                     note: { _ in "Deletes the worktree folder now. The git branch stays, and you can undo for a few seconds after." }) { [self] _ in
             [
                 PaletteItem(icon: .phosphor(Phosphor.trash), label: "Delete worktree",
                             ctx: "removes the folder from disk", danger: true,

@@ -1984,13 +1984,15 @@ enum FeedbackMode {
     @ObservationIgnored private var sweptThisLaunch = 0
     @ObservationIgnored private var lastVerdictRefresh: Date?
 
-    /// The ⌘K Archived row's ctx line. Deliberately just "when", not "why".
+    /// The "when" half of an Archived row: how long ago it was put away.
     ///
-    /// Archiving is one simple idea to the user: this row is put away, and it can come back.
-    /// Whether the folder has yet been reclaimed — and which of two dozen conditions is
-    /// currently holding it — is housekeeping, and narrating it here would make a simple
-    /// action read like a system report. The reasons still exist and are still logged; they
-    /// come out through `archiveReason` for the harness and `os.Logger` for debugging.
+    /// This used to be the whole ctx line, on the argument that which of two dozen conditions
+    /// is holding a folder is housekeeping, and narrating it would make a simple action read
+    /// like a system report. What that missed is that the folder outliving its grace is the
+    /// question users actually arrive with — "why hasn't this been cleaned up yet" — and with
+    /// no answer on the row, the sweeper is a process deleting folders nobody can enumerate.
+    /// So the "why" now rides alongside it (`archiveVerdictLine`, composed by the palette's
+    /// `archivedCtx`), and this returns its first half.
     func archiveStatusLine(_ branch: Branch) -> String {
         guard let at = branch.archivedAt else { return "" }
         return "archived " + relativeAge(at, now: Date())

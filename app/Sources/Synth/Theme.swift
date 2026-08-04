@@ -105,7 +105,7 @@ enum Theme {
     /// it fails contrast on white — so light takes a copper of the same warm family (4.78:1).
     /// Spent only on focus, selection, the ⌘K active row and the open-session tint.
     static let accent      = dyn(0xA86038, 0xEEE0CD)
-    /// The mark's own pair — charcoal on light, champagne on dark (--focus): the active tab's bar.
+    /// The mark's own pair — charcoal on light, champagne on dark (--focus).
     static let focus       = dyn(0x1E2126, 0xEEE0CD)
     /// The app icon's champagne, worn only by the waiting-build foot button — which is why it is
     /// not an accent: the accents mean states, this means Synth itself. Like `accent` it flips per

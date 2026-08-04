@@ -49,7 +49,7 @@ struct TabStrip: View {
             // Served its full ask before the spacer and the PR chip, so the tabs get the room and the
             // slack lands on the right — an even split would starve them the moment a PR chip appears.
             .layoutPriority(1)
-            Spacer(minLength: 8)
+            Spacer(minLength: 0)
             // The per-pane header is gone in tabs mode, so the branch's PR relocates here,
             // right-aligned (working.html `.tabstrip__pr`).
             if let pr = branch?.pr {
@@ -145,7 +145,7 @@ private struct TabChip: View {
                         TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
                         Text(session.title)
                             .font(.sans(12, 500))
-                            .foregroundStyle(isActive ? Theme.inkOpen : Theme.inkMuted)
+                            .foregroundStyle(isActive ? Theme.ink : Theme.inkMuted)
                             .lineLimit(1).truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         indicator
@@ -164,6 +164,7 @@ private struct TabChip: View {
         .frame(minWidth: 34, maxWidth: 200)
         .frame(height: 28)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.11), value: hovering)
         .tabDrag(session)
         // Right-click opens the same ⌘K frame the sidebar row's ⋯ / right-click opens (openRowActions).
         .onSecondaryClick { store.openRowActions(.session(session)) }
@@ -216,9 +217,11 @@ private struct TabIcon: View {
             .frame(width: size, height: size)
             .overlay(alignment: .topTrailing) {
                 if session.unread {
+                    // 6pt of blue with the 1.5pt ring OUTSIDE it (working.html's box-shadow spread,
+                    // 9pt overall) — an inset strokeBorder would eat half the dot.
                     Circle().fill(Theme.input)
                         .frame(width: 6, height: 6)
-                        .overlay(Circle().strokeBorder(ring, lineWidth: 1.5))
+                        .background(Circle().fill(ring).frame(width: 9, height: 9))
                         .offset(x: 3, y: -2)
                 }
             }
@@ -269,10 +272,10 @@ private struct TabCloseButton: View {
         // × closes through the same confirm/close path as ⌘W (confirms while busy).
         Button { store.requestDelete(.session(session)) } label: {
             Phos(path: Phosphor.close, size: 11)
-                .foregroundStyle(hovering ? Theme.ink2 : Theme.inkFaint)
+                .foregroundStyle(hovering ? Theme.ink : Theme.inkFaint)
                 .frame(width: 16, height: 16)
-                .padding(.leading, 1)
                 .background(RoundedRectangle(cornerRadius: 4).fill(hovering ? Theme.rowHover : .clear))
+                .padding(.leading, 1)   // outside the pill, so the glyph stays centred in its 16pt
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -381,11 +384,13 @@ private struct FlexRow: Layout {
         var over = w.reduce(0, +) + gaps(count) - available
         var elastic = (0..<count).filter { w[$0] - cache.floor[$0] > 0.5 }
         while over > 0.5, !elastic.isEmpty {
-            let basis = elastic.reduce(0.0) { $0 + w[$1] }
+            // weighted by the IDEAL, not the already-shrunk width — flex re-runs against the base
+            // size every pass and only freezes items, it never re-bases on what it has taken
+            let basis = elastic.reduce(0.0) { $0 + cache.ideal[$1] }
             guard basis > 0.5 else { break }
             var spent: CGFloat = 0
             for i in elastic {
-                let take = Swift.min(over * w[i] / basis, w[i] - cache.floor[i])
+                let take = Swift.min(over * cache.ideal[i] / basis, w[i] - cache.floor[i])
                 w[i] -= take
                 spent += take
             }

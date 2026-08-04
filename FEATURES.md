@@ -1605,3 +1605,7 @@ disclosure to dive deeper.
 - **Tabs-mode branches carry their session facts without growing a third tree level** — the branch
   row becomes a 46px two-line summary (`N sessions · activity`) with a fixed PR/status rail; classic
   sidebar mode keeps its original compact disclosure row. Both designs + native app.
+- **The pre-notarization Gatekeeper check asserts *why*** — `spctl`'s expected `rejected` before
+  notarization was indistinguishable from a broken-build `rejected` because the line ended in
+  `|| true`; it now requires `source=Unnotarized Developer ID` and dies on anything else, and says
+  so in the log. Release skill also records: never edit `release.sh` mid-run.

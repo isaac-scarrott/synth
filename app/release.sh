@@ -63,10 +63,15 @@ SYNTH_NO_INSTALL=1 ./dist.sh
 APP="build/Synth.app"
 echo "==> Verifying signature"
 codesign --verify --deep --strict --verbose=2 "$APP"
-# Gatekeeper's own verdict, not just codesign's. Pre-notarization this reports "rejected"
-# with source=Unnotarized Developer ID — that is the expected answer here, and the check
-# exists to catch the other failures (unsigned nested code, missing hardened runtime).
-spctl --assess --type execute --verbose=4 "$APP" 2>&1 | sed 's/^/    /' || true
+# Gatekeeper's own verdict, not just codesign's. Pre-notarization the only passing answer is
+# "rejected" with source=Unnotarized Developer ID. The failures worth catching here — unsigned
+# nested code, missing hardened runtime — are *also* a "rejected", so printing the verdict and
+# moving on could not tell them apart: assert the reason, or this line is decoration.
+GATEKEEPER="$(spctl --assess --type execute --verbose=4 "$APP" 2>&1 || true)"
+echo "$GATEKEEPER" | sed 's/^/    /'
+grep -q "source=Unnotarized Developer ID" <<<"$GATEKEEPER" \
+  || die "Gatekeeper rejected the build for a reason other than being unnotarized (above) — not a notarization problem"
+echo "    (expected: it is not notarized yet — the assess after stapling is the one that must be accepted)"
 
 echo "==> Notarizing (this uploads $(du -h build/Synth.zip | cut -f1) and waits on Apple)"
 xcrun notarytool submit build/Synth.zip --keychain-profile "$NOTARY_PROFILE" --wait

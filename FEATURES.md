@@ -1553,6 +1553,27 @@ disclosure to dive deeper.
   offering `git init` (4–1) — the usual mistake is the *wrong folder*, so one click makes a slip
   permanent, and `init` alone leaves no branch, so Synth would have to author the first commit too;
   plain folders as a second kind of project. Gate: `t23_projectgate`.
+- **Synth 0.23.0 shipped (build 478)** — a minor led by the typeface: Geist on a six-step scale with
+  the designs' own tracking, leading, weights and stem darkening. Plus four kept promises — a close
+  hands off to its neighbour in the same branch, an archived branch always has a way back, a project
+  must be a git repository with a branch (refused at the picker, subdirectories resolved to the
+  root), and a notification's × closes it wherever you click it — and two invisible fixes shipped as
+  changelog lines because their absence was noticed: escaped-process reaping and the launch crash on
+  a moved or unmounted project folder. Notarized + stapled (zip + dmg), verified credential-less on
+  the quarantined downloads (both Notarized Developer ID, the app inside the dmg staples on its own,
+  bundle reads 0.23.0 / 478, bundled changelog leads with 0.23.0); appcast newest `sparkle:version`
+  478 / `0.23.0`, all 18 enclosures EdDSA-signed, 5 deltas against 458/433/425/418/413 (1.1M from the
+  previous build against a 131M download). Landing links unchanged, no site republish.
+- **…and stem darkening back on: the menu bar is not ours to restyle** — reverses the entry above, same
+  day. `AppleFontSmoothing` is read per *process*, so switching it off thinned Synth's own menu bar
+  along with its chrome, and a menu ~12% lighter than every other app's is Synth failing to look like a
+  Mac app where the OS sets the vocabulary. `working.html` never modelled the menu bar;
+  `-webkit-font-smoothing: antialiased` spoke about Synth's surfaces, not the process. No seam exists to
+  scope it (the wall that also stopped `.set-code`), so the override is gone and the ~12% gap between
+  app chrome and the design files is an accepted divergence — the cost of AppKit rather than WebKit
+  drawing the text. Remember two things it cost: the preference *persists*, so deleting the code is not
+  a revert until the key is deleted too; and the domain is *shared across worktrees* via `CFBundleName`
+  "Synth Dev", so another checkout still carrying the override rewrites it for everyone.
 
 ## [2026-08-04](docs/features/2026-08-04.md)
 

@@ -2255,6 +2255,10 @@ enum FeedbackMode {
     /// instance under test vanishing.
     func stageStubUpdate(version: String) {
         updateInstall = { [weak self] in self?.updateInstallRequested = true }
+        // Cleared per staging, not per install: the flag records "Restart reached the installer",
+        // and a second stage-and-assert cycle in one instance would otherwise read the previous
+        // cycle's answer before Restart was pressed.
+        updateInstallRequested = false
         stagedUpdate = StagedUpdate(version: version)
     }
 

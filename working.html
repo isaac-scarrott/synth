@@ -2299,7 +2299,9 @@
   @keyframes foot-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .foot-btn--update svg { color: var(--update-ink); }
   .foot-btn--update span { font-weight: 600; }
-  .foot-btn--update .foot-btn__meta { color: var(--ink-4); }
+  /* the meta is a span too, so `.foot-btn span` and the 600 above both reach it — restated here
+     to keep the version at the trailing slot's own quiet 11/500 rather than the label's size */
+  .foot-btn--update .foot-btn__meta { font-size: 11px; font-weight: 500; color: var(--ink-4); }
   @media (hover: hover) and (pointer: fine) {
     .foot-btn--update:hover { background: rgba(var(--update-rgb),0.2); color: var(--ink); }
     .foot-btn--update:hover svg { color: var(--update-ink); }
@@ -7848,7 +7850,7 @@
     + sec('Agent defaults', AGENTS.map(agentRow).join(''))
     + sec('Privacy', row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics')))
     + sec('Experimental', row('Tabs', desc("Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview."), switchCtl(tabsMode, 'tabs')))
-    // The row and the card are one fact seen twice, so About states the update outright and
+    // The row and the foot button are one fact seen twice, so About states the update outright and
     // offers the same Restart rather than a Check that would only re-find what is already here.
     + sec('About', update.version
         ? row('Synth ' + APP_VERSION + ' (317)', desc('Synth ' + update.version + ' is ready · installs when you quit'),

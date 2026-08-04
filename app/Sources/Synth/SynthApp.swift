@@ -411,8 +411,8 @@ struct RootView: View {
                 }
                 return nil
             }
-            // ⌥U stages a build (working.html's ⌥U demo); pressing it again winds the clock on a
-            // day, so the daily reminder can be read as it will actually arrive.
+            // ⌥U toggles a waiting build (working.html's ⌥U demo), so both foot states — the
+            // update button standing above Settings, and Settings alone — are readable in turn.
             if !editing, event.modifierFlags.contains(.option), event.keyCode == 32 {
                 store.debugStageUpdate(); return nil
             }

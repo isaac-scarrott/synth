@@ -112,6 +112,7 @@ private struct EmptySidebarHint: View {
 /// there is, and both are pull.
 private struct SidebarFoot: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // A foot button is a row of the navigable list, so it shows the same keyboard selection
     // ring as a tree row when the cursor rests on it (F5).
     private func selected(_ id: UUID) -> Bool { store.keyboardActive && store.navCursor == id }
@@ -121,11 +122,16 @@ private struct SidebarFoot: View {
                 FootButton(icon: Phosphor.arrowCircleDown, title: "Restart to update",
                            meta: update.version, selected: selected(NavID.updateFoot),
                            waiting: true) { store.restartForUpdate() }
+                    // It rises in rather than appearing (working.html `foot-in`, 220ms ease-out
+                    // + 6px), the same entrance a notification card makes — a button that pops
+                    // into the one strip of chrome always on screen reads as a glitch.
+                    .transition(.opacity.combined(with: .offset(y: 6)))
             }
             FootButton(icon: Phosphor.gear, title: "Settings",
                        selected: selected(NavID.settingsFoot),
                        active: store.settingsOpen) { store.toggleSettings() }
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: store.stagedUpdate?.version)
         .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
         .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }

@@ -1050,8 +1050,9 @@ private struct AboutRow: View {
                 aboutButton(checking ? "Checking…" : "Check for updates") {
                     // A real build asks Sparkle, and a check you asked for answers in its own
                     // window. A dev build has no updater, so it stages a demo build instead —
-                    // checking by hand has to be able to end in the card, or the dev channel is
-                    // the one place this feature can never be seen.
+                    // checking by hand has to land where finding one on its own lands, the foot
+                    // button and this row flipping to Restart, or the dev channel is the one
+                    // place this feature can never be seen.
                     if let updater = Updates.controller?.updater { updater.checkForUpdates(); return }
                     checking = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {

@@ -82,7 +82,7 @@ indirect enum PersistedPaneNode: Codable {
 
 struct PersistedSession: Codable {
     var id: UUID
-    var kind: String            // SessionKind.rawValue ("terminal" / "browser" / an AgentID)
+    var kind: String            // SessionKind.rawValue ("terminal" / "browser" / "simulator" / an AgentID)
     var title: String
     var titleIsCustom: Bool
     /// The agent's own conversation id, used to resume on restore.
@@ -96,6 +96,11 @@ struct PersistedSession: Codable {
     /// The owning agent row's id for a contained browser (ADR-0011 stage four).
     /// Optional/omitted when unowned so pre-containment snapshots decode unchanged.
     var ownerSessionID: UUID?
+    /// The device a simulator session claims, by UDID (ADR-0015) — a restored row reclaims
+    /// and reboots the same device. Optional/omitted so a pre-simulator snapshot decodes and
+    /// every other session kind adds no key (additive, so `version` stays 1 — a bump would
+    /// throw the whole snapshot away).
+    var simulatorUDID: String?
 }
 
 extension PersistedSession {

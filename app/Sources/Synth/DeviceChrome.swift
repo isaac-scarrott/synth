@@ -1,10 +1,13 @@
 import AppKit
 import SwiftUI
 
-// The device a page is previewed on (working.html `.dev` / `.devui__*`): the hardware
-// around the screen, and the software the device itself draws on it — status bar, its own
-// browser's bars, home indicator. The live page gets what those leave, which is the point:
-// a page handed the whole 393 × 852 passes layouts no iPhone ever gives that room.
+// The device a screen is shown on (working.html `.dev` / `.devui__*`), in two halves that
+// the mock already splits: `DeviceFrame` is the hardware around the glass, and what goes
+// on the glass is handed in. For an emulated page that content is `BrowserDeviceScreen` —
+// the software the device itself draws, status bar, its own browser's bars, home indicator
+// — with the live page taking what those leave, which is the point: a page handed the whole
+// 393 × 852 passes layouts no iPhone ever gives that room. For a booted simulator it is the
+// live framebuffer and nothing else, because iOS paints all of that into the frames itself.
 //
 // Every metric is a device point multiplied by the stage's fit scale, so the frame draws
 // crisp at any fit instead of rasterising through a scaleEffect.
@@ -57,24 +60,29 @@ private struct StatusIcon: View {
 
 // MARK: - Frame
 
-/// working.html `.dev`: the hardware around the screen — bezel per edge, the cutout the
-/// display is punched around, and the side buttons standing proud of the rail.
-struct DeviceFrame: View {
-    let device: BrowserDevice
+/// working.html `deviceHTML(d, land, screenHTML)`: the hardware around the screen — bezel
+/// per edge, the cutout the display is punched around, and the side buttons standing proud
+/// of the rail — with whatever goes on the glass handed in.
+///
+/// It draws only what the hardware has and the screen cannot: body, bezel, cutout shape,
+/// buttons, radii, shadow. Anything a screen paints for itself belongs in the content, so
+/// one frame serves an emulated page (whose device software we draw) and a live simulator
+/// (whose iOS draws its own) without either doubling the other's chrome.
+struct DeviceFrame<Screen: View>: View {
+    let device: HardwareDevice
     let landscape: Bool
-    /// What the device's own address bar shows.
-    let host: String
     /// The stage's fit scale.
     let s: CGFloat
-    let engineView: NSView
+    /// What sits on the glass, laid out at the screen's full size.
+    @ViewBuilder let screen: Screen
 
     var body: some View {
         let bez = device.bezels(landscape: landscape)
-        let screen = device.screenSize(landscape: landscape)
-        let frameSize = CGSize(width: (screen.width + bez.leading + bez.trailing) * s,
-                               height: (screen.height + bez.top + bez.bottom) * s)
-        display
-            .frame(width: screen.width * s, height: screen.height * s)
+        let glass = device.screenSize(landscape: landscape)
+        let frameSize = CGSize(width: (glass.width + bez.leading + bez.trailing) * s,
+                               height: (glass.height + bez.top + bez.bottom) * s)
+        screen
+            .frame(width: glass.width * s, height: glass.height * s)
             .background(DeviceInk.glass)
             .clipShape(RoundedRectangle(cornerRadius: device.screenRadius * s,
                                         style: .continuous))
@@ -93,49 +101,6 @@ struct DeviceFrame: View {
                                          s: s, frameSize: frameSize) }
             .shadow(color: .black.opacity(0.30), radius: 22 * s, y: 16 * s)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// The display's stack: the device's own bars, with the live page taking what's left.
-    @ViewBuilder private var display: some View {
-        let page = device.pageViewport(landscape: landscape)
-        VStack(spacing: 0) {
-            if showsStatusBar { DeviceStatusBar(device: device, s: s) }
-            topBar
-            DeviceScreenHost(engineView: engineView)
-                .frame(height: page.height * s)
-            bottomBar
-            if standaloneHomeIndicator {
-                DeviceHomeIndicator(device: device, s: s)
-            }
-        }
-    }
-
-    /// Landscape iPhone drops the status bar — the reason a page gets height back there.
-    private var showsStatusBar: Bool {
-        !(device.onScreen == .safariPhone && landscape)
-    }
-
-    @ViewBuilder private var topBar: some View {
-        switch device.onScreen {
-        case .safariPad:
-            SafariPadBar(host: host, s: s)
-        case .chromeAndroid:
-            ChromeAndroidBar(host: host, s: s)
-        case .safariPhone:
-            if landscape { SafariPhoneTopBar(device: device, host: host, s: s) }
-        }
-    }
-
-    @ViewBuilder private var bottomBar: some View {
-        if device.onScreen == .safariPhone, !landscape {
-            SafariPhoneBottomBar(device: device, host: host, s: s)
-        }
-    }
-
-    /// Portrait Safari draws the indicator on its own bar; everywhere else it rides over
-    /// the page.
-    private var standaloneHomeIndicator: Bool {
-        device.homeIndicatorHeight > 0 && !(device.onScreen == .safariPhone && !landscape)
     }
 
     // MARK: Cutout
@@ -173,7 +138,7 @@ struct DeviceFrame: View {
     // MARK: Bezel hardware
 
     /// The earpiece, front camera and home button a device carries in the bezel itself.
-    @ViewBuilder private func bezelHardware(bez: BrowserDevice.Bezel) -> some View {
+    @ViewBuilder private func bezelHardware(bez: HardwareDevice.Bezel) -> some View {
         switch device.face {
         case .homeButton:
             ZStack {
@@ -197,7 +162,7 @@ struct DeviceFrame: View {
 
     /// Centres a piece of hardware in one bezel band, optionally slid along it.
     @ViewBuilder private func bezelItem<Content: View>(
-        band: BezelBand, bez: BrowserDevice.Bezel, along: CGFloat = 0,
+        band: BezelBand, bez: HardwareDevice.Bezel, along: CGFloat = 0,
         @ViewBuilder _ content: () -> Content
     ) -> some View {
         let thickness: CGFloat = {
@@ -242,37 +207,13 @@ struct DeviceFrame: View {
     }
 }
 
-/// The engine hosted inside the glass. The page no longer reaches the screen's corners —
-/// the device's own bars sit above and below it — so the clip is the frame's job, not a
-/// radius on the AppKit container.
-private struct DeviceScreenHost: NSViewRepresentable {
-    let engineView: NSView
-
-    func makeNSView(context: Context) -> NSView {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.masksToBounds = true
-        engineView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(engineView)
-        NSLayoutConstraint.activate([
-            engineView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            engineView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            engineView.topAnchor.constraint(equalTo: container.topAnchor),
-            engineView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        return container
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
 // MARK: - Side buttons
 
 /// The rail's own hardware. Positions are fractions of the device's long axis; rotating
 /// counter-clockwise walks each button one edge round — the trailing edge (power) becomes
 /// the top one, the leading edge (volume) the bottom.
 private struct DeviceSideButtons: View {
-    let device: BrowserDevice
+    let device: HardwareDevice
     let landscape: Bool
     let s: CGFloat
     let frameSize: CGSize
@@ -353,12 +294,95 @@ private struct DeviceSideButtons: View {
     }
 }
 
+// MARK: - The browser's screen
+
+/// working.html `deviceScreenHTML(d, land, host)`: what the *device's own software* puts on
+/// the glass when the screen is showing an emulated page — its status bar, its browser's
+/// bars, its home indicator — with the live page taking the room those leave. It is a
+/// screen's content, not hardware, which is why it is a separate view from `DeviceFrame`:
+/// a simulator's iOS draws all of this itself and must not get ours on top.
+struct BrowserDeviceScreen: View {
+    let device: HardwareDevice
+    let landscape: Bool
+    /// What the device's own address bar shows.
+    let host: String
+    /// The stage's fit scale — the same one the frame is drawn at.
+    let s: CGFloat
+    let engineView: NSView
+
+    var body: some View {
+        let page = device.pageViewport(landscape: landscape)
+        VStack(spacing: 0) {
+            if showsStatusBar { DeviceStatusBar(device: device, s: s) }
+            topBar
+            DeviceScreenHost(view: engineView)
+                .frame(height: page.height * s)
+            bottomBar
+            if standaloneHomeIndicator {
+                DeviceHomeIndicator(device: device, s: s)
+            }
+        }
+    }
+
+    /// Landscape iPhone drops the status bar — the reason a page gets height back there.
+    private var showsStatusBar: Bool {
+        !(device.onScreen == .safariPhone && landscape)
+    }
+
+    @ViewBuilder private var topBar: some View {
+        switch device.onScreen {
+        case .safariPad:
+            SafariPadBar(host: host, s: s)
+        case .chromeAndroid:
+            ChromeAndroidBar(host: host, s: s)
+        case .safariPhone:
+            if landscape { SafariPhoneTopBar(device: device, host: host, s: s) }
+        }
+    }
+
+    @ViewBuilder private var bottomBar: some View {
+        if device.onScreen == .safariPhone, !landscape {
+            SafariPhoneBottomBar(device: device, host: host, s: s)
+        }
+    }
+
+    /// Portrait Safari draws the indicator on its own bar; everywhere else it rides over
+    /// the page.
+    private var standaloneHomeIndicator: Bool {
+        device.homeIndicatorHeight > 0 && !(device.onScreen == .safariPhone && !landscape)
+    }
+}
+
+/// An AppKit view pinned to fill its slice of the glass — the browser engine on a page, a
+/// simulator's framebuffer layer on a live device. The corners are the frame's clip, not a
+/// radius here: content rarely reaches them, since the device's own bars usually do.
+struct DeviceScreenHost: NSViewRepresentable {
+    let view: NSView
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.masksToBounds = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 // MARK: - Status bar
 
 /// working.html `.devui__status`: the time, then the cellular / wifi / battery trio,
 /// parting around the island rather than running under it.
 private struct DeviceStatusBar: View {
-    let device: BrowserDevice
+    let device: HardwareDevice
     let s: CGFloat
 
     var body: some View {
@@ -383,7 +407,7 @@ private struct DeviceStatusBar: View {
 
 /// working.html `.devui__home`: software, so it rides over whatever is beneath it.
 private struct DeviceHomeIndicator: View {
-    let device: BrowserDevice
+    let device: HardwareDevice
     let s: CGFloat
 
     var body: some View {
@@ -432,7 +456,7 @@ private struct SafariPill: View {
 /// `.devui__safari`: portrait iPhone Safari — the tab bar at the bottom, the toolbar under
 /// it, the home indicator on the same fill.
 private struct SafariPhoneBottomBar: View {
-    let device: BrowserDevice
+    let device: HardwareDevice
     let host: String
     let s: CGFloat
 
@@ -473,7 +497,7 @@ private struct SafariPhoneBottomBar: View {
 /// `.devui__safari--top`: landscape iPhone folds every control into one top bar, and the
 /// island takes an edge, so the bar insets clear of it.
 private struct SafariPhoneTopBar: View {
-    let device: BrowserDevice
+    let device: HardwareDevice
     let host: String
     let s: CGFloat
 

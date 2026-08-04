@@ -20,6 +20,10 @@ import Foundation
 ///        exactly as deleting its row would; anything it doesn't own is refused)
 ///   {"verb":"app.worktreeCreate", …} — the synth-app server's approval-gated create;
 ///     documented on `worktreePrompt` below (it blocks on the user, unlike everything here).
+///   {"verb":"simulator.*", …} — the synth-simulator server's verbs, in SimulatorControl.
+///     Unlike the browser there is no second channel: ADR-0015 routes EVERY simulator verb over
+///     this socket, because the app holds the warm Indigo session and the framebuffer, so a tool
+///     call drives the same device through the same source the user's pointer does.
 final class ControlServer: @unchecked Sendable {
     let socketPath = InstanceRegistry.controlSocketPath
     private weak var store: AppStore?
@@ -91,6 +95,17 @@ final class ControlServer: @unchecked Sendable {
         if request["verb"] as? String == "app.worktreeCreate" {
             // The one verb that waits on the user — it parks THIS thread, never main.
             response = Self.worktreePrompt(request, store: store)
+        } else if SimulatorControl.handles(request["verb"] as? String ?? "") {
+            // Simulator verbs take real time: a swipe is paced to the guest's own gesture
+            // recogniser, a screenshot copies and encodes megabytes, and the `simctl` verbs spawn a
+            // process. They run on THIS thread and hop to main only to read the store.
+            //
+            // Dispatching on the prefix alone is NOT the gate: `SimulatorControl.handle` refuses
+            // every verb unless `store.simulatorsAvailable`. This socket is reachable by any local
+            // process, and an agent that was started before the Experimental toggle was turned off
+            // still holds the tool list — so enforcement has to live behind the verb, not in what
+            // Synth chose to advertise.
+            response = SimulatorControl.handle(request, store: store)
         } else {
             DispatchQueue.main.sync {
                 MainActor.assumeIsolated {
@@ -237,12 +252,12 @@ final class ControlServer: @unchecked Sendable {
             let wantsChange = request["on"] != nil || request["device"] != nil
                            || request["landscape"] != nil
             if wantsChange {
-                var picked: BrowserDevice?
+                var picked: HardwareDevice?
                 if let id = request["device"] as? String {
-                    guard let d = BrowserDevice.fleet.first(where: { $0.id == id }) else {
+                    guard let d = HardwareDevice.fleet.first(where: { $0.id == id }) else {
                         return ["ok": false,
                                 "error": "unknown device '\(id)' — one of: " +
-                                         BrowserDevice.fleet.map(\.id).joined(separator: ", ")]
+                                         HardwareDevice.fleet.map(\.id).joined(separator: ", ")]
                     }
                     picked = d
                 }
@@ -266,7 +281,7 @@ final class ControlServer: @unchecked Sendable {
                     "landscape": ctrl.deviceLandscape,
                     "viewport": ["width": Int(page.width), "height": Int(page.height)],
                     "screen": ["width": Int(screen.width), "height": Int(screen.height)],
-                    "devices": BrowserDevice.fleet.map {
+                    "devices": HardwareDevice.fleet.map {
                         ["id": $0.id, "name": $0.name,
                          "width": Int($0.width), "height": Int($0.height)]
                     }]
@@ -283,6 +298,29 @@ final class ControlServer: @unchecked Sendable {
                 return ["ok": false, "error": "session creation failed"]
             }
             return ["ok": true, "sessionId": session.id.uuidString]
+
+        // The simulator's comment mode, drivable end to end: toggle, click a point, send the text.
+        // Its own verb because the flow has three steps where the browser's has one — the anchor
+        // comes from a hit test on the device rather than from an overlay the page hosts.
+        case "automation.simulatorComment" where automation:
+            guard let session = requestedSession(request, in: branch), session.kind == .simulator,
+                  let ctrl = SimulatorManager.shared.existing(session.id) else {
+                return ["ok": false, "error": "no simulator session/controller for sessionId"]
+            }
+            let mode = ctrl.commentMode
+            if let on = request["on"] as? Bool {
+                if on { mode.enter() } else { mode.exit() }
+            }
+            if let x = request["x"] as? Double, let y = request["y"] as? Double {
+                mode.select(at: CGPoint(x: x, y: y), in: ctrl.source)
+            }
+            if let text = request["text"] as? String { mode.send(text) }
+            return ["ok": true,
+                    "active": mode.active,
+                    "anchor": mode.pendingAnchor ?? "",
+                    "composerOpen": mode.pendingPoint != nil,
+                    "target": mode.targetTitle ?? "",
+                    "notice": mode.notice ?? ""]
 
         case "automation.commentMode" where automation:
             guard let session = requestedSession(request, in: branch), session.kind == .browser,

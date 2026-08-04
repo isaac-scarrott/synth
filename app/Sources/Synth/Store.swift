@@ -215,6 +215,61 @@ enum FeedbackMode {
     }
 }
 
+/// One device from the installed simulator fleet, as the creation picker and the session row
+/// need it (ADR-0015). The UDID is the identity — a session persists that, never the model name.
+struct SimulatorDevice: Identifiable, Hashable, Sendable {
+    var udid: String
+    var name: String       // "iPhone 16 Pro"
+    var runtime: String    // "iOS 18.4"
+    var isBooted: Bool
+    /// "iPhone17,3" — the hardware the drawn frame is resolved from.
+    var modelIdentifier: String?
+    /// The framebuffer's pixel size and backing scale, so a pane can lay the stream out at true
+    /// viewport size.
+    var screenPixelSize: CGSize?
+    var screenScale: CGFloat?
+
+    var id: String { udid }
+}
+
+/// The one thing the tree needs from the simulator engine: which devices exist, and the
+/// claim/release pair a session's hold on a device is made of. Deliberately this small so
+/// the engine (framebuffer, HID, `simctl`) can land behind it without the tree changing.
+///
+/// `claim` boots a shut-down device; `release` shuts it down, and is only called when the
+/// last session holding that UDID goes away — devices are machine-global state, so two
+/// branches that pick the same model share it (ADR-0015).
+@MainActor protocol SimulatorFleet {
+    func devices() -> [SimulatorDevice]
+    /// One device out of the cache. This exists so a pane never asks `simctl`: enumerating the
+    /// fleet costs three subprocess spawns and a plist read per installed device (~350 ms), and the
+    /// pane needs a device's geometry on the main actor, once per attach and again on every retry
+    /// while it boots. Reading a cache instead is the difference between a responsive app and one
+    /// whose terminals stall for the length of a simulator boot.
+    func device(udid: String) -> SimulatorDevice?
+    func claim(_ udid: String)
+    func release(_ udid: String)
+    /// Refresh the cache off the main actor. Callers that just changed device state ask for this
+    /// instead of re-enumerating inline.
+    func refreshSoon()
+}
+
+/// Answers "no devices" until the engine is wired in, so every surface renders honestly
+/// rather than offering a device that cannot be driven.
+@MainActor final class UnavailableSimulatorFleet: SimulatorFleet {
+    func devices() -> [SimulatorDevice] { [] }
+    func device(udid: String) -> SimulatorDevice? { nil }
+    func claim(_ udid: String) {}
+    func release(_ udid: String) {}
+    func refreshSoon() {}
+}
+
+/// Where the tree reaches the fleet. The engine replaces `fleet` at launch; nothing else
+/// about the seam moves.
+@MainActor enum Simulators {
+    static var fleet: any SimulatorFleet = UnavailableSimulatorFleet()
+}
+
 /// The durable, observed source of truth. Holds only the low-frequency facts the
 /// UI reads: the tree, per-session status, expansion, and the two selection fields
 /// (nav cursor + open session) from docs/adr/0005.
@@ -336,9 +391,10 @@ enum FeedbackMode {
     }
 
     /// Per-machine MCP server toggles (Settings → MCP servers): which bundled servers are
-    /// registered in every managed worktree's agent config. Both ship on — the app-control
+    /// registered in every managed worktree's agent config. All three ship on — the app-control
     /// server's one mutating verb is approval-gated behind a native prompt, so an agent
-    /// holding the tool still can't create a worktree the user didn't click Create on. A flip
+    /// holding the tool still can't create a worktree the user didn't click Create on, and the
+    /// simulator server can only reach devices the user's own machine already has. A flip
     /// re-syncs every worktree's config immediately — disabled means the entry is REMOVED,
     /// so agents don't even see the tools.
     var mcpBrowserEnabled = AppStore.loadBoolPref(AppStore.mcpBrowserKey, default: true) {
@@ -353,8 +409,15 @@ enum FeedbackMode {
             syncAgentBridge()
         }
     }
+    var mcpSimulatorEnabled = AppStore.loadBoolPref(AppStore.mcpSimulatorKey, default: true) {
+        didSet {
+            UserDefaults.standard.set(mcpSimulatorEnabled, forKey: AppStore.mcpSimulatorKey)
+            syncAgentBridge()
+        }
+    }
     static let mcpBrowserKey = "synth-mcp-browser"
     static let mcpAppKey = "synth-mcp-app"
+    static let mcpSimulatorKey = "synth-mcp-simulator"
 
     /// Anonymous usage analytics (Settings → Privacy). On by default, opt-out: flipping it off
     /// tells PostHog to stop sending straight away and stays off across launches. Read at launch
@@ -376,6 +439,33 @@ enum FeedbackMode {
         didSet { UserDefaults.standard.set(tabsMode, forKey: AppStore.tabsModeKey) }
     }
     static let tabsModeKey = "synth-tabs"
+
+    /// Experimental simulator sessions (ADR-0015). OFF by default, and deliberately so: the feature
+    /// reads the device framebuffer and injects input through Apple's *private* simulator
+    /// frameworks, resolved by name at runtime. It has been proven on the Xcode it was built
+    /// against, and it degrades by design when a symbol moves — but "degrades by design" is a claim
+    /// about Xcode versions nobody has run it on yet, and this is the app hosting the user's
+    /// terminals and agent sessions.
+    ///
+    /// The gate covers what a user can start and what an agent is offered: with it off, no create
+    /// route offers a simulator and the `synth-simulator` MCP server is not registered into any
+    /// worktree. Rows that already exist keep working, because silently breaking a session someone
+    /// is using is not what a toggle should do.
+    var simulatorSessionsEnabled = AppStore.loadBoolPref(
+        AppStore.simulatorSessionsKey, default: false) {
+        didSet {
+            UserDefaults.standard.set(simulatorSessionsEnabled, forKey: AppStore.simulatorSessionsKey)
+            syncAgentBridge()
+        }
+    }
+    static let simulatorSessionsKey = "synth-simulator-sessions"
+
+    /// Whether simulator sessions can be offered at all: the experiment is on, and there is a full
+    /// Xcode to run them with. Every create route and the MCP registration ask this, so there is one
+    /// answer rather than four.
+    var simulatorsAvailable: Bool {
+        simulatorSessionsEnabled && SimulatorDeviceCatalog.isXcodeAvailable
+    }
 
     // MARK: Archive sweep settings
 
@@ -638,6 +728,15 @@ enum FeedbackMode {
             for await event in self.bus.stream { self.apply(event) }
         }
         if let state = PersistenceStore.load() { restore(from: state) }
+        // ADR-0015: the real device fleet, replacing the unavailable default. Constructed before
+        // restore-driven panes can ask for a device, and harmless without Xcode — the catalog
+        // reports an empty fleet and every create route says so.
+        if SimulatorDeviceCatalog.isXcodeAvailable {
+            Simulators.fleet = SimulatorCatalogFleet()
+            // Release anything a previous run left booted. This, not the quit handler, is what
+            // actually guarantees a device is not leaked: exits that skip `willTerminate` exist.
+            SimulatorCatalogFleet.reconcileOrphanedClaims()
+        }
         // Stage two (ADR-0011): advertise this instance, listen for control verbs,
         // and install/register the bundled browser MCP server.
         InstanceRegistry.shared.start()
@@ -676,6 +775,9 @@ enum FeedbackMode {
         MCPInstaller.syncWorktreeConfigs(live, servers: [
             "synth-browser": mcpBrowserEnabled,
             "synth-app": mcpAppEnabled,
+            // Gated on the experiment AND a real Xcode: registering a server whose every tool
+            // errors is worse than not registering it, and it would cost each agent context.
+            "synth-simulator": mcpSimulatorEnabled && simulatorsAvailable,
         ])
     }
 
@@ -738,11 +840,11 @@ enum FeedbackMode {
             }
         case let .kindChanged(id, kind):
             guard let s = session(id) else { break }
-            // A browser session never runs an agent, so an agent lifecycle signal carrying its
-            // id is spurious — applying it would flip the pane to a terminal while
-            // BrowserManager still holds the browser controller, desyncing the two and
+            // A browser or simulator session never runs an agent, so an agent lifecycle signal
+            // carrying its id is spurious — applying it would flip the pane to a terminal while
+            // the engine still holds the browser controller / device claim, desyncing the two and
             // wedging ⌘K on that row.
-            if s.spawnedKind == .browser { break }
+            if s.spawnedKind == .browser || s.spawnedKind == .simulator { break }
             // A session spawned as an agent never reverts to a plain terminal: it exec'd the
             // agent, so an agent-end is either the process about to exit (the child-exited
             // signal closes the row moments later) or a /clear's end/start pair — neither
@@ -1335,7 +1437,7 @@ enum FeedbackMode {
         pal.push(frame)
     }
 
-    /// ⌘N — the new-session picker (terminal / agents / browser) for the branch you're in:
+    /// ⌘N — the new-session picker (terminal / agents / browser / simulator) for the branch you're in:
     /// the focused sidebar row's branch when the keyboard owns the sidebar, else the open
     /// session's, else the first available (working.html contextBranch → newSessionFrame).
     func newSessionPicker() {
@@ -1410,11 +1512,47 @@ enum FeedbackMode {
         return session
     }
 
+    /// A simulator session (ADR-0015): a claim on one device from the installed fleet, named by
+    /// the device it drives. `device` nil is a session with no claim yet — a template-spawned row,
+    /// or a snapshot written before a device was picked — and the pane says so rather than
+    /// guessing one. Like browsers, simulators carry no liveness of their own: the row is `.idle`
+    /// for life and agent lifecycle signals never touch it.
+    @discardableResult
+    func newSimulator(in branch: Branch? = nil, device: SimulatorDevice? = nil,
+                      focus: Bool = true) -> Session? {
+        let session = addSession(kind: .simulator,
+                                 title: device?.name ?? "Simulator",
+                                 status: .idle, in: branch, focus: focus)
+        session?.simulatorUDID = device?.udid
+        // Devices are machine-global state: claiming one boots it if it is shut down, and the
+        // last session to let go shuts it back down (teardownSession).
+        if let udid = device?.udid, session != nil { Simulators.fleet.claim(udid) }
+        return session
+    }
+
+    /// Give a device-less simulator session its device — the pane's "pick a device" state
+    /// committing (ADR-0015). Releases any device it already held, so re-picking never leaves a
+    /// device booted with nothing pointing at it, and resets the pane's engine so the next render
+    /// attaches to the new device rather than the old one.
+    func attachSimulatorDevice(_ device: SimulatorDevice, to session: Session) {
+        guard session.kind == .simulator, session.simulatorUDID != device.udid else { return }
+        let previous = session.simulatorUDID
+        session.simulatorUDID = device.udid
+        if !session.titleIsCustom { session.title = device.name }
+        // Reference-counted, like teardown: the reassignment above means this session no longer
+        // counts as holding `previous`, so re-picking never shuts down a device someone else has.
+        if let previous, !allSessions.contains(where: { $0.simulatorUDID == previous }) {
+            Simulators.fleet.release(previous)
+        }
+        Simulators.fleet.claim(device.udid)
+        SimulatorManager.shared.reset(session.id)
+    }
+
     /// Spawn a session for a split *without* opening it (focus:false), so the pending create
     /// doesn't clobber the layout before it's bound into the new pane (007's keyboard create /
     /// 010's "New …" drag-in). The caller then `splitActiveWith`s the returned session.
     @discardableResult
-    func newForSplit(_ kind: SessionKind, in branch: Branch) -> Session? {
+    func newForSplit(_ kind: SessionKind, in branch: Branch, device: SimulatorDevice? = nil) -> Session? {
         switch kind {
         case .terminal:
             return addSession(kind: .terminal, title: "shell", status: .idle, in: branch, focus: false)
@@ -1423,6 +1561,8 @@ enum FeedbackMode {
                               in: branch, focus: false)
         case .browser:
             return newBrowser(in: branch, focus: false)
+        case .simulator:
+            return newSimulator(in: branch, device: device, focus: false)
         }
     }
 
@@ -1453,7 +1593,7 @@ enum FeedbackMode {
     func closeSession(_ session: Session) {
         // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
         // live and die with it — the delete confirm names them before this runs.
-        for browser in ownedBrowsers(of: session) { closeSession(browser) }
+        for owned in ownedSessions(of: session) { closeSession(owned) }
         // Cursor falls up the hierarchy to the branch row (working.html removeUnit fallback).
         if navCursor == session.id { navCursor = branch(of: session)?.id }
         teardownSession(session)
@@ -1477,6 +1617,10 @@ enum FeedbackMode {
     func teardownSession(_ session: Session) {
         TerminalManager.shared.terminate(session.id)
         BrowserManager.shared.terminate(session.id)
+        // Before the device is released: the source holds a framebuffer registration and an Indigo
+        // session on a device that is about to be shut down under it.
+        SimulatorManager.shared.terminate(session.id)
+        releaseSimulatorDevice(of: session)
         if openSessionID == session.id { openSessionID = nil }
         liveAgentIDs.remove(session.id)
         // Detach EVERY installed agent's supervisor, not just this row's kind: opencode's
@@ -1498,6 +1642,16 @@ enum FeedbackMode {
         linkBrowsers = linkBrowsers.filter { $0.value != session.id }
     }
 
+    /// Let go of the device a closing simulator session claimed, shutting it down only when no
+    /// other session still holds the same UDID (ADR-0015): the device is machine-global, so two
+    /// sessions on one model share it and the *last* one out turns it off. Called from teardown,
+    /// before the row leaves the tree — hence the id filter.
+    private func releaseSimulatorDevice(of session: Session) {
+        guard let udid = session.simulatorUDID else { return }
+        let stillHeld = allSessions.contains { $0.id != session.id && $0.simulatorUDID == udid }
+        if !stillHeld { Simulators.fleet.release(udid) }
+    }
+
     // MARK: Containment (ADR-0011 stage four: a browser can belong to an agent session)
 
     /// The agent row owning `session`, or nil — a dangling owner id (owner deleted out
@@ -1507,8 +1661,10 @@ enum FeedbackMode {
         return branch(of: session)?.sessions.first { $0.id == id && $0.kind.isAgent }
     }
 
-    /// The browsers an agent row owns, in sidebar order.
-    func ownedBrowsers(of session: Session) -> [Session] {
+    /// The rows an agent owns, in sidebar order — browsers and simulators both, since ownership is
+    /// containment and keys off the row id rather than the kind (ADR-0015 corrects ADR-0011's
+    /// browser-only framing here).
+    func ownedSessions(of session: Session) -> [Session] {
         guard session.kind.isAgent, let br = branch(of: session) else { return [] }
         return br.sessions.filter { $0.ownerSessionID == session.id }
     }
@@ -1517,7 +1673,12 @@ enum FeedbackMode {
     /// comment-spawned agent adopting its browser). Ownership keys off the Synth row id,
     /// so it survives agent exits and resumes.
     func adopt(_ browser: Session, by agent: Session) {
-        guard browser.kind == .browser, agent.kind.isAgent,
+        // Browsers and simulators both. ADR-0015 originally argued a simulator row could not be
+        // owned because its *device* is shared machine state — which is true of the device and does
+        // not follow for the row. Ownership here is containment: this row exists because that agent
+        // made it, and closing the agent closes it. The device stays reference-counted either way,
+        // so an owned row going away only decrements; the last holder is still what shuts it down.
+        guard browser.kind == .browser || browser.kind == .simulator, agent.kind.isAgent,
               let br = branch(of: browser),
               br.sessions.contains(where: { $0.id == agent.id })
         else { return }
@@ -1585,9 +1746,19 @@ enum FeedbackMode {
     /// Close-confirm copy for a session: closing an owning claude row cascades, so the
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
-        let owned = ownedBrowsers(of: session)
+        let owned = ownedSessions(of: session)
         guard !owned.isEmpty else { return "Close this session?" }
-        let what = owned.count == 1 ? "browser" : "\(owned.count) browsers"
+        // Named by kind, because "this also closes its browser" in front of a simulator row is the
+        // kind of small lie that makes a confirm dialog untrustworthy.
+        let kinds = Set(owned.map(\.kind))
+        let what: String
+        if owned.count == 1 {
+            what = kinds.contains(.simulator) ? "simulator" : "browser"
+        } else if kinds.count > 1 {
+            what = "\(owned.count) browsers and simulators"
+        } else {
+            what = kinds.contains(.simulator) ? "\(owned.count) simulators" : "\(owned.count) browsers"
+        }
         return "Close this session? This also closes its \(what)."
     }
 
@@ -1649,7 +1820,7 @@ enum FeedbackMode {
     /// tree but keep their live processes; only the undo's commit tears them down (working.html
     /// softRemove of a session leaf + its ADR-0011 browser cascade).
     func softCloseSession(_ session: Session) {
-        let victims = [session] + ownedBrowsers(of: session)
+        let victims = [session] + ownedSessions(of: session)
         var homes: [(branch: Branch, index: Int, session: Session)] = []
         for v in victims {
             if let br = branch(of: v), let i = br.sessions.firstIndex(where: { $0.id == v.id }) {
@@ -2360,9 +2531,10 @@ enum FeedbackMode {
         if let s = openSession {
             let kind: String
             switch s.kind {
-            case .agent:    kind = s.kind.tplStart
-            case .terminal: kind = "Terminal"
-            case .browser:  kind = "Browser"
+            case .agent:     kind = s.kind.tplStart
+            case .terminal:  kind = "Terminal"
+            case .browser:   kind = "Browser"
+            case .simulator: kind = "Simulator"
             }
             lines.append("Here: \(kind) · \(branch(of: s)?.name ?? "—")")
         }
@@ -2839,7 +3011,8 @@ enum FeedbackMode {
                                                  titleIsCustom: s.titleIsCustom,
                                                  agentSessionID: s.agentSessionID,
                                                  browserURL: s.browserURL,
-                                                 ownerSessionID: s.ownerSessionID)
+                                                 ownerSessionID: s.ownerSessionID,
+                                                 simulatorUDID: s.simulatorUDID)
                             },
                             browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents,
                             // The branch's remembered split, serialized to session identities;
@@ -2888,7 +3061,8 @@ enum FeedbackMode {
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
                             agentSessionID: ps.resumeID, browserURL: ps.browserURL,
-                            ownerSessionID: ps.ownerSessionID)
+                            ownerSessionID: ps.ownerSessionID,
+                            simulatorUDID: ps.simulatorUDID)
                 }
                 // Scrub hostless recents (about:blank) recorded before the filter existed.
                 let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }
@@ -2968,6 +3142,9 @@ enum FeedbackMode {
                 // closeSession, so without this every open login → agent → MCP-server tree
                 // orphans to launchd on quit.
                 TerminalManager.shared.shutdownAll()
+                // Nor must simulator devices, for exactly the same reason — and each one left
+                // running costs the user a gigabyte and change (ADR-0015).
+                SimulatorManager.shared.shutdownAll()
             }
         }
     }

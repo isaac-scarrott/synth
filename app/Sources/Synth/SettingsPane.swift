@@ -76,7 +76,13 @@ struct SettingsPane: View {
                 switchRow("Command failed", "A terminal command exited non-zero.", bind(\.soundError))
             }
             SetSection(label: "MCP servers") {
-                switchRow("Browser", "13 tools to drive and inspect browser sessions.", bind(\.mcpBrowserEnabled))
+                // No tool counts in these lines: the browser row claimed 13 for months while the
+                // server grew past 20, and a number nobody can see is wrong is worse than none.
+                switchRow("Browser", "Lets an agent drive and inspect browser sessions.",
+                          bind(\.mcpBrowserEnabled))
+                SetDivider()
+                switchRow("Simulator", "Lets an agent drive simulator sessions — tap, type, screenshot.",
+                          bind(\.mcpSimulatorEnabled))
                 SetDivider()
                 switchRow("Synth app", "Lets an agent create worktrees.", bind(\.mcpAppEnabled))
             }
@@ -130,6 +136,9 @@ struct SettingsPane: View {
             }
             SetSection(label: "Experimental") {
                 switchRow("Tabs", "Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview.", bind(\.tabsMode))
+                switchRow("Simulator sessions",
+                          "Run an iOS simulator as a session: its live screen in a pane, tappable, and drivable by Claude. Needs a full Xcode. Uses Apple's private simulator frameworks, so a future Xcode can degrade it — it will say so rather than fail quietly.",
+                          bind(\.simulatorSessionsEnabled))
             }
             SetSection(label: "About") { aboutRow }
             if store.workspaces.isEmpty { emptyProject }
@@ -577,9 +586,10 @@ private struct FlagLineField: View {
 private extension SessionKind {
     @MainActor var tplLabel: String {
         switch self {
-        case .agent:    return tplStart
-        case .terminal: return "Terminal"
-        case .browser:  return "Browser"
+        case .agent:     return tplStart
+        case .terminal:  return "Terminal"
+        case .browser:   return "Browser"
+        case .simulator: return "Simulator"
         }
     }
 }
@@ -824,9 +834,15 @@ private struct TplNameField: View {
 
 private struct TplAddBar: View {
     @Binding var entries: [SessionTemplateEntry]
+    @Environment(AppStore.self) private var store
     var body: some View {
+        // A template that spawns a simulator row is only offerable while the experiment is on and
+        // there is an Xcode to run it; otherwise every new worktree would come up with a row that
+        // cannot attach to anything.
+        let kinds = AgentRegistry.installed.map { SessionKind.agent($0.id) }
+            + [.terminal, .browser] + (store.simulatorsAvailable ? [.simulator] : [])
         HStack(spacing: 6) {
-            ForEach(AgentRegistry.installed.map { SessionKind.agent($0.id) } + [.terminal, .browser], id: \.self) { kind in
+            ForEach(kinds, id: \.self) { kind in
                 TplHover { hovering in
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) {

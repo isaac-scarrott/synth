@@ -185,12 +185,13 @@ extension SessionKind {
         case .terminal: return Phosphor.terminal
         case .agent:    return Phosphor.sparkle
         case .browser:  return Phosphor.globe
+        case .simulator: return Phosphor.deviceMobile
         }
     }
     var tint: Color {
         switch self {
         case .agent: return Theme.copper
-        case .terminal, .browser: return Theme.sessionIcon
+        case .terminal, .browser, .simulator: return Theme.sessionIcon
         }
     }
 }

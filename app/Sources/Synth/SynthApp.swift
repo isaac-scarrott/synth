@@ -534,6 +534,20 @@ struct RootView: View {
                 Task { await cm.exit() }
                 return nil
             }
+            // Esc exits simulator comment mode, and cancels a composer that is open — the same
+            // grammar as the browser's, one row up. Checked before the pane's own key handling so it
+            // works while the device has the keys (the pane forwards every character to the guest).
+            if event.keyCode == 53, let open = store.openSession, open.kind == .simulator,
+               let controller = SimulatorManager.shared.existing(open.id) {
+                if controller.commentMode.pendingPoint != nil {
+                    controller.commentMode.cancelPending()
+                    return nil
+                }
+                if controller.commentMode.active {
+                    controller.commentMode.exit()
+                    return nil
+                }
+            }
             // ===== Split layout layer (007) — three arrow-families read as one grammar:
             // ⌘⌥ move · ⌘⌥⇧ resize · ⌘⇧ create; plus ⌘⇧⏎ zoom, ⌘⇧U unsplit, ⌘` cycle, ⌘2…9
             // focus-pane. Placed before the browser page-verbs so ⌘⌥L (focus-right alias) wins

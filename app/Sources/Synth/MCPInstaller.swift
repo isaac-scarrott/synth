@@ -1,9 +1,9 @@
 import Foundation
 import os.log
 
-/// Installs the bundled MCP servers — synth-browser (ADR-0011 stage two) and
-/// synth-app (approval-gated app control) — and registers them in every managed
-/// worktree.
+/// Installs the bundled MCP servers — synth-browser (ADR-0011 stage two), synth-app
+/// (approval-gated app control) and synth-simulator (ADR-0015) — and registers them
+/// in every managed worktree.
 ///
 /// Install: the repo's mcp/ (copied into Contents/Resources/mcp by dev.sh /
 /// dist.sh) is synced to the channel's Application Support sandbox (AppSupport.root)
@@ -24,10 +24,11 @@ import os.log
 
     static let installDir = AppSupport.dir("browser-mcp")
 
-    /// The bundled servers: registry name → entry script (shared.mjs serves both).
+    /// The bundled servers: registry name → entry script (shared.mjs serves all of them).
     nonisolated static let serverScripts = [
         "synth-browser": "server.mjs",
         "synth-app": "app-server.mjs",
+        "synth-simulator": "simulator-server.mjs",
     ]
 
     /// Copy the bundled servers into the shared install dir and (re)install their deps

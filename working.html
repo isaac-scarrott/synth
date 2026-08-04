@@ -76,6 +76,9 @@
     --tui-cursor: #1c1e23;   /* terminal cursor */
     --tui-sel: #d0d9e6;      /* terminal selection */
     --tui-hair: rgba(0,0,0,0.13);   /* terminal card inset hairline */
+    --tab-well: rgba(0,0,0,0.055);    /* the recess a tab chip sits in — a split's tray. One step
+                                         below the coat rather than --hover-soft, which is a pointer
+                                         state and washes out the moment it has to read as a surface. */
     --hover-soft: rgba(0,0,0,0.035);  /* faint row / control hover */
     --hover: rgba(0,0,0,0.05);        /* standard hover + selection fill */
     --press: rgba(0,0,0,0.08);        /* press / dividers / open-kebab */
@@ -85,7 +88,7 @@
     --accent: #a86038;       /* structural brand accent — deep copper on light (clears 4.5:1 on white) */
     --accent-rgb: 168,96,56; /* drives every rgba(var(--accent-rgb),A) ring/wash so hue flips per-theme in one edit */
     --on-accent: #ffffff;    /* foreground on an --accent fill (never #fff on the dark champagne button) */
-    --focus: #1e2126;        /* active-tab bar — the mark's own pair: charcoal on light, champagne on dark */
+    --focus: #1e2126;        /* the mark's own pair: charcoal on light, champagne on dark */
     /* The app icon's champagne mark, as a hue the shell can use. Worn only by the update button,
        which is why it is not called an accent: the accents mean states, this means Synth itself. */
     --update-ink: #7f6130;   /* the mark taken down far enough to read on a near-white panel (5.2:1) */
@@ -170,6 +173,7 @@
     opacity: 0.3;
     transition: opacity 140ms ease;
   }
+  .desk-pick--seed { bottom: 34px; }
   .desk-pick:hover { opacity: 1; }
   .desk-pick button {
     border: 0;
@@ -1379,24 +1383,24 @@
      Shows even for a lone tab. Uncapped — overflow scrolls horizontally. ~30px, compact, tabular. */
   .tabstrip {
     flex-shrink: 0;
-    display: flex; align-items: stretch;
-    height: 30px;
-    /* no fill of its own: .content has already laid the translucent --panel down, and a second
-       coat of it composites to a near-opaque band across the top of every pane */
-    border-bottom: 0.5px solid var(--border);
+    display: flex; align-items: center;
+    height: 42px;
+    padding: 0 8px;
+    /* no fill of its own, and no bottom rule: .content has already laid the translucent --panel
+       down, and the chips are inset far enough off every edge that nothing needs a seam to stop at */
   }
   .tabstrip__tabs {
     flex: 1; min-width: 0;
-    display: flex; align-items: stretch;
+    display: flex; align-items: center; gap: 3px;
     overflow: hidden;                       /* no scroll — tabs shrink to fit so the + stays visible */
   }
   .tab {
-    flex: 0 1 auto; min-width: 40px;         /* shrink to fit; the name ellipsizes, the + never scrolls off */
+    flex: 0 1 auto; min-width: 34px;         /* shrink to fit; the name ellipsizes, the + never scrolls off */
     position: relative;
     display: flex; align-items: center; gap: 6px;
-    max-width: 190px;
-    padding: 0 6px 0 11px;
-    border-right: 0.5px solid var(--border);
+    height: 28px; max-width: 200px;
+    padding: 0 5px 0 9px;
+    border-radius: 8px;
     font-size: 12px; font-weight: 500;
     color: var(--text-muted);
     cursor: default; white-space: nowrap;
@@ -1406,10 +1410,16 @@
     /* the open tab holds its raised fill under the pointer — hovering it must not wash it back down */
     .tab:not(.tab--active):hover { background: var(--hover); }
   }
-  .tab--active { background: var(--raised); color: var(--ink); }
-  .tab--active::after {   /* the active-tab bar */
-    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
-    background: var(--focus);
+  /* The open tab lifts off the rail as a card, and that is the whole of "open": no bar, no seam,
+     no fill running out to the window edge. An unopened tab is its label and nothing else. */
+  .tab--active {
+    background: var(--raised); color: var(--ink);
+    box-shadow: inset 0 0 0 0.5px var(--border-strong),
+                0 1px 1px rgba(0, 0, 0, 0.04), 0 3px 8px rgba(0, 0, 0, 0.06);
+  }
+  :root[data-theme="dark"] .tab--active {
+    box-shadow: inset 0 0 0 0.5px var(--border-strong),
+                0 1px 1px rgba(0, 0, 0, 0.24), 0 3px 10px rgba(0, 0, 0, 0.3);
   }
   .tab__icon { position: relative; flex-shrink: 0; display: flex; width: 14px; height: 14px; }
   .tab__icon svg { width: 14px; height: 14px; display: block; }
@@ -1441,8 +1451,8 @@
   .tabstrip__new {
     flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
-    width: 30px; padding: 0;
-    border: 0;
+    width: 26px; height: 26px; margin-left: 1px; padding: 0;
+    border: 0; border-radius: 7px;
     background: none; color: var(--text-muted); cursor: pointer;
     transition: background-color 110ms ease, color 110ms ease;
   }
@@ -1457,9 +1467,9 @@
   .tab--dragsource { opacity: 0.4; }
   .tab-ghost {
     position: fixed; z-index: 300; pointer-events: none;
-    height: 30px; box-sizing: border-box;
+    height: 28px; box-sizing: border-box;
     background: var(--raised); color: var(--ink);
-    border: 0.5px solid var(--border); border-radius: 7px;
+    border: 0.5px solid var(--border); border-radius: 8px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 14px 30px rgba(0, 0, 0, 0.22);
     transform: scale(1.03); opacity: 0.98;
   }
@@ -1471,22 +1481,25 @@
     animation: dz-in 110ms var(--ease-out);
   }
   /* ---- An on-screen split's member tabs ----
-     A member IS a tab: same 30px, same padding, same icon, same indicator slot, same ×, same active
-     bar, same hover wash, same shrink-to-fit, so the strip stays one language. The chip cluster this
-     replaces was a second language, and it cost the members their indicator — the one signal the
-     strip exists to carry.
-     Grouping rides on a single added mark: an 8px map of the split drawn on each member's icon with
-     that tab's own pane filled. Two tabs wearing the same map are the same split, and the map also
-     says WHICH pane, so a member reads as a position before you look down at the surface. */
-  .tab-group { display: flex; align-items: stretch; }
-  .tab-group .tab { border-right: 0; gap: 11px; }   /* the map overhangs the icon; the name clears it */
-  /* the members are one unit, so what divides them is an inset hairline rather than a full-height
-     seam. The seam that ENDS the group is the strip's ordinary one. */
-  .tab-group .tab + .tab::before {
-    content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px;
-    background: var(--border);
+     A member IS a tab: same 28px chip, same padding, same icon, same indicator slot, same ×, same
+     hover wash, same shrink-to-fit, so the strip stays one language. The chip cluster this replaces
+     was a second language, and it cost the members their indicator — the one signal the strip
+     exists to carry. */
+  /* The run is a tray: a hairline container the members sit in, with no fill of its own. A fill
+     here would give every UNFOCUSED member a background, and on this strip a background is what
+     "open" means — the tray would be handing three tabs the one signal reserved for one.
+     min-width:0 is load-bearing. Without it the tray is a flex item at its automatic minimum, which
+     is its members' min-content — so the run refused to shrink past ~390px while the lone tabs
+     beside it were squeezed down to bare icons. Zero lets the members shrink and ellipsize on the
+     same terms as every other tab, which is the point: a member IS a tab. */
+  .tab-group {
+    display: flex; align-items: center;
+    min-width: 0;
+    gap: 2px; padding: 2px;
+    border-radius: 11px;
+    box-shadow: inset 0 0 0 0.5px var(--border-strong);
   }
-  .tab-group > .tab:last-child { border-right: 0.5px solid var(--border); }
+  .tab-group .tab { gap: 9px; }   /* the map overhangs the icon; the name clears it */
   /* the map sits in the icon's corner on a plate of the tab's own fill — the idiom the unread dot
      uses on the opposite corner, so the two coexist on one 14px icon without touching */
   .tab__map {
@@ -1497,42 +1510,12 @@
   }
   .tab--active .tab__map { background: var(--raised); box-shadow: 0 0 0 1px var(--raised); }
   .tab__map svg { width: 8px; height: 8px; display: block; }
+
   /* the tab a dragged tab is about to pair into a split with — copper ring, echoing the sidebar's pair-to (012) */
   .tab--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.7); background: rgba(var(--accent-rgb), 0.12); }
   /* tabs mode drops the per-pane title bar (the strip carries name + icon); its PR chip moves to the strip */
   html[data-tabs="on"] .pane__head { display: none; }
-  .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; padding: 0 8px 0 6px; }
-  /* Whatever fill the first tab carries — raised when open, the wash under the pointer — runs on
-     under the sidebar, so the sidebar's rounded corner is what ends it and no fill ever stops in a
-     hard square short of the curve. .content clips its own overflow, so the run-on is a bare block
-     behind the sidebar rather than the tab itself bleeding past the seam; the two states below are
-     mutually exclusive, so they resolve exactly as the tab's own background does. */
-  /* The first tab's fill carried into the wedge the sidebar's rounded top-right corner leaves
-     uncovered, so the fill follows that curve instead of stopping in a hard square short of it.
-     Masked to exactly the wedge, which it did not used to need: the sidebar was an opaque fill and
-     hid the rest of this box for free. It is a translucent tint now, so unmasked the whole
-     rectangle shows straight through the sidebar as a bright block. Height is the radius for the
-     same reason — below the curve the sidebar's edge runs straight, so there is nothing to fill. */
-  .tab-bleed {
-    display: none;
-    position: absolute;
-    top: 0;
-    left: calc(var(--sidebar-w, 260px) - var(--radius-panel));
-    width: var(--radius-panel);
-    height: var(--radius-panel);
-    -webkit-mask: radial-gradient(circle var(--radius-panel) at 0 100%, transparent 99.5%, #000 100%);
-            mask: radial-gradient(circle var(--radius-panel) at 0 100%, transparent 99.5%, #000 100%);
-  }
-  html[data-tabs="on"] .app:not(.collapsed):has(.tabstrip__tabs > .tab:first-child.tab--active,
-      .tabstrip__tabs > .tab-group:first-child > .tab:first-child.tab--active) .tab-bleed {
-    display: block; background: var(--raised);
-  }
-  @media (hover: hover) and (pointer: fine) {
-    html[data-tabs="on"] .app:not(.collapsed):has(.tabstrip__tabs > .tab:first-child:not(.tab--active):hover,
-        .tabstrip__tabs > .tab-group:first-child > .tab:first-child:not(.tab--active):hover) .tab-bleed {
-      display: block; background: var(--hover);
-    }
-  }
+  .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; margin-left: auto; padding: 0 4px 0 6px; }
   .tab-dropline::before {
     content: ""; position: absolute; left: -2px; top: -3px;
     width: 6px; height: 6px; border-radius: 50%;
@@ -2682,6 +2665,7 @@
     --panel: rgba(25,27,31,0.97);
     --sidebar: #1d1f24;
     --sidebar-step: rgba(255,255,255,0.025);   /* the ladder runs the other way in dark */
+    --tab-well: rgba(255,255,255,0.06);
     --border: rgba(255,255,255,0.09);
     --border-strong: rgba(255,255,255,0.13);
     --text: #e6e8ed;
@@ -2890,6 +2874,15 @@
     <button type="button" data-desk-opt="night">night</button>
     <button type="button" data-desk-opt="gradient">gradient</button>
   </div>
+  <!-- Prototype affordance: throw the branch's sessions into a given split shape, so the strip has
+       something real to represent. Not a Synth control — the app has no "make me a 2×2". -->
+  <div class="desk-pick desk-pick--seed" role="group" aria-label="Seed split layout">
+    <button type="button" data-seed="1">1</button>
+    <button type="button" data-seed="2r">2 ↔</button>
+    <button type="button" data-seed="2c">2 ↕</button>
+    <button type="button" data-seed="3">3</button>
+    <button type="button" data-seed="4">4</button>
+  </div>
   <main class="app is-dev" id="app">
     <div class="resize-handle" id="resizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize · double-click to reset"></div>
     <button class="icon-btn expand-btn" id="expandBtn" aria-label="Expand sidebar">
@@ -2901,7 +2894,6 @@
     </div>
     <div class="dev-tag" aria-label="Development build" title="Development build">DEV</div>
 
-    <div class="tab-bleed" aria-hidden="true"></div>
 
     <aside class="sidebar">
       <div class="sidebar__top">
@@ -5248,8 +5240,8 @@
       + '" rx="0.7" fill="currentColor"/></svg></span>';
   }
   // One strip, mirroring the branch's sessions; the on-screen split's members fold into one contiguous
-  // run at the first member's position (the horizontal twin of renderSidebarEcho), each wearing its
-  // pane map. Lone tabs render in place, unmarked.
+  // run at the first member's position (the horizontal twin of renderSidebarEcho). How that run reads
+  // as one split is the tray it sits in. Lone tabs render in place, unmarked.
   function renderContentTabStrip() {
     const strip = document.createElement('div'); strip.className = 'tabstrip';
     const wrap = document.createElement('div'); wrap.className = 'tabstrip__tabs';
@@ -7885,6 +7877,38 @@
       paint();
     }));
     paint();
+  })();
+
+  // Split-layout seeder. The redesign needs the strip to be representing real geometry — a 2×2 and
+  // a three-pane T say different things about how a run of member tabs should read, and neither is
+  // reachable in a couple of clicks. Builds the tree directly from the branch's own sessions, which
+  // is why it is a prototype knob and not a feature: the app grows a split a pane at a time.
+  (() => {
+    const btns = [...document.querySelectorAll('[data-seed]')];
+    if (!btns.length) return;
+    const N = (dir, a, b, split) => ({ leaf: false, dir: dir, split: split == null ? 0.5 : split, a: a, b: b });
+    // uneven fractions on purpose: an all-halves screen is the one arrangement the 8px pane map
+    // draws exactly, and it would flatter the map into looking more faithful than it is
+    const SHAPES = {
+      '1':  { n: 1, build: (s) => leafNode(s[0]) },
+      '2r': { n: 2, build: (s) => N('row', leafNode(s[0]), leafNode(s[1]), 0.56) },
+      '2c': { n: 2, build: (s) => N('col', leafNode(s[0]), leafNode(s[1]), 0.62) },
+      '3':  { n: 3, build: (s) => N('row', leafNode(s[0]), N('col', leafNode(s[1]), leafNode(s[2]), 0.55), 0.54) },
+      '4':  { n: 4, build: (s) => N('col', N('row', leafNode(s[0]), leafNode(s[1]), 0.52),
+                                           N('row', leafNode(s[2]), leafNode(s[3]), 0.46), 0.5) },
+    };
+    const paint = (key) => btns.forEach((b) => b.classList.toggle('is-on', b.dataset.seed === key));
+    btns.forEach((b) => b.addEventListener('click', () => {
+      const shape = SHAPES[b.dataset.seed];
+      const rows = branchTabs();
+      if (!shape || rows.length < shape.n) return;
+      setTabsMode(true);
+      stashedSplit = null;
+      layout = shape.build(rows);
+      activePane = firstLeaf(layout);
+      renderLayout();
+      paint(b.dataset.seed);
+    }));
   })();
 
   // App settings. The native app reads these from disk; here they live in memory.

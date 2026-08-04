@@ -1602,6 +1602,24 @@ disclosure to dive deeper.
   occlude what was behind it: that double-coated terminal, the card's own `.shadow` (SwiftUI blurs
   *alpha*, so it showed through the card it belonged to), and the tabs-mode first-tab bleed (a plain
   rectangle that an opaque sidebar used to hide all but the corner of).
+- **Tabs are chips on a rail, and a split is a hairline tray** — the strip stops being one solid band
+  welded to the window: each tab is a 28px chip on a 42px rail, and the open one lifts off it as a card,
+  which is the whole of "open" — no seam, no bottom bar, no fill reaching the window edge. Three chip
+  directions were built live in the shell (**inset** elevation, **track** recessed-well-and-thumb,
+  **focus** icon-only-unless-on-screen) and inset won; track truncates first because everything shares
+  one hugging container, and focus is unreadable at a glance when half the sessions share a terminal
+  icon. Because nothing reaches the seam, `.tab-bleed` — an element plus a `radial-gradient` mask plus
+  two `:has()` rules, existing only so the first tab's fill followed the sidebar's rounded corner — is
+  **deleted**. A split's run of members got its own round (**tray** / **bracket** / **lead** glyph /
+  **merged** into one chip); tray won, but its recessed *fill* was wrong and is gone: on this strip a
+  background is what open means, so filling the tray handed every unfocused member the one signal
+  reserved for one tab. It is a hairline container over the bare rail now. **Merged** is the direction
+  to keep in reserve — the only shell that gets cheaper as a split grows (a four-pane split leaves every
+  other tab its full name) — rejected on signal, not space: a non-active member loses its indicator, so
+  a pane going to needs-input behind the chip says nothing. The members' refusal to shrink was
+  `min-width: auto` on `.tab-group`: as a flex item its floor was its own min-content, where a lone
+  `.tab` escapes that by setting `min-width: 34px` explicitly. Zeroing it puts a member on the same
+  terms as every other tab, which is the premise — a member IS a tab.
 - **Tabs-mode branches carry their session facts without growing a third tree level** — the branch
   row becomes a 46px two-line summary (`N sessions · activity`) with a fixed PR/status rail; classic
   sidebar mode keeps its original compact disclosure row. Both designs + native app.

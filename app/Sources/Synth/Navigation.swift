@@ -18,11 +18,13 @@ enum RowRef: Identifiable, Equatable {
     static func == (lhs: RowRef, rhs: RowRef) -> Bool { lhs.id == rhs.id }
 }
 
-/// Stable id for the one non-tree cursor target — the Settings foot button — so the single
-/// `navCursor: UUID?` primitive can address it alongside tree rows (working.html addresses
-/// it by DOM element; here by a constant id).
+/// Stable ids for the non-tree cursor targets — the foot buttons — so the single
+/// `navCursor: UUID?` primitive can address them alongside tree rows (working.html addresses
+/// them by DOM element; here by constant ids).
 enum NavID {
     static let settingsFoot = UUID(uuidString: "00000000-0000-0000-0000-0000000F0071")!
+    /// `Restart to update`, which only exists while a build is waiting.
+    static let updateFoot   = UUID(uuidString: "00000000-0000-0000-0000-0000000F0072")!
 }
 
 extension AppStore {
@@ -69,11 +71,21 @@ extension AppStore {
 
     // MARK: Movement
 
-    /// The single list the keyboard cursor walks: the tree followed by the Settings foot
-    /// button, so ↓/j off the last leaf flows straight into Settings. The tree stays live
-    /// in Settings too, so the same list drives both screens (working.html `activeRows`).
+    /// The single list the keyboard cursor walks: the tree followed by the foot buttons, so ↓/j
+    /// off the last leaf flows straight into them. The tree stays live in Settings too, so the
+    /// same list drives both screens (working.html `activeRows`). `Restart to update` joins only
+    /// while a build is waiting — the foot draws exactly the rows this walks.
     var activeRows: [UUID] {
-        visibleRows.map(\.id) + [NavID.settingsFoot]
+        visibleRows.map(\.id)
+            + (stagedUpdate != nil ? [NavID.updateFoot] : [])
+            + [NavID.settingsFoot]
+    }
+
+    /// The waiting build stopped waiting while the cursor was on its button. Settings is the
+    /// foot's resting row, so the cursor falls there rather than being stranded on a button
+    /// that is no longer drawn (working.html `syncUpdateBtn`).
+    func releaseUpdateFootCursor() {
+        if navCursor == NavID.updateFoot { navCursor = NavID.settingsFoot }
     }
 
     /// Where the cursor rests when nothing is explicitly selected: the open session in the
@@ -262,6 +274,7 @@ extension AppStore {
         keyboardActive = true
         // The lit foot button toggles Settings; the tree is live on both screens.
         if navCursor == NavID.settingsFoot { toggleSettings(); return }
+        if navCursor == NavID.updateFoot { restartForUpdate(); return }
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
         // Tabs: a branch has no disclosure to toggle — activating it opens its tabs instead.

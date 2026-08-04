@@ -101,64 +101,102 @@ private struct EmptySidebarHint: View {
     }
 }
 
-// MARK: - Sidebar foot (Settings entry)
+// MARK: - Sidebar foot (Settings entry, and the waiting build above it)
 
-/// working.html `.sidebar__foot` — pinned to the bottom of the left panel. Lights up while
-/// Settings is open (working.html `.foot-btn.is-on`); clicking it toggles Settings.
+/// working.html `.sidebar__foot` — pinned to the bottom of the left panel. Settings lights up
+/// while it is open (working.html `.foot-btn.is-on`); clicking it toggles Settings.
+///
+/// A staged build takes a button of its own directly ABOVE Settings: the foot is bottom-anchored,
+/// so it grows upward and Settings never moves out from under the cursor. The waiting build has
+/// no other standing surface — it never raises a toast — so this and Settings → About are both
+/// there is, and both are pull.
 private struct SidebarFoot: View {
     @Environment(AppStore.self) private var store
-    // The foot button is the last row of the navigable list, so it shows the same keyboard
-    // selection ring as a tree row when the cursor rests on it (F5).
-    private var selected: Bool { store.keyboardActive && store.navCursor == NavID.settingsFoot }
+    // A foot button is a row of the navigable list, so it shows the same keyboard selection
+    // ring as a tree row when the cursor rests on it (F5).
+    private func selected(_ id: UUID) -> Bool { store.keyboardActive && store.navCursor == id }
     var body: some View {
-        FootButton(icon: Phosphor.gear, title: "Settings", kbd: "⌘,",
-                   selected: selected, active: store.settingsOpen) { store.toggleSettings() }
-            .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
+        VStack(spacing: 4) {
+            if let update = store.stagedUpdate {
+                FootButton(icon: Phosphor.arrowCircleDown, title: "Restart to update",
+                           meta: update.version, selected: selected(NavID.updateFoot),
+                           waiting: true) { store.restartForUpdate() }
+            }
+            FootButton(icon: Phosphor.gear, title: "Settings",
+                       selected: selected(NavID.settingsFoot),
+                       active: store.settingsOpen) { store.toggleSettings() }
+        }
+        .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 }
 
 private struct FootButton: View {
     let icon: String
     let title: String
-    var kbd: String? = nil
+    /// The trailing slot ⌘, used to occupy (working.html `.foot-btn__meta`) — now the version of
+    /// the build waiting. Settings dropped its hint: the shortcut is in ⌘? and the ⌘K row, and
+    /// spending the foot's one trailing slot on a reminder of it costs the fact that matters.
+    var meta: String? = nil
     let selected: Bool
     var active = false
+    /// The waiting build (working.html `.foot-btn--update`): a champagne wash and hairline rather
+    /// than a filled slab, which would be the loudest thing in a shell made of hairlines and
+    /// washes — and shouting on behalf of housekeeping that installs itself on the next quit.
+    var waiting = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
+        Group {
+            if waiting {
+                core
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(Theme.updateWash.opacity(hovering || selected ? 0.2 : 0.13)))
+                    // The shared `rowChrome` ring would swap the wash out for the neutral
+                    // selection fill; same primitive, drawn in the row's own hue so the tint
+                    // survives being selected.
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Theme.updateWash.opacity(selected ? 0.7 : 0.3),
+                                      lineWidth: selected ? 1.5 : 0.5))
+            } else {
+                core
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(Theme.accent.opacity(active ? (hovering ? 0.14 : 0.10) : 0)))
+                    .rowChrome(hovering: hovering && !active, selected: selected)
+            }
+        }
+        .onHover { hovering = $0 }
+    }
+
+    private var core: some View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Phos(path: icon, size: 16)
                     .foregroundStyle(iconTint).frame(width: 16)
                 Text(title)
-                    .font(.sans(13, active ? 600 : 500))
+                    .font(.sans(13, active || waiting ? 600 : 500))
                     .foregroundStyle(labelTint)
                 Spacer(minLength: 0)
-                if let kbd {
-                    Text(kbd)
-                        .font(.mono(11))
-                        .foregroundStyle(Theme.inkFaint)
+                if let meta {
+                    Text(meta)
+                        .font(.mono(11, 500))
+                        .foregroundStyle(Theme.ink4)
                 }
             }
             .padding(.horizontal, 6).padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(RowButtonStyle())
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Theme.accent.opacity(active ? (hovering ? 0.14 : 0.10) : 0))
-        )
-        .rowChrome(hovering: hovering && !active, selected: selected)
-        .onHover { hovering = $0 }
     }
 
     private var iconTint: Color {
+        if waiting { return Theme.updateInk }
         if active { return Theme.accent }
         return hovering ? Theme.inkMuted : Theme.navLabel
     }
     private var labelTint: Color {
+        if waiting { return Theme.ink }
         if active { return Theme.inkOpen }
         return hovering ? Theme.repoName : Theme.branchName
     }

@@ -21,13 +21,14 @@ enum Updates {
     }()
 }
 
-/// Sparkle speaks through the notification deck, not through its own window.
+/// Sparkle never speaks: it hands the fact to the store, and the shell holds it standing.
 ///
 /// `SUEnableAutomaticChecks` + `SUAutomaticallyUpdate` mean a newer build finds and downloads
-/// itself in the background; this bridge is what turns that otherwise silent event into a card,
-/// and what hands the card the relaunch it offers. Nothing here starts a download or asks
-/// permission to — by the time we speak, the build is already on disk and installs itself on the
-/// next quit, which is exactly what makes the card's `Restart` a shortcut rather than a demand.
+/// itself in the background; this bridge is what records that otherwise silent event on the store
+/// — where the sidebar foot button and Settings → About both read it — and what hands them the
+/// relaunch they offer. Nothing here starts a download or asks permission to: by the time we know,
+/// the build is already on disk and installs itself on the next quit, which is exactly what makes
+/// `Restart to update` a shortcut rather than a demand, and interrupting anyone about it wrong.
 final class UpdateBridge: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     /// Tells Sparkle we own the reminding, so it holds its own alert back for a scheduled find.
     var supportsGentleScheduledUpdateReminders: Bool { true }
@@ -41,7 +42,7 @@ final class UpdateBridge: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDel
     }
 
     /// The one hook that matters: the build is staged, so from here the only open question is
-    /// *when* it lands — and that question belongs to the card. Returning true takes the update
+    /// *when* it lands — and that question belongs to the foot button. Returning true takes the update
     /// cycle off Sparkle's hands; it installs on quit regardless, so nothing is lost by holding
     /// the handler until someone asks for it sooner.
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,

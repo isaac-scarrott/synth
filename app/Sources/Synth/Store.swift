@@ -2182,117 +2182,35 @@ enum FeedbackMode {
         return session
     }
 
-    // MARK: The update card (working.html "The update card")
+    // MARK: The waiting build (working.html "The waiting build, as a control")
 
     /// A build Sparkle has already downloaded and staged. It installs itself the next time Synth
-    /// quits whatever anyone clicks — everything here is only about saying so.
+    /// quits whatever anyone clicks, so a waiting build never speaks: no toast when the download
+    /// lands, no daily reminder, no Notification Center post. It has two surfaces, both pull —
+    /// the sidebar foot button and Settings → About.
     struct StagedUpdate: Sendable, Equatable {
         var version: String
-        /// When the build arrived, which is what the reminder's sub-line counts from.
-        var stagedAt: Date
     }
 
-    /// Set only once we hold a working installer, so the card's `Restart` can never be a button
+    /// Set only once we hold a working installer, so `Restart to update` can never be a button
     /// that does nothing. A staged build restored from a previous launch is deliberately NOT
     /// enough — Sparkle has to offer it again first.
     var stagedUpdate: StagedUpdate?
     /// Sparkle's `immediateInstallationBlock`: install and relaunch, no UI.
     @ObservationIgnored private var updateInstall: (@MainActor () -> Void)?
-    @ObservationIgnored private var updateCardID: UUID?
-    @ObservationIgnored private var updateReminderTask: Task<Void, Never>?
     /// The stub installer records the ask instead of relaunching, so a harness can prove Restart
     /// reached Sparkle without the instance vanishing mid-suite.
     var updateInstallRequested = false
 
-    static let updateVersionKey  = "synth-update-version"
-    static let updateStagedKey   = "synth-update-staged-at"
-    static let updateRemindedKey = "synth-update-reminded-at"
-
-    /// Once a day. Waiting a day is not a test, so `app/harness/` can compress this clock the
-    /// same way it compresses the archive sweep's.
-    var updateRemindInterval: TimeInterval {
-        if let raw = ProcessInfo.processInfo.environment["SYNTH_UPDATE_REMIND_SECONDS"],
-           let secs = TimeInterval(raw) { return secs }
-        return 86_400
-    }
-
-    /// Sparkle staged a build. The card goes up now — that first one is news — unless we already
-    /// spoke about this same build within the last day: Sparkle re-offers a staged update on
-    /// every launch, and announcing it every launch is the nag this feature exists to avoid.
+    /// Sparkle staged a build. Nothing is announced — the foot button and About both read this,
+    /// and go on reading it for as long as it is true.
     func updateStaged(version: String, install: @escaping @MainActor () -> Void) {
-        // A build that IS this build is not an update. Sparkle should never offer one, but the
-        // record outlives the install it describes, so without this a re-signed or rolled-back
-        // appcast could resurface "Synth 0.13.1 is ready" to someone already running 0.13.1 —
-        // dated, for good measure, from before they installed it.
-        guard version != AppStore.currentShortVersion else { forgetUpdateRecord(); return }
+        // A build that IS this build is not an update. Sparkle should never offer one, but a
+        // re-signed or rolled-back appcast could, and offering to restart into the version
+        // already running is a button that does nothing.
+        guard version != AppStore.currentShortVersion else { return }
         updateInstall = install
-        let known = UserDefaults.standard.string(forKey: AppStore.updateVersionKey)
-        let stamped = UserDefaults.standard.object(forKey: AppStore.updateStagedKey) as? Date
-        // A build we already know keeps the date it arrived, so "Downloaded 3 days ago" survives
-        // a relaunch. A different version starts its own clock.
-        let stagedAt = (known == version ? stamped : nil) ?? Date()
-        UserDefaults.standard.set(version, forKey: AppStore.updateVersionKey)
-        UserDefaults.standard.set(stagedAt, forKey: AppStore.updateStagedKey)
-        stagedUpdate = StagedUpdate(version: version, stagedAt: stagedAt)
-        let spokenAt = UserDefaults.standard.object(forKey: AppStore.updateRemindedKey) as? Date
-        if known == version, let spokenAt, Date().timeIntervalSince(spokenAt) < updateRemindInterval {
-            armUpdateReminder()
-            return
-        }
-        showUpdateCard()
-    }
-
-    /// Raising re-raises: a dismissed card comes back and a card still standing is rebuilt, so the
-    /// daily reminder returns to the FRONT of the deck with its waiting time redrawn instead of
-    /// ageing quietly behind newer news (working.html `showUpdateCard`).
-    func showUpdateCard() {
-        guard let update = stagedUpdate else { return }
-        if let old = updateCardID { clearNotif(old) }
-        UserDefaults.standard.set(Date(), forKey: AppStore.updateRemindedKey)
-        notifSeq += 1
-        let id = UUID()
-        updateCardID = id
-        // Attention tier — sticky, no countdown — because the decision stays open until you make
-        // it. Neutral ink and no who-line because this is the app talking about its own
-        // housekeeping. And it is the one attention card that never posts Notification Center:
-        // a version you were not waiting for does not earn a banner over the app you were
-        // actually using, so it waits in the deck for focus to come back.
-        notifs.append(InAppNotif(id: id, kind: .neutral, seq: notifSeq, sessionKind: .terminal,
-                                 title: "", colorIndex: nil, outlivesSession: true,
-                                 message: "Synth \(update.version) is ready",
-                                 iconPath: Phosphor.arrowCircleDown,
-                                 tier: .attention, sub: updateSubline(),
-                                 action: NotifAction(label: "Restart"), drains: false))
-        notifActions[id] = { [weak self] in
-            guard let self else { return }
-            // `runNotifAction` spends the card before it runs this, and a restart that stops to
-            // ask must not also cost you the reminder — so it goes back up behind the frame.
-            // Only here: from Settings no card was spent, and repairing one would be conjuring it.
-            if self.busySessions.count > 0 { self.showUpdateCard() }
-            self.restartForUpdate()
-        }
-        armUpdateReminder()
-    }
-
-    /// The first card is news; every card after it is a reminder, and by then the only thing that
-    /// has changed is how long you have been putting it off — so that is what the line says.
-    func updateSubline() -> String {
-        guard let update = stagedUpdate else { return "" }
-        let days = Int(Date().timeIntervalSince(update.stagedAt) / updateRemindInterval)
-        if days < 1 { return "Installs when you quit" }
-        return days == 1 ? "Downloaded yesterday" : "Downloaded \(days) days ago"
-    }
-
-    private func armUpdateReminder() {
-        updateReminderTask?.cancel()
-        guard stagedUpdate != nil else { return }
-        let spokenAt = UserDefaults.standard.object(forKey: AppStore.updateRemindedKey) as? Date ?? Date()
-        let due = max(0, updateRemindInterval - Date().timeIntervalSince(spokenAt))
-        updateReminderTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(due))
-            guard !Task.isCancelled else { return }
-            await self?.showUpdateCard()
-        }
+        stagedUpdate = StagedUpdate(version: version)
     }
 
     /// Restarting is the shortcut, not the price — the staged build installs itself on the next
@@ -2319,22 +2237,13 @@ enum FeedbackMode {
     /// build, or this one after a stub — is not still being told a build is waiting.
     func applyUpdate() {
         guard let install = updateInstall else {
-            NSLog("Synth: update Restart with no installer — the card should never have been up.")
+            NSLog("Synth: update Restart with no installer — the foot button should never have been up.")
             return
         }
-        if let id = updateCardID { clearNotif(id); updateCardID = nil }
-        updateReminderTask?.cancel()
         updateInstall = nil
         stagedUpdate = nil
-        forgetUpdateRecord()
+        releaseUpdateFootCursor()
         install()
-    }
-
-    /// The persisted record of a staged build, dropped once it stops describing anything.
-    private func forgetUpdateRecord() {
-        for key in [AppStore.updateVersionKey, AppStore.updateStagedKey, AppStore.updateRemindedKey] {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
     }
 
     static var currentShortVersion: String {
@@ -2342,14 +2251,11 @@ enum FeedbackMode {
     }
 
     /// Stage a build without Sparkle — the ⌥U demo and the harness. The installer records the ask
-    /// instead of relaunching, and `daysAgo` back-dates the arrival so the ageing reminder can be
-    /// read without waiting days for it. Deliberately does NOT go through `updateStaged`: a demo
-    /// must not overwrite the record of a real build this install is genuinely waiting on.
-    func stageStubUpdate(version: String, daysAgo: Double = 0) {
+    /// instead of relaunching, so Restart can be proven to reach the installer without the
+    /// instance under test vanishing.
+    func stageStubUpdate(version: String) {
         updateInstall = { [weak self] in self?.updateInstallRequested = true }
-        stagedUpdate = StagedUpdate(version: version,
-                                    stagedAt: Date().addingTimeInterval(-daysAgo * updateRemindInterval))
-        showUpdateCard()
+        stagedUpdate = StagedUpdate(version: version)
     }
 
     // MARK: Feedback (⌘⇧F)
@@ -3335,17 +3241,17 @@ enum FeedbackMode {
     /// ⌥C — clear every standing toast (reset the deck).
     func debugClearNotifs() { notifs.removeAll() }
 
-    /// ⌥U — stage a build. Pressing it again winds the clock back a day and re-raises, so the
-    /// daily reminder can be read as it will actually arrive rather than a day from now.
+    /// ⌥U — toggle a waiting build, so both foot states can be read side by side. Clearing it
+    /// drops the fact rather than routing through the stub installer: the point is the foot in
+    /// both states, not the install path.
     func debugStageUpdate() {
-        guard var update = stagedUpdate else {
+        guard stagedUpdate != nil else {
             stageStubUpdate(version: AppStore.debugNextVersion())
             return
         }
-        update.stagedAt = update.stagedAt.addingTimeInterval(-86_400)
-        stagedUpdate = update
-        UserDefaults.standard.set(update.stagedAt, forKey: AppStore.updateStagedKey)
-        showUpdateCard()
+        stagedUpdate = nil
+        updateInstall = nil
+        releaseUpdateFootCursor()
     }
 
     /// This build's version with its last number bumped — a plausible next release to demo with,

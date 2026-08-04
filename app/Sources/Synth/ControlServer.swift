@@ -584,6 +584,10 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true,
                     "openSessionId": store.openSessionID?.uuidString ?? "",
                     "navCursor": store.navCursor?.uuidString ?? "",
+                    // The whole run the cursor walks, in order — the tree plus the foot buttons.
+                    // `rows` is one branch's sessions, so it can't show that a foot button joined
+                    // or left the run, which is exactly what the update button does.
+                    "navRows": store.activeRows.map(\.uuidString),
                     "branchId": branch.id.uuidString,
                     "rows": branch.sessions.map { s -> [String: String] in
                         ["sessionId": s.id.uuidString,
@@ -661,24 +665,15 @@ final class ControlServer: @unchecked Sendable {
 
         // Stage a build without Sparkle: same path the real `willInstallUpdateOnQuit` takes, with
         // an installer that records the ask instead of relaunching (a harness can't assert on an
-        // instance that just quit). `daysAgo` back-dates the arrival so the reminder's ageing
-        // sub-line is readable without waiting days for it.
+        // instance that just quit).
         case "automation.updateStage" where automation:
-            let version = request["version"] as? String ?? "9.9.9"
-            store.stageStubUpdate(version: version,
-                                  daysAgo: (request["daysAgo"] as? NSNumber)?.doubleValue ?? 0)
-            return ["ok": true]
-
-        // "The day rolled over" — the daily reminder, without a day.
-        case "automation.updateRemind" where automation:
-            store.showUpdateCard()
+            store.stageStubUpdate(version: request["version"] as? String ?? "9.9.9")
             return ["ok": true]
 
         case "automation.updateStatus" where automation:
             return ["ok": true,
                     "pending": store.stagedUpdate != nil,
                     "version": store.stagedUpdate?.version ?? "",
-                    "sub": store.updateSubline(),
                     "installRequested": store.updateInstallRequested]
 
         case "automation.archiveRestore" where automation:

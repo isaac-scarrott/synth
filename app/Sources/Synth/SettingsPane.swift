@@ -1035,9 +1035,9 @@ private struct AboutRow: View {
     let version: String
     @State private var checking = false
     var body: some View {
-        // The card and this row are one fact seen twice — pushed and pulled — so a staged build
-        // says so here too, and offers the same Restart rather than a Check that would only
-        // re-find what is already downloaded.
+        // The foot button and this row are the waiting build's only two surfaces, both pull — so a
+        // staged build says so here too, and offers the same Restart rather than a Check that
+        // would only re-find what is already downloaded.
         if let update = store.stagedUpdate {
             SetToggleRow(label: version,
                          desc: "Synth \(update.version) is ready · installs when you quit") {

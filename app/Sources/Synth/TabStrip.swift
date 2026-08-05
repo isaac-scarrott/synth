@@ -110,6 +110,7 @@ private enum StripItem: Identifiable {
 /// (working.html `.tab` / `.tab--active`).
 private struct TabChip: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
     let session: Session
     /// This tab's pane as a fraction rect of the split it belongs to — the map it wears. Nil on a
     /// lone tab, which has no split to map.
@@ -173,17 +174,26 @@ private struct TabChip: View {
         .help(session.title)
     }
 
-    /// The chip itself. Elevation is the only thing that says "open" here — a hairline plus two soft
-    /// shadows, and no fill at all when the tab is closed. Dark leans on the shadows harder because
-    /// the raised charcoal is a much smaller step off the coat than white is.
+    /// The chip itself. Elevation is the only thing that says "open" here — a hairline plus a
+    /// contact shadow, and no fill at all when the tab is closed. Dark can't lean on a black drop
+    /// shadow the way light does — it reads as nothing against an already-dark rail — so dark trades
+    /// the wasted ambient blur for a hairline top highlight instead (light catching the tab's edge,
+    /// the standard dark-UI substitute for shadow).
     @ViewBuilder private var shell: some View {
         let shape = RoundedRectangle(cornerRadius: 8)
         shape.fill(fill)
             .overlay {
                 if isActive { shape.strokeBorder(Theme.borderStrong, lineWidth: 0.5) }
             }
-            .shadow(color: isActive ? Theme.shade(0.04, 0.24) : .clear, radius: 0.5, y: 1)
-            .shadow(color: isActive ? Theme.shade(0.06, 0.30) : .clear, radius: 4, y: 3)
+            .overlay {
+                if isActive && colorScheme == .dark {
+                    Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .clipShape(shape)
+                }
+            }
+            .shadow(color: contactShadow, radius: colorScheme == .dark ? 1 : 0.5, y: 1)
+            .shadow(color: ambientShadow, radius: 5, y: 4)
             // Copper ring + wash when a dragged tab is about to pair into a split with this one (012).
             .overlay {
                 if store.pairTargetID == session.id {
@@ -191,6 +201,16 @@ private struct TabChip: View {
                         .overlay { shape.strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1.5) }
                 }
             }
+    }
+    /// The tight, always-present grounding shadow (working.html `.tab--active`'s first layer).
+    private var contactShadow: Color {
+        guard isActive else { return .clear }
+        return colorScheme == .dark ? .black.opacity(0.3) : .black.opacity(0.05)
+    }
+    /// The soft ambient lift — light only; in dark it never had enough contrast to show.
+    private var ambientShadow: Color {
+        guard isActive, colorScheme == .light else { return .clear }
+        return .black.opacity(0.08)
     }
 
     // The same status/owner slot the sidebar row carries; a browser owned by an agent wears the

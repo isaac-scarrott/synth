@@ -1827,3 +1827,9 @@ disclosure to dive deeper.
   `describe`, now asks the device; comment mode refuses to hand over a stale frame as evidence. The check's
   own device handling had reintroduced an earlier fix's bug, and its coverage gap for the mixed-space case is
   a failure now rather than a PASS that quietly meant "not run". 48 assertions plus forced degradation.
+
+## [2026-08-05](docs/features/2026-08-05.md)
+
+- **Active tab lift, fixed for dark mode** — dark mode was reusing light mode's black drop shadow at
+  higher opacity, which reads as nothing against an already-dark rail; swapped in a top highlight +
+  tight contact shadow, the standard dark-UI substitute for ambient shadow.

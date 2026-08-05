@@ -1720,3 +1720,9 @@ disclosure to dive deeper.
   row is centred in the rail, so it rises 3px and now sits 7px (was 4px) above the centreline of the
   traffic lights and the sidebar toggle. Those can't come up to meet it — AppKit fixes the lights'
   vertical position — so the choice was a tight rail or an aligned top row, and tight won.
+
+## [2026-08-05](docs/features/2026-08-05.md)
+
+- **Active tab lift, fixed for dark mode** — dark mode was reusing light mode's black drop shadow at
+  higher opacity, which reads as nothing against an already-dark rail; swapped in a top highlight +
+  tight contact shadow, the standard dark-UI substitute for ambient shadow.

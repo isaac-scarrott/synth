@@ -907,6 +907,7 @@ struct RenameField: View {
             .textFieldStyle(.plain)
             .font(font)
             .foregroundStyle(Theme.repoName)
+            .frame(maxWidth: .infinity)
             .focused($focused)
             .onAppear {
                 focused = true

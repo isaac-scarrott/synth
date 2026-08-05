@@ -836,6 +836,7 @@ private struct GoToField: View {
                 .textFieldStyle(.plain)
                 .font(.mono(13))
                 .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity)
                 .focused($focused)
                 .onSubmit { onSubmit(text) }
                 .onExitCommand { onCancel?() }

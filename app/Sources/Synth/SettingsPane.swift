@@ -964,6 +964,7 @@ private struct TplNameField: View {
         TextField("", text: $text)
             .textFieldStyle(.plain).font(.sans(13, 500))
             .foregroundStyle(off ? Theme.inkFaint : Theme.ink)
+            .frame(maxWidth: .infinity)
             .focused($focused)
             .padding(.horizontal, 5).padding(.vertical, 2)
             .background(RoundedRectangle(cornerRadius: 5).fill(hovering || focused ? Theme.rowHover : Color.clear)

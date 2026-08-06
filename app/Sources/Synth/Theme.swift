@@ -13,7 +13,7 @@ enum Theme {
     // bottom used to be `canvas`, an opaque fill behind the whole shell; the window's material
     // stands where it did, so the desktop itself is now the last stop on the ramp.
     static let panel       = dyn(0xFAFBFC, 0x191B1F)   // content surface
-    static let sidebar     = dyn(0xF0F1F4, 0x1D1F24)   // sidebar surface
+    static let sidebar     = dyn(0xF0F1F4, 0x1D1F24)   // rails in ⌘? + changelog (the sidebar itself is bare coat)
 
     /// Translucency. The window's one translucent coat, over `WindowBlur`'s blurred desktop
     /// (`--panel` on working.html's `.app`). The blur only samples what sits behind the *window*, so
@@ -32,11 +32,6 @@ enum Theme {
     /// translucent shell over a *sharp* wallpaper is worse than an opaque one.
     static let windowCoat = WindowBlur.isAvailable ? dyn(0xFAFBFC, 0.86, 0x191B1F, 0.97)
                                                   : dyn(0xFAFBFC, 0x191B1F)
-    /// The sidebar: the coat, one step down the ladder. A tint of the ink rather than a colour, so
-    /// the step holds even as the wallpaper drags the coat up and down beneath it — a fixed colour
-    /// breathes with it. `sidebar` above stays opaque; all that's left for it is the rails in ⌘?
-    /// and the changelog, which sit on a dialog rather than on the coat.
-    static let sidebarStep = mono(0.04, 0.025)
     static let raised      = dyn(0xFFFFFF, 0x282B30)   // raised fills: menus, pills, fields
     static let border      = mono(0.07, 0.09)          // hairline (black→white overlay)
     static let borderStrong = mono(0.10, 0.13)

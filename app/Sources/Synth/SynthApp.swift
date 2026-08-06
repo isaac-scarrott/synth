@@ -174,12 +174,8 @@ struct RootView: View {
                 if !store.sidebarCollapsed {
                     Sidebar()
                         .frame(width: store.sidebarWidth)
-                        .background(Theme.sidebarStep)
-                        .clipShape(.rect(topLeadingRadius: 0, bottomLeadingRadius: 0,
-                                         bottomTrailingRadius: Theme.radiusPanel,
-                                         topTrailingRadius: Theme.radiusPanel))
-                        .shadow(color: .black.opacity(0.03), radius: 14, x: 4)
-                        .shadow(color: .black.opacity(0.02), radius: 1, x: 1)
+                        // Above ContentPane so the resize handle, which overhangs the
+                        // trailing edge onto the session card, still receives hits.
                         .zIndex(1)
                         .overlay(alignment: .trailing) { SidebarResizeHandle() }
                         .transition(.move(edge: .leading))

@@ -133,7 +133,6 @@ private struct SidebarFoot: View {
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: store.stagedUpdate?.version)
         .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 10)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 }
 
@@ -1503,9 +1502,12 @@ struct DropLine: View {
     }
 }
 
-/// Draggable seam on the sidebar's trailing edge (working.html's `.resize-handle`):
-/// drag resizes within [min,max]; double-click resets to the default width. The width
-/// tracks instantly (no animation) so the drag feels direct.
+/// Draggable grab on the session card's left edge (working.html's `.resize-handle`):
+/// the sidebar has no seam of its own any more, so the card — the only visible
+/// boundary — is what you grab. Drag resizes within [min,max]; double-click resets to
+/// the default width. The width tracks instantly (no animation) so the drag feels
+/// direct. On hover/drag the card's edge thickens: a 3pt strip along its straight run,
+/// stopping short of the rounded corners.
 struct SidebarResizeHandle: View {
     @Environment(AppStore.self) private var store
     @State private var startWidth: CGFloat?
@@ -1516,16 +1518,23 @@ struct SidebarResizeHandle: View {
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(width: 10)
+            .frame(width: 9)
             .contentShape(Rectangle())
             .overlay {
-                Rectangle()
-                    .fill(Theme.input)
-                    .frame(width: 1.5)
-                    .opacity(active ? 0.7 : (hovering ? 0.5 : 0))
-                    .animation(.easeOut(duration: 0.12), value: hovering)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Theme.inkFaint)
+                    .frame(width: 3)
+                    // Straight-edge run only: below the card's top corner radius
+                    // (titlebar 50 + top margin 4 + radius 10, or the 36+4+10 tab
+                    // strip), above its bottom one (margin 14 + radius 10).
+                    .padding(.top, store.tabsMode ? 50 : Theme.titlebarHeight + 4 + 10)
+                    .padding(.bottom, 24)
+                    .opacity((hovering || active) ? 1 : 0)
+                    .animation(.easeOut(duration: 0.14), value: hovering)
+                    .animation(.easeOut(duration: 0.14), value: active)
             }
-            .offset(x: 5)   // straddle the sidebar/content seam
+            // Centre on the card's left edge, 14pt beyond the sidebar's trailing edge.
+            .offset(x: 18.5)
             .onHover { h in
                 hovering = h
                 if h { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }

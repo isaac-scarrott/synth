@@ -1833,3 +1833,10 @@ disclosure to dive deeper.
 - **Active tab lift, fixed for dark mode** — dark mode was reusing light mode's black drop shadow at
   higher opacity, which reads as nothing against an already-dark rail; swapped in a top highlight +
   tight contact shadow, the standard dark-UI substitute for ambient shadow.
+
+## [2026-08-06](docs/features/2026-08-06.md)
+
+- **One coat, no seams** — sidebar tint/corner/shadow and every shell hairline (sidebar seam, pane
+  header, sidebar foot) removed; the raised session card is the only surface, its left edge is the
+  sidebar-resize grab (hover thickens it along the straight run, stopping at the corner radius),
+  and Claude Code now renders as the TUI it really is, inside the same terminal card as the shells.

@@ -24,15 +24,11 @@
        sibling app layers above it, so nested backdrop-filters would promise a look AppKit can't
        build. Every surface that differs from the coat is a tint *on* it, never a second
        translucent layer — two coats compound to near-opaque, so the desktop would show through
-       the pane but not the sidebar, and the sidebar's rounded corners would cut a hole clean
-       through to the wallpaper. The alphas err solid: the desktop is a wash under the app, never
-       a subject, and legibility outranks the effect everywhere the two disagree. */
+       one surface but not its neighbour. The alphas err solid: the desktop is a wash under the
+       app, never a subject, and legibility outranks the effect everywhere the two disagree. */
     --canvas: #e9eaee;                     /* the desktop the window sits on */
     --panel: rgba(250,251,252,0.86);       /* the window's one translucent coat */
     --sidebar: #f0f1f4;                    /* opaque — all that's left is the sidebar's echo inside ⌘? */
-    --sidebar-step: rgba(0,0,0,0.04);      /* the sidebar itself: the coat, one step down the ladder.
-                                              A tint of the ink, not a colour, so the step stays even
-                                              as the wallpaper drags the coat up and down under it. */
     --border: rgba(0, 0, 0, 0.07);
     --border-strong: rgba(0, 0, 0, 0.1);
     --text: #1c1e23;
@@ -95,7 +91,6 @@
     --update-rgb: 127,97,48; /* drives the wash + hairline, so the hue flips per theme in one edit */
     --titlebar-h: 50px;
     --radius-app: 14px;
-    --radius-panel: 20px;
     --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
     --notif-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 12px 30px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.06);
     --font: "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
@@ -220,52 +215,50 @@
   .app.collapsed { grid-template-columns: 0 1fr; }
   .app.resizing { transition: none; cursor: col-resize; -webkit-user-select: none; user-select: none; }
 
-  /* ---- Resizable sidebar: drag the seam between sidebar and content ---- */
+  /* ---- Resizable sidebar: grab the session card's left edge ---- */
   .resize-handle {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: var(--sidebar-w, 260px);
+    left: calc(var(--sidebar-w, 260px) + 14px);   /* the card's left edge (14px side margin) */
     width: 9px;
     transform: translateX(-4.5px);
     z-index: 30;
     cursor: col-resize;
     -webkit-app-region: no-drag;
   }
+  /* under the pointer the card's own edge thickens — a strip along its straight run only,
+     stopping where the 10px corner radius begins */
   .resize-handle::after {
     content: "";
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: calc(var(--titlebar-h) + 4px + 10px);
+    bottom: calc(14px + 10px);
     left: 50%;
-    width: 1.5px;
+    width: 3px;
     transform: translateX(-50%);
-    background: var(--input);
+    border-radius: 2px;
+    background: var(--text-faint);   /* scrollbar-thumb weight: visible, but quieter than any state colour */
     opacity: 0;
     transition: opacity 140ms ease;
   }
+  html[data-tabs="on"] .resize-handle::after { top: 50px; }   /* tabs mode: 36px strip + the card's 4px + radius */
   @media (hover: hover) and (pointer: fine) {
-    .resize-handle:hover::after { opacity: 0.5; }
+    .resize-handle:hover::after { opacity: 1; }
   }
-  .app.resizing .resize-handle::after { opacity: 0.7; }
+  .app.resizing .resize-handle::after { opacity: 1; }
   .app.collapsed .resize-handle { display: none; }
 
-  /* ---- Sidebar (full height, rounded right) ---- */
+  /* ---- Sidebar (full height) ----
+     No fill and no seam of its own: the sidebar IS the coat. The only boundary you see is the
+     session card's left edge, and that edge is also the sidebar-resize grab. */
   .sidebar {
     grid-column: 1;
     grid-row: 1;
     min-width: 0;
     overflow: hidden;
-    /* stacked above the content column so anything the content runs on underneath — the tabs-mode
-       first-tab fill — is occluded by the sidebar's rounded corner rather than painting over it */
     position: relative;
     z-index: 1;
-    background: var(--sidebar-step);
-    border-right: 0.5px solid var(--border);
-    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
-    box-shadow:
-      1px 0 1px rgba(0, 0, 0, 0.02),
-      4px 0 14px rgba(0, 0, 0, 0.03);
     display: flex;
     flex-direction: column;
   }
@@ -466,9 +459,9 @@
   .split--row { flex-direction: row; }
   .split--col { flex-direction: column; }
   .split > .pane, .split > .split { min-width: 0; min-height: 0; }
-  /* Draggable inter-pane seam (011) — reuses the sidebar .resize-handle idiom: a 1px hairline
-     divider with a widened invisible grab band, revealing a brighter 1.5px line on hover / while
-     dragging. Drag-only (no double-click reset, 004 §5); the drag honours the min-pane floor. */
+  /* Draggable inter-pane seam (011) — a 1px hairline divider with a widened invisible grab band,
+     revealing a brighter 1.5px line on hover / while dragging. Drag-only (no double-click reset,
+     004 §5); the drag honours the min-pane floor. */
   .pane-seam { position: relative; flex: 0 0 1px; background: var(--border); z-index: 6; }
   .pane-seam::before { content: ""; position: absolute; }
   .pane-seam--row::before { top: 0; bottom: 0; left: 50%; width: 9px; transform: translateX(-50%); cursor: col-resize; }
@@ -514,12 +507,12 @@
     .prchip span { display: none; }               /* number label → bare state glyph */
     /* session surfaces give back their generous padding so content stays legible at the floor.
        The terminal already reflows (pre-wrap + word-break); this only reclaims the frame margins. */
-    .term { margin: 8px; padding: 10px 12px; }
-    .browser { margin: 8px; }
+    .term { margin: 4px 8px 8px; padding: 10px 12px; }
+    .browser { margin: 4px 8px 8px; }
     .browser__bar { gap: 5px; padding: 6px 7px; }
     .browser__view { padding: 18px 16px; }
     .browser__home { padding: 34px 18px 20px; }
-    .chat__scroll { padding: 14px 15px; }
+    .chat__scroll { padding: 10px 12px; }
     .chat__composer { margin: 0 10px 10px; }
   }
   @container (max-width: 380px) {
@@ -534,7 +527,6 @@
     gap: 12px;
     padding: 0 18px;
     height: var(--titlebar-h);
-    border-bottom: 0.5px solid var(--border);
   }
   .pane__title {
     display: flex;
@@ -605,7 +597,8 @@
   /* ----- Terminal surface ----- */
   .term {
     flex: 1;
-    margin: 14px;
+    /* 4px top: the 50px header already carries the vertical air, so the card tucks up under it */
+    margin: 4px 14px 14px;
     padding: 13px 15px;
     border-radius: 10px;
     background: var(--tui-bg);
@@ -628,26 +621,20 @@
   @keyframes term-blink { 50% { opacity: 0; } }
   .term ::selection { background: var(--tui-sel); }
 
-  /* ----- Agent (Claude Code) surface ----- */
-  .chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  .chat__scroll { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 18px; }
-  .msg { max-width: 660px; width: 100%; }
-  .msg__role { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 6px; }
-  .msg__body { font-size: 13px; line-height: 1.6; color: var(--ink-open); }
-  .msg--user .msg__body { background: var(--hover-soft); border-radius: 10px; padding: 10px 12px; }
-  .msg__body p + p { margin-top: 9px; }
-  .msg__body ul { margin: 9px 0 0; padding-left: 18px; }
-  .msg__body li { margin: 3px 0; }
-  .msg__body code { font-family: var(--mono); font-size: 12px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
-  .msg--work .msg__body { color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
-
+  /* ----- Agent (Claude Code) surface — Claude Code is a TUI living inside a real terminal, so
+     the pane draws the same terminal card the shells get and renders the agent inside it:
+     transcript as terminal lines, then the framed reply box the CLI itself draws. ----- */
+  .term--claude { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  .chat__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 13px 15px; }
+  .term__dim { color: var(--tui-dim); }
+  .tui__spin { display: inline-block; color: var(--copper); animation: tui-spin 1.4s var(--ease-in-out) infinite; }
+  @keyframes tui-spin { 50% { opacity: 0.3; } }
   .chat__composer {
     flex-shrink: 0;
-    margin: 0 16px 16px;
-    padding: 11px 13px;
-    border: 0.5px solid var(--border-strong);
-    border-radius: 12px;
-    background: var(--raised);
+    margin: 0 13px 13px;
+    padding: 8px 11px;
+    border: 1px solid var(--tui-hair);
+    border-radius: 6px;
     transition: border-color 160ms ease, box-shadow 160ms ease;
   }
   .chat__composer.awaiting {
@@ -658,17 +645,15 @@
     0%, 100% { box-shadow: 0 0 0 3px rgba(var(--input-rgb),0.13); }
     50% { box-shadow: 0 0 0 3px rgba(var(--input-rgb),0.04); }
   }
-  .chat__ask { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--input); margin-bottom: 9px; }
+  .chat__ask { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--input); margin-bottom: 8px; }
   .chat__ask svg { width: 13px; height: 13px; flex-shrink: 0; }
   .chat__inputrow { display: flex; align-items: center; gap: 8px; }
-  .chat__input { flex: 1; font-family: inherit; font-size: 13px; color: var(--text); outline: none; min-width: 0; }
-  .chat__input:empty::before { content: attr(data-ph); color: var(--text-faint); }
-  .chat__send { width: 27px; height: 27px; flex-shrink: 0; border-radius: 7px; background: var(--accent); color: var(--on-accent); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 110ms var(--ease-out), opacity 120ms ease; }
-  .chat__send svg { width: 15px; height: 15px; }
-  .chat__send:active { transform: scale(0.9); }
+  .tui__prompt { color: var(--tui-dim); }
+  .chat__input { flex: 1; font-family: inherit; font-size: 12px; line-height: 1.6; color: var(--tui-fg); outline: none; min-width: 0; }
+  .chat__input:empty::before { content: attr(data-ph); color: var(--tui-dim); }
 
   /* ----- Browser (embedded; one page per session, opens to a "go to" home) ----- */
-  .browser { flex: 1; display: flex; flex-direction: column; margin: 14px; border-radius: 10px; overflow: hidden; border: 0.5px solid var(--border-strong); background: var(--raised); box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; }
+  .browser { flex: 1; display: flex; flex-direction: column; margin: 4px 14px 14px; border-radius: 10px; overflow: hidden; border: 0.5px solid var(--border-strong); background: var(--raised); box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; }
   .browser__bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--chrome); border-bottom: 0.5px solid var(--border); }
   .browser__nav { display: flex; gap: 2px; }
   .browser__btn { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 120ms ease, color 120ms ease, transform 110ms var(--ease-out); }
@@ -2225,7 +2210,6 @@
     flex-shrink: 0;
     /* 10px gutter tracks .nav so the Settings pill shares a left edge with tree row pills */
     padding: 6px 10px 10px;
-    border-top: 0.5px solid var(--border);
   }
   .foot-btn {
     display: flex;
@@ -2643,7 +2627,7 @@
     * { transition-duration: 0.01ms !important; }
     .row:active, .icon-btn:active { transform: translateY(0); }
     .kebab:active { transform: none; }
-    .ind, .beat i, .ind--input svg, .term__cursor, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .ind, .beat i, .ind--input svg, .term__cursor, .tui__spin, .chat__composer.awaiting, .skel, .pane { animation: none; }
     .session--pulse, .notif--input .notif__glyph svg { animation: none; }
     .beat i { opacity: 0.85; transform: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
@@ -2672,7 +2656,6 @@
        once. Equal effect, wildly unequal alpha. */
     --panel: rgba(25,27,31,0.97);
     --sidebar: #1d1f24;
-    --sidebar-step: rgba(255,255,255,0.025);   /* the ladder runs the other way in dark */
     --tab-well: rgba(255,255,255,0.06);
     --border: rgba(255,255,255,0.09);
     --border-strong: rgba(255,255,255,0.13);
@@ -3380,7 +3363,6 @@
   });
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const ICON_SEND = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z"/></svg>';
   const ICON_EMPTY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg>';
   const STATE_LABEL = { run: 'busy', work: 'busy', input: 'needs input', error: 'error', idle: 'idle' };
   const IND_HTML = {
@@ -5109,30 +5091,25 @@
   function composerHTML(awaiting) {
     const ask = awaiting ? `<div class="chat__ask">${MARK_INPUT}Should the menu also surface recent files, or just commands and sessions for now?</div>` : '';
     return `<div class="chat__composer ${awaiting ? 'awaiting' : ''}">${ask}
-      <div class="chat__inputrow">
+      <div class="chat__inputrow"><span class="tui__prompt">&gt;</span>
         <div class="chat__input" contenteditable="true" role="textbox" data-ph="Reply to Claude Code…"></div>
-        <span class="chat__send" role="button" aria-label="Send">${ICON_SEND}</span>
       </div></div>`;
   }
   function renderChat(state) {
     const transcript = `
-      <div class="msg msg--user"><div class="msg__role">You</div>
-        <div class="msg__body">Add a ⌘K command menu to the sidebar, styled like Linear's.</div></div>
-      <div class="msg msg--assistant"><div class="msg__role">Claude Code</div>
-        <div class="msg__body">
-          <p>Done — <code>CommandPalette</code> opens on <code>⌘K</code> with fuzzy search over commands, projects, branches, and sessions.</p>
-          <p>Wired up:</p>
-          <ul><li>Focus-trapped input, <code>↑/↓</code> to move, <code>↵</code> to run, <code>Esc</code> to close</li>
-          <li>Subsequence matcher with word-boundary + contiguity bonuses</li>
-          <li>Results list resizes fluidly as you type</li></ul>
-        </div></div>`;
-    if (state === 'work') {
-      return `<div class="chat"><div class="chat__scroll">${transcript}
-        <div class="msg msg--assistant msg--work"><div class="msg__role">Claude Code</div>
-          <div class="msg__body"><span class="beat"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Editing <code>src/palette/CommandPalette.tsx</code>…</div></div>
-      </div>${composerHTML(false)}</div>`;
-    }
-    return `<div class="chat"><div class="chat__scroll">${transcript}</div>${composerHTML(state === 'input')}</div>`;
+      <div class="term__ln dim">&gt; Add a ⌘K command menu to the sidebar, styled like Linear's.</div>
+      <div class="term__ln"></div>
+      <div class="term__ln">● Done — CommandPalette opens on ⌘K with fuzzy search over commands, projects, branches, and sessions.</div>
+      <div class="term__ln"></div>
+      <div class="term__ln">  Wired up:</div>
+      <div class="term__ln">  - Focus-trapped input, ↑/↓ to move, ↵ to run, Esc to close</div>
+      <div class="term__ln">  - Subsequence matcher with word-boundary + contiguity bonuses</div>
+      <div class="term__ln">  - Results list resizes fluidly as you type</div>`;
+    const work = state === 'work' ? `
+      <div class="term__ln"></div>
+      <div class="term__ln"><span class="tui__spin">✻</span> Editing src/palette/CommandPalette.tsx… <span class="term__dim">(esc to interrupt)</span></div>` : '';
+    return `<div class="term term--claude">
+      <div class="chat__scroll">${transcript}${work}</div>${composerHTML(state === 'input')}</div>`;
   }
 
   function renderEmpty() {
@@ -5466,37 +5443,38 @@
     streamTimers.add(id);
   }
 
-  // Replying to the agent: append the message, flip it to working, then settle back to running.
+  // Replying to the agent: echo the reply into the transcript as the CLI would, flip it to
+  // working, then settle back to running.
   function wireComposer(sessionEl, scope) {
     const composerEl = scope.querySelector('.chat__composer');
     if (!composerEl) return;
     const input = composerEl.querySelector('.chat__input');
-    const send = composerEl.querySelector('.chat__send');
     const scroll = scope.querySelector('.chat__scroll');
+    const line = (cls, html) => {
+      const d = document.createElement('div');
+      d.className = 'term__ln' + (cls ? ' ' + cls : '');
+      d.innerHTML = html;
+      scroll.appendChild(d);
+      return d;
+    };
     const submit = () => {
       const text = (input.textContent || '').trim() || 'Just commands and sessions for now.';
-      const u = document.createElement('div');
-      u.className = 'msg msg--user';
-      u.innerHTML = `<div class="msg__role">You</div><div class="msg__body">${esc(text)}</div>`;
-      scroll.appendChild(u);
+      line('', '');
+      line('dim', '&gt; ' + esc(text));
       input.textContent = '';
       composerEl.classList.remove('awaiting');
       const ask = composerEl.querySelector('.chat__ask'); if (ask) ask.remove();
       setSessionState(sessionEl, 'work');
-      const w = document.createElement('div');
-      w.className = 'msg msg--assistant msg--work';
-      w.innerHTML = `<div class="msg__role">Claude Code</div><div class="msg__body"><span class="beat"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>On it — wiring that up now…</div>`;
-      scroll.appendChild(w);
+      line('', '');
+      const w = line('', '<span class="tui__spin">✻</span> On it — wiring that up now…');
       scroll.scrollTop = scroll.scrollHeight;
       setTimeout(() => {
         if (!document.contains(w)) return;
-        w.classList.remove('msg--work');
-        w.querySelector('.msg__body').innerHTML = 'Added recent files to the palette source and re-ran the tests — all green.';
+        w.innerHTML = '● Added recent files to the palette source and re-ran the tests — all green.';
         setSessionState(sessionEl, 'run');
         scroll.scrollTop = scroll.scrollHeight;
       }, 3200);
     };
-    send.addEventListener('click', submit);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
   }
 

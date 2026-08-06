@@ -1840,3 +1840,10 @@ disclosure to dive deeper.
   header, sidebar foot) removed; the raised session card is the only surface, its left edge is the
   sidebar-resize grab (hover thickens it along the straight run, stopping at the corner radius),
   and Claude Code now renders as the TUI it really is, inside the same terminal card as the shells.
+- **0.27.0 ships** — the version boundary: the ten entries above this line are 0.27.0, `CFBundleVersion`
+  532, tag `v0.27.0`, minor for the simulator headline. Four changelog lines: the seven simulator entries
+  collapse into one (from outside they are one feature, Experimental and off by default), the three
+  tabs-mode entries into one, one coat stands alone, and the paste-hang fix gets a line despite no ledger
+  entry of its own. Verified credential-less with quarantine set: dmg and the app inside it both notarized
+  and stapled, appcast newest item 0.27.0 at `sparkle:version` 532, `edSignature` on all 18 enclosures
+  including 5 deltas. Landing page unchanged — no `synth-site` push.

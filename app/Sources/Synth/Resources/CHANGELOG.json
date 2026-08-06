@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.27.0",
+    "date": "2026-08-06",
+    "changes": [
+      "An iOS simulator is a session, behind a new Experimental toggle (off by default). Pick a device when you start a session and its live screen streams straight into the pane — Simulator.app never launches — with your clicks, typing and scrolling delivered as real device input, and Home/Lock on the pane itself. Agents get the same device through a synth-simulator MCP server: boot, launch, tap, type, scroll, rotate, screenshot, and a describe tool that reads the screen as text — a fraction of a screenshot's size, carrying the identifiers a screenshot makes you guess at. Comment mode works here too: click an element on the device and it lands with the owning agent.",
+      "One coat, no seams. The sidebar's tint, rounded corner and shadow are gone, along with every shell hairline — the sidebar seam, the pane-header rule, the line above the sidebar foot. The window is a single surface with exactly one raised thing on it, the session card, and the card's left edge is the boundary: it doubles as the sidebar-resize grab, thickening on hover along its straight run and stopping where the corner radius begins.",
+      "Tabs mode's top row sits on one centre line. The rail tightens from 42px to 36px so the clearance around the tab run matches the clearance inside it, and the traffic lights and sidebar toggle come down to the chips' own centre line instead of holding the taller band's. The open tab's lift finally reads in dark mode too — a top highlight and tight contact shadow replace a black drop shadow that vanished against an already-dark rail.",
+      "Pasting an enormous clipboard into a rename, search or template field no longer hangs the app — the unbounded fields were forcing the whole string through text layout on every keystroke, measured at an 18-second stall."
+    ]
+  },
+  {
     "version": "0.26.0",
     "date": "2026-08-04",
     "changes": [

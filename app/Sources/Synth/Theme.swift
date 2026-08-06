@@ -147,6 +147,10 @@ enum Theme {
     /// pane header are exactly this tall, so the traffic lights, the sidebar toggle, the pane
     /// title and the DEV tag all share one centre line across the sidebar/content boundary.
     static let titlebarHeight: CGFloat = 50
+    /// Tabs mode's top row — working.html `.tabstrip { height: 36px }`: the 32pt split tray
+    /// plus 2pt. In tabs mode the whole top row (toggle band, traffic lights, DEV tag) drops
+    /// to this height so everything shares the strip's centre line.
+    static let tabStripHeight: CGFloat = 36
     /// Traffic lights (working.html `.traffic`): 12pt circles, 20pt from the leading edge,
     /// 20pt pitch, centred in the band. WindowChrome puts AppKit's real buttons here.
     static let trafficLightInset: CGFloat = 20

@@ -1329,6 +1329,12 @@
      untouched. Sidebar drops to 2-deep (session rows + the split echo band leave the tree; the
      branch becomes the deepest row, still carrying its roll-up); per-session signals ride the tabs
      the panes draw instead. */
+  /* The whole top row shares the strip's 36px rhythm: the sidebar's toggle band drops to strip
+     height, and the fixed chrome moves to the same centre line (18px) whatever its own height. */
+  html[data-tabs="on"] .sidebar__top { height: 36px; }
+  html[data-tabs="on"] .traffic { top: 12px; }      /* 12px dots centred in 36 */
+  html[data-tabs="on"] .expand-btn { top: 4px; }    /* 28px button centred in 36 */
+  html[data-tabs="on"] .dev-tag { top: 9px; }       /* 18.5px pill centred in 36 */
   html[data-tabs="on"] .nav .session { display: none; }        /* rows leave the tree — they're tabs now */
   html[data-tabs="on"] .nav .session-group { display: none; }  /* the on-screen-split echo band goes too */
   html[data-tabs="on"] .branch--group > .chev { display: none; }  /* nothing left to disclose under the branch */

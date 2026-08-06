@@ -65,7 +65,8 @@ struct Sidebar: View {
         // 10pt trailing pad lands the 28pt toggle on the sidebar's control axis, 24pt in from
         // the trailing edge — where the header's `+` and every row's status indicator sit too.
         .padding(.horizontal, 10)
-        .frame(height: Theme.titlebarHeight)
+        // Tabs mode: the band drops to strip height so the toggle rides the tabs' centre line.
+        .frame(height: store.tabsMode ? Theme.tabStripHeight : Theme.titlebarHeight)
     }
 
     private var header: some View {
@@ -1525,9 +1526,9 @@ struct SidebarResizeHandle: View {
                     .fill(Theme.inkFaint)
                     .frame(width: 3)
                     // Straight-edge run only: below the card's top corner radius
-                    // (titlebar 50 + top margin 4 + radius 10, or the 36+4+10 tab
-                    // strip), above its bottom one (margin 14 + radius 10).
-                    .padding(.top, store.tabsMode ? 50 : Theme.titlebarHeight + 4 + 10)
+                    // (band + top margin 4 + radius 10), above its bottom one
+                    // (margin 14 + radius 10).
+                    .padding(.top, (store.tabsMode ? Theme.tabStripHeight : Theme.titlebarHeight) + 4 + 10)
                     .padding(.bottom, 24)
                     .opacity((hovering || active) ? 1 : 0)
                     .animation(.easeOut(duration: 0.14), value: hovering)

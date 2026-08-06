@@ -2,7 +2,8 @@ import SwiftUI
 import AppKit
 
 /// Puts the window's traffic lights on working.html's `.traffic` axis: 12pt circles 20pt from the
-/// leading edge, centred in the `Theme.titlebarHeight` band.
+/// leading edge, centred in the top band (`Theme.titlebarHeight`, or the tab strip's 36 in tabs
+/// mode so the lights ride the tabs' centre line).
 ///
 /// AppKit's own placement is a 28pt titlebar with the lights at x=8, centre y=14 — too high and too
 /// close to the rounded corner once the band is 50pt. Two approaches don't work: an empty unified
@@ -14,15 +15,19 @@ import AppKit
 /// resets both on every relayout, so the container tells us when it has been reset and we redo the
 /// work. Fullscreen is left alone: there the titlebar is an auto-hiding overlay AppKit owns.
 struct WindowChrome: NSViewRepresentable {
+    var band: CGFloat = Theme.titlebarHeight
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView {
         let view = PassthroughView()
+        context.coordinator.band = band
         DispatchQueue.main.async { context.coordinator.adopt(view.window) }
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.band = band
         DispatchQueue.main.async { context.coordinator.adopt(view.window) }
     }
 
@@ -39,6 +44,14 @@ struct WindowChrome: NSViewRepresentable {
         private weak var window: NSWindow?
         private var tokens: [NSObjectProtocol] = []
         private let closeGuard = CloseGuard()
+
+        /// The band the lights centre in; re-placed immediately when a mode switch changes it.
+        var band: CGFloat = Theme.titlebarHeight {
+            didSet {
+                guard band != oldValue, let window else { return }
+                place(in: window)
+            }
+        }
 
         func adopt(_ window: NSWindow?) {
             guard let window else { return }
@@ -118,7 +131,6 @@ struct WindowChrome: NSViewRepresentable {
                   let frameView = container.superview
             else { return }
 
-            let band = Theme.titlebarHeight
             let wanted = NSRect(x: 0, y: frameView.bounds.height - band,
                                 width: frameView.bounds.width, height: band)
             if container.frame != wanted { container.frame = wanted }

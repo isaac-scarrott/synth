@@ -56,9 +56,9 @@ struct TabStrip: View {
                 PRChip(pr: pr).padding(.leading, 6).padding(.trailing, 12)
             }
         }
-        // 36 = the 32pt split tray plus 2 — the same 2 the tray gives its own members, so the rail is
+        // The 32pt split tray plus 2 — the same 2 the tray gives its own members, so the rail is
         // no deeper than the run it holds (working.html `.tabstrip`).
-        .frame(height: 36)
+        .frame(height: Theme.tabStripHeight)
         // No fill and no bottom rule of its own: the shell root's coat is already under it, and the
         // chips are inset far enough off every edge that nothing needs a seam to stop at.
         .background(GeometryReader { g in

@@ -212,7 +212,8 @@ struct RootView: View {
         .overlay(alignment: .topLeading) { DropLine() }
         // Tabs mode's horizontal twin of the reorder line, same z-order.
         .overlay(alignment: .topLeading) { TabDropLine() }
-        .background(WindowChrome().frame(width: 0, height: 0))
+        .background(WindowChrome(band: store.tabsMode ? Theme.tabStripHeight : Theme.titlebarHeight)
+            .frame(width: 0, height: 0))
         // Appearance: nil follows the OS (System), else pins light/dark. Working.html parity.
         .preferredColorScheme(store.colorSchemeOverride)
         // Band-height row rather than a top inset: the tag centres on the traffic-light axis
@@ -220,7 +221,7 @@ struct RootView: View {
         .overlay(alignment: .top) {
             if isDevChannel {
                 HStack(spacing: 0) { Spacer(minLength: 0); DevTagBadge() }
-                    .frame(height: Theme.titlebarHeight)
+                    .frame(height: store.tabsMode ? Theme.tabStripHeight : Theme.titlebarHeight)
             }
         }
         .overlay {

@@ -339,7 +339,7 @@ struct BrowserPane: View {
             .fill(Theme.raised)
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
             .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
-            .padding(14)
+            .padding(EdgeInsets(top: 4, leading: 14, bottom: 14, trailing: 14))
     }
 
     private func pane(_ ctrl: BrowserSessionController) -> some View {
@@ -373,7 +373,7 @@ struct BrowserPane: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
-        .padding(14)
+        .padding(EdgeInsets(top: 4, leading: 14, bottom: 14, trailing: 14))
         // ⌘L / palette "Go to address…" — same routing as clicking the omnibox pill.
         // onChange serves the live pane; onAppear one the action's jump just mounted.
         .onChange(of: ctrl.pendingFocusAddress) { _, pending in

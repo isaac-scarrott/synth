@@ -190,9 +190,9 @@ private struct SplitContainer: View {
     }
 }
 
-/// working.html `.pane-seam` (011): the draggable inter-pane divider — reuses the sidebar
-/// resize-handle idiom (1px hairline + a widened invisible grab band + a brighter 1.5px line on
-/// hover / while dragging). Drag-only, no double-click reset. The drag rewrites `node.split` in
+/// working.html `.pane-seam` (011): the draggable inter-pane divider — a 1px hairline with a
+/// widened invisible grab band and a brighter 1.5px line on hover / while dragging.
+/// Drag-only, no double-click reset. The drag rewrites `node.split` in
 /// place — SwiftUI just resizes the sibling views, never re-mounting them, so live surfaces
 /// survive — and clamps to the 360×240 floor (paneMinAlong); an over-subscribed split pins.
 private struct PaneSeam: View {
@@ -339,7 +339,8 @@ private struct SessionPane: View {
     }
 }
 
-/// working.html `.pane__head`: the titlebar band, 18pt side padding, hairline bottom border.
+/// working.html `.pane__head`: the titlebar band, 18pt side padding, no bottom border — the
+/// session card tucks up 4pt beneath it.
 private struct PaneHead: View {
     @Environment(AppStore.self) private var store
     let session: Session
@@ -403,9 +404,6 @@ private struct PaneHead: View {
                 .onChange(of: g.size.width) { _, w in width = w }
         })
         .onHover { hovering = $0 }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.border).frame(height: 0.5)
-        }
     }
 }
 
@@ -484,8 +482,9 @@ struct PRChip: View {
     }
 }
 
-/// working.html `.term`: the dark rounded card the shell lives in — 14 margin,
-/// 13/15 inner padding, #1b1b1e, inset hairline + soft drop shadow.
+/// working.html `.term`: the dark rounded card the shell lives in — margins 4 top / 14 sides
+/// and bottom (the 50pt header carries the vertical air), 13/15 inner padding, #1b1b1e,
+/// inset hairline + soft drop shadow.
 private struct TermSurface: View {
     let terminal: GhosttySurfaceView
 
@@ -501,7 +500,7 @@ private struct TermSurface: View {
             .clipShape(shape)
             .overlay(shape.strokeBorder(Theme.tuiHair, lineWidth: 0.5))
             .background(halo)
-            .padding(14)
+            .padding(EdgeInsets(top: 4, leading: 14, bottom: 14, trailing: 14))
     }
 
     /// The card's soft drop shadow, cast by an opaque stand-in with the card's own footprint
@@ -614,9 +613,6 @@ private struct WorktreeSetupPane: View {
             .padding(.leading, collapsed ? Theme.trafficLightsClearance : 18)
             .padding(.trailing, 18)
             .frame(height: Theme.titlebarHeight)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Theme.border).frame(height: 0.5)
-            }
 
             VStack(spacing: 12) {
                 SetupSpinner()

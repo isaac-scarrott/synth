@@ -303,7 +303,7 @@ extension BrowserSessionController: BrowserEngineDelegate {
 
 // MARK: - Pane
 
-/// working.html `.browser`: the rounded card (14 margin, radius 10, raised bg) holding
+/// working.html `.browser`: the rounded card (4/14/14 margins, radius 10, raised bg) holding
 /// the toolbar over the page — or over the "go to" home when nothing is loaded yet.
 struct BrowserPane: View {
     @Environment(AppStore.self) private var store

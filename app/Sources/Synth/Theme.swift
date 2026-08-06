@@ -145,7 +145,7 @@ enum Theme {
     static let sidebarMaxWidth: CGFloat = 460
     /// The titlebar band — working.html's `--titlebar-h`. The sidebar's top strip and every
     /// pane header are exactly this tall, so the traffic lights, the sidebar toggle, the pane
-    /// title and the DEV tag all share one centre line across the sidebar/content seam.
+    /// title and the DEV tag all share one centre line across the sidebar/content boundary.
     static let titlebarHeight: CGFloat = 50
     /// Traffic lights (working.html `.traffic`): 12pt circles, 20pt from the leading edge,
     /// 20pt pitch, centred in the band. WindowChrome puts AppKit's real buttons here.

@@ -174,10 +174,10 @@ struct RootView: View {
                 if !store.sidebarCollapsed {
                     Sidebar()
                         .frame(width: store.sidebarWidth)
+                        .overlay(alignment: .trailing) { SidebarResizeHandle() }
                         // Above ContentPane so the resize handle, which overhangs the
                         // trailing edge onto the session card, still receives hits.
                         .zIndex(1)
-                        .overlay(alignment: .trailing) { SidebarResizeHandle() }
                         .transition(.move(edge: .leading))
                 }
                 ContentPane()

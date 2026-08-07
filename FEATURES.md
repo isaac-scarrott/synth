@@ -1857,3 +1857,9 @@ disclosure to dive deeper.
   no percentages — a `+N idle` valve at seven rows, and one monochrome branch line carrying the PR
   number and diffstat. The branch name is never repeated. Pointer-transparent, 350ms cold / 60ms warm,
   repositions rather than rebuilds, and dies instantly on scroll, drag, blur or Esc.
+- **Hover card ported to the app** — `BranchHoverCard.swift` (card + hover model + root anchor
+  overlay), reusing `SessionIcon`/`Ind`/`StatusIndicator`/`OwnedIndicator`/`TabIcon` outright. Two
+  gaps handled rather than faked: the meta counter has no data source in the app so the column
+  renders empty, and the diffstat needed a new `DiffStatCache` (`FolderSizeCache`-shaped, 30s
+  floor, refuses to guess a base branch) because every `GitService` call blocks. Card tracks its
+  row on scroll instead of dismissing — the anchor cannot desync.

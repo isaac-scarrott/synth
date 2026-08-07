@@ -313,6 +313,9 @@ private struct WorkspaceRow: View {
 
 private struct BranchRow: View {
     @Environment(AppStore.self) private var store
+    /// Tabs mode only: pointing at this row raises the branch hover card at the window root
+    /// (BranchHoverCard.swift). The row reports the pointer; the overlay draws.
+    @Environment(BranchHoverCardModel.self) private var hoverCard
     let branch: Branch
     let workspace: Workspace
     /// Computed by the parent (see WorkspaceRow) so cursor moves don't touch this body.
@@ -381,6 +384,10 @@ private struct BranchRow: View {
                         // tabs appear in the strip) rather than toggling a disclosure with nothing
                         // under it. Same verb the keyboard's ↵ uses (working.html `openBranch`).
                         if store.tabsMode {
+                            // The click is the answer the card was standing in for — the sessions
+                            // are about to be the tab strip. Cut it rather than leave it floating
+                            // over the surface it just handed you to.
+                            hoverCard.snap()
                             store.openBranch(branch)
                             return
                         }
@@ -404,11 +411,27 @@ private struct BranchRow: View {
             }
             .rowChrome(hovering: hovering, selected: selected)
             .onHover { hovering = $0 }
+            // The card's anchor is the row itself, so a resized sidebar — or a scrolled tree —
+            // is handled for free. `onContinuousHover` rather than `onHover` is the native
+            // `pointermove`: a stale pointer that a keyboard nav laid a row under fires `onHover`
+            // and never a real move, and keying off movement is the whole guard.
+            .onContinuousHover { phase in
+                guard store.tabsMode else { return }
+                switch phase {
+                case .active:  hoverCard.pointerMoved(over: branch)
+                case .ended:   hoverCard.pointerLeft(branch)
+                @unknown default: hoverCard.pointerLeft(branch)
+                }
+            }
+            .anchorPreference(key: BranchHoverAnchorKey.self, value: .bounds) {
+                store.tabsMode ? [branch.id: $0] : [:]
+            }
             .help(branch.isPending ? "\(branch.name) · creating worktree…"
                                    : "\(branch.name) · \(branch.sessions.count) sessions")
             .id(branch.id)
             .reorderGesture(.branch(branch))
             .onSecondaryClick { store.openRowActions(.branch(branch)) }
+            .modifier(BranchHoverCardLabel(branch: branch, enabled: store.tabsMode))
 
             // Tabs: the 2-deep sidebar drops session rows and the split echo band — they're tabs
             // now (working.html hides `.nav .session` and `.session-group`). Keep the disclosure

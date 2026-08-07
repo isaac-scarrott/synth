@@ -166,6 +166,19 @@ struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var keyMonitor: Any?
+    /// Tabs mode's branch hover card (BranchHoverCard.swift). Owned here because the card is drawn
+    /// at the root and reported from a row several levels down; injected rather than stored on
+    /// AppStore because nothing else in the app has any business reading it.
+    @State private var hoverCard = BranchHoverCardModel()
+
+    /// Every reason the hover card must not exist — working.html's `hcBlocked`, plus the one
+    /// guard the web has no equivalent for. `pointerStale` is essential: SwiftUI re-fires hover
+    /// merely because a row got laid out under the pointer's last known position during keyboard
+    /// nav, and this app's established answer to that is this flag.
+    private var hoverCardBlocked: Bool {
+        !store.tabsMode || store.draggingRowID != nil || store.renamingRowID != nil
+            || store.pointerStale || store.activeMenu != nil
+    }
 
     var body: some View {
         @Bindable var store = store
@@ -204,6 +217,18 @@ struct RootView: View {
         // drag ghost's 300, `.app.settings .notifs { display: none }`).
         .overlay(alignment: .bottomLeading) {
             if !store.settingsOpen { NotificationDeck() }
+        }
+        // Tabs mode's branch hover card, mounted here so it clears the sidebar's clip: above the
+        // deck, below every modal (working.html z-index 90, between 60 and 149).
+        //
+        // Deliberate divergence from the mock: working.html kills the card on a nav scroll,
+        // because a `position: fixed` card cannot follow a row that is moving under it. The
+        // anchor preference makes the card track its row exactly, so it cannot desync — there is
+        // nothing left to protect against, and dismissing would just be a flinch.
+        .overlayPreferenceValue(BranchHoverAnchorKey.self) { anchors in
+            BranchHoverCardOverlay(anchors: anchors)
+                .environment(store)
+                .environment(hoverCard)
         }
         // The free-floating session drag ghost, at the window root so it floats over both panes.
         .overlay(alignment: .topLeading) { DragGhost() }
@@ -275,6 +300,15 @@ struct RootView: View {
                 ScratchTerminalOverlay(scratch: scratch).environment(store)
             }
         }
+        .environment(hoverCard)
+        // Suppression is evaluated here rather than at the row, so the card dies the moment a
+        // menu opens or a drag starts — it must not wait for a pointer event that may never come.
+        .onAppear { hoverCard.suppressed = hoverCardBlocked }
+        .onChange(of: hoverCardBlocked) { _, blocked in hoverCard.suppressed = blocked }
+        // The pointer is somewhere else entirely now.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            hoverCard.snap()
+        }
         .onAppear(perform: installKeyMonitor)
         .onAppear { NotificationService.shared.bootstrap(store: store) }
         // Refetch PR state whenever Synth comes forward — a branch merged or a PR opened
@@ -322,6 +356,10 @@ struct RootView: View {
             // so a synthetic `automation.key` would hide the cursor of whoever is at the keyboard.
             if !Automation.isDriven { NSCursor.setHiddenUntilMouseMoves(true) }
             store.pointerStale = true
+            // Esc dismisses the branch hover card outright. The staleness above already suppresses
+            // it for every keystroke, but Esc is the explicit "get that off my screen", and it
+            // must not depend on a side effect of the cursor-hiding rule to work.
+            if event.keyCode == 53 { hoverCard.snap() }
 
             // Modal Esc must win even while its text field is first responder.
             if store.creatingWorktreeIn != nil || store.feedbackOpen {

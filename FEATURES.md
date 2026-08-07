@@ -1847,3 +1847,13 @@ disclosure to dive deeper.
   entry of its own. Verified credential-less with quarantine set: dmg and the app inside it both notarized
   and stapled, appcast newest item 0.27.0 at `sparkle:version` 532, `edSignature` on all 18 enclosures
   including 5 deltas. Landing page unchanged — no `synth-site` push.
+
+## [2026-08-07](docs/features/2026-08-07.md)
+
+- **Branch hover card (tabs mode)** — hovering a branch row fades its whole rail, so a 300px
+  read-only card to its right pays back what the hover hid: the hidden session rows unpacked one
+  level, each cloning the tree row's own icon and indicator so the card can never disagree with the
+  rail. A fact per session only where there is a real counter (`step 4/6`, `18 failed`) — no clocks,
+  no percentages — a `+N idle` valve at seven rows, and one monochrome branch line carrying the PR
+  number and diffstat. The branch name is never repeated. Pointer-transparent, 350ms cold / 60ms warm,
+  repositions rather than rebuilds, and dies instantly on scroll, drag, blur or Esc.

@@ -1370,6 +1370,88 @@
   }
   html[data-tabs="on"] .row.menu-open > .branch__pr { opacity: 0; }
 
+  /* ---- Branch hover card (tabs mode) ----
+     Reaching for a branch row fades its whole rail — the PR glyph and the roll-up both go to 0
+     under the action cluster — so the moment you point at a branch you lose its only per-session
+     signal. The card is what pays that back: the sessions the 2-deep tree stopped listing,
+     unpacked one level. Each row CLONES the tree row's own icon and .ind node rather than
+     re-deriving state, so the card can never disagree with the rail it replaced, and the card
+     introduces no status vocabulary of its own.
+     Read-only and pointer-transparent: no hover-trap, no safe-triangle, no focus to manage, and
+     no second floating menu in an app that deliberately deleted its first (249/253). Acting on a
+     session is what clicking the row and landing in the strip is for. */
+  .hovercard {
+    position: fixed; z-index: 90;      /* over the notification deck (60), under any modal (149+) */
+    pointer-events: none;
+    width: 300px;                      /* fixed, not max-width — a card that resizes per row jitters
+                                          as you run down the list, and that reads as cheap */
+    padding: 5px;
+    border-radius: 12px;
+    background: var(--glass);
+    border: 0.5px solid var(--line);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    box-shadow: var(--notif-shadow);
+    opacity: 0;
+    transform: translateX(-4px);       /* it grows out of the row — direction encodes origin */
+    transition: opacity 90ms ease, transform 90ms ease;   /* exits are quieter than entrances */
+  }
+  .hovercard.is-open {
+    opacity: 1; transform: none;
+    transition: opacity 140ms ease, transform 140ms var(--ease-out);
+  }
+  /* Row → row slides the one node instead of destroying and rebuilding it. Recreating per row is
+     the flicker that makes a hovering list unusable. */
+  .hovercard.is-open.is-moving {
+    transition: opacity 140ms ease, transform 140ms var(--ease-out), top 130ms var(--ease-out);
+  }
+
+  /* the PR *number* the rail's bare state glyph has no room to say, folded into the branch line */
+  .hovercard__pr { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .hovercard__pr svg { width: 13px; height: 13px; display: block; }
+  .hovercard__pr span { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-faint); }
+
+  .hovercard__div { height: 0.5px; margin: 4px 6px; background: var(--line-soft); }
+
+  .hovercard__row {
+    display: grid; grid-template-columns: 14px 1fr auto 16px;
+    align-items: center; gap: 8px;
+    height: 28px; padding: 0 8px;
+  }
+  .hovercard__row .session__icon { position: relative; }
+  .hovercard__name {
+    font-size: 12.5px; font-weight: 500; color: var(--ink-meta);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .hovercard__row--unread .hovercard__name { color: var(--ink-unread); font-weight: 560; }
+  /* unread lands on the icon's corner — the same mark the tab wears, on a plate of the card's fill */
+  .hovercard__row--unread .session__icon::after {
+    content: ''; position: absolute; top: -2px; right: -3px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--input);
+    box-shadow: 0 0 0 1.5px var(--glass);
+  }
+  /* One fact per session, and only where the session genuinely produces one — a step count, a
+     failure count. No clocks: the glyph already says whether a session needs you, and an "8m"
+     beside it is an ageing number that never once changed whether you'd go there. No percentage
+     and no bar either — the beat says alive without promising a finish. */
+  .hovercard__meta {
+    font-size: 11px; font-weight: 500; color: var(--text-faint);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+
+  /* Overflow valve, so the card is never a thing you scroll — a card you scroll is a window. */
+  .hovercard__more,
+  .hovercard__wt {
+    height: 24px; display: flex; align-items: center; padding: 0 8px;
+    font-size: 11px; font-weight: 500; color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The branch's own line — the PR number, and a diffstat that lives nowhere else in the shell.
+     The name is NOT repeated: the row under your pointer is already showing it. Deliberately
+     monochrome: this app spends colour on state, and a diffstat is not a state. */
+  .hovercard__wt { gap: 5px; }
+
   /* Tab strip: the pane's hosted sessions, exactly one active, with a + new-tab and per-tab ×.
      Shows even for a lone tab. Uncapped — overflow scrolls horizontally. ~30px, compact, tabular. */
   .tabstrip {
@@ -2637,6 +2719,8 @@
     .session--pulse, .notif--input .notif__glyph svg { animation: none; }
     .beat i { opacity: 0.85; transform: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
+    /* the card keeps its fade — only the slide-in and the row-to-row glide go */
+    .hovercard, .hovercard.is-open, .hovercard.is-open.is-moving { transform: none !important; transition: opacity 120ms ease; }
     .cmdk__panel { transform: none !important; }
     .row-enter, .row-exit { animation: none; }
     .seg--slide .seg__thumb, .switch, .switch::after { transition: none; }
@@ -2928,7 +3012,7 @@
             </div>
 
             <div class="repo repo--open" data-repo>
-              <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="2m">
+              <a class="row branch branch--active branch--group" data-row data-toggle data-group data-activity="2m" data-diff="+412 −128" data-ahead="6 ahead of main">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">feat/command-menu</span>
                 <span class="branch__facts"></span>
@@ -2960,7 +3044,7 @@
                   <span class="ind"><span class="beat beat--run"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
                 </a>
                 <!-- api-tests — error -->
-                <a class="row session session--unread" data-row data-session data-type="terminal">
+                <a class="row session session--unread" data-row data-session data-type="terminal" data-meta="18 failed">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">api-tests</span>
@@ -2974,7 +3058,7 @@
                   <span class="ind"></span>
                 </a>
                 <!-- build — working -->
-                <a class="row session" data-row data-session data-type="terminal">
+                <a class="row session" data-row data-session data-type="terminal" data-meta="step 4/6">
                   <span class="session__bullet"></span>
                   <span class="session__icon"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg></span>
                   <span class="session__name">build</span>
@@ -2992,7 +3076,7 @@
             </div>
 
             <div class="repo" data-repo>
-              <a class="row branch branch--group" data-row data-toggle data-group data-activity="5h">
+              <a class="row branch branch--group" data-row data-toggle data-group data-activity="5h" data-diff="+38 −12" data-ahead="1 ahead of main">
                 <span class="chev"><svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg></span>
                 <span class="branch__name">fix/sidebar-shadow</span>
                 <span class="branch__facts"></span>
@@ -3169,9 +3253,185 @@
       if (facts) facts.textContent = inTabs
         ? `${sessions.length ? `${sessions.length} session${sessions.length > 1 ? 's' : ''}` : 'No sessions'} · ${group.dataset.activity}`
         : '';
+      hcLabel(group);   // the spoken form of the hover card, for anyone without a pointer
     });
   }
   rollUpGroups();
+
+  // ===== Branch hover card (tabs mode) =====
+  // Tabs mode buys a 2-deep sidebar by taking the session rows away; hovering a branch gives them
+  // back for as long as you're pointing at it. Scope is deliberately narrow — ONE question:
+  // "is anything in this worktree waiting on me or broken, and is anything still moving?" The row
+  // itself already says what the branch is, so the card never repeats it.
+  // Tabs-only: with the tree 3-deep the sessions are already on screen and a card would just be
+  // the same rows, floating.
+  const HC_CAP = 7;              // rows before the +N valve; a card you scroll is a window
+  const HC_COLD = 350;           // 100ms fires while you scrub the tree, 700ms reads as broken
+  const HC_WARM = 60;            // ...but once one card has been up, the next branch is instant
+  const HC_WARM_WINDOW = 400;
+  const HC_GRACE = 120;
+  let hcEl = null, hcRow = null, hcPending = null, hcOpenT = 0, hcCloseT = 0, hcWarmUntil = 0;
+
+  function hcNode() {
+    if (!hcEl) {
+      hcEl = document.createElement('div');
+      hcEl.className = 'hovercard';
+      // aria-hidden on purpose: this is a visual affordance, not a source of content. The same
+      // summary rides the branch row's own aria-label (hcLabel), so VoiceOver gets the answer
+      // without a hover-only surface existing in the a11y tree at all.
+      hcEl.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(hcEl);
+    }
+    return hcEl;
+  }
+
+  function hcSessions(group) {
+    return [...group.closest('[data-repo]').querySelectorAll('.sessions .session')];
+  }
+  // "interesting" = not idle, or idle with output nobody has read. Everything else is filler the
+  // eye has to step over on every single hover, and that cost compounds while its value doesn't.
+  function hcLive(s) { return sessionState(s) !== 'idle' || s.classList.contains('session--unread'); }
+
+  function hcFill(group) {
+    const all = hcSessions(group);
+    // Never re-sort: the card has to map onto the strip you're about to land in. State ranking is
+    // carried by the glyph column, not by rows moving around under the pointer.
+    const quiet = all.filter((s) => !hcLive(s));
+    const room = Math.max(0, HC_CAP - (all.length - quiet.length));
+    const dropped = new Set(quiet.slice(room));
+    const el = hcNode();
+    el.textContent = '';
+
+    all.forEach((s) => {
+      if (dropped.has(s)) return;
+      const row = document.createElement('div');
+      row.className = 'hovercard__row' + (s.classList.contains('session--unread') ? ' hovercard__row--unread' : '');
+      const label = document.createElement('span');
+      label.className = 'hovercard__name';
+      label.textContent = s.querySelector('.session__name').textContent;
+      const meta = document.createElement('span');
+      meta.className = 'hovercard__meta';
+      meta.textContent = s.dataset.meta || '';   // only a real counter; silence otherwise
+      // cloned, not rebuilt — same icon, same indicator node, same beat, by construction
+      const ind = s.querySelector('.ind');
+      const slot = ind ? ind.cloneNode(true) : Object.assign(document.createElement('span'), { className: 'ind' });
+      row.append(s.querySelector('.session__icon').cloneNode(true), label, meta, slot);
+      el.appendChild(row);
+    });
+
+    if (dropped.size) {
+      const more = document.createElement('div');
+      more.className = 'hovercard__more';
+      more.textContent = `+${dropped.size} idle`;
+      el.appendChild(more);
+    }
+    const pr = group.querySelector('.branch__pr');
+    const wt = [group.dataset.diff, group.dataset.ahead].filter(Boolean).join(' · ');
+    if ((pr && pr.dataset.pr) || wt) {
+      const line = document.createElement('div');
+      line.className = 'hovercard__wt';
+      if (pr && pr.dataset.pr) {
+        const chip = document.createElement('span');
+        chip.className = 'hovercard__pr ' + [...pr.classList].filter((c) => c.startsWith('pr--')).join(' ');
+        chip.innerHTML = pr.innerHTML + `<span>#${esc(pr.dataset.pr)}</span>`;
+        line.appendChild(chip);
+      }
+      if (wt) {
+        // the separator is its own item so the flex gap spaces it evenly on both sides
+        if (line.childElementCount) line.appendChild(Object.assign(document.createElement('span'), { textContent: '·' }));
+        line.appendChild(Object.assign(document.createElement('span'), { textContent: wt }));
+      }
+      el.append(hcRule(), line);
+    }
+  }
+  function hcRule() { const d = document.createElement('div'); d.className = 'hovercard__div'; return d; }
+
+  // Anchored to the ROW, not the sidebar, so a resized sidebar is handled for free. Clamp rather
+  // than flip: the sidebar is pinned to the left of a window that is always far wider than
+  // 260 + 300, so a horizontal flip would be dead code that only ever fires as a bug.
+  function hcPlace(row, gliding) {
+    const el = hcNode(), r = row.getBoundingClientRect();
+    el.classList.toggle('is-moving', gliding);
+    el.style.left = Math.min(r.right + 8, window.innerWidth - 312) + 'px';
+    el.style.top = Math.max(12, Math.min(r.top - 4, window.innerHeight - el.offsetHeight - 12)) + 'px';
+  }
+
+  function hcShow(row) {
+    hcOpenT = 0; hcPending = null;
+    if (hcBlocked() || !hcSessions(row).length) return;
+    const el = hcNode(), gliding = el.classList.contains('is-open');
+    hcFill(row);
+    hcPlace(row, gliding);
+    el.classList.add('is-open');
+    hcRow = row;
+  }
+  function hcHide() {
+    clearTimeout(hcOpenT); hcOpenT = 0; hcPending = null;
+    if (!hcEl || !hcEl.classList.contains('is-open')) { hcRow = null; return; }
+    hcWarmUntil = performance.now() + HC_WARM_WINDOW;
+    hcEl.classList.remove('is-open', 'is-moving');
+    hcRow = null;
+  }
+  // A card anchored to a row that just moved (or to a drag that just started) is telling a lie —
+  // cut it dead, no fade, and no warm window to soften the next one.
+  function hcSnap() {
+    clearTimeout(hcOpenT); clearTimeout(hcCloseT);
+    hcOpenT = hcCloseT = 0; hcWarmUntil = 0; hcRow = hcPending = null;
+    if (!hcEl) return;
+    hcEl.style.transition = 'none';
+    hcEl.classList.remove('is-open', 'is-moving');
+    void hcEl.offsetWidth;
+    hcEl.style.transition = '';
+  }
+  function hcBlocked() {
+    return document.documentElement.dataset.tabs !== 'on'
+      || document.body.classList.contains('dragging')
+      || !!nav.querySelector('[contenteditable="true"]');
+  }
+  function hcQueueShow(row) {
+    clearTimeout(hcCloseT); hcCloseT = 0;
+    clearTimeout(hcOpenT);
+    hcPending = row;
+    const wait = hcRow ? 0 : performance.now() < hcWarmUntil ? HC_WARM : HC_COLD;
+    hcOpenT = setTimeout(() => hcShow(row), wait);
+  }
+  function hcQueueHide() {
+    clearTimeout(hcOpenT); hcOpenT = 0; hcPending = null;
+    if (hcCloseT || !hcRow) return;
+    hcCloseT = setTimeout(() => { hcCloseT = 0; hcHide(); }, HC_GRACE);
+  }
+
+  // pointermove, not pointerover: a list that scrolls under a stationary pointer fires `over` but
+  // never `move`, so keying off movement is the whole scroll guard.
+  nav.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    if (hcBlocked()) { hcSnap(); return; }
+    const row = e.target.closest('[data-group]');
+    if (!row || !hcSessions(row).length) { hcQueueHide(); return; }   // a branch with nothing in it has nothing to say
+    if (row === hcRow || row === hcPending) return;
+    hcQueueShow(row);
+  });
+  nav.addEventListener('pointerleave', hcQueueHide);
+  nav.addEventListener('scroll', hcSnap, true);
+  nav.addEventListener('pointerdown', hcSnap);
+  window.addEventListener('blur', hcSnap);
+  window.addEventListener('resize', hcSnap);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hcSnap(); });
+
+  // The a11y half of the card: the branch row states its own roll-up in words, so the answer is
+  // reachable without a pointer. Refreshed wherever the roll-up is.
+  function hcLabel(group) {
+    const all = hcSessions(group);
+    if (!all.length) return;
+    const n = (st) => all.filter((s) => sessionState(s) === st).length;
+    const parts = [`${all.length} session${all.length > 1 ? 's' : ''}`];
+    if (n('input')) parts.push(`${n('input')} needs input`);
+    if (n('error')) parts.push(`${n('error')} failed`);
+    if (n('work') + n('run')) parts.push(`${n('work') + n('run')} running`);
+    const unread = all.filter((s) => s.classList.contains('session--unread')).length;
+    if (unread) parts.push(`${unread} unread`);
+    group.setAttribute('aria-label', `${group.querySelector('.branch__name').textContent} — ${parts.join(', ')}`);
+  }
 
   // ===== Content pane: render the open session (the one "you are here") =====
   // Sticky selection — survives mousing around, changes only on activate. The white

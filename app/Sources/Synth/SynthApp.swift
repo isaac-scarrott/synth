@@ -171,13 +171,21 @@ struct RootView: View {
     /// AppStore because nothing else in the app has any business reading it.
     @State private var hoverCard = BranchHoverCardModel()
 
-    /// Every reason the hover card must not exist — working.html's `hcBlocked`, plus the one
-    /// guard the web has no equivalent for. `pointerStale` is essential: SwiftUI re-fires hover
-    /// merely because a row got laid out under the pointer's last known position during keyboard
-    /// nav, and this app's established answer to that is this flag.
+    /// Every *standing* reason the hover card must not exist — working.html's `hcBlocked`, minus
+    /// the stale-pointer guard, which the row applies at event time instead (see BranchRow).
+    ///
+    /// `pointerStale` deliberately does not appear here. It flips on every keyDown, so reading it
+    /// in this body would invalidate the whole root view on every keystroke; and because raising a
+    /// suppression cuts the card, typing would also dismiss a card the mock leaves standing (there
+    /// a keystroke simply produces no pointermove). It belongs on the open path, not in the
+    /// standing set.
+    ///
+    /// `settingsOpen` is here for the same reason the notification deck is hidden in Settings: the
+    /// sidebar stays hoverable behind the pane, and a card floating over the settings screen is
+    /// answering a question nobody asked.
     private var hoverCardBlocked: Bool {
         !store.tabsMode || store.draggingRowID != nil || store.renamingRowID != nil
-            || store.pointerStale || store.activeMenu != nil
+            || store.activeMenu != nil || store.settingsOpen
     }
 
     var body: some View {

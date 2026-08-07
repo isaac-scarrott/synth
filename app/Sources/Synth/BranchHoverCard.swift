@@ -54,7 +54,14 @@ final class BranchHoverCardModel {
         // A branch with nothing in it has nothing to say — and it is a real destination, so
         // whatever is open steps down the ordinary way rather than being cut.
         if branch.sessions.isEmpty { queueHide(); return }
-        if branch.id == self.branch?.id || branch.id == pendingID { return }
+        // Already showing this one — but cancel any queued hide first. SwiftUI churns
+        // `.ended`/`.active` far more than the DOM churns pointerout/pointerover, so a spurious
+        // exit followed by re-entry onto the same row is common here; returning before the cancel
+        // would let that 120ms grace run out under a pointer that never actually left.
+        if branch.id == self.branch?.id || branch.id == pendingID {
+            closeTask?.cancel(); closeTask = nil
+            return
+        }
         closeTask?.cancel(); closeTask = nil
         openTask?.cancel()
         pendingID = branch.id
@@ -149,22 +156,33 @@ struct BranchHoverCardOverlay: View {
     private static let margin: CGFloat = 12
 
     var body: some View {
-        GeometryReader { proxy in
-            if let branch = hover.branch, let anchor = anchors[branch.id] {
-                // nil until the measurement lands, and the branch line simply isn't drawn until
-                // it does — warming here rather than on the row keeps the git spawns to the one
-                // branch actually being looked at.
-                let diffStat = DiffStatCache.shared.line(for: branch)
+        // Both reads happen in the ordinary body pass, not inside the GeometryReader's content:
+        // that closure runs at layout time, and an observation registered there is not reliably
+        // the one that invalidates this view — the diffstat would then land silently and only
+        // show up on some later open.
+        let branch = hover.branch
+        // nil until the measurement lands, and the branch line simply isn't drawn until it does —
+        // warming from `show` rather than here keeps the git spawns to the branch being looked at.
+        let diffStat = branch.flatMap { DiffStatCache.shared.line(for: $0) }
+        return GeometryReader { proxy in
+            if let branch, let anchor = anchors[branch.id] {
                 let row = proxy[anchor]
-                let height = BranchHoverCard.height(branch: branch, diffStat: diffStat)
                 BranchHoverCard(branch: branch, diffStat: diffStat)
                     .offset(x: min(row.maxX + Self.gap,
                                    proxy.size.width - BranchHoverCard.width - Self.margin),
                             // Clamp, never flip: the sidebar is pinned to the left of a window
                             // always far wider than 260 + 300, so a horizontal flip would be dead
                             // code that only ever fired as a bug.
+                            //
+                            // Clamped against the height the card would have WITH its branch line,
+                            // even before git has answered. The real height grows by that line
+                            // mid-open, and clamping against the current one would place the card
+                            // against the bottom edge and then jump it up when the measurement
+                            // lands. Over-reserving costs a branch with no line 32.5pt of headroom
+                            // at the very bottom of the window, and nothing anywhere else.
                             y: max(Self.margin,
-                                   min(row.minY - 4, proxy.size.height - height - Self.margin)))
+                                   min(row.minY - 4,
+                                       proxy.size.height - BranchHoverCard.clampHeight(branch: branch) - Self.margin)))
                     // In: 140ms, opacity plus a 4pt slide out of the row — the direction encodes
                     // where it came from. Out: opacity only, and quicker.
                     .transition(.asymmetric(
@@ -316,6 +334,13 @@ struct BranchHoverCard: View {
         if hasBranchLine(branch: branch, diffStat: diffStat) { h += ruleHeight + lineHeight }
         return h
     }
+
+    /// What the vertical clamp reserves: the height the card will have *once* its diffstat lands,
+    /// not the one it has while git is still being asked. The card grows by a line mid-open, and a
+    /// clamp that tracked that growth would place the card on the bottom edge and then jump it.
+    static func clampHeight(branch: Branch) -> CGFloat {
+        height(branch: branch, diffStat: "")
+    }
 }
 
 /// One session: `[14pt icon][name][meta][16pt indicator]`. The icon and the indicator are the
@@ -356,19 +381,11 @@ private struct HoverCardSessionRow: View {
         .frame(height: 28)
     }
 
-    /// Unread lands on the icon's corner — the same mark the tab wears (TabIcon), on a plate of
-    /// the card's own fill.
+    /// Literally the tab's icon — same component, same unread mark, only the plate behind the dot
+    /// changes to the card's own fill. Two copies of that recipe would be two things to keep in
+    /// step, and the whole point of this card is that it cannot disagree with what it stands in for.
     private var icon: some View {
-        SessionIcon(kind: session.kind, size: 14)
-            .frame(width: 14, height: 14)
-            .overlay(alignment: .topTrailing) {
-                if session.unread {
-                    Circle().fill(Theme.input)
-                        .frame(width: 6, height: 6)
-                        .background(Circle().fill(plate).frame(width: 9, height: 9))
-                        .offset(x: 3, y: -2)
-                }
-            }
+        TabIcon(session: session, ring: plate)
     }
 
     /// The same status/owner slot the sidebar row carries: a browser owned by an agent wears the
@@ -414,7 +431,13 @@ struct BranchHoverCardLabel: ViewModifier {
 
     func body(content: Content) -> some View {
         if enabled, let label = branch.hoverCardLabel {
-            content.accessibilityLabel(Text(verbatim: label))
+            // `.combine` first: the row is a ZStack of the branch button and the hover-revealed
+            // action cluster, so without it the label has no single element to land on and gets
+            // pushed down onto the buttons inside instead. The card itself is accessibilityHidden,
+            // which makes this row the only place the answer exists for a non-pointer reader.
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(Text(verbatim: label))
         } else {
             content
         }

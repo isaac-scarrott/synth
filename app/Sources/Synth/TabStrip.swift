@@ -229,7 +229,9 @@ private struct TabChip: View {
 /// The session icon carrying up to two corner marks: the quiet blue unread dot at its top-right, and
 /// — on a split member — the pane map at its bottom-right. Opposite corners, each on a plate of the
 /// tab's own fill, so both fit on one 14pt icon without touching.
-private struct TabIcon: View {
+/// Shared with the branch hover card, which wears the same mark on a plate of its own fill —
+/// one unread idiom, not two that drift.
+struct TabIcon: View {
     let session: Session
     var size: CGFloat = 14
     var ring: Color = Theme.panel

@@ -324,6 +324,13 @@ private struct BranchRow: View {
 
     private var isOpen: Bool { store.expanded.contains(branch.id) }
     private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
+    /// Tabs mode answers this hover with the card, and the card deliberately does not repeat the
+    /// branch name — the row under the pointer is already showing it. A tooltip arriving a second
+    /// later to say it anyway would be two surfaces for one hover, the second one redundant.
+    private var branchHelp: String {
+        if branch.isPending { return "\(branch.name) · creating worktree…" }
+        return store.tabsMode ? "" : "\(branch.name) · \(branch.sessions.count) sessions"
+    }
     private var renaming: Bool { store.renamingRowID == branch.id }
     /// Focus peek: while collapsed, the open session it holds still shows — just that one
     /// session, nothing else (working.html `.collapse:has(.session--open)`).
@@ -418,7 +425,13 @@ private struct BranchRow: View {
             .onContinuousHover { phase in
                 guard store.tabsMode else { return }
                 switch phase {
-                case .active:  hoverCard.pointerMoved(over: branch)
+                // `pointerStale` is checked here rather than in the standing suppression set: it
+                // flips on every keyDown, and reading it from a view body would invalidate the
+                // root on every keystroke *and* dismiss a card the mock would leave standing. A
+                // stale pointer must not OPEN one — that is the whole keyboard-nav guard — but it
+                // has no business closing one that is already up.
+                case .active where !store.pointerStale: hoverCard.pointerMoved(over: branch)
+                case .active:  break
                 case .ended:   hoverCard.pointerLeft(branch)
                 @unknown default: hoverCard.pointerLeft(branch)
                 }
@@ -426,8 +439,7 @@ private struct BranchRow: View {
             .anchorPreference(key: BranchHoverAnchorKey.self, value: .bounds) {
                 store.tabsMode ? [branch.id: $0] : [:]
             }
-            .help(branch.isPending ? "\(branch.name) · creating worktree…"
-                                   : "\(branch.name) · \(branch.sessions.count) sessions")
+            .help(branchHelp)
             .id(branch.id)
             .reorderGesture(.branch(branch))
             .onSecondaryClick { store.openRowActions(.branch(branch)) }

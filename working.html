@@ -1461,7 +1461,9 @@
        strip is no deeper than the run it holds. At 42px the tray sat in 5px of vertical air against
        a 3px gap to the tab beside it, and that mismatch is what read as "too much space up there". */
     height: 36px;
-    padding: 0 8px;
+    /* 14px sides: the same inset the session surface below uses for its card, so the chip edges and
+       the content edge sit on one line down the pane */
+    padding: 0 14px;
     /* no fill of its own, and no bottom rule: .content has already laid the translucent --panel
        down, and the chips are inset far enough off every edge that nothing needs a seam to stop at */
   }
@@ -1596,7 +1598,7 @@
   .tab--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.7); background: rgba(var(--accent-rgb), 0.12); }
   /* tabs mode drops the per-pane title bar (the strip carries name + icon); its PR chip moves to the strip */
   html[data-tabs="on"] .pane__head { display: none; }
-  .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; margin-left: auto; padding: 0 4px 0 6px; }
+  .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; margin-left: auto; padding-left: 6px; }
   .tab-dropline::before {
     content: ""; position: absolute; left: -2px; top: -3px;
     width: 6px; height: 6px; border-radius: 50%;

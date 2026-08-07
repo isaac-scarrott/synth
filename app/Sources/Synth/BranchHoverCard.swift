@@ -204,6 +204,31 @@ struct BranchHoverCardOverlay: View {
     }
 }
 
+/// `--notif-shadow`, translated rather than approximated. SwiftUI's shadow `radius` is roughly
+/// half a CSS blur, so each of the token's three layers maps to one `.shadow` at half its blur:
+///
+///     light  0 1px 2px  .05  ·  0 2px 8px  .06  ·  0 12px 30px .13
+///     dark   0 1px 2px  .40  ·  0 2px 8px  .40  ·  0 16px 40px .55
+///
+/// The first port reused `NotifCard`'s two-layer pair, and it read as too heavy for good reason:
+/// the ambient layer was both darker (.16 against .13) and half again as wide (r18 ≈ 36px of blur
+/// against 30px), with the tight contact layer at double its alpha, and the middle layer missing —
+/// so the card carried a visible halo where the design asks for three quiet, tightly stacked ones.
+/// A notification is a persistent object that has to hold the corner of the window; a hover card
+/// is a transient one that should barely lift.
+///
+/// Theme-split, because the token is: a black shadow at light-mode alpha is invisible against a
+/// dark sidebar, so dark trades the whole recipe up rather than reusing one theme-invariant pair.
+private struct HoverCardShadow: ViewModifier {
+    let dark: Bool
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: .black.opacity(dark ? 0.40 : 0.05), radius: 1, y: 1)
+            .shadow(color: .black.opacity(dark ? 0.40 : 0.06), radius: 4, y: 2)
+            .shadow(color: .black.opacity(dark ? 0.55 : 0.13), radius: dark ? 20 : 15, y: dark ? 16 : 12)
+    }
+}
+
 /// The entry slide. `AnyTransition.offset` would move the card's *layout*, which here is an
 /// absolute offset already — this shifts only the rendered result.
 private struct HoverCardSlide: ViewModifier {
@@ -221,6 +246,7 @@ private struct HoverCardSlide: ViewModifier {
 /// anything in here waiting on me or broken, and is anything still moving?" The branch name is
 /// never repeated; the row under the pointer is already showing it.
 struct BranchHoverCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     let branch: Branch
     /// The branch's worktree diffstat (`"+412 −128 · 6 ahead of main"`), or nil when there is
     /// nothing to say — then the branch line carries the PR chip alone, with no separator.
@@ -256,8 +282,7 @@ struct BranchHoverCard: View {
         .frame(width: Self.width)
         .background(shape.fill(Theme.glass).background(.ultraThinMaterial, in: shape))
         .overlay(shape.strokeBorder(Theme.line, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
-        .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+        .modifier(HoverCardShadow(dark: colorScheme == .dark))
     }
 
     private var rule: some View {

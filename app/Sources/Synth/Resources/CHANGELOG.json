@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.28.0",
+    "date": "2026-08-07",
+    "changes": [
+      "In tabs mode, hovering a branch row opens a card beside it that unpacks what the row hides: the branch's sessions one level deep, each drawn with the rail's own icon and state mark so the card can never disagree with the sidebar, a fact per session only where a real counter exists (step 4/6, 18 failed), and one branch line carrying the PR number and diffstat. It is read-only and lets clicks pass straight through to the row beneath — a beat to appear cold, near-instant when moving between branches, tracking its row as you scroll and gone the moment you drag, leave or press Esc.",
+      "Tabs sit on the content's own left edge. The strip inset its chips 8px while the session card below used 14px, so every tab started 6px left of the content it belongs to."
+    ]
+  },
+  {
     "version": "0.27.0",
     "date": "2026-08-06",
     "changes": [

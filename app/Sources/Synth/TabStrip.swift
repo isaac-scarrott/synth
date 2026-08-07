@@ -41,7 +41,9 @@ struct TabStrip: View {
                 }
                 NewTabButton()
             }
-            .padding(.leading, store.sidebarCollapsed ? 0 : 8)
+            // 14 matches the session surface's own inset below, so the chip edges and the content
+            // edge sit on one line down the pane.
+            .padding(.leading, store.sidebarCollapsed ? 0 : 14)
             // Past the point where every tab is at its floor the row stops shrinking and simply
             // overruns, exactly as the mock's `overflow: hidden` row does. Masked on the horizontal
             // only — a plain clip would take the open chip's shadow off with it.
@@ -53,7 +55,7 @@ struct TabStrip: View {
             // The per-pane header is gone in tabs mode, so the branch's PR relocates here,
             // right-aligned (working.html `.tabstrip__pr`).
             if let pr = branch?.pr {
-                PRChip(pr: pr).padding(.leading, 6).padding(.trailing, 12)
+                PRChip(pr: pr).padding(.leading, 6).padding(.trailing, 14)
             }
         }
         // The 32pt split tray plus 2 — the same 2 the tray gives its own members, so the rail is

@@ -1863,3 +1863,10 @@ disclosure to dive deeper.
   renders empty, and the diffstat needed a new `DiffStatCache` (`FolderSizeCache`-shaped, 30s
   floor, refuses to guess a base branch) because every `GitService` call blocks. Card tracks its
   row on scroll instead of dismissing — the anchor cannot desync.
+- **0.28.0 ships** — the version boundary: the two entries above this line are 0.28.0, `CFBundleVersion`
+  544, tag `v0.28.0`, minor for the hover card. Two changelog lines: the hover card's design and port
+  collapse into one (from outside they are one feature), and the tab-chip alignment fix (chips inset 8px
+  against the content's 14px) gets a line despite no ledger entry of its own. Verified credential-less
+  with quarantine set: dmg and the app inside it both notarized and stapled, appcast newest item 0.28.0
+  at `sparkle:version` 544, `edSignature` on all 18 enclosures including 5 deltas. Landing page
+  unchanged — no `synth-site` push.

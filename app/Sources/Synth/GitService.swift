@@ -515,6 +515,104 @@ enum GitService {
         runChecked(["-C", repo.path, "fetch", "--prune", "--quiet", "origin"], timeout: 30).status == 0
     }
 
+    // MARK: Worktree diffstat
+    //
+    // What a branch's worktree has done to the codebase, for the sidebar's hover card:
+    // "+412 −128 · 6 ahead of main". Same `Probe` contract as the sweep probes — nothing
+    // here infers "no changes" from a git that couldn't be asked.
+
+    struct DiffCounts: Sendable, Equatable {
+        var insertions: Int = 0
+        var deletions: Int = 0
+    }
+
+    /// Lines added and removed against `base` — committed work and uncommitted work counted
+    /// together, as one number.
+    ///
+    /// Deliberately the merge base diffed against the *working tree*, not `base...HEAD` plus a
+    /// second diff of the working tree against HEAD. Summing those two double-counts every line
+    /// a commit touched and the user has since edited again, so a worktree mid-change would
+    /// inflate the moment it got interesting. One diff from the fork point to what's on disk is
+    /// the number the card claims to show.
+    ///
+    /// Untracked files are absent, because `git diff` never sees them: a file in no commit and
+    /// no index has no before-state to count lines against.
+    ///
+    /// `--no-optional-locks` for the same reason `cleanliness` uses it — a diff against the
+    /// working tree refreshes and writes the index, which races a live agent in that folder.
+    static func diffStat(against base: String, at wt: URL) -> Probe<DiffCounts> {
+        let (baseStatus, baseOut) = runChecked(["-C", wt.path, "merge-base", base, "HEAD"],
+                                               timeout: probeTimeout)
+        let forkPoint = baseOut.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard baseStatus == 0, !forkPoint.isEmpty else { return .unknown }
+        let (status, out) = runChecked(["-C", wt.path, "--no-optional-locks", "diff",
+                                        "--shortstat", forkPoint], timeout: probeTimeout)
+        guard status == 0 else { return .unknown }
+        return .known(parseShortstat(out))
+    }
+
+    /// ` 12 files changed, 412 insertions(+), 128 deletions(-)`. Either half is omitted when it
+    /// is zero, both are when nothing changed at all (git prints an empty line), and each is
+    /// singular at one ("1 deletion(-)") — so match the prefix and let a missing field stay 0.
+    private static func parseShortstat(_ out: String) -> DiffCounts {
+        var stat = DiffCounts()
+        for field in out.split(separator: ",") {
+            let words = field.split(separator: " ")
+            guard words.count >= 2, let n = Int(words[0]) else { continue }
+            if words[1].hasPrefix("insertion") { stat.insertions = n }
+            if words[1].hasPrefix("deletion") { stat.deletions = n }
+        }
+        return stat
+    }
+
+    /// Commits on this worktree's HEAD that `base` can't reach — the "6 ahead of main" half.
+    ///
+    /// Not `commitsOnNoRemote`, which answers a different question (unpushed anywhere) and
+    /// would read as a lie under this label: work pushed to a PR branch is 0 by that count and
+    /// still very much ahead of main.
+    static func commitsAhead(of base: String, at wt: URL) -> Probe<Int> {
+        let (status, out) = runChecked(["-C", wt.path, "rev-list", "--count", "\(base)..HEAD"],
+                                       timeout: probeTimeout)
+        guard status == 0, let n = Int(out.trimmingCharacters(in: .whitespacesAndNewlines)) else { return .unknown }
+        return .known(n)
+    }
+
+    /// The first of `candidates` this worktree can actually resolve to a commit, else nil.
+    ///
+    /// Each candidate is tried on the remote first: a PR's `baseRefName` is a bare branch name
+    /// ("main") naming a branch on GitHub, and the local branch of the same name is whatever
+    /// was last pulled — often many commits behind, which would inflate the ahead count. A name
+    /// that only exists locally still resolves on the second try, and an already-qualified
+    /// "origin/main" simply fails "origin/origin/main" and falls through to itself.
+    static func resolvableRef(_ candidates: [String], at wt: URL) -> String? {
+        for candidate in candidates where !candidate.isEmpty {
+            for ref in ["origin/\(candidate)", candidate] where resolvesToCommit(ref, at: wt) {
+                return ref
+            }
+        }
+        return nil
+    }
+
+    private static func resolvesToCommit(_ ref: String, at wt: URL) -> Bool {
+        runChecked(["-C", wt.path, "rev-parse", "--verify", "--quiet", "\(ref)^{commit}"],
+                   timeout: probeTimeout).status == 0
+    }
+
+    /// `defaultBase` with the network step removed: origin/HEAD's symref when it is already
+    /// set, else a local main/master, else nil.
+    ///
+    /// `defaultBase` falls back to `git remote set-head -a`, which talks to the remote on a
+    /// `runChecked` with no timeout — right on the create path, where the user asked for a
+    /// branch and one round-trip buys the correct base. Wrong on a hover path: hovering is
+    /// involuntary, and a repo whose origin/HEAD was never set is exactly the repo where that
+    /// call would block a pool thread until the network answers. Nil rather than a guessed
+    /// "main" — a card that names the wrong base is worse than a card with no second half.
+    static func localDefaultBase(at wt: URL) -> String? {
+        if let ref = originHead(at: wt) { return ref }
+        for name in ["main", "master"] where localBranchExists(name, at: wt) { return name }
+        return nil
+    }
+
     /// This worktree's own git dir (`<repo>/.git/worktrees/<name>`), not the common dir.
     static func gitDir(at wt: URL) -> URL? {
         let (status, out) = runChecked(["-C", wt.path, "rev-parse", "--path-format=absolute", "--git-dir"],

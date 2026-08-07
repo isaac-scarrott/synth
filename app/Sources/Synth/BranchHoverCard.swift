@@ -93,6 +93,11 @@ final class BranchHoverCardModel {
         openTask = nil
         pendingID = nil
         guard !suppressed, !branch.sessions.isEmpty else { return }
+        // Measure the worktree only for a branch actually being looked at, and only once the
+        // card has committed to opening — hovering is involuntary, and a git spawn per row the
+        // pointer merely crossed is the cost this deferral avoids. Deduped and floored by the
+        // cache, so a re-open inside 30s spawns nothing; the line fills in when git answers.
+        DiffStatCache.shared.warm([branch])
         if self.branch == nil {
             withAnimation(Self.easeOut) { self.branch = branch }
         } else {
@@ -146,8 +151,10 @@ struct BranchHoverCardOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             if let branch = hover.branch, let anchor = anchors[branch.id] {
-                // TODO(integration): DiffStatCache.shared.line(for: branch)
-                let diffStat: String? = nil
+                // nil until the measurement lands, and the branch line simply isn't drawn until
+                // it does — warming here rather than on the row keeps the git spawns to the one
+                // branch actually being looked at.
+                let diffStat = DiffStatCache.shared.line(for: branch)
                 let row = proxy[anchor]
                 let height = BranchHoverCard.height(branch: branch, diffStat: diffStat)
                 BranchHoverCard(branch: branch, diffStat: diffStat)

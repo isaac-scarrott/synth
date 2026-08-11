@@ -1874,3 +1874,8 @@ disclosure to dive deeper.
   Claude Code's OSC 8 file links carry `:line` inside the path and sometimes a hostname;
   `openFileLink` now resolves both before opening, and a path not on disk raises an in-app toast
   naming it rather than Launch Services' bare numeric dialog.
+- **0.28.1 ships** — patch carrying exactly one change, the file:// link resolution above:
+  `CFBundleVersion` 548, tag `v0.28.1`, one changelog line told from the click. Verified
+  credential-less with quarantine set: dmg and the app inside it both notarized and stapled,
+  appcast newest item 0.28.1 at `sparkle:version` 548, `edSignature` on all 18 enclosures
+  including 5 deltas. Landing page unchanged — no `synth-site` push.

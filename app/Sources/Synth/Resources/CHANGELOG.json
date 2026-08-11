@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.28.1",
+    "date": "2026-08-11",
+    "changes": [
+      "Clicking a file link in the terminal now opens the file. Claude Code's links carry a line number inside the path and sometimes a hostname, which macOS rejected with a bare \"-50\" dialog — both are resolved before the file opens, and a link to a file no longer on disk raises a toast naming the path instead of a numeric error."
+    ]
+  },
+  {
     "version": "0.28.0",
     "date": "2026-08-07",
     "changes": [

@@ -974,8 +974,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// every non-web scheme goes to the OS default handler — that keeps the user's real
     /// auth/extensions and matches every other macOS terminal (an embedded browser is a
     /// fresh, logged-out profile, wrong for github.com/stripe.com and blank for mailto:).
+    /// `file:` resolves through `openFileLink` first — handing Launch Services a path it
+    /// can't find pops a bare "The application can't be opened. -50" OS dialog.
     func openTerminalLink(_ url: URL, from sourceID: UUID?) {
         let scheme = url.scheme?.lowercased()
+        if scheme == "file" { openFileLink(url); return }
         guard scheme == "http" || scheme == "https", url.isLoopbackHost else {
             NSWorkspace.shared.open(url); return
         }
@@ -995,6 +998,31 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             NSWorkspace.shared.open(url); return   // no branch to host it — don't lose the click
         }
         if let srcID = source?.id { linkBrowsers[srcID] = browser.id }
+    }
+
+    /// A clicked file:// link. These arrive shaped for a terminal, not for Launch Services:
+    /// Claude Code wraps its `path:line` references in OSC 8 hyperlinks, so the line number
+    /// rides inside the URL's path ("…/Store.swift:980"), and some emitters stamp a hostname
+    /// after `file://`. Handed either, `NSWorkspace.open` fails with the OS's bare
+    /// "The application can't be opened. -50" dialog. So resolve here: treat the path as
+    /// local, shed a trailing :line(:col) when the literal path isn't on disk, and open
+    /// what's found in the OS default app (Finder for a folder — the routing the ledger's
+    /// 2026-07-07 entry already locked for non-web schemes). Nothing on disk → the in-app
+    /// toast names the path, instead of the OS dialog that names nothing.
+    private func openFileLink(_ url: URL) {
+        let fm = FileManager.default
+        var path = url.path   // percent-decodes, drops any host
+        if !fm.fileExists(atPath: path) {
+            path = path.replacingOccurrences(of: ":\\d+(:\\d+)?$", with: "",
+                                             options: .regularExpression)
+        }
+        guard !path.isEmpty, fm.fileExists(atPath: path) else {
+            raiseAmbientToast(.error, message: "File not found",
+                              title: url.lastPathComponent, icon: Phosphor.folder,
+                              sub: url.path)
+            return
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
     /// Front of the branch's Recent list, deduped by URL (keeping the known title), capped at 5.

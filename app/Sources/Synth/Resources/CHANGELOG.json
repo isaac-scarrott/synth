@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.28.2",
+    "date": "2026-08-11",
+    "changes": [
+      "The terminal cursor now hollows out when it isn't taking keys — an unfocused pane, or any pane while Synth is in the background, shows an empty, unblinking block instead of a filled one, so the pane that will receive your typing is always the one with the solid cursor."
+    ]
+  },
+  {
     "version": "0.28.1",
     "date": "2026-08-11",
     "changes": [

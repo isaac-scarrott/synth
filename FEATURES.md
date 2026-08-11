@@ -1870,3 +1870,7 @@ disclosure to dive deeper.
   with quarantine set: dmg and the app inside it both notarized and stapled, appcast newest item 0.28.0
   at `sparkle:version` 544, `edSignature` on all 18 enclosures including 5 deltas. Landing page
   unchanged — no `synth-site` push.
+- **Clicked file:// terminal links resolve instead of popping the OS "-50" dialog (native app)** —
+  Claude Code's OSC 8 file links carry `:line` inside the path and sometimes a hostname;
+  `openFileLink` now resolves both before opening, and a path not on disk raises an in-app toast
+  naming it rather than Launch Services' bare numeric dialog.

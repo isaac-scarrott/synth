@@ -1879,3 +1879,7 @@ disclosure to dive deeper.
   credential-less with quarantine set: dmg and the app inside it both notarized and stapled,
   appcast newest item 0.28.1 at `sparkle:version` 548, `edSignature` on all 18 enclosures
   including 5 deltas. Landing page unchanged — no `synth-site` push.
+- **The terminal cursor empties out when it isn't taking keys** — hollow, unblinking block in any
+  pane that doesn't hold the keyboard and in every pane while Synth is in the background.
+  libghostty already draws it; the app now tells it the truth (focus = first responder *and* key
+  window), and both designs mirror it via `pane--active` / `body.unfocused`.

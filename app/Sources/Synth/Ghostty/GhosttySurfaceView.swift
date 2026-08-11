@@ -113,6 +113,33 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.displayReconfigured() }
         }))
+
+        // Key-window changes are a focus edge the responder chain never reports: this view
+        // stays first responder while its window resigns key (⌘K's palette taking over,
+        // Synth dropping out of frontmost). See syncFocus.
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            windowObservers.append((nc, nc.addObserver(
+                forName: name, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.syncFocus() }
+            }))
+        }
+        syncFocus()
+    }
+
+    /// Tell libghostty whether this surface is taking keys. It draws the cursor as a hollow,
+    /// unblinking box whenever it isn't — the terminal's own "this pane is asleep" signal —
+    /// but only ever from what the host reports here.
+    ///
+    /// Focus is first responder *and* key window, not first responder alone: a background
+    /// pane resigns, but the pane you were typing in stays first responder when the window
+    /// loses key, which is exactly when the caret should stop blinking. `resignFirstResponder`
+    /// runs before the new responder is installed, so it passes `responder` explicitly rather
+    /// than reading a window that still points at this view.
+    private func syncFocus(responder: Bool? = nil) {
+        guard let surface else { return }
+        let isResponder = responder ?? (window?.firstResponder === self)
+        ghostty_surface_set_focus(surface, isResponder && window?.isKeyWindow == true)
     }
 
     private func removeWindowObservers() {
@@ -207,7 +234,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         updateDisplayID()
         updateSurfaceSize()
         applyTheme()
-        if let surface { ghostty_surface_set_focus(surface, window.firstResponder === self) }
+        syncFocus()
     }
 
     /// Re-theme the surface to the view's current appearance (working.html's `--tui-*`,
@@ -308,11 +335,11 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
 
     override var acceptsFirstResponder: Bool { true }
     override func becomeFirstResponder() -> Bool {
-        if let surface { ghostty_surface_set_focus(surface, true) }
+        syncFocus(responder: true)
         return super.becomeFirstResponder()
     }
     override func resignFirstResponder() -> Bool {
-        if let surface { ghostty_surface_set_focus(surface, false) }
+        syncFocus(responder: false)
         return super.resignFirstResponder()
     }
 

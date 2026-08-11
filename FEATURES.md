@@ -1883,3 +1883,7 @@ disclosure to dive deeper.
   pane that doesn't hold the keyboard and in every pane while Synth is in the background.
   libghostty already draws it; the app now tells it the truth (focus = first responder *and* key
   window), and both designs mirror it via `pane--active` / `body.unfocused`.
+- **0.28.2 ships** — patch carrying exactly one change, the unfocused-cursor hollowing above:
+  `CFBundleVersion` 552, tag `v0.28.2`. Verified quarantined-outsider on dmg and zip (both
+  notarized + stapled); appcast newest item 0.28.2 at `sparkle:version` 552, `edSignature` on
+  all 18 enclosures including 5 deltas. Landing page unchanged — no `synth-site` push.

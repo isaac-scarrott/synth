@@ -92,7 +92,9 @@ stage_markdown() {
   local app="$1"
   local md="../md"
   [ -d "$md" ] || return 0
-  if ! ( cd "$md" && ./vendor/fetch-bun.sh >/dev/null && ./vendor/bun/aarch64/bun run build.ts >/dev/null ); then
+  if ! ( cd "$md" && ./vendor/fetch-bun.sh >/dev/null \
+      && ./vendor/bun/aarch64/bun install --frozen-lockfile >/dev/null \
+      && ./vendor/bun/aarch64/bun run build.ts >/dev/null ); then
     echo "warning: synth-md payload unavailable — markdown sessions will be disabled" >&2
     return 0
   fi

@@ -61,6 +61,12 @@ echo "==> Building $TAG (signing as: $IDENTITY)"
 SYNTH_NO_INSTALL=1 ./dist.sh
 
 APP="build/Synth.app"
+# A build without the synth-md payload still runs — markdown sessions just stop being offered —
+# which is the right degradation for a dev checkout and a silent feature amputation in a public
+# release. 0.29.0 shipped exactly that way: stage_markdown's failure is a warning dist.sh
+# scrolls past, and nothing downstream ever misses the files.
+[ -x "$APP/Contents/Resources/md/bun/aarch64/bun" ] \
+  || die "built app is missing the synth-md payload (Resources/md) — see stage_markdown's warning in the build output"
 echo "==> Verifying signature"
 codesign --verify --deep --strict --verbose=2 "$APP"
 # Gatekeeper's own verdict, not just codesign's. Pre-notarization the only passing answer is

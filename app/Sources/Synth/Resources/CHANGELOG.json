@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.29.1",
+    "date": "2026-08-12",
+    "changes": [
+      "0.29.0's markdown viewer is actually in the box this time. The release built on a machine missing the viewer's dependencies, and the pipeline treated the resulting hole as a warning — so the feature announced below shipped disabled. The build now installs those dependencies itself, and a release refuses to ship without the viewer aboard."
+    ]
+  },
+  {
     "version": "0.29.0",
     "date": "2026-08-12",
     "changes": [

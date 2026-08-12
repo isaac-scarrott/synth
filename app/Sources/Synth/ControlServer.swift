@@ -189,7 +189,13 @@ final class ControlServer: @unchecked Sendable {
             guard let raw = request["url"] as? String, let url = URL(string: raw) else {
                 return ["ok": false, "error": "link.open needs a url"]
             }
-            store.openTerminalLink(url, from: nil)
+            // The caller names itself (`SYNTH_SESSION_ID`, already in every session's env), so
+            // a document opened from a document lands in the same branch. Without it the
+            // routing falls back to whatever happens to be open, and a markdown link could
+            // find no branch at all — which used to end at Launch Services and the OS's bare
+            // "can't be opened" dialog.
+            let caller = (request["sessionId"] as? String).flatMap(UUID.init(uuidString:))
+            store.openTerminalLink(url, from: caller)
             return ["ok": true]
         }
 

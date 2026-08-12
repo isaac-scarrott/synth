@@ -1030,9 +1030,36 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         if isMarkdown(path), (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
             let source = sourceID.flatMap(session) ?? openSessionID.flatMap(session)
             if newMarkdown(in: source.flatMap { branch(of: $0) }, path: path) != nil { return }
-            // No branch to host the row — fall through rather than losing the click.
+            // No branch to host the row. Deliberately NOT a fall-through to Launch Services:
+            // markdown routinely has no handler registered at all (it does not on this
+            // machine), so handing it over produces the OS's bare "The application can't be
+            // opened." — the exact dialog the 2026-08-07 entry removed from this function.
+            // Say what actually went wrong instead.
+            raiseAmbientToast(.error, message: "No branch to open this document in",
+                              title: url.lastPathComponent, icon: Phosphor.fileText, sub: path)
+            return
         }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        openInDefaultApp(URL(fileURLWithPath: path))
+    }
+
+    /// Hand a URL to the OS, and own the failure rather than leaving it to Launch Services.
+    ///
+    /// `NSWorkspace.open(_:)` puts up its own modal on failure — the bare "The application
+    /// can't be opened." with no path and no reason — which is what a file type with no
+    /// registered handler gets. The completion-handler form reports the error back instead, so
+    /// the miss can be told in the app's own voice, naming the file, like every other
+    /// unopenable thing here.
+    private func openInDefaultApp(_ url: URL) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open(url, configuration: configuration) { [weak self] _, error in
+            guard error != nil else { return }
+            Task { @MainActor in
+                self?.raiseAmbientToast(.error, message: "No app opens this file",
+                                        title: url.lastPathComponent, icon: Phosphor.folder,
+                                        sub: url.path)
+            }
+        }
     }
 
     /// Whether a path is a markdown document by extension. Case-insensitive, because

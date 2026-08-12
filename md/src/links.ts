@@ -112,7 +112,15 @@ export function openViaSynth(url: string, socketPath = process.env.SYNTH_CTL_SOC
       })
       socket.on("error", () => done(false))
       socket.on("connect", () => {
-        socket.write(JSON.stringify({ verb: "link.open", url }) + "\n")
+        // Name ourselves, so the app opens whatever this link becomes in the branch this
+        // document is being read in rather than in whatever happens to be focused.
+        socket.write(
+          JSON.stringify({
+            verb: "link.open",
+            url,
+            sessionId: process.env.SYNTH_SESSION_ID,
+          }) + "\n",
+        )
       })
       let buffer = ""
       socket.on("data", (chunk) => {

@@ -132,6 +132,11 @@ export class DocumentView {
       contentOptions: { backgroundColor: "transparent", flexDirection: "column" },
       scrollbarOptions: { visible: false },
     })
+    // Clicking off the text — the margin either side, the space past the last block — folds
+    // the open block back, the same as Esc. It is what a click away means everywhere else on
+    // a Mac, and without it the only way to stop editing is a key. Block clicks stop
+    // propagating before they reach here, so this fires only for a genuine click outside.
+    this.scroll.onMouseDown = () => this.commit()
     this.renderer.root.add(this.scroll)
 
     this.column = new BoxRenderable(this.renderer, {
@@ -316,9 +321,11 @@ export class DocumentView {
       // Only a task item's box is a control. A bullet is decoration, and making it clickable
       // would put a dead hit target in front of every list in every document.
       if (isTask) {
+        const raw = block.raw
+        const start = block.start
         checkbox.onMouseDown = (event: MouseEvent) => {
           event.stopPropagation()
-          this.toggleCheckbox(index)
+          this.toggleCheckbox(raw, start)
         }
       }
       root.add(checkbox)
@@ -359,6 +366,10 @@ export class DocumentView {
   /// have; and `conceal` hides the block's own marker (`# `, `- [ ] `, `> `), which occupies
   /// raw columns the screen does not have. Subtract the first, add the second.
   private onBlockClick(index: number, root: BoxRenderable, event: MouseEvent) {
+    // A click that lands on a block is that block's business. Without this it would also
+    // reach the page behind, whose job is to fold the open block back — so every click would
+    // reveal a block and immediately close it again.
+    event.stopPropagation()
     if (this.mode !== "read") this.closeOverlays()
     const view = this.views[this.viewIndexOf(index)]
     const row = Math.max(0, event.y - root.screenY)
@@ -485,8 +496,22 @@ export class DocumentView {
     this.host.onEdit(source)
   }
 
-  private toggleCheckbox(index: number) {
-    const block = this.blocks[index]
+  /// Toggle the task item whose box was clicked, identified by its source rather than by an
+  /// index into `this.blocks`.
+  ///
+  /// Indices go stale the moment another block is open: typing into it moves `this.source`
+  /// forward while the block array still holds offsets from the last segmentation, so a
+  /// splice at `blocks[index].start` would land in the wrong place and corrupt the document.
+  /// So fold the open block back first — which resegments — and then find the item again by
+  /// its text, preferring the occurrence nearest where it used to be, since a checklist may
+  /// legitimately hold the same line twice.
+  private toggleCheckbox(raw: string, start: number) {
+    this.commit()
+    const candidates = this.blocks.filter((b) => b.kind === "list-item" && b.raw === raw)
+    if (candidates.length === 0) return
+    const block = candidates.reduce((a, b) =>
+      Math.abs(a.start - start) <= Math.abs(b.start - start) ? a : b,
+    )
     const next = toggleTask(this.source, block)
     if (next === null) return
     // Deliberately does NOT reveal: toggling a checkbox is the locked "without entering the

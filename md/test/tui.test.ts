@@ -125,6 +125,63 @@ describe("block reveal", () => {
     await h.dispose()
   }, 30000)
 
+  test("clicking off the text folds the block back, the same as escape", async () => {
+    const h = await open("# Title\n\nSome **bold** prose.\n\nA second paragraph.\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Some") + 2, rowOf(frame, "Some"))
+    frame = await h.frame()
+    expect(trim(frame)).toContain("Some **bold** prose.")
+
+    // The margin beside the column — inside the page, on no block at all.
+    await h.mouse.click(0, rowOf(frame, "Some **bold** prose."))
+    frame = await h.frame()
+    expect(trim(frame)).toContain("Some bold prose.")
+    expect(trim(frame)).not.toContain("**")
+
+    await h.dispose()
+  }, 30000)
+
+  test("clicking empty space below the document also folds the block back", async () => {
+    const h = await open("# Title\n\nSome **bold** prose.\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Some") + 2, rowOf(frame, "Some"))
+    expect(trim(await h.frame())).toContain("Some **bold** prose.")
+
+    // Well past the last block, still inside the scrolling page.
+    await h.mouse.click(20, 30)
+    expect(trim(await h.frame())).not.toContain("**")
+    await h.dispose()
+  }, 30000)
+
+  test("clicking off the text keeps the edit rather than discarding it", async () => {
+    const h = await open("# Title\n\nProse.\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Prose.") + 6, rowOf(frame, "Prose."))
+    await h.keys.typeText(" kept")
+    await h.mouse.click(0, 30)
+    await h.frame()
+
+    expect(h.app.fileState.text).toContain("Prose. kept")
+    await h.settleSave()
+    expect(await h.onDisk()).toContain("Prose. kept")
+    await h.dispose()
+  }, 30000)
+
+  test("clicking a block while another is open moves the reveal, not closes it", async () => {
+    const h = await open("# Title\n\nFirst **para**.\n\nSecond _para_.\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "First") + 1, rowOf(frame, "First"))
+    frame = await h.frame()
+    expect(trim(frame)).toContain("First **para**.")
+
+    await h.mouse.click(colOf(frame, "Second") + 1, rowOf(frame, "Second"))
+    frame = await h.frame()
+    // The second is open — a block click must not be swallowed by the fold-back behind it.
+    expect(trim(frame)).toContain("Second _para_.")
+    expect(trim(frame)).not.toContain("First **para**.")
+    await h.dispose()
+  }, 30000)
+
   test("escape from a plain reading view does nothing rather than becoming a mode", async () => {
     const h = await open("# Title\n\nProse.\n")
     const before = await h.frame()

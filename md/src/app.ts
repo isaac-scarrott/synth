@@ -1,4 +1,9 @@
-import { getTreeSitterClient, type CliRenderer } from "@opentui/core"
+import {
+  destroyTreeSitterClient,
+  getTreeSitterClient,
+  type CliRenderer,
+  type TreeSitterClient,
+} from "@opentui/core"
 import { DocumentFile } from "./save"
 import { History, openViaSynth, resolveLink } from "./links"
 import { readTheme, type Theme } from "./theme"
@@ -15,6 +20,38 @@ export interface AppOptions {
   /// Injected by tests so a run never touches the real socket.
   openExternal?: (url: string) => Promise<boolean>
   onQuit?: () => void
+}
+
+/// The tree-sitter client, ready to highlight.
+///
+/// Awaited before the first paint rather than deferred: without a client MarkdownRenderable
+/// draws no text at all, so "defer it off the first paint" would mean flashing an empty
+/// document. It costs ~25ms, which is inside the speed budget.
+///
+/// The client is a process-wide singleton that `renderer.destroy()` tears down, so a second
+/// document opened in the same process can be handed a dead one. That failure is silent in
+/// the worst way: `initialize()` still resolves, and the client then answers every highlight
+/// request with nothing, so the document renders BLANK rather than erroring. So readiness is
+/// established positively — by asking it to highlight something and checking that it did —
+/// and a client that fails the check is thrown away and replaced.
+async function startTreeSitter(): Promise<TreeSitterClient> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const client = getTreeSitterClient()
+      await client.initialize()
+      const probe = await client.highlightOnce("# h", "markdown")
+      if (probe.highlights && probe.highlights.length > 0) return client
+    } catch {
+      // Fall through to the recycle below.
+    }
+    await destroyTreeSitterClient().catch(() => {})
+  }
+  // Two failures means something is wrong with the assets, not with our bookkeeping. Return a
+  // client anyway: an unhighlighted document is a worse document, not a missing one, and
+  // failing the open here would be the wrong trade.
+  const client = getTreeSitterClient()
+  await client.initialize().catch(() => {})
+  return client
 }
 
 export class App {
@@ -40,11 +77,7 @@ export class App {
 
   static async start(renderer: CliRenderer, options: AppOptions): Promise<App> {
     const theme = options.theme ?? readTheme()
-    // Awaited before the first paint rather than deferred: without a tree-sitter client
-    // MarkdownRenderable draws no text at all, so "defer it off the first paint" would mean
-    // flashing an empty document. It costs ~25ms, which is inside the speed budget.
-    const treeSitter = getTreeSitterClient()
-    await treeSitter.initialize()
+    const treeSitter = await startTreeSitter()
 
     const app = new App(renderer, theme, options, treeSitter)
     app.view.mount()

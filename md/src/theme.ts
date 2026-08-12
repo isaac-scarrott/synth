@@ -8,9 +8,16 @@ import { SyntaxStyle, type StyleDefinitionInput } from "@opentui/core"
 /// for both appearances, because `synth <file>` runs this TUI in ANY terminal, with no Synth
 /// app on the other end to describe itself.
 ///
-/// Nothing paints an opaque page background. The ghostty surface underneath is already
-/// painting Synth's translucent card (TerminalTheme's `background-opacity`), so a filled
-/// backdrop here would be a second coat and the window would stop reading as one surface.
+/// Nothing paints an opaque page BACKDROP. The ghostty surface underneath is already painting
+/// Synth's translucent card (TerminalTheme's `background-opacity`), so a filled backdrop here
+/// would be a second coat and the window would stop reading as one surface.
+///
+/// But every colour that IS painted must be opaque, and that distinction cost a real bug. A
+/// terminal cell has no backdrop to blend into: an `#RRGGBB0A` tint does not composite against
+/// the card behind it, it composites against nothing and lands on pure black. The code-span
+/// and revealed-block tints were written that way and rendered as black slabs — in light mode,
+/// black-on-black. So the two surface tints below are opaque colours derived from the card's
+/// own value, a step off it rather than a wash over it.
 
 export interface Palette {
   fg: string
@@ -48,14 +55,14 @@ const DEFAULTS: Record<"light" | "dark", Palette> = {
     heading: "#F2F4F8",
     link: "#8AB4F8",
     code: "#D8DEE9",
-    codeBg: "#FFFFFF0D",
+    codeBg: "#1B1D22",       // a step up from the card, not a wash over it
     quote: "#A9ADB6",
-    rule: "#3A3D45",
+    rule: "#5E626D",         // 3.04:1 on the card — a hairline you can actually see
     selection: "#33507A",
     cursor: "#EEE0CD",
     match: "#5B4A2A",
     matchCurrent: "#A86038",
-    revealBg: "#FFFFFF08",
+    revealBg: "#1E2026",
     overlayBg: "#22252B",
     danger: "#E5534B",
   },
@@ -67,14 +74,14 @@ const DEFAULTS: Record<"light" | "dark", Palette> = {
     heading: "#12141A",
     link: "#194EB7",
     code: "#2B2D34",
-    codeBg: "#0000000A",
+    codeBg: "#EDEEF2",       // a step down from the paper, not a wash over it
     quote: "#54565E",
-    rule: "#C9CCD3",
+    rule: "#868C99",         // 3.17:1 on the paper
     selection: "#D0D9E6",
     cursor: "#1C1E23",
     match: "#F3E2B8",
     matchCurrent: "#E8B45E",
-    revealBg: "#00000008",
+    revealBg: "#EFF0F4",
     overlayBg: "#FFFFFF",
     danger: "#A2241A",
   },

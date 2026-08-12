@@ -117,7 +117,7 @@ enum MarkdownSession {
                 "link": "#8AB4F8",
                 "code": "#D8DEE9",
                 "quote": "#A9ADB6",
-                "rule": "#3A3D45",
+                "rule": "#5E626D",      // 3.04:1 on the terminal card — a visible hairline
                 "overlayBg": "#282B30", // Theme.raised
                 "danger": "#E5534B",
               ]
@@ -130,7 +130,7 @@ enum MarkdownSession {
                 "link": "#194EB7",      // the light ANSI blue from TerminalTheme, 7:1 on paper
                 "code": "#2B2D34",
                 "quote": "#54565E",
-                "rule": "#C9CCD3",
+                "rule": "#868C99",      // 3.17:1 on the paper
                 "overlayBg": "#FFFFFF", // Theme.raised
                 "danger": "#A2241A",
               ]

@@ -1933,3 +1933,9 @@ disclosure to dive deeper.
   and a delivered send finally clears its pins. `CFBundleVersion` 564, tag `v0.30.0`; dmg + zip
   notarized, stapled, verified credential-less; appcast newest 0.30.0 at 564, `edSignature` on all
   18 enclosures, 813KB delta from 561. No `synth-site` push.
+- **0.30.1 ships — a bare path is a file link** — patch release: a clicked hyperlink carrying a
+  schemeless absolute path (`/tmp/plan.md`) now routes through `openFileLink` — markdown into a
+  Synth session, files to their default app, a missing file to the named toast — instead of
+  falling through to Launch Services' bare "can't be opened" dialog. `CFBundleVersion` 566, tag
+  `v0.30.1`; dmg + zip notarized, stapled, verified credential-less; appcast newest 0.30.1 at 566,
+  `edSignature` on all 18 enclosures. No `synth-site` push.

@@ -42,10 +42,30 @@ enum MarkdownSession {
     /// is the PTY child exiting, which is the child-exited signal that closes the row — the
     /// same contract an agent row has.
     static func launchCommand(path: String?) -> String? {
+        // A markdown row is "a session showing this document", not "a session running
+        // synth-md" — so which program renders it is the user's choice (Settings → Markdown)
+        // and the row is the same either way.
+        if case let .editor(binary) = preference, let path,
+           let command = MarkdownOpener.launchCommand(binary: binary, path: path) {
+            return command
+        }
         guard let runtime = runtimeURL, let payload = payloadURL else { return nil }
         var words = ["exec", shellQuote(runtime.path), shellQuote(payload.appendingPathComponent("synth-md.js").path)]
         if let path { words.append(shellQuote(path)) }
         return words.joined(separator: " ")
+    }
+
+    /// Settings → Markdown, mirrored off the store so the surface — which builds its own launch
+    /// line and holds no store reference — can read it. AppStore owns the value and keeps this
+    /// in step; nothing else writes it.
+    nonisolated(unsafe) static var preference: MarkdownOpen = .synth
+
+    /// Whether a markdown row can be opened at all. The bundled TUI may be missing from a build
+    /// that could not fetch Bun, but a chosen terminal editor still works — so this is not the
+    /// same question as `isAvailable`.
+    static var canOpenInSession: Bool {
+        if case let .editor(binary) = preference { return MarkdownOpener.resolve(binary) != nil }
+        return isAvailable
     }
 
     /// What the TUI needs to look and behave like part of Synth rather than a program that
@@ -76,7 +96,20 @@ enum MarkdownSession {
     /// script needs no environment to find them. `exec`, so `synth notes.md` REPLACES the
     /// shell — it behaves like typing `vim`, which is the locked feel.
     static func installCLI(into shimDir: String) {
-        guard let runtime = runtimeURL, let payload = payloadURL else { return }
+        // Whatever Settings → Markdown says, so `synth notes.md` and a clicked link agree.
+        // Re-written whenever that choice changes.
+        let opener: String
+        if case let .editor(binary) = preference, let resolved = MarkdownOpener.resolve(binary) {
+            opener = shellQuote(resolved)
+        } else if let runtime = runtimeURL, let payload = payloadURL {
+            opener = shellQuote(runtime.path) + " "
+                + shellQuote(payload.appendingPathComponent("synth-md.js").path)
+        } else {
+            // Nothing to open markdown with; the shim would only be `open`, which the user's
+            // shell already does better.
+            try? FileManager.default.removeItem(atPath: shimDir + "/synth")
+            return
+        }
         let script = """
         #!/bin/sh
         # synth — open a file the way Synth would (ADR-0016). Written by the running app.
@@ -87,7 +120,7 @@ enum MarkdownSession {
         # Case-insensitive, because README.MD and Notes.Markdown are both real.
         case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
           *.md|*.markdown)
-            [ -f "$1" ] && exec \(shellQuote(runtime.path)) \(shellQuote(payload.appendingPathComponent("synth-md.js").path)) "$1"
+            [ -f "$1" ] && exec \(opener) "$1"
             ;;
         esac
         # Anything else is the OS's business, which is what this shell would have done anyway.

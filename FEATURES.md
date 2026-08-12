@@ -1900,3 +1900,9 @@ disclosure to dive deeper.
   back to the app over a new `link.open` control-socket verb, so the existing routing stays the only
   copy. Built on OpenTUI, which means **Synth now ships a vendored Bun runtime** (ADR-0016) — pinned,
   because the version failure is silent and renders every paragraph blank.
+- **Settings → Markdown: open .md in Synth, your editor, or the default app** — three choices and no
+  more. The middle one hosts any terminal editor found on this machine (nvim, helix, micro, nano, …)
+  in a Synth session, detected off the login shell's PATH so version managers and every install
+  prefix are covered. Fixes with it: a clicked markdown link could raise the OS's bare "The
+  application can't be opened." — markdown often has no registered handler at all, so no path may
+  hand one to Launch Services; and clicking outside a revealed block now folds it back like Esc.

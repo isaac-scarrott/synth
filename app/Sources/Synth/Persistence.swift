@@ -21,6 +21,9 @@ struct PersistedState: Codable {
     var globalClaudeFlags: String?
     /// The new-worktree session template (working.html globalTpl) — same optionality rule.
     var globalSessionTemplate: [SessionTemplateEntry]?
+    /// What a clicked markdown file opens in (ADR-0016), as MarkdownOpen.rawValue. Optional so
+    /// a pre-markdown snapshot decodes unchanged.
+    var markdownOpen: String?
 }
 
 struct PersistedWorkspace: Codable {

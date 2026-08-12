@@ -68,6 +68,12 @@ struct SettingsPane: View {
             SetSection(label: "Appearance") {
                 SetToggleRow(label: "Theme", desc: "Follows macOS unless you pin it.") { ThemeSeg() }
             }
+            SetSection(label: "Markdown") {
+                SetToggleRow(label: "Open .md in",
+                             desc: "Clicking a markdown link, and the `synth` command.") {
+                    MarkdownOpenSeg()
+                }
+            }
             SetSection(label: "Notification sounds") {
                 switchRow("Session finished", "A background agent stopped working.", bind(\.soundDone))
                 SetDivider()
@@ -1286,6 +1292,80 @@ private struct SetSeg<Value: Hashable>: View {
         }
         .padding(2).background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowSelected))
         .frame(width: width)
+    }
+}
+
+/// Settings → Markdown. Three choices, because there are only three answers: read it here, read
+/// it in your editor, or send it out of Synth entirely.
+///
+/// The editor choice carries WHICH editor rather than adding a fourth control for it. A machine
+/// with one editor installed therefore has nothing extra to decide, and a machine with several
+/// gets the menu only when it clicks that segment. Nothing is offered that is not installed, so
+/// the middle segment is simply absent on a machine with no terminal editor at all.
+private struct MarkdownOpenSeg: View {
+    @Environment(AppStore.self) private var store
+    @State private var editors: [TerminalEditor] = []
+
+    private var chosenEditor: TerminalEditor? {
+        if case let .editor(binary) = store.markdownOpen {
+            return editors.first { $0.binary == binary }
+        }
+        return editors.first
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            SetSeg(options: options, selection: Binding(
+                get: { mode },
+                set: { apply($0) }
+            ), width: editors.isEmpty ? SegWidth.three : SegWidth.four)
+
+            // Only when there is a genuine choice to make.
+            if mode == .editor, editors.count > 1 {
+                Menu {
+                    ForEach(editors) { editor in
+                        Button(editor.name) { store.markdownOpen = .editor(editor.binary) }
+                    }
+                } label: {
+                    Text(chosenEditor?.name ?? "Editor").font(.sans(12, 500))
+                        .foregroundStyle(Theme.inkMuted)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+        }
+        // Detection reads the login shell's PATH, which is probed off the main thread and may
+        // not have resolved when Settings first draws.
+        .task { editors = MarkdownOpener.installed() }
+    }
+
+    private enum Mode: Hashable { case synth, editor, defaultApp }
+
+    private var mode: Mode {
+        switch store.markdownOpen {
+        case .synth: return .synth
+        case .editor: return .editor
+        case .defaultApp: return .defaultApp
+        }
+    }
+
+    private var options: [(Mode, String)] {
+        var out: [(Mode, String)] = [(.synth, "Synth")]
+        if !editors.isEmpty {
+            out.append((.editor, editors.count == 1 ? editors[0].name : "Editor"))
+        }
+        out.append((.defaultApp, "Default app"))
+        return out
+    }
+
+    private func apply(_ next: Mode) {
+        switch next {
+        case .synth: store.markdownOpen = .synth
+        case .defaultApp: store.markdownOpen = .defaultApp
+        case .editor:
+            guard let editor = chosenEditor else { return }
+            store.markdownOpen = .editor(editor.binary)
+        }
     }
 }
 

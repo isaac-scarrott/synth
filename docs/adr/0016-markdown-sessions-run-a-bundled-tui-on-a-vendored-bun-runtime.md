@@ -76,6 +76,18 @@ precisely why it would have drifted: two copies of a rule that only one of them 
 answered before the control server's worktree guard, because routing a link needs no branch and the
 document being read may sit outside every managed worktree.
 
+## The surface is a choice, and the session model does not care which
+
+Settings → Markdown picks between Synth's own document surface, a terminal editor, and the OS default.
+A markdown row is "a session showing this document", not "a session running synth-md" — so choosing nvim
+changes only the launch line, and the row, its persistence, its icon and its teardown are unchanged.
+
+Editor detection reads the login shell's PATH (`ShellEnvironment`, already probed for agent detection)
+rather than a list of install prefixes. That is not a refinement, it is the whole reason it works: on the
+machine this was built on, `nvim` lives under `~/.local/share/bob/nvim-bin` because it is managed by bob,
+and no plausible hint list contains that. The hints remain as a fallback for the window before the probe
+resolves.
+
 ## Consequences
 
 - Synth's download grows by roughly 70MB, nearly all of it the Bun binary.

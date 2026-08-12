@@ -205,6 +205,31 @@ click-to-comment. Decisions that turned out to be load-bearing:
   a dormant-but-live-capable row is booted and delivery waits for the liveness signal, never for the
   terminal view; on timeout the comment is dropped and its screenshots deleted.
 
+### The host half of the two rules above landed 2026-08-12, not 2026-07-29
+
+Both amendments above described a page that keeps its batch and a host that answers. The overlay
+implemented its side; the host never did, and using comment mode on a real app found both halves of
+the gap at once:
+
+- **Leaving the mode deleted the batch** rather than parking it, so the toolbar's comment button —
+  which reads as a view toggle — was the only unlabelled Delete in the app. `exit()` now returns
+  `'parked'` or `'off'` and the host believes the answer: parked keeps the CDP client, the binding,
+  the injected script and the count, because the parked island's own Send still has to reach us. The
+  batch outlives the document too (sessionStorage + a `restore` injection verb), since the likeliest
+  thing to replace the page is the agent acting on the comments.
+- **Nothing ever called `confirm`/`reject`.** Delivery reported a notice and no more, so a batch that
+  *did* land kept its pins and its count forever, and one that never landed said so only in a notice
+  that auto-cleared. `CommentDelivery` now reports its terminal answer and the browser turns it into
+  the overlay's own two verbs.
+
+One thing the ADR had not accounted for at all: the veil is not automatically the top of the page it
+covers. The top z-index loses to the *top layer*, and a modal `<dialog>` beats even that — it inerts
+everything outside itself and `elementsFromPoint` stops reporting the page (measured). The overlay is
+a manual popover that re-promotes itself, and over a modal dialog it mounts *inside* it, the only
+place that is both interactive and able to hit-test. Equally: the overlay's own events must stop at
+its host, or the page's outside-click and focus-trap handlers treat every click on the composer as a
+click outside and take the caret back.
+
 ## Stage four: a browser can belong to a Claude session (decided 2026-07-06)
 
 Stage three routes a comment to "the branch's most-active live claude" — a guess that is usually

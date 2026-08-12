@@ -66,6 +66,26 @@
     <iframe id="the-frame" srcdoc="<button>inside iframe</button>"></iframe>
   </div>
 
+  <div class="cardish">
+    <h2>Top layer: above every z-index there is</h2>
+    <button id="open-dialog" type="button">Open modal dialog</button>
+    <dialog id="the-dialog">
+      <p id="dialog-text">Inside a modal dialog. A z-index cannot reach this, and everything
+        outside it is inert.</p>
+      <button id="dialog-close" type="button">Close</button>
+    </dialog>
+  </div>
+
+  <div class="cardish">
+    <h2>A panel that fights for focus and dismisses on outside clicks</h2>
+    <button id="open-trap" type="button">Open trapping panel</button>
+    <div id="trap-panel" class="nested-a" hidden>
+      <input id="trap-input" placeholder="the page wants this focused">
+      <p>Refocuses itself whenever focus leaves, closes on any pointerdown outside — the way
+        every focus-scope / dismissable-layer implementation does.</p>
+    </div>
+  </div>
+
   <div class="long">
     <h2 id="b">Long scrollable content</h2>
     <button id="way-down" type="button">Way-down button</button>
@@ -103,6 +123,33 @@
     window.__clickCounts.docClicks++; paintCounts();
   });
   paintCounts();
+
+  // A modal dialog: the page's own top-layer element, with everything outside it inert.
+  document.getElementById('open-dialog').addEventListener('click', function () {
+    document.getElementById('the-dialog').showModal();
+  });
+  document.getElementById('dialog-close').addEventListener('click', function () {
+    document.getElementById('the-dialog').close();
+  });
+
+  // A focus scope and a dismissable layer, written the way component libraries write them. Both
+  // read a click on the overlay as "outside" — the overlay's own events must never get here.
+  window.__trap = { dismissed: 0, refocused: 0 };
+  var trapPanel = document.getElementById('trap-panel');
+  document.getElementById('open-trap').addEventListener('click', function () {
+    trapPanel.hidden = false;
+    document.getElementById('trap-input').focus();
+  });
+  document.addEventListener('pointerdown', function (e) {
+    if (trapPanel.hidden || trapPanel.contains(e.target)) return;
+    window.__trap.dismissed++;
+    trapPanel.hidden = true;
+  });
+  trapPanel.addEventListener('focusout', function (e) {
+    if (trapPanel.hidden || trapPanel.contains(e.relatedTarget)) return;
+    window.__trap.refocused++;
+    document.getElementById('trap-input').focus();
+  });
 
   document.getElementById('btn-enter').addEventListener('click', function () {
     window.__synthOverlay.enter({ targetLabel: 'claude · fix/browser-header', debug: true });

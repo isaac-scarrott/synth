@@ -519,9 +519,15 @@ private struct BrowserBar: View {
     private var commentOn: Bool { ctrl.commentMode?.active ?? false }
     private var pendingComments: Int { ctrl.commentMode?.pendingCount ?? 0 }
     private var commentHelp: String {
-        guard commentOn else { return "Comment mode" }
-        if let t = ctrl.commentMode?.targetTitle { return "Comment mode → \(t)" }
-        return "Comment mode (no agent session in this branch)"
+        if commentOn {
+            if let t = ctrl.commentMode?.targetTitle { return "Comment mode → \(t)" }
+            return "Comment mode (no agent session in this branch)"
+        }
+        // Off with a batch still parked on the page: say it is being kept, not lost.
+        if pendingComments > 0 {
+            return "Comment mode · \(pendingComments) comment\(pendingComments == 1 ? "" : "s") not sent"
+        }
+        return "Comment mode"
     }
 
     var body: some View {

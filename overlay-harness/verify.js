@@ -40,9 +40,10 @@ const dbgOf = (pg) => pg.evaluate(() => {
   return d ? {
     state: d.state, hoveredTag: d.hoveredTag, highlightRect: d.highlightRect,
     cardOpen: d.cardOpen, cardRect: d.cardRect, listOpen: d.listOpen,
-    sending: d.sending, inFlight: d.inFlight,
+    sending: d.sending, inFlight: d.inFlight, parked: d.parked,
     queuedCount: d.queuedCount, islandText: d.islandText, comments: d.comments,
-    pendingSendCount: d.pendingSendCount
+    pendingSendCount: d.pendingSendCount, pinCount: d.pinCount,
+    composerFocused: d.composerFocused, topLayer: d.topLayer, stored: d.stored
   } : null;
 });
 const msgsOf = (pg) => pg.evaluate(() => window.__synthReceived.map((j) => JSON.parse(j)));
@@ -631,17 +632,128 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
     !msgs.slice(ladderBase).some((m) => m.type === 'exitMode'),
     JSON.stringify(msgs.slice(ladderBase)));
 
+  // ==== ASSERTION 8: leaving the mode parks the batch — it never discards it ==========
+  // The bug this whole section exists for: the comment button used to be a way to lose work.
+  // Escape 3 (and the island's ✕, and the host's toggle) leave the *mode*, not the comments.
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
+  d = await dbgOf(page);
   msgs = await msgsOf(page);
-  check('Escape 3 exits the mode and emits exitMode',
-    (await hostsOf(page)) === 0 && msgs[msgs.length - 1].type === 'exitMode' &&
-    msgs.slice(ladderBase).filter((m) => m.type === 'exitMode').length === 1,
+  check('Escape 3 parks the batch instead of exiting',
+    d.parked === true && d.state === 'parked' && (await hostsOf(page)) === 1 &&
+    !msgs.slice(ladderBase).some((m) => m.type === 'exitMode'),
+    'state=' + d.state + ' ' + JSON.stringify(msgs.slice(ladderBase).map((m) => m.type)));
+  check('the host hears parkMode, and the count it already had stands',
+    msgs[msgs.length - 1].type === 'parkMode' && d.queuedCount === 1 &&
+    !msgs.slice(ladderBase).some((m) => m.type === 'batchCount'),
     JSON.stringify(msgs.slice(ladderBase)));
-  check('abandoning a queue tells the host it is gone',
-    msgs[msgs.length - 2].type === 'batchCount' && msgs[msgs.length - 2].n === 0,
-    JSON.stringify(msgs.slice(-2)));
-  check('exit deletes the debug hook', (await dbgOf(page)) === null);
+  check('the parked island shrinks to a claim, with a way back and a way out',
+    d.islandText.indexOf('1 comment not sent') === 0 && d.islandText.includes('Resume') &&
+    d.islandText.includes('Send 1') &&
+    await page.evaluate(() => {
+      const r = window.__synthOverlayDebug.root;
+      return !!r.querySelector('.island.is-parked [data-cm="resume"]') &&
+             !!r.querySelector('.island.is-parked [data-cm="send"]') &&
+             !r.querySelector('[data-cm="off"]') && !r.querySelector('.target');
+    }), d.islandText);
+  check('the pin stays on the page while the mode is off',
+    d.pinCount === 1 && locked(await pinDriftOf(page)), JSON.stringify(await pinDriftOf(page)));
+  await page.screenshot({ path: path.join(SHOT_DIR, 'overlay-parked.png') });
+
+  // Parked means the page is the user's again: no veil, no suppressors, no captured keys.
+  const parkedClicks = await page.evaluate(() => window.__clickCounts.deep);
+  await page.click('#deep-button');
+  await page.waitForTimeout(80);
+  check('the page works normally while a batch is parked',
+    (await page.evaluate(() => window.__clickCounts.deep)) === parkedClicks + 1 &&
+    (await dbgOf(page)).queuedCount === 1);
+  check('a parked batch is written to the store, so a reload can bring it back',
+    (await dbgOf(page)).stored &&
+    (await dbgOf(page)).stored.comments.length === 1 &&
+    (await dbgOf(page)).stored.comments[0].text === 'ladder one',
+    JSON.stringify((await dbgOf(page)).stored));
+
+  // Resume: back into the mode with the same batch, from the island's own control.
+  const beforeResume = (await msgsOf(page)).length;
+  await shadowClick(page, '[data-cm="resume"]');
+  await page.waitForTimeout(150);
+  d = await dbgOf(page);
+  msgs = await msgsOf(page);
+  check('Resume puts the picker back with the batch intact',
+    d.state === 'pick' && d.parked === false && d.queuedCount === 1 &&
+    d.islandText.includes('Send 1') && d.islandText.includes('ladder') &&
+    JSON.stringify(msgs.slice(beforeResume).map((m) => m.type)) === JSON.stringify(['resumeMode']),
+    d.islandText);
+
+  // The host's own toggle: exit() answers what leaving meant, so the host knows to stay attached.
+  check('exit() answers "parked" while a batch stands',
+    (await page.evaluate(() => window.__synthOverlay.exit())) === 'parked' &&
+    (await hostsOf(page)) === 1 && (await dbgOf(page)).parked === true);
+  check('a second exit() is idempotent, and still "parked"',
+    (await page.evaluate(() => window.__synthOverlay.exit())) === 'parked' &&
+    (await hostsOf(page)) === 1);
+
+  // ==== ASSERTION 9: the batch survives the document, and re-finds its element ========
+  // The reload case that matters: the agent edits the code, the dev server reloads the page.
+  await page.reload();
+  await page.waitForTimeout(200);
+  check('a reload alone brings nothing up — restore() is what the host calls',
+    (await hostsOf(page)) === 0);
+  await page.evaluate(() => window.__synthOverlay.restore({ targetLabel: 'reloaded', debug: true }));
+  await page.waitForTimeout(200);
+  await settle(page);
+  d = await dbgOf(page);
+  check('restore() brings the parked batch back on the new document',
+    (await hostsOf(page)) === 1 && d.parked === true && d.queuedCount === 1 &&
+    d.comments[0].text === 'ladder one', JSON.stringify(d.comments));
+  check('the restored comment re-found its element by selector, and is pinned again',
+    d.pinCount === 1 && d.comments[0].selector === '#deep-button' &&
+    locked(await pinDriftOf(page)), JSON.stringify(await pinDriftOf(page)));
+  check('the restored batch re-announces itself to the host',
+    JSON.stringify((await msgsOf(page)).map((m) => m.type + ':' + m.n)) ===
+      JSON.stringify(['batchCount:1']), JSON.stringify(await msgsOf(page)));
+
+  // A comment whose element is gone keeps its words: it lists and it sends, it just has no pin.
+  await page.evaluate(() => document.getElementById('deep-button').remove());
+  await page.waitForTimeout(600);
+  await settle(page);
+  d = await dbgOf(page);
+  check('a comment whose element went keeps its place in the batch, without a pin',
+    d.queuedCount === 1 && d.pinCount === 0 && (await rowsOf(page)).length === 1,
+    'pins=' + d.pinCount + ' queued=' + d.queuedCount);
+  // …and finds it again the moment the page puts it back (a re-render, a hot reload).
+  await page.evaluate(() => {
+    const b = document.createElement('button');
+    b.id = 'deep-button'; b.type = 'button'; b.textContent = 'Deep button';
+    b.addEventListener('click', () => { window.__clickCounts.deep++; });   // as a re-render would
+    document.querySelector('.nested-c').prepend(b);
+  });
+  await page.waitForTimeout(600);
+  await settle(page);
+  d = await dbgOf(page);
+  check('a re-rendered element takes its pin back',
+    d.pinCount === 1 && locked(await pinDriftOf(page)), JSON.stringify(await pinDriftOf(page)));
+
+  // ==== ASSERTION 10: deleting the last comment is the only quiet way out =============
+  await page.evaluate(() => window.__synthOverlay.exit());
+  await page.waitForTimeout(120);
+  const beforeDiscard = (await msgsOf(page)).length;
+  await shadowClick(page, '[data-cm="list"]');
+  await page.waitForTimeout(120);
+  const lastRow = (await rowsOf(page))[0];
+  await shadowClick(page, '.row[data-id="' + lastRow.id + '"] .row__del');
+  await page.waitForTimeout(350);
+  msgs = await msgsOf(page);
+  check('discarding the last parked comment takes the overlay off the page',
+    (await hostsOf(page)) === 0 && (await dbgOf(page)) === null &&
+    JSON.stringify(msgs.slice(beforeDiscard).map((m) => m.type + (m.n === undefined ? '' : ':' + m.n))) ===
+      JSON.stringify(['batchCount:0', 'exitMode']),
+    JSON.stringify(msgs.slice(beforeDiscard)));
+  check('and it takes the store with it — nothing is left to restore',
+    (await page.evaluate(() => window.sessionStorage.getItem('__synthComments/v1'))) === null);
+  await page.evaluate(() => window.__synthOverlay.restore({ targetLabel: 'nothing', debug: true }));
+  await page.waitForTimeout(150);
+  check('restore() with nothing parked mounts nothing at all', (await hostsOf(page)) === 0);
 
   // ---- enter/exit cycles leave nothing behind ---------------------------------------
   for (let i = 0; i < 3; i++) {
@@ -661,6 +773,97 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
   // after exit, page handlers work again (no leaked suppressors)
   await page.click('#deep-button');
   check('page handlers restored after exit', (await page.evaluate(() => window.__clickCounts.deep)) === 1);
+
+  // ==== ASSERTION 11: the page's own top layer, and its fight for focus ================
+  // Both halves of "I can't click into the comment box". A modal dialog is above every z-index
+  // there is (and inerts everything outside it), and a focus scope drags the caret back out of
+  // anything it reads as outside itself — which a click on the overlay looks exactly like.
+  await page.evaluate(() => window.__synthOverlay.enter({ targetLabel: 'layers', debug: true }));
+  await page.waitForTimeout(120);
+  check('the overlay is in the top layer, not merely at the top z-index',
+    (await dbgOf(page)).topLayer === true);
+
+  await page.evaluate(() => document.getElementById('the-dialog').showModal());
+  await page.waitForTimeout(150);
+  const dlgBox = await page.locator('#dialog-text').boundingBox();
+  const dlgPoint = { x: dlgBox.x + 12, y: dlgBox.y + 8 };
+  check('the veil is still what a point over a modal dialog hit-tests to',
+    await page.evaluate(([x, y]) => {
+      const el = document.elementFromPoint(x, y);
+      return !!(el && el.hasAttribute && el.hasAttribute('data-synth-comment-overlay'));
+    }, [dlgPoint.x, dlgPoint.y]));
+  await page.mouse.move(dlgPoint.x, dlgPoint.y);
+  await page.waitForTimeout(120);
+  await page.mouse.click(dlgPoint.x, dlgPoint.y);
+  await page.waitForTimeout(200);
+  d = await dbgOf(page);
+  check('a comment can be left on the contents of a modal dialog',
+    d.cardOpen === true && d.comments.length === 1 && d.comments[0].selector === '#dialog-text',
+    JSON.stringify(d.comments.map((c) => c.selector)));
+  // The composer must take a real click, over the dialog, on its own textarea.
+  const taBox = await page.evaluate(() => {
+    const r = window.__synthOverlayDebug.root.querySelector('.card textarea').getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+  await page.mouse.click(taBox.x + taBox.width / 2, taBox.y + taBox.height / 2);
+  await page.waitForTimeout(150);
+  await page.keyboard.type('over the dialog');
+  await page.waitForTimeout(120);
+  d = await dbgOf(page);
+  check('clicking into the composer focuses it, over the top layer, and typing lands there',
+    d.composerFocused === true && d.comments[0].text === 'over the dialog' && d.queuedCount === 1,
+    'focused=' + d.composerFocused + ' text=' + JSON.stringify(d.comments[0].text));
+  await page.screenshot({ path: path.join(SHOT_DIR, 'overlay-top-layer.png') });
+  await page.keyboard.press('Escape');           // drops the composer, keeps the comment
+  await page.evaluate(() => document.getElementById('the-dialog').close());
+  await page.waitForTimeout(120);
+
+  // A focus scope + dismissable layer, as component libraries write them.
+  await page.evaluate(() => {
+    document.getElementById('trap-panel').hidden = false;
+    document.getElementById('trap-input').focus();
+  });
+  await page.waitForTimeout(120);
+  const trapBox = await page.locator('#trap-panel p').boundingBox();
+  await page.mouse.move(trapBox.x + 12, trapBox.y + 8);
+  await page.waitForTimeout(120);
+  await page.mouse.click(trapBox.x + 12, trapBox.y + 8);
+  await page.waitForTimeout(180);
+  const ta2 = await page.evaluate(() => {
+    const r = window.__synthOverlayDebug.root.querySelector('.card textarea').getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+  await page.mouse.click(ta2.x + ta2.width / 2, ta2.y + ta2.height / 2);
+  await page.waitForTimeout(150);
+  await page.keyboard.type('inside a focus trap');
+  await page.waitForTimeout(120);
+  d = await dbgOf(page);
+  const trap = await page.evaluate(() => window.__trap);
+  check('the overlay\'s own clicks never reach the page: nothing dismissed, nothing refocused',
+    trap.dismissed === 0 && trap.refocused === 0 &&
+    (await page.evaluate(() => document.getElementById('trap-panel').hidden)) === false,
+    JSON.stringify(trap));
+  check('the composer keeps the caret while the page is trying to take it back',
+    d.composerFocused === true &&
+    d.comments.some((c) => c.text === 'inside a focus trap'),
+    'focused=' + d.composerFocused + ' ' + JSON.stringify(d.comments.map((c) => c.text)));
+  await page.screenshot({ path: path.join(SHOT_DIR, 'overlay-focus-trap.png') });
+  await page.evaluate(() => { document.getElementById('trap-panel').hidden = true; });
+
+  // Clean slate for the sections below: discard both comments rather than parking them.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(120);
+  await shadowClick(page, '[data-cm="list"]');
+  await page.waitForTimeout(120);
+  for (const row of await rowsOf(page)) {
+    await shadowClick(page, '.row[data-id="' + row.id + '"] .row__del');
+    await page.waitForTimeout(250);
+  }
+  await page.evaluate(() => window.__synthOverlay.exit());
+  await page.waitForTimeout(150);
+  check('discarding every row leaves the mode with nothing to park',
+    (await hostsOf(page)) === 0 &&
+    (await page.evaluate(() => window.sessionStorage.getItem('__synthComments/v1'))) === null);
 
   // ---- zero-size element hover does not crash ----------------------------------------
   await page.evaluate(() => window.__synthOverlay.enter({ targetLabel: 'edge', debug: true }));
@@ -795,4 +998,9 @@ const shadowClick = (pg, sel) => pg.evaluate((s) => {
   console.log(fail ? 'RESULT: FAIL' : 'RESULT: PASS');
   await browser.close();
   process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('HARNESS ERROR', e); process.exit(2); });
+})().catch((e) => {
+  // Whatever ran before the throw is the diagnosis, so it goes out with it.
+  console.log(results.join('\n'));
+  console.error('HARNESS ERROR', e);
+  process.exit(2);
+});

@@ -1916,3 +1916,15 @@ disclosure to dive deeper.
   payload's runtime, and verification now checks the feature is aboard, not just signatures.
   `CFBundleVersion` 561, tag `v0.29.1`; dmg + zip notarized, stapled, payload confirmed in both;
   appcast newest 0.29.1 at 561, `edSignature` on all 18 enclosures. No `synth-site` push.
+- **Browser comments outlive the mode, and the composer wins the page it lives in** — leaving comment
+  mode now *parks* the batch (working.html's `.cm-island.is-parked`, never implemented until now)
+  instead of deleting it: pins and island stay, the picker comes off, and the island shrinks to "2
+  comments not sent · Resume · Send 2". Only a confirmed send, a deleted row or a blank composer takes
+  a comment off the page. The batch also survives the document — written comments mirror into
+  sessionStorage and a parked page restores them on reload (the agent's own edit is what reloads it),
+  each comment re-finding its element by selector. Plus the two reasons the composer could not be
+  clicked: the overlay's own events reached the page (so the app's outside-click and focus-trap
+  handlers fought it), and the top z-index is not the top layer — it is a manual popover now, and
+  mounts inside a modal dialog, which inerts and out-paints everything else. And the host now
+  *answers* a send: the page has always held the batch until it heard `confirm`/`reject` and nothing
+  ever said either, so a delivered batch kept its pins and its count for good.

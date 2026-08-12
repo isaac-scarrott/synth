@@ -14,6 +14,21 @@
  * through scroll, resize and zoom, and widening the comment's scope up the ancestor chain
  * leaves the pin exactly where it was put.
  *
+ * Leaving the mode is not discarding the batch (working.html `.cm-island.is-parked`). exit()
+ * with comments standing *parks*: the picker comes off — the page is the user's again — and the
+ * pins, the island and its Send stay. Only a confirmed send, a deleted row or a discarded
+ * composer takes a comment off the page. The queue outlives the document too: it mirrors into
+ * sessionStorage, so the reload a dev server does when an agent edits the code brings the batch
+ * back (restore()), and each comment re-finds its element by the selector it was snapshotted
+ * with. A comment belongs to the page it was left on, so a batch can span pages.
+ *
+ * Two things about living inside someone else's page, both learned the hard way:
+ *   - The overlay puts itself in the *top layer* (popover), not merely at the top z-index —
+ *     a modal dialog or a popover the page opens is above every z-index there is.
+ *   - Its own events stop at the host and never reach the page, or the app's "clicked outside"
+ *     and focus-trap handlers dismiss themselves / pull the caret straight back out of the
+ *     composer the moment you click into it.
+ *
  * Works in the MAIN world or an isolated world. reactSource extraction needs the MAIN world
  * (fiber expandos are per-world); elsewhere it degrades to null.
  */
@@ -27,6 +42,9 @@
   var RETRY_MS = 200;
   var RETRY_WINDOW_MS = 5000;
   var SENT_MS = 1500;          // the sent confirmation stands this long, then the mode closes
+  var STORE_KEY = '__synthComments/v1';   // the parked batch, across this page's own reloads
+  var PERSIST_MS = 250;        // typing writes the store at most this often
+  var RELOCATE_MS = 400;       // and a comment whose element went looks for it this often
 
   /* ---------------------------------------------------------------- channel */
 
@@ -180,6 +198,7 @@
   var ICON_X = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>';
   var ICON_TICK = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
   var ICON_PIN = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,64a40,40,0,1,0,40,40A40,40,0,0,0,128,64Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,128Zm0-112a88.1,88.1,0,0,0-88,88c0,31.4,14.51,64.68,42,96.25a254.19,254.19,0,0,0,41.45,38.3,8,8,0,0,0,9.18,0A254.19,254.19,0,0,0,174,200.25c27.45-31.57,42-64.85,42-96.25A88.1,88.1,0,0,0,128,16Zm0,206c-16.53-13-72-60.75-72-118a72,72,0,0,1,144,0C200,161.23,144.53,209,128,222Z"/></svg>';
+  var ICON_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128a95.38,95.38,0,0,1-65.94-26.21,8,8,0,1,1,11-11.63A80,80,0,1,0,71.43,72.62l-.36.35L44.7,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60,60A96,96,0,0,1,224,128Z"/></svg>';
 
   var STYLE = [
     ':host { all: initial; }',
@@ -299,6 +318,7 @@
     '  transition: background-color 100ms ease, transform 110ms ' + EASE + '; }',
     '.btn:hover { background: rgba(255,255,255,0.13); }',
     '.btn:active { transform: scale(0.97); }',
+    '.btn svg { width: 13px; height: 13px; flex-shrink: 0; }',
     /* The island is dark glass wherever it lands, so the primary carries the mark's own dark
        pair (--accent / --on-accent) rather than system blue — nothing else here is blue, and
        the page's CSS variables are not ours to read. */
@@ -332,6 +352,10 @@
     '.row:hover .row__del { opacity: 1; }',
     '.row__del:hover { background: rgba(255,255,255,0.12); color: #e8e8ea; }',
     '.row__del svg { width: 12px; height: 12px; }',
+    /* Mode off with a queue still standing: the island shrinks to a claim, never to nothing.
+       Unsent comments are the one thing that must not vanish quietly. */
+    '.island.is-parked .bar { padding-left: 13px; }',
+    '.parked { font-size: 12px; color: #b9b9c0; }',
     '.sent { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 12.5px;',
     '  font-weight: 500; color: #e8e8ea; }',
     '.sent svg { width: 14px; height: 14px; color: #34c759; }',
@@ -346,22 +370,32 @@
 
   /* ------------------------------------------------------------------ state */
 
-  var state = 'off';          // 'off' | 'pick' | 'card'
-  var deferredTimer = null, deferredConfig = null;   // document-start: mount deferred
+  // 'pick' is the mode; 'parked' is the mode off with a batch still standing. A composer being
+  // open is `activeId`, not a state — comments can be read and written in either.
+  var state = 'off';          // 'off' | 'pick' | 'parked'
+  var deferredTimer = null, deferredConfig = null, deferredParked = false;   // document-start
   var cfg = { targetLabel: '' };
   var hostEl = null, root = null, veil = null, hiBox = null, chip = null;
   var scopeBox = null, layerEl = null, island = null, card = null, cardInput = null;
   var hoveredEl = null, lastPoint = null, needsHitTest = false;
-  var rafId = 0, moveRafPending = false, sentTimer = null;
-  var teardownFns = [];
+  var rafId = 0, moveRafPending = false, sentTimer = null, topLayerRaf = 0;
+  var teardownFns = [], pickFns = [];
 
-  // A comment: { id, chain, level, fx, fy, url, text, snap, listed, anchor }
+  // A comment: { id, chain, level, fx, fy, url, text, snap, listed, anchor }. The array outlives
+  // both the mode and (through the store below) the document — see doPark / hydrate.
   var comments = [], seq = 0, activeId = null, listOpen = false, sending = false;
-  var lastCount = 0;
+  var lastCount = 0, leaveAfterSend = false, persistTimer = null, relocateAt = 0;
 
   function on(target, type, fn, opts) {
     target.addEventListener(type, fn, opts);
     teardownFns.push(function () { target.removeEventListener(type, fn, opts); });
+  }
+
+  // Listeners that belong to *picking*, not to the overlay: parking takes them off and leaves
+  // everything else standing.
+  function onPick(target, type, fn, opts) {
+    target.addEventListener(type, fn, opts);
+    pickFns.push(function () { target.removeEventListener(type, fn, opts); });
   }
 
   function isOurs(ev) {
@@ -374,6 +408,140 @@
       return ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;'
         : ch === '"' ? '&quot;' : '&#39;';
     });
+  }
+
+  /* --------------------------------------------------------- the drafts store
+
+     Why a store at all: the queue already survives leaving the mode (this closure lives as long
+     as the document does), but not the document. The one thing most likely to replace the
+     document is the agent acting on the comments — a dev server reloads the page under the
+     batch. sessionStorage is scoped to this tab and this origin, which is exactly the life an
+     unsent batch should have: it outlives reloads, it dies with the session, and it never
+     follows the user anywhere. */
+
+  function storage() {
+    try { return window.sessionStorage; } catch (e) { return null; }   // opaque origin / disabled
+  }
+
+  // Only written comments are stored: a composer someone opened is not a batch.
+  function persistNow() {
+    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+    var store = storage();
+    if (!store) return;
+    var keep = queued();
+    try {
+      if (!keep.length) { store.removeItem(STORE_KEY); return; }
+      var records = [];
+      for (var i = 0; i < keep.length; i++) {
+        var c = keep[i];
+        records.push({
+          text: c.text, url: c.url, fx: c.fx, fy: c.fy,
+          selector: c.snap.selector, xpath: c.snap.xpath,
+          elementHTML: c.snap.elementHTML, elementText: c.snap.elementText,
+          reactSource: c.snap.reactSource, freezeRect: c.snap.freezeRect
+        });
+      }
+      store.setItem(STORE_KEY, JSON.stringify({ v: 1, comments: records }));
+    } catch (e) { /* quota / disabled — the closure is still the queue */ }
+  }
+
+  function persist() {
+    if (persistTimer) return;
+    persistTimer = setTimeout(function () { persistTimer = null; persistNow(); }, PERSIST_MS);
+  }
+
+  function clearStore() {
+    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+    try { var store = storage(); if (store) store.removeItem(STORE_KEY); } catch (e) {}
+  }
+
+  // The batch this page was holding when it last unloaded. Read once per mount, and only when
+  // the closure has nothing — within a document the closure is the queue and the store is its
+  // mirror, never the other way round.
+  function hydrate() {
+    if (comments.length) return;
+    var raw = null, saved = null;
+    try { var store = storage(); raw = store && store.getItem(STORE_KEY); } catch (e) {}
+    if (!raw) return;
+    try { saved = JSON.parse(raw); } catch (e) { return; }
+    if (!saved || saved.v !== 1 || !saved.comments) return;
+    for (var i = 0; i < saved.comments.length; i++) {
+      var r = saved.comments[i];
+      if (!r || !r.text) continue;
+      var c = {
+        id: ++seq,
+        chain: [], level: 0,                     // no element yet — relocate() finds it or not
+        fx: typeof r.fx === 'number' ? r.fx : 0.5,
+        fy: typeof r.fy === 'number' ? r.fy : 0.5,
+        url: String(r.url || location.href),
+        text: String(r.text),
+        snap: {
+          el: null,
+          freezeRect: r.freezeRect || { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 },
+          selector: String(r.selector || ''),
+          xpath: String(r.xpath || ''),
+          elementHTML: String(r.elementHTML || ''),
+          elementText: String(r.elementText || ''),
+          reactSource: r.reactSource || null
+        },
+        listed: true,
+        anchor: null
+      };
+      comments.push(c);
+      relocate(c);
+    }
+  }
+
+  /* A comment's element gets replaced under it — a re-render, a hot reload, its own page loaded
+     again. The selector it was snapshotted with is how it finds its way back, and it keeps the
+     fractions it was placed at, so the pin lands where it was put. A comment that cannot find
+     its element keeps its words and its frozen snapshot: it lists, it sends, it just has no pin
+     to ride. */
+  function relocate(c) {
+    if (c.url !== location.href) return false;
+    var el = null;
+    try { if (c.snap.selector) el = document.querySelector(c.snap.selector); } catch (e) {}
+    if (!el && c.snap.xpath) {
+      try {
+        el = document.evaluate(c.snap.xpath, document, null,
+                               XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      } catch (e) {}
+    }
+    // A stored selector is the page's, so it must never resolve onto our own host.
+    if (!el || el.nodeType !== 1 || !el.isConnected) return false;
+    if (hostEl && (el === hostEl || hostEl.contains(el))) return false;
+    c.chain = chainFor(el);
+    c.level = c.chain.length - 1;
+    c.snap = takeSnapshot(el);
+    c.anchor = null;
+    anchorOf(c);
+    return true;
+  }
+
+  // Pins are for comments that can be pointed at: on this page, with a live element.
+  function locatable(c) {
+    if (!c || c.url !== location.href) return false;
+    var el = targetOf(c);
+    return !!(el && el.isConnected);
+  }
+
+  // Comments whose element went while nobody was typing get one look for it per RELOCATE_MS, and
+  // what is pinned is reconciled with what can be pinned. Never while a composer is open
+  // (re-rendering would tear the textarea out) or while a pin is animating away.
+  function relocateStale() {
+    if (activeId || sending || !layerEl) return;
+    if (layerEl.querySelector('.pin.is-going')) return;
+    var now = Date.now();
+    if (now < relocateAt) return;
+    relocateAt = now + RELOCATE_MS;
+    reseat();
+    var pinnable = 0, i;
+    for (i = 0; i < comments.length; i++) {
+      var c = comments[i];
+      if (c.url === location.href && !locatable(c)) relocate(c);
+      if (locatable(c)) pinnable++;
+    }
+    if (pinnable !== layerEl.querySelectorAll('.pin').length) refresh();
   }
 
   /* ------------------------------------------------------------ the comments */
@@ -400,10 +568,21 @@
   // The host mirrors the queue (toolbar badge, menu state), so every change in what would
   // actually be sent is announced — including the drop back to nothing.
   function announceCount() {
+    persist();
     var n = queued().length;
     if (n === lastCount) return;
     lastCount = n;
     send({ type: 'batchCount', n: n });
+  }
+
+  // The comment's page, said the way the toolbar says it — for the rows of a batch that spans
+  // more than one page.
+  function pageLabel(url) {
+    try {
+      var u = new URL(url);
+      if (!u.host) return u.pathname.split('/').pop() || u.pathname;
+      return u.host + (u.pathname === '/' ? '' : u.pathname);
+    } catch (e) { return String(url); }
   }
 
   // Every ancestor of the thing you hit, outermost first. This is a comment's whole vocabulary
@@ -473,7 +652,7 @@
     for (var i = 0; i < comments.length; i++) {
       if (comments[i].id === id) { comments.splice(i, 1); break; }
     }
-    if (activeId === id) { activeId = null; state = 'pick'; }
+    if (activeId === id) activeId = null;
     announceCount();
     setTimeout(refresh, 120);
   }
@@ -498,12 +677,12 @@
     markCrumb(c);
     renderIsland();
     layout();
+    persist();
     focusComposer();
   }
 
   function openComposer(c) {
     activeId = c.id;
-    state = 'card';
     clearHover();
     refresh();
     focusComposer();
@@ -518,7 +697,6 @@
       if (i >= 0) comments.splice(i, 1);
     }
     activeId = null;
-    if (state !== 'off') state = 'pick';
     announceCount();
     refresh();
   }
@@ -529,7 +707,6 @@
     if (!c) return;
     if (!written(c)) { closeComposer(); return; }
     activeId = null;
-    state = 'pick';
     announceCount();
     refresh();
   }
@@ -540,6 +717,9 @@
 
   function refresh() {
     if (state === 'off' || sending) return;
+    // Parked is a state the batch holds up. Delete the last comment and there is nothing left to
+    // hold it: the overlay leaves the page entirely rather than lingering as an empty claim.
+    if (state === 'parked' && !queued().length) { doExit(true); return; }
     renderPins();
     renderIsland();
     layout();
@@ -550,10 +730,11 @@
     layerEl.innerHTML = '';
     card = null; cardInput = null;
     layerEl.classList.toggle('is-focused', !!activeId);
-    veil.setAttribute('data-mode', state === 'card' ? 'card' : 'pick');
+    veil.setAttribute('data-mode', activeId ? 'card' : 'pick');
 
+    // A comment belongs to the page it was left on, and needs a live element to point at.
     for (var i = 0; i < comments.length; i++) {
-      layerEl.appendChild(buildPin(comments[i], i + 1));
+      if (locatable(comments[i])) layerEl.appendChild(buildPin(comments[i], i + 1));
     }
     var c = active();
     if (c) buildCard(c);
@@ -607,6 +788,9 @@
         '<button type="button" class="crumb__seg' + (i === c.level ? ' is-on' : '') +
         '" data-level="' + i + '">' + esc(shortName(c.chain[i])) + '</button>';
     }
+    // A comment whose element is gone has no chain to climb: it shows the element it was left
+    // on, as it was named then, and there is nothing to widen to.
+    if (!crumb) crumb = '<span class="crumb__seg is-on">' + esc(c.snap.selector || '—') + '</span>';
     card.innerHTML = '<div class="card__sel"><span class="card__no">' + numberOf(c) + '</span>' +
       '<div class="crumb">' + crumb + '</div></div>' +
       '<textarea rows="3" placeholder="What\'s off here?" spellcheck="true"></textarea>' +
@@ -665,6 +849,7 @@
     var has = written(c);
     var pin = pinFor(c.id);
     if (pin) pin.classList.toggle('is-draft', !has);
+    persist();
     if (has !== c.listed) {
       c.listed = has;
       announceCount();
@@ -723,7 +908,9 @@
   // The composer opens beside its pin, folding to the other side / above rather than running
   // off the viewport — and never over the island it is about to feed.
   function positionCard(c) {
-    var a = anchorOf(c);
+    // Beside its pin — or, with no pin to sit beside, where the page is being looked at.
+    var a = locatable(c) ? anchorOf(c)
+                         : { x: window.innerWidth / 2, y: window.innerHeight / 3 };
     var w = card.offsetWidth || 300, h = card.offsetHeight || 150;
     var vw = window.innerWidth, vh = window.innerHeight, pad = 10, floor = vh - 76;
     var left = a.x + 18, top = a.y - 10;
@@ -735,7 +922,7 @@
   function layout() {
     if (state === 'off' || !layerEl) return;
     var c = active();
-    if (c && targetOf(c) && targetOf(c).isConnected) {
+    if (c && locatable(c)) {
       var r = targetOf(c).getBoundingClientRect();
       scopeBox.style.display = 'block';
       setBox(scopeBox, r.left - 1.5, r.top - 1.5, Math.max(r.width, 0), Math.max(r.height, 0));
@@ -755,26 +942,30 @@
 
   function renderIsland() {
     if (!island) return;
-    var q = queued(), n = q.length;
-    island.className = 'island' + (listOpen && n ? ' is-open' : '') + (activeId ? ' is-shy' : '');
+    var q = queued(), n = q.length, parked = state === 'parked';
+    island.className = 'island' + (listOpen && n ? ' is-open' : '') +
+      (parked && n ? ' is-parked' : '') + (activeId ? ' is-shy' : '');
     if (sending) {
       island.className = 'island';
       island.innerHTML = '<div class="sent"><span class="spin"></span><span>Sending ' + n + ' ' +
         (n === 1 ? 'comment' : 'comments') + '\u2026</span></div>';
       return;
     }
-    var label = esc(cfg.targetLabel || 'Claude');
     var word = n === 1 ? 'comment' : 'comments';
-    var head = n
-      ? '<button type="button" class="count" data-cm="list"><span class="count__n">' + n + '</span>' +
-        '<span>' + word + '</span><span class="count__chev">' + ICON_CHEV + '</span></button>'
-      : '<span class="hint">' + ICON_PIN + 'Click anything to comment</span>';
-    island.innerHTML = '<div class="bar">' + head +
-      '<div class="div"></div><span class="target">→ ' + label + '</span>' +
-      '<button type="button" class="btn btn--pri" data-cm="send"' + (n ? '' : ' disabled') + '>Send ' +
-      (n || '') + '<span class="kbd">⌘⌥⏎</span></button>' +
-      '<button type="button" class="x" data-cm="off" aria-label="Exit comment mode">' + ICON_X + '</button>' +
-      '</div>' + (n ? listHTML() : '');
+    var count = '<button type="button" class="count" data-cm="list"><span class="count__n">' + n +
+      '</span><span>' + word + '</span><span class="count__chev">' + ICON_CHEV + '</span></button>';
+    // Parked: the mode is off and the batch is not. Nothing here picks, so the island says what
+    // it is holding and offers the two ways on from it — back into the mode, or sent.
+    var bar = (parked && n)
+      ? '<span class="parked">' + n + ' ' + word + ' not sent</span><div class="div"></div>' + count +
+        '<button type="button" class="btn" data-cm="resume">' + ICON_UNDO + 'Resume</button>' +
+        '<button type="button" class="btn btn--pri" data-cm="send">Send ' + n + '</button>'
+      : (n ? count : '<span class="hint">' + ICON_PIN + 'Click anything to comment</span>') +
+        '<div class="div"></div><span class="target">→ ' + esc(cfg.targetLabel || 'Claude') + '</span>' +
+        '<button type="button" class="btn btn--pri" data-cm="send"' + (n ? '' : ' disabled') + '>Send ' +
+        (n || '') + '<span class="kbd">⌘⌥⏎</span></button>' +
+        '<button type="button" class="x" data-cm="off" aria-label="Exit comment mode">' + ICON_X + '</button>';
+    island.innerHTML = '<div class="bar">' + bar + '</div>' + (n ? listHTML() : '');
     wireIsland();
   }
 
@@ -785,9 +976,11 @@
     for (var i = 0; i < comments.length; i++) {
       var c = comments[i];
       if (!written(c)) continue;
+      // A batch can span the pages it was left on, so a row off this page names its own.
+      var where = c.url === location.href ? '' : esc(pageLabel(c.url)) + ' · ';
       rows += '<div class="row" data-id="' + c.id + '"><span class="row__no">' + (i + 1) + '</span>' +
         '<div class="row__body"><div class="row__txt">' + esc(c.text) + '</div>' +
-        '<div class="row__sel">' + esc(c.snap.selector) + '</div></div>' +
+        '<div class="row__sel">' + where + esc(c.snap.selector) + '</div></div>' +
         '<button type="button" class="row__del" aria-label="Remove comment">' + ICON_X + '</button></div>';
     }
     return '<div class="list">' + rows + '</div>';
@@ -801,7 +994,8 @@
         var a = this.getAttribute('data-cm');
         if (a === 'list') { listOpen = !listOpen; renderIsland(); }
         else if (a === 'send') doSend();
-        else if (a === 'off') doExit(true);
+        else if (a === 'resume') doResume(true);
+        else if (a === 'off') doLeave(true);
       });
     }
     var rows = island.querySelectorAll('.row');
@@ -819,7 +1013,11 @@
           ev.stopPropagation();
           if (ev.target.closest && ev.target.closest('.row__del')) return;
           var c = byId(id);
-          if (c) openComposer(c);
+          if (!c) return;
+          if (state === 'parked') doResume(true);      // a row is a way back into the mode
+          // Its page first, then its pin: the batch is restored on the other side.
+          if (c.url !== location.href) { persistNow(); location.href = c.url; return; }
+          openComposer(c);
         });
         var del = row.querySelector('.row__del');
         if (del) del.addEventListener('click', function (ev) { ev.stopPropagation(); removeComment(id); });
@@ -858,7 +1056,6 @@
     if (!batch.length) return;
     comments = batch;
     activeId = null;
-    state = 'pick';
 
     var payload = [];
     for (var i = 0; i < comments.length; i++) payload.push(buildCommentPayload(comments[i], i));
@@ -886,6 +1083,7 @@
     if (!count) return;
     lastCount = 0;
     send({ type: 'batchCount', n: 0 });
+    clearStore();               // sent is the one ending that takes the batch off the page
     var pins = layerEl.querySelectorAll('.pin');
     for (var p = 0; p < pins.length; p++) {
       (function (pin, k) { setTimeout(function () { pin.classList.add('is-going'); }, k * 45); })(pins[p], p);
@@ -903,7 +1101,7 @@
     sending = false;
     renderPins();
     layout();
-    if (!why) { renderIsland(); return; }
+    if (!why) { finishReject(); return; }
     // Say why in the island itself — it is the thing that claimed to be sending — then hand
     // the bar straight back with the batch still counted.
     var n = comments.length;
@@ -911,7 +1109,14 @@
     island.innerHTML = '<div class="sent sent--warn"><span>' + esc(why) + ' \u2014 ' + n + ' ' +
       (n === 1 ? 'comment' : 'comments') + ' kept</span></div>';
     if (sentTimer) clearTimeout(sentTimer);
-    sentTimer = setTimeout(function () { sentTimer = null; renderIsland(); }, 2600);
+    sentTimer = setTimeout(function () { sentTimer = null; finishReject(); }, 2600);
+  }
+
+  // Where a handed-back batch lands. Normally back in the bar it came from — but if the mode was
+  // left while the delivery was in flight, the batch parks now, with nothing lost either way.
+  function finishReject() {
+    if (leaveAfterSend) { leaveAfterSend = false; doPark(false); return; }
+    renderIsland();
   }
 
   /* --------------------------------------------------------------- hit test */
@@ -943,6 +1148,8 @@
       hideHighlight();
     }
     layout();                                          // pins ride scroll, resize and zoom
+    relocateStale();                                   // and re-find elements a render replaced
+    if (state === 'off') return;                       // …which can be what ends the mode
     rafId = requestAnimationFrame(frame);
   }
 
@@ -960,7 +1167,7 @@
     ev.stopPropagation();
     if (sending) return;
     lastPoint = { x: ev.clientX, y: ev.clientY };
-    if (state === 'card') closeComposer();   // clicking away discards a blank draft
+    if (activeId) closeComposer();           // clicking away discards a blank draft
     var el = hitTest(ev.clientX, ev.clientY);
     if (el) addComment(el, ev.clientX, ev.clientY);
   }
@@ -969,7 +1176,12 @@
     ev.stopPropagation();
     var c = active();
     if (!c) return;
-    if (ev.key === 'Enter' && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey) {
+    // Parked, the window-level ladder is off the page (its keys are the page's again), so the
+    // composer answers for its own Escape.
+    if (ev.key === 'Escape' && state === 'parked') {
+      ev.preventDefault();
+      closeComposer();
+    } else if (ev.key === 'Enter' && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey) {
       ev.preventDefault();
       queueActive();
     } else if (ev.altKey && ev.key === 'ArrowUp') {
@@ -981,22 +1193,23 @@
     }
   }
 
-  // Esc unwinds one layer at a time: the open composer, then the batch list, then the mode.
+  // Esc unwinds one layer at a time: the open composer, then the batch list, then the mode —
+  // and leaving the mode parks whatever is queued rather than dropping it.
   function onKeyDown(ev) {
     if (state === 'off') return;
     if (ev.key === 'Escape') {
       ev.preventDefault();
       ev.stopImmediatePropagation();
       if (sending) return;
-      if (state === 'card') closeComposer();
+      if (activeId) closeComposer();
       else if (listOpen) { listOpen = false; renderIsland(); }
-      else doExit(true);
+      else doLeave(true);
       return;
     }
     if (ev.key === 'Enter' && ev.altKey && (ev.metaKey || ev.ctrlKey)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      if (state === 'card') queueActive();
+      if (activeId) queueActive();
       doSend();
     }
   }
@@ -1019,6 +1232,77 @@
 
   function onScroll() { needsHitTest = true; }
 
+  /* Our own UI's events stop at the host. A click on the composer is not a click on the app, and
+     a page that watches the document for "clicked outside", or keeps focus inside a modal, would
+     otherwise dismiss itself or pull the caret straight back out of the textarea — the overlay's
+     events reach the page retargeted to the host, which every such handler reads as *outside*.
+     Nothing of ours needs them: the shadow content has already had the event by this point, and
+     the window-capture handlers above run before it. Movement and wheel are deliberately not in
+     the list: the page is still the page, and it may scroll and track the cursor as it likes. */
+  var OURS_STOP = ['pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click',
+                   'dblclick', 'auxclick', 'contextmenu', 'keydown', 'keyup', 'keypress',
+                   'focusin', 'focusout'];
+
+  function onOurs(ev) { ev.stopPropagation(); }
+
+  /* The other half of the same problem, from the page's side: a focus trap reacts to *its* own
+     element losing focus, which is dispatched on the page's node where stopping at the host is
+     too late. Capture at the window and the trap never hears that focus went to us. */
+  function onFocusLeaving(ev) {
+    if (state === 'off' || !hostEl || isOurs(ev)) return;
+    if (ev.relatedTarget === hostEl) ev.stopImmediatePropagation();
+  }
+
+  /* The page can put things in the *top layer* — a modal dialog, a popover, fullscreen — and the
+     top layer is above every z-index there is, so the highest z-index in the document is not
+     enough to be clickable. The overlay lives in the top layer too (as a manual popover, which
+     nothing in the page can dismiss), and re-promotes itself whenever the page promotes something
+     new, so the composer is never the thing you cannot click. Where popovers are unsupported the
+     inline z-index still stands, as it did before. */
+  function assertTopLayer(again) {
+    if (!hostEl || typeof hostEl.showPopover !== 'function') return;
+    try {
+      var up = hostEl.matches(':popover-open');
+      if (up && !again) return;
+      if (up) hostEl.hidePopover();      // re-showing is what puts us back on top of the layer
+      hostEl.showPopover();
+    } catch (e) { /* not connected / unsupported — the z-index is the fallback */ }
+  }
+
+  function onTopLayerShift(ev) {
+    if (state === 'off' || !hostEl || isOurs(ev) || topLayerRaf) return;
+    topLayerRaf = requestAnimationFrame(function () { topLayerRaf = 0; reseat(); assertTopLayer(true); });
+  }
+
+  /* A modal dialog is a harder wall than the top layer: it makes everything outside itself inert
+     and its backdrop swallows every hit, so from out there the overlay is not merely covered — it
+     is unreachable, and document.elementsFromPoint stops reporting the page at all. Verified in
+     overlay-harness. The only place that is both interactive and able to see the page while one is
+     open is *inside* it, which is also the only part of the page there is anything to say about.
+     (A dialog with a transform on it makes our fixed positioning relative to its own box, so
+     inside one of those the overlay is confined to the dialog. It stays usable, and the dialog is
+     all there is to comment on.) */
+  function hostParent() {
+    var modal = null;
+    try {
+      var open = document.querySelectorAll('dialog:modal');
+      if (open.length) modal = open[open.length - 1];         // the topmost is the live one
+    } catch (e) { /* :modal unsupported — the top layer is all we have */ }
+    if (!modal && document.fullscreenElement) modal = document.fullscreenElement;
+    return modal || document.documentElement;
+  }
+
+  function reseat() {
+    if (!hostEl) return;
+    var parent = hostParent();
+    if (hostEl.isConnected && hostEl.parentNode === parent) return;
+    try { if (hostEl.matches(':popover-open')) hostEl.hidePopover(); } catch (e) {}
+    parent.appendChild(hostEl);
+    // Inside a modal we are already above its backdrop; promoting again would put us back out in
+    // the inert cold.
+    if (parent === document.documentElement) assertTopLayer(true);
+  }
+
   /* ------------------------------------------------------------------ mount */
 
   // The pin's ring is the page's own background, so it reads as cut out of the page rather
@@ -1037,8 +1321,12 @@
   function buildUI() {
     hostEl = document.createElement('div');
     hostEl.setAttribute(HOST_ATTR, '');
+    // 'manual': the page cannot light-dismiss it, and Escape belongs to the mode's own ladder.
+    hostEl.setAttribute('popover', 'manual');
     hostEl.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: ' + MAX_Z +
       '; pointer-events: none;';
+    // Beats both a page rule hiding stray divs and the UA rule that hides a closed popover, so a
+    // browser without showPopover() still gets the overlay it always had.
     hostEl.style.setProperty('display', 'block', 'important');
     root = hostEl.attachShadow({ mode: 'closed' });
 
@@ -1071,11 +1359,13 @@
     island.className = 'island';
     root.appendChild(island);
 
-    document.documentElement.appendChild(hostEl);
+    hostParent().appendChild(hostEl);
     teardownFns.push(function () { if (hostEl && hostEl.parentNode) hostEl.parentNode.removeChild(hostEl); });
+    for (var i = 0; i < OURS_STOP.length; i++) on(hostEl, OURS_STOP[i], onOurs);
+    if (hostEl.parentNode === document.documentElement) assertTopLayer();
   }
 
-  /* ---------------------------------------------------------- enter / exit */
+  /* ------------------------------------------------- enter / park / resume / exit */
 
   function stopDeferred() {
     if (deferredTimer) { clearInterval(deferredTimer); deferredTimer = null; }
@@ -1084,72 +1374,154 @@
 
   function domReady() { return !!(document.documentElement && document.body); }
 
-  function doEnter(config) {
+  function setLabel(config) {
+    if (config.targetLabel != null) cfg.targetLabel = String(config.targetLabel);
+    else if (state === 'off') cfg.targetLabel = '';
+  }
+
+  // Picking is what the mode adds to the page: the veil that takes the pointer, the hover
+  // highlight, and the suppressors that keep a pick out of the page's own handlers. Parking takes
+  // all of it back off — the page is the user's again — and leaves the pins, the island and the
+  // composer standing.
+  function armPick() {
+    if (pickFns.length || !veil) return;
+    veil.style.display = '';
+    onPick(veil, 'mousemove', onVeilMove);
+    onPick(veil, 'click', onVeilClick);
+    var veilPress = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'auxclick'];
+    for (var v = 0; v < veilPress.length; v++) onPick(veil, veilPress[v], onVeilPress);
+    onPick(window, 'keydown', onKeyDown, true);
+    var types = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick'];
+    for (var i = 0; i < types.length; i++) onPick(window, types[i], onSuppress, true);
+  }
+
+  function disarmPick() {
+    while (pickFns.length) { try { pickFns.pop()(); } catch (e) {} }
+    if (veil) veil.style.display = 'none';
+    clearHover();
+  }
+
+  /* Bring the overlay up on this document. `parked` mounts a batch without the picker — the mode
+     is off, the comments are not — and mounts nothing at all if no batch came through. */
+  function bringUp(config, parked) {
     config = config || {};
-    if (state !== 'off') {
-      cfg.targetLabel = config.targetLabel != null ? String(config.targetLabel) : cfg.targetLabel;
-      renderIsland();
-      return;
-    }
+    if (state === 'parked' && !parked) { setLabel(config); doResume(false); return; }
+    if (state !== 'off') { setLabel(config); renderIsland(); return; }
     // Injected via Page.addScriptToEvaluateOnNewDocument this runs at document-start,
     // when documentElement/body may not exist yet — mounting now would throw and leave
     // the overlay absent for the whole document. Defer until the DOM can host it;
     // enter() stays idempotent while the wait is pending (the config just refreshes).
     if (!domReady()) {
       deferredConfig = config;
+      deferredParked = parked;
       if (deferredTimer) return;
       var tryMount = function () {
         if (!deferredConfig) return;
         if (state !== 'off') { stopDeferred(); return; }
         if (!domReady()) return;
-        var pending = deferredConfig;
+        var pending = deferredConfig, pendingParked = deferredParked;
         stopDeferred();
-        doEnter(pending);
+        bringUp(pending, pendingParked);
       };
       deferredTimer = setInterval(tryMount, 50);
       document.addEventListener('DOMContentLoaded', tryMount, { once: true });
       return;
     }
     stopDeferred();
-    cfg.targetLabel = config.targetLabel != null ? String(config.targetLabel) : '';
-    comments = []; seq = 0; activeId = null; listOpen = false; sending = false; lastCount = 0;
+    setLabel(config);
+    activeId = null; listOpen = false; sending = false; leaveAfterSend = false; lastCount = 0;
+    hydrate();                    // the batch this page was holding, if it was holding one
+    if (parked && !queued().length) {
+      // Nothing came through — a cross-origin hop leaves the store behind, and the host is still
+      // counting what this document does not have. Say so rather than let the badge lie.
+      send({ type: 'batchCount', n: 0 });
+      return;
+    }
     buildUI();
-    state = 'pick';
+    state = parked ? 'parked' : 'pick';
 
-    on(veil, 'mousemove', onVeilMove);
-    on(veil, 'click', onVeilClick);
-    var veilPress = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dblclick', 'auxclick'];
-    for (var v = 0; v < veilPress.length; v++) on(veil, veilPress[v], onVeilPress);
-    on(window, 'keydown', onKeyDown, true);
     on(window, 'scroll', onScroll, { capture: true, passive: true });
     on(window, 'resize', onScroll, { passive: true });
-    var types = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick'];
-    for (var i = 0; i < types.length; i++) on(window, types[i], onSuppress, true);
+    on(window, 'focusout', onFocusLeaving, true);
+    on(window, 'blur', onFocusLeaving, true);
+    on(document, 'toggle', onTopLayerShift, true);
+    on(document, 'close', onTopLayerShift, true);      // a dialog closing hands the layer back
+    on(document, 'fullscreenchange', onTopLayerShift, true);
+    if (!parked) armPick();
 
     if (config.debug) installDebug();
 
+    // The host cleared its count when it left; a restored batch has to say it is back.
+    if (queued().length) { lastCount = -1; announceCount(); }
     refresh();
     rafId = requestAnimationFrame(frame);
+  }
+
+  /* Leaving with comments standing: the picker comes off, everything else stays. This is the
+     whole promise — the ✕, Escape and the toolbar's own toggle all end here, and none of them is
+     a way to lose what was written. */
+  function doPark(notifyHost) {
+    if (state === 'off' || state === 'parked') return;
+    closeComposer();                             // a composer left blank was never a comment
+    if (!queued().length) { doExit(notifyHost); return; }
+    disarmPick();
+    state = 'parked';
+    listOpen = false;
+    persistNow();
+    refresh();
+    if (notifyHost) send({ type: 'parkMode' });
+  }
+
+  function doResume(notifyHost) {
+    if (state !== 'parked') return;
+    state = 'pick';
+    armPick();
+    assertTopLayer(true);
+    refresh();
+    if (notifyHost) send({ type: 'resumeMode' });
+  }
+
+  /* What leaving means is the page's to answer, because the page holds the queue: 'parked' with a
+     batch standing, 'off' when there is nothing to keep. The host reads it to decide whether to
+     stay attached — a parked island's Send still has to reach it. */
+  function doLeave(notifyHost) {
+    if (state === 'off') return 'off';
+    if (state === 'parked') return 'parked';
+    if (sending) {                               // answer for the batch in flight, park on its way back
+      leaveAfterSend = true;
+      disarmPick();
+      if (notifyHost) send({ type: 'parkMode' });
+      return 'parked';
+    }
+    if (queued().length) { doPark(notifyHost); return 'parked'; }
+    doExit(notifyHost);
+    return 'off';
   }
 
   function teardown() {
     state = 'off';
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
     if (sentTimer) { clearTimeout(sentTimer); sentTimer = null; }
+    if (topLayerRaf) { cancelAnimationFrame(topLayerRaf); topLayerRaf = 0; }
+    disarmPick();
     while (teardownFns.length) {
       try { teardownFns.pop()(); } catch (e) {}
     }
     hostEl = root = veil = hiBox = chip = scopeBox = layerEl = island = card = cardInput = null;
     hoveredEl = lastPoint = null;
-    comments = []; activeId = null; listOpen = false; sending = false;
+    activeId = null; listOpen = false; sending = false; leaveAfterSend = false;
     moveRafPending = false; needsHitTest = false;
     try { delete window.__synthOverlayDebug; } catch (e) {}
   }
 
+  /* The mode is over and nothing is being kept: reached only with an empty queue, or straight
+     after a confirmed send. Anything still on the page here was a draft nobody wrote. */
   function doExit(notifyHost) {
     stopDeferred();               // exit during a deferred (pre-DOM) mount cancels it
     if (state === 'off') return;
-    var hadQueue = lastCount !== 0;
+    var hadQueue = lastCount > 0;
+    comments = [];
+    clearStore();
     teardown();
     if (notifyHost) {
       if (hadQueue) { lastCount = 0; send({ type: 'batchCount', n: 0 }); }
@@ -1171,7 +1543,17 @@
         var r = hiBox.getBoundingClientRect();
         return { x: r.x, y: r.y, width: r.width, height: r.height };
       },
-      get cardOpen() { return state === 'card'; },
+      get parked() { return state === 'parked'; },
+      get cardOpen() { return !!activeId; },
+      get composerFocused() { return !!(root && cardInput && root.activeElement === cardInput); },
+      get pinCount() { return layerEl ? layerEl.querySelectorAll('.pin').length : 0; },
+      get stored() {
+        try { return JSON.parse(window.sessionStorage.getItem(STORE_KEY) || 'null'); }
+        catch (e) { return null; }
+      },
+      get topLayer() {
+        try { return !!(hostEl && hostEl.matches(':popover-open')); } catch (e) { return false; }
+      },
       get cardRect() {
         if (!card) return null;
         var r = card.getBoundingClientRect();
@@ -1199,8 +1581,16 @@
 
   window.__synthOverlay = {
     __synthCommentOverlay: true,
-    enter: function (config) { try { doEnter(config); } catch (e) { console.warn('[synth-overlay] enter failed:', e); } },
-    exit: function () { try { doExit(true); } catch (e) { console.warn('[synth-overlay] exit failed:', e); } },
+    enter: function (config) { try { bringUp(config, false); } catch (e) { console.warn('[synth-overlay] enter failed:', e); } },
+    // A new document under a parked batch: bring the pins and the island back without the picker,
+    // so the reload an agent's own edit caused does not take the unsent comments with it.
+    restore: function (config) { try { bringUp(config, true); } catch (e) { console.warn('[synth-overlay] restore failed:', e); } },
+    // Leaving is not discarding: this answers 'parked' when the batch stays, 'off' when the mode
+    // is really over, and the host stays attached for the former.
+    exit: function () {
+      try { return doLeave(true); } catch (e) { console.warn('[synth-overlay] exit failed:', e); return 'off'; }
+    },
+    resume: function () { try { doResume(true); } catch (e) { console.warn('[synth-overlay] resume failed:', e); } },
     send: function () { try { doSend(); } catch (e) { console.warn('[synth-overlay] send failed:', e); } },
     // The host's answer to a batch. Until one of these lands the comments stay on the page.
     confirm: function (label) { try { doConfirm(label); } catch (e) { console.warn('[synth-overlay] confirm failed:', e); } },

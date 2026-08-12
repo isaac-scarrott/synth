@@ -13,6 +13,12 @@ import Observation
 /// single `commentBatch`, so one interruption carries the whole round of feedback. The host
 /// only mirrors the running count (`batchCount`) for the toolbar badge.
 ///
+/// Leaving the mode does not end the batch (working.html `.cm-island.is-parked`): with comments
+/// standing the page *parks* them — pins and island stay, the picker comes off — and this
+/// attachment stays up for them, because the parked island's own Send still has to reach us. So
+/// `exit()` asks the page what leaving meant and believes the answer: 'parked' keeps the client,
+/// the binding, the injected script and the count; 'off' is the only path that tears down.
+///
 /// World choice: everything runs in the MAIN world (binding + overlay + injection), not an
 /// isolated world. Deliberate for v1: the payload's `reactSource` comes off React's expando
 /// props on DOM nodes, which isolated worlds cannot see (separate JS wrappers), and the
@@ -25,6 +31,9 @@ import Observation
 
     /// Drives the bar button's on-state and the Esc handler's gate.
     private(set) var active = false
+    /// The mode is off and the page is still holding a batch. The CDP attachment stays up for it;
+    /// the toolbar keeps its count badge, and entering again resumes rather than re-attaches.
+    private(set) var parked = false
     /// The receiving Claude session's title — named by the page's island, and passed to the
     /// overlay at injection.
     private(set) var targetTitle: String?
@@ -39,6 +48,7 @@ import Observation
     @ObservationIgnored private var attachTask: Task<Void, Never>?
     @ObservationIgnored private var attachNonce = 0
     @ObservationIgnored private var injectedScriptID: String?
+    @ObservationIgnored private var scriptNonce = 0
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
 
     init(sessionID: UUID, cdpPort: UInt16) {
@@ -53,6 +63,10 @@ import Observation
     /// task on top of the first (the bar reads `active` for its on-state, this to toggle).
     var engaged: Bool { active || attachTask != nil }
 
+    /// Unsent comments the user would lose if this browser went away — a parked batch included.
+    /// Not `engaged`: parking is not being in the mode, and entering from here resumes.
+    var holdingComments: Bool { pendingCount > 0 }
+
     func enter(store: AppStore, urlHint: URL?) {
         guard !engaged else { return }
         guard cdpPort != 0 else {
@@ -65,6 +79,21 @@ import Observation
         // typed rather than refusing it on send (working.html `commentTarget`).
         targetTitle = prospectiveTarget()?.title
             ?? (store.availableAgents.isEmpty ? "No agent enabled" : "New agent session")
+        // Parked: this attachment never went away, so entering is a resume — a second attach here
+        // would stack a client and an event task on top of the ones holding the batch.
+        if parked, let client {
+            parked = false
+            active = true
+            let label = targetTitle ?? "Claude Code"
+            Task { [weak self] in
+                _ = try? await client.send("Runtime.evaluate",
+                                           ["expression": Self.injectionSource(targetLabel: label)],
+                                           timeout: 5)
+                await self?.installNewDocumentScript(verb: "enter")
+            }
+            NSLog("Synth: comment mode resumed for %@ (%d unsent)", sessionID.uuidString, pendingCount)
+            return
+        }
         attachNonce += 1
         let nonce = attachNonce
         attachTask = Task { [weak self] in
@@ -112,18 +141,39 @@ import Observation
         attachTask?.cancel()
         attachTask = nil
         guard active else {
-            targetTitle = nil
-            pendingCount = 0
+            if !parked { targetTitle = nil; pendingCount = 0 }
             return
         }
+        guard let client else { teardown(); return }
+        // What leaving means is the page's to answer — it holds the queue. 'parked' means the
+        // comments stayed on it, so everything here stays up for them.
+        let reply = try? await client.send(
+            "Runtime.evaluate",
+            ["expression": "window.__synthOverlay && window.__synthOverlay.exit ? window.__synthOverlay.exit() : 'off'",
+             "returnByValue": true],
+            timeout: 3)
+        let answer = ((reply?["result"] as? [String: Any])?["value"] as? String) ?? "off"
+        if answer == "parked" {
+            park()
+            return
+        }
+        await shutDown()
+    }
+
+    /// The page's overlay is gone of its own accord — a confirmed send, or the last comment
+    /// discarded from a parked island. There is nothing left to ask it, and this is the one path
+    /// that ends a *parked* attachment as well as a live one.
+    private func pageLeft() async {
+        guard active || parked else { return }
+        await shutDown()
+    }
+
+    private func shutDown() async {
         active = false
+        parked = false
         targetTitle = nil
         pendingCount = 0
         if let client {
-            _ = try? await client.send(
-                "Runtime.evaluate",
-                ["expression": "window.__synthOverlay && window.__synthOverlay.exit && window.__synthOverlay.exit()"],
-                timeout: 3)
             if let id = injectedScriptID {
                 _ = try? await client.send("Page.removeScriptToEvaluateOnNewDocument",
                                            ["identifier": id], timeout: 3)
@@ -133,6 +183,53 @@ import Observation
         }
         teardown()
         NSLog("Synth: comment mode OFF for %@", sessionID.uuidString)
+    }
+
+    /// The page kept a batch the mode was leaving. Idempotent: the overlay says so over the
+    /// binding as well, and either arrival order lands here once.
+    private func park() {
+        guard !parked else { return }
+        active = false
+        parked = true
+        Task { [weak self] in await self?.installNewDocumentScript(verb: "restore") }
+        NSLog("Synth: comment mode parked for %@ (%d unsent)", sessionID.uuidString, pendingCount)
+    }
+
+    private func resumed() {
+        guard parked else { return }
+        parked = false
+        active = true
+        Task { [weak self] in await self?.installNewDocumentScript(verb: "enter") }
+    }
+
+    /// The script every future document of this target gets. `enter` while the mode is on (it
+    /// survives navigation); `restore` while a batch is parked, which brings the pins and the
+    /// island back on the other side of a reload without turning the picker back on.
+    /// Nonced like the attach: park/resume can be toggled faster than two CDP round-trips, and a
+    /// swap that lost the race must drop its own script rather than leave one behind injecting the
+    /// wrong verb into every future document.
+    private func installNewDocumentScript(verb: String) async {
+        guard let client else { return }
+        scriptNonce += 1
+        let nonce = scriptNonce
+        if let id = injectedScriptID {
+            injectedScriptID = nil
+            _ = try? await client.send("Page.removeScriptToEvaluateOnNewDocument",
+                                       ["identifier": id], timeout: 3)
+        }
+        guard nonce == scriptNonce else { return }
+        let source = Self.injectionSource(targetLabel: targetTitle ?? "Claude Code", verb: verb)
+        let added = try? await client.send("Page.addScriptToEvaluateOnNewDocument",
+                                          ["source": source])
+        let id = added?["identifier"] as? String
+        guard nonce == scriptNonce else {
+            if let id {
+                _ = try? await client.send("Page.removeScriptToEvaluateOnNewDocument",
+                                           ["identifier": id], timeout: 3)
+            }
+            return
+        }
+        injectedScriptID = id
     }
 
     /// Synchronous cleanup — session close / app quit (no CDP goodbyes).
@@ -145,13 +242,15 @@ import Observation
         client = nil
         injectedScriptID = nil
         active = false
+        parked = false
         pendingCount = 0
     }
 
     /// ⌘⌥⏎: the queue is the page's, so the send is the overlay's own verb — the batch comes
-    /// back over the binding exactly as it does when the island's Send is clicked.
+    /// back over the binding exactly as it does when the island's Send is clicked. Not gated on
+    /// `active`: a parked batch is still sendable, which is the point of parking it.
     func sendBatch() {
-        guard active, let client else { return }
+        guard let client, active || parked else { return }
         Task {
             _ = try? await client.send(
                 "Runtime.evaluate",
@@ -180,7 +279,9 @@ import Observation
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return }
         switch obj["type"] as? String {
-        case "exitMode":     await exit()
+        case "exitMode":     await pageLeft()
+        case "parkMode":     park()
+        case "resumeMode":   resumed()
         case "batchCount":   pendingCount = (obj["n"] as? NSNumber)?.intValue ?? 0
         case "commentBatch": await handleBatch(obj)
         default: break
@@ -277,8 +378,27 @@ import Observation
         let delivery = CommentDelivery(sessionID: sessionID, store: store, subjectKindLabel: "browser")
         delivery.onNotice = { [weak self] in self?.showNotice($0) }
         delivery.onTarget = { [weak self] in self?.targetTitle = $0 }
+        // The page keeps the batch standing — pins, text and all — until it hears which of these
+        // happened. Send is a request; this is the answer.
+        delivery.onLanded = { [weak self] in self?.answer("confirm", $0) }
+        delivery.onLost = { [weak self] in self?.answer("reject", $0) }
         return delivery
     }()
+
+    /// The overlay's own two verbs for how a delivery ended. `text` is the receiving row's title or
+    /// the reason it never got there; it travels as JSON rather than spliced into the expression,
+    /// the same way the target label does at injection.
+    private func answer(_ verb: String, _ text: String) {
+        guard let client else { return }
+        let json = (try? JSONSerialization.data(withJSONObject: [text]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
+        Task {
+            _ = try? await client.send("Runtime.evaluate", [
+                "expression": "window.__synthOverlay && window.__synthOverlay.\(verb) && "
+                    + "window.__synthOverlay.\(verb)(\(json)[0])",
+            ], timeout: 5)
+        }
+    }
 
     /// `count` is the batch size, which only ever changes the wording the user sees.
     private func deliver(_ message: String, count: Int = 1, screenshots: [String]) {
@@ -353,12 +473,14 @@ import Observation
         (reply["data"] as? String).flatMap { Data(base64Encoded: $0) }
     }
 
-    /// The overlay source plus its enter() call — evaluated on the current page and on
-    /// every new document while the mode is on.
-    static func injectionSource(targetLabel: String) -> String {
+    /// The overlay source plus the call that brings it up — evaluated on the current page and on
+    /// every new document. `enter` turns the picker on (the mode survives navigation); `restore`
+    /// only brings a parked batch back, and does nothing on a page that inherited none.
+    static func injectionSource(targetLabel: String, verb: String = "enter") -> String {
         let cfg = (try? JSONSerialization.data(withJSONObject: ["targetLabel": targetLabel]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-        return overlayJS + "\n;window.__synthOverlay && window.__synthOverlay.enter(\(cfg));"
+        return overlayJS +
+            "\n;window.__synthOverlay && window.__synthOverlay.\(verb) && window.__synthOverlay.\(verb)(\(cfg));"
     }
 
     /// CommentOverlay.js from the SwiftPM resource bundle. Looked up by hand (not
@@ -380,7 +502,7 @@ import Observation
         NSLog("Synth: CommentOverlay.js resource missing — using the inline stub overlay")
         return """
         (() => { if (window.__synthOverlay) return;
-          window.__synthOverlay = { enter(cfg) {}, exit() {} }; })();
+          window.__synthOverlay = { enter(cfg) {}, restore(cfg) {}, exit() { return 'off'; } }; })();
         """
     }()
 }

@@ -35,6 +35,13 @@ final class CommentDelivery {
     var onNotice: ((String) -> Void)?
     /// The resolved target's title, for the bar's chip. Nil when there is no owner yet.
     var onTarget: ((String?) -> Void)?
+    /// The ladder's terminal answer, for a subject that holds its comments until it hears one:
+    /// `onLanded` with the receiving row's title, or `onLost` with a short reason. The browser's
+    /// queue lives on the page and only a landed delivery may take it off (ADR-0011) — a batch
+    /// cleared on the way out would be gone from both sides when the last rung fails. The
+    /// simulator sends one comment at a time and holds nothing, so it leaves these nil.
+    var onLanded: ((String) -> Void)?
+    var onLost: ((String) -> Void)?
 
     private var deliveryTask: Task<Void, Never>?
 
@@ -87,12 +94,14 @@ final class CommentDelivery {
         // nobody to send this to, which the user can fix.
         guard let agent = store.availableAgents.first?.id else {
             onNotice?("No agent enabled — turn one on in Settings")
+            onLost?("No agent enabled")
             Self.discard(screenshots)
             return
         }
         guard let branch = store.branch(of: subject),
               let spawned = store.spawnAgent(agent, in: branch) else {
             onNotice?("Couldn't start an agent session for the comment")
+            onLost?("Couldn't start an agent")
             Self.discard(screenshots)
             return
         }
@@ -134,12 +143,14 @@ final class CommentDelivery {
             // comment — and its now-orphaned screenshots — rather than paste.
             self?.onNotice?("Couldn't reach “\(row.title)” — "
                 + (count == 1 ? "comment" : "comments") + " not delivered")
+            self?.onLost?("Couldn't reach \(row.title)")
             Self.discard(screenshots)
         }
     }
 
     private func sent(_ count: Int, to title: String) {
         onNotice?(count == 1 ? "Comment sent to \(title)" : "\(count) comments sent to \(title)")
+        onLanded?(title)
     }
 
     private static func theComments(_ count: Int) -> String {

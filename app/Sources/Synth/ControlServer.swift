@@ -256,8 +256,11 @@ final class ControlServer: @unchecked Sendable {
                                  "close it. Ask the user to close it if it's in the way."]
             }
             // Comment mode engaged means the user is picking an element or composing right now;
-            // closing would delete what they were about to send back to this very session.
-            if BrowserManager.shared.existing(session.id)?.commentMode?.engaged == true {
+            // closing would delete what they were about to send back to this very session. A
+            // parked batch is the same feedback with the mode switched off — it dies with the
+            // page, so it is no more closable than a live one.
+            if let mode = BrowserManager.shared.existing(session.id)?.commentMode,
+               mode.engaged || mode.holdingComments {
                 return ["ok": false,
                         "error": "the user is commenting in this browser — leave it open"]
             }
@@ -454,6 +457,8 @@ final class ControlServer: @unchecked Sendable {
             }
             return ["ok": true,
                     "commentModeActive": ctrl.commentMode?.active ?? false,
+                    // The mode off with the batch still on the page (working.html is-parked).
+                    "commentsParked": ctrl.commentMode?.parked ?? false,
                     "targetTitle": ctrl.commentMode?.targetTitle ?? "",
                     "notice": ctrl.commentMode?.notice ?? "",
                     // What the toolbar badge shows, and what survives the mode being left —

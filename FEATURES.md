@@ -1906,3 +1906,7 @@ disclosure to dive deeper.
   prefix are covered. Fixes with it: a clicked markdown link could raise the OS's bare "The
   application can't be opened." — markdown often has no registered handler at all, so no path may
   hand one to Launch Services; and clicking outside a revealed block now folds it back like Esc.
+- **0.29.0 ships** — minor for the markdown-session headline: synth-md and the Settings → Markdown
+  chooser, `CFBundleVersion` 559, tag `v0.29.0`. Verified quarantined-outsider on dmg and zip (both
+  notarized + stapled); appcast newest item 0.29.0 at `sparkle:version` 559, `edSignature` on all
+  18 enclosures including 5 deltas. Landing page unchanged — no `synth-site` push.

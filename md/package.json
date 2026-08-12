@@ -1,0 +1,18 @@
+{
+  "name": "synth-md",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "synth-md: the terminal-native markdown viewer + live-preview editor a SessionKind.markdown row runs (see docs/adr/0016).",
+  "scripts": {
+    "build": "bun run build.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@opentui/core": "0.5.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "web-tree-sitter": "0.25.10"
+  }
+}

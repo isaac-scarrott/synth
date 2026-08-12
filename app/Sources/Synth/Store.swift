@@ -993,6 +993,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     func openTerminalLink(_ url: URL, from sourceID: UUID?) {
         let scheme = url.scheme?.lowercased()
         if scheme == "file" { openFileLink(url, from: sourceID); return }
+        // An OSC 8 target is an arbitrary string, not necessarily a URL — programs emit bare
+        // absolute paths ("/tmp/plan.md"). Schemeless, those would fall through to Launch
+        // Services below and its bare "can't be opened" dialog; a path is a file link.
+        if scheme == nil {
+            let path = (url.path as NSString).expandingTildeInPath
+            if path.hasPrefix("/") { openFileLink(URL(fileURLWithPath: path), from: sourceID); return }
+        }
         guard scheme == "http" || scheme == "https", url.isLoopbackHost else {
             NSWorkspace.shared.open(url); return
         }

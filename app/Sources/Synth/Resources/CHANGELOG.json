@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.30.1",
+    "date": "2026-08-12",
+    "changes": [
+      "Cmd+clicking a link that carries a bare file path (no file:// scheme, e.g. /tmp/notes.md) now opens it like any other file link — markdown lands in a Synth session — instead of the OS's bare \"application can't be opened\" dialog."
+    ]
+  },
+  {
     "version": "0.30.0",
     "date": "2026-08-12",
     "changes": [

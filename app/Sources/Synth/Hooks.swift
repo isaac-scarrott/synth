@@ -169,6 +169,9 @@ final class HookServer: @unchecked Sendable {
             try? FileManager.default.removeItem(atPath: link)
             try? FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: hookBin)
         }
+        // `synth <file>` lives beside the agent shims, so it is on PATH in every Synth
+        // terminal and nowhere else (ADR-0016).
+        MarkdownSession.installCLI(into: shimDir)
         writeZDotDir()
     }
 

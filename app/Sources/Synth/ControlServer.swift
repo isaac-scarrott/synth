@@ -175,6 +175,24 @@ final class ControlServer: @unchecked Sendable {
         guard let verb = request["verb"] as? String else {
             return ["ok": false, "error": "missing verb"]
         }
+        // Answered before the worktree guard below, because a link is app-global: routing one
+        // needs no branch, and the caller — the synth-md TUI (ADR-0016) — is a program showing
+        // a file, which may sit outside every managed worktree.
+        //
+        // The whole verb is "hand this back to the app". synth-md keeps only the one decision
+        // that is genuinely its own (a relative .md link is navigation, and stays inside the
+        // viewer) and defers everything else here, so loopback pages still open in the synth
+        // browser, other pages in the default browser and files through `openFileLink` —
+        // one copy of those rules, in `openTerminalLink`, rather than a second in TypeScript
+        // free to drift from it.
+        if verb == "link.open" {
+            guard let raw = request["url"] as? String, let url = URL(string: raw) else {
+                return ["ok": false, "error": "link.open needs a url"]
+            }
+            store.openTerminalLink(url, from: nil)
+            return ["ok": true]
+        }
+
         guard let worktreePath = request["worktreePath"] as? String,
               let branch = store.branch(forWorktreePath: worktreePath) else {
             return ["ok": false,

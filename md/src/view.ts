@@ -215,6 +215,23 @@ export class DocumentView {
     return this.source
   }
 
+  /// Re-theme in place, after ghostty announces a light/dark flip. Every renderable holds
+  /// resolved colours rather than reading a palette each frame, so the tree is rebuilt — cheap
+  /// next to how rarely appearance changes, and it means no colour can be left behind.
+  setTheme(theme: Theme) {
+    this.theme = theme
+    const p = theme.palette
+    this.statusBar.fg = p.faint
+    this.searchInput.textColor = p.fg
+    this.overlay.borderColor = p.rule
+    this.overlay.backgroundColor = p.overlayBg
+    const revealed = this.revealed
+    this.revealed = -1
+    this.rebuild()
+    if (revealed >= 0) this.reveal(revealed, "start")
+    this.paintStatus()
+  }
+
   setFlags(flags: { dirty: boolean; conflicted: boolean }) {
     this.dirty = flags.dirty
     this.conflicted = flags.conflicted

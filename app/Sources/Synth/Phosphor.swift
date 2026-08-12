@@ -63,6 +63,10 @@ enum Phosphor {
     static let export = "M208,112v96a16,16,0,0,1-16,16H64a16,16,0,0,1-16-16V112A16,16,0,0,1,64,96H88a8,8,0,0,1,0,16H64v96H192V112H168a8,8,0,0,1,0-16h24A16,16,0,0,1,208,112ZM93.66,69.66,120,43.31V136a8,8,0,0,0,16,0V43.31l26.34,26.35a8,8,0,0,0,11.32-11.32l-40-40a8,8,0,0,0-11.32,0l-40,40A8,8,0,0,0,93.66,69.66Z"
     static let bookmark = "M184,32H72A16,16,0,0,0,56,48V224a8,8,0,0,0,12.24,6.78L128,193.43l59.77,37.35A8,8,0,0,0,200,224V48A16,16,0,0,0,184,32Zm0,177.57-51.77-32.35a8,8,0,0,0-8.48,0L72,209.57V48H184Z"
     static let dotsVertical = "M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM128,72a12,12,0,1,0-12-12A12,12,0,0,0,128,72Zm0,112a12,12,0,1,0,12,12A12,12,0,0,0,128,184Z"
+    /// Phosphor `file-text` — the markdown session's mark. A page with ruled lines rather than
+    /// the plain `file` outline: the ruling is what reads as *prose* at 16pt beside a terminal
+    /// and a globe, and a bare page silhouette does not.
+    static let fileText = "M216,88V216a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V40A16,16,0,0,1,56,24h96ZM152,88h48L152,40Zm8,56H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Zm0,32H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Z"
 }
 
 /// Renders a Phosphor path as a tintable template image.

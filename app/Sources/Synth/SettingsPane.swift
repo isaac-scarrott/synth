@@ -705,6 +705,7 @@ private extension SessionKind {
         case .terminal:  return "Terminal"
         case .browser:   return "Browser"
         case .simulator: return "Simulator"
+        case .markdown:  return "Document"
         }
     }
 }
@@ -1005,8 +1006,11 @@ private struct TplAddBar: View {
         // `availableAgents`, not every installed one: a switched-off agent is not offerable. Plus
         // the simulator only while the experiment is on and there is an Xcode — otherwise a new
         // worktree would come up with a row that cannot attach to anything.
+        // The markdown kind is offerable only in a build that staged the synth-md payload
+        // (ADR-0016) — otherwise a new worktree would come up with a row that cannot open.
         let kinds = store.availableAgents.map { SessionKind.agent($0.id) }
             + [.terminal, .browser] + (store.simulatorsAvailable ? [.simulator] : [])
+            + (MarkdownSession.isAvailable ? [SessionKind.markdown] : [])
         HStack(spacing: 6) {
             ForEach(kinds, id: \.self) { kind in
                 TplHover { hovering in

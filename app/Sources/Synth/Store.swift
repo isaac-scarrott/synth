@@ -978,7 +978,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// can't find pops a bare "The application can't be opened. -50" OS dialog.
     func openTerminalLink(_ url: URL, from sourceID: UUID?) {
         let scheme = url.scheme?.lowercased()
-        if scheme == "file" { openFileLink(url); return }
+        if scheme == "file" { openFileLink(url, from: sourceID); return }
         guard scheme == "http" || scheme == "https", url.isLoopbackHost else {
             NSWorkspace.shared.open(url); return
         }
@@ -1009,7 +1009,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// what's found in the OS default app (Finder for a folder — the routing the ledger's
     /// 2026-07-07 entry already locked for non-web schemes). Nothing on disk → the in-app
     /// toast names the path, instead of the OS dialog that names nothing.
-    private func openFileLink(_ url: URL) {
+    private func openFileLink(_ url: URL, from sourceID: UUID? = nil) {
         let fm = FileManager.default
         var path = url.path   // percent-decodes, drops any host
         if !fm.fileExists(atPath: path) {
@@ -1022,7 +1022,23 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                               sub: url.path)
             return
         }
+        // A markdown file opens *inside Synth* (ADR-0016), in the branch the click came from,
+        // rather than going out to whatever has claimed .md on this Mac. Checked before the
+        // generic handoff below, and only for a real file — a directory named `notes.md` is
+        // still Finder's. Agents write plans, TODOs and reports as markdown constantly; those
+        // are the documents this app is for, so following one should not leave it.
+        if isMarkdown(path), (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            let source = sourceID.flatMap(session) ?? openSessionID.flatMap(session)
+            if newMarkdown(in: source.flatMap { branch(of: $0) }, path: path) != nil { return }
+            // No branch to host the row — fall through rather than losing the click.
+        }
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    /// Whether a path is a markdown document by extension. Case-insensitive, because
+    /// `README.MD` and `Notes.Markdown` are both real things people commit.
+    func isMarkdown(_ path: String) -> Bool {
+        ["md", "markdown"].contains(URL(fileURLWithPath: path).pathExtension.lowercased())
     }
 
     /// Front of the branch's Recent list, deduped by URL (keeping the known title), capped at 5.
@@ -1667,6 +1683,31 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         SimulatorManager.shared.reset(session.id)
     }
 
+    /// A markdown session (ADR-0016): the bundled synth-md TUI showing one file, named by the
+    /// file. Mechanically a terminal session with a fixed launch command — so the PTY
+    /// lifecycle, reaping and theming all come free — which is why the pane needs no new case.
+    ///
+    /// Like browsers and simulators it carries no liveness: reading a document is not a thing
+    /// that can be "working" or "error", so the row is `.idle` for life and never notifies.
+    /// A row with no path yet (spawned from a worktree template) opens the TUI's own empty
+    /// state rather than guessing a file.
+    ///
+    /// Re-opening a document already on screen in this branch focuses that row instead of
+    /// minting a second one — cmd+clicking the same link twice is a navigation, not a create.
+    @discardableResult
+    func newMarkdown(in branch: Branch? = nil, path: String? = nil, focus: Bool = true) -> Session? {
+        let br = branch ?? defaultBranch()
+        if let path, let existing = br?.sessions.first(where: { $0.kind == .markdown && $0.markdownPath == path }) {
+            if focus { open(existing) }
+            return existing
+        }
+        let session = addSession(kind: .markdown,
+                                 title: path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Document",
+                                 status: .idle, in: br, focus: focus)
+        session?.markdownPath = path
+        return session
+    }
+
     /// Spawn a session for a split *without* opening it (focus:false), so the pending create
     /// doesn't clobber the layout before it's bound into the new pane (007's keyboard create /
     /// 010's "New …" drag-in). The caller then `splitActiveWith`s the returned session.
@@ -1682,6 +1723,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             return newBrowser(in: branch, focus: false)
         case .simulator:
             return newSimulator(in: branch, device: device, focus: false)
+        case .markdown:
+            return newMarkdown(in: branch, focus: false)
         }
     }
 
@@ -2757,6 +2800,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             case .terminal:  kind = "Terminal"
             case .browser:   kind = "Browser"
             case .simulator: kind = "Simulator"
+            case .markdown:  kind = "Document"
             }
             lines.append("Here: \(kind) · \(branch(of: s)?.name ?? "—")")
         }
@@ -3367,7 +3411,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                                  agentSessionID: s.agentSessionID,
                                                  browserURL: s.browserURL,
                                                  ownerSessionID: s.ownerSessionID,
-                                                 simulatorUDID: s.simulatorUDID)
+                                                 simulatorUDID: s.simulatorUDID,
+                                                 markdownPath: s.markdownPath)
                             },
                             browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents,
                             // The branch's remembered split, serialized to session identities;
@@ -3422,7 +3467,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
                             agentSessionID: ps.resumeID, browserURL: ps.browserURL,
                             ownerSessionID: ps.ownerSessionID,
-                            simulatorUDID: ps.simulatorUDID)
+                            simulatorUDID: ps.simulatorUDID,
+                            markdownPath: ps.markdownPath)
                 }
                 // Scrub hostless recents (about:blank) recorded before the filter existed.
                 let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }

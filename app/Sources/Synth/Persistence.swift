@@ -101,6 +101,10 @@ struct PersistedSession: Codable {
     /// every other session kind adds no key (additive, so `version` stays 1 — a bump would
     /// throw the whole snapshot away).
     var simulatorUDID: String?
+    /// The document a markdown session is showing (ADR-0016) — a restored row reopens it.
+    /// Optional/omitted so a pre-markdown snapshot decodes and every other kind adds no key
+    /// (additive, so `version` stays 1 — a bump would throw the whole snapshot away).
+    var markdownPath: String?
 }
 
 extension PersistedSession {

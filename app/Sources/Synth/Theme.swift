@@ -240,12 +240,15 @@ extension SessionKind {
         case .agent:    return Phosphor.sparkle
         case .browser:  return Phosphor.globe
         case .simulator: return Phosphor.deviceMobile
+        case .markdown: return Phosphor.fileText
         }
     }
     var tint: Color {
         switch self {
         case .agent: return Theme.copper
-        case .terminal, .browser, .simulator: return Theme.sessionIcon
+        // A document is content the user owns, not a live thing Synth is running, so it wears
+        // the same quiet ink as a terminal rather than the agent's copper.
+        case .terminal, .browser, .simulator, .markdown: return Theme.sessionIcon
         }
     }
 }

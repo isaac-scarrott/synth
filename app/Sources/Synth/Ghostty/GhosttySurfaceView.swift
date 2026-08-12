@@ -14,6 +14,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Set when restoring a Claude row (ADR-0010): its terminal resumes the conversation
     /// with `claude --resume <id>` instead of a fresh `claude`. nil for a new session.
     private let resumeAgentID: String?
+    /// The document a markdown row shows (ADR-0016). nil for every other kind, and for a
+    /// markdown row spawned from a template — the TUI then opens its own empty state.
+    private let markdownPath: String?
     private let env: [String: String]
     private let command: String
     /// Default flags typed after `claude` on launch (Settings → Claude Code flags). The
@@ -40,6 +43,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         self.cwd = cwd
         self.kind = session.kind
         self.resumeAgentID = session.agentSessionID
+        self.markdownPath = session.markdownPath
         self.env = env
         self.command = command
         self.agentFlags = agentFlags
@@ -202,6 +206,19 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         if let launch = kind.agentID
             .flatMap({ AgentRegistry.supervisor($0) })
             .map({ $0.launchCommand(resume: resumeAgentID, flags: agentFlags) }) {
+            env["SYNTH_LAUNCH_COMMAND"] = launch
+        }
+        // Every session carries the synth-md palette and control socket, not just markdown
+        // rows: `synth notes.md` typed in an ordinary terminal runs the same TUI, and it has
+        // to arrive themed and able to hand links back like any other (ADR-0016).
+        if MarkdownSession.isAvailable {
+            let theme = MarkdownSession.environment(dark: TerminalTheme.isDark(effectiveAppearance),
+                                                    socketPath: InstanceRegistry.controlSocketPath)
+            for (key, value) in theme { env[key] = value }
+        }
+        // A markdown row is the same shape as an agent row — a login shell that execs one
+        // fixed program — so it rides the same launch mechanism.
+        if kind == .markdown, let launch = MarkdownSession.launchCommand(path: markdownPath) {
             env["SYNTH_LAUNCH_COMMAND"] = launch
         }
 

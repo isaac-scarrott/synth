@@ -1887,3 +1887,16 @@ disclosure to dive deeper.
   `CFBundleVersion` 552, tag `v0.28.2`. Verified quarantined-outsider on dmg and zip (both
   notarized + stapled); appcast newest item 0.28.2 at `sparkle:version` 552, `edSignature` on
   all 18 enclosures including 5 deltas. Landing page unchanged — no `synth-site` push.
+
+## [2026-08-12](docs/features/2026-08-12.md)
+
+- **synth-md — markdown is a session** — a new first-class `SessionKind.markdown`: a rendered
+  document you can also edit, in a ghostty pane beside the agent that wrote it. Obsidian-style live
+  preview (click a block, it shows raw markdown with a cursor; click away, it re-renders), modeless
+  CUA editing, checkbox click-to-toggle without entering the block, smart lists, debounced autosave
+  with a file watcher that keeps your keystrokes when an agent rewrites the file underneath you,
+  ⌃F search and a ⌃O outline. Opened by cmd+clicking any `.md` link or by `synth <file>` in any
+  Synth terminal. Relative `.md` links navigate in-viewer with a back stack; every other link goes
+  back to the app over a new `link.open` control-socket verb, so the existing routing stays the only
+  copy. Built on OpenTUI, which means **Synth now ships a vendored Bun runtime** (ADR-0016) — pinned,
+  because the version failure is silent and renders every paragraph blank.

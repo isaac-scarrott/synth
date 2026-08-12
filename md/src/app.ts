@@ -48,6 +48,16 @@ export class App {
 
     const app = new App(renderer, theme, options, treeSitter)
     app.view.mount()
+
+    // Ghostty announces the appearance to the program it runs (DEC 2031) and re-announces it
+    // when Synth flips — which is what keeps a document open across a theme change from being
+    // left in the other scheme's ink. Only when the app did not pin a theme (the tests do).
+    if (!options.theme) {
+      renderer.on("theme_mode", (mode) => {
+        if (mode === "light" || mode === "dark") app.view.setTheme(readTheme(process.env, mode))
+      })
+    }
+
     await app.load(options.path)
     return app
   }

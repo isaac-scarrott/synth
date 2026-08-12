@@ -8,6 +8,10 @@ enum SessionKind: Codable, Sendable, Hashable {
     case agent(AgentID)
     case browser
     case simulator
+    /// A markdown document, read and edited in the bundled synth-md TUI (ADR-0016). Like an
+    /// agent row it is a terminal session whose launch command is fixed; unlike one it carries
+    /// no liveness of its own — the row is `.idle` for life.
+    case markdown
 
     /// The agent hosted by this session, if it is one.
     var agentID: AgentID? {
@@ -26,6 +30,7 @@ extension SessionKind: RawRepresentable {
         case .terminal: return "terminal"
         case .browser: return "browser"
         case .simulator: return "simulator"
+        case .markdown: return "markdown"
         case .agent(let id): return id.rawValue
         }
     }
@@ -37,6 +42,7 @@ extension SessionKind: RawRepresentable {
         case "terminal": self = .terminal
         case "browser": self = .browser
         case "simulator": self = .simulator
+        case "markdown": self = .markdown
         default: self = .agent(AgentID(rawValue))
         }
     }
@@ -121,8 +127,13 @@ enum SessionStatus: Equatable, Sendable {
     /// branch stays possible later. nil for non-simulators and for a simulator session
     /// spawned from a template, which has no device to name yet.
     var simulatorUDID: String?
+    /// The file a markdown session is showing — what that kind of session *is*, the analogue
+    /// of a browser's `browserURL` (ADR-0016). Persisted, so a restored row reopens the same
+    /// document. nil for every other kind, and for a markdown row spawned from a template,
+    /// which has no document to name yet.
+    var markdownPath: String?
 
-    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, agentSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil, simulatorUDID: String? = nil) {
+    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, agentSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil, simulatorUDID: String? = nil, markdownPath: String? = nil) {
         self.id = id
         self.kind = kind
         self.spawnedKind = kind
@@ -134,6 +145,7 @@ enum SessionStatus: Equatable, Sendable {
         self.browserURL = browserURL
         self.ownerSessionID = ownerSessionID
         self.simulatorUDID = simulatorUDID
+        self.markdownPath = markdownPath
     }
 }
 
@@ -166,6 +178,7 @@ extension SessionKind {
         case .terminal:      return "shell"
         case .browser:       return "Browser"
         case .simulator:     return "Simulator"
+        case .markdown:      return "Document"
         }
     }
 }

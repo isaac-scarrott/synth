@@ -1,3 +1,6 @@
+// First, and before anything that reaches @opentui/core: it tells the library where its
+// native dylib and tree-sitter assets live in a bundle that has no node_modules.
+import "./asset-root"
 import { createCliRenderer } from "@opentui/core"
 import { resolve } from "node:path"
 import { App } from "./app"

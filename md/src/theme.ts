@@ -98,21 +98,23 @@ export interface Theme {
   matchCurrentStyleId: number
 }
 
-export function readTheme(env: NodeJS.ProcessEnv = process.env): Theme {
-  const appearance = env.SYNTH_MD_APPEARANCE === "light" ? "light" : "dark"
+/// Build the theme for one appearance.
+///
+/// Both appearances are read, not just the current one: ghostty announces a light/dark flip to
+/// the running program (DEC 2031) and OpenTUI surfaces it as `theme_mode`, so the TUI re-themes
+/// in place when Synth's appearance changes. The env carries a palette for each — a launch-time
+/// snapshot of one of them would leave a document that survived the flip painted in the other
+/// scheme's ink.
+export function readTheme(
+  env: NodeJS.ProcessEnv = process.env,
+  appearanceOverride?: "light" | "dark",
+): Theme {
+  const appearance = appearanceOverride ?? (env.SYNTH_MD_APPEARANCE === "light" ? "light" : "dark")
   const palette = { ...DEFAULTS[appearance] }
-  const raw = env.SYNTH_MD_PALETTE
-  if (raw) {
-    try {
-      const given = JSON.parse(raw) as Partial<Palette>
-      for (const [key, value] of Object.entries(given)) {
-        // Only known keys, and only strings: the blob crosses a process boundary, and a
-        // malformed one must degrade to the defaults rather than paint with `undefined`.
-        if (key in palette && typeof value === "string") (palette as any)[key] = value
-      }
-    } catch {
-      // A corrupt blob is not worth failing a document open over.
-    }
+  for (const [key, value] of Object.entries(overrides(env.SYNTH_MD_PALETTE, appearance))) {
+    // Only known keys, and only strings: the blob crosses a process boundary, and a malformed
+    // one must degrade to the defaults rather than paint with `undefined`.
+    if (key in palette && typeof value === "string") (palette as any)[key] = value
   }
   const syntax = buildSyntax(palette)
   return {
@@ -125,6 +127,24 @@ export function readTheme(env: NodeJS.ProcessEnv = process.env): Theme {
       bg: palette.matchCurrent,
       bold: true,
     }),
+  }
+}
+
+/// The app's palette overrides for one appearance. Accepts either a flat object (one
+/// appearance's worth) or `{light: {...}, dark: {...}}`; anything else yields nothing, because
+/// a corrupt blob is not worth failing a document open over.
+function overrides(raw: string | undefined, appearance: "light" | "dark"): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+    const perAppearance = parsed[appearance]
+    if (perAppearance && typeof perAppearance === "object" && !Array.isArray(perAppearance)) {
+      return perAppearance as Record<string, unknown>
+    }
+    return "light" in parsed || "dark" in parsed ? {} : (parsed as Record<string, unknown>)
+  } catch {
+    return {}
   }
 }
 

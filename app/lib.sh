@@ -76,6 +76,30 @@ stage_resources() {
     rm -rf "$app/Contents/Resources/Synth_Synth.bundle"
     cp -R "$bin/Synth_Synth.bundle" "$app/Contents/Resources/Synth_Synth.bundle"
   fi
+  stage_markdown "$app"
+}
+
+# stage_markdown <app_dir>
+# The synth-md payload (ADR-0016): the Bun runtime, the TUI bundle, and OpenTUI's runtime
+# assets, into Contents/Resources/md. Built here rather than committed — it is ~70MB, most of
+# it a runtime binary, and the build is deterministic from md/ plus vendor/bun.
+#
+# A build without it still ships: MarkdownSession reports the payload absent, markdown rows
+# stop being offered, and a clicked .md link falls back to the OS handler. So a checkout with
+# no network, or a machine where bun's release download is blocked, is inconvenienced rather
+# than broken.
+stage_markdown() {
+  local app="$1"
+  local md="../md"
+  [ -d "$md" ] || return 0
+  if ! ( cd "$md" && ./vendor/fetch-bun.sh >/dev/null && ./vendor/bun/aarch64/bun run build.ts >/dev/null ); then
+    echo "warning: synth-md payload unavailable — markdown sessions will be disabled" >&2
+    return 0
+  fi
+  rm -rf "$app/Contents/Resources/md"
+  # ditto, not cp -R: it preserves the executable bit on the Bun binary, which cp -R on some
+  # configurations does not, and a non-executable runtime fails at launch rather than at build.
+  ditto "$md/dist" "$app/Contents/Resources/md"
 }
 
 # stage_sparkle <app_dir> <bin_dir> <copy|symlink>
@@ -138,6 +162,18 @@ sign_app() {
   # synth-hook is a second Mach-O in Contents/MacOS. Signing the bundle seals it as a resource
   # but never signs it, and notarization rejects any unsigned executable in the bundle.
   "${sign[@]}" "$app/Contents/MacOS/synth-hook"
+
+  # The bundled Bun runtime and OpenTUI's dylib are the same case: nested Mach-Os that the
+  # app's own seal covers as data but never signs, which notarization rejects. Both are signed
+  # before the bundle so its seal is taken over already-signed contents. Bun ships with an
+  # ad-hoc signature that must be replaced, hence --force (already in `sign`).
+  local md="$app/Contents/Resources/md"
+  if [ -d "$md" ]; then
+    local nested
+    for nested in "$md"/bun/*/bun "$md"/assets/@opentui/*/libopentui.dylib; do
+      [ -f "$nested" ] && "${sign[@]}" "$nested"
+    done
+  fi
 
   "${sign[@]}" --entitlements signing/Synth.entitlements "$app"
 }

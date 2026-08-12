@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.30.0",
+    "date": "2026-08-12",
+    "changes": [
+      "Leaving comment mode now parks your unsent browser comments instead of deleting them — the pins and the island stay on the page, shrunk to \"2 comments not sent · Resume · Send\". Only sending, deleting a row, or leaving a composer blank removes a comment.",
+      "Parked comments survive the page reloading underneath you — including the reload caused by the agent's own edit — with each pin re-finding its element.",
+      "The comment composer no longer loses clicks to the page it floats over, and a delivered batch now clears its pins and count instead of keeping them forever."
+    ]
+  },
+  {
     "version": "0.29.1",
     "date": "2026-08-12",
     "changes": [

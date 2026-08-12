@@ -1928,3 +1928,8 @@ disclosure to dive deeper.
   mounts inside a modal dialog, which inerts and out-paints everything else. And the host now
   *answers* a send: the page has always held the batch until it heard `confirm`/`reject` and nothing
   ever said either, so a delivered batch kept its pins and its count for good.
+- **0.30.0 ships — comments that survive the mode** — minor release carrying the comment-parking
+  batch: parked comments outlive the mode and the document, the composer wins the page it lives in,
+  and a delivered send finally clears its pins. `CFBundleVersion` 564, tag `v0.30.0`; dmg + zip
+  notarized, stapled, verified credential-less; appcast newest 0.30.0 at 564, `edSignature` on all
+  18 enclosures, 813KB delta from 561. No `synth-site` push.

@@ -1910,3 +1910,9 @@ disclosure to dive deeper.
   chooser, `CFBundleVersion` 559, tag `v0.29.0`. Verified quarantined-outsider on dmg and zip (both
   notarized + stapled); appcast newest item 0.29.0 at `sparkle:version` 559, `edSignature` on all
   18 enclosures including 5 deltas. Landing page unchanged — no `synth-site` push.
+- **0.29.1 ships — the payload 0.29.0 promised** — 0.29.0's markdown viewer shipped disabled
+  (payload build failed on missing `md/node_modules`; dist.sh warned and shipped anyway).
+  `stage_markdown` now installs dependencies first, `release.sh` refuses a build without the
+  payload's runtime, and verification now checks the feature is aboard, not just signatures.
+  `CFBundleVersion` 561, tag `v0.29.1`; dmg + zip notarized, stapled, payload confirmed in both;
+  appcast newest 0.29.1 at 561, `edSignature` on all 18 enclosures. No `synth-site` push.

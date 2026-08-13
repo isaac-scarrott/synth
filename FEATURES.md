@@ -1983,3 +1983,7 @@ disclosure to dive deeper.
   reveal the match raw (unfocused, byte-neutral), ←/→/backspace/⌦ cross and join blocks with
   goal-column ↑/↓, ⌃R takes the disk version in a conflict and quitting no longer overwrites
   the other writer, ⌃B restores the reading position (`md/src/view.ts`, `save.ts`, `app.ts`).
+- **Markdown editing: chords defer to the typist, and everything explains itself** — ⌃F/⌃B
+  move the caret while typing (⌘F searches), fragment links jump to headings, the outline is
+  clickable and opens where you are, and the status line teaches ⌃] / ⌃B / ⌃Q at the moment
+  each matters (`md/src/view.ts`, `links.ts`, `app.ts`).

@@ -16,6 +16,7 @@ import { splitFrontmatter, type Frontmatter } from "./frontmatter"
 import { continueList, indentItem, renumber } from "./smartlist"
 import { currentOffset, find, matchesWithin, NO_MATCHES, step, type Matches } from "./search"
 import { linkAt } from "./links"
+import { OverlayScrollbar } from "./scrollbar"
 import type { Theme } from "./theme"
 
 /// The reading column's ceiling. Prose stops being comfortable somewhere past 80 columns and
@@ -79,6 +80,7 @@ export class DocumentView {
   private treeSitter: TreeSitterClient
 
   private scroll!: ScrollBoxRenderable
+  private scrollbar!: OverlayScrollbar
   private column!: BoxRenderable
   private statusBar!: TextRenderable
   private searchBar!: BoxRenderable
@@ -130,14 +132,21 @@ export class DocumentView {
       wrapperOptions: { backgroundColor: "transparent" },
       viewportOptions: { backgroundColor: "transparent" },
       contentOptions: { backgroundColor: "transparent", flexDirection: "column" },
-      scrollbarOptions: { visible: false },
     })
+    // Retire the built-in bar through its SETTER: assigning marks visibility as manual, which
+    // is the only thing its auto-show (any overflow → visible) respects. The constructor
+    // option is not enough — auto-show overwrites it on the first long document. The overlay
+    // scrollbar below is the replacement.
+    this.scroll.verticalScrollBar.visible = false
     // Clicking off the text — the margin either side, the space past the last block — folds
     // the open block back, the same as Esc. It is what a click away means everywhere else on
     // a Mac, and without it the only way to stop editing is a key. Block clicks stop
     // propagating before they reach here, so this fires only for a genuine click outside.
     this.scroll.onMouseDown = () => this.commit()
     this.renderer.root.add(this.scroll)
+
+    this.scrollbar = new OverlayScrollbar(this.renderer, this.scroll, p)
+    this.renderer.root.add(this.scrollbar)
 
     this.column = new BoxRenderable(this.renderer, {
       id: "column",
@@ -228,6 +237,7 @@ export class DocumentView {
     const p = theme.palette
     this.statusBar.fg = p.faint
     this.searchInput.textColor = p.fg
+    this.scrollbar.setPalette(p)
     this.overlay.borderColor = p.rule
     this.overlay.backgroundColor = p.overlayBg
     const revealed = this.revealed
@@ -349,6 +359,11 @@ export class DocumentView {
       treeSitterClient: this.treeSitter,
       fg: this.theme.palette.fg,
       flexGrow: 1,
+      // MarkdownRenderable defaults flexShrink to 0, which lets a long paragraph hold its
+      // intrinsic single-line width and overflow the column instead of wrapping. Shrinking
+      // is what hands it the column's width, and wrapping follows from that.
+      flexShrink: 1,
+      minWidth: 0,
       tableOptions: {
         style: "grid",
         borderColor: this.theme.palette.rule,

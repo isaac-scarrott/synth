@@ -1945,3 +1945,12 @@ disclosure to dive deeper.
   and `release.sh` refuses to ship a bundle whose signed bun cannot execute JavaScript.
   `CFBundleVersion` 568, tag `v0.30.2`; dmg + zip notarized, stapled, verified credential-less;
   shipped TUI proven live in a PTY; appcast newest 0.30.2 at 568, all 18 enclosures signed.
+
+## [2026-08-13](docs/features/2026-08-13.md)
+
+- **The markdown viewer wraps its prose and grows a Safari-style scrollbar** — long paragraphs
+  now wrap inside the reading column instead of running off the page (`flexShrink: 1` — the
+  overflow was flex, not text), and OpenTUI's permanent `█`-column scrollbar is retired for a
+  macOS-style overlay: invisible at rest, a slim half-cell-metric pill while scrolling, widens
+  and brightens under the pointer, draggable anywhere on the track, gone ~900ms after the last
+  movement (`md/src/scrollbar.ts`).

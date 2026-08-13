@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.30.3",
+    "date": "2026-08-13",
+    "changes": [
+      "Markdown documents wrap their text: long paragraphs now break inside the reading column instead of running off the right edge of the page.",
+      "The markdown viewer's scrollbar is now Safari-style: invisible while you read, a slim pill while you scroll, wider and brighter under the pointer, and draggable anywhere on its track."
+    ]
+  },
+  {
     "version": "0.30.2",
     "date": "2026-08-13",
     "changes": [

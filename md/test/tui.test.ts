@@ -77,6 +77,21 @@ describe("rendering", () => {
     await h.dispose()
   }, 30000)
 
+  test("a long paragraph wraps inside the column instead of running off the page", async () => {
+    const words = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ")
+    const h = await open(`# Title\n\n${words}\n`, { width: 100 })
+    const frame = await h.frame()
+
+    // Every word is on screen — nothing was clipped at the right edge…
+    const flat = trim(frame).replace(/\s+/g, " ")
+    expect(flat).toContain("word0")
+    expect(flat).toContain("word39")
+    // …because the paragraph broke across lines rather than holding one long one.
+    expect(rowOf(frame, "word39")).toBeGreaterThan(rowOf(frame, "word0"))
+    for (const line of frame.split("\n")) expect(line.replace(/\s+$/, "").length).toBeLessThanOrEqual(95)
+    await h.dispose()
+  }, 30000)
+
   test("renders a mermaid fence as marked code rather than dropping it", async () => {
     // OpenTUI 0.5.1 has no mermaid renderable (see the ADR); the locked fallback is that the
     // diagram source stays visible and highlighted rather than vanishing.
@@ -491,6 +506,53 @@ describe("outline", () => {
     await h.frame()
     h.keys.pressKey("o", { ctrl: true })
     expect(trim(await h.frame())).toContain("no headings")
+    await h.dispose()
+  }, 30000)
+})
+
+describe("overlay scrollbar", () => {
+  /// A document tall enough to scroll in a 20-row window, and the thumb glyphs the overlay
+  /// draws: slim right-half blocks at rest, full blocks under the pointer.
+  const TALL = Array.from({ length: 40 }, (_, i) => `paragraph ${i}`).join("\n\n") + "\n"
+  const SLIM = ["▐", "▗", "▝"]
+  const WIDE = ["█", "▄", "▀"]
+  const hasGlyph = (frame: string, glyphs: string[]) => glyphs.some((g) => frame.includes(g))
+
+  test("appears on scroll, slims at rest, and folds away after the linger", async () => {
+    const h = await open(TALL, { height: 20 })
+    let frame = await h.frame()
+    // At rest there is no bar at all — a still page is all page.
+    expect(hasGlyph(frame, [...SLIM, ...WIDE])).toBe(false)
+
+    h.keys.pressKey("j")
+    frame = await h.frame()
+    expect(hasGlyph(frame, SLIM)).toBe(true)
+
+    // The linger elapses with no further movement and the bar folds away.
+    await Bun.sleep(1100)
+    frame = await h.frame()
+    expect(hasGlyph(frame, [...SLIM, ...WIDE])).toBe(false)
+    await h.dispose()
+  }, 30000)
+
+  test("widens under the pointer and drags the document with it", async () => {
+    const h = await open(TALL, { height: 20, width: 90 })
+    await h.frame()
+    h.keys.pressKey("j")
+    let frame = await h.frame()
+    const barX = 89
+
+    // Hovering the thumb widens it — the grab affordance.
+    await h.mouse.moveTo(barX, 1)
+    frame = await h.frame()
+    expect(hasGlyph(frame, WIDE)).toBe(true)
+
+    // Dragging it to the bottom takes the document to the end.
+    await h.mouse.pressDown(barX, 1)
+    await h.mouse.emitMouseEvent("drag", barX, 18)
+    await h.mouse.release(barX, 18)
+    frame = await h.frame()
+    expect(trim(frame)).toContain("paragraph 39")
     await h.dispose()
   }, 30000)
 })

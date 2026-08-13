@@ -1960,3 +1960,9 @@ disclosure to dive deeper.
   pill while scrolling, wider under the pointer, draggable, self-hiding. `CFBundleVersion`
   570, tag `v0.30.3`; dmg + zip notarized, stapled, verified credential-less; appcast newest
   0.30.3 at 570, `edSignature` on all 18 enclosures. No `synth-site` push.
+- **0.30.4 ships — a scrollbar drag always ends** — patch release: a fast flick on the markdown
+  scrollbar could outrun OpenTUI's pointer capture and leave the bar pinned on screen in a drag
+  that never finished; three nets (lost-drag `out`, drag re-entry, liveness check) end it
+  cleanly. `CFBundleVersion` 573, tag `v0.30.4`; dmg + zip notarized, stapled, verified
+  credential-less; appcast newest 0.30.4 at 573, `edSignature` on all 18 enclosures. No
+  `synth-site` push.

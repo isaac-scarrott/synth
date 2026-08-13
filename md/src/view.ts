@@ -25,6 +25,11 @@ import type { Theme } from "./theme"
 const COLUMN_MAX = 84
 const GUTTER_MIN = 2
 
+/// Entries the document-level undo stack keeps. One entry is one committed mutation, so a
+/// hundred covers a long editing session; beyond it the oldest history quietly falls off
+/// rather than the stack growing for as long as the document stays open.
+const UNDO_CAP = 100
+
 /// Geometric, not nerd-font: the gotcha list is explicit that nothing load-bearing may
 /// depend on a patched font, and a checkbox is as load-bearing as this document gets.
 const BOX_UNCHECKED = "□"
@@ -136,6 +141,12 @@ export class DocumentView {
   private outlineCapacity = 1
   private dirty = false
   private conflicted = false
+  /// Document-level undo: prior sources, one entry per committed mutation — the fold of an
+  /// edited reveal, a checkbox toggle, a cross-block join. The in-reveal typing history
+  /// lives in each editor and dies with it; this stack is for what happens AT and beyond the
+  /// fold, which autosave otherwise makes permanent within half a second.
+  private undoStack: string[] = []
+  private redoStack: string[] = []
   private note = ""
   private noteTimer: ReturnType<typeof setTimeout> | null = null
   private disposed = false
@@ -301,6 +312,48 @@ export class DocumentView {
     this.rebuild()
     if (revealed >= 0) this.reveal(revealed, "start", { focus: hadFocus })
     this.paintStatus()
+  }
+
+  /// Drop both undo stacks — an epoch boundary. After an external reload or a ⌃R take-disk
+  /// the text on screen is the OTHER writer's work, and popping an entry from before it
+  /// would silently resurrect the clobbered local text: the exact overwrite the conflict
+  /// machinery exists to prevent. Navigation is an epoch too — the stack belongs to a
+  /// document, and popping doc A's bytes into doc B would be corruption wearing undo's key.
+  clearHistory() {
+    this.undoStack = []
+    this.redoStack = []
+  }
+
+  /// Record `prior` as the state a ⌃Z returns to. Every push opens a new timeline, so the
+  /// redo branch dies — the universal editor rule.
+  private pushUndo(prior: string) {
+    this.undoStack.push(prior)
+    if (this.undoStack.length > UNDO_CAP) this.undoStack.shift()
+    this.redoStack = []
+  }
+
+  private undoDocument() {
+    const prior = this.undoStack.pop()
+    if (prior === undefined) {
+      this.flash("nothing to undo")
+      return
+    }
+    this.redoStack.push(this.source)
+    // Through applyEdit like any mutation, so the restored text re-arms autosave and the
+    // dirty flag exactly as typing it back would have.
+    this.applyEdit(prior)
+    this.flash("undid edit")
+  }
+
+  private redoDocument() {
+    const next = this.redoStack.pop()
+    if (next === undefined) {
+      this.flash("nothing to redo")
+      return
+    }
+    this.undoStack.push(this.source)
+    this.applyEdit(next)
+    this.flash("redid edit")
   }
 
   /// Stop the timers the view owns. The renderer outlives none of them: a flash's self-clear
@@ -723,6 +776,10 @@ export class DocumentView {
       text === this.revealedOriginal
         ? this.source
         : renumber(splice(this.revealBase, start, end, erased ? "" : text + this.revealedSuffix))
+    // One undo entry per committed reveal, and only when it changed something: the
+    // byte-neutral folds search stepping produces constantly must never bury real history
+    // under no-op entries.
+    if (updated !== this.revealBase) this.pushUndo(this.revealBase)
     this.revealed = -1
     this.revealedSuffix = ""
     this.applyEdit(updated)
@@ -773,6 +830,7 @@ export class DocumentView {
     )
     const next = toggleTask(this.source, block)
     if (next === null) return
+    this.pushUndo(this.source)
     // Deliberately does NOT reveal: toggling a checkbox is the locked "without entering the
     // block" interaction, and revealing would flip the row to raw under the click.
     this.applyEdit(next)
@@ -799,6 +857,39 @@ export class DocumentView {
     // reflex is about the document, not the caret, and Esc → ⌃F stays the plain-terminal
     // path. Back-navigation is likewise a reading gesture: ⌃B/⌘B only act outside an editor.
     const editing = this.focusedEditor() !== null
+
+    // ⌃Z inside a focused editor steps ITS history first — in-reveal typing, exactly as
+    // today. The seam: when that history is exhausted, a further ⌃Z must not silently do
+    // nothing, so the block folds and the DOCUMENT stack takes over — one continuous
+    // timeline back through the fold. Exhaustion is read from the edit buffer itself; the
+    // renderable's own undo() unconditionally answers true.
+    if (cmd && key.name === "z" && !key.shift && editing) {
+      key.preventDefault()
+      const editor = this.focusedEditor()!
+      if (editor.editBuffer.undo() !== null) {
+        this.renderer.clearSelection()
+        this.onEditorChange()
+        this.renderer.requestRender()
+        return
+      }
+      this.commit()
+      this.undoDocument()
+      return
+    }
+    // Redo stays editor-scoped while focused (the fold that reaches the document stack
+    // would itself push an entry and erase the redo being reached for); ⌃⇧Z falls through
+    // to the editor's binding. From the reader, both directions are the document's.
+    if (cmd && key.name === "z" && !editing && this.mode === "read") {
+      key.preventDefault()
+      if (key.shift) this.redoDocument()
+      else this.undoDocument()
+      return
+    }
+    if (cmd && key.name === "y" && !editing && this.mode === "read") {
+      key.preventDefault()
+      this.redoDocument()
+      return
+    }
 
     if (cmd && key.name === "f" && !(editing && !key.super)) {
       key.preventDefault()
@@ -1053,6 +1144,11 @@ export class DocumentView {
     // Joining can fuse two ordered lists, and renumbering may then rewrite marker digits on
     // the caret's own line — anchor the caret from the line's tail so it lands on the join.
     const { source, cursor } = renumberPreservingCursor(splice(current, at, at + 1, ""), at)
+    // The join ends the reveal without passing through commit, so it records its own
+    // history: two entries when the reveal held unsaved typing — the first ⌃Z un-joins with
+    // the typing kept, the next un-types — and one otherwise.
+    if (current !== this.revealBase) this.pushUndo(this.revealBase)
+    this.pushUndo(current)
     this.applyEdit(source)
     this.reveal(blockAt(this.blocks, cursor), { offset: cursor })
   }

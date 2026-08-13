@@ -908,6 +908,214 @@ describe("links", () => {
   }, 30000)
 })
 
+describe("document undo", () => {
+  test("⌃Z after a fold restores the pre-reveal text, and autosaves it", async () => {
+    const h = await open("# T\n\nProse.\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Prose.") + 6, rowOf(frame, "Prose."))
+    await h.keys.typeText(" more")
+    h.keys.pressEscape()
+    await h.frame()
+    expect(h.app.fileState.text).toBe("# T\n\nProse. more\n")
+
+    h.keys.pressKey("z", { ctrl: true })
+    const after = trim(await h.frame())
+    expect(h.app.fileState.text).toBe("# T\n\nProse.\n")
+    expect(after).toContain("undid edit")
+
+    // The restored text re-arms autosave like any edit: the undo reaches the disk.
+    await h.settleSave()
+    expect(await h.onDisk()).toBe("# T\n\nProse.\n")
+    await h.dispose()
+  }, 30000)
+
+  test("⌃Y redoes what ⌃Z undid", async () => {
+    const h = await open("para\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "para") + 4, rowOf(frame, "para"))
+    await h.keys.typeText("!")
+    h.keys.pressEscape()
+    await h.frame()
+
+    h.keys.pressKey("z", { ctrl: true })
+    await h.frame()
+    expect(h.app.fileState.text).toBe("para\n")
+
+    // ⌃⇧Z only exists under the kitty protocol — at the legacy byte level shift is not
+    // encodable on a control character, which is exactly why ⌃Y is bound too. The harness
+    // speaks legacy bytes, so redo is exercised through ⌃Y.
+    h.keys.pressKey("y", { ctrl: true })
+    expect(trim(await h.frame())).toContain("redid edit")
+    expect(h.app.fileState.text).toBe("para!\n")
+
+    // A fresh edit opens a new timeline: the redo branch dies.
+    h.keys.pressKey("z", { ctrl: true })
+    await h.frame()
+    const frame2 = await h.frame()
+    await h.mouse.click(colOf(frame2, "para") + 4, rowOf(frame2, "para"))
+    await h.keys.typeText("?")
+    h.keys.pressEscape()
+    await h.frame()
+    h.keys.pressKey("y", { ctrl: true })
+    expect(trim(await h.frame())).toContain("nothing to redo")
+    expect(h.app.fileState.text).toBe("para?\n")
+    await h.dispose()
+  }, 30000)
+
+  test("sequential folds unwind newest-first", async () => {
+    const h = await open("aaa\n\nbbb\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "aaa") + 3, rowOf(frame, "aaa"))
+    await h.keys.typeText("1")
+    h.keys.pressEscape()
+    frame = await h.frame()
+    await h.mouse.click(colOf(frame, "bbb") + 3, rowOf(frame, "bbb"))
+    await h.keys.typeText("2")
+    h.keys.pressEscape()
+    await h.frame()
+    expect(h.app.fileState.text).toBe("aaa1\n\nbbb2\n")
+
+    h.keys.pressKey("z", { ctrl: true })
+    await h.frame()
+    expect(h.app.fileState.text).toBe("aaa1\n\nbbb\n")
+    h.keys.pressKey("z", { ctrl: true })
+    await h.frame()
+    expect(h.app.fileState.text).toBe("aaa\n\nbbb\n")
+    await h.dispose()
+  }, 30000)
+
+  test("a checkbox toggle is one undo step", async () => {
+    const h = await open("- [ ] task one\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "□ task"), rowOf(frame, "□ task"))
+    await h.frame()
+    expect(h.app.fileState.text).toBe("- [x] task one\n")
+
+    h.keys.pressKey("z", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(h.app.fileState.text).toBe("- [ ] task one\n")
+    expect(frame).toContain("□ task one")
+    await h.dispose()
+  }, 30000)
+
+  test("⌃Z inside a fresh reveal crosses the fold — a join comes straight back", async () => {
+    const h = await open("first para\n\nsecond para\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "second"), rowOf(frame, "second"))
+    h.keys.pressKey("HOME")
+    h.keys.pressBackspace()
+    await h.frame()
+    expect(h.app.fileState.text).toBe("first para\nsecond para\n")
+
+    // The re-revealed editor has no history of its own, so ⌃Z falls through the fold to the
+    // document stack and un-joins.
+    h.keys.pressKey("z", { ctrl: true })
+    const after = trim(await h.frame())
+    expect(h.app.fileState.text).toBe("first para\n\nsecond para\n")
+    expect(after).toContain("undid edit")
+    await h.dispose()
+  }, 30000)
+
+  test("the editor's own history exhausts into the document stack", async () => {
+    const h = await open("- [ ] task\n\npara text\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "□ task"), rowOf(frame, "□ task"))
+    frame = await h.frame()
+    expect(h.app.fileState.text).toContain("- [x] task")
+
+    await h.mouse.click(colOf(frame, "para text") + 9, rowOf(frame, "para text"))
+    await h.keys.typeText("X")
+    await h.frame()
+    expect(h.app.fileState.text).toContain("para textX")
+
+    // First ⌃Z: the editor's own step — the X goes, the block stays open.
+    h.keys.pressKey("z", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(h.app.fileState.text).toContain("para text\n")
+    expect(frame).toContain("editing")
+
+    // Second ⌃Z: nothing left in the editor, so the timeline continues through the fold and
+    // undoes the toggle that came before the reveal.
+    h.keys.pressKey("z", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(h.app.fileState.text).toBe("- [ ] task\n\npara text\n")
+    expect(frame).toContain("undid edit")
+    await h.dispose()
+  }, 30000)
+
+  test("byte-neutral search stepping leaves no history", async () => {
+    const h = await open("alpha one\n\nalpha two\n")
+    await h.frame()
+    h.keys.pressKey("f", { ctrl: true })
+    await h.keys.typeText("alpha")
+    h.keys.pressEnter()
+    await h.frame()
+    h.keys.pressEscape()
+    await h.frame()
+    h.keys.pressEscape()
+    await h.frame()
+
+    h.keys.pressKey("z", { ctrl: true })
+    expect(trim(await h.frame())).toContain("nothing to undo")
+    expect(h.app.fileState.text).toBe("alpha one\n\nalpha two\n")
+    await h.dispose()
+  }, 30000)
+
+  test("an external reload is an epoch: no undoing into the agent's text", async () => {
+    const h = await open("# Doc\n\nMine.\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Mine.") + 5, rowOf(frame, "Mine."))
+    await h.keys.typeText(" edited")
+    h.keys.pressEscape()
+    await h.settleSave()
+
+    await h.writeExternally("# Doc\n\nAgent text.\n")
+    await h.frame()
+    h.keys.pressKey("z", { ctrl: true })
+    expect(trim(await h.frame())).toContain("nothing to undo")
+    expect(h.app.fileState.text).toBe("# Doc\n\nAgent text.\n")
+    await h.dispose()
+  }, 30000)
+
+  test("navigation is an epoch: the stack belongs to a document", async () => {
+    const h = await open("[go](./d.md)\n\nsome para\n")
+    await writeFile(join(dirname(h.path), "d.md"), "# D\n\nother doc\n", "utf8")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "some para") + 4, rowOf(frame, "some para"))
+    await h.keys.typeText("X")
+    h.keys.pressEscape()
+    frame = await h.frame()
+
+    await h.mouse.click(colOf(frame, "go"), rowOf(frame, "go"))
+    await h.frame()
+    h.keys.pressKey("]", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("other doc")
+
+    h.keys.pressKey("z", { ctrl: true })
+    expect(trim(await h.frame())).toContain("nothing to undo")
+    expect(h.app.fileState.text).toBe("# D\n\nother doc\n")
+    await h.dispose()
+  }, 30000)
+
+  test("the stack caps at 100 entries", async () => {
+    const h = await open("- [ ] task\n")
+    const frame = await h.frame()
+    const x = colOf(frame, "□ task")
+    const y = rowOf(frame, "□ task")
+    for (let i = 0; i < 102; i++) await h.mouse.click(x, y)
+
+    // The hundredth ⌃Z still finds history…
+    for (let i = 0; i < 100; i++) h.keys.pressKey("z", { ctrl: true })
+    expect(trim(await h.frame())).toContain("undid edit")
+    // …and the one after it finds the cap: the two oldest toggles fell off.
+    h.keys.pressKey("z", { ctrl: true })
+    expect(trim(await h.frame())).toContain("nothing to undo")
+    expect(h.app.fileState.text).toBe("- [ ] task\n")
+    await h.dispose()
+  }, 30000)
+})
+
 describe("chords while editing", () => {
   test("⌃B moves the caret instead of navigating away", async () => {
     const h = await open("plain **p**\n")

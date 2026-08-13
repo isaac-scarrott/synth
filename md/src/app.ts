@@ -103,6 +103,9 @@ export class App {
       onExternalChange: (text) => {
         this.view.setSource(text, { preserveScroll: true })
         this.view.setFlags({ dirty: false, conflicted: false })
+        // Epoch: the adopted text is the other writer's work; an undo reaching past this
+        // moment would resurrect our old bytes over it (see DocumentView.clearHistory).
+        this.view.clearHistory()
         this.view.flash("reloaded")
       },
       onConflict: () => {
@@ -115,6 +118,9 @@ export class App {
     })
     this.view.setSource(this.file.state.text)
     this.view.setFlags({ dirty: false, conflicted: false })
+    // Epoch: the stack belongs to a document. Without this, ⌃Z after following a link would
+    // splice the PREVIOUS file's bytes into the one now on screen.
+    this.view.clearHistory()
   }
 
   /// A relative markdown link navigates in place and pushes the current doc onto the back
@@ -148,6 +154,9 @@ export class App {
     const text = await this.file.discard()
     this.view.setSource(text, { preserveScroll: true })
     this.view.setFlags({ dirty: false, conflicted: false })
+    // Epoch, same as an external reload: the user just chose the disk's text — an undo that
+    // popped their discarded edits back would unmake the choice a beat after it was made.
+    this.view.clearHistory()
     this.view.flash("took the disk version")
   }
 

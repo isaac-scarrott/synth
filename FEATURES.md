@@ -1970,3 +1970,8 @@ disclosure to dive deeper.
   block now walk a word-wrapped paragraph's visual lines instead of stepping to the
   neighbouring block from the middle of it; the block handoff fires only from the true
   first/last visual row (`md/src/view.ts`).
+- **0.30.5 ships — arrows walk the wrapped lines the eye sees** — patch release: ↓/↑ in the
+  markdown editor traverse a word-wrapped paragraph's visual lines instead of jumping to the
+  neighbouring block from its middle. `CFBundleVersion` 576, tag `v0.30.5`; dmg + zip
+  notarized, stapled, verified credential-less; appcast newest 0.30.5 at 576, `edSignature`
+  on all 18 enclosures. No `synth-site` push.

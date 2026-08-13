@@ -1990,3 +1990,8 @@ disclosure to dive deeper.
 - **Markdown editing: one unbroken undo timeline** — ⌃Z works from reading, steps the open
   editor's history first while typing, and continues through the fold into a document-level
   stack; ⌃Y redoes; reloads, ⌃R, and navigation are epoch boundaries (`md/src/view.ts`).
+- **0.31.0 ships — the markdown editor grows up** — minor release: the four-batch ergonomics
+  overhaul (wrap-true clicks, one-field editing, unbroken undo, visible search, two-sided
+  conflicts, fragment links, teachable chords). `CFBundleVersion` 586, tag `v0.31.0`; dmg +
+  zip notarized, stapled, verified credential-less; appcast newest 0.31.0 at 586,
+  `edSignature` on all 18 enclosures. No `synth-site` push.

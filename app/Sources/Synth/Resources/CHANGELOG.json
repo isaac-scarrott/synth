@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.30.2",
+    "date": "2026-08-13",
+    "changes": [
+      "Markdown sessions work again: the bundled synth-md runtime shipped signed without its JIT entitlements, so every document row opened and instantly closed. The runtime is now signed correctly, and a release whose runtime cannot start aborts instead of shipping."
+    ]
+  },
+  {
     "version": "0.30.1",
     "date": "2026-08-12",
     "changes": [

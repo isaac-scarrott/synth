@@ -67,6 +67,12 @@ APP="build/Synth.app"
 # scrolls past, and nothing downstream ever misses the files.
 [ -x "$APP/Contents/Resources/md/bun/aarch64/bun" ] \
   || die "built app is missing the synth-md payload (Resources/md) — see stage_markdown's warning in the build output"
+# Present is not alive: the hardened runtime kills a JIT runtime signed without its
+# entitlements before its first byte of output, so a broken bun looks exactly like a working
+# one until a user opens a document (0.30.1 shipped that way). Make it execute JavaScript
+# as-signed, or nothing ships.
+"$APP/Contents/Resources/md/bun/aarch64/bun" -e 'process.exit(0)' \
+  || die "the signed bundled bun cannot execute JavaScript — check its entitlements (signing/Bun.entitlements)"
 echo "==> Verifying signature"
 codesign --verify --deep --strict --verbose=2 "$APP"
 # Gatekeeper's own verdict, not just codesign's. Pre-notarization the only passing answer is

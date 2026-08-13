@@ -168,12 +168,17 @@ sign_app() {
   # The bundled Bun runtime and OpenTUI's dylib are the same case: nested Mach-Os that the
   # app's own seal covers as data but never signs, which notarization rejects. Both are signed
   # before the bundle so its seal is taken over already-signed contents. Bun ships with an
-  # ad-hoc signature that must be replaced, hence --force (already in `sign`).
+  # ad-hoc signature that must be replaced, hence --force (already in `sign`). Bun is a
+  # process and needs its entitlements: JavaScriptCore's JIT dies under the hardened runtime
+  # without them — silently, killed before its first byte of output (v0.30.1 shipped that).
   local md="$app/Contents/Resources/md"
   if [ -d "$md" ]; then
     local nested
-    for nested in "$md"/bun/*/bun "$md"/assets/@opentui/*/libopentui.dylib; do
+    for nested in "$md"/assets/@opentui/*/libopentui.dylib; do
       [ -f "$nested" ] && "${sign[@]}" "$nested"
+    done
+    for nested in "$md"/bun/*/bun; do
+      [ -f "$nested" ] && "${sign[@]}" --entitlements signing/Bun.entitlements "$nested"
     done
   fi
 

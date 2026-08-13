@@ -1979,3 +1979,7 @@ disclosure to dive deeper.
   aware click→caret mapping, reveal scrolls into view, Enter opens the first visible block,
   empty documents are editable, external reloads reset the reveal honestly, flashes self-
   clear, ⌘S saves without closing the editor (`md/src/view.ts`).
+- **Markdown editing: one field, honest search, conflicts with two answers** — search steps
+  reveal the match raw (unfocused, byte-neutral), ←/→/backspace/⌦ cross and join blocks with
+  goal-column ↑/↓, ⌃R takes the disk version in a conflict and quitting no longer overwrites
+  the other writer, ⌃B restores the reading position (`md/src/view.ts`, `save.ts`, `app.ts`).

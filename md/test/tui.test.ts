@@ -555,4 +555,30 @@ describe("overlay scrollbar", () => {
     expect(trim(frame)).toContain("paragraph 39")
     await h.dispose()
   }, 30000)
+
+  test("a drag the renderer never captured still ends, and the bar still hides", async () => {
+    // Press the bar, then flick so fast the first drag report is already off the bar: capture
+    // never engages, so no further event — drag, up, out — will ever reach the bar. The
+    // liveness net must end the dead drag and let the linger fold the bar away, rather than
+    // leaving it pinned on screen in a drag that can never finish.
+    const h = await open(TALL, { height: 20, width: 90 })
+    await h.frame()
+    h.keys.pressKey("j")
+    let frame = await h.frame()
+    expect(hasGlyph(frame, SLIM)).toBe(true)
+
+    await h.mouse.pressDown(89, 1)
+    await h.mouse.emitMouseEvent("drag", 89, 25) // beyond the window in one report
+    await h.mouse.release(89, 25)
+    await h.mouse.moveTo(40, 10)
+
+    // Liveness net (~600ms) plus linger (~900ms), with renders driven in between.
+    await h.frame()
+    await Bun.sleep(800)
+    await h.frame()
+    await Bun.sleep(1100)
+    frame = await h.frame()
+    expect(hasGlyph(frame, [...SLIM, ...WIDE])).toBe(false)
+    await h.dispose()
+  }, 30000)
 })

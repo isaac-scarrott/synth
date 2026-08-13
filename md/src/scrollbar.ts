@@ -38,6 +38,9 @@ export class OverlayScrollbar extends Renderable {
   private dragging = false
   /// Half-cell offset between where the thumb was grabbed and its top edge.
   private grabOffset = 0
+  /// When the last press/drag reached us — the liveness signal for a drag the renderer never
+  /// captured for us (see onUpdate).
+  private lastDragEventAt = 0
   private hideTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, palette: Palette) {
@@ -57,30 +60,29 @@ export class OverlayScrollbar extends Renderable {
     }
     this.onMouseOut = () => {
       this.hovered = false
-      if (!this.dragging) this.scheduleHide()
+      // An `out` during a drag means the drag is LOST, not merely wandering: once the
+      // renderer captures the pointer for us (which the first drag event over the bar does),
+      // it stops sending us `out` at all. So this only fires when that first drag report
+      // already jumped off the bar — a fast flick — and no further event will ever reach us.
+      // Without this the bar stays in `dragging` forever and never folds away.
+      this.dragging = false
+      this.scheduleHide()
       this.requestRender()
     }
     this.onMouseDown = (event: MouseEvent) => {
       event.stopPropagation()
       event.preventDefault()
-      const metrics = this.metrics()
-      if (!metrics) return
-      const halfAt = (event.y - this.y) * 2
-      if (halfAt >= metrics.startHalf && halfAt < metrics.startHalf + metrics.thumbHalf) {
-        this.grabOffset = halfAt - metrics.startHalf
-      } else {
-        // Pressed the bare track: bring the thumb to the pointer, centred, then drag from
-        // there — Safari's "jump to here" rather than a page-at-a-time crawl.
-        this.grabOffset = metrics.thumbHalf / 2
-        this.dragTo(halfAt)
-      }
-      this.dragging = true
-      this.cancelHide()
+      this.beginDrag((event.y - this.y) * 2)
     }
     this.onMouseDrag = (event: MouseEvent) => {
-      if (!this.dragging) return
       event.stopPropagation()
-      this.dragTo((event.y - this.y) * 2)
+      // A drag with no drag state is a grab we lost (or never saw the press for) with the
+      // pointer back over the bar — re-enter it as a fresh grab rather than ignoring it.
+      if (!this.dragging) this.beginDrag((event.y - this.y) * 2)
+      else {
+        this.lastDragEventAt = Date.now()
+        this.dragTo((event.y - this.y) * 2)
+      }
     }
     this.onMouseUp = () => {
       if (!this.dragging) return
@@ -120,6 +122,21 @@ export class OverlayScrollbar extends Renderable {
       if (wasSettled) this.show()
     }
     if (this.shown && !this.scrollable()) this.hide()
+
+    // The last net under a lost drag. A drag is only reliably ours once the renderer has
+    // captured the pointer for us, and capture engages on the first drag event that lands on
+    // the bar by hit test — a press followed by a fast flick can skip it entirely, and then
+    // release happens somewhere we will never hear about. So: dragging, not captured, and
+    // nothing has reached us for long enough that a live scrub would have → the drag is dead.
+    // A genuine press-and-hold trips this too, harmlessly — the next movement over the bar
+    // re-enters the drag through onMouseDrag's beginDrag.
+    if (this.dragging && Date.now() - this.lastDragEventAt > 600) {
+      const captured = (this.ctx as unknown as { capturedRenderable?: Renderable }).capturedRenderable
+      if (captured !== this) {
+        this.dragging = false
+        if (!this.hovered) this.scheduleHide()
+      }
+    }
   }
 
   protected renderSelf(buffer: OptimizedBuffer) {
@@ -144,6 +161,23 @@ export class OverlayScrollbar extends Renderable {
             : wide ? "▄" : "▗"
       buffer.setCellWithAlphaBlending(x, this.y + row, glyph, color, TRANSPARENT)
     }
+  }
+
+  /// Start a drag at a pointer position (in half-cells): from the thumb, keep the grip where
+  /// the finger landed; from the bare track, bring the thumb to the pointer, centred —
+  /// Safari's "jump to here" rather than a page-at-a-time crawl.
+  private beginDrag(halfAt: number) {
+    const metrics = this.metrics()
+    if (!metrics) return
+    if (halfAt >= metrics.startHalf && halfAt < metrics.startHalf + metrics.thumbHalf) {
+      this.grabOffset = halfAt - metrics.startHalf
+    } else {
+      this.grabOffset = metrics.thumbHalf / 2
+      this.dragTo(halfAt)
+    }
+    this.dragging = true
+    this.lastDragEventAt = Date.now()
+    this.cancelHide()
   }
 
   /// Thumb geometry in half-cell units, or null when the document fits and there is nothing

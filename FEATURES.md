@@ -1966,3 +1966,7 @@ disclosure to dive deeper.
   cleanly. `CFBundleVersion` 573, tag `v0.30.4`; dmg + zip notarized, stapled, verified
   credential-less; appcast newest 0.30.4 at 573, `edSignature` on all 18 enclosures. No
   `synth-site` push.
+- **Arrow keys in the markdown editor move by what the eye sees** — ↓/↑ inside a revealed
+  block now walk a word-wrapped paragraph's visual lines instead of stepping to the
+  neighbouring block from the middle of it; the block handoff fires only from the true
+  first/last visual row (`md/src/view.ts`).

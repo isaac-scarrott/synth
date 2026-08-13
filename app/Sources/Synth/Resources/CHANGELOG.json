@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.30.5",
+    "date": "2026-08-13",
+    "changes": [
+      "Arrow keys in the markdown editor now move through a wrapped paragraph line by line as it appears on screen, instead of jumping straight to the next block."
+    ]
+  },
+  {
     "version": "0.30.4",
     "date": "2026-08-13",
     "changes": [

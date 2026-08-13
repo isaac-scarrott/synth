@@ -69,6 +69,10 @@ export async function open(
   const setup = await createTestRenderer({
     width: options.width ?? 90,
     height: options.height ?? 40,
+    // The real renderer runs with this off (main.ts): ^C must never kill a document. The
+    // test renderer's default would destroy itself under the very keypress the view answers
+    // with "⌃Q quits".
+    exitOnCtrlC: false,
   })
 
   const app = await App.start(setup.renderer, {

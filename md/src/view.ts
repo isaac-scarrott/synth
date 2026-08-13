@@ -15,7 +15,7 @@ import { blockAt, nextEditable, outline, segment, splice, toggleTask, type Block
 import { splitFrontmatter, type Frontmatter } from "./frontmatter"
 import { continueList, indentItem, renumber, renumberPreservingCursor } from "./smartlist"
 import { currentOffset, find, matchesWithin, NO_MATCHES, step, type Matches } from "./search"
-import { linkAt } from "./links"
+import { anchorSlug, linkAt, linksIn } from "./links"
 import { OverlayScrollbar } from "./scrollbar"
 import type { Theme } from "./theme"
 
@@ -125,7 +125,15 @@ export class DocumentView {
   private revealEnd = 0
   private mode: Mode = "read"
   private matches: Matches = NO_MATCHES
+  /// Whether the document contains any link at all — the read-mode hint only spends its
+  /// cells on ⌃] when there is something for it to open.
+  private hasLinks = false
   private outlineIndex = 0
+  /// First heading row visible in the outline overlay, when the list outgrows it.
+  private outlineTop = 0
+  /// Rows the overlay can show. Held here because the box's height getter answers from the
+  /// LAYOUT, which has not seen the height set a moment ago.
+  private outlineCapacity = 1
   private dirty = false
   private conflicted = false
   private note = ""
@@ -241,6 +249,7 @@ export class DocumentView {
     // bytes on disk and an edit is a plain splice — nothing downstream tracks frontmatter.
     const base = front?.bodyStart ?? 0
     this.blocks = segment(body).map((b) => ({ ...b, start: b.start + base, end: b.end + base }))
+    this.hasLinks = linksIn(body).length > 0
     this.rebuild()
     if (options.preserveScroll) this.scroll.scrollTop = scrollTop
     if (this.matches.query) this.matches = find(this.source, this.matches.query, currentOffset(this.matches) ?? 0)
@@ -313,13 +322,14 @@ export class DocumentView {
   /// for the session stops being information and starts burying the dirty/conflict signals
   /// beside it.
   flash(note: string) {
+    if (this.disposed) return
     this.note = note
     this.paintStatus()
     if (this.noteTimer) clearTimeout(this.noteTimer)
     this.noteTimer = setTimeout(() => {
       this.note = ""
       this.noteTimer = null
-      this.paintStatus()
+      if (!this.disposed) this.paintStatus()
     }, 2500)
   }
 
@@ -353,6 +363,13 @@ export class DocumentView {
 
   /// Frontmatter as the locked "styled key/value header": a dim rule, aligned keys, and the
   /// values in body ink. Never markdown — see frontmatter.ts for why it never reaches the lexer.
+  ///
+  /// The accepted state is DISPLAY-ONLY, and the click is swallowed. Revealing it for editing
+  /// would not slot into the reveal machinery honestly: frontmatter is not a Block — every
+  /// index, offset and commit path assumes membership in `this.blocks`, which starts at
+  /// `bodyStart` — so an editable header means a parallel reveal/commit/focus path for one
+  /// row of chrome. What must not happen is the click falling through to the page, whose
+  /// meaning is "fold the open block": a click AIMED at the header is not a click away.
   private buildFrontmatter(front: Frontmatter): BoxRenderable {
     const p = this.theme.palette
     const box = new BoxRenderable(this.renderer, {
@@ -360,6 +377,7 @@ export class DocumentView {
       marginBottom: 1,
       backgroundColor: "transparent",
     })
+    box.onMouseDown = (event: MouseEvent) => event.stopPropagation()
     const width = Math.max(...front.entries.map((e) => e.key.length)) + 2
     for (const entry of front.entries) {
       const row = new BoxRenderable(this.renderer, { flexDirection: "row", backgroundColor: "transparent" })
@@ -774,7 +792,15 @@ export class DocumentView {
       if (this.onSearchKey(key, cmd)) return
     }
 
-    if (cmd && key.name === "f") {
+    // While an editor holds focus, ⌃F and ⌃B belong to the EDITOR — OpenTUI's defaults bind
+    // them to move-right/move-left, and a caret key that yanked the writer into search or
+    // into another document mid-word was the audit's sharpest surprise. The emacs siblings
+    // behave alike; ⌘F (super, forwarded by libghostty) still opens search because that
+    // reflex is about the document, not the caret, and Esc → ⌃F stays the plain-terminal
+    // path. Back-navigation is likewise a reading gesture: ⌃B/⌘B only act outside an editor.
+    const editing = this.focusedEditor() !== null
+
+    if (cmd && key.name === "f" && !(editing && !key.super)) {
       key.preventDefault()
       this.openSearch()
       return
@@ -803,6 +829,9 @@ export class DocumentView {
       key.preventDefault()
       const href = this.linkUnderCursor()
       if (href) this.host.onLink(href)
+      // The hint that advertises this key must never lead to a scolding: with no block open
+      // there IS no cursor yet, so teach the two-step instead of reporting its absence.
+      else if (this.revealed < 0) this.flash("click a link's text, then ⌃] opens it")
       else this.flash("no link under the cursor")
       return
     }
@@ -813,10 +842,19 @@ export class DocumentView {
     }
     // ctrl+B, not the ctrl+[ that would pair with ctrl+]: ctrl+[ IS Escape at the byte
     // level, so binding it would either never fire or hijack every Escape in the app.
-    if (cmd && key.name === "b") {
+    // Only outside an editor — see the ⌃F note above.
+    if (cmd && key.name === "b" && !editing) {
       key.preventDefault()
       this.commit()
       this.host.onBack()
+      return
+    }
+    // exitOnCtrlC is off so a stray ^C can never kill a document mid-edit; from the reader
+    // it teaches the real exit instead of doing silently nothing — the one place a
+    // terminal-shaped reflex would otherwise hit a dead key.
+    if (key.ctrl && key.name === "c" && this.mode === "read" && !editing) {
+      key.preventDefault()
+      this.flash("⌃Q quits")
       return
     }
     // The other half of the conflict pair the status line offers beside ⌃S. Gated on the
@@ -855,14 +893,19 @@ export class DocumentView {
 
   private onReaderKey(key: KeyEvent) {
     const page = Math.max(1, this.scroll.viewport.height - 2)
+    // ⌘↑/⌘↓ mean the ends of the document on a Mac; without this they fell into the plain
+    // arrow cases and crawled one line.
+    const cmd = key.ctrl || key.super === true
     switch (key.name) {
       case "down":
       case "j":
-        this.scroll.scrollBy(1)
+        if (cmd) this.scroll.scrollTop = this.scroll.scrollHeight
+        else this.scroll.scrollBy(1)
         break
       case "up":
       case "k":
-        this.scroll.scrollBy(-1)
+        if (cmd) this.scroll.scrollTop = 0
+        else this.scroll.scrollBy(-1)
         break
       case "pagedown":
       case "space":
@@ -1222,27 +1265,56 @@ export class DocumentView {
   private openOutline() {
     this.commit()
     const headings = outline(this.blocks)
-    this.overlay.getChildren().forEach((c) => (c as Renderable).destroyRecursively())
     if (headings.length === 0) {
       this.flash("no headings")
       return
     }
     this.mode = "outline"
+    // Open on the heading the reader is currently inside — "where am I" answered before any
+    // key — which is the last heading at or above the top of the viewport.
+    const at = this.scrollOffsetHint()
     this.outlineIndex = 0
-    const p = this.theme.palette
-    headings.forEach((h, i) => {
-      this.overlay.add(
-        new TextRenderable(this.renderer, {
-          id: `outline-${i}`,
-          content: "  ".repeat(Math.max(0, h.level - 1)) + h.text,
-          fg: i === 0 ? p.accent : p.fg,
-          height: 1,
-        }),
-      )
-    })
-    this.overlay.height = Math.min(headings.length + 2, this.renderer.height - 4)
+    for (let i = 0; i < headings.length; i++) {
+      if (this.blocks[headings[i].index].start <= at) this.outlineIndex = i
+    }
+    this.outlineTop = 0
+    const height = Math.min(headings.length + 2, this.renderer.height - 4)
+    this.overlay.height = height
+    this.outlineCapacity = Math.max(1, height - 2)
     this.overlay.visible = true
+    this.renderOutlineRows(headings)
     this.paintStatus()
+  }
+
+  /// (Re)draw the overlay's rows: the window of headings around the selection, accent on the
+  /// selected one. A long document holds more headings than the overlay has rows, so the
+  /// window slides to keep the selection visible — without this, ↓ walked the accent off the
+  /// bottom of the box and the picker went blind.
+  private renderOutlineRows(headings: ReturnType<typeof outline>) {
+    const capacity = this.outlineCapacity
+    if (this.outlineIndex < this.outlineTop) this.outlineTop = this.outlineIndex
+    if (this.outlineIndex >= this.outlineTop + capacity) this.outlineTop = this.outlineIndex - capacity + 1
+    this.outlineTop = Math.max(0, Math.min(this.outlineTop, Math.max(0, headings.length - capacity)))
+
+    this.overlay.getChildren().forEach((c) => (c as Renderable).destroyRecursively())
+    const p = this.theme.palette
+    for (let i = this.outlineTop; i < Math.min(headings.length, this.outlineTop + capacity); i++) {
+      const h = headings[i]
+      const row = new TextRenderable(this.renderer, {
+        id: `outline-${i}`,
+        content: "  ".repeat(Math.max(0, h.level - 1)) + h.text,
+        fg: i === this.outlineIndex ? p.accent : p.fg,
+        height: 1,
+      })
+      // The rows look clickable, so they are: a click jumps, exactly like ⏎ on the row.
+      row.onMouseDown = (event: MouseEvent) => {
+        event.stopPropagation()
+        this.closeOverlays()
+        this.jumpToBlock(h.index)
+      }
+      this.overlay.add(row)
+    }
+    this.renderer.requestRender()
   }
 
   private onOutlineKey(key: KeyEvent): boolean {
@@ -1250,12 +1322,12 @@ export class DocumentView {
     if (headings.length === 0) return false
     if (key.name === "down" || key.name === "j") {
       key.preventDefault()
-      this.moveOutline(1, headings.length)
+      this.moveOutline(1, headings)
       return true
     }
     if (key.name === "up" || key.name === "k") {
       key.preventDefault()
-      this.moveOutline(-1, headings.length)
+      this.moveOutline(-1, headings)
       return true
     }
     if (key.name === "return") {
@@ -1268,23 +1340,48 @@ export class DocumentView {
     return false
   }
 
-  private moveOutline(dir: 1 | -1, count: number) {
-    const p = this.theme.palette
-    const previous = this.overlay.getRenderable(`outline-${this.outlineIndex}`) as TextRenderable | undefined
-    if (previous) previous.fg = p.fg
+  private moveOutline(dir: 1 | -1, headings: ReturnType<typeof outline>) {
+    const count = headings.length
     this.outlineIndex = (this.outlineIndex + dir + count) % count
-    const next = this.overlay.getRenderable(`outline-${this.outlineIndex}`) as TextRenderable | undefined
-    if (next) next.fg = p.accent
+    this.renderOutlineRows(headings)
   }
 
+  /// Jump to the heading a `#fragment` names, matched the way GitHub mints anchors — that is
+  /// what an author writing `[…](#section)` is quoting.
+  jumpToFragment(fragment: string) {
+    // Following a link is leaving: whatever block is open folds first, like any navigation.
+    this.commit()
+    const want = anchorSlug(decodeURIComponent(fragment))
+    const target = outline(this.blocks).find((h) => anchorSlug(h.text) === want)
+    if (!target) {
+      this.flash("no such heading")
+      return
+    }
+    this.jumpToBlock(target.index)
+  }
+
+  /// Scroll a block's top to the top of the viewport. Deferred until the layout exists: a
+  /// caller arriving straight from a commit (fragment jumps) or a load (cross-document
+  /// fragments) is reading a freshly rebuilt tree whose screenY is still zero, and an
+  /// immediate scroll would compute garbage.
   private jumpToBlock(index: number) {
     const viewIndex = this.viewIndexOf(index)
     if (viewIndex < 0) return
-    const view = this.views[viewIndex]
-    this.scroll.scrollTop = Math.max(
-      0,
-      view.root.screenY - this.scroll.viewport.screenY + this.scroll.scrollTop,
-    )
+    const root = this.views[viewIndex].root
+    let tries = 0
+    const jump = () => {
+      if (this.disposed || root.isDestroyed) return
+      if (root.height <= 0) {
+        if (++tries < 25) setTimeout(jump, 8)
+        return
+      }
+      this.scroll.scrollTop = Math.max(
+        0,
+        root.screenY - this.scroll.viewport.screenY + this.scroll.scrollTop,
+      )
+      this.renderer.requestRender()
+    }
+    jump()
   }
 
   private closeOverlays() {
@@ -1335,6 +1432,9 @@ export class DocumentView {
     // A block opened by search stepping: raw on screen, but no keyboard focus — the reader
     // is still reading, one Enter (or click) away from editing at the match.
     else if (this.revealed >= 0) parts.push("⏎ edit · esc to render")
+    // ⌃] earns its cells only in a document that has links to open; pressing it from here
+    // answers with the two-step rather than a scolding, so the hint never dead-ends.
+    else if (this.hasLinks) parts.push("⌃F find · ⌃O outline · ⌃] links · click to edit")
     else parts.push("⌃F find · ⌃O outline · click to edit")
 
     this.statusBar.content = parts.join("  ·  ")

@@ -277,6 +277,22 @@ describe("block reveal", () => {
     await h.dispose()
   }, 30000)
 
+  test("clicking the frontmatter header neither folds the open block nor edits", async () => {
+    const h = await open("---\ntitle: Plan\n---\n\nSome **bold** prose.\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Some") + 2, rowOf(frame, "Some"))
+    frame = await h.frame()
+    expect(trim(frame)).toContain("Some **bold** prose.")
+
+    // The header is display-only (see buildFrontmatter): a click aimed AT it is not a click
+    // away, so the open block stays open — and no editor appears over the header.
+    await h.mouse.click(colOf(frame, "title"), rowOf(frame, "title"))
+    frame = trim(await h.frame())
+    expect(frame).toContain("Some **bold** prose.")
+    expect(frame).not.toContain("---")
+    await h.dispose()
+  }, 30000)
+
   test("escape from a plain reading view does nothing rather than becoming a mode", async () => {
     const h = await open("# Title\n\nProse.\n")
     const before = await h.frame()
@@ -824,6 +840,136 @@ describe("links", () => {
     expect(frame).not.toContain("filler line 0")
     await h.dispose()
   }, 30000)
+
+  test("⌃] on a #fragment jumps to its heading", async () => {
+    const filler = Array.from({ length: 30 }, (_, i) => `filler line ${i}`).join("\n\n")
+    const h = await open(`[go](#deep-section)\n\n${filler}\n\n## Deep Section\n\nthe target paragraph\n`, {
+      height: 20,
+    })
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "go"), rowOf(frame, "go"))
+    await h.frame()
+    h.keys.pressKey("]", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("Deep Section")
+    expect(frame).toContain("the target paragraph")
+    await h.dispose()
+  }, 30000)
+
+  test("⌃] on a fragment with no such heading says so", async () => {
+    const h = await open("[go](#nowhere)\n\n## Real Heading\n\nprose\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "go"), rowOf(frame, "go"))
+    await h.frame()
+    h.keys.pressKey("]", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("no such heading")
+    await h.dispose()
+  }, 30000)
+
+  test("a cross-document fragment lands on the heading, and the way back is taught", async () => {
+    const filler = Array.from({ length: 30 }, (_, i) => `c filler ${i}`).join("\n\n")
+    const h = await open("[go](./c.md#part-two)\n", { height: 20 })
+    await writeFile(
+      join(dirname(h.path), "c.md"),
+      `# C Top\n\n${filler}\n\n## Part Two\n\nthe far paragraph\n`,
+      "utf8",
+    )
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "go"), rowOf(frame, "go"))
+    await h.frame()
+    h.keys.pressKey("]", { ctrl: true })
+    frame = trim(await h.frame())
+    // Landed on the fragment's section, pages past the title — with ⌃B advertised at the
+    // exact moment it became useful.
+    expect(frame).toContain("Part Two")
+    expect(frame).toContain("the far paragraph")
+    expect(frame).not.toContain("C Top")
+    expect(frame).toContain("⌃B back")
+    await h.dispose()
+  }, 30000)
+
+  test("the read-mode hint offers ⌃] only when the document has links", async () => {
+    const linked = await open("see [the notes](./notes.md)\n")
+    expect(trim(await linked.frame())).toContain("⌃] links")
+    await linked.dispose()
+
+    const plain = await open("no links here at all\n")
+    expect(trim(await plain.frame())).not.toContain("⌃] links")
+    await plain.dispose()
+  }, 30000)
+
+  test("⌃] from the plain reader teaches the two-step instead of scolding", async () => {
+    const h = await open("see [the notes](./notes.md)\n")
+    await h.frame()
+    h.keys.pressKey("]", { ctrl: true })
+    expect(trim(await h.frame())).toContain("then ⌃] opens it")
+    await h.dispose()
+  }, 30000)
+})
+
+describe("chords while editing", () => {
+  test("⌃B moves the caret instead of navigating away", async () => {
+    const h = await open("plain **p**\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "plain"), rowOf(frame, "plain"))
+    h.keys.pressKey("END")
+    // Emacs move-left: one column back from the end, and the block stays open.
+    h.keys.pressKey("b", { ctrl: true })
+    await h.keys.typeText("X")
+    frame = trim(await h.frame())
+    expect(h.app.fileState.text).toBe("plain **p*X*\n")
+    expect(frame).toContain("editing")
+    await h.dispose()
+  }, 30000)
+
+  test("⌃F moves the caret; Esc then ⌃F still reaches search", async () => {
+    const h = await open("plain **p**\n")
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "plain"), rowOf(frame, "plain"))
+    h.keys.pressKey("HOME")
+    // Emacs move-right — the sibling of ⌃B, behaving alike.
+    h.keys.pressKey("f", { ctrl: true })
+    await h.keys.typeText("X")
+    await h.frame()
+    expect(h.app.fileState.text).toBe("pXlain **p**\n")
+
+    // Search is one fold away, exactly as documented. (The settle between the two keys
+    // matters: a bare ESC byte chased immediately by ^F reads as one meta-chord.)
+    h.keys.pressEscape()
+    await h.frame()
+    h.keys.pressKey("f", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("⇧⏎ prev")
+    await h.dispose()
+  }, 30000)
+})
+
+describe("discoverability", () => {
+  test("⌃C from the reader teaches the real exit", async () => {
+    const h = await open("just prose\n")
+    await h.frame()
+    h.keys.pressKey("c", { ctrl: true })
+    expect(trim(await h.frame())).toContain("⌃Q quits")
+    await h.dispose()
+  }, 30000)
+
+  test("⌘↓ and ⌘↑ jump to the ends of the document", async () => {
+    const paragraphs = Array.from({ length: 40 }, (_, i) => `paragraph ${i}`).join("\n\n")
+    const h = await open(`${paragraphs}\n`, { height: 20 })
+    let frame = await h.frame()
+    expect(trim(frame)).toContain("paragraph 0")
+
+    h.keys.pressArrow("down", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("paragraph 39")
+    expect(frame).not.toContain("paragraph 0")
+
+    h.keys.pressArrow("up", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("paragraph 0")
+    await h.dispose()
+  }, 30000)
 })
 
 describe("status flash", () => {
@@ -999,6 +1145,60 @@ describe("outline", () => {
     await h.frame()
     h.keys.pressKey("o", { ctrl: true })
     expect(trim(await h.frame())).toContain("no headings")
+    await h.dispose()
+  }, 30000)
+
+  test("opens on the heading the reader is inside, not the first", async () => {
+    const filler = Array.from({ length: 25 }, (_, i) => `alpha body ${i}`).join("\n\n")
+    const tail = Array.from({ length: 20 }, (_, i) => `omega body ${i}`).join("\n\n")
+    const h = await open(`# Alpha Head\n\n${filler}\n\n## Omega Head\n\n${tail}\n`, { height: 20 })
+    await h.frame()
+
+    // Read deep into the second section, then ask "where am I".
+    h.keys.pressKey("END")
+    await h.frame()
+    h.keys.pressKey("o", { ctrl: true })
+    // ⏎ with no arrow pressed: the selection already sits on the section being read.
+    h.keys.pressEnter()
+    const frame = trim(await h.frame())
+    expect(frame).toContain("Omega Head")
+    expect(frame).not.toContain("Alpha Head")
+    await h.dispose()
+  }, 30000)
+
+  test("clicking an outline row jumps, the same as ⏎", async () => {
+    const filler = Array.from({ length: 25 }, (_, i) => `alpha body ${i}`).join("\n\n")
+    const h = await open(`# Alpha Head\n\n${filler}\n\n## Omega Head\n\ntail text\n`, { height: 20 })
+    await h.frame()
+    h.keys.pressKey("o", { ctrl: true })
+    let frame = await h.frame()
+
+    await h.mouse.click(colOf(frame, "Omega Head"), rowOf(frame, "Omega Head"))
+    frame = trim(await h.frame())
+    expect(frame).not.toContain("⏎ jump")
+    expect(frame).toContain("tail text")
+    await h.dispose()
+  }, 30000)
+
+  test("the selection window slides when the list outgrows the overlay", async () => {
+    const doc = Array.from({ length: 30 }, (_, i) => `## H${i} heading\n\nbody ${i}\n`).join("\n")
+    const h = await open(doc, { height: 16 })
+    await h.frame()
+    h.keys.pressKey("o", { ctrl: true })
+    // The overlay window starts at the selection; the last heading is pages below it.
+    let frame = trim(await h.frame())
+    expect(frame).not.toContain("H29 heading")
+
+    // ↑ wraps to the last heading — past the overlay's rows, so the window must follow the
+    // selection or the picker goes blind.
+    h.keys.pressArrow("up")
+    frame = trim(await h.frame())
+    expect(frame).toContain("H29 heading")
+
+    // And back down to the top.
+    h.keys.pressArrow("down")
+    frame = trim(await h.frame())
+    expect(frame).not.toContain("H29 heading")
     await h.dispose()
   }, 30000)
 })

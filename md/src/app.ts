@@ -122,9 +122,19 @@ export class App {
   private async followLink(href: string) {
     const target = resolveLink(href, this.path)
     if (target.kind === "document") {
-      if (target.path === this.path) return
+      if (target.path === this.path) {
+        // Same document: the only work is the fragment. Without one there is nowhere to go,
+        // and silence would read as a broken key.
+        if (target.fragment) this.view.jumpToFragment(target.fragment)
+        else this.view.flash("already here")
+        return
+      }
       this.history.push(this.path, this.view.scrollTop)
       await this.load(target.path)
+      // The way back is a chord nobody can guess; teach it at the exact moment it becomes
+      // useful. A fragment jump's own failure flash ("no such heading") outranks it.
+      this.view.flash("⌃B back")
+      if (target.fragment) this.view.jumpToFragment(target.fragment)
       return
     }
     const opened = await this.openExternal(target.url)

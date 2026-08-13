@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { splitFrontmatter } from "../src/frontmatter"
 import { find, matchesWithin, step } from "../src/search"
-import { History, resolveLink } from "../src/links"
+import { anchorSlug, History, resolveLink } from "../src/links"
 import { readTheme } from "../src/theme"
 
 describe("frontmatter", () => {
@@ -101,8 +101,18 @@ describe("resolveLink", () => {
     await writeFile(sibling, "", "utf8")
 
     expect(resolveLink("./notes.md", from)).toEqual({ kind: "document", path: sibling })
-    expect(resolveLink("notes.md#section", from)).toEqual({ kind: "document", path: sibling })
+    // A fragment rides along, so the caller can finish the jump after the load.
+    expect(resolveLink("notes.md#section", from)).toEqual({
+      kind: "document",
+      path: sibling,
+      fragment: "section",
+    })
     expect(resolveLink(`file://${sibling}`, from)).toEqual({ kind: "document", path: sibling })
+    expect(resolveLink(`file://${sibling}#part-two`, from)).toEqual({
+      kind: "document",
+      path: sibling,
+      fragment: "part-two",
+    })
   })
 
   test("hands a markdown link that does not exist to the app, which explains itself", async () => {
@@ -129,7 +139,23 @@ describe("resolveLink", () => {
   })
 
   test("treats a bare fragment as staying in this document", () => {
-    expect(resolveLink("#section", "/tmp/doc.md")).toEqual({ kind: "document", path: "/tmp/doc.md" })
+    expect(resolveLink("#section", "/tmp/doc.md")).toEqual({
+      kind: "document",
+      path: "/tmp/doc.md",
+      fragment: "section",
+    })
+  })
+})
+
+describe("anchorSlug", () => {
+  test("mints GitHub-style anchors from heading text", () => {
+    expect(anchorSlug("Deep Section")).toBe("deep-section")
+    expect(anchorSlug("What's New?")).toBe("whats-new")
+    // Both sides of the comparison go through the slug, so a GitHub-minted double-hyphen
+    // anchor and the heading it names meet in the middle.
+    expect(anchorSlug("v2.0 — the_plan")).toBe("v20-the_plan")
+    expect(anchorSlug("v20--the_plan")).toBe("v20-the_plan")
+    expect(anchorSlug("deep-section")).toBe("deep-section")
   })
 })
 

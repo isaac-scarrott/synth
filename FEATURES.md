@@ -1987,3 +1987,6 @@ disclosure to dive deeper.
   move the caret while typing (⌘F searches), fragment links jump to headings, the outline is
   clickable and opens where you are, and the status line teaches ⌃] / ⌃B / ⌃Q at the moment
   each matters (`md/src/view.ts`, `links.ts`, `app.ts`).
+- **Markdown editing: one unbroken undo timeline** — ⌃Z works from reading, steps the open
+  editor's history first while typing, and continues through the fold into a document-level
+  stack; ⌃Y redoes; reloads, ⌃R, and navigation are epoch boundaries (`md/src/view.ts`).

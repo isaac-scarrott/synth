@@ -40,16 +40,17 @@ const BULLET = ["•", "◦", "▪"]
 /// allowed in TerminalTheme), and a paste arrives here as a bracketed-paste event the editor
 /// already handles. Binding them again inside the TUI would fight the terminal for the same
 /// keys and lose the system pasteboard in the process.
+///
+/// ⌘←/→ are deliberately NOT rebound: OpenTUI's defaults already map them to the VISUAL line
+/// home/end, which is what a Mac means by them on a wrapped paragraph. Rebinding them to the
+/// logical `line-home`/`line-end` here would vault the caret across wrapped lines — the same
+/// visual-vs-logical bug the block-edge arrow fix cured.
 const CUA_BINDINGS = [
   { name: "z", ctrl: true, action: "undo" },
   { name: "z", ctrl: true, shift: true, action: "redo" },
   { name: "y", ctrl: true, action: "redo" },
   { name: "a", ctrl: true, action: "select-all" },
   { name: "a", super: true, action: "select-all" },
-  { name: "left", super: true, action: "line-home" },
-  { name: "right", super: true, action: "line-end" },
-  { name: "left", super: true, shift: true, action: "select-line-home" },
-  { name: "right", super: true, shift: true, action: "select-line-end" },
 ] as const
 
 export interface ViewHost {
@@ -114,6 +115,8 @@ export class DocumentView {
   private dirty = false
   private conflicted = false
   private note = ""
+  private noteTimer: ReturnType<typeof setTimeout> | null = null
+  private disposed = false
 
   constructor(renderer: CliRenderer, theme: Theme, treeSitter: TreeSitterClient, host: ViewHost) {
     this.renderer = renderer
@@ -212,6 +215,11 @@ export class DocumentView {
 
   setSource(source: string, options: { preserveScroll?: boolean } = {}) {
     const scrollTop = this.scroll.scrollTop
+    // The rebuild below destroys any open editor, so the reveal bookkeeping must go with it.
+    // Leaving `revealed` pointing at a destroyed editor after an external reload made the
+    // status line claim "editing" while keystrokes fell into the gap between modes.
+    this.revealed = -1
+    this.revealedSuffix = ""
     this.source = source
     const { front, body } = splitFrontmatter(source)
     this.front = front
@@ -247,15 +255,33 @@ export class DocumentView {
     this.paintStatus()
   }
 
+  /// Stop the timers the view owns. The renderer outlives none of them: a flash's self-clear
+  /// or a deferred caret refinement firing after teardown paints into destroyed renderables
+  /// and throws — from a test, into whatever unrelated test is running 2.5 seconds later.
+  dispose() {
+    this.disposed = true
+    if (this.noteTimer) clearTimeout(this.noteTimer)
+    this.noteTimer = null
+  }
+
   setFlags(flags: { dirty: boolean; conflicted: boolean }) {
     this.dirty = flags.dirty
     this.conflicted = flags.conflicted
     this.paintStatus()
   }
 
+  /// A transient status note. It clears itself: a "reloaded" or "no headings" that lingers
+  /// for the session stops being information and starts burying the dirty/conflict signals
+  /// beside it.
   flash(note: string) {
     this.note = note
     this.paintStatus()
+    if (this.noteTimer) clearTimeout(this.noteTimer)
+    this.noteTimer = setTimeout(() => {
+      this.note = ""
+      this.noteTimer = null
+      this.paintStatus()
+    }, 2500)
   }
 
   private rebuild() {
@@ -269,14 +295,19 @@ export class DocumentView {
       this.column.add(this.frontView)
     }
 
+    // An all-blank document (a new file, or one emptied out) still needs one view: with
+    // nothing to click and nothing for Enter to reveal, an empty buffer would be uneditable
+    // and `synth newfile.md` a dead end.
+    const hasEditable = this.blocks.some((b) => b.kind !== "blank")
     let previousWasListItem = false
     for (let i = 0; i < this.blocks.length; i++) {
       const block = this.blocks[i]
-      if (block.kind === "blank") continue
+      if (block.kind === "blank" && hasEditable) continue
       const view = this.buildBlock(block, i, previousWasListItem)
       this.views.push(view)
       this.column.add(view.root)
       previousWasListItem = block.kind === "list-item"
+      if (block.kind === "blank") break
     }
     this.applyHighlights()
   }
@@ -309,6 +340,9 @@ export class DocumentView {
       marginTop: tight ? 0 : index === 0 ? 0 : 1,
       marginLeft: block.listDepth * 2,
       backgroundColor: "transparent",
+      // A blank-only document renders no text at all; one cell of height keeps the empty
+      // block clickable so the file can be edited into existence.
+      minHeight: block.kind === "blank" ? 1 : undefined,
     })
 
     let checkbox: TextRenderable | null = null
@@ -376,10 +410,10 @@ export class DocumentView {
 
   /// Map a click on a RENDERED block to a caret position in its RAW source.
   ///
-  /// Two shifts separate the two, and both are on the first line only. The view draws its own
-  /// gutter glyph for list items (`□ `, `• `), which occupies screen columns the raw does not
-  /// have; and `conceal` hides the block's own marker (`# `, `- [ ] `, `> `), which occupies
-  /// raw columns the screen does not have. Subtract the first, add the second.
+  /// The view's own gutter glyph for list items (`□ `, `• `) occupies screen columns the raw
+  /// does not have, so it is subtracted here; everything conceal hides — markers, fence
+  /// lines, per-line quote prefixes — is added back in `placeCaretAtClick`, which also owns
+  /// the visual-to-logical mapping once the editor has laid out its wrap.
   private onBlockClick(index: number, root: BoxRenderable, event: MouseEvent) {
     // A click that lands on a block is that block's business. Without this it would also
     // reach the page behind, whose job is to fold the open block back — so every click would
@@ -390,7 +424,7 @@ export class DocumentView {
     const row = Math.max(0, event.y - root.screenY)
     const gutter = view?.checkbox?.width ?? 0
     const column = Math.max(0, event.x - root.screenX - gutter)
-    this.reveal(index, { row, col: column + (row === 0 ? concealedPrefixWidth(this.blocks[index]) : 0) })
+    this.reveal(index, { row, col: column })
   }
 
   private viewIndexOf(blockIndex: number): number {
@@ -399,17 +433,19 @@ export class DocumentView {
 
   /// Swap the rendered block for a focused editor over its raw source.
   ///
-  /// The cursor lands at the clicked cell's own row/column inside the raw. That is an
-  /// approximation on purpose: `conceal` means the raw is strictly longer than what was on
-  /// screen, so a click deep into a heavily-marked-up line lands slightly left of the glyph
-  /// aimed at. It is never the wrong block or the wrong line, one arrow key fixes it, and the
-  /// exact alternative is a rendered-to-source offset map per inline token.
+  /// The cursor lands where the click aimed, mapped through the editor's own wrap layout
+  /// (`placeCaretAtClick`). The remaining approximation is columns only: `conceal` makes the
+  /// raw slightly longer than what was on screen, so a click deep into a heavily-marked-up
+  /// line lands slightly left of the glyph aimed at — never on the wrong line, and one arrow
+  /// key fixes it.
   reveal(index: number, at: { row: number; col: number } | "start" | "end" = "start") {
     if (index < 0 || index >= this.blocks.length) return
     if (this.blocks[index].kind === "blank") {
       const editable = nextEditable(this.blocks, index, 1)
-      if (editable < 0) return
-      index = editable
+      // No editable block anywhere means an empty document; the blank IS the document, and
+      // revealing it is the only way to start typing into a new file.
+      if (editable >= 0) index = editable
+      else if (this.viewIndexOf(index) < 0) return
     }
     if (this.revealed === index) return
     this.commit()
@@ -458,10 +494,87 @@ export class DocumentView {
 
     if (at === "start") editor.setCursor(0, 0)
     else if (at === "end") editor.gotoBufferEnd()
-    else editor.setCursor(at.row, at.col)
+    else this.placeCaretAtClick(editor, block, at)
 
+    // Editing something you cannot see is never right: Enter from a scrolled reader and
+    // arrowing across blocks both reveal off-screen, and without this the caret walks out of
+    // the viewport while the status line claims "editing".
+    this.scrollBlockIntoView(view.root)
     this.paintStatus()
     this.renderer.requestRender()
+  }
+
+  /// Put the caret where a click on the RENDERED block aimed, once the editor can say what
+  /// the eye was looking at.
+  ///
+  /// Two corrections, then a mapping. The corrections un-hide what conceal hid: a fence's
+  /// opening ``` line occupies a raw row the screen never showed (so the row shifts down),
+  /// and a blockquote's `> ` starts every raw line (so continuation columns shift right) —
+  /// the first line's own marker is the row-0 case of the same shift. The mapping is
+  /// visual→logical through the editor's wrap layout: `setCursor(row, col)` speaks LOGICAL
+  /// lines, and handing it a screen row called a wrapped paragraph "row 0" and put the caret
+  /// lines away from the aim point.
+  ///
+  /// The editor has no layout until the next frame — its width, and therefore its wrap, is
+  /// unknown here — so the caret parks at the start and the mapping runs when the lines
+  /// exist. If the user types or moves before then, their position wins.
+  private placeCaretAtClick(editor: TextareaRenderable, block: Block, at: { row: number; col: number }) {
+    const rawLines = block.raw.split("\n")
+    const y = at.row + hiddenLeadRows(block)
+    const line = rawLines[Math.min(y, rawLines.length - 1)] ?? ""
+    const x = at.col + concealedLinePrefixWidth(block, y, line)
+    // Best effort NOW, so a click-and-type never waits a frame: exact for any unwrapped
+    // line, and no worse than the visual row for a wrapped one.
+    editor.setCursor(Math.min(y, rawLines.length - 1), x)
+    const parked = editor.logicalCursor.offset
+    let tries = 0
+    const place = () => {
+      if (this.disposed) return
+      if (this.views[this.viewIndexOf(this.revealed)]?.editor !== editor) return
+      if (editor.width <= 0) {
+        if (++tries < 25) setTimeout(place, 8)
+        return
+      }
+      // The user typed or moved before the layout arrived — their position wins.
+      if (editor.logicalCursor.offset !== parked) return
+      const info = editor.editorView.getLineInfo()
+      if (info.lineSources.length === 0) return
+      const vy = Math.min(y, info.lineSources.length - 1)
+      editor.setCursor(info.lineSources[vy] ?? 0, (info.lineStartCols[vy] ?? 0) + x)
+      this.renderer.requestRender()
+    }
+    setTimeout(place, 0)
+  }
+
+  /// Scroll the block into view if it is off-screen, the same landing revealMatch gives a
+  /// search hit: upper third, with its context around it.
+  ///
+  /// Twice, because reveal has two arrival paths. From a rendered document (Enter, a click)
+  /// the layout is current and the immediate nudge is exact. But arrowing across blocks goes
+  /// through commit, whose rebuild replaces every renderable — the new tree has no layout
+  /// until the next frame, screenY reads 0, and the immediate nudge is a no-op. So nudge
+  /// again once the layout exists; a block already in view makes the second pass a no-op.
+  private scrollBlockIntoView(root: BoxRenderable) {
+    this.nudgeScrollTo(root)
+    let tries = 0
+    const nudge = () => {
+      if (this.disposed || root.isDestroyed) return
+      if (root.height <= 0) {
+        if (++tries < 25) setTimeout(nudge, 8)
+        return
+      }
+      this.nudgeScrollTo(root)
+    }
+    setTimeout(nudge, 0)
+  }
+
+  private nudgeScrollTo(root: BoxRenderable) {
+    const top = root.screenY - this.scroll.viewport.screenY + this.scroll.scrollTop
+    const height = this.scroll.viewport.height
+    if (top < this.scroll.scrollTop || top > this.scroll.scrollTop + height - 2) {
+      this.scroll.scrollTop = Math.max(0, top - Math.floor(height / 3))
+      this.renderer.requestRender()
+    }
   }
 
   /// Fold the revealed block back into the document. Idempotent, so every path that leaves a
@@ -560,7 +673,10 @@ export class DocumentView {
     }
     if (cmd && key.name === "s") {
       key.preventDefault()
-      this.commit()
+      // Save WITHOUT folding the open block: the document text is live-synced on every
+      // keystroke, so the flush needs no commit — and a habitual mid-typing ⌘S that closed
+      // the editor would punish the most ingrained Mac reflex there is. Renumbering still
+      // happens on the natural fold, exactly as it does for autosave.
       this.host.onSave()
       return
     }
@@ -633,9 +749,13 @@ export class DocumentView {
         this.scroll.scrollTop = this.scroll.scrollHeight
         break
       case "return":
-        // Enter from the reader opens the first block for editing — the keyboard-only way in,
-        // so the editor is never mouse-gated.
-        this.reveal(nextEditable(this.blocks, 0, 1))
+        // Enter from the reader opens the first VISIBLE block for editing — the keyboard-only
+        // way in, so the editor is never mouse-gated. The first block of the file would be
+        // wrong the moment the reader has scrolled: it would put the caret pages away from
+        // what they are looking at. preventDefault, or the very Enter that revealed the block
+        // reaches the editor it just focused and types a newline into it.
+        key.preventDefault()
+        this.reveal(this.firstVisibleBlockIndex())
         break
       case "n":
         this.stepSearch(1)
@@ -834,6 +954,15 @@ export class DocumentView {
     return 0
   }
 
+  /// The first block whose top is inside the viewport — what "here" means to a scrolled
+  /// reader pressing Enter.
+  private firstVisibleBlockIndex(): number {
+    for (const view of this.views) {
+      if (view.root.screenY >= this.scroll.viewport.screenY) return this.blocks.indexOf(view.block)
+    }
+    return nextEditable(this.blocks, 0, 1)
+  }
+
   // MARK: outline
 
   private openOutline() {
@@ -935,12 +1064,14 @@ export class DocumentView {
     const parts: string[] = []
     if (this.conflicted) parts.push("changed on disk — ⌃S keeps yours")
     else if (this.dirty) parts.push("unsaved")
-    if (this.matches.query) {
-      parts.push(
-        this.matches.offsets.length === 0
-          ? `no match for "${this.matches.query}"`
-          : `${this.matches.current + 1}/${this.matches.offsets.length}`,
-      )
+    if (this.matches.query && this.matches.offsets.length > 0) {
+      const count = `${this.matches.current + 1}/${this.matches.offsets.length}`
+      // Matches outlive the search bar so n/p can keep stepping — but a bare count lingering
+      // after Esc reads as a stuck indicator unless the keys that explain it ride along.
+      const stepping = this.mode === "read" && this.revealed < 0
+      parts.push(stepping ? `${count} · n next · p prev` : count)
+    } else if (this.matches.query && this.mode === "search") {
+      parts.push(`no match for "${this.matches.query}"`)
     }
     if (this.note) parts.push(this.note)
     if (this.mode === "outline") parts.push("↑↓ pick · ⏎ jump · esc close")
@@ -958,17 +1089,24 @@ export class DocumentView {
   }
 }
 
-/// How many leading characters of a block's first raw line `conceal` hides from the reader.
-/// The inverse of that hiding is what maps a click back onto the source.
-function concealedPrefixWidth(block: Block): number {
-  const first = block.raw.split("\n")[0]
+/// Whole raw rows the rendered block never showed. A fence's opening ``` line is concealed,
+/// so the screen's first code row is the raw's second row; without this every fence click
+/// lands one line high.
+function hiddenLeadRows(block: Block): number {
+  return block.kind === "code" ? 1 : 0
+}
+
+/// How many leading characters of raw line `y` conceal hides from the reader. The inverse of
+/// that hiding is what maps a click back onto the source. Markers live on the first line;
+/// a blockquote's `> ` starts every line.
+function concealedLinePrefixWidth(block: Block, y: number, line: string): number {
+  if (block.kind === "blockquote") return /^\s*>\s?/.exec(line)?.[0].length ?? 0
+  if (y > 0) return 0
   switch (block.kind) {
     case "heading":
-      return /^#{1,6}\s*/.exec(first)?.[0].length ?? 0
+      return /^#{1,6}\s*/.exec(line)?.[0].length ?? 0
     case "list-item":
-      return listItemPrefix(first).length
-    case "blockquote":
-      return /^\s*>\s?/.exec(first)?.[0].length ?? 0
+      return listItemPrefix(line).length
     default:
       return 0
   }

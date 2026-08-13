@@ -197,6 +197,84 @@ describe("block reveal", () => {
     await h.dispose()
   }, 30000)
 
+  /// Distinct words, no inline markup, longer than the 84-column measure: raw and rendered
+  /// are byte-identical, so the wrap-aware click mapping can be asserted to the character —
+  /// any concealment or wrap drift would land the caret on the wrong word.
+  test("clicking a word on the second visual line of a wrapped paragraph lands there", async () => {
+    const words = Array.from({ length: 30 }, (_, i) => `word${String(i).padStart(2, "0")}`)
+    const h = await open(words.join(" ") + "\n")
+    const frame = await h.frame()
+    const firstRow = rowOf(frame, "word00")
+    // A word the wrap pushed onto the SECOND visual line — found on screen, not computed,
+    // so the test keeps working if the measure changes.
+    const target = words.find((w) => rowOf(frame, w) === firstRow + 1)
+    expect(target).toBeTruthy()
+    await h.mouse.click(colOf(frame, target!), rowOf(frame, target!))
+    // A settled frame before typing: the visual→logical refinement runs one frame after the
+    // click, once the editor has laid out its wrap.
+    await h.frame()
+    await h.keys.typeText("QQ")
+    await h.frame()
+
+    // The caret was ON the clicked word — not at the paragraph start, not on line 1.
+    expect(h.app.fileState.text).toContain("QQ" + target)
+    await h.dispose()
+  }, 30000)
+
+  test("click then type immediately lands at the clicked character on a single line", async () => {
+    const h = await open("# Title\n\nProse here today.\n")
+    const frame = await h.frame()
+    // Between "Prose " and "here" — and type with no settled frame in between, which is the
+    // synchronous fast path: the deferred refinement must yield to the user's keystrokes.
+    await h.mouse.click(colOf(frame, "Prose here today.") + 6, rowOf(frame, "Prose here today."))
+    await h.keys.typeText("ZZ")
+    await h.frame()
+
+    expect(h.app.fileState.text).toContain("Prose ZZhere today.")
+    await h.dispose()
+  }, 30000)
+
+  test("Enter after scrolling reveals a block the reader can see", async () => {
+    const doc = Array.from({ length: 30 }, (_, i) => `paragraph ${i}`).join("\n\n") + "\n"
+    const h = await open(doc, { height: 20 })
+    await h.frame()
+    h.keys.pressKey("\x1b[6~") // pagedown
+    await h.frame()
+    h.keys.pressKey("\x1b[6~")
+    await h.frame()
+
+    h.keys.pressEnter()
+    await h.keys.typeText("MM")
+    await h.frame()
+
+    // The reveal went to a block inside the scrolled viewport, not back to the top of the
+    // file — the caret would otherwise be pages away from what the reader was looking at.
+    const landed = /MMparagraph (\d+)/.exec(h.app.fileState.text)
+    expect(landed).not.toBeNull()
+    expect(Number(landed![1])).toBeGreaterThan(5)
+    await h.dispose()
+  }, 30000)
+
+  test("arrowing down through many blocks keeps the caret on screen", async () => {
+    const doc = Array.from({ length: 30 }, (_, i) => `paragraph ${i}`).join("\n\n") + "\n"
+    const h = await open(doc, { height: 20 })
+    await h.frame()
+    h.keys.pressEnter()
+    await h.frame()
+    // Each press is at the single-line block's bottom edge, so each steps to the next block.
+    for (let i = 0; i < 15; i++) {
+      h.keys.pressArrow("down")
+      await h.frame()
+    }
+    await h.keys.typeText("VV")
+    const frame = trim(await h.frame())
+
+    expect(h.app.fileState.text).toContain("VVparagraph 15")
+    // The scroll followed the reveal: what is being edited is on screen.
+    expect(frame).toContain("VVparagraph 15")
+    await h.dispose()
+  }, 30000)
+
   test("escape from a plain reading view does nothing rather than becoming a mode", async () => {
     const h = await open("# Title\n\nProse.\n")
     const before = await h.frame()
@@ -347,6 +425,64 @@ describe("editing", () => {
   }, 30000)
 })
 
+describe("empty documents", () => {
+  /// `synth newfile.md`: a zero-byte file must still be a document someone can type into —
+  /// no block to click and nothing for Enter to reveal was a dead end.
+  test("Enter on an empty file opens an editor, and typing fills the file", async () => {
+    const h = await open("")
+    await h.frame()
+    h.keys.pressEnter()
+    await h.keys.typeText("hello world")
+    h.keys.pressEscape()
+    const frame = trim(await h.frame())
+
+    expect(frame).toContain("hello world")
+    expect(h.app.fileState.text.startsWith("hello world")).toBe(true)
+    await h.dispose()
+  }, 30000)
+
+  test("clicking into an empty file also opens the editor", async () => {
+    const h = await open("")
+    await h.frame()
+    // The lone blank block sits at the top of the column; it renders no text, so the click
+    // aims at coordinates rather than at a needle in the frame.
+    await h.mouse.click(10, 0)
+    await h.keys.typeText("clicked into being")
+    h.keys.pressEscape()
+    const frame = trim(await h.frame())
+
+    expect(frame).toContain("clicked into being")
+    expect(h.app.fileState.text).toContain("clicked into being")
+    await h.dispose()
+  }, 30000)
+
+  test("typing into a whitespace-only file keeps its trailing newlines", async () => {
+    const h = await open("\n\n")
+    await h.frame()
+    h.keys.pressEnter()
+    await h.keys.typeText("hello")
+    h.keys.pressEscape()
+    await h.frame()
+
+    // The blank run was the revealed block's own trailing suffix; folding back must
+    // re-append it verbatim rather than normalising the writer's blank lines away.
+    expect(h.app.fileState.text).toBe("hello\n\n")
+    await h.dispose()
+  }, 30000)
+
+  test("a longer blank run behaves the same", async () => {
+    const h = await open("\n\n\n")
+    await h.frame()
+    h.keys.pressEnter()
+    await h.keys.typeText("hi")
+    h.keys.pressEscape()
+    await h.frame()
+
+    expect(h.app.fileState.text).toBe("hi\n\n\n")
+    await h.dispose()
+  }, 30000)
+})
+
 describe("checkbox toggle", () => {
   test("clicking the box toggles it without revealing the block", async () => {
     const h = await open("# Tasks\n\n- [ ] cut the branch\n- [x] write the spike\n")
@@ -414,6 +550,23 @@ describe("autosave", () => {
     await h.dispose()
   }, 30000)
 
+  test("⌘S flushes the typed text without folding the editor", async () => {
+    const h = await open("# Title\n\nSome **bold** prose.\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Some bold prose.") + 2, rowOf(frame, "Some bold prose."))
+    await h.frame()
+    await h.keys.typeText("XX")
+    h.keys.pressKey("s", { ctrl: true })
+    const after = trim(await h.frame())
+
+    // The block is still revealed — a habitual mid-typing ⌘S must not close the editor.
+    expect(after).toContain("**bold**")
+    expect(after).toContain("editing")
+    // And the save needed no commit: the document text is live-synced per keystroke.
+    expect(await h.onDisk()).toContain("XX")
+    await h.dispose()
+  }, 30000)
+
   test("closing flushes an in-flight edit rather than losing it", async () => {
     const h = await open("para\n")
     const frame = await h.frame()
@@ -473,6 +626,41 @@ describe("external change", () => {
     expect(await h.onDisk()).toContain("Mine. edited")
     await h.dispose()
   }, 30000)
+
+  test("a reload under an open editor returns cleanly to reading", async () => {
+    const h = await open("# Doc\n\nMine here.\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Mine here.") + 2, rowOf(frame, "Mine here."))
+    expect(trim(await h.frame())).toContain("editing")
+
+    // The buffer is clean — revealing is not an edit — so the external write is adopted and
+    // the reload destroys the open editor. The reveal bookkeeping must go with it, or the
+    // status keeps claiming "editing" while keystrokes fall into the gap between modes.
+    await h.writeExternally("# Doc\n\nTheirs now.\n")
+    let after = trim(await h.frame())
+    expect(after).not.toContain("editing")
+    expect(after).toContain("click to edit")
+
+    // And the app is really back in reading mode: keys scroll rather than vanish.
+    h.keys.pressArrow("down")
+    after = trim(await h.frame())
+    expect(after).toContain("Theirs now.")
+    await h.dispose()
+  }, 30000)
+})
+
+describe("status flash", () => {
+  test("a flash clears itself rather than lingering for the session", async () => {
+    const h = await open("just prose, nothing else\n")
+    await h.frame()
+    h.keys.pressKey("o", { ctrl: true })
+    expect(trim(await h.frame())).toContain("no headings")
+
+    // Past the 2.5s self-clear.
+    await Bun.sleep(3200)
+    expect(trim(await h.frame())).not.toContain("no headings")
+    await h.dispose()
+  }, 30000)
 })
 
 describe("search", () => {
@@ -505,6 +693,26 @@ describe("search", () => {
     h.keys.pressKey("f", { ctrl: true })
     await h.keys.typeText("zzzz")
     expect(trim(await h.frame())).toContain("no match")
+
+    // "no match" belongs to the open search bar; closed, there is nothing to step through
+    // and the message would read as a stuck indicator.
+    h.keys.pressEscape()
+    expect(trim(await h.frame())).not.toContain("no match")
+    await h.dispose()
+  }, 30000)
+
+  test("matches linger after closing search, with the stepping keys named", async () => {
+    const h = await open("# Doc\n\nalpha one\n\nalpha two\n")
+    await h.frame()
+    h.keys.pressKey("f", { ctrl: true })
+    await h.keys.typeText("alpha")
+    expect(trim(await h.frame())).toContain("1/2")
+
+    h.keys.pressEscape()
+    const frame = trim(await h.frame())
+    // The count survives Esc so n/p keep stepping — and the keys that explain it ride along.
+    expect(frame).toContain("n next")
+    expect(frame).toContain("p prev")
     await h.dispose()
   }, 30000)
 

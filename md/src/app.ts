@@ -144,6 +144,7 @@ export class App {
   }
 
   async dispose() {
+    this.view.dispose()
     await this.file?.close()
   }
 

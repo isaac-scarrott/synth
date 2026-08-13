@@ -13,7 +13,7 @@ import {
 } from "@opentui/core"
 import { blockAt, nextEditable, outline, segment, splice, toggleTask, type Block } from "./blocks"
 import { splitFrontmatter, type Frontmatter } from "./frontmatter"
-import { continueList, indentItem, renumber } from "./smartlist"
+import { continueList, indentItem, renumber, renumberPreservingCursor } from "./smartlist"
 import { currentOffset, find, matchesWithin, NO_MATCHES, step, type Matches } from "./search"
 import { linkAt } from "./links"
 import { OverlayScrollbar } from "./scrollbar"
@@ -60,10 +60,22 @@ export interface ViewHost {
   onLink(href: string): void
   onQuit(): void
   onSave(): void
+  /// Resolve a conflict in the disk's favour — drop the local edits, take the file.
+  onDiscard(): void
   onBack(): void
 }
 
 type Mode = "read" | "search" | "outline"
+
+/// Where the caret lands in a freshly revealed block. Beyond the two edges: a screen
+/// row/column (a click), an absolute source offset (a search match, a boundary join), or a
+/// visual edge plus a goal column (arrowing across blocks).
+type RevealAt =
+  | "start"
+  | "end"
+  | { row: number; col: number }
+  | { offset: number }
+  | { edge: "first" | "last"; col: number }
 
 interface BlockView {
   block: Block
@@ -99,6 +111,8 @@ export class DocumentView {
   /// text. Re-appended verbatim on commit — the document's blank-line structure is the
   /// writer's, not ours to normalise.
   private revealedSuffix = ""
+  /// The text the editor opened with, so commit can tell "was deleted" from "was empty".
+  private revealedOriginal = ""
   /// The document as it stood when the block was revealed, and the block's range within IT.
   ///
   /// Every keystroke rebuilds the whole document by splicing the editor's current text into
@@ -237,6 +251,28 @@ export class DocumentView {
     return this.source
   }
 
+  get scrollTop(): number {
+    return this.scroll.scrollTop
+  }
+
+  /// Put a saved scroll position back onto a freshly loaded document. The ScrollBox clamps
+  /// its setter against the CURRENT content height, which is zero until the next layout pass
+  /// — an immediate set is silently swallowed — so keep trying until the layout exists.
+  restoreScroll(top: number) {
+    if (top <= 0) return
+    let tries = 0
+    const apply = () => {
+      if (this.disposed) return
+      if (this.scroll.scrollHeight <= this.scroll.viewport.height) {
+        if (++tries < 25) setTimeout(apply, 8)
+        return
+      }
+      this.scroll.scrollTop = top
+      this.renderer.requestRender()
+    }
+    apply()
+  }
+
   /// Re-theme in place, after ghostty announces a light/dark flip. Every renderable holds
   /// resolved colours rather than reading a palette each frame, so the tree is rebuilt — cheap
   /// next to how rarely appearance changes, and it means no colour can be left behind.
@@ -249,9 +285,12 @@ export class DocumentView {
     this.overlay.borderColor = p.rule
     this.overlay.backgroundColor = p.overlayBg
     const revealed = this.revealed
+    // A search-stepped reveal is unfocused on purpose; re-revealing it focused would steal
+    // the keys from the search bar mid-query.
+    const hadFocus = this.focusedEditor() !== null
     this.revealed = -1
     this.rebuild()
-    if (revealed >= 0) this.reveal(revealed, "start")
+    if (revealed >= 0) this.reveal(revealed, "start", { focus: hadFocus })
     this.paintStatus()
   }
 
@@ -421,6 +460,17 @@ export class DocumentView {
     event.stopPropagation()
     if (this.mode !== "read") this.closeOverlays()
     const view = this.views[this.viewIndexOf(index)]
+    // A click on the block that is already open: the editor's own selection machinery has
+    // placed the caret under the pointer; all that can be missing is the focus a
+    // search-stepped reveal deliberately withheld.
+    if (index === this.revealed) {
+      const editor = view?.editor
+      if (editor && !editor.focused) {
+        editor.focus()
+        this.paintStatus()
+      }
+      return
+    }
     const row = Math.max(0, event.y - root.screenY)
     const gutter = view?.checkbox?.width ?? 0
     const column = Math.max(0, event.x - root.screenX - gutter)
@@ -438,7 +488,7 @@ export class DocumentView {
   /// raw slightly longer than what was on screen, so a click deep into a heavily-marked-up
   /// line lands slightly left of the glyph aimed at — never on the wrong line, and one arrow
   /// key fixes it.
-  reveal(index: number, at: { row: number; col: number } | "start" | "end" = "start") {
+  reveal(index: number, at: RevealAt = "start", options: { focus?: boolean } = {}) {
     if (index < 0 || index >= this.blocks.length) return
     if (this.blocks[index].kind === "blank") {
       const editable = nextEditable(this.blocks, index, 1)
@@ -490,10 +540,17 @@ export class DocumentView {
     view.editor = editor
     view.root.add(editor)
     this.revealed = index
-    editor.focus()
+    this.revealedOriginal = text
+    // Search stepping reveals WITHOUT focus: the block shows its highlight while the search
+    // bar (or the reader's n/p) keeps every key. Focus arrives when the reader asks for it —
+    // Enter, or a click on the open block.
+    if (options.focus !== false) editor.focus()
 
     if (at === "start") editor.setCursor(0, 0)
     else if (at === "end") editor.gotoBufferEnd()
+    else if ("offset" in at)
+      editor.cursorOffset = Math.max(0, Math.min(at.offset - block.start, text.length))
+    else if ("edge" in at) this.placeCaretAtEdge(editor, at.edge, at.col)
     else this.placeCaretAtClick(editor, block, at)
 
     // Editing something you cannot see is never right: Enter from a scrolled reader and
@@ -527,14 +584,7 @@ export class DocumentView {
     // line, and no worse than the visual row for a wrapped one.
     editor.setCursor(Math.min(y, rawLines.length - 1), x)
     const parked = editor.logicalCursor.offset
-    let tries = 0
-    const place = () => {
-      if (this.disposed) return
-      if (this.views[this.viewIndexOf(this.revealed)]?.editor !== editor) return
-      if (editor.width <= 0) {
-        if (++tries < 25) setTimeout(place, 8)
-        return
-      }
+    this.whenLaidOut(editor, () => {
       // The user typed or moved before the layout arrived — their position wins.
       if (editor.logicalCursor.offset !== parked) return
       const info = editor.editorView.getLineInfo()
@@ -542,8 +592,49 @@ export class DocumentView {
       const vy = Math.min(y, info.lineSources.length - 1)
       editor.setCursor(info.lineSources[vy] ?? 0, (info.lineStartCols[vy] ?? 0) + x)
       this.renderer.requestRender()
+    })
+  }
+
+  /// Park the caret on the first or last VISUAL line of a fresh editor, at a goal column —
+  /// stepping across a block boundary should feel like moving down one line, not like tabbing
+  /// into the next form field at column zero.
+  ///
+  /// "first" needs no layout: the first visual line always starts logical row 0 column 0, so
+  /// the goal column applies immediately. "last" depends on where the wrap put the final
+  /// visual row, which does not exist yet — park at the buffer end now, refine when it does.
+  private placeCaretAtEdge(editor: TextareaRenderable, edge: "first" | "last", col: number) {
+    if (edge === "first") {
+      editor.setCursor(0, col)
+      return
     }
-    setTimeout(place, 0)
+    editor.gotoBufferEnd()
+    const parked = editor.logicalCursor.offset
+    this.whenLaidOut(editor, () => {
+      // The user typed or moved before the layout arrived — their position wins.
+      if (editor.logicalCursor.offset !== parked) return
+      const info = editor.editorView.getLineInfo()
+      if (info.lineSources.length === 0) return
+      const last = info.lineSources.length - 1
+      editor.setCursor(info.lineSources[last] ?? 0, (info.lineStartCols[last] ?? 0) + col)
+      this.renderer.requestRender()
+    })
+  }
+
+  /// Run `fn` once a freshly created editor has a laid-out width — anything reading wrap
+  /// geometry has nothing to look at until the next frame. Bails when the reveal has moved on
+  /// or the view is being torn down.
+  private whenLaidOut(editor: TextareaRenderable, fn: () => void) {
+    let tries = 0
+    const run = () => {
+      if (this.disposed) return
+      if (this.views[this.viewIndexOf(this.revealed)]?.editor !== editor) return
+      if (editor.width <= 0) {
+        if (++tries < 25) setTimeout(run, 8)
+        return
+      }
+      fn()
+    }
+    setTimeout(run, 0)
   }
 
   /// Scroll the block into view if it is off-screen, the same landing revealMatch gives a
@@ -588,10 +679,32 @@ export class DocumentView {
       this.revealed = -1
       return
     }
-    // Renumbering is document-scoped and therefore happens here, not per keystroke: an item
-    // inserted into the middle of a list changes the numbers of items in OTHER blocks, which
-    // the open editor cannot see.
-    const updated = renumber(this.documentWithEditor(editor))
+    const text = editor.plainText
+    // An untouched reveal folds back byte-neutral, renumber included: search stepping opens
+    // blocks just to SHOW them, and merely reading a document must never rewrite an author's
+    // as-typed list numbers.
+    //
+    // A block whose text was deleted must not strand its separators: its trailing newlines
+    // go with it, and so does ONE adjacent blank block — the two gaps that used to flank it
+    // would otherwise abut into a double blank between its neighbours. Only when content was
+    // genuinely removed: folding an untouched blank back must stay byte-exact, or opening an
+    // empty file and pressing Esc would eat its blank lines.
+    const erased = text.trim() === "" && this.revealedOriginal.trim() !== ""
+    let start = this.revealStart
+    let end = this.revealEnd
+    if (erased) {
+      const after = this.blocks[this.revealed + 1]
+      const before = this.blocks[this.revealed - 1]
+      if (after?.kind === "blank" && after.start === end) end = after.end
+      else if (before?.kind === "blank" && before.end === start) start = before.start
+    }
+    // Renumbering is document-scoped and therefore happens on the fold, not per keystroke:
+    // an item inserted into the middle of a list changes the numbers of items in OTHER
+    // blocks, which the open editor cannot see.
+    const updated =
+      text === this.revealedOriginal
+        ? this.source
+        : renumber(splice(this.revealBase, start, end, erased ? "" : text + this.revealedSuffix))
     this.revealed = -1
     this.revealedSuffix = ""
     this.applyEdit(updated)
@@ -706,6 +819,14 @@ export class DocumentView {
       this.host.onBack()
       return
     }
+    // The other half of the conflict pair the status line offers beside ⌃S. Gated on the
+    // conflict so ⌃R stays inert — and unshadowed — the rest of the time; R for revert,
+    // because ⌃E and its neighbours are already the editor's own line motions.
+    if (cmd && key.name === "r" && this.conflicted) {
+      key.preventDefault()
+      this.host.onDiscard()
+      return
+    }
 
     if (key.name === "escape") {
       key.preventDefault()
@@ -717,7 +838,15 @@ export class DocumentView {
       return
     }
 
-    if (this.revealed >= 0) {
+    // While the search bar is open the query input owns every plain key. Falling through
+    // would double-act them: the input types the "j" while the reader scrolls a line, and a
+    // space in the query pages the document.
+    if (this.mode === "search") return
+
+    // Routed on FOCUS, not on the reveal: a block opened by search stepping is on screen raw
+    // but unfocused, and the reader behind it is still reading — n/p keep stepping, j/k keep
+    // scrolling, and nothing types into a block nobody entered.
+    if (this.focusedEditor()) {
       this.onEditorKey(key)
       return
     }
@@ -748,15 +877,24 @@ export class DocumentView {
       case "end":
         this.scroll.scrollTop = this.scroll.scrollHeight
         break
-      case "return":
+      case "return": {
         // Enter from the reader opens the first VISIBLE block for editing — the keyboard-only
         // way in, so the editor is never mouse-gated. The first block of the file would be
         // wrong the moment the reader has scrolled: it would put the caret pages away from
         // what they are looking at. preventDefault, or the very Enter that revealed the block
         // reaches the editor it just focused and types a newline into it.
         key.preventDefault()
+        // A block already open from search stepping: Enter steps INTO it, at the caret
+        // parked on the match, rather than revealing a different block.
+        const open = this.revealed >= 0 ? this.views[this.viewIndexOf(this.revealed)]?.editor : null
+        if (open) {
+          open.focus()
+          this.paintStatus()
+          break
+        }
         this.reveal(this.firstVisibleBlockIndex())
         break
+      }
       case "n":
         this.stepSearch(1)
         break
@@ -801,6 +939,8 @@ export class DocumentView {
       return
     }
 
+    const plain = !key.ctrl && !key.meta && !key.super && !key.shift
+
     // Arrowing off the top or bottom edge steps to the neighbouring block, which is what
     // makes the whole document feel like one field rather than a grid of boxes.
     if (key.name === "up" && !key.shift && this.atVisualEdge(editor, -1)) {
@@ -813,6 +953,65 @@ export class DocumentView {
       this.stepBlock(1)
       return
     }
+
+    // ←/→ at the buffer's very ends cross into the neighbouring block too. With ↑/↓ stepping
+    // and backspace joining, an arrow that stopped at an invisible wall would be the one hole
+    // left in the illusion. At the document's edges the caret simply stays, as on a Mac.
+    if (plain && key.name === "right" && editor.cursorOffset >= editor.plainText.length) {
+      key.preventDefault()
+      const target = nextEditable(this.blocks, this.revealed + 1, 1)
+      if (target >= 0) {
+        this.commit()
+        this.reveal(target, "start")
+      }
+      return
+    }
+    if (plain && key.name === "left" && editor.cursorOffset === 0) {
+      key.preventDefault()
+      const target = nextEditable(this.blocks, this.revealed - 1, -1)
+      if (target >= 0) {
+        this.commit()
+        this.reveal(target, "end")
+      }
+      return
+    }
+
+    // Backspace at the block's start (and ⌦ at its end) reaches across the boundary.
+    if (plain && key.name === "backspace" && editor.cursorOffset === 0 && !editor.hasSelection()) {
+      key.preventDefault()
+      this.joinAcrossBoundary(editor, -1)
+      return
+    }
+    if (
+      plain &&
+      key.name === "delete" &&
+      editor.cursorOffset >= editor.plainText.length &&
+      !editor.hasSelection()
+    ) {
+      key.preventDefault()
+      this.joinAcrossBoundary(editor, 1)
+      return
+    }
+  }
+
+  /// Delete the separator newline just outside the revealed block — backspace at its start,
+  /// ⌦ at its end. One newline per press, never the whole blank run: that is byte-for-byte
+  /// what the key would do were the document one big textarea, so each press is predictable
+  /// and a stray join is one Enter away from undone. When the run is exhausted the blocks
+  /// fall together at the resegment and the caret rides the join.
+  private joinAcrossBoundary(editor: TextareaRenderable, dir: 1 | -1) {
+    const current = this.documentWithEditor(editor)
+    const at = dir === -1 ? this.revealStart - 1 : this.revealStart + editor.plainText.length
+    // Frontmatter is a header, not text: backspacing the first block into its closing fence
+    // would quietly turn the whole header back into markdown.
+    const floor = this.front?.bodyStart ?? 0
+    if (at < floor || at >= current.length) return
+    if (current[at] !== "\n") return
+    // Joining can fuse two ordered lists, and renumbering may then rewrite marker digits on
+    // the caret's own line — anchor the caret from the line's tail so it lands on the join.
+    const { source, cursor } = renumberPreservingCursor(splice(current, at, at + 1, ""), at)
+    this.applyEdit(source)
+    this.reveal(blockAt(this.blocks, cursor), { offset: cursor })
   }
 
   /// Whether the caret sits on the editor's first or last VISUAL line — the edge the user can
@@ -824,6 +1023,16 @@ export class DocumentView {
     const row = editor.scrollY + editor.visualCursor.visualRow
     if (dir === -1) return row === 0
     return row >= editor.editorView.getTotalVirtualLineCount() - 1
+  }
+
+  /// The revealed block's editor when it actually holds keyboard focus. A block can be
+  /// revealed WITHOUT focus — search stepping opens the match's block so its highlight is
+  /// visible while the search bar keeps the keys — and that state must behave as "reading",
+  /// not "editing".
+  private focusedEditor(): TextareaRenderable | null {
+    if (this.revealed < 0) return null
+    const editor = this.views[this.viewIndexOf(this.revealed)]?.editor ?? null
+    return editor?.focused ? editor : null
   }
 
   /// The href under the caret of the revealed block, if any — what the status line offers to
@@ -856,12 +1065,21 @@ export class DocumentView {
     this.renderer.requestRender()
   }
 
+  /// Step the reveal to the neighbouring block, carrying the caret's visual column with it —
+  /// crossing a boundary should feel like moving down one line, not like tabbing into the
+  /// next form field at column zero. At the document's edges macOS semantics apply instead:
+  /// ↓ on the last line parks at the end of the text, ↑ on the first at its start.
   private stepBlock(dir: 1 | -1) {
-    const from = this.revealed
-    const target = nextEditable(this.blocks, from + dir, dir)
-    if (target < 0) return
+    const editor = this.views[this.viewIndexOf(this.revealed)]?.editor
+    const target = nextEditable(this.blocks, this.revealed + dir, dir)
+    if (target < 0) {
+      if (dir === 1) editor?.gotoBufferEnd()
+      else editor?.setCursor(0, 0)
+      return
+    }
+    const goal = editor?.visualCursor.visualCol ?? 0
     this.commit()
-    this.reveal(target, dir === 1 ? "start" : "end")
+    this.reveal(target, dir === 1 ? { edge: "first", col: goal } : { edge: "last", col: goal })
   }
 
   // MARK: search
@@ -893,6 +1111,14 @@ export class DocumentView {
   private runSearch() {
     const query = this.searchInput.plainText.replace(/\n/g, "")
     this.matches = find(this.source, query, this.scrollOffsetHint())
+    // A block revealed by an earlier step goes stale the moment the query moves on: fold it
+    // back unless it still holds the current match, or the reader is left staring at a
+    // random block in raw.
+    if (this.revealed >= 0) {
+      const offset = currentOffset(this.matches)
+      const block = this.blocks[this.revealed]
+      if (offset === null || offset < block.start || offset >= block.end) this.commit()
+    }
     this.applyHighlights()
     this.revealMatch()
     this.paintStatus()
@@ -901,9 +1127,37 @@ export class DocumentView {
   private stepSearch(dir: 1 | -1) {
     if (this.matches.offsets.length === 0) return
     this.matches = step(this.matches, dir)
+    this.revealCurrentMatch()
     this.applyHighlights()
-    this.revealMatch()
     this.paintStatus()
+  }
+
+  /// Show the current match where it can actually be SEEN. Only a revealed block can carry a
+  /// highlight (see applyHighlights), so stepping opens the match's block as an UNFOCUSED
+  /// editor: the tint lands on the match itself, the search bar (or the reader's n/p) keeps
+  /// every key, and the caret parks on the match so Enter or a click starts editing right
+  /// there. Typing in the bar deliberately does not reveal — that would rebuild the block
+  /// tree per keystroke and flip blocks to raw under the reader mid-query; stepping is the
+  /// explicit "take me there" gesture.
+  private revealCurrentMatch() {
+    const offset = currentOffset(this.matches)
+    if (offset === null) return
+    // Frontmatter renders as a header, not a block: nothing there can highlight, and blockAt
+    // would misfile the offset into the LAST block. Put the header on screen instead.
+    if (offset < (this.front?.bodyStart ?? 0)) {
+      this.scroll.scrollTop = 0
+      return
+    }
+    const index = blockAt(this.blocks, offset)
+    if (this.revealed === index) {
+      const editor = this.views[this.viewIndexOf(index)]?.editor
+      if (editor && !editor.focused) {
+        editor.cursorOffset = Math.max(0, Math.min(offset - this.blocks[index].start, editor.plainText.length))
+      }
+      this.revealMatch()
+      return
+    }
+    this.reveal(index, { offset }, { focus: false })
   }
 
   /// Scroll the current match into view by finding the block that contains it. Block
@@ -1062,13 +1316,14 @@ export class DocumentView {
   /// look, so this is the whole of it.
   private paintStatus() {
     const parts: string[] = []
-    if (this.conflicted) parts.push("changed on disk — ⌃S keeps yours")
+    const focused = this.focusedEditor()
+    if (this.conflicted) parts.push("changed on disk — ⌃S keeps yours · ⌃R takes disk")
     else if (this.dirty) parts.push("unsaved")
     if (this.matches.query && this.matches.offsets.length > 0) {
       const count = `${this.matches.current + 1}/${this.matches.offsets.length}`
       // Matches outlive the search bar so n/p can keep stepping — but a bare count lingering
       // after Esc reads as a stuck indicator unless the keys that explain it ride along.
-      const stepping = this.mode === "read" && this.revealed < 0
+      const stepping = this.mode === "read" && !focused
       parts.push(stepping ? `${count} · n next · p prev` : count)
     } else if (this.matches.query && this.mode === "search") {
       parts.push(`no match for "${this.matches.query}"`)
@@ -1076,7 +1331,10 @@ export class DocumentView {
     if (this.note) parts.push(this.note)
     if (this.mode === "outline") parts.push("↑↓ pick · ⏎ jump · esc close")
     else if (this.mode === "search") parts.push("⏎ next · ⇧⏎ prev · esc close")
-    else if (this.revealed >= 0) parts.push(this.linkUnderCursor() ? "⌃] open link · esc to render" : "editing · esc to render")
+    else if (focused) parts.push(this.linkUnderCursor() ? "⌃] open link · esc to render" : "editing · esc to render")
+    // A block opened by search stepping: raw on screen, but no keyboard focus — the reader
+    // is still reading, one Enter (or click) away from editing at the match.
+    else if (this.revealed >= 0) parts.push("⏎ edit · esc to render")
     else parts.push("⌃F find · ⌃O outline · click to edit")
 
     this.statusBar.content = parts.join("  ·  ")

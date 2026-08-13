@@ -70,6 +70,7 @@ export class App {
       onEdit: (source) => this.file.edit(source),
       onLink: (href) => void this.followLink(href),
       onSave: () => void this.file.flush(),
+      onDiscard: () => void this.takeDisk(),
       onBack: () => void this.goBack(),
       onQuit: () => void this.quit(),
     })
@@ -122,7 +123,7 @@ export class App {
     const target = resolveLink(href, this.path)
     if (target.kind === "document") {
       if (target.path === this.path) return
-      this.history.push(this.path, 0)
+      this.history.push(this.path, this.view.scrollTop)
       await this.load(target.path)
       return
     }
@@ -130,10 +131,24 @@ export class App {
     if (!opened) this.view.flash("could not open link")
   }
 
+  /// Resolve a conflict in the DISK's favour: drop the local edits and adopt the file. The
+  /// other half of the ⌃S/⌃R pair — save.ts holds the buffer still until one of them is
+  /// pressed.
+  private async takeDisk() {
+    const text = await this.file.discard()
+    this.view.setSource(text, { preserveScroll: true })
+    this.view.setFlags({ dirty: false, conflicted: false })
+    this.view.flash("took the disk version")
+  }
+
   private async goBack() {
     const previous = this.history.pop()
     if (!previous) return
     await this.load(previous.path)
+    // The reason the stack exists is to get back to where the reading stopped, not merely to
+    // which file it stopped in — landing at the top of a long document loses the place the
+    // cross-reference was followed from.
+    this.view.restoreScroll(previous.scroll)
   }
 
   private async quit() {

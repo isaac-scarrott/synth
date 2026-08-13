@@ -1,4 +1,6 @@
 import { expect, test, describe } from "bun:test"
+import { writeFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import { colOf, open, rowOf, trim } from "./harness"
 
 /// End-to-end behaviour of the TUI: real renderer, real keystroke and mouse bytes, real file
@@ -425,6 +427,122 @@ describe("editing", () => {
   }, 30000)
 })
 
+describe("one field", () => {
+  /// The document should edit like a single textarea over its source, not a grid of boxes:
+  /// arrows cross block boundaries in every direction, and backspace/⌦ reach across them.
+  test("→ at a block's end crosses into the next, ← at the start crosses back", async () => {
+    const h = await open("first\n\nsecond\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "first"), rowOf(frame, "first"))
+    h.keys.pressKey("END")
+    h.keys.pressArrow("right")
+    await h.keys.typeText("A")
+    await h.frame()
+    expect(h.app.fileState.text).toContain("Asecond")
+
+    h.keys.pressKey("HOME")
+    h.keys.pressArrow("left")
+    await h.keys.typeText("B")
+    await h.frame()
+    expect(h.app.fileState.text).toContain("firstB")
+    await h.dispose()
+  }, 30000)
+
+  test("backspace at a block's start eats the separator one newline per press", async () => {
+    const h = await open("first para\n\nsecond para\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "second"), rowOf(frame, "second"))
+    h.keys.pressKey("HOME")
+    // One press, one newline — exactly what the key would do in one big textarea. The blank
+    // line thins to a soft break, and the blocks are now one.
+    h.keys.pressBackspace()
+    await h.frame()
+    expect(h.app.fileState.text).toBe("first para\nsecond para\n")
+
+    // The caret rode the join: the next press is an ordinary in-block backspace on the
+    // remaining newline, and typing lands between the joined words.
+    h.keys.pressBackspace()
+    await h.keys.typeText("X")
+    await h.frame()
+    expect(h.app.fileState.text).toBe("first paraXsecond para\n")
+    await h.dispose()
+  }, 30000)
+
+  test("⌦ at a block's end joins downward the same way", async () => {
+    const h = await open("first para\n\nsecond para\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "first"), rowOf(frame, "first"))
+    h.keys.pressKey("END")
+    h.keys.pressKey("DELETE")
+    await h.frame()
+    expect(h.app.fileState.text).toBe("first para\nsecond para\n")
+    await h.dispose()
+  }, 30000)
+
+  test("backspace at the very first block's start stays put", async () => {
+    const h = await open("only para\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "only"), rowOf(frame, "only"))
+    h.keys.pressKey("HOME")
+    h.keys.pressBackspace()
+    await h.frame()
+    expect(h.app.fileState.text).toBe("only para\n")
+    await h.dispose()
+  }, 30000)
+
+  test("deleting a block's whole text leaves one separator, not a crater", async () => {
+    const h = await open("first para\n\nsecond para\n\nthird para\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "second"), rowOf(frame, "second"))
+    h.keys.pressKey("a", { ctrl: true })
+    h.keys.pressBackspace()
+    h.keys.pressEscape()
+    await h.frame()
+    // Not "first para\n\n\n\nthird para\n": the deleted block's own trailing newlines went
+    // with it, so the neighbours sit a single blank line apart, as they started.
+    expect(h.app.fileState.text).toBe("first para\n\nthird para\n")
+    await h.dispose()
+  }, 30000)
+
+  test("↓ across a block boundary keeps the caret's column", async () => {
+    const h = await open("abcdef\n\nuvwxyz\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "abcdef") + 3, rowOf(frame, "abcdef"))
+    await h.frame()
+    h.keys.pressArrow("down")
+    await h.keys.typeText("Q")
+    await h.frame()
+    expect(h.app.fileState.text).toContain("uvwQxyz")
+    await h.dispose()
+  }, 30000)
+
+  test("↑ across a block boundary keeps the caret's column too", async () => {
+    const h = await open("abcdef\n\nuvwxyz\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "uvwxyz") + 4, rowOf(frame, "uvwxyz"))
+    await h.frame()
+    h.keys.pressArrow("up")
+    // The goal column lands once the fresh editor has laid out its wrap.
+    await h.frame()
+    await h.keys.typeText("Q")
+    await h.frame()
+    expect(h.app.fileState.text).toContain("abcdQef")
+    await h.dispose()
+  }, 30000)
+
+  test("↓ on the document's last line parks at the end of the text", async () => {
+    const h = await open("only para\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "only"), rowOf(frame, "only"))
+    await h.frame()
+    h.keys.pressArrow("down")
+    await h.keys.typeText("E")
+    await h.frame()
+    expect(h.app.fileState.text).toBe("only paraE\n")
+    await h.dispose()
+  }, 30000)
+})
+
 describe("empty documents", () => {
   /// `synth newfile.md`: a zero-byte file must still be a document someone can type into —
   /// no block to click and nothing for Enter to reveal was a dead end.
@@ -647,6 +765,65 @@ describe("external change", () => {
     expect(after).toContain("Theirs now.")
     await h.dispose()
   }, 30000)
+
+  test("⌃R resolves a conflict by taking the disk version", async () => {
+    const h = await open("# Doc\n\nMine.\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Mine.") + 5, rowOf(frame, "Mine."))
+    await h.keys.typeText(" edited")
+    await h.writeExternally("# Doc\n\nTheirs.\n")
+    // The status line offers both halves of the choice.
+    expect(trim(await h.frame())).toContain("⌃R takes disk")
+
+    h.keys.pressKey("r", { ctrl: true })
+    const after = trim(await h.frame())
+    expect(after).toContain("Theirs.")
+    expect(after).toContain("took the disk version")
+    expect(after).not.toContain("changed on disk")
+    expect(h.app.fileState.text).toBe("# Doc\n\nTheirs.\n")
+    expect(await h.onDisk()).toBe("# Doc\n\nTheirs.\n")
+    await h.dispose()
+  }, 30000)
+
+  test("closing while conflicted keeps the disk bytes", async () => {
+    const h = await open("# Doc\n\nMine.\n")
+    const frame = await h.frame()
+    await h.mouse.click(colOf(frame, "Mine.") + 5, rowOf(frame, "Mine."))
+    await h.keys.typeText(" edited")
+    await h.writeExternally("# Doc\n\nTheirs.\n")
+    await h.frame()
+
+    // Quitting is not choosing: the close flush must not land "Mine. edited" on top of the
+    // agent's write. The disk keeps the agent's version; ⌃S was the way to keep yours.
+    await h.app.dispose()
+    expect(await h.onDisk()).toBe("# Doc\n\nTheirs.\n")
+    await h.dispose()
+  }, 30000)
+})
+
+describe("links", () => {
+  test("⌃B returns to where the reading stopped, not to the top", async () => {
+    const filler = Array.from({ length: 30 }, (_, i) => `filler line ${i}`).join("\n\n")
+    const h = await open(`# A\n\n${filler}\n\n[onward](./b.md)\n`, { height: 20 })
+    await writeFile(join(dirname(h.path), "b.md"), "# B\n\nthe other doc\n", "utf8")
+    let frame = await h.frame()
+
+    // Read to the bottom, open the link's block, follow it.
+    h.keys.pressKey("END")
+    frame = await h.frame()
+    await h.mouse.click(colOf(frame, "onward") + 2, rowOf(frame, "onward"))
+    await h.frame()
+    h.keys.pressKey("]", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("the other doc")
+
+    // Back lands where the cross-reference was followed from, pages below the title.
+    h.keys.pressKey("b", { ctrl: true })
+    frame = trim(await h.frame())
+    expect(frame).toContain("filler line 29")
+    expect(frame).not.toContain("filler line 0")
+    await h.dispose()
+  }, 30000)
 })
 
 describe("status flash", () => {
@@ -724,6 +901,71 @@ describe("search", () => {
     expect(trim(await h.frame())).toContain("1/1")
     h.keys.pressEscape()
     expect(trim(await h.frame())).toContain("⌃F find")
+    await h.dispose()
+  }, 30000)
+
+  test("stepping reveals the match's block raw, while the bar keeps the keys", async () => {
+    const h = await open("# Doc\n\nalpha **one**\n\nbeta\n\nalpha **two**\n")
+    await h.frame()
+    h.keys.pressKey("f", { ctrl: true })
+    await h.keys.typeText("alpha")
+    expect(trim(await h.frame())).toContain("1/2")
+
+    // Stepping opens the match's block as raw — the one surface a highlight can actually
+    // render on — without taking the keys away from the query input.
+    h.keys.pressEnter()
+    let frame = trim(await h.frame())
+    expect(frame).toContain("2/2")
+    expect(frame).toContain("alpha **two**")
+
+    // The query input still owns typing: the keystroke extends the query, not the document.
+    await h.keys.typeText("x")
+    frame = trim(await h.frame())
+    expect(frame).toContain("no match")
+    expect(h.app.fileState.text).not.toContain("alphax")
+    await h.dispose()
+  }, 30000)
+
+  test("n and p keep stepping over an open match, and Enter steps into it", async () => {
+    const h = await open("# Doc\n\nalpha **one**\n\nalpha **two**\n")
+    await h.frame()
+    h.keys.pressKey("f", { ctrl: true })
+    await h.keys.typeText("alpha")
+    h.keys.pressEscape()
+    expect(trim(await h.frame())).toContain("n next")
+
+    // n reveals the next match's block — and stays a step, never a typed character, because
+    // the revealed block is on screen without keyboard focus.
+    h.keys.pressKey("n")
+    let frame = trim(await h.frame())
+    expect(frame).toContain("2/2")
+    expect(frame).toContain("alpha **two**")
+    expect(frame).toContain("⏎ edit")
+
+    h.keys.pressKey("n")
+    frame = trim(await h.frame())
+    expect(frame).toContain("1/2")
+    expect(frame).toContain("alpha **one**")
+    expect(h.app.fileState.text).toBe("# Doc\n\nalpha **one**\n\nalpha **two**\n")
+
+    // Enter enters the open block, with the caret already parked on the match.
+    h.keys.pressEnter()
+    await h.keys.typeText("X")
+    await h.frame()
+    expect(h.app.fileState.text).toContain("Xalpha **one**")
+    await h.dispose()
+  }, 30000)
+
+  test("typing the query never scrolls the reader beneath the bar", async () => {
+    const paragraphs = Array.from({ length: 30 }, (_, i) => `paragraph ${i}`).join("\n\n")
+    const h = await open(`# Top\n\n${paragraphs}\n`, { height: 20 })
+    await h.frame()
+    h.keys.pressKey("f", { ctrl: true })
+    // j and space are reader keys; inside the bar they are only ever query characters.
+    await h.keys.typeText("j j")
+    const frame = trim(await h.frame())
+    expect(frame).toContain("Top")
+    expect(frame).toContain("no match")
     await h.dispose()
   }, 30000)
 })

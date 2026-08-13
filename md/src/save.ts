@@ -171,6 +171,19 @@ export class DocumentFile {
     this.closed = true
     this.watcher?.close()
     this.watcher = null
+    // Quitting is not choosing. A conflicted buffer means the human's keystrokes and an
+    // agent's write both exist and nobody has said which wins; flushing here would destroy
+    // the agent's version silently, at the exact moment no one is looking at the file. So a
+    // conflicted close keeps the DISK bytes — the explicit ⌃S (flush) / ⌃R (discard) pair is
+    // the only resolution, and the cost of closing without choosing falls on the unsaved
+    // local edits rather than on the other writer's completed work.
+    if (this.conflict) {
+      if (this.timer) {
+        clearTimeout(this.timer)
+        this.timer = null
+      }
+      return
+    }
     await this.flush()
   }
 }

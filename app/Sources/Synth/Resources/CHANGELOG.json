@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.30.4",
+    "date": "2026-08-13",
+    "changes": [
+      "The markdown scrollbar can no longer get stuck on screen: a fast flick that outran the pointer now ends the drag cleanly, and the bar folds away as it should."
+    ]
+  },
+  {
     "version": "0.30.3",
     "date": "2026-08-13",
     "changes": [

@@ -1995,3 +1995,6 @@ disclosure to dive deeper.
   conflicts, fragment links, teachable chords). `CFBundleVersion` 586, tag `v0.31.0`; dmg +
   zip notarized, stapled, verified credential-less; appcast newest 0.31.0 at 586,
   `edSignature` on all 18 enclosures. No `synth-site` push.
+- **Markdown editing: the caret's first paint is its final position** — the one-frame caret
+  leap on click-to-edit (and upward block steps) is gone; the wrap-aware mapping now runs
+  before the first paint, pinned by a frame-walking test (`md/src/view.ts`).

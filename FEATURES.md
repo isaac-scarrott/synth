@@ -1939,3 +1939,9 @@ disclosure to dive deeper.
   falling through to Launch Services' bare "can't be opened" dialog. `CFBundleVersion` 566, tag
   `v0.30.1`; dmg + zip notarized, stapled, verified credential-less; appcast newest 0.30.1 at 566,
   `edSignature` on all 18 enclosures. No `synth-site` push.
+- **0.30.2 ships — the bundled runtime gets to keep its JIT** — patch release: the vendored bun
+  was signed hardened-runtime with no entitlements, so JSC's JIT was killed at startup and every
+  markdown session opened and instantly closed. Bun now signs with `signing/Bun.entitlements`,
+  and `release.sh` refuses to ship a bundle whose signed bun cannot execute JavaScript.
+  `CFBundleVersion` 568, tag `v0.30.2`; dmg + zip notarized, stapled, verified credential-less;
+  shipped TUI proven live in a PTY; appcast newest 0.30.2 at 568, all 18 enclosures signed.

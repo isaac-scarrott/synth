@@ -1975,3 +1975,7 @@ disclosure to dive deeper.
   neighbouring block from its middle. `CFBundleVersion` 576, tag `v0.30.5`; dmg + zip
   notarized, stapled, verified credential-less; appcast newest 0.30.5 at 576, `edSignature`
   on all 18 enclosures. No `synth-site` push.
+- **Markdown editing: the click lands where the eye aimed, and the view stops lying** — wrap-
+  aware click→caret mapping, reveal scrolls into view, Enter opens the first visible block,
+  empty documents are editable, external reloads reset the reveal honestly, flashes self-
+  clear, ⌘S saves without closing the editor (`md/src/view.ts`).

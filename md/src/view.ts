@@ -683,16 +683,27 @@ export class DocumentView {
 
     // Arrowing off the top or bottom edge steps to the neighbouring block, which is what
     // makes the whole document feel like one field rather than a grid of boxes.
-    if (key.name === "up" && !key.shift && editor.logicalCursor.row === 0) {
+    if (key.name === "up" && !key.shift && this.atVisualEdge(editor, -1)) {
       key.preventDefault()
       this.stepBlock(-1)
       return
     }
-    if (key.name === "down" && !key.shift && editor.logicalCursor.row === editor.lineCount - 1) {
+    if (key.name === "down" && !key.shift && this.atVisualEdge(editor, 1)) {
       key.preventDefault()
       this.stepBlock(1)
       return
     }
+  }
+
+  /// Whether the caret sits on the editor's first or last VISUAL line — the edge the user can
+  /// see. The editor word-wraps, so one logical line spans several visual rows; keying the
+  /// handoff off `logicalCursor.row` would call a wrapped paragraph "the last line" from its
+  /// first row and arrow the cursor out of it past lines that are plainly still below.
+  private atVisualEdge(editor: TextareaRenderable, dir: 1 | -1): boolean {
+    // visualRow is viewport-relative; scrollY is the viewport's offset in visual rows.
+    const row = editor.scrollY + editor.visualCursor.visualRow
+    if (dir === -1) return row === 0
+    return row >= editor.editorView.getTotalVirtualLineCount() - 1
   }
 
   /// The href under the caret of the revealed block, if any — what the status line offers to

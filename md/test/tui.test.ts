@@ -291,6 +291,49 @@ describe("editing", () => {
     await h.dispose()
   }, 30000)
 
+  /// One logical line, several visual lines: the paragraph is longer than the 84-column
+  /// reading measure, so the editor word-wraps it. Arrow keys must move by what the user
+  /// sees — a wrapped line below is "down", not the next block.
+  const WRAPPED =
+    "The **quick** brown fox jumps over the lazy dog again and again and again, " +
+    "running well past the column limit so this single markdown paragraph occupies " +
+    "several visual lines on the screen once the editor wraps it."
+
+  test("down from a wrapped paragraph's first visual line stays inside the block", async () => {
+    const h = await open(`${WRAPPED}\n\ntail paragraph\n`)
+    await h.frame()
+    // Enter reveals the first block with the cursor at its start.
+    h.keys.pressEnter()
+    let frame = await h.frame()
+    expect(trim(frame)).toContain("**quick**")
+
+    h.keys.pressArrow("down")
+    await h.keys.typeText("XX")
+    frame = await h.frame()
+
+    // Still editing the wrapped paragraph — its raw markers are on screen and the typed
+    // text landed inside it, not at the head of the block below.
+    expect(trim(frame)).toContain("**quick**")
+    expect(h.app.fileState.text).not.toContain("XXtail")
+    expect(h.app.fileState.text.indexOf("XX")).toBeLessThan(h.app.fileState.text.indexOf("tail"))
+    await h.dispose()
+  }, 30000)
+
+  test("up from a wrapped paragraph's last visual line stays inside the block", async () => {
+    const h = await open(`head paragraph\n\n${WRAPPED}\n`)
+    let frame = await h.frame()
+    await h.mouse.click(colOf(frame, "The quick") + 1, rowOf(frame, "The quick"))
+    // END puts the cursor at the end of the single logical line — the LAST visual line.
+    h.keys.pressKey("END")
+    h.keys.pressArrow("up")
+    await h.keys.typeText("YY")
+    frame = await h.frame()
+
+    expect(trim(frame)).toContain("**quick**")
+    expect(h.app.fileState.text).not.toContain("head paragraphYY")
+    await h.dispose()
+  }, 30000)
+
   test("undo reverts typing inside a revealed block", async () => {
     const h = await open("# Title\n\nProse.\n")
     const frame = await h.frame()

@@ -49,6 +49,10 @@ export interface Harness {
   mouse: TestRendererSetup["mockMouse"]
   /// Settle the frame, then return it as text.
   frame(): Promise<string>
+  /// ONE render pass, then the frame as it stands — no settling. This is how a test watches
+  /// a transition instead of its end state: call it in a loop across a click or a reveal and
+  /// every intermediate frame the user's eye would have seen passes through your hands.
+  tick(ms?: number): Promise<string>
   /// The bytes currently on disk.
   onDisk(): Promise<string>
   /// Wait past the autosave debounce and let the write land.
@@ -98,6 +102,17 @@ export async function open(
     keys: setup.mockInput,
     mouse: setup.mockMouse,
     frame: () => settle(setup),
+    async tick(ms = 8) {
+      // A zero-ms tick is ONE raw render pass — no flush, no sleep. flush() renders to
+      // visual idle, which lets deferred work catch up and repaints over the very
+      // intermediate frame a transition test exists to sample.
+      if (ms > 0) {
+        await setup.flush()
+        await Bun.sleep(ms)
+      }
+      await setup.renderOnce()
+      return setup.captureCharFrame()
+    },
     onDisk: () => readFile(path, "utf8"),
     async settleSave() {
       await Bun.sleep(AUTOSAVE_DELAY_MS + 120)

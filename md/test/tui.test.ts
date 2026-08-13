@@ -303,6 +303,46 @@ describe("block reveal", () => {
   }, 30000)
 })
 
+describe("reveal without flicker", () => {
+  /// The user-visible bug: clicking a wrapped block flickered, because the caret's first
+  /// paint was a same-column estimate on the WRONG visual line, refined a frame later — a
+  /// one-row leap the eye reads as flicker. The fix sizes the editor's wrap synchronously,
+  /// so the first paint is already the final position. This test walks the individual frames
+  /// of the transition rather than settling past them.
+  test("the caret's first paint is its final position on a wrapped click", async () => {
+    const marked =
+      "alpha **bravo** charlie _delta_ echo **foxtrot** golf hotel india juliet kilo lima mike " +
+      "november oscar **papa** quebec romeo sierra tango uniform victor whiskey xray yankee zulu"
+    const h = await open(`# Title\n\n${marked}\n\ntail paragraph\n`)
+    const before = await h.frame()
+    const clickedRow = rowOf(before, "oscar")
+    // pressDown, not click: click sleeps 10ms between down and up, long enough for a wrong
+    // first paint to be corrected before any frame gets sampled — the flicker would hide
+    // from the test exactly the way it does not hide from the eye.
+    await h.mouse.pressDown(colOf(before, "oscar"), clickedRow)
+
+    const renderer = h.renderer as unknown as {
+      getCursorState(): { x: number; y: number; visible: boolean }
+    }
+    const positions: string[] = []
+    for (let i = 0; i < 12; i++) {
+      // The first pass renders with no sleep, inside the deferred-placement window; the rest
+      // walk real time forward so every later correction gets its chance to repaint.
+      await h.tick(i === 0 ? 0 : 8)
+      const cursor = renderer.getCursorState()
+      if (cursor?.visible) positions.push(`${cursor.x},${cursor.y}`)
+      if (i === 2) await h.mouse.release(colOf(before, "oscar"), clickedRow)
+    }
+
+    // One position across every frame of the transition: no intermediate paint, no leap.
+    expect(new Set(positions).size).toBe(1)
+    // And it is the RIGHT position: the caret sits on the visual row the eye clicked
+    // (getCursorState is 1-based; the frame's rows are 0-based).
+    expect(Number(positions[0].split(",")[1])).toBe(clickedRow + 1)
+    await h.dispose()
+  }, 30000)
+})
+
 describe("editing", () => {
   test("typing into a revealed block reaches the buffer and the file", async () => {
     const h = await open("# Title\n\nProse.\n")

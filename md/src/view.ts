@@ -617,6 +617,13 @@ export class DocumentView {
     // Enter, or a click on the open block.
     if (options.focus !== false) editor.focus()
 
+    // The editor has no LAYOUT yet, but its wrap needs only a width, and that is already
+    // known: the reading column's, minus the row's list indent. Sizing the view now lets the
+    // caret's very first paint be the wrap-aware one — placing an estimate and refining it a
+    // frame later parked the caret on the wrong line for one visible frame on every wrapped
+    // block, which the eye reads as a flicker.
+    this.sizeEditorView(editor, block, text)
+
     if (at === "start") editor.setCursor(0, 0)
     else if (at === "end") editor.gotoBufferEnd()
     else if ("offset" in at)
@@ -643,25 +650,40 @@ export class DocumentView {
   /// lines, and handing it a screen row called a wrapped paragraph "row 0" and put the caret
   /// lines away from the aim point.
   ///
-  /// The editor has no layout until the next frame — its width, and therefore its wrap, is
-  /// unknown here — so the caret parks at the start and the mapping runs when the lines
-  /// exist. If the user types or moves before then, their position wins.
+  /// Give a freshly created editor its wrap geometry synchronously. The width is not a
+  /// guess: it is the column width the layout is about to assign (minus the list indent),
+  /// held as the number relayout wrote rather than read back from a layout that has not run.
+  /// The height only needs to cover every visual line so `getLineInfo` reports all of them;
+  /// the real layout replaces both a frame later via the editor's own onResize.
+  private sizeEditorView(editor: TextareaRenderable, block: Block, text: string) {
+    const width = (typeof this.column.width === "number" ? this.column.width : 0) - block.listDepth * 2
+    if (width <= 0) return
+    const lines = text.split("\n").length + Math.ceil(text.length / Math.max(20, width)) + 2
+    editor.editorView.setViewportSize(width, lines)
+  }
+
+  /// The mapping is exact from the first paint: `sizeEditorView` gave the fresh editor its
+  /// wrap before this runs, so the visual row the eye clicked maps straight onto the raw.
+  /// The deferred pass re-runs the same mapping against the REAL layout once it exists — a
+  /// no-op when the widths agree, a correction when they somehow did not — and if the user
+  /// typed or moved before it fires, their position wins.
   private placeCaretAtClick(editor: TextareaRenderable, block: Block, at: { row: number; col: number }) {
     const rawLines = block.raw.split("\n")
     const y = at.row + hiddenLeadRows(block)
     const line = rawLines[Math.min(y, rawLines.length - 1)] ?? ""
     const x = at.col + concealedLinePrefixWidth(block, y, line)
-    // Best effort NOW, so a click-and-type never waits a frame: exact for any unwrapped
-    // line, and no worse than the visual row for a wrapped one.
-    editor.setCursor(Math.min(y, rawLines.length - 1), x)
-    const parked = editor.logicalCursor.offset
-    this.whenLaidOut(editor, () => {
-      // The user typed or moved before the layout arrived — their position wins.
-      if (editor.logicalCursor.offset !== parked) return
+    const place = (): boolean => {
       const info = editor.editorView.getLineInfo()
-      if (info.lineSources.length === 0) return
+      if (info.lineSources.length === 0) return false
       const vy = Math.min(y, info.lineSources.length - 1)
       editor.setCursor(info.lineSources[vy] ?? 0, (info.lineStartCols[vy] ?? 0) + x)
+      return true
+    }
+    if (!place()) editor.setCursor(Math.min(y, rawLines.length - 1), x)
+    const parked = editor.logicalCursor.offset
+    this.whenLaidOut(editor, () => {
+      if (editor.logicalCursor.offset !== parked) return
+      place()
       this.renderer.requestRender()
     })
   }
@@ -671,22 +693,26 @@ export class DocumentView {
   /// into the next form field at column zero.
   ///
   /// "first" needs no layout: the first visual line always starts logical row 0 column 0, so
-  /// the goal column applies immediately. "last" depends on where the wrap put the final
-  /// visual row, which does not exist yet — park at the buffer end now, refine when it does.
+  /// the goal column applies immediately. "last" reads the wrap `sizeEditorView` computed, so
+  /// it too paints in place on the first frame; the deferred pass re-checks against the real
+  /// layout, and a user keystroke in the gap wins.
   private placeCaretAtEdge(editor: TextareaRenderable, edge: "first" | "last", col: number) {
     if (edge === "first") {
       editor.setCursor(0, col)
       return
     }
-    editor.gotoBufferEnd()
-    const parked = editor.logicalCursor.offset
-    this.whenLaidOut(editor, () => {
-      // The user typed or moved before the layout arrived — their position wins.
-      if (editor.logicalCursor.offset !== parked) return
+    const place = (): boolean => {
       const info = editor.editorView.getLineInfo()
-      if (info.lineSources.length === 0) return
+      if (info.lineSources.length === 0) return false
       const last = info.lineSources.length - 1
       editor.setCursor(info.lineSources[last] ?? 0, (info.lineStartCols[last] ?? 0) + col)
+      return true
+    }
+    if (!place()) editor.gotoBufferEnd()
+    const parked = editor.logicalCursor.offset
+    this.whenLaidOut(editor, () => {
+      if (editor.logicalCursor.offset !== parked) return
+      place()
       this.renderer.requestRender()
     })
   }

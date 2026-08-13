@@ -1954,3 +1954,9 @@ disclosure to dive deeper.
   macOS-style overlay: invisible at rest, a slim half-cell-metric pill while scrolling, widens
   and brightens under the pointer, draggable anywhere on the track, gone ~900ms after the last
   movement (`md/src/scrollbar.ts`).
+- **0.30.3 ships — the viewer reads like a page, not a printout** — patch release: markdown
+  paragraphs wrap inside the reading column instead of clipping at the page edge, and the
+  permanent block-column scrollbar becomes a Safari-style overlay — invisible at rest, slim
+  pill while scrolling, wider under the pointer, draggable, self-hiding. `CFBundleVersion`
+  570, tag `v0.30.3`; dmg + zip notarized, stapled, verified credential-less; appcast newest
+  0.30.3 at 570, `edSignature` on all 18 enclosures. No `synth-site` push.

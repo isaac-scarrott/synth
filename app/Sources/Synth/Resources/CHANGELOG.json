@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.31.0",
+    "date": "2026-08-13",
+    "changes": [
+      "Clicking into a wrapped paragraph, code fence, or quote puts the cursor on the exact line you aimed at, and revealing a block always scrolls it into view.",
+      "The document now edits like one continuous field: arrow keys cross block edges, backspace and delete join blocks, and the cursor keeps its column moving between them.",
+      "Undo finally survives leaving a block: ⌃Z steps back through your typing, then on through every fold, checkbox toggle, and join — ⌃Y redoes.",
+      "Search shows its work: stepping matches reveals the match highlighted in place, and browsing a document can never modify it.",
+      "When a file changed on disk underneath you, ⌃R takes the disk version (⌃S still keeps yours) — and quitting no longer silently overwrites the other writer.",
+      "Links jump to #section headings, the outline opens on the section you're reading and is clickable, ⌘S saves without closing your editor, and a new empty file can simply be typed into."
+    ]
+  },
+  {
     "version": "0.30.5",
     "date": "2026-08-13",
     "changes": [

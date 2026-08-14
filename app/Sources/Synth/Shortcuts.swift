@@ -121,6 +121,10 @@ struct ShortcutsSheet: View {
         // exists rather than what is switched on: a binding missing from here is a binding the user
         // has no way to find.
         ShortcutCategory(name: "Simulator", icon: Phosphor.deviceMobile, rows: [
+            Shortcut(keys: ["⌘", "L"], label: "Open app or URL"),
+            Shortcut(keys: ["⌘", "R"], label: "Relaunch app"),
+            Shortcut(keys: ["⌘", "⇧", "H"], label: "Home"),
+            Shortcut(keys: ["⌘", "⇧", "R"], label: "Rotate"),
             Shortcut(keys: ["esc"], label: "Exit comment mode, or cancel a comment"),
         ]),
     ]

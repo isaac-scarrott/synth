@@ -75,6 +75,8 @@ struct PaneBadge: View {
         // verbatim: a readout — a percentage, a pixel count — not a quantity to group by locale.
         Text(verbatim: text)
             .font(.mono(11))
+            .lineLimit(1)
+            .fixedSize()                     // a readout that wraps is a readout clipped mid-line
             .foregroundStyle(lit ? Theme.ink : Theme.inkMuted)
             .padding(.horizontal, 8)
             .frame(height: 27)

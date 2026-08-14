@@ -158,8 +158,8 @@ final class SimulatorSessionController {
     /// Whether the launcher drop is up. On the controller, like comment mode, because a pane is
     /// rebuilt on every layout change and a half-typed bundle id must survive that.
     var launcherOpen = false
-    /// What `simctl listapps` last said is on the device. Loaded when the launcher opens and kept,
-    /// so reopening it is instant and a device that answers slowly does not blank the list.
+    /// What `simctl listapps` last said is on the device, read once per session: the fleet does not
+    /// change under a booted device often enough to pay a process spawn on every ⌘L.
     private(set) var installedApps: [SimulatorInstalledApp] = []
     /// The result of the last thing the bar did — a launch, a shake, a copied screenshot — or the
     /// error it failed with. Auto-clears, like a refused input.
@@ -168,16 +168,22 @@ final class SimulatorSessionController {
     /// What ⌘L presses. The drop is the pane's, but the state it reads is here.
     func openAppLauncher() {
         launcherOpen = true
-        loadInstalledApps()
+        if installedApps.isEmpty { loadInstalledApps() }
     }
 
     /// Off the main actor: `simctl listapps` spawns a process and prints a plist of every app on
     /// the device, and paying that on main freezes the window — the user's terminals included.
     private func loadInstalledApps() {
         let udid = self.udid
-        Task.detached(priority: .userInitiated) {
-            guard let apps = try? SimulatorDeviceCatalog.installedApps(udid: udid) else { return }
-            await MainActor.run { self.installedApps = apps }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let apps = try SimulatorDeviceCatalog.installedApps(udid: udid)
+                await MainActor.run { [weak self] in self?.installedApps = apps }
+            } catch {
+                // An empty list and a device that could not be asked look identical in the drop,
+                // so the second one says so rather than reading as "nothing is installed".
+                await MainActor.run { [weak self] in self?.note("\(error)", isError: true) }
+            }
         }
     }
 
@@ -187,13 +193,13 @@ final class SimulatorSessionController {
         guard !target.isEmpty else { return }
         let isURL = target.contains("://")
         let source = self.source
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 if isURL { try source.open(url: target) }
                 else { try source.launch(bundleIdentifier: target) }
-                await MainActor.run { self.recordLaunch(of: target, isBundleIdentifier: !isURL) }
+                await MainActor.run { [weak self] in self?.recordLaunch(of: target, isBundleIdentifier: !isURL) }
             } catch {
-                await MainActor.run { self.note("\(error)", isError: true) }
+                await MainActor.run { [weak self] in self?.note("\(error)", isError: true) }
             }
         }
     }
@@ -206,17 +212,18 @@ final class SimulatorSessionController {
             return
         }
         let udid = self.udid
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [weak self] in
             // A terminate of an app that is not running is not a failure of the relaunch, which is
             // the whole verb — so only the launch decides what the user is told.
             try? SimulatorDeviceCatalog.terminate(udid: udid, bundleIdentifier: bundleIdentifier)
             do {
                 try SimulatorDeviceCatalog.launch(udid: udid, bundleIdentifier: bundleIdentifier)
-                await MainActor.run {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
                     self.note("Relaunched \(self.displayName(of: bundleIdentifier))", isError: false)
                 }
             } catch {
-                await MainActor.run { self.note("\(error)", isError: true) }
+                await MainActor.run { [weak self] in self?.note("\(error)", isError: true) }
             }
         }
     }
@@ -225,12 +232,12 @@ final class SimulatorSessionController {
     /// is: the send is a bootstrap lookup plus a bounded `mach_msg`.
     func shake() {
         let source = self.source
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 try source.shake()
-                await MainActor.run { self.note("Shook the device", isError: false) }
+                await MainActor.run { [weak self] in self?.note("Shook the device", isError: false) }
             } catch {
-                await MainActor.run { self.note("\(error)", isError: true) }
+                await MainActor.run { [weak self] in self?.note("\(error)", isError: true) }
             }
         }
     }
@@ -241,10 +248,11 @@ final class SimulatorSessionController {
     func copyScreenshot() {
         let source = self.source
         let udid = self.udid
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [weak self] in
             let png = (try? source.captureVerifiedFrame())??.pngByCopyingPixels()
                 ?? (try? SimulatorDeviceCatalog.screenshotPNG(udid: udid))
-            await MainActor.run {
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 guard let png else {
                     self.note("The device produced no frame to copy.", isError: true)
                     return
@@ -410,6 +418,7 @@ final class SimulatorSessionController {
         // its `teardown()` had no caller at all, so closing a session with a composer open left the
         // PNGs in Application Support for good — unbounded over a working day.
         commentMode.teardown()
+        launcherOpen = false
         retryTask?.cancel()
         retryTask = nil
         source.onFrame = nil
@@ -645,21 +654,9 @@ struct SimulatorPane: View {
     private func stage(_ controller: SimulatorSessionController) -> some View {
         VStack(spacing: 0) {
             SimulatorBar(controller: controller)
-            if let notice = controller.commentMode.notice {
-                SimulatorNotice(label: "Comment", text: notice, isError: false)
-            } else if let action = controller.actionNotice {
-                SimulatorNotice(label: action.isError ? "Refused" : "Device",
-                                text: action.text, isError: action.isError)
-            } else if let failure = controller.inputFailure {
-                SimulatorNotice(text: "Input was refused. \(failure)", isError: true)
-            } else if controller.isAwaitingBoot {
-                SimulatorNotice(text: "Starting \(controller.deviceInfo?.name ?? "the device")…",
-                                isError: false)
-            } else if let failure = controller.startFailure {
-                SimulatorNotice(text: "Could not attach to the device. \(failure)", isError: true)
-            } else if let degradation = controller.degradation {
-                SimulatorNotice(text: degradation.summary, isError: false)
-            }
+            // The launcher hangs off the bar, so the notice strip cannot sit between them — a
+            // degradation or a 4s action notice would carry the drop away from the field it belongs
+            // to. It rides the stage instead, above the device and below the drop.
             ZStack(alignment: .top) {
                 GeometryReader { geo in
                     // Comment mode lives in the controller; the AppKit view needs telling.
@@ -688,6 +685,7 @@ struct SimulatorPane: View {
                             .padding(14)
                     }
                 }
+                noticeStrip(controller)
                 if controller.launcherOpen {
                     // Outside-click catcher under the drop (the browser pane's, and the mock's
                     // document mousedown).
@@ -697,6 +695,27 @@ struct SimulatorPane: View {
                     SimulatorLauncherDrop(controller: controller)
                 }
             }
+        }
+    }
+
+    /// One line at a time, most immediate first: what the last verb did, then what is refusing or
+    /// still starting. A comment notice outranks them because it answers a thing the user just sent.
+    @ViewBuilder
+    private func noticeStrip(_ controller: SimulatorSessionController) -> some View {
+        if let notice = controller.commentMode.notice {
+            SimulatorNotice(label: "Comment", text: notice, isError: false)
+        } else if let action = controller.actionNotice {
+            SimulatorNotice(label: action.isError ? "Refused" : "Device",
+                            text: action.text, isError: action.isError)
+        } else if let failure = controller.inputFailure {
+            SimulatorNotice(text: "Input was refused. \(failure)", isError: true)
+        } else if controller.isAwaitingBoot {
+            SimulatorNotice(text: "Starting \(controller.deviceInfo?.name ?? "the device")…",
+                            isError: false)
+        } else if let failure = controller.startFailure {
+            SimulatorNotice(text: "Could not attach to the device. \(failure)", isError: true)
+        } else if let degradation = controller.degradation {
+            SimulatorNotice(text: degradation.summary, isError: false)
         }
     }
 }

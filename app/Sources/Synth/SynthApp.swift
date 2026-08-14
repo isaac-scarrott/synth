@@ -716,7 +716,10 @@ struct RootView: View {
                 switch key {
                 case "l":
                     ctrl.openAppLauncher(); return nil
-                case "r" where !event.modifierFlags.contains(.shift):
+                // Swallowing ⌘R to answer "nothing has been launched" would be a worse key than
+                // one that does nothing, so with no bundle id recorded this is not our chord.
+                case "r" where !event.modifierFlags.contains(.shift)
+                        && ctrl.runningBundleIdentifier != nil:
                     ctrl.relaunch(); return nil
                 case "r" where event.modifierFlags.contains(.shift):
                     ctrl.rotate(); return nil

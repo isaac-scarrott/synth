@@ -112,10 +112,6 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "−"], label: "Zoom out"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "DevTools"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Device mode"),
-            Shortcut(keys: ["⏎"], label: "Add comment to batch"),
-            Shortcut(keys: ["⌥", "↑"], label: "Widen comment target"),
-            Shortcut(keys: ["⌘", "⌥", "⏎"], label: "Send all comments"),
-            Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
         // Simulator sessions are behind the Experimental toggle (ADR-0015), but the sheet lists what
         // exists rather than what is switched on: a binding missing from here is a binding the user
@@ -125,7 +121,16 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "R"], label: "Relaunch app"),
             Shortcut(keys: ["⌘", "⇧", "H"], label: "Home"),
             Shortcut(keys: ["⌘", "⇧", "R"], label: "Rotate"),
+            Shortcut(keys: ["⏎"], label: "Send the comment you are writing"),
             Shortcut(keys: ["esc"], label: "Exit comment mode, or cancel a comment"),
+        ]),
+        // Comment mode belongs to whatever Synth is driving, not to the browser it started in —
+        // under a "Browser" heading these read as unavailable to someone holding a simulator.
+        ShortcutCategory(name: "Comments", icon: Phosphor.commentMode, rows: [
+            Shortcut(keys: ["⏎"], label: "Add comment to the browser's batch"),
+            Shortcut(keys: ["⌥", "↑"], label: "Widen comment target"),
+            Shortcut(keys: ["⌘", "⌥", "⏎"], label: "Send all comments"),
+            Shortcut(keys: ["esc"], label: "Exit comment mode"),
         ]),
     ]
 

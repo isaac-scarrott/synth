@@ -494,17 +494,20 @@ struct PaletteFrame {
             PaletteItem(icon: .phosphor(Phosphor.squares), label: "Open app or URL",
                         kbd: ["⌘", "L"], enter: drive { $0.openAppLauncher() }),
             // Nothing launched from here is nothing to relaunch — the device's twin of the
-            // browser's home page, where the page verbs have no page to act on.
+            // browser's home page, where the page verbs have no page to act on. A deep link counts
+            // as nothing: it names a destination, not a process this could terminate.
             PaletteItem(icon: .phosphor(Phosphor.reload), label: "Relaunch app",
-                        kbd: ["⌘", "R"], disabled: live?.runningAppLabel == nil,
+                        kbd: ["⌘", "R"], disabled: live?.runningBundleIdentifier == nil,
                         enter: drive { $0.relaunch() }),
+            // Home and Lock do not flip to "Back to app" / "Unlock" the way the mock's do: a real
+            // device reports neither, and a label that guesses is worse than one that only acts.
             PaletteItem(icon: .phosphor(Phosphor.house), label: "Home",
                         kbd: ["⌘", "⇧", "H"], enter: drive { $0.press(.home) }),
             PaletteItem(icon: .phosphor(Phosphor.lock), label: "Lock device",
                         enter: drive { $0.press(.lock) }),
             PaletteItem(icon: .phosphor(Phosphor.deviceMobile), label: "Rotate device",
                         kbd: ["⌘", "⇧", "R"], enter: drive { $0.rotate() }),
-            PaletteItem(icon: .phosphor(Phosphor.reset), label: "Shake",
+            PaletteItem(icon: .phosphor(Phosphor.shake), label: "Shake",
                         enter: drive { $0.shake() }),
             PaletteItem(icon: .phosphor(Phosphor.copy), label: "Copy screenshot",
                         enter: drive { $0.copyScreenshot() }),

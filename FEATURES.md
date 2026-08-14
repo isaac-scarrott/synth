@@ -1998,3 +1998,10 @@ disclosure to dive deeper.
 - **Markdown editing: the caret's first paint is its final position** — the one-frame caret
   leap on click-to-edit (and upward block steps) is gone; the wrap-aware mapping now runs
   before the first paint, pinned by a frame-walking test (`md/src/view.ts`).
+
+## [2026-08-14](docs/features/2026-08-14.md)
+
+- **0.31.1 ships — the click is clean** — patch release: the one-frame caret leap on
+  click-to-edit is gone. `CFBundleVersion` 590, tag `v0.31.1`; dmg + zip notarized, stapled,
+  verified credential-less; appcast newest 0.31.1 at 590, `edSignature` on all 18
+  enclosures. No `synth-site` push.

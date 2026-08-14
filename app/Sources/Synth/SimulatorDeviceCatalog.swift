@@ -65,6 +65,18 @@ struct SimulatorDeviceInfo: Identifiable, Hashable, Sendable {
     }
 }
 
+/// One app installed on a device, as the pane's launcher lists it.
+struct SimulatorInstalledApp: Identifiable, Hashable, Sendable {
+    var bundleIdentifier: String
+    /// `CFBundleDisplayName`, falling back to `CFBundleName` — what the home screen calls it.
+    var name: String
+    /// Installed rather than shipped with the runtime. Decides the order, because a developer's
+    /// own build is the reason this list is ever open.
+    var isUserApp: Bool
+
+    var id: String { bundleIdentifier }
+}
+
 /// An installed runtime, for grouping the picker.
 struct SimulatorRuntimeInfo: Identifiable, Hashable, Sendable {
     var identifier: String
@@ -287,6 +299,42 @@ enum SimulatorDeviceCatalog {
 
     static func open(udid: String, url: String) throws {
         try SimulatorShell.simctl(["openurl", udid, url], timeout: 30)
+    }
+
+    /// What is installed on the device, so the launcher can offer bundle ids instead of asking the
+    /// user to remember them.
+    ///
+    /// `simctl listapps` has no `--json`: it prints an **OpenStep** property list, which
+    /// `PropertyListSerialization` reads and `JSONSerialization` does not — reaching for the JSON
+    /// path here fails on every device, which reads as "no apps installed" rather than as a parse
+    /// that never had a chance.
+    static func installedApps(udid: String) throws -> [SimulatorInstalledApp] {
+        let output = try SimulatorShell.simctl(["listapps", udid], timeout: 60)
+        guard let data = output.standardOutput.data(using: .utf8),
+              let listing = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil) as? [String: Any]
+        else {
+            throw SimulatorCatalogFailure.malformedListing(
+                "simctl listapps \(udid) did not return a property list")
+        }
+        let apps = listing.values.compactMap { value -> SimulatorInstalledApp? in
+            guard let entry = value as? [String: Any],
+                  let bundleIdentifier = entry["CFBundleIdentifier"] as? String,
+                  !bundleIdentifier.isEmpty
+            else { return nil }
+            let name = (entry["CFBundleDisplayName"] as? String)
+                ?? (entry["CFBundleName"] as? String) ?? bundleIdentifier
+            return SimulatorInstalledApp(
+                bundleIdentifier: bundleIdentifier, name: name,
+                isUserApp: (entry["ApplicationType"] as? String) == "User")
+        }
+        // What the developer put there first: on a stock device the system apps outnumber them
+        // twenty to one, and the app being worked on is the only reason this list is open.
+        return apps.sorted {
+            $0.isUserApp == $1.isUserApp
+                ? $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                : $0.isUserApp
+        }
     }
 
     /// A PNG of the device's screen. The degraded screen source polls this; it is also the

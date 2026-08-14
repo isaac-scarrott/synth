@@ -2009,3 +2009,8 @@ disclosure to dive deeper.
   to shared `pane-*` primitives and comment mode to `wireComments`, then the simulator says it
   in hardware: Home / Lock / Rotate, a bundle-id field with a launcher, a points badge, the
   device log docked where DevTools docks, and a ⌘K Device group.
+- **The app's simulator pane grows the same chrome** — `PaneChrome.swift` shares the bar, button,
+  badge, field, drop and rows between browser and simulator; the simulator bar becomes Home / Lock /
+  Rotate + a bundle-id launcher over `simctl listapps` + a viewport badge, with a ⌘K Device group and
+  ⌘L / ⌘R / ⌘⇧H / ⌘⇧R.
+

@@ -2005,3 +2005,7 @@ disclosure to dive deeper.
   click-to-edit is gone. `CFBundleVersion` 590, tag `v0.31.1`; dmg + zip notarized, stapled,
   verified credential-less; appcast newest 0.31.1 at 590, `edSignature` on all 18
   enclosures. No `synth-site` push.
+- **The simulator speaks the browser's language** — the driven-surface vocabulary is extracted
+  to shared `pane-*` primitives and comment mode to `wireComments`, then the simulator says it
+  in hardware: Home / Lock / Rotate, a bundle-id field with a launcher, a points badge, the
+  device log docked where DevTools docks, and a ⌘K Device group.

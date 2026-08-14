@@ -437,7 +437,7 @@
   .pane-setup__spin {
     width: 22px; height: 22px; border-radius: 50%;
     border: 2px solid var(--text-faint); border-top-color: transparent;
-    animation: browser-spin 0.9s linear infinite;
+    animation: pane-spin 0.9s linear infinite;
   }
   .pane-setup span { font-size: 13px; }
 
@@ -508,10 +508,11 @@
     /* session surfaces give back their generous padding so content stays legible at the floor.
        The terminal already reflows (pre-wrap + word-break); this only reclaims the frame margins. */
     .term { margin: 4px 8px 8px; padding: 10px 12px; }
-    .browser { margin: 4px 8px 8px; }
-    .browser__bar { gap: 5px; padding: 6px 7px; }
-    .browser__view { padding: 18px 16px; }
-    .browser__home { padding: 34px 18px 20px; }
+    .pane-surface { margin: 4px 8px 8px; }
+    .pane-bar { gap: 5px; padding: 6px 7px; }
+    .sim .pane-badge { display: none; }           /* the viewport reading gives its place to the tools */
+    .pane-view { padding: 18px 16px; }
+    .pane-start { padding: 34px 18px 20px; }
     .chat__scroll { padding: 10px 12px; }
     .chat__composer { margin: 0 10px 10px; }
   }
@@ -660,61 +661,69 @@
   .chat__input { flex: 1; font-family: inherit; font-size: 12px; line-height: 1.6; color: var(--tui-fg); outline: none; min-width: 0; }
   .chat__input:empty::before { content: attr(data-ph); color: var(--tui-dim); }
 
-  /* ----- Browser (embedded; one page per session, opens to a "go to" home) ----- */
-  .browser { flex: 1; display: flex; flex-direction: column; margin: 4px 14px 14px; border-radius: 10px; overflow: hidden; border: 0.5px solid var(--border-strong); background: var(--raised); box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; }
-  .browser__bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--chrome); border-bottom: 0.5px solid var(--border); }
-  .browser__nav { display: flex; gap: 2px; }
-  .browser__btn { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 120ms ease, color 120ms ease, transform 110ms var(--ease-out); }
-  .browser__btn svg { width: 16px; height: 16px; }
-  .browser__btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
-  .browser__btn:active:not(:disabled) { transform: scale(0.9); }
-  .browser__btn:disabled { opacity: 0.32; cursor: default; }
-  .browser__btn--spin svg { animation: browser-spin 0.6s var(--ease-in-out); transform-origin: 50% 50%; }
-  @keyframes browser-spin { to { transform: rotate(360deg); } }
-  .browser__omni { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12px; color: var(--text-muted); background: var(--raised); border: 0.5px solid var(--border); border-radius: 8px; padding: 5px 11px; cursor: text; text-align: left; transition: border-color 120ms ease, box-shadow 120ms ease; }
-  .browser__omni:hover { border-color: var(--border-strong); }
-  .browser__omni.is-editing { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
-  .browser__zoom { flex-shrink: 0; display: none; align-items: center; height: 28px; padding: 0 8px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--raised); color: var(--text-muted); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
-  .browser__zoom.is-shown { display: inline-flex; }
-  .browser__zoom:hover { background: var(--hover); color: var(--ink); border-color: var(--border-strong); }
-  .browser__lock { flex-shrink: 0; display: flex; color: var(--text-faint); }
-  .browser__lock svg { width: 12px; height: 12px; }
-  .browser__url { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .browser__url--ph { color: var(--text-faint); }
-  .browser__view { flex: 1; overflow-y: auto; padding: 30px 34px; background: var(--raised); }
+  /* ----- Driven surfaces: the chrome Synth wraps around something it drives ---------------
+     One vocabulary, two speakers so far — the embedded browser and the simulator. A surface is
+     a framed card with a toolbar: hardware/navigation buttons on the left, one identity field
+     that names what is loaded and reopens the "open…" surface, a mono badge for the number that
+     changes as you drive, then the tools. Below it the view, optionally a docked panel, and the
+     comment layer over everything. Anything a second surface would want is named `pane-*`; only
+     what genuinely belongs to one keeps its own name (device mode is the browser's alone). */
+  .pane-surface { flex: 1; display: flex; flex-direction: column; margin: 4px 14px 14px; border-radius: 10px; overflow: hidden; border: 0.5px solid var(--border-strong); background: var(--raised); box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; }
+  .pane-bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--chrome); border-bottom: 0.5px solid var(--border); }
+  .pane-nav { display: flex; gap: 2px; }
+  .pane-btn { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 120ms ease, color 120ms ease, transform 110ms var(--ease-out); }
+  .pane-btn svg { width: 16px; height: 16px; }
+  .pane-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+  .pane-btn:active:not(:disabled) { transform: scale(0.9); }
+  .pane-btn:disabled { opacity: 0.32; cursor: default; }
+  .pane-btn--spin svg { animation: pane-spin 0.6s var(--ease-in-out); transform-origin: 50% 50%; }
+  @keyframes pane-spin { to { transform: rotate(360deg); } }
+  .pane-omni { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12px; color: var(--text-muted); background: var(--raised); border: 0.5px solid var(--border); border-radius: 8px; padding: 5px 11px; cursor: text; text-align: left; transition: border-color 120ms ease, box-shadow 120ms ease; }
+  .pane-omni:hover { border-color: var(--border-strong); }
+  .pane-omni.is-editing { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
+  /* the one number that moves while you drive: the browser's zoom, the simulator's viewport */
+  .pane-badge { flex-shrink: 0; display: none; align-items: center; height: 28px; padding: 0 8px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--raised); color: var(--text-muted); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
+  .pane-badge.is-shown { display: inline-flex; }
+  button.pane-badge { cursor: pointer; }
+  button.pane-badge:hover { background: var(--hover); color: var(--ink); border-color: var(--border-strong); }
+  .pane-omni__mark { flex-shrink: 0; display: flex; color: var(--text-faint); }
+  .pane-omni__mark svg { width: 12px; height: 12px; }
+  .pane-omni__text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pane-omni__text--ph { color: var(--text-faint); }
+  .pane-view { flex: 1; overflow-y: auto; padding: 30px 34px; background: var(--raised); }
   /* new-tab / "go to" home surface, and the omnibox dropdown, share one recents list */
-  .browser__home { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 60px 22px 28px; background: var(--raised); }
-  .browser__homeinner { width: 100%; max-width: 440px; }
-  .browser__glyph { display: block; margin: 0 auto 18px; color: var(--text-faint); }
-  .browser__glyph svg { width: 34px; height: 34px; display: block; margin: 0 auto; }
-  .browser__field { display: flex; align-items: center; gap: 9px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 11px; padding: 11px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: border-color 120ms ease, box-shadow 120ms ease; }
-  .browser__field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
-  .browser__field svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-faint); }
-  .browser__field input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; color: var(--ink); background: transparent; border: 0; outline: 0; }
-  .browser__field input::placeholder { color: var(--text-faint); }
-  .browser__reclabel { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); margin: 22px 4px 7px; }
-  .browser__rec { display: flex; flex-direction: column; gap: 1px; }
-  .browser__recitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; transition: background 110ms ease; }
-  .browser__recitem:hover { background: var(--hover); }
-  .browser__recitem svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-faint); }
-  .browser__recurl { font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .browser__recname { margin-left: auto; font-size: 12px; color: var(--text-faint); white-space: nowrap; flex-shrink: 0; }
-  .browser__cmdkhint { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 26px; font-size: 12px; color: var(--text-faint); }
-  .browser__drop { position: absolute; top: 41px; left: 10px; right: 10px; z-index: 5; padding: 8px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 14px 36px rgba(0,0,0,0.17); animation: browser-drop 140ms var(--ease-out); }
-  .browser__drop .browser__reclabel { margin-top: 12px; }
-  @keyframes browser-drop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-  .browser__btn.is-on { background: var(--hover); color: var(--ink); }
+  .pane-start { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 60px 22px 28px; background: var(--raised); }
+  .pane-start__inner { width: 100%; max-width: 440px; }
+  .pane-start__glyph { display: block; margin: 0 auto 18px; color: var(--text-faint); }
+  .pane-start__glyph svg { width: 34px; height: 34px; display: block; margin: 0 auto; }
+  .pane-field { display: flex; align-items: center; gap: 9px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 11px; padding: 11px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: border-color 120ms ease, box-shadow 120ms ease; }
+  .pane-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
+  .pane-field svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-faint); }
+  .pane-field input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; color: var(--ink); background: transparent; border: 0; outline: 0; }
+  .pane-field input::placeholder { color: var(--text-faint); }
+  .pane-rec__label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); margin: 22px 4px 7px; }
+  .pane-rec { display: flex; flex-direction: column; gap: 1px; }
+  .pane-rec__item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; transition: background 110ms ease; }
+  .pane-rec__item:hover { background: var(--hover); }
+  .pane-rec__item svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-faint); }
+  .pane-rec__key { font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pane-rec__name { margin-left: auto; font-size: 12px; color: var(--text-faint); white-space: nowrap; flex-shrink: 0; }
+  .pane-start__hint { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 26px; font-size: 12px; color: var(--text-faint); }
+  .pane-drop { position: absolute; top: 41px; left: 10px; right: 10px; z-index: 5; padding: 8px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 14px 36px rgba(0,0,0,0.17); animation: pane-drop-in 140ms var(--ease-out); }
+  .pane-drop .pane-rec__label { margin-top: 12px; }
+  @keyframes pane-drop-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .pane-btn.is-on { background: var(--hover); color: var(--ink); }
 
   /* ---- Comment mode (ADR-0011 stages three/four, batched) ------------------------------
      Comments accumulate on the page and leave together. Nothing reaches an agent until Send,
      so a pass over a page is one delivery instead of one interruption per remark. Two surfaces:
      quiet numbered pins on the page, and one floating island that owns the batch. */
-  .browser__view { position: relative; }
-  .browser--commenting .browser__view { cursor: crosshair; }
+  .pane-view { position: relative; }
+  .is-commenting .pane-view { cursor: crosshair; }
   /* the queue stays legible from the toolbar even with the island collapsed */
-  .browser__btnwrap { position: relative; display: flex; }
-  .browser__cnt { position: absolute; top: -1px; right: -2px; min-width: 14px; height: 14px; padding: 0 4px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--copper); color: #fff; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 1.5px var(--chrome); animation: cm-pop 220ms var(--ease-out); }
-  .browser__cnt[hidden] { display: none; }   /* the class's own display would outrank [hidden] */
+  .pane-btnwrap { position: relative; display: flex; }
+  .pane-cnt { position: absolute; top: -1px; right: -2px; min-width: 14px; height: 14px; padding: 0 4px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--copper); color: #fff; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 1.5px var(--chrome); animation: cm-pop 220ms var(--ease-out); }
+  .pane-cnt[hidden] { display: none; }   /* the class's own display would outrank [hidden] */
 
   /* Pins, the active comment's scope and the inspect outline share one non-interactive
      overlay above the page; only the pins take the pointer back. */
@@ -742,12 +751,12 @@
   .cm-pin.is-going { transform: scale(0.3); opacity: 0; }
 
   /* hover peek: the comment's own words, without opening anything */
-  .cm-peek { position: absolute; pointer-events: none; z-index: 3; max-width: 250px; padding: 7px 10px; border-radius: 9px; background: var(--glass); border: 0.5px solid var(--line); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: var(--notif-shadow); animation: browser-drop 130ms var(--ease-out); }
+  .cm-peek { position: absolute; pointer-events: none; z-index: 3; max-width: 250px; padding: 7px 10px; border-radius: 9px; background: var(--glass); border: 0.5px solid var(--line); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: var(--notif-shadow); animation: pane-drop-in 130ms var(--ease-out); }
   .cm-peek__sel { font-family: var(--mono); font-size: 10px; color: var(--text-faint); margin-bottom: 3px; }
   .cm-peek__txt { font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 
   /* Composer — anchored to its pin, and it queues. Nothing here reaches an agent. */
-  .cm-card { position: absolute; z-index: 4; width: 300px; pointer-events: auto; padding: 9px; border-radius: 12px; background: var(--glass); border: 0.5px solid var(--line); -webkit-backdrop-filter: saturate(180%) blur(22px); backdrop-filter: saturate(180%) blur(22px); box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 14px 38px rgba(0,0,0,0.22); animation: browser-drop 150ms var(--ease-out); }
+  .cm-card { position: absolute; z-index: 4; width: 300px; pointer-events: auto; padding: 9px; border-radius: 12px; background: var(--glass); border: 0.5px solid var(--line); -webkit-backdrop-filter: saturate(180%) blur(22px); backdrop-filter: saturate(180%) blur(22px); box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 14px 38px rgba(0,0,0,0.22); animation: pane-drop-in 150ms var(--ease-out); }
   /* The path is the scope control, not a caption: each ancestor is a target you can promote
      the comment to. Opens scrolled to the element you actually hit. */
   .cm-card__sel { display: flex; align-items: center; gap: 6px; padding: 0 0 7px; }
@@ -821,16 +830,16 @@
   .cm-spin { width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--line-2); border-top-color: var(--copper); animation: cm-spin 0.7s linear infinite; }
   @keyframes cm-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .cm-spin { animation: none; } }
-  .browser__notice { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; padding: 5px 12px; border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); box-shadow: var(--notif-shadow); font-size: 12px; font-weight: 500; color: var(--ink-3); white-space: nowrap; animation: browser-drop 160ms var(--ease-out); transition: opacity 240ms ease; }
-  .browser__notice.out { opacity: 0; }
+  .pane-notice { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; padding: 5px 12px; border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border: 0.5px solid var(--line); box-shadow: var(--notif-shadow); font-size: 12px; font-weight: 500; color: var(--ink-3); white-space: nowrap; animation: pane-drop-in 160ms var(--ease-out); transition: opacity 240ms ease; }
+  .pane-notice.out { opacity: 0; }
 
-  .browser__devtools { height: 38%; min-height: 150px; display: flex; flex-direction: column; border-top: 0.5px solid var(--border-strong); background: var(--chrome); }
-  .devtools__tabs { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 0.5px solid var(--border); }
-  .devtools__tab { padding: 4px 9px; border: 0; border-radius: 6px; background: transparent; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: background 110ms ease, color 110ms ease; }
-  .devtools__tab:hover { background: var(--hover); }
-  .devtools__tab.is-active { background: var(--hover); color: var(--ink); }
-  .devtools__body { flex: 1; overflow-y: auto; padding: 12px 14px; }
-  .devtools__body .skel { border-radius: 4px; }
+  .pane-dock { height: 38%; min-height: 150px; display: flex; flex-direction: column; border-top: 0.5px solid var(--border-strong); background: var(--chrome); }
+  .pane-dock__tabs { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 0.5px solid var(--border); }
+  .pane-dock__tab { padding: 4px 9px; border: 0; border-radius: 6px; background: transparent; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: background 110ms ease, color 110ms ease; }
+  .pane-dock__tab:hover { background: var(--hover); }
+  .pane-dock__tab.is-active { background: var(--hover); color: var(--ink); }
+  .pane-dock__body { flex: 1; overflow-y: auto; padding: 12px 14px; }
+  .pane-dock__body .skel { border-radius: 4px; }
   .skel { border-radius: 7px; background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05)); background-size: 200% 100%; animation: skel-shimmer 1.6s linear infinite; }
   @keyframes skel-shimmer { to { background-position: -200% 0; } }
   .skel--title { height: 26px; width: 46%; margin-bottom: 18px; }
@@ -849,8 +858,8 @@
   .devicebar__dims { flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--text-faint); white-space: nowrap; }
   /* rotate previews the orientation a press would give — the device glyph turned, never
      a circular arrow (reads as reload beside the toolbar's real one) */
-  .browser__btn--turned svg { transform: rotate(90deg); }
-  .browser--device .browser__view { padding: 0; overflow: hidden; }
+  .pane-btn--turned svg { transform: rotate(90deg); }
+  .browser--device .pane-view, .pane-view--flush { padding: 0; overflow: hidden; }
   .devstage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--chrome); }
   .dev-box { position: relative; flex-shrink: 0; }
 
@@ -1002,6 +1011,38 @@
   .devui__tablabel { width: 26px; height: 5px; border-radius: 3px; background: rgba(0,0,0,0.14); }
   .devui__tabitem.is-on .devui__tabicon { background: #0a84ff; }
   .devui__tabitem.is-on .devui__tablabel { background: rgba(10,132,255,0.7); }
+  /* Home and lock are the device's other two screens, and the app keeps running behind both —
+     so all three live in the screen at once and the mode picks which one shows. That is what
+     lets a comment left on the app still be there when you come back from the home screen. */
+  .devui__board, .devui__lockface { display: none; }
+  .dev__screen.is-home .devui__app, .dev__screen.is-locked .devui__app { display: none; }
+  .dev__screen.is-home .devui__board { display: flex; }
+  .dev__screen.is-locked .devui__lockface { display: flex; }
+  .dev__screen.is-locked { background: #0e1219; color: #fff; }
+  .devui__board { flex: 1; min-height: 0; flex-direction: column; padding: 18px 20px 0; background: linear-gradient(168deg, #cddcf3 0%, #e5d9ec 52%, #f6e2d5 100%); }
+  .devui__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 17px 14px; }
+  .dev--pad .devui__grid { grid-template-columns: repeat(6, 1fr); gap: 26px 22px; }
+  .devui__tile { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; padding: 0; background: transparent; }
+  .devui__tileicon { width: 100%; aspect-ratio: 1; border-radius: 23%; background: rgba(255,255,255,0.62); border: 0.5px solid rgba(0,0,0,0.05); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  .devui__tilename { width: 68%; height: 5px; border-radius: 3px; background: rgba(0,0,0,0.2); }
+  /* the app this session is running — the one tile on the springboard that is not a stand-in */
+  .devui__tile.is-on { cursor: pointer; }
+  .devui__tile.is-on .devui__tileicon { background: linear-gradient(165deg, #4da2ff, #0a5fe0); border-color: rgba(0,0,0,0.08); }
+  .devui__tile.is-on .devui__tilename { width: 78%; background: rgba(0,0,0,0.42); }
+  .devui__dockrow { margin: auto 0 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 11px 12px; border-radius: 26px; background: rgba(255,255,255,0.42); border: 0.5px solid rgba(255,255,255,0.5); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .dev--pad .devui__dockrow { grid-template-columns: repeat(6, 1fr); gap: 22px; }
+  .devui__dockrow .devui__tilename { display: none; }
+  .devui__lockface { flex: 1; min-height: 0; flex-direction: column; align-items: center; padding-top: 11%; }
+  .devui__lockglyph { width: 15px; height: 15px; opacity: 0.65; }
+  .devui__locktime { margin-top: 10px; font-size: 62px; font-weight: 300; letter-spacing: -0.03em; line-height: 1; }
+  .dev--pad .devui__locktime, .dev--land .devui__locktime { font-size: 50px; }
+  .devui__lockdate { margin-top: 6px; font-size: 15px; font-weight: 500; opacity: 0.72; }
+  .devui__lockface .devui__home { margin-top: auto; align-self: stretch; }
+  .devui__lockface .devui__home::after { background: rgba(255,255,255,0.85); }
+  /* a shake is a gesture, so it is shown as one — the frame itself, not a toast */
+  .dev.is-shaking { animation: dev-shake 420ms var(--ease-in-out); }
+  @keyframes dev-shake { 0%, 100% { margin-left: 0; } 20% { margin-left: -9px; } 45% { margin-left: 8px; } 70% { margin-left: -5px; } 88% { margin-left: 3px; } }
+  @media (prefers-reduced-motion: reduce) { .dev.is-shaking { animation: none; } }
 
   /* ---- Sidebar nav: workspace → branches → sessions ---- */
   .nav {
@@ -1298,7 +1339,7 @@
   .wt-spinner {
     display: inline-block; width: 11px; height: 11px; border-radius: 50%;
     border: 1.5px solid var(--text-faint); border-top-color: transparent;
-    animation: browser-spin 0.9s linear infinite;
+    animation: pane-spin 0.9s linear infinite;
   }
 
   /* ---- Sessions inside a branch ---- */
@@ -4673,14 +4714,18 @@
   }
   // A device at true viewport size, inside a box that carries its scaled footprint so the stage
   // can centre it before fitFrame() picks the scale.
-  function deviceHTML(d, land, screenHTML) {
+  // Every number the frame is drawn from, as custom properties — so rotating a device can be a
+  // change of these on the frame that is already standing, rather than a new one.
+  function deviceVars(d, land) {
     const w = land ? d.h : d.w, h = land ? d.w : d.h;
     const bz = devBezel(d, land);
-    const vars = `width:${w}px;height:${h}px;--bz-t:${bz[0]}px;--bz-r:${bz[1]}px;--bz-b:${bz[2]}px;--bz-l:${bz[3]}px;` +
+    return `width:${w}px;height:${h}px;--bz-t:${bz[0]}px;--bz-r:${bz[1]}px;--bz-b:${bz[2]}px;--bz-l:${bz[3]}px;` +
       `--frame-r:${d.frameR}px;--screen-r:${d.screenR}px;--sb-h:${d.sb}px;--sb-top:${d.sbTop}px;` +
       `--sb-l:${d.sbPad[0]}px;--sb-r:${d.sbPad[1]}px;--home-h:${d.home}px`;
-    return `<div class="dev-box" data-framebox><div class="${deviceClasses(d, land)}" data-frame style="${vars}">
-      <div class="dev__screen">${screenHTML}</div>${deviceHardwareHTML(d)}
+  }
+  function deviceHTML(d, land, screenHTML, screenClass) {
+    return `<div class="dev-box" data-framebox><div class="${deviceClasses(d, land)}" data-frame style="${deviceVars(d, land)}">
+      <div class="dev__screen${screenClass ? ' ' + screenClass : ''}" data-screen>${screenHTML}</div>${deviceHardwareHTML(d)}
     </div></div>`;
   }
   const svgClass = (svg, cls) => svg.replace('<svg ', `<svg class="${cls}" `);
@@ -4728,7 +4773,7 @@
     return `<div class="browser__devicebar" data-devicebar>
       <div class="devicebar__chips">${DEVICES.map((x) => `<button class="devicebar__chip ${x.id === deviceId ? 'is-active' : ''}" data-device="${x.id}">${esc(x.name)}</button>`).join('')}</div>
       <span class="devicebar__dims">${w} × ${h}</span>
-      <button class="browser__btn${landscape ? '' : ' browser__btn--turned'}" data-rotate aria-label="Rotate device">${ICON_DEVICE}</button>
+      <button class="pane-btn${landscape ? '' : ' pane-btn--turned'}" data-rotate aria-label="Rotate device">${ICON_DEVICE}</button>
     </div>`;
   }
   function deviceFrameHTML(deviceId, landscape, host) {
@@ -4751,8 +4796,8 @@
   }
 
   function browserRecentsHTML() {
-    return `<div class="browser__reclabel">Recent</div><div class="browser__rec">` +
-      BROWSER_RECENTS.map((r) => `<button class="browser__recitem" data-goto="${esc(r.url)}">${ICON_BROWSER}<span class="browser__recurl">${esc(r.url)}</span><span class="browser__recname">${esc(r.name)}</span></button>`).join('') +
+    return `<div class="pane-rec__label">Recent</div><div class="pane-rec">` +
+      BROWSER_RECENTS.map((r) => `<button class="pane-rec__item" data-goto="${esc(r.url)}">${ICON_BROWSER}<span class="pane-rec__key">${esc(r.url)}</span><span class="pane-rec__name">${esc(r.name)}</span></button>`).join('') +
       `</div>`;
   }
   // A skeleton stands in for the live WKWebView / Chromium surface a real session would host — a
@@ -4764,123 +4809,103 @@
       <div class="skel skel--line" style="width:70%"></div>
       <div class="skel--cards"><div class="skel skel--card"></div><div class="skel skel--card"></div><div class="skel skel--card"></div></div>`;
   }
-  // DevTools body is a skeleton for the same reason the page is: the real panel is Chromium's own
-  // DevTools rendered into the pane; only the toggle and the docked frame are ours.
-  function devtoolsHTML(tab) {
-    const tabs = ['Elements', 'Console', 'Network', 'Sources'];
-    return `<div class="browser__devtools" data-devtools>
-      <div class="devtools__tabs">${tabs.map((t) => `<button class="devtools__tab ${t === (tab || 'Elements') ? 'is-active' : ''}" data-tab="${t}">${t}</button>`).join('')}</div>
-      <div class="devtools__body">
+  // The panel a surface docks under itself — Chromium's DevTools for the browser, the device's
+  // own log for the simulator. Its body is a skeleton for the same reason the page is: the real
+  // panel is the tool itself rendered into the pane. Only the toggle, the frame and the tabs are ours.
+  function paneDockHTML(tabs, active, body) {
+    return `<div class="pane-dock" data-dock>
+      <div class="pane-dock__tabs">${tabs.map((t) => `<button class="pane-dock__tab ${t === (active || tabs[0]) ? 'is-active' : ''}" data-tab="${t}">${t}</button>`).join('')}</div>
+      <div class="pane-dock__body">${body}</div>
+    </div>`;
+  }
+  // one tab picks another, and the surface keeps the choice for its next paint
+  function wireDock(host, pick) {
+    host.querySelectorAll('.pane-dock__tab').forEach((t) => t.onclick = () => {
+      pick(t.dataset.tab);
+      host.querySelectorAll('.pane-dock__tab').forEach((x) => x.classList.toggle('is-active', x === t));
+    });
+  }
+  const DEVTOOLS_TABS = ['Elements', 'Console', 'Network', 'Sources'];
+  const devtoolsHTML = (tab) => paneDockHTML(DEVTOOLS_TABS, tab, `
         <div class="skel skel--line" style="width:58%"></div>
         <div class="skel skel--line" style="width:74%;margin-left:16px"></div>
         <div class="skel skel--line" style="width:46%;margin-left:32px"></div>
         <div class="skel skel--line" style="width:66%;margin-left:32px"></div>
-        <div class="skel skel--line" style="width:38%;margin-left:16px"></div>
-      </div>
-    </div>`;
-  }
+        <div class="skel skel--line" style="width:38%;margin-left:16px"></div>`);
   function browserBarHTML(url) {
-    return `<div class="browser__bar">
-      <div class="browser__nav">
-        <button class="browser__btn" data-nav="back" disabled aria-label="Back">${ICON_NAV_BACK}</button>
-        <button class="browser__btn" data-nav="fwd" disabled aria-label="Forward">${ICON_NAV_FWD}</button>
-        <button class="browser__btn" data-nav="reload" aria-label="Reload">${ICON_NAV_RELOAD}</button>
+    return `<div class="pane-bar">
+      <div class="pane-nav">
+        <button class="pane-btn" data-nav="back" disabled aria-label="Back">${ICON_NAV_BACK}</button>
+        <button class="pane-btn" data-nav="fwd" disabled aria-label="Forward">${ICON_NAV_FWD}</button>
+        <button class="pane-btn" data-nav="reload" aria-label="Reload">${ICON_NAV_RELOAD}</button>
       </div>
-      <button class="browser__omni" data-omni><span class="browser__lock">${ICON_NAV_LOCK}</span><span class="browser__url">${esc(url)}</span></button>
-      <button class="browser__zoom" data-zoom aria-label="Reset zoom">100%</button>
-      <span class="browser__btnwrap"><button class="browser__btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button><span class="browser__cnt" data-cnt hidden></span></span>
-      <button class="browser__btn" data-nav="device" aria-label="Device mode">${ICON_DEVICE}</button>
-      <button class="browser__btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
-      <button class="browser__btn" data-nav="external" aria-label="Open in default browser">${ICON_EXTERNAL}</button>
+      <button class="pane-omni" data-omni><span class="pane-omni__mark">${ICON_NAV_LOCK}</span><span class="pane-omni__text">${esc(url)}</span></button>
+      <button class="pane-badge" data-zoom aria-label="Reset zoom">100%</button>
+      <span class="pane-btnwrap"><button class="pane-btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button><span class="pane-cnt" data-cnt hidden></span></span>
+      <button class="pane-btn" data-nav="device" aria-label="Device mode">${ICON_DEVICE}</button>
+      <button class="pane-btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
+      <button class="pane-btn" data-nav="external" aria-label="Open in default browser">${ICON_EXTERNAL}</button>
     </div>`;
   }
   function renderBrowser(name) {
     if (browserIsHome(name)) {
-      return `<div class="browser browser--home" data-browser data-home>
-        <div class="browser__bar">
-          <div class="browser__nav">
-            <button class="browser__btn" data-nav="back" disabled aria-label="Back">${ICON_NAV_BACK}</button>
-            <button class="browser__btn" data-nav="fwd" disabled aria-label="Forward">${ICON_NAV_FWD}</button>
-            <button class="browser__btn" data-nav="reload" disabled aria-label="Reload">${ICON_NAV_RELOAD}</button>
+      return `<div class="pane-surface browser browser--home" data-browser data-home>
+        <div class="pane-bar">
+          <div class="pane-nav">
+            <button class="pane-btn" data-nav="back" disabled aria-label="Back">${ICON_NAV_BACK}</button>
+            <button class="pane-btn" data-nav="fwd" disabled aria-label="Forward">${ICON_NAV_FWD}</button>
+            <button class="pane-btn" data-nav="reload" disabled aria-label="Reload">${ICON_NAV_RELOAD}</button>
           </div>
-          <button class="browser__omni" data-omni><span class="browser__url browser__url--ph">Search or enter address</span></button>
-          <button class="browser__btn" data-nav="comment" disabled aria-label="Comment mode">${ICON_COMMENT}</button>
-          <button class="browser__btn" data-nav="device" disabled aria-label="Device mode">${ICON_DEVICE}</button>
-          <button class="browser__btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
-          <button class="browser__btn" data-nav="external" disabled aria-label="Open in default browser">${ICON_EXTERNAL}</button>
+          <button class="pane-omni" data-omni><span class="pane-omni__text pane-omni__text--ph">Search or enter address</span></button>
+          <button class="pane-btn" data-nav="comment" disabled aria-label="Comment mode">${ICON_COMMENT}</button>
+          <button class="pane-btn" data-nav="device" disabled aria-label="Device mode">${ICON_DEVICE}</button>
+          <button class="pane-btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
+          <button class="pane-btn" data-nav="external" disabled aria-label="Open in default browser">${ICON_EXTERNAL}</button>
         </div>
-        <div class="browser__home"><div class="browser__homeinner">
-          <span class="browser__glyph">${ICON_BROWSER}</span>
-          <div class="browser__field">${ICON_SEARCH}<input type="text" data-address placeholder="Go to…" autocomplete="off" spellcheck="false"></div>
+        <div class="pane-start"><div class="pane-start__inner">
+          <span class="pane-start__glyph">${ICON_BROWSER}</span>
+          <div class="pane-field">${ICON_SEARCH}<input type="text" data-address placeholder="Go to…" autocomplete="off" spellcheck="false"></div>
           ${browserRecentsHTML()}
-          <div class="browser__cmdkhint">Press <kbd class="cmdk__key">⌘</kbd><kbd class="cmdk__key">K</kbd> for the command menu</div>
+          <div class="pane-start__hint">Press <kbd class="cmdk__key">⌘</kbd><kbd class="cmdk__key">K</kbd> for the command menu</div>
         </div></div>
       </div>`;
     }
-    return `<div class="browser" data-browser>${browserBarHTML(browserHost(name))}<div class="browser__view">${browserPageHTML()}</div></div>`;
+    return `<div class="pane-surface browser" data-browser>${browserBarHTML(browserHost(name))}<div class="pane-view">${browserPageHTML()}</div></div>`;
   }
   // The embedded browser is live: recents and the address bar navigate, history drives back/forward,
   // and the omnibox reopens the same "go to" surface floated over a loaded page.
   // The open browser pane's comment-mode controls, for ⌘K ("Enter/Exit comment mode").
-  let browserCommentAPI = { isOn: () => false, available: () => false, toggle: () => {}, refresh: () => {}, pending: () => 0, send: () => {}, escape: () => {} };
+  let commentAPI = { isOn: () => false, available: () => false, toggle: () => {}, refresh: () => {}, pending: () => 0, send: () => {}, escape: () => {} };
   // The open browser pane's zoom controls, for ⌘+/⌘− and the ⌘K page verbs. Zoom steps a
   // fixed ladder; the omnibox %-badge appears off 100% and clicks back to it.
   let browserZoomAPI = { in: () => {}, out: () => {}, reset: () => {}, canReset: () => false };
-  function wireBrowser(openEl, scope) {
-    const host = scope.querySelector('.browser'); if (!host) return;
-    const titleEl = scope.querySelector('.pane__title span:last-child');
-    const nameEl = openEl && openEl.querySelector('.session__name');
-    const hist = []; let idx = -1;
-    let devOpen = false, devTab = 'Elements';
+  // The open simulator pane's device controls, for ⌘K and the window-wide device keys.
+  let simDriveAPI = null;
+  // The batch's own notice: something the surface has to say about what just happened, said
+  // over the view it happened in and gone again on its own.
+  function paneNotice(host, text) {
+    const view = host.querySelector('.pane-view'); if (!view) return;
+    view.querySelectorAll('.pane-notice').forEach((n) => n.remove());
+    const n = document.createElement('div'); n.className = 'pane-notice'; n.textContent = text;
+    view.appendChild(n);
+    setTimeout(() => { n.classList.add('out'); setTimeout(() => n.remove(), 260); }, 2200);
+  }
+  // Comment mode, shared by every driven surface (ADR-0011 stages three/four, batched). The
+  // machinery — pins, the scope you can widen, the batch, the island, delivery — is the same
+  // wherever Synth is driving something you can point at. A surface hands in only what is its
+  // own: whether there is anything to comment on, the `place` a comment belongs to (a page for
+  // the browser, an app for the simulator) and how to get back to it, the view's scale, and who
+  // receives a batch nobody owns.
+  function wireComments(host, openEl, hooks) {
     // Comment mode's batch: comments live here until one Send delivers all of them.
     let commentOn = false, cmts = [], cmtSeq = 0, activeCmt = null, listOpen = false, sendingCmts = false;
-    let deviceOn = false, deviceId = DEVICES[1].id, deviceLand = false, deviceRO = null;
-    const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
-    let zoom = 100;
-
-    function spin() {
-      const r = host.querySelector('[data-nav="reload"]'); if (!r || reduceMotion) return;
-      r.classList.remove('browser__btn--spin'); void r.offsetWidth; r.classList.add('browser__btn--spin');
-      setTimeout(() => r.classList.remove('browser__btn--spin'), 640);
-    }
-    function paint(url, push) {
-      if (push !== false) { hist.splice(idx + 1); hist.push(url); idx = hist.length - 1; }
-      const label = browserHost(url);
-      host.className = 'browser'; host.removeAttribute('data-home');
-      host.innerHTML = browserBarHTML(label) + `<div class="browser__view">${browserPageHTML()}</div>` + (devOpen ? devtoolsHTML(devTab) : '');
-      if (titleEl) titleEl.textContent = label;
-      if (nameEl) nameEl.textContent = label;
-      bindBar(); if (devOpen) wireDevtools(); spin();
-    }
-    function bindBar() {
-      const back = host.querySelector('[data-nav="back"]');
-      const fwd = host.querySelector('[data-nav="fwd"]');
-      const rel = host.querySelector('[data-nav="reload"]');
-      const omni = host.querySelector('[data-omni]');
-      if (back) { back.disabled = idx <= 0; back.onclick = () => { if (idx > 0) { idx--; paint(hist[idx], false); } }; }
-      if (fwd) { fwd.disabled = idx >= hist.length - 1; fwd.onclick = () => { if (idx < hist.length - 1) { idx++; paint(hist[idx], false); } }; }
-      if (rel) { rel.disabled = idx < 0; rel.onclick = spin; }
-      const dev = host.querySelector('[data-nav="devtools"]');
-      if (dev) { dev.disabled = idx < 0; dev.classList.toggle('is-on', devOpen); dev.onclick = toggleDev; }
-      const com = host.querySelector('[data-nav="comment"]');
-      if (com) { com.disabled = idx < 0; com.onclick = toggleComment; }
-      const dvc = host.querySelector('[data-nav="device"]');
-      if (dvc) { dvc.disabled = idx < 0; dvc.onclick = toggleDevice; }
-      const ext = host.querySelector('[data-nav="external"]');
-      if (ext) { ext.disabled = idx < 0; ext.onclick = () => { if (idx >= 0) window.open(hist[idx], '_blank', 'noopener'); }; }
-      if (omni) omni.onclick = openOmni;
-      const zm = host.querySelector('[data-zoom]');
-      if (zm) zm.onclick = resetZoom;
-      updateCommentUI();
-      updateDeviceUI();
-      applyZoom();
-    }
+    const notice = (text) => paneNotice(host, text);
     // Comment mode (ADR-0011 stages three/four, batched). Comments queue on the page and
     // leave together; the island names the delivery target up front — the owning Claude
     // session, or the fresh one this batch will spawn (which then adopts the browser, see
     // sendBatch). Mode survives navigation, exactly like the native app.
     function toggleComment() {
-      if (idx < 0) return;                       // the "go to" home has nothing to comment on
+      if (!hooks.available()) return;             // a surface with nothing loaded has nothing to comment on
       commentOn = !commentOn;
       if (!commentOn) closeCard();               // leaving the mode never drops the queue
       updateCommentUI();
@@ -4893,7 +4918,7 @@
     const written = (c) => !!c.text.trim();
     const queuedCmts = () => cmts.filter(written);
     function updateCommentUI() {
-      host.classList.toggle('browser--commenting', commentOn);
+      host.classList.toggle('is-commenting', commentOn);
       const btn = host.querySelector('[data-nav="comment"]');
       if (btn) btn.classList.toggle('is-on', commentOn);
       renderPins();
@@ -4901,52 +4926,6 @@
       const cnt = host.querySelector('[data-cnt]'), q = queuedCmts().length;
       if (cnt) { cnt.hidden = !q; cnt.textContent = q; }
     }
-    // Device mode: the page reflowed at a real device viewport inside a hardware frame, with a
-    // strip to hop across the fleet and rotate. Survives navigation, exactly like comment mode.
-    function toggleDevice() {
-      if (idx < 0) return;                       // the "go to" home has no page to frame
-      deviceOn = !deviceOn;
-      updateDeviceUI();
-    }
-    function updateDeviceUI() {
-      host.classList.toggle('browser--device', deviceOn);
-      const btn = host.querySelector('[data-nav="device"]');
-      if (btn) btn.classList.toggle('is-on', deviceOn);
-      const bar = host.querySelector('[data-devicebar]');
-      const view = host.querySelector('.browser__view');
-      if (!deviceOn || !view) {
-        if (bar) bar.remove();
-        if (deviceRO) { deviceRO.disconnect(); deviceRO = null; }
-        if (view && view.querySelector('[data-stage]')) view.innerHTML = browserPageHTML();
-        return;
-      }
-      const strip = devicebarHTML(deviceId, deviceLand);
-      if (bar) bar.outerHTML = strip; else view.insertAdjacentHTML('beforebegin', strip);
-      // the device runs its own browser, so it shows the page's address in its own address bar
-      view.innerHTML = deviceFrameHTML(deviceId, deviceLand, browserHost(hist[idx] || ''));
-      const nb = host.querySelector('[data-devicebar]');
-      nb.querySelectorAll('[data-device]').forEach((b) => b.onclick = () => { deviceId = b.dataset.device; updateDeviceUI(); });
-      nb.querySelector('[data-rotate]').onclick = () => { deviceLand = !deviceLand; updateDeviceUI(); };
-      if (deviceRO) deviceRO.disconnect();
-      deviceRO = new ResizeObserver(() => fitFrame(host.querySelector('[data-stage]')));
-      deviceRO.observe(view.querySelector('[data-stage]'));
-      fitFrame(host.querySelector('[data-stage]'));
-    }
-    // Page zoom (⌘+/⌘−): steps a fixed ladder, re-applied after every paint so it rides
-    // through navigation and reload — real per-tab zoom. The badge shows only off 100%.
-    function applyZoom() {
-      const view = host.querySelector('.browser__view');
-      if (view) view.style.zoom = zoom / 100;
-      const badge = host.querySelector('[data-zoom]');
-      if (badge) { badge.textContent = zoom + '%'; badge.classList.toggle('is-shown', zoom !== 100); }
-    }
-    function zoomStep(dir) {
-      if (idx < 0) return;                       // the "go to" home has no page to zoom
-      const i = Math.max(0, ZOOM_STEPS.indexOf(zoom));
-      zoom = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))];
-      applyZoom();
-    }
-    function resetZoom() { zoom = 100; applyZoom(); }
     // ---- The comment layer -------------------------------------------------------------
     // A comment holds the element it was left on, plus where inside it the click landed as a
     // fraction of that element's box — never a page coordinate. So the pin rides its own
@@ -4957,7 +4936,7 @@
     const CM_UNDO = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128a95.38,95.38,0,0,1-65.94-26.21,8,8,0,1,1,11-11.63A80,80,0,1,0,71.43,72.62l-.36.35L44.7,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60,60A96,96,0,0,1,224,128Z"/></svg>';
     const CM_PIN  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,64a40,40,0,1,0,40,40A40,40,0,0,0,128,64Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,128Zm0-112a88.1,88.1,0,0,0-88,88c0,31.4,14.51,64.68,42,96.25a254.19,254.19,0,0,0,41.45,38.3,8,8,0,0,0,9.18,0A254.19,254.19,0,0,0,174,200.25c27.45-31.57,42-64.85,42-96.25A88.1,88.1,0,0,0,128,16Zm0,206c-16.53-13-72-60.75-72-118a72,72,0,0,1,144,0C200,161.23,144.53,209,128,222Z"/></svg>';
 
-    const cmView = () => host.querySelector('.browser__view');
+    const cmView = () => host.querySelector('.pane-view');
     // in device mode a comment lands on the device's screen, not the stage backdrop
     const cmRoot = () => { const v = cmView(); return v ? (v.querySelector('.dev__screen') || v) : null; };
     const cmLayer = () => host.querySelector('.cm-layer');
@@ -4965,7 +4944,7 @@
     // while the overlay is positioned in the page's own *layout* pixels. Everything measured
     // off a rect comes back through this ratio, or the layer slides toward the origin the
     // moment zoom leaves 100%.
-    const cmScale = () => zoom / 100;
+    const cmScale = () => hooks.scale();
     function cmBox(el) {
       const v = cmView(); if (!v) return { l: 0, t: 0, w: 1, h: 1 };
       const r = el.getBoundingClientRect(), b = v.getBoundingClientRect(), k = cmScale();
@@ -4996,7 +4975,7 @@
     const cmAnchor = (c) => { const b = cmBox(cmEl(c)); return { x: b.l + c.fx * b.w, y: b.t + c.fy * b.h }; };
     const cmById = (id) => cmts.find((c) => c.id === id);
     const cmNo = (id) => cmts.findIndex((c) => c.id === id) + 1;
-    const cmHere = (c) => c.url === hist[idx];
+    const cmHere = (c) => c.place === hooks.place();
 
     // A comment you opened and left blank was never a comment — dropping it on close keeps the
     // queue honest about what will actually be sent.
@@ -5016,7 +4995,7 @@
     }
     function addComment(el, p) {
       const chain = cmChain(el), b = cmBox(el);
-      cmts.push({ id: ++cmtSeq, chain, level: chain.length - 1, fx: (p.x - b.l) / b.w, fy: (p.y - b.t) / b.h, url: hist[idx], text: '', listed: false });
+      cmts.push({ id: ++cmtSeq, chain, level: chain.length - 1, fx: (p.x - b.l) / b.w, fy: (p.y - b.t) / b.h, place: hooks.place(), text: '', listed: false });
       activeCmt = cmtSeq;
       clearHover();
       updateCommentUI(); focusCard();
@@ -5199,7 +5178,7 @@
           if (ev.target.closest('.cm-row__del')) return;
           const c = cmById(id); if (!c) return;
           if (!commentOn) { commentOn = true; }
-          if (!cmHere(c)) { paint(c.url); }       // its page first, then its pin
+          if (!cmHere(c)) { hooks.goTo(c.place); }  // its page first, then its pin
           activeCmt = id; updateCommentUI(); focusCard();
         };
         const del = row.querySelector('.cm-row__del');
@@ -5213,7 +5192,7 @@
         '<div class="cm-row" data-id="' + c.id + '">'
         + '<span class="cm-row__no">' + (i + 1) + '</span>'
         + '<div class="cm-row__body"><div class="cm-row__txt">' + esc(c.text) + '</div>'
-        + '<div class="cm-row__sel">' + (cmHere(c) ? '' : esc(browserHost(c.url)) + ' · ') + esc(cmSel(c)) + '</div></div>'
+        + '<div class="cm-row__sel">' + (cmHere(c) ? '' : esc(hooks.placeLabel(c.place)) + ' · ') + esc(cmSel(c)) + '</div></div>'
         + '<button class="cm-row__del" aria-label="Remove comment">' + CM_X + '</button></div>').join('') + '</div>';
     }
 
@@ -5240,7 +5219,7 @@
       // The mock of the stage-four ladder: owned → the owner receives it; unowned → a fresh
       // agent spawns and has to report live before anything is pasted, which is the rung that
       // can fail. Either way the answer comes back through confirm/reject.
-      const target = o || spawnOwnerClaude(openEl);
+      const target = o || hooks.spawn();
       if (!target) { rejectBatch('Couldn\u2019t start an agent'); return; }
       if (o) setSessionState(o, 'work');
       setTimeout(() => confirmBatch(sessionTitle(target)), 700);
@@ -5264,27 +5243,142 @@
       updateCommentUI();
       notice(why + ' — ' + cmts.length + ' ' + (cmts.length === 1 ? 'comment' : 'comments') + ' kept');
     }
-    function notice(text) {
-      const view = host.querySelector('.browser__view'); if (!view) return;
-      view.querySelectorAll('.browser__notice').forEach((n) => n.remove());
-      const n = document.createElement('div'); n.className = 'browser__notice'; n.textContent = text;
-      view.appendChild(n);
-      setTimeout(() => { n.classList.add('out'); setTimeout(() => n.remove(), 260); }, 2200);
+    // Picking an element in comment mode: any click on the page surface drops a pin.
+    host.addEventListener('click', (e) => {
+      if (!commentOn) return;
+      const view = e.target.closest('.pane-view');
+      if (!view || e.target.closest('.cm-card') || e.target.closest('.cm-pin') || e.target.closest('.pane-notice')) return;
+      // in device mode a comment lands on the device's screen, not the stage backdrop
+      if (view.querySelector('[data-stage]') && !e.target.closest('.dev__screen')) return;
+      addComment(e.target, cmPt(e));
+    });
+    // The inspect outline: what a click would attach to, named before you commit to it.
+    host.addEventListener('mousemove', (e) => {
+      if (!commentOn || activeCmt) return;
+      const view = e.target.closest('.pane-view');
+      if (!view || e.target.closest('.cm-card') || e.target.closest('.cm-pin')) return clearHover();
+      if (view.querySelector('[data-stage]') && !e.target.closest('.dev__screen')) return clearHover();
+      paintHover(e.target);
+    });
+    host.addEventListener('mouseleave', clearHover);
+    return {
+      isOn: () => commentOn, available: hooks.available, toggle: toggleComment, refresh: updateCommentUI,
+      pending: () => queuedCmts().length, send: sendBatch,
+      // Esc unwinds one layer at a time: the open composer, then the batch list, then the mode.
+      escape: () => { if (activeCmt) closeCard(); else if (listOpen) { listOpen = false; updateCommentUI(); } else toggleComment(); },
+    };
+  }
+  function wireBrowser(openEl, scope) {
+    const host = scope.querySelector('.browser'); if (!host) return;
+    const titleEl = scope.querySelector('.pane__title span:last-child');
+    const nameEl = openEl && openEl.querySelector('.session__name');
+    const hist = []; let idx = -1;
+    let devOpen = false, devTab = 'Elements';
+    let deviceOn = false, deviceId = DEVICES[1].id, deviceLand = false, deviceRO = null;
+    const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
+    let zoom = 100;
+
+    function spin() {
+      const r = host.querySelector('[data-nav="reload"]'); if (!r || reduceMotion) return;
+      r.classList.remove('pane-btn--spin'); void r.offsetWidth; r.classList.add('pane-btn--spin');
+      setTimeout(() => r.classList.remove('pane-btn--spin'), 640);
     }
+    function paint(url, push) {
+      if (push !== false) { hist.splice(idx + 1); hist.push(url); idx = hist.length - 1; }
+      const label = browserHost(url);
+      host.className = 'pane-surface browser'; host.removeAttribute('data-home');
+      host.innerHTML = browserBarHTML(label) + `<div class="pane-view">${browserPageHTML()}</div>` + (devOpen ? devtoolsHTML(devTab) : '');
+      if (titleEl) titleEl.textContent = label;
+      if (nameEl) nameEl.textContent = label;
+      bindBar(); if (devOpen) wireDevtools(); spin();
+    }
+    function bindBar() {
+      const back = host.querySelector('[data-nav="back"]');
+      const fwd = host.querySelector('[data-nav="fwd"]');
+      const rel = host.querySelector('[data-nav="reload"]');
+      const omni = host.querySelector('[data-omni]');
+      if (back) { back.disabled = idx <= 0; back.onclick = () => { if (idx > 0) { idx--; paint(hist[idx], false); } }; }
+      if (fwd) { fwd.disabled = idx >= hist.length - 1; fwd.onclick = () => { if (idx < hist.length - 1) { idx++; paint(hist[idx], false); } }; }
+      if (rel) { rel.disabled = idx < 0; rel.onclick = spin; }
+      const dev = host.querySelector('[data-nav="devtools"]');
+      if (dev) { dev.disabled = idx < 0; dev.classList.toggle('is-on', devOpen); dev.onclick = toggleDev; }
+      const com = host.querySelector('[data-nav="comment"]');
+      if (com) { com.disabled = idx < 0; com.onclick = () => comments.toggle(); }
+      const dvc = host.querySelector('[data-nav="device"]');
+      if (dvc) { dvc.disabled = idx < 0; dvc.onclick = toggleDevice; }
+      const ext = host.querySelector('[data-nav="external"]');
+      if (ext) { ext.disabled = idx < 0; ext.onclick = () => { if (idx >= 0) window.open(hist[idx], '_blank', 'noopener'); }; }
+      if (omni) omni.onclick = openOmni;
+      const zm = host.querySelector('[data-zoom]');
+      if (zm) zm.onclick = resetZoom;
+      comments.refresh();
+      updateDeviceUI();
+      applyZoom();
+    }
+    // Comments belong to the page they were left on, and the browser can walk back to it.
+    const comments = wireComments(host, openEl, {
+      available: () => idx >= 0,                 // the "go to" home has no page to comment on
+      place: () => hist[idx],
+      placeLabel: browserHost,
+      goTo: (url) => paint(url),
+      scale: () => zoom / 100,                   // ⌘+/⌘− zooms the view under the overlay
+      spawn: () => spawnOwnerClaude(openEl),     // unowned → this browser gets its own Claude
+    });
+    // Device mode: the page reflowed at a real device viewport inside a hardware frame, with a
+    // strip to hop across the fleet and rotate. Survives navigation, exactly like comment mode.
+    function toggleDevice() {
+      if (idx < 0) return;                       // the "go to" home has no page to frame
+      deviceOn = !deviceOn;
+      updateDeviceUI();
+    }
+    function updateDeviceUI() {
+      host.classList.toggle('browser--device', deviceOn);
+      const btn = host.querySelector('[data-nav="device"]');
+      if (btn) btn.classList.toggle('is-on', deviceOn);
+      const bar = host.querySelector('[data-devicebar]');
+      const view = host.querySelector('.pane-view');
+      if (!deviceOn || !view) {
+        if (bar) bar.remove();
+        if (deviceRO) { deviceRO.disconnect(); deviceRO = null; }
+        if (view && view.querySelector('[data-stage]')) view.innerHTML = browserPageHTML();
+        return;
+      }
+      const strip = devicebarHTML(deviceId, deviceLand);
+      if (bar) bar.outerHTML = strip; else view.insertAdjacentHTML('beforebegin', strip);
+      // the device runs its own browser, so it shows the page's address in its own address bar
+      view.innerHTML = deviceFrameHTML(deviceId, deviceLand, browserHost(hist[idx] || ''));
+      const nb = host.querySelector('[data-devicebar]');
+      nb.querySelectorAll('[data-device]').forEach((b) => b.onclick = () => { deviceId = b.dataset.device; updateDeviceUI(); });
+      nb.querySelector('[data-rotate]').onclick = () => { deviceLand = !deviceLand; updateDeviceUI(); };
+      if (deviceRO) deviceRO.disconnect();
+      deviceRO = new ResizeObserver(() => fitFrame(host.querySelector('[data-stage]')));
+      deviceRO.observe(view.querySelector('[data-stage]'));
+      fitFrame(host.querySelector('[data-stage]'));
+    }
+    // Page zoom (⌘+/⌘−): steps a fixed ladder, re-applied after every paint so it rides
+    // through navigation and reload — real per-tab zoom. The badge shows only off 100%.
+    function applyZoom() {
+      const view = host.querySelector('.pane-view');
+      if (view) view.style.zoom = zoom / 100;
+      const badge = host.querySelector('[data-zoom]');
+      if (badge) { badge.textContent = zoom + '%'; badge.classList.toggle('is-shown', zoom !== 100); }
+    }
+    function zoomStep(dir) {
+      if (idx < 0) return;                       // the "go to" home has no page to zoom
+      const i = Math.max(0, ZOOM_STEPS.indexOf(zoom));
+      zoom = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))];
+      applyZoom();
+    }
+    function resetZoom() { zoom = 100; applyZoom(); }
     function toggleDev() {
       devOpen = !devOpen;
       const btn = host.querySelector('[data-nav="devtools"]');
       if (btn) btn.classList.toggle('is-on', devOpen);
-      const panel = host.querySelector('[data-devtools]');
+      const panel = host.querySelector('[data-dock]');
       if (devOpen && !panel) { host.insertAdjacentHTML('beforeend', devtoolsHTML(devTab)); wireDevtools(); }
       else if (!devOpen && panel) panel.remove();
     }
-    function wireDevtools() {
-      host.querySelectorAll('.devtools__tab').forEach((t) => t.onclick = () => {
-        devTab = t.dataset.tab;
-        host.querySelectorAll('.devtools__tab').forEach((x) => x.classList.toggle('is-active', x === t));
-      });
-    }
+    const wireDevtools = () => wireDock(host, (t) => { devTab = t; });
     function bindGoto(scope, done) {
       const input = scope.querySelector('[data-address]');
       if (input) input.addEventListener('keydown', (e) => {
@@ -5296,10 +5390,10 @@
       scope.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => { if (done) done(); paint(b.dataset.goto); }));
     }
     function openOmni() {
-      if (host.querySelector('.browser__drop')) return;
+      if (host.querySelector('.pane-drop')) return;
       const omni = host.querySelector('[data-omni]'); if (omni) omni.classList.add('is-editing');
-      const drop = document.createElement('div'); drop.className = 'browser__drop';
-      drop.innerHTML = `<div class="browser__field">${ICON_SEARCH}<input type="text" data-address placeholder="Search or enter address" autocomplete="off" spellcheck="false"></div>${browserRecentsHTML()}`;
+      const drop = document.createElement('div'); drop.className = 'pane-drop';
+      drop.innerHTML = `<div class="pane-field">${ICON_SEARCH}<input type="text" data-address placeholder="Search or enter address" autocomplete="off" spellcheck="false"></div>${browserRecentsHTML()}`;
       host.appendChild(drop);
       const input = drop.querySelector('[data-address]'); const cur = hist[idx];
       if (input && cur) { input.value = browserHost(cur); input.select(); }
@@ -5309,30 +5403,7 @@
       setTimeout(() => document.addEventListener('mousedown', onDoc), 0);
     }
 
-    // Picking an element in comment mode: any click on the page surface drops a pin.
-    host.addEventListener('click', (e) => {
-      if (!commentOn) return;
-      const view = e.target.closest('.browser__view');
-      if (!view || e.target.closest('.cm-card') || e.target.closest('.cm-pin') || e.target.closest('.browser__notice')) return;
-      // in device mode a comment lands on the device's screen, not the stage backdrop
-      if (view.querySelector('[data-stage]') && !e.target.closest('.dev__screen')) return;
-      addComment(e.target, cmPt(e));
-    });
-    // The inspect outline: what a click would attach to, named before you commit to it.
-    host.addEventListener('mousemove', (e) => {
-      if (!commentOn || activeCmt) return;
-      const view = e.target.closest('.browser__view');
-      if (!view || e.target.closest('.cm-card') || e.target.closest('.cm-pin')) return clearHover();
-      if (view.querySelector('[data-stage]') && !e.target.closest('.dev__screen')) return clearHover();
-      paintHover(e.target);
-    });
-    host.addEventListener('mouseleave', clearHover);
-    browserCommentAPI = {
-      isOn: () => commentOn, available: () => idx >= 0, toggle: toggleComment, refresh: updateCommentUI,
-      pending: () => queuedCmts().length, send: sendBatch,
-      // Esc unwinds one layer at a time: the open composer, then the batch list, then the mode.
-      escape: () => { if (activeCmt) closeCard(); else if (listOpen) { listOpen = false; updateCommentUI(); } else toggleComment(); },
-    };
+    commentAPI = comments;   // the last-wired pane owns the ⌘K / Esc comment verbs
     browserZoomAPI = { in: () => zoomStep(1), out: () => zoomStep(-1), reset: resetZoom, canReset: () => zoom !== 100 };
 
     if (host.hasAttribute('data-home')) {
@@ -5344,33 +5415,214 @@
       bindBar();
     }
   }
+  // ===== Simulator: the same surface as the browser, speaking the device's language =========
+  // What a browser session does with a page, a simulator session does with a booted device: the
+  // toolbar's left cluster is the hardware you press instead of history, the identity field names
+  // the app instead of the address, the badge counts points instead of percent, and the dock is
+  // the device log instead of DevTools. Comment mode is the same machine on both.
+  const ICON_SIM_SHAKE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M168,24H88A24,24,0,0,0,64,48V208a24,24,0,0,0,24,24h80a24,24,0,0,0,24-24V48A24,24,0,0,0,168,24Zm8,184a8,8,0,0,1-8,8H88a8,8,0,0,1-8-8V48a8,8,0,0,1,8-8h80a8,8,0,0,1,8,8ZM40,88v80a8,8,0,0,1-16,0V88a8,8,0,0,1,16,0Zm192,0v80a8,8,0,0,1-16,0V88a8,8,0,0,1,16,0Z"/></svg>';
+  const ICON_SIM_HOME = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M218.83,103.77l-80-75.48a1.14,1.14,0,0,1-.11-.11,16,16,0,0,0-21.53,0l-.11.11L37.17,103.77A16,16,0,0,0,32,115.55V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V160h32v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V115.55A16,16,0,0,0,218.83,103.77ZM208,208H160V160a16,16,0,0,0-16-16H112a16,16,0,0,0-16,16v48H48V115.55l.11-.1L128,40l79.9,75.43.11.1Z"/></svg>';
+  // What the field accepts, and what it offers before you type: installed apps by bundle id, and
+  // the deep links this project's app answers to — a simulator's version of the browser's recents.
+  const SIM_APPS = [
+    { id: 'com.synth.app',          name: 'Synth' },
+    { id: 'com.synth.app.dev',      name: 'Synth (Dev)' },
+    { id: 'synth://checkout',       name: 'Checkout deep link' },
+    { id: 'com.apple.mobilesafari', name: 'Safari' },
+    { id: 'com.apple.Preferences',  name: 'Settings' },
+  ];
+  const SIM_LOG_TABS = ['Console', 'Network', 'Views'];
+  const simApp = (id) => SIM_APPS.find((a) => a.id === id) || { id, name: id };
   // A simulator session names its device, so the frame is that device's — an iPhone we don't
   // carry in the fleet still boots on iPhone hardware rather than a guess.
   function simDevice(name) {
     const hit = DEVICES.find((d) => d.name.toLowerCase() === (name || '').trim().toLowerCase());
     return hit || Object.assign({}, DEVICES.find((d) => d.id === 'iphone-16'), { name: name });
   }
-  // The simulator is a booted device running the app, so its screen carries an app's chrome —
-  // status bar, large title, tab bar — where the browser's device mode carries Safari's.
-  function renderSim(name) {
-    const d = simDevice(name);
+  const simHomeBar = (d) => d.home ? '<div class="devui__home"></div>' : '';
+  // The app: a booted device running it, so the screen carries an app's own chrome — status bar,
+  // large title, tab bar — where the browser's device mode carries Safari's.
+  function simAppHTML(d) {
     const tabs = [0, 1, 2, 3, 4].map((i) => `<span class="devui__tabitem${i === 0 ? ' is-on' : ''}"><span class="devui__tabicon"></span><span class="devui__tablabel"></span></span>`).join('');
-    const screen = `${statusBarHTML()}<div class="devui__app">
+    return `<div class="devui__app">
       <div class="devui__appnav"><div class="skel"></div></div>
       <div class="devui__appbody">
         <div class="skel skel--line" style="width:88%"></div>
         <div class="skel skel--line" style="width:72%"></div>
         <div class="skel--cards" style="grid-template-columns:1fr 1fr"><div class="skel skel--card"></div><div class="skel skel--card"></div></div>
       </div>
-      <div class="devui__tabbar"><div class="devui__tabitems">${tabs}</div>${d.home ? '<div class="devui__home"></div>' : ''}</div>
+      <div class="devui__tabbar"><div class="devui__tabitems">${tabs}</div>${simHomeBar(d)}</div>
     </div>`;
-    return `<div class="devstage" data-stage>${deviceHTML(d, false, screen)}</div>`;
   }
-  // The simulator's device scales to its pane exactly like device mode's does.
-  function wireSim(scope) {
-    const stage = scope.querySelector('[data-stage]'); if (!stage) return;
-    new ResizeObserver(() => fitFrame(stage)).observe(stage);
-    fitFrame(stage);
+  // The home screen: stand-in tiles for everything the device came with, and one real one — the
+  // app this session is running, which takes you back into it.
+  function simBoardHTML(d, appId) {
+    const pad = d.kind === 'pad';
+    const tile = (on) => `<${on ? 'button' : 'span'} class="devui__tile${on ? ' is-on" data-launch' : '"'}>`
+      + `<span class="devui__tileicon"></span><span class="devui__tilename"></span></${on ? 'button' : 'span'}>`;
+    const grid = Array.from({ length: pad ? 24 : 20 }, (_, i) => tile(!!appId && i === 0)).join('');
+    const dock = Array.from({ length: pad ? 6 : 4 }, () => tile(false)).join('');
+    return `<div class="devui__board"><div class="devui__grid">${grid}</div>
+      <div class="devui__dockrow">${dock}</div>${simHomeBar(d)}</div>`;
+  }
+  const simLockHTML = (d) => `<div class="devui__lockface">${svgClass(ICON_NAV_LOCK, 'devui__lockglyph')}`
+    + `<div class="devui__locktime">9:41</div><div class="devui__lockdate">Thursday, 14 August</div>${simHomeBar(d)}</div>`;
+  // The toolbar. Same shape as the browser's, said in hardware: press, then what is running,
+  // then the size it is running at, then the tools.
+  function simBarHTML(d, land, appId) {
+    const w = land ? d.h : d.w, h = land ? d.w : d.h;
+    const app = appId ? simApp(appId) : null;
+    return `<div class="pane-bar">
+      <div class="pane-nav">
+        <button class="pane-btn" data-nav="home" aria-label="Home">${ICON_SIM_HOME}</button>
+        <button class="pane-btn" data-nav="lock" aria-label="Lock">${ICON_NAV_LOCK}</button>
+        <button class="pane-btn${land ? '' : ' pane-btn--turned'}" data-nav="rotate" aria-label="Rotate device">${ICON_DEVICE}</button>
+      </div>
+      <button class="pane-omni" data-omni><span class="pane-omni__mark">${ICON_SQUARES}</span>` +
+      `<span class="pane-omni__text${app ? '' : ' pane-omni__text--ph'}">${app ? esc(app.id) : 'Open an app or URL'}</span></button>
+      <span class="pane-badge is-shown">${w} × ${h}</span>
+      <span class="pane-btnwrap"><button class="pane-btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button><span class="pane-cnt" data-cnt hidden></span></span>
+      <button class="pane-btn" data-nav="logs" aria-label="Device log">${ICON_DEVTOOLS}</button>
+      <button class="pane-btn" data-nav="external" aria-label="Open in Simulator">${ICON_EXTERNAL}</button>
+    </div>`;
+  }
+  const simRecentsHTML = () => `<div class="pane-rec__label">Installed</div><div class="pane-rec">`
+    + SIM_APPS.map((a) => `<button class="pane-rec__item" data-launch="${esc(a.id)}">${ICON_SQUARES}`
+      + `<span class="pane-rec__key">${esc(a.id)}</span><span class="pane-rec__name">${esc(a.name)}</span></button>`).join('')
+    + `</div>`;
+  function renderSim(name) {
+    const d = simDevice(name);
+    const screen = statusBarHTML() + simBoardHTML(d, 'com.synth.app') + simAppHTML(d) + simLockHTML(d);
+    return `<div class="pane-surface sim" data-sim>${simBarHTML(d, false, 'com.synth.app')}` +
+      `<div class="pane-view pane-view--flush"><div class="devstage" data-stage>${deviceHTML(d, false, screen)}</div></div></div>`;
+  }
+  // Driving the device never rebuilds the app's screen — home, lock and rotate all leave it
+  // standing, hidden or re-laid-out — so a comment left on it is still on it when you come back.
+  // Only a launch replaces the app, because a launch really does.
+  function wireSim(openEl, scope) {
+    const host = scope.querySelector('.sim'); if (!host) return;
+    const nameEl = openEl && openEl.querySelector('.session__name');
+    const d = simDevice(nameEl ? nameEl.textContent.trim() : '');
+    let appId = 'com.synth.app', land = false, locked = false, home = false;
+    let logsOpen = false, logTab = SIM_LOG_TABS[0];
+
+    const screenEl = () => host.querySelector('[data-screen]');
+    const stageEl = () => host.querySelector('[data-stage]');
+    const place = () => locked ? 'lock' : home || !appId ? 'home' : 'app:' + appId;
+    const placeLabel = (p) => p === 'lock' ? 'Lock screen' : p === 'home' ? 'Home screen' : simApp(p.slice(4)).name;
+    // Comments belong to the screen they were left on — the app's, the home screen's — and the
+    // device can be put back into that screen to show them again.
+    const comments = wireComments(host, openEl, {
+      available: () => true,                     // a booted device always has a screen to point at
+      place, placeLabel, scale: () => 1,
+      goTo: (p) => { locked = p === 'lock'; home = p === 'home'; paintScreen(); },
+      spawn: () => spawnOwnerClaude(openEl, false),
+    });
+    // Home shows the springboard, and shows it again the way the device does — press it while
+    // you are already there and the running app comes back.
+    const pressHome = () => { home = !home || !appId; locked = false; paintScreen(); };
+    const pressLock = () => { locked = !locked; paintScreen(); };
+    function paintScreen() {
+      const s = screenEl(); if (!s) return;
+      s.classList.toggle('is-home', home && !locked && !!appId);
+      s.classList.toggle('is-locked', locked);
+      if (!appId) s.classList.add('is-home');
+      // a button stays lit while the state it put the device in is the one on screen
+      const lit = (sel, on) => { const b = host.querySelector(sel); if (b) b.classList.toggle('is-on', on); };
+      lit('[data-nav="home"]', s.classList.contains('is-home') && !locked);
+      lit('[data-nav="lock"]', locked);
+      comments.refresh();
+    }
+    function paintBar() {
+      host.querySelector('.pane-bar').outerHTML = simBarHTML(d, land, appId);
+      bindBar();
+    }
+    function rotate() {
+      land = !land;
+      const frame = host.querySelector('[data-frame]');
+      frame.className = deviceClasses(d, land);
+      frame.setAttribute('style', deviceVars(d, land));
+      paintBar(); fitFrame(stageEl()); comments.refresh();
+    }
+    function launch(id) {
+      appId = id; home = false; locked = false;
+      const app = screenEl().querySelector('.devui__app');
+      app.outerHTML = simAppHTML(d);
+      // the board's one real tile is this app now, and the field says what is running
+      const board = screenEl().querySelector('.devui__board');
+      board.outerHTML = simBoardHTML(d, appId);
+      paintBar(); paintScreen();
+      paneNotice(host, 'Launched ' + simApp(id).name);
+    }
+    function toggleLogs() {
+      logsOpen = !logsOpen;
+      const panel = host.querySelector('[data-dock]');
+      if (logsOpen && !panel) {
+        host.insertAdjacentHTML('beforeend', paneDockHTML(SIM_LOG_TABS, logTab, `
+        <div class="skel skel--line" style="width:64%"></div>
+        <div class="skel skel--line" style="width:88%"></div>
+        <div class="skel skel--line" style="width:52%"></div>
+        <div class="skel skel--line" style="width:76%"></div>
+        <div class="skel skel--line" style="width:41%"></div>`));
+        wireDock(host, (t) => { logTab = t; });
+      } else if (!logsOpen && panel) panel.remove();
+      const btn = host.querySelector('[data-nav="logs"]');
+      if (btn) btn.classList.toggle('is-on', logsOpen);
+      fitFrame(stageEl());
+    }
+    function shake() {
+      const frame = host.querySelector('[data-frame]'); if (!frame) return;
+      frame.classList.remove('is-shaking'); void frame.offsetWidth; frame.classList.add('is-shaking');
+      setTimeout(() => frame.classList.remove('is-shaking'), 460);
+    }
+    // The launcher, floated over the device exactly as the browser's "go to" floats over a page.
+    function openOmni() {
+      if (host.querySelector('.pane-drop')) return;
+      const omni = host.querySelector('[data-omni]'); if (omni) omni.classList.add('is-editing');
+      const drop = document.createElement('div'); drop.className = 'pane-drop';
+      drop.innerHTML = `<div class="pane-field">${ICON_SEARCH}<input type="text" data-address placeholder="Bundle id or URL" autocomplete="off" spellcheck="false"></div>${simRecentsHTML()}`;
+      host.appendChild(drop);
+      const input = drop.querySelector('[data-address]');
+      if (input) { input.value = appId || ''; input.select(); }
+      function close() { document.removeEventListener('mousedown', onDoc); drop.remove(); if (omni) omni.classList.remove('is-editing'); }
+      function onDoc(e) { if (!drop.contains(e.target) && !(omni && omni.contains(e.target))) close(); }
+      if (input) input.addEventListener('keydown', (e) => {
+        // stopPropagation: close() detaches this input mid-dispatch, so the bubbled event would
+        // reach the document handler as a click on the row behind it.
+        if (e.key === 'Enter' && input.value.trim()) { e.stopPropagation(); close(); launch(input.value.trim()); }
+        else if (e.key === 'Escape') { e.stopPropagation(); close(); }
+      });
+      drop.querySelectorAll('[data-launch]').forEach((b) => b.onclick = () => { close(); launch(b.dataset.launch); });
+      if (input) input.focus();
+      setTimeout(() => document.addEventListener('mousedown', onDoc), 0);
+    }
+    function bindBar() {
+      const on = (sel, fn) => { const b = host.querySelector(sel); if (b) b.onclick = fn; };
+      on('[data-nav="home"]', pressHome);
+      on('[data-nav="lock"]', pressLock);
+      on('[data-nav="rotate"]', rotate);
+      on('[data-nav="comment"]', () => comments.toggle());
+      on('[data-nav="logs"]', toggleLogs);
+      on('[data-nav="external"]', () => paneNotice(host, 'Handed to Simulator.app'));
+      on('[data-omni]', openOmni);
+      const lg = host.querySelector('[data-nav="logs"]'); if (lg) lg.classList.toggle('is-on', logsOpen);
+      comments.refresh();
+    }
+    // The one real tile on the home screen takes you back into the app, unless you are pointing
+    // at things — in comment mode a tap is a comment, everywhere on the screen.
+    host.addEventListener('click', (e) => {
+      const tile = e.target.closest('[data-launch]');
+      if (tile && !comments.isOn() && !e.target.closest('.pane-drop')) { home = false; paintScreen(); }
+    });
+    simDriveAPI = {
+      rotate, shake, home: pressHome, lock: pressLock,
+      relaunch: () => appId && launch(appId),
+      screenshot: () => paneNotice(host, 'Screenshot copied'),
+      logsOpen: () => logsOpen,
+    };
+    bindBar(); paintScreen();
+    new ResizeObserver(() => fitFrame(stageEl())).observe(stageEl());
+    fitFrame(stageEl());
   }
   function composerHTML(awaiting) {
     const ask = awaiting ? `<div class="chat__ask">${MARK_INPUT}Should the menu also surface recent files, or just commands and sessions for now?</div>` : '';
@@ -5585,7 +5837,7 @@
 
   // Wire each leaf's live surface, scoped to its own pane element (never content-wide — a
   // second browser/composer must not steal the first's controls). Active pane wired last so
-  // the shared singletons (browserCommentAPI) reflect it.
+  // the shared singletons (commentAPI) reflect it.
   function wirePanes() {
     const leaves = []; eachLeaf(layout, (l) => leaves.push(l));
     leaves.sort((x, y) => (x === activePane ? 1 : 0) - (y === activePane ? 1 : 0));
@@ -5594,7 +5846,7 @@
       const el = leaf.session, type = el.dataset.type || 'terminal', state = sessionState(el);
       if (type === 'ai') wireComposer(el, leaf.el);
       else if (type === 'browser') wireBrowser(el, leaf.el);
-      else if (type === 'simulator') wireSim(leaf.el);
+      else if (type === 'simulator') wireSim(el, leaf.el);
       else if (type === 'terminal' && state === 'run' && !reduceMotion) startStream(leaf.el);
     });
   }
@@ -5944,8 +6196,8 @@
     // ⌘⌥⏎ — send the open browser's whole comment batch. Deliberately not ⌘⇧⏎: that is the
     // split layer's zoom-pane chord, and a parked batch outlives comment mode, so overloading it
     // would mean ⌘⇧⏎ silently shipped feedback to an agent while you were only trying to zoom.
-    if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === 'Enter' && browserCommentAPI.pending()) {
-      e.preventDefault(); browserCommentAPI.send(); return;
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === 'Enter' && commentAPI.pending()) {
+      e.preventDefault(); commentAPI.send(); return;
     }
     // ⌘⇧F — send feedback from anywhere. One textbox; the author path spawns a fix, everyone else emails.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (k === 'f' || k === 'F')) {
@@ -6069,6 +6321,17 @@
       if (k === '=' || k === '+') { e.preventDefault(); browserZoomAPI.in(); return; }
       if (k === '-' || k === '_') { e.preventDefault(); browserZoomAPI.out(); return; }
     }
+    // An open simulator claims the device verbs the same way, in the same places: ⌘L the app
+    // field, ⌘R relaunch, ⌥⌘I the log, ⌘⇧H home, ⌘⇧R rotate.
+    const shost = openEl && openEl.dataset.type === 'simulator' && activePaneEl() ? activePaneEl().querySelector('.sim') : null;
+    if (shost && (e.metaKey || e.ctrlKey)) {
+      const spress = (sel) => { const b = shost.querySelector(sel); if (b && !b.disabled) b.click(); };
+      if (k === 'l' || k === 'L') { e.preventDefault(); spress('[data-omni]'); return; }
+      if ((k === 'r' || k === 'R') && !e.shiftKey) { e.preventDefault(); if (simDriveAPI) simDriveAPI.relaunch(); return; }
+      if (e.shiftKey && e.code === 'KeyR') { e.preventDefault(); spress('[data-nav="rotate"]'); return; }
+      if (e.shiftKey && e.code === 'KeyH') { e.preventDefault(); spress('[data-nav="home"]'); return; }
+      if (e.altKey && e.code === 'KeyI') { e.preventDefault(); spress('[data-nav="logs"]'); return; }
+    }
     // while focus lives in the content pane (composer, terminal), nav keys stay there
     if (e.target instanceof Element && e.target.closest('.content')) return;
     // an open row menu owns the keyboard (its ↵/Esc are handled by the menu key handler)
@@ -6078,7 +6341,7 @@
       if (document.querySelector('.backdrop')) return;   // a dialog owns Esc first
       // Comment mode owns Esc while it is up, and unwinds a layer at a time. The queue is
       // never what Esc discards — leaving the mode parks it, it does not drop it.
-      if (browserCommentAPI.isOn()) { e.preventDefault(); browserCommentAPI.escape(); return; }
+      if (commentAPI.isOn()) { e.preventDefault(); commentAPI.escape(); return; }
       e.preventDefault();
       focusContent();
       return;
@@ -6190,7 +6453,7 @@
     const block = ownedOf(ownerRow).filter((b) => b !== browserRow);
     const ref = block.length ? block[block.length - 1] : ownerRow;
     ref.parentElement.insertBefore(browserRow, ref.nextSibling);
-    browserCommentAPI.refresh();               // the open pane's target chip may name this owner
+    commentAPI.refresh();               // the open pane's target chip may name this owner
   }
   function detach(browserRow) {
     const o = ownerOf(browserRow);
@@ -6199,11 +6462,12 @@
     const bInd = browserRow.querySelector(':scope > .ind');
     if (bInd) bInd.outerHTML = `<span class="ind"></span>`;   // detached → status-less browser
     if (o) { const block = ownedOf(o); const ref = block.length ? block[block.length - 1] : o; o.parentElement.insertBefore(browserRow, ref.nextSibling); }
-    browserCommentAPI.refresh();               // a detached open browser's next comment spawns
+    commentAPI.refresh();               // a detached open browser's next comment spawns
   }
   // The spawn moment: a comment from an unowned browser births this browser's own Claude —
   // silently. The row appears above it, already working on the comment; focus stays put.
-  function spawnOwnerClaude(browserRow) {
+  function spawnOwnerClaude(row, takeOwnership = true) {
+    const browserRow = row;
     const kind = liveAgents()[0];
     if (!kind) return null;                    // every agent switched off — nothing to spawn
     const spec = SESSION_KINDS[kind];
@@ -6220,7 +6484,9 @@
     addRowActions(a);
     browserRow.parentElement.insertBefore(a, browserRow);
     a.addEventListener('animationend', () => a.classList.remove('row-enter'), { once: true });
-    adopt(browserRow, a);
+    // A browser re-nests under the agent it just spawned; a simulator does not — its row carries
+    // the booted device's own liveness, and ownership would take that indicator's slot.
+    if (takeOwnership) adopt(browserRow, a);
     rollUpGroups();
     return a;
   }
@@ -7153,6 +7419,16 @@
       [['⌘', '−'], 'Zoom out'],
       [['⌥', '⌘', 'I'], 'DevTools'],
       [['⌘', '⇧', 'M'], 'Device mode'],
+    ]],
+    ['Simulator', [
+      [['⌘', 'L'], 'Open app or URL'],
+      [['⌘', 'R'], 'Relaunch app'],
+      [['⌘', '⇧', 'H'], 'Home'],
+      [['⌘', '⇧', 'R'], 'Rotate'],
+      [['⌥', '⌘', 'I'], 'Device log'],
+    ]],
+    // comment mode belongs to whatever Synth is driving, so it is its own group, not the browser's
+    ['Comments', [
       [['⏎'], 'Add comment to batch'],
       [['⌥', '↑'], 'Widen comment target'],
       [['⌘', '⌥', '⏎'], 'Send all comments'],
@@ -7621,7 +7897,7 @@
   // first. "Where you are" is the focused sidebar row when its ring is showing, else the open session;
   // Session actions only appear when that anchor is a session leaf. A session action never sits under
   // the same heading as a branch or workspace action. A browser session adds a Page group above
-  // Session — the page's own verbs, one keystroke from anywhere.
+  // Session, a simulator a Device group — the surface's own verbs, one keystroke from anywhere.
   const ICON_COPY = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/></svg>';
   // Page verbs drive the same toolbar controls a click would — the palette adds no second
   // navigation path. When the row isn't the open session there is no live page yet, so
@@ -7629,7 +7905,7 @@
   function browserActions(row) {
     const live = row === openEl && activePaneEl() ? activePaneEl().querySelector('.browser') : null;
     const home = !live || live.hasAttribute('data-home');
-    const url = home ? '' : live.querySelector('.browser__url').textContent;
+    const url = home ? '' : live.querySelector('.pane-omni__text').textContent;
     const drive = (fn) => runAndClose(() => {
       if (row !== openEl) jumpTo(row);
       const host = activePaneEl() && activePaneEl().querySelector('.browser');
@@ -7645,11 +7921,34 @@
       { icon: ICON_NAV_FWD,    label: 'Forward', kbd: ['⌘', ']'], disabled: navOff('fwd'), enter: () => press('[data-nav="fwd"]') },
       { icon: ICON_COPY,       label: 'Copy URL', disabled: home, enter: () => runAndClose(() => { if (url && navigator.clipboard) navigator.clipboard.writeText(browserNorm(url)); }) },
       { icon: ICON_EXTERNAL,   label: 'Open in default browser', disabled: home, enter: () => runAndClose(() => { if (url) window.open(browserNorm(url), '_blank'); }) },
-      { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-devtools]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
+      { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-dock]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
       { icon: ICON_DEVICE,     label: (live && live.querySelector('[data-nav="device"].is-on')) ? 'Exit device mode' : 'Enter device mode', kbd: ['⌘', '⇧', 'M'], disabled: home, enter: () => press('[data-nav="device"]') },
       { icon: ICON_PLUS,       label: 'Zoom in',  kbd: ['⌘', '+'], disabled: home, enter: () => drive(() => browserZoomAPI.in()) },
       { icon: ICON_MINUS,      label: 'Zoom out', kbd: ['⌘', '−'], disabled: home, enter: () => drive(() => browserZoomAPI.out()) },
       { icon: ICON_SEARCH,     label: 'Reset zoom', disabled: home || !(live && live.querySelector('[data-zoom].is-shown')), enter: () => drive(() => browserZoomAPI.reset()) },
+    ];
+  }
+  // The simulator's verbs, the same way: every one of them drives the toolbar control a click
+  // would, except the three the toolbar has no room for — relaunch, shake, screenshot.
+  function simActions(row) {
+    const drive = (fn) => runAndClose(() => {
+      if (row !== openEl) jumpTo(row);
+      const host = activePaneEl() && activePaneEl().querySelector('.sim');
+      if (host) fn(host);
+    });
+    const press = (sel) => drive((host) => { const b = host.querySelector(sel); if (b && !b.disabled) b.click(); });
+    const live = row === openEl && activePaneEl() ? activePaneEl().querySelector('.sim') : null;
+    const lit = (sel) => !!(live && live.querySelector(sel + '.is-on'));
+    return [
+      { icon: ICON_SEARCH,     label: 'Open app or URL', kbd: ['⌘', 'L'], enter: () => press('[data-omni]') },
+      { icon: ICON_NAV_RELOAD, label: 'Relaunch app', kbd: ['⌘', 'R'], enter: () => drive(() => simDriveAPI && simDriveAPI.relaunch()) },
+      { icon: ICON_SIM_HOME,   label: lit('[data-nav="home"]') ? 'Back to app' : 'Home', kbd: ['⌘', '⇧', 'H'], enter: () => press('[data-nav="home"]') },
+      { icon: ICON_NAV_LOCK,   label: lit('[data-nav="lock"]') ? 'Unlock device' : 'Lock device', enter: () => press('[data-nav="lock"]') },
+      { icon: ICON_DEVICE,     label: 'Rotate device', kbd: ['⌘', '⇧', 'R'], enter: () => press('[data-nav="rotate"]') },
+      { icon: ICON_SIM_SHAKE,  label: 'Shake', enter: () => drive(() => simDriveAPI && simDriveAPI.shake()) },
+      { icon: ICON_COPY,       label: 'Copy screenshot', enter: () => drive(() => simDriveAPI && simDriveAPI.screenshot()) },
+      { icon: ICON_DEVTOOLS,   label: (lit('[data-nav="logs"]') ? 'Hide' : 'Show') + ' device log', kbd: ['⌥', '⌘', 'I'], enter: () => press('[data-nav="logs"]') },
+      { icon: ICON_EXTERNAL,   label: 'Open in Simulator.app', enter: () => press('[data-nav="external"]') },
     ];
   }
   function contextActions() {
@@ -7658,9 +7957,10 @@
     const br = contextBranch(), head = contextWorkspaceHead();
     const items = [];
     if (open && open.dataset.type === 'browser') browserActions(open).forEach((a) => items.push({ grp: 'Page', unit: seName(open), ...a }));
+    if (open && open.dataset.type === 'simulator') simActions(open).forEach((a) => items.push({ grp: 'Device', unit: seName(open), ...a }));
     if (open) items.push({ grp: 'Session', unit: seName(open), icon: ICON_RENAME, label: 'Rename', enter: () => pushFrame(renameFrame(open)) });
-    if (open && open === openEl && open.dataset.type === 'browser' && browserCommentAPI.available())
-      items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (browserCommentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => browserCommentAPI.toggle()) });
+    if (open && open === openEl && (open.dataset.type === 'browser' || open.dataset.type === 'simulator') && commentAPI.available())
+      items.push({ grp: 'Session', unit: seName(open), icon: ICON_COMMENT, label: (commentAPI.isOn() ? 'Exit' : 'Enter') + ' comment mode', enter: () => runAndClose(() => commentAPI.toggle()) });
     if (open && open.dataset.type === 'browser') {
       const owner = ownerOf(open);
       if (owner) items.push({ grp: 'Session', unit: seName(open), icon: ICON_MINUS, label: 'Detach from “' + sessionTitle(owner) + '”', danger: true, enter: () => runAndClose(() => detach(open)) });

@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// The browser session's pane (ADR-0011 stage one): working.html's `.browser` chrome —
+// The browser session's pane (ADR-0011 stage one): working.html's `.pane-surface` chrome —
 // back/forward/reload, the lock+URL omnibox pill, the DevTools toggle — around the live
 // engine view, with the "go to" home surface and its floating dropdown twin. Everything
 // here talks to `BrowserEngine`, never a concrete engine (the factory picks one).
@@ -303,7 +303,7 @@ extension BrowserSessionController: BrowserEngineDelegate {
 
 // MARK: - Pane
 
-/// working.html `.browser`: the rounded card (4/14/14 margins, radius 10, raised bg) holding
+/// working.html `.pane-surface`: the rounded card (4/14/14 margins, radius 10, raised bg) holding
 /// the toolbar over the page — or over the "go to" home when nothing is loaded yet.
 struct BrowserPane: View {
     @Environment(AppStore.self) private var store
@@ -440,8 +440,8 @@ private struct DeviceBar: View {
                 .lineLimit(1).fixedSize()
             // The device glyph turned to the orientation a press would give — a
             // circular arrow here reads as reload next to the toolbar's real one.
-            BarButton(icon: Phosphor.deviceMobile, help: "Rotate device",
-                      rotation: ctrl.deviceLandscape ? 0 : 90) {
+            PaneBarButton(icon: Phosphor.deviceMobile, help: "Rotate device",
+                          rotation: ctrl.deviceLandscape ? 0 : 90) {
                 ctrl.rotateDevice()
             }
         }
@@ -508,7 +508,7 @@ private struct DeviceStage: View {
 
 // MARK: - Bar
 
-/// working.html `.browser__bar`: nav cluster · omnibox pill · comment-mode toggle ·
+/// working.html `.pane-bar`: nav cluster · omnibox pill · comment-mode toggle ·
 /// DevTools toggle, on the chrome-grey strip with a hairline below.
 private struct BrowserBar: View {
     @Environment(AppStore.self) private var store
@@ -533,41 +533,41 @@ private struct BrowserBar: View {
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: 2) {
-                BarButton(icon: Phosphor.back, help: "Back",
-                          disabled: !ctrl.canGoBack) { ctrl.goBack() }
-                BarButton(icon: Phosphor.forward, help: "Forward",
-                          disabled: !ctrl.canGoForward) { ctrl.goForward() }
+                PaneBarButton(icon: Phosphor.back, help: "Back",
+                              disabled: !ctrl.canGoBack) { ctrl.goBack() }
+                PaneBarButton(icon: Phosphor.forward, help: "Forward",
+                              disabled: !ctrl.canGoForward) { ctrl.goForward() }
                 ReloadButton(ctrl: ctrl)
             }
             OmniPill(ctrl: ctrl, editing: dropOpen) {
                 if ctrl.isHome { homeFocusNonce += 1 } else { dropOpen = true }
             }
             if ctrl.isZoomed {
-                ZoomBadge(percent: ctrl.zoomPercent) { ctrl.resetZoom() }
+                // The live zoom readout, which clicks back to 100% — the reset affordance,
+                // since ⌘0 stays Synth's focus-sidebar.
+                PaneBadge(text: "\(ctrl.zoomPercent)%", help: "Reset zoom to 100%") {
+                    ctrl.resetZoom()
+                }
             }
-            BarButton(icon: Phosphor.commentMode, help: commentHelp,
-                      disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
+            PaneBarButton(icon: Phosphor.commentMode, help: commentHelp,
+                          disabled: ctrl.isHome, on: commentOn) { ctrl.toggleCommentMode(store: store) }
                 .overlay(alignment: .topTrailing) {
                     if pendingComments > 0 { CommentCountBadge(count: pendingComments) }
                 }
-            BarButton(icon: Phosphor.deviceMobile, help: "Device mode",
-                      disabled: ctrl.isHome, on: ctrl.deviceModeOn) { ctrl.toggleDeviceMode() }
-            BarButton(icon: Phosphor.devtools, help: "DevTools",
-                      disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
-            BarButton(icon: Phosphor.external, help: "Open in default browser",
-                      disabled: ctrl.isHome) {
+            PaneBarButton(icon: Phosphor.deviceMobile, help: "Device mode",
+                          disabled: ctrl.isHome, on: ctrl.deviceModeOn) { ctrl.toggleDeviceMode() }
+            PaneBarButton(icon: Phosphor.devtools, help: "DevTools",
+                          disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
+            PaneBarButton(icon: Phosphor.external, help: "Open in default browser",
+                          disabled: ctrl.isHome) {
                 if let url = ctrl.address { NSWorkspace.shared.open(url) }
             }
         }
-        .padding(.vertical, 7).padding(.horizontal, 10)
-        .background(Theme.chrome)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.border).frame(height: 0.5)
-        }
+        .paneBar()
     }
 }
 
-/// working.html `.browser__cnt`: how many comments are queued on the page and waiting to be
+/// working.html `.pane-cnt`: how many comments are queued on the page and waiting to be
 /// sent, as a copper pill notched into the comment button's top-right corner. Absent at 0.
 private struct CommentCountBadge: View {
     let count: Int
@@ -585,33 +585,6 @@ private struct CommentCountBadge: View {
             .offset(x: 2, y: -1)
             .help(count == 1 ? "1 comment queued — ⌘⌥⏎ to send"
                              : "\(count) comments queued — ⌘⌥⏎ to send")
-    }
-}
-
-/// working.html `.browser__zoom`: the compact %-pill at the right of the omnibox row. Shown
-/// only off 100% (the bar omits it otherwise); it's the live zoom readout and clicks back to
-/// 100% — the reset affordance, since ⌘0 stays Synth's focus-sidebar.
-private struct ZoomBadge: View {
-    let percent: Int
-    let reset: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: reset) {
-            // verbatim: the % is a zoom readout, not a quantity — no locale grouping.
-            Text(verbatim: "\(percent)%")
-                .font(.mono(11))
-                .foregroundStyle(hovering ? Theme.ink : Theme.inkMuted)
-                .padding(.horizontal, 8)
-                .frame(height: 27)
-                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.rowHover : Theme.raised))
-                .overlay(RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(hovering ? Theme.borderStrong : Theme.border, lineWidth: 0.5))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help("Reset zoom to 100%")
     }
 }
 
@@ -634,46 +607,7 @@ private struct CommentNotice: View {
     }
 }
 
-/// `.browser__btn`: 26×26, radius 7, muted glyph; hover fills + darkens, press dips to
-/// 0.9, disabled fades to 0.32, `is-on` keeps the hover look (the DevTools on-state).
-private struct BarButton: View {
-    let icon: String
-    let help: String
-    var disabled = false
-    var on = false
-    var rotation: Double = 0
-    let action: () -> Void
-    @State private var hovering = false
-
-    private var lit: Bool { (hovering && !disabled) || on }
-
-    var body: some View {
-        Button(action: action) {
-            Phos(path: icon, size: 16)
-                .foregroundStyle(lit ? Theme.ink : Theme.inkMuted)
-                .rotationEffect(.degrees(rotation))
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(lit ? Theme.rowHover : .clear))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(BarPressStyle())
-        .disabled(disabled)
-        .opacity(disabled ? 0.32 : 1)
-        .help(help)
-        .onHover { hovering = $0 && !disabled }
-    }
-}
-
-/// `.browser__btn:active`: scale(0.9).
-private struct BarPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.9 : 1)
-            .animation(.easeOut(duration: 0.11), value: configuration.isPressed)
-    }
-}
-
-/// The reload button spins one full turn on every navigation (`browser__btn--spin`,
+/// The reload button spins one full turn on every navigation (`pane-btn--spin`,
 /// 0.6s) — driven by the controller's spinNonce so back/forward/recents spin it too.
 private struct ReloadButton: View {
     let ctrl: BrowserSessionController
@@ -681,8 +615,8 @@ private struct ReloadButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        BarButton(icon: Phosphor.reload, help: "Reload",
-                  disabled: ctrl.isHome, rotation: angle) { ctrl.reload() }
+        PaneBarButton(icon: Phosphor.reload, help: "Reload",
+                      disabled: ctrl.isHome, rotation: angle) { ctrl.reload() }
             .onChange(of: ctrl.spinNonce) { _, _ in
                 guard !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 0.6)) { angle += 360 }
@@ -690,7 +624,7 @@ private struct ReloadButton: View {
     }
 }
 
-/// `.browser__omni`: the flexible lock+URL pill. On home it shows the placeholder and
+/// `.pane-omni`: the flexible lock+URL pill. On home it shows the placeholder and
 /// refocuses the "Go to…" field; loaded, it floats the OmniDrop. `is-editing` = blue
 /// border + soft focus ring while the dropdown is up.
 private struct OmniPill: View {
@@ -739,7 +673,7 @@ private struct OmniPill: View {
 
 // MARK: - Home surface + omnibox dropdown
 
-/// `.browser__home`: centered globe glyph, the "Go to…" field (focused), and the
+/// `.pane-start`: centered globe glyph, the "Go to…" field (focused), and the
 /// branch's Recent list. Enter or clicking a recent navigates.
 private struct BrowserHome: View {
     let recents: [BrowserRecent]
@@ -757,7 +691,7 @@ private struct BrowserHome: View {
                 if !recents.isEmpty {
                     RecentsList(recents: recents, labelTopPadding: 22) { go($0.url) }
                 }
-                // `.browser__cmdkhint`: the quiet pointer to the Page group's verbs.
+                // `.pane-start__hint`: the quiet pointer to the Page group's verbs.
                 HStack(spacing: 5) {
                     Text("Press")
                     KeyCap(text: "⌘")
@@ -777,7 +711,7 @@ private struct BrowserHome: View {
     }
 }
 
-/// `.browser__drop`: the same go-to/recents surface floated under the omnibox over a
+/// `.pane-drop`: the same go-to/recents surface floated under the omnibox over a
 /// loaded page, seeded with the current address (selected). Esc or an outside click
 /// closes; Enter / a recent navigates and closes.
 private struct OmniDrop: View {
@@ -785,11 +719,8 @@ private struct OmniDrop: View {
     let recents: [BrowserRecent]
     let close: () -> Void
 
-    @State private var shown = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        PaneDrop {
             GoToField(placeholder: "Search or enter address",
                       seed: ctrl.address?.browserHostPath,
                       onSubmit: { text in if ctrl.go(text) { close() } },
@@ -801,132 +732,23 @@ private struct OmniDrop: View {
                 }
             }
         }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panel))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.17), radius: 18, y: 14)
-        .padding(.horizontal, 10).padding(.top, 1)
-        .opacity(shown ? 1 : 0)
-        .offset(y: shown ? 0 : -6)
-        .onAppear {
-            if reduceMotion { shown = true }
-            else { withAnimation(.easeOut(duration: 0.14)) { shown = true } }
-        }
     }
 }
 
-/// `.browser__field`: search glyph + mono address input on a raised panel card, with
-/// the blue focus ring. Shared by the home surface and the dropdown.
-private struct GoToField: View {
-    let placeholder: String
-    var seed: String? = nil
-    var focusNonce: Int = 0
-    let onSubmit: (String) -> Void
-    var onCancel: (() -> Void)? = nil
-
-    @State private var text: String
-    @FocusState private var focused: Bool
-
-    init(placeholder: String, seed: String? = nil, focusNonce: Int = 0,
-         onSubmit: @escaping (String) -> Void, onCancel: (() -> Void)? = nil) {
-        self.placeholder = placeholder
-        self.seed = seed
-        self.focusNonce = focusNonce
-        self.onSubmit = onSubmit
-        self.onCancel = onCancel
-        _text = State(initialValue: seed ?? "")
-    }
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Phos(path: Phosphor.search, size: 16).foregroundStyle(Theme.inkFaint)
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.plain)
-                .font(.mono(13))
-                .foregroundStyle(Theme.ink)
-                .frame(maxWidth: .infinity)
-                .focused($focused)
-                .onSubmit { onSubmit(text) }
-                .onExitCommand { onCancel?() }
-        }
-        .padding(.vertical, 11).padding(.horizontal, 14)
-        .background(RoundedRectangle(cornerRadius: 11).fill(Theme.panel))
-        .overlay(
-            RoundedRectangle(cornerRadius: 11)
-                .strokeBorder(focused ? Theme.accent : Theme.borderStrong, lineWidth: 0.5)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 13)
-                .inset(by: -2)
-                .stroke(Theme.accent.opacity(0.16), lineWidth: 3)
-                .opacity(focused ? 1 : 0)
-        )
-        .shadow(color: .black.opacity(0.05), radius: 1.5, y: 1)
-        .onAppear {
-            focused = true
-            // Seeded (dropdown): current address pre-selected so a keystroke replaces —
-            // working.html's input.select().
-            if seed != nil {
-                DispatchQueue.main.async {
-                    (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
-                }
-            }
-        }
-        .onChange(of: focusNonce) { _, _ in focused = true }
-    }
-}
-
-/// `.browser__reclabel` + `.browser__rec`: the RECENT header over the visited rows.
+/// `.pane-rec__label` + `.pane-rec`: the RECENT header over the visited rows.
 private struct RecentsList: View {
     let recents: [BrowserRecent]
     let labelTopPadding: CGFloat
     let open: (BrowserRecent) -> Void
 
     var body: some View {
-        Text("Recent")
-            .textCase(.uppercase)
-            .font(.sans(11, 600)).kerning(0.44)
-            .foregroundStyle(Theme.inkFaint)
-            .padding(.top, labelTopPadding).padding(.horizontal, 4).padding(.bottom, 7)
+        PaneRecLabel(text: "Recent", topPadding: labelTopPadding)
         VStack(spacing: 1) {
             ForEach(recents, id: \.url) { r in
-                RecentRow(recent: r) { open(r) }
+                PaneRecRow(icon: Phosphor.globe,
+                           key: URL(string: r.url)?.browserHostPath ?? r.url,
+                           name: r.title) { open(r) }
             }
         }
-    }
-}
-
-/// `.browser__recitem`: globe · mono URL · faint page-title, hover-filled row.
-private struct RecentRow: View {
-    let recent: BrowserRecent
-    let action: () -> Void
-    @State private var hovering = false
-
-    private var display: String {
-        URL(string: recent.url)?.browserHostPath ?? recent.url
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Phos(path: Phosphor.globe, size: 15).foregroundStyle(Theme.inkFaint)
-                Text(display)
-                    .font(.mono(12))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1).truncationMode(.tail)
-                Spacer(minLength: 8)
-                if !recent.title.isEmpty {
-                    Text(recent.title)
-                        .font(.sans(12))
-                        .foregroundStyle(Theme.inkFaint)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.vertical, 8).padding(.horizontal, 10)
-            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : .clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
     }
 }

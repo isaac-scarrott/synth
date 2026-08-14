@@ -69,6 +69,12 @@ final class SimulatorManager {
 
 // MARK: - Controller
 
+/// What the bar's last action did, shown in the pane's notice strip until it is superseded.
+struct SimulatorActionNotice: Equatable {
+    var text: String
+    var isError: Bool
+}
+
 /// Pane-local, high-frequency state for one simulator session. Frames never travel through the
 /// store: they go straight to the layer, and only facts the rest of the app needs live here.
 @MainActor
@@ -141,6 +147,140 @@ final class SimulatorSessionController {
         }
     }
 
+    // MARK: The app the device is running
+
+    /// What the identity field names: the last thing Synth opened here, bundle id or URL. Nil is
+    /// the field's placeholder — Synth cannot ask a device what is frontmost, so this is a record
+    /// of what we did rather than a claim about what is on screen.
+    private(set) var runningAppLabel: String?
+    /// Only a bundle id can be relaunched; a URL names a destination, not a process to terminate.
+    private(set) var runningBundleIdentifier: String?
+    /// Whether the launcher drop is up. On the controller, like comment mode, because a pane is
+    /// rebuilt on every layout change and a half-typed bundle id must survive that.
+    var launcherOpen = false
+    /// What `simctl listapps` last said is on the device. Loaded when the launcher opens and kept,
+    /// so reopening it is instant and a device that answers slowly does not blank the list.
+    private(set) var installedApps: [SimulatorInstalledApp] = []
+    /// The result of the last thing the bar did — a launch, a shake, a copied screenshot — or the
+    /// error it failed with. Auto-clears, like a refused input.
+    private(set) var actionNotice: SimulatorActionNotice?
+
+    /// What ⌘L presses. The drop is the pane's, but the state it reads is here.
+    func openAppLauncher() {
+        launcherOpen = true
+        loadInstalledApps()
+    }
+
+    /// Off the main actor: `simctl listapps` spawns a process and prints a plist of every app on
+    /// the device, and paying that on main freezes the window — the user's terminals included.
+    private func loadInstalledApps() {
+        let udid = self.udid
+        Task.detached(priority: .userInitiated) {
+            guard let apps = try? SimulatorDeviceCatalog.installedApps(udid: udid) else { return }
+            await MainActor.run { self.installedApps = apps }
+        }
+    }
+
+    /// The launcher's submit and its rows: a URL is opened, anything else is launched by bundle id.
+    func open(_ text: String) {
+        let target = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return }
+        let isURL = target.contains("://")
+        let source = self.source
+        Task.detached(priority: .userInitiated) {
+            do {
+                if isURL { try source.open(url: target) }
+                else { try source.launch(bundleIdentifier: target) }
+                await MainActor.run { self.recordLaunch(of: target, isBundleIdentifier: !isURL) }
+            } catch {
+                await MainActor.run { self.note("\(error)", isError: true) }
+            }
+        }
+    }
+
+    /// Terminate and launch again — the "I just rebuilt it" verb, which a plain launch does not do:
+    /// `simctl launch` on an app that is already frontmost is a no-op with a pid.
+    func relaunch() {
+        guard let bundleIdentifier = runningBundleIdentifier else {
+            note("Nothing has been launched from here yet.", isError: false)
+            return
+        }
+        let udid = self.udid
+        Task.detached(priority: .userInitiated) {
+            // A terminate of an app that is not running is not a failure of the relaunch, which is
+            // the whole verb — so only the launch decides what the user is told.
+            try? SimulatorDeviceCatalog.terminate(udid: udid, bundleIdentifier: bundleIdentifier)
+            do {
+                try SimulatorDeviceCatalog.launch(udid: udid, bundleIdentifier: bundleIdentifier)
+                await MainActor.run {
+                    self.note("Relaunched \(self.displayName(of: bundleIdentifier))", isError: false)
+                }
+            } catch {
+                await MainActor.run { self.note("\(error)", isError: true) }
+            }
+        }
+    }
+
+    /// The gesture there is no pointer equivalent of. Off the main actor for the same reason rotate
+    /// is: the send is a bootstrap lookup plus a bounded `mach_msg`.
+    func shake() {
+        let source = self.source
+        Task.detached(priority: .userInitiated) {
+            do {
+                try source.shake()
+                await MainActor.run { self.note("Shook the device", isError: false) }
+            } catch {
+                await MainActor.run { self.note("\(error)", isError: true) }
+            }
+        }
+    }
+
+    /// The screen on the pasteboard. The same capture the agent's `simulator.screenshot` verb uses,
+    /// including its fallback: a pixel format we cannot read is a reason to spawn `simctl io
+    /// screenshot`, not a reason to hand back nothing.
+    func copyScreenshot() {
+        let source = self.source
+        let udid = self.udid
+        Task.detached(priority: .userInitiated) {
+            let png = (try? source.captureVerifiedFrame())??.pngByCopyingPixels()
+                ?? (try? SimulatorDeviceCatalog.screenshotPNG(udid: udid))
+            await MainActor.run {
+                guard let png else {
+                    self.note("The device produced no frame to copy.", isError: true)
+                    return
+                }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setData(png, forType: .png)
+                self.note("Screenshot copied", isError: false)
+            }
+        }
+    }
+
+    private func recordLaunch(of target: String, isBundleIdentifier: Bool) {
+        runningAppLabel = target
+        runningBundleIdentifier = isBundleIdentifier ? target : nil
+        note("Launched \(displayName(of: target))", isError: false)
+    }
+
+    /// What the home screen calls it, when the device has told us — a bundle id is what the field
+    /// says, but "Launched com.apple.Preferences" is a worse sentence than "Launched Settings".
+    private func displayName(of bundleIdentifier: String) -> String {
+        installedApps.first { $0.bundleIdentifier == bundleIdentifier }?.name ?? bundleIdentifier
+    }
+
+    private func note(_ text: String, isError: Bool) {
+        actionNotice = SimulatorActionNotice(text: text, isError: isError)
+        let generation = UUID()
+        noticeGeneration = generation
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard let self, self.noticeGeneration == generation else { return }
+            self.actionNotice = nil
+        }
+    }
+
+    private var noticeGeneration = UUID()
+
     private func noteInputFailure(_ detail: String) {
         inputFailure = detail
         let generation = UUID()
@@ -194,6 +334,7 @@ final class SimulatorSessionController {
         // it is not fine for deciding whether to act.
         Simulators.fleet.claim(udid)
         attach()
+        awaitDeviceInfo()
     }
 
     /// Claiming a device boots it, and a boot takes seconds — so the first attach routinely races
@@ -237,6 +378,22 @@ final class SimulatorSessionController {
     private var isBooted: Bool { Simulators.fleet.device(udid: udid)?.isBooted ?? false }
 
     private var lastKnownPixelSize: CGSize?
+
+    /// The fleet's listing is refreshed in the background, so a session opened in the first moment
+    /// after launch resolves to nothing at all. An attach that settles first time never comes back
+    /// through the retry loop, so without this the pane keeps that empty answer for its whole life —
+    /// and with the device's name gone from the bar, the badge's runtime is the only thing left
+    /// saying which iOS this is.
+    private func awaitDeviceInfo() {
+        guard deviceInfo == nil else { return }
+        Task { @MainActor [weak self] in
+            for _ in 0..<20 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let self, self.deviceInfo == nil else { return }
+                self.refreshDeviceInfo()
+            }
+        }
+    }
 
     /// A device's reported screen only firms up once it is booted, so re-resolve the drawn
     /// hardware on the way through a retry.
@@ -464,17 +621,24 @@ struct SimulatorPane: View {
         Group {
             if session.simulatorUDID == nil {
                 SimulatorDevicePicker(session: session)
+                    .padding(14)
             } else if let controller = SimulatorManager.shared.controller(for: session) {
                 stage(controller)
             } else {
                 SimulatorNotice(text: "This simulator's device is no longer available.",
                                 isError: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(14)
             }
         }
-        .padding(14)
+        // `.pane-surface`, the browser's card exactly: the bar is flush against its top edge, so
+        // the two surfaces read as siblings rather than as one framed strip and one floating one.
         .background(Theme.raised)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
+        .padding(EdgeInsets(top: 4, leading: 14, bottom: 14, trailing: 14))
     }
 
     @ViewBuilder
@@ -483,6 +647,9 @@ struct SimulatorPane: View {
             SimulatorBar(controller: controller)
             if let notice = controller.commentMode.notice {
                 SimulatorNotice(label: "Comment", text: notice, isError: false)
+            } else if let action = controller.actionNotice {
+                SimulatorNotice(label: action.isError ? "Refused" : "Device",
+                                text: action.text, isError: action.isError)
             } else if let failure = controller.inputFailure {
                 SimulatorNotice(text: "Input was refused. \(failure)", isError: true)
             } else if controller.isAwaitingBoot {
@@ -493,31 +660,41 @@ struct SimulatorPane: View {
             } else if let degradation = controller.degradation {
                 SimulatorNotice(text: degradation.summary, isError: false)
             }
-            GeometryReader { geo in
-                // Comment mode lives in the controller; the AppKit view needs telling.
-                let _ = { controller.screenView.commentModeActive = controller.commentMode.active }()
-                // Turning the device turns the drawn hardware too — the bezel's one wide edge and
-                // the side buttons come round with it — so the glass is landscape and the whole
-                // frame is re-fitted, which is why this reads the controller's orientation rather
-                // than assuming portrait.
-                let landscape = controller.orientation.isLandscape
-                let bez = controller.device.bezels(landscape: landscape)
-                let glass = controller.device.screenSize(landscape: landscape)
-                let frameW = glass.width + bez.leading + bez.trailing
-                let frameH = glass.height + bez.top + bez.bottom
-                let s = max(0.05, min(1, (geo.size.width - 48) / frameW,
-                                         (geo.size.height - 48) / frameH))
-                DeviceFrame(device: controller.device, landscape: landscape, s: s) {
-                    DeviceScreenHost(view: controller.screenView)
-                        .frame(width: glass.width * s, height: glass.height * s)
+            ZStack(alignment: .top) {
+                GeometryReader { geo in
+                    // Comment mode lives in the controller; the AppKit view needs telling.
+                    let _ = { controller.screenView.commentModeActive = controller.commentMode.active }()
+                    // Turning the device turns the drawn hardware too — the bezel's one wide edge
+                    // and the side buttons come round with it — so the glass is landscape and the
+                    // whole frame is re-fitted, which is why this reads the controller's
+                    // orientation rather than assuming portrait.
+                    let landscape = controller.orientation.isLandscape
+                    let bez = controller.device.bezels(landscape: landscape)
+                    let glass = controller.device.screenSize(landscape: landscape)
+                    let frameW = glass.width + bez.leading + bez.trailing
+                    let frameH = glass.height + bez.top + bez.bottom
+                    let s = max(0.05, min(1, (geo.size.width - 48) / frameW,
+                                             (geo.size.height - 48) / frameH))
+                    DeviceFrame(device: controller.device, landscape: landscape, s: s) {
+                        DeviceScreenHost(view: controller.screenView)
+                            .frame(width: glass.width * s, height: glass.height * s)
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
                 }
-                .frame(width: geo.size.width, height: geo.size.height)
-            }
-            .background(Theme.chrome)
-            .overlay(alignment: .bottom) {
-                if controller.commentMode.pendingPoint != nil {
-                    SimulatorCommentComposer(commentMode: controller.commentMode)
-                        .padding(14)
+                .background(Theme.chrome)
+                .overlay(alignment: .bottom) {
+                    if controller.commentMode.pendingPoint != nil {
+                        SimulatorCommentComposer(commentMode: controller.commentMode)
+                            .padding(14)
+                    }
+                }
+                if controller.launcherOpen {
+                    // Outside-click catcher under the drop (the browser pane's, and the mock's
+                    // document mousedown).
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture { controller.launcherOpen = false }
+                    SimulatorLauncherDrop(controller: controller)
                 }
             }
         }
@@ -586,11 +763,12 @@ private struct SimulatorCommentComposer: View {
     }
 }
 
-/// The pane's own chrome: which device this is, and the actions the drawn frame cannot be clicked
-/// for. Home and Lock are the two hardware buttons a developer actually reaches for — background the
-/// app, lock the screen — and neither is reachable any other way, since the side buttons on the frame
-/// are drawn hardware rather than controls. Rotate joins them because turning a real device is a
-/// gesture there is no pointer equivalent of at all.
+/// `.pane-bar` said in hardware: press, then what is running, then the size it is running at, then
+/// the tools. Home and Lock are the two buttons a developer actually reaches for — background the
+/// app, lock the screen — and neither is reachable any other way, since the side buttons on the
+/// drawn frame are hardware rather than controls. Rotate joins them because turning a real device
+/// is a gesture there is no pointer equivalent of at all. The device's *name* is not here: the
+/// session row already says it, so the bar spends the room on what changes.
 private struct SimulatorBar: View {
     let controller: SimulatorSessionController
 
@@ -604,19 +782,40 @@ private struct SimulatorBar: View {
         return "Comment mode — the first comment starts a Claude Code session for this device"
     }
 
+    /// The runtime, and the viewport the interface is laid out in — which is the number that moves
+    /// while you drive this surface, so it turns with the device.
+    private var badge: String {
+        let glass = controller.device.screenSize(landscape: controller.orientation.isLandscape)
+        // verbatim: a point count, not a quantity — no locale grouping.
+        let size = "\(Int(glass.width)) × \(Int(glass.height))"
+        guard let runtime = controller.deviceInfo?.runtime, !runtime.isEmpty else { return size }
+        return "\(runtime) · \(size)"
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Text(controller.deviceInfo?.name ?? "Simulator")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.ink)
-            if let runtime = controller.deviceInfo?.runtime {
-                Text(runtime)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkMuted)
+            HStack(spacing: 2) {
+                PaneBarButton(icon: Phosphor.house, help: "Press the Home button") {
+                    controller.press(.home)
+                }
+                PaneBarButton(icon: Phosphor.lock, help: "Press the Lock button") {
+                    controller.press(.lock)
+                }
+                // The device glyph turned to the orientation a press would give — the browser's
+                // device bar's rotate, for the same reason: a circular arrow reads as reload.
+                PaneBarButton(
+                    icon: Phosphor.deviceMobile,
+                    help: controller.orientation.isLandscape
+                        ? "Turn the device back to portrait"
+                        : "Turn the device to landscape. Apps that declare portrait-only stay portrait.",
+                    rotation: controller.orientation.isLandscape ? 0 : 90) {
+                    controller.rotate()
+                }
             }
-            Spacer()
-            // Who the comment will reach, while the mode is on — the browser bar's chip, in a bar
-            // whose own controls are text rather than icons.
+            SimulatorIdentityField(controller: controller)
+            PaneBadge(text: badge, help: "The runtime and the device's viewport in points")
+            // Who the comment will reach, while the mode is on — this is the only place the
+            // delivery target is named.
             if controller.commentMode.active, let target = controller.commentMode.targetTitle {
                 Text("→ \(target)")
                     .font(.system(size: 10.5, weight: .medium))
@@ -628,51 +827,91 @@ private struct SimulatorBar: View {
                     .frame(maxWidth: 180, alignment: .trailing)
                     .help("Comments go to \(target)")
             }
-            SimulatorButton(label: "Comment", help: commentHelp,
-                            isOn: controller.commentMode.active) {
+            PaneBarButton(icon: Phosphor.commentMode, help: commentHelp,
+                          on: controller.commentMode.active) {
                 controller.commentMode.toggle()
             }
-            // Leading of the two buttons, so the pair a user already knows keeps the trailing edge.
-            SimulatorButton(
-                label: controller.orientation.isLandscape ? "Portrait" : "Rotate",
-                help: controller.orientation.isLandscape
-                    ? "Turn the device back to portrait"
-                    : "Turn the device to landscape. Apps that declare portrait-only stay portrait.") {
-                controller.rotate()
-            }
-            SimulatorButton(label: "Home", help: "Press the Home button") {
-                controller.press(.home)
-            }
-            SimulatorButton(label: "Lock", help: "Press the Lock button") {
-                controller.press(.lock)
-            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .paneBar()
     }
 }
 
-private struct SimulatorButton: View {
-    let label: String
-    let help: String
-    var isOn: Bool = false
-    let action: () -> Void
+/// `.pane-omni`, in the device's language: the browser's omnibox names the page, this names the app.
+/// It says what Synth last launched here, and clicking it opens the launcher.
+private struct SimulatorIdentityField: View {
+    let controller: SimulatorSessionController
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isOn ? Theme.accent : Theme.inkMuted)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(isOn ? Theme.rowSelected : (hovering ? Theme.rowHover : .clear),
-                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .contentShape(Rectangle())
+        let editing = controller.launcherOpen
+        Button { controller.openAppLauncher() } label: {
+            HStack(spacing: 7) {
+                Phos(path: Phosphor.squares, size: 12).foregroundStyle(Theme.inkFaint)
+                if let label = controller.runningAppLabel {
+                    Text(label)
+                        .font(.mono(12))
+                        .foregroundStyle(Theme.inkMuted)
+                        .lineLimit(1).truncationMode(.tail)
+                } else {
+                    Text("Open an app or URL")
+                        .font(.mono(12))
+                        .foregroundStyle(Theme.inkFaint)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5).padding(.horizontal, 11)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(editing ? Theme.accent
+                                          : (hovering ? Theme.borderStrong : Theme.border),
+                                  lineWidth: 0.5)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .inset(by: -2)
+                    .stroke(Theme.accent.opacity(0.16), lineWidth: 3)
+                    .opacity(editing ? 1 : 0)
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(help)
+    }
+}
+
+/// `.pane-drop`, floated over the device exactly as the browser's "go to" floats over a page: type
+/// a bundle id or a URL, or pick something the device already has. Esc or an outside click closes.
+private struct SimulatorLauncherDrop: View {
+    let controller: SimulatorSessionController
+
+    /// Enough to find the app being worked on without turning the drop into the home screen —
+    /// user apps sort first, so a long tail of system apps never pushes them off.
+    private var apps: [SimulatorInstalledApp] { Array(controller.installedApps.prefix(8)) }
+
+    var body: some View {
+        PaneDrop {
+            GoToField(placeholder: "Bundle id or URL",
+                      seed: controller.runningAppLabel,
+                      onSubmit: { text in
+                          controller.launcherOpen = false
+                          controller.open(text)
+                      },
+                      onCancel: { controller.launcherOpen = false })
+            if !apps.isEmpty {
+                PaneRecLabel(text: "Installed", topPadding: 12)
+                VStack(spacing: 1) {
+                    ForEach(apps) { app in
+                        PaneRecRow(icon: Phosphor.squares, key: app.bundleIdentifier,
+                                   name: app.name) {
+                            controller.launcherOpen = false
+                            controller.open(app.bundleIdentifier)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

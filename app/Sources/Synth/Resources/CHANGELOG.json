@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.31.1",
+    "date": "2026-08-14",
+    "changes": [
+      "Clicking to edit no longer flickers: the cursor appears directly on the line you clicked instead of visibly leaping there a frame later."
+    ]
+  },
+  {
     "version": "0.31.0",
     "date": "2026-08-13",
     "changes": [

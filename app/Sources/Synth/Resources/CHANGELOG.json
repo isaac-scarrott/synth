@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.32.0",
+    "date": "2026-08-14",
+    "changes": [
+      "The simulator pane grows real controls: Home, Lock and Rotate on its bar, a field naming the running app that launches any installed app by bundle id (or opens a deep link), and a badge reading the OS and screen size that follows rotation.",
+      "While a simulator is open, ⌘K carries a Device group — Open app or URL, Relaunch, Home, Lock, Rotate, Shake, Copy screenshot — with window shortcuts ⌘L, ⌘R, ⌘⇧H and ⌘⇧R, all listed in the ⌘? sheet."
+    ]
+  },
+  {
     "version": "0.31.1",
     "date": "2026-08-14",
     "changes": [

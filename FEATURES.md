@@ -2014,3 +2014,7 @@ disclosure to dive deeper.
   Rotate + a bundle-id launcher over `simctl listapps` + a viewport badge, with a ⌘K Device group and
   ⌘L / ⌘R / ⌘⇧H / ⌘⇧R.
 
+- **0.32.0 ships — the simulator has hands** — minor release carrying the simulator chrome
+  (Home / Lock / Rotate, bundle-id launcher, viewport badge, ⌘K Device group). `CFBundleVersion`
+  599, tag `v0.32.0`; dmg + zip notarized, stapled, verified credential-less; appcast newest
+  0.32.0 at 599, `edSignature` on all 18 enclosures. No `synth-site` push.

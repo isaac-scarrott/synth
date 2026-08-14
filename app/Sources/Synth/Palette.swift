@@ -340,17 +340,31 @@ struct PaletteFrame {
                     var it = item; it.group = "Page · \(open.title)"; it.ctx = open.title; return it
                 }
             }
+            // A simulator session gets the same treatment one level down — a Device group of the
+            // device's own verbs (working.html simActions).
+            if open.kind == .simulator {
+                items += simulatorActions(open).map { item -> PaletteItem in
+                    var it = item; it.group = "Device · \(open.title)"; it.ctx = open.title; return it
+                }
+            }
             let g = "Session · \(open.title)"
-            // Browser only: toggle comment mode (ADR-0011 stage three) — the palette
+            // Browser and simulator: toggle comment mode (ADR-0011 stage three) — the palette
             // twin of the bar button, so the keyboard can drive it without a click.
-            if open.kind == .browser {
-                let on = BrowserManager.shared.existing(open.id)?.commentMode?.active ?? false
+            if open.kind == .browser || open.kind == .simulator {
+                let on = open.kind == .browser
+                    ? BrowserManager.shared.existing(open.id)?.commentMode?.active ?? false
+                    : SimulatorManager.shared.existing(open.id)?.commentMode.active ?? false
                 items.append(PaletteItem(icon: .phosphor(Phosphor.commentMode),
                                          label: on ? "Exit comment mode" : "Enter comment mode",
                                          group: g, ctx: open.title,
                                          enter: { self.runAndClose { [store = self.store] in
-                                             BrowserManager.shared.controller(for: open)?
-                                                 .toggleCommentMode(store: store)
+                                             if open.kind == .browser {
+                                                 BrowserManager.shared.controller(for: open)?
+                                                     .toggleCommentMode(store: store)
+                                             } else {
+                                                 SimulatorManager.shared.controller(for: open)?
+                                                     .commentMode.toggle()
+                                             }
                                          } }))
             }
             items.append(PaletteItem(icon: .phosphor(Phosphor.pencil), label: "Rename",
@@ -460,6 +474,40 @@ struct PaletteFrame {
             PaletteItem(icon: .phosphor(Phosphor.search), label: "Reset zoom",
                         disabled: home || !(live?.isZoomed ?? false),
                         enter: drive { $0.resetZoom() }),
+        ]
+    }
+
+    /// The Device verbs for a simulator session (working.html simActions). Same shape as the
+    /// Page group: each one presses the control the pane bar already offers, plus the three the
+    /// bar has no room for — relaunch, shake, screenshot. When `s` isn't the open session there
+    /// is no live device yet, so what depends on live state reads disabled.
+    private func simulatorActions(_ s: Session) -> [PaletteItem] {
+        let live = store.openSessionID == s.id ? SimulatorManager.shared.existing(s.id) : nil
+        // close palette → jump to the session if it isn't open → drive the control.
+        func drive(_ fn: @escaping (SimulatorSessionController) -> Void) -> () -> Void {
+            { self.runAndClose { [store = self.store] in
+                if store.openSessionID != s.id { store.jump(to: s) }
+                if let ctrl = SimulatorManager.shared.controller(for: s) { fn(ctrl) }
+            } }
+        }
+        return [
+            PaletteItem(icon: .phosphor(Phosphor.squares), label: "Open app or URL",
+                        kbd: ["⌘", "L"], enter: drive { $0.openAppLauncher() }),
+            // Nothing launched from here is nothing to relaunch — the device's twin of the
+            // browser's home page, where the page verbs have no page to act on.
+            PaletteItem(icon: .phosphor(Phosphor.reload), label: "Relaunch app",
+                        kbd: ["⌘", "R"], disabled: live?.runningAppLabel == nil,
+                        enter: drive { $0.relaunch() }),
+            PaletteItem(icon: .phosphor(Phosphor.house), label: "Home",
+                        kbd: ["⌘", "⇧", "H"], enter: drive { $0.press(.home) }),
+            PaletteItem(icon: .phosphor(Phosphor.lock), label: "Lock device",
+                        enter: drive { $0.press(.lock) }),
+            PaletteItem(icon: .phosphor(Phosphor.deviceMobile), label: "Rotate device",
+                        kbd: ["⌘", "⇧", "R"], enter: drive { $0.rotate() }),
+            PaletteItem(icon: .phosphor(Phosphor.reset), label: "Shake",
+                        enter: drive { $0.shake() }),
+            PaletteItem(icon: .phosphor(Phosphor.copy), label: "Copy screenshot",
+                        enter: drive { $0.copyScreenshot() }),
         ]
     }
 

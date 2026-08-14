@@ -706,6 +706,25 @@ struct RootView: View {
                 default: break
                 }
             }
+            // An open simulator claims the device verbs the same way, in the same places:
+            // ⌘L the app field, ⌘R relaunch, ⌘⇧H home, ⌘⇧R rotate. Same position as the page
+            // verbs — after the split layer (so ⌘⌥L stays focus-right) and before the
+            // passthrough, because the pane forwards every key to the guest device.
+            if event.modifierFlags.contains(.command),
+               let open = store.openSession, open.kind == .simulator,
+               let ctrl = SimulatorManager.shared.controller(for: open) {
+                switch key {
+                case "l":
+                    ctrl.openAppLauncher(); return nil
+                case "r" where !event.modifierFlags.contains(.shift):
+                    ctrl.relaunch(); return nil
+                case "r" where event.modifierFlags.contains(.shift):
+                    ctrl.rotate(); return nil
+                case "h" where event.modifierFlags.contains(.shift):
+                    ctrl.press(.home); return nil
+                default: break
+                }
+            }
             // Tabs (experimental): ⌃⇥ / ⌃⇧⇥ cycle the branch's tabs. Placed before the surface
             // passthrough so it works even while a terminal/browser holds focus (a global nav
             // chord, like ⌘⇧[ / ⌘⇧]). Guarded by tabsMode.

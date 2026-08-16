@@ -2022,6 +2022,10 @@ disclosure to dive deeper.
   state (no device, the pane's own desktop viewport, the right way to check ordinary work),
   says a desktop viewport is the mode off rather than the widest device in the fleet, and drops
   `ipad-pro-13` from the `device` examples that agents were copying.
+- **0.32.1 ships — agents stay at the desktop viewport** — patch release carrying the
+  `browser_device_mode` description fix so installed copies stop defaulting to device emulation.
+  `CFBundleVersion` 602, tag `v0.32.1`; dmg + zip notarized, stapled, verified credential-less;
+  appcast newest 0.32.1 at 602, `edSignature` on all 18 enclosures. No `synth-site` push.
 
 ## [2026-08-17](docs/features/2026-08-17.md)
 

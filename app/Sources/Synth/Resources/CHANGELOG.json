@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.32.1",
+    "date": "2026-08-16",
+    "changes": [
+      "Agents no longer switch the browser pane into phone or tablet emulation unless you ask for one — the pane's own desktop viewport is the resting state."
+    ]
+  },
+  {
     "version": "0.32.0",
     "date": "2026-08-14",
     "changes": [

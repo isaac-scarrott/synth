@@ -507,17 +507,22 @@ tool("browser_reload", "Reload the session's page.",
 tool("browser_device_mode",
   "Read or set the session's device mode — the page inside a hardware device frame at a " +
   "real device viewport (Chrome device-toolbar emulation: true innerWidth/innerHeight, " +
-  "devicePixelRatio, mobile layout), visible to the user in the pane. Use it to check a " +
-  "page at phone/tablet sizes; screenshots and clicks see the emulated viewport too. " +
-  "With no arguments it reports the current state plus the device fleet (smallest → " +
-  "biggest). Naming a device or orientation switches the mode on; it persists across " +
-  "navigations until turned off with on:false.",
+  "devicePixelRatio, mobile layout), visible to the user in the pane. A session runs with " +
+  "no device — the page at the pane's own desktop viewport — and that is the right way to " +
+  "check ordinary work: only enter device mode when the task itself is about phone or " +
+  "tablet layout, and leave it with on:false once that check is done. The fleet is phones " +
+  "and tablets; a desktop viewport is this mode off, not the widest device in the list. " +
+  "Screenshots and clicks see the emulated viewport too. With no arguments it reports the " +
+  "current state plus the fleet (smallest → biggest) and changes nothing. Naming a device " +
+  "or orientation switches the mode on; it persists across navigations until turned off.",
   {
     sessionId: sessionIdParam,
     on: z.boolean().optional().describe(
-      "false exits device mode (default true when any other setting is passed)"),
+      "false returns the page to the desktop viewport (default true when any other " +
+      "setting is passed)"),
     device: z.string().optional().describe(
-      "fleet device id, e.g. iphone-se, iphone-16, ipad-pro-13 (full list in the no-arg reply)"),
+      "fleet device id the task calls for, e.g. iphone-se or iphone-16 (full list in the " +
+      "no-arg reply)"),
     landscape: z.boolean().optional().describe("true = landscape, false = portrait"),
   },
   async ({ sessionId, on, device, landscape }) => {

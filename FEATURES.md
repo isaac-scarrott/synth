@@ -2018,3 +2018,7 @@ disclosure to dive deeper.
   (Home / Lock / Rotate, bundle-id launcher, viewport badge, ⌘K Device group). `CFBundleVersion`
   599, tag `v0.32.0`; dmg + zip notarized, stapled, verified credential-less; appcast newest
   0.32.0 at 599, `edSignature` on all 18 enclosures. No `synth-site` push.
+- **No device is the default** — `browser_device_mode`'s description now leads with the resting
+  state (no device, the pane's own desktop viewport, the right way to check ordinary work),
+  says a desktop viewport is the mode off rather than the widest device in the fleet, and drops
+  `ipad-pro-13` from the `device` examples that agents were copying.

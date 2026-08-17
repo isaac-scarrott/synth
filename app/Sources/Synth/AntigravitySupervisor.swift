@@ -46,9 +46,9 @@ import OSLog
 
     // MARK: Launch
 
-    /// Where the launch shim instruments this session: it writes `.agents/hooks.json` into the
-    /// hooks dir and hands agy `--add-dir <dir> --log-file <log>` (unless the user asked for a
-    /// log of their own, which wins — agy keeps only one).
+    /// Where the launch shim instruments this session: it writes `.agents/hooks.json` and
+    /// `.agents/mcp_config.json` into the hooks dir and hands agy `--add-dir <dir> --log-file
+    /// <log>` (unless the user asked for a log of their own, which wins — agy keeps only one).
     ///
     /// The log is dropped here rather than left to the shim because the tail reads each launch
     /// from the top: a relaunch of the same row reuses the path, and replayed lines would resume

@@ -13,12 +13,18 @@ import os.log
 /// (The dir name predates the second server; renaming it would orphan nothing but
 /// churn every config, so it stays.)
 ///
-/// Registration: each worktree root gets .mcp.json with the ENABLED servers (the
-/// Settings → MCP servers toggles: browser on by default, app off), MERGED into any
-/// existing file (other servers preserved), skipped when already correct; a disabled
-/// server's entry is removed, so its tools never even appear to agents. Project scope
-/// is the point — the file must NOT be gitignored (any Claude session in the worktree
-/// should see the tools) — but Synth never commits it.
+/// Registration: nothing is written into the worktree. The ENABLED servers (the
+/// Settings → MCP servers toggles) are handed to each agent's launch as environment
+/// (`launchEnv`), and `synth-hook` turns them into that agent's own registration —
+/// `claude --mcp-config`, opencode's `OPENCODE_CONFIG_CONTENT`, and an
+/// `.agents/mcp_config.json` inside the Synth-owned dir agy is handed via `--add-dir`.
+/// A disabled server is simply absent, so its tools never appear to agents.
+///
+/// Synth used to write `.mcp.json`, `opencode.json` and `.agents/mcp_config.json` into
+/// every managed worktree, which left three untracked files in every user repo (nobody
+/// else's `.gitignore` names them) and cost an agent one approval prompt per server on
+/// top of Claude's folder-trust prompt. Those files are now swept back up — see
+/// `removeStrandedConfigs`.
 @MainActor enum MCPInstaller {
     private static let log = Logger(subsystem: bundleIdentifier, category: "mcp")
 
@@ -117,45 +123,91 @@ import os.log
         return candidates.first { fm.isExecutableFile(atPath: $0) }
     }
 
-    // MARK: Per-worktree agent config
+    // MARK: Per-launch agent config
 
-    /// In-memory skip: the sync runs on the autosave cadence, so an unchanged
+    /// In-memory skip: the store re-states this on the autosave cadence, so an unchanged
     /// worktree set (with unchanged toggles) costs nothing.
     private static var lastSynced: (paths: [String], servers: [String: Bool])?
+    /// The Settings toggle state, as the next launch should see it.
+    private static var enabledServers: [String: Bool] = [:]
+    /// Worktrees a launch may claim servers for — a terminal opened anywhere else (the user's
+    /// own folder, a path Synth doesn't manage) gets none, because the servers scope every tool
+    /// to a worktree Synth knows about and would fail on the first call.
+    private static var liveWorktrees: Set<String> = []
 
-    /// Each agent discovers project MCP servers from its own file, with its own schema. All
-    /// are written into every worktree: whichever agent runs there finds the enabled servers
-    /// already registered, and the others' files are inert. `servers` is the Settings toggle
-    /// state — a false entry actively REMOVES that server from the configs.
-    static func syncWorktreeConfigs(_ worktreePaths: [String], servers: [String: Bool]) {
-        guard lastSynced == nil || lastSynced! != (worktreePaths, servers) else { return }
-        lastSynced = (worktreePaths, servers)
-        for path in worktreePaths {
-            writeClaudeConfig(atWorktree: path, servers: servers)
-            writeOpencodeConfig(atWorktree: path, servers: servers)
-            writeAntigravityConfig(atWorktree: path, servers: servers)
+    /// Adopt the live worktree set and the Settings toggles. Nothing is written: this only
+    /// decides what the next agent launch in each worktree is handed (`launchEnv`), and sweeps
+    /// up the config files older builds left in the tree.
+    static func updateLaunchConfig(worktrees: [String], servers: [String: Bool]) {
+        enabledServers = servers
+        liveWorktrees = Set(worktrees.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
+        guard lastSynced == nil || lastSynced! != (worktrees, servers) else { return }
+        lastSynced = (worktrees, servers)
+        for path in worktrees { removeStrandedConfigs(in: path) }
+    }
+
+    /// The enabled servers in each hosted agent's own schema, as `synth-hook` takes them.
+    /// Empty when every server is off, so the launch stays bare, and empty outside a managed
+    /// worktree. `SYNTH_WORKTREE` travels in every entry: the servers scope themselves to a
+    /// worktree and this is the only thing that names it (`shared.mjs` prefers it over
+    /// `CLAUDE_PROJECT_DIR`, which the other two agents don't set at all).
+    static func launchEnv(worktree: String) -> [String: String] {
+        let path = URL(fileURLWithPath: worktree).resolvingSymlinksInPath().path
+        guard liveWorktrees.contains(path) else { return [:] }
+        let names = enabledServers.filter(\.value).keys.sorted()
+        guard !names.isEmpty else { return [:] }
+
+        let env = channelEnv.merging(["SYNTH_WORKTREE": worktree]) { _, new in new }
+        // Claude Code and agy share a schema (command + args + env); opencode takes the command
+        // as one array and spells the environment differently.
+        var claude: [String: Any] = [:]
+        var opencode: [String: Any] = [:]
+        for name in names {
+            claude[name] = ["command": "node", "args": [serverPath(name)], "env": env]
+            opencode[name] = ["type": "local", "command": ["node", serverPath(name)],
+                              "enabled": true, "environment": env]
+        }
+        guard let claudeJSON = json(["mcpServers": claude]),
+              let opencodeJSON = json(["mcp": opencode]) else { return [:] }
+        return ["SYNTH_MCP_CLAUDE": claudeJSON,
+                "SYNTH_MCP_OPENCODE": opencodeJSON,
+                "SYNTH_MCP_AGY": claudeJSON]
+    }
+
+    private static func json(_ object: [String: Any]) -> String? {
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Delete the per-worktree config files older builds wrote, in worktrees that still carry
+    /// them. Not just tidying: a stale file registers the same servers a second time alongside
+    /// the launch's own copy, and a stale entry points at whatever the toggles said back then.
+    ///
+    /// Only files that are provably still Synth's are removed — a user who has since put their
+    /// own server (or any other opencode setting) in one owns it now, and it stays.
+    private static func removeStrandedConfigs(in worktree: String) {
+        let fm = FileManager.default
+        let root = URL(fileURLWithPath: worktree)
+        for relative in [".mcp.json", "opencode.json", ".agents/mcp_config.json"]
+        where isUnmodifiedSynthConfig(relative, inWorktree: worktree) {
+            try? fm.removeItem(at: root.appendingPathComponent(relative))
+            log.info("removed stranded \(relative) from \(worktree)")
+        }
+        // `.agents/` is agy's whole customization dir — skills, rules and hooks live there too —
+        // so it goes only when Synth's file was the only thing in it.
+        let agents = root.appendingPathComponent(".agents")
+        if let contents = try? fm.contentsOfDirectory(atPath: agents.path), contents.isEmpty {
+            try? fm.removeItem(at: agents)
         }
     }
 
-    /// True when `relative` is one of the config files Synth writes into every managed
+    /// True when `relative` is one of the config files Synth used to write into every managed
     /// worktree AND the user has put nothing of their own in it.
     ///
-    /// The archive sweeper needs this. Synth dirties every managed worktree with `.mcp.json`,
-    /// `opencode.json` and `.agents/mcp_config.json` on the autosave cadence, and no *user*
-    /// repo gitignores them — so they show up as untracked in every worktree (individually:
-    /// the sweeper's `status -uall` names the nested path, not a bare `.agents/`), and a sweeper
-    /// that blocks on untracked files (as it must) would block on Synth's own droppings and
-    /// never reclaim anything.
-    /// Measured: with this carve-out absent, every scenario in the archive gate reported
-    /// "untracked files — kept", including the ones that were merged, clean and fully pushed.
-    ///
     /// Deliberately not a bare filename allowlist: a user who added their own servers, or any
-    /// other opencode setting, has real work in that file and it must count as untracked. So
-    /// this proves the file contains *only* what Synth itself puts there.
-    ///
-    /// This whole carve-out is transitional. It disappears the day Synth stops writing into
-    /// worktrees at all (Claude's `--mcp-config`, opencode's `OPENCODE_CONFIG`) — and leaving
-    /// it in past that point would silently mask a real config file the user cares about.
+    /// other opencode setting, has real work in that file, and deleting it would be Synth
+    /// throwing away something it never owned.
     nonisolated static func isUnmodifiedSynthConfig(_ relative: String, inWorktree worktree: String) -> Bool {
         let container: String
         let allowedTopLevel: Set<String>
@@ -188,99 +240,4 @@ import os.log
         ["SYNTH_SUPPORT_DIR": AppSupport.root.path]
     }
 
-    /// Claude Code: `.mcp.json` → `mcpServers.<name>.{command,args,env}`.
-    private static func writeClaudeConfig(atWorktree path: String, servers: [String: Bool]) {
-        var built: [String: [String: Any]?] = [:]
-        for (name, enabled) in servers {
-            let entry: [String: Any] = [
-                "command": "node",
-                "args": [serverPath(name)],
-                "env": channelEnv,
-            ]
-            built.updateValue(enabled ? entry : nil, forKey: name)
-        }
-        merge(atWorktree: path, file: ".mcp.json", container: "mcpServers", entries: built)
-    }
-
-    /// opencode: `opencode.json` → `mcp.<name>.{type,command,enabled,environment}`. A single
-    /// `command` array rather than command+args, and the worktree travels in the env because
-    /// the server can no longer read Claude's `CLAUDE_PROJECT_DIR`.
-    private static func writeOpencodeConfig(atWorktree path: String, servers: [String: Bool]) {
-        var built: [String: [String: Any]?] = [:]
-        for (name, enabled) in servers {
-            let entry: [String: Any] = [
-                "type": "local",
-                "command": ["node", serverPath(name)],
-                "enabled": true,
-                "environment": channelEnv.merging(["SYNTH_WORKTREE": path]) { _, new in new },
-            ]
-            built.updateValue(enabled ? entry : nil, forKey: name)
-        }
-        merge(atWorktree: path, file: "opencode.json", container: "mcp", entries: built,
-              extra: ["$schema": "https://opencode.ai/config.json"])
-    }
-
-    /// Antigravity: `.agents/mcp_config.json` → `mcpServers.<name>.{command,args,env}` — Claude's
-    /// schema one directory down. The worktree still travels in the env: agy names no project dir
-    /// for its servers, and the language server that spawns them picks their cwd, so `process.cwd()`
-    /// is not the fallback it looks like. `.agents/` is agy's whole workspace-customization dir —
-    /// skills, rules and hooks live there too — hence a writer that reconciles this one file and
-    /// never enumerates the directory. Measured on agy 1.1.8: the file is read (and its stdio
-    /// server spawned) only once the workspace is trusted, which is agy's own first-run prompt —
-    /// an untrusted worktree silently discovers no workspace customizations at all.
-    private static func writeAntigravityConfig(atWorktree path: String, servers: [String: Bool]) {
-        var built: [String: [String: Any]?] = [:]
-        for (name, enabled) in servers {
-            let entry: [String: Any] = [
-                "command": "node",
-                "args": [serverPath(name)],
-                "env": channelEnv.merging(["SYNTH_WORKTREE": path]) { _, new in new },
-            ]
-            built.updateValue(enabled ? entry : nil, forKey: name)
-        }
-        merge(atWorktree: path, file: ".agents/mcp_config.json", container: "mcpServers",
-              entries: built)
-    }
-
-    /// Reconcile Synth's servers under `container` in `file` — set enabled entries, drop
-    /// disabled ones (an inner nil) — preserving whatever else the user keeps there. A
-    /// no-op when everything is already correct: the worktree is the user's working tree,
-    /// and a needless rewrite shows up as a dirty file in their `git status`.
-    private static func merge(atWorktree path: String, file name: String, container: String,
-                              entries: [String: [String: Any]?], extra: [String: Any] = [:]) {
-        guard FileManager.default.fileExists(atPath: path) else { return }
-        let file = URL(fileURLWithPath: path).appendingPathComponent(name)
-
-        var root: [String: Any] = [:]
-        if let data = try? Data(contentsOf: file) {
-            guard let existing = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                // Unparseable user file — leave it alone rather than clobber.
-                log.error("\(file.path) exists but isn't a JSON object — not touching it")
-                return
-            }
-            root = existing
-        }
-        var servers = root[container] as? [String: Any] ?? [:]
-        var changed = false
-        for (key, entry) in entries {
-            if let entry {
-                if let current = servers[key] as? [String: Any],
-                   NSDictionary(dictionary: current).isEqual(to: entry) { continue }
-                servers[key] = entry
-                changed = true
-            } else if servers[key] != nil {
-                servers.removeValue(forKey: key)
-                changed = true
-            }
-        }
-        guard changed else { return }
-        root[container] = servers
-        for (k, v) in extra where root[k] == nil { root[k] = v }
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) else { return }
-        // agy's config sits a directory down, and a worktree that has never run it has no `.agents/`.
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        try? data.write(to: file, options: .atomic)
-    }
 }

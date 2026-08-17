@@ -2047,3 +2047,16 @@ disclosure to dive deeper.
   from 602. Nearly shipped as nothing: a rebase left the feature commit below the 0.32.1 release
   commits, where the log reads as released but the tag says otherwise — diff `<last tag>..HEAD`.
   No `synth-site` push.
+
+- **MCP servers ride each agent's launch; Synth stops writing config into your repo** — the three
+  files in every managed worktree (`.mcp.json`, `opencode.json`, `.agents/mcp_config.json`, none of
+  which a user repo ignores) are gone. `MCPInstaller.launchEnv` builds the enabled servers per
+  agent schema, `synth-hook` turns each into that agent's own registration: `--mcp-config` for
+  claude, `OPENCODE_CONFIG_CONTENT` for opencode (merged, not set), and — measured on agy 1.1.9,
+  since agy's docs name only machine-wide scopes — `.agents/mcp_config.json` inside the
+  Synth-owned dir `--add-dir` already hands it. Worktrees an older build dirtied are swept on
+  launch, but only while the file is provably still ours. Deletes `ArchiveSweeper`'s untracked
+  carve-out and Synth's own three `.gitignore` lines. Claude's per-server approval prompt goes with
+  the file; its folder-trust prompt is a property of the path and stays. Cost: an uninstrumented
+  invocation (`claude -p`, subcommands, a claude started outside Synth) no longer sees the servers.
+  New `automation.mcpLaunchEnv` verb keeps `t4a`/`t8` asserting the real thing.

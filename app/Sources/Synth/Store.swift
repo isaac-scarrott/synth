@@ -916,9 +916,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         AppStore.shared = self
     }
 
-    /// Keep the instance file's worktreePaths and every worktree's .mcp.json current.
-    /// Runs at init, on the autosave cadence, and when an MCP toggle flips (all skip
-    /// unchanged inputs), so no workspace/branch mutation site can forget it — the
+    /// Keep the instance file's worktreePaths and the MCP servers each new agent launch is
+    /// handed current. Runs at init, on the autosave cadence, and when an MCP toggle flips
+    /// (all skip unchanged inputs), so no workspace/branch mutation site can forget it — the
     /// autosave model.
     private func syncAgentBridge() {
         let paths = workspaces.flatMap { $0.branches.map(\.worktreeURL.path) }
@@ -927,11 +927,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // anything another live instance claims. Dropping archived paths here would fail that
         // check open in exactly the case it exists for.
         InstanceRegistry.shared.update(worktreePaths: paths)
-        // The config writer takes only live rows: an archived worktree is one the user has
-        // stopped working in, and writing into it every 4s would keep dirtying a folder the
-        // sweeper is trying to certify as clean.
+        // Only live rows can claim the servers: an archived worktree is one the user has stopped
+        // working in, and a terminal opened there is not a session Synth is hosting agents for.
         let live = workspaces.flatMap { $0.branches.filter { !$0.isArchived }.map(\.worktreeURL.path) }
-        MCPInstaller.syncWorktreeConfigs(live, servers: [
+        MCPInstaller.updateLaunchConfig(worktrees: live, servers: [
             "synth-browser": mcpBrowserEnabled,
             "synth-app": mcpAppEnabled,
             // Gated on the experiment AND a real Xcode: registering a server whose every tool

@@ -88,7 +88,8 @@ same-surface guarantee hold here. A tap from the agent and a tap from the mouse 
 ## Claude drives it through a `synth-simulator` MCP server, mirroring `synth-browser`
 
 A second Node stdio MCP server beside the existing one, installed by `MCPInstaller` and registered
-per-worktree through the same `.mcp.json` / `opencode.json` sync. It resolves its Synth instance and
+through the same per-agent launch config as `synth-browser` (a per-worktree `.mcp.json` /
+`opencode.json` until 2026-08-17, the launch environment since — see ADR-0011, amended). It resolves its Synth instance and
 branch exactly as `synth-browser` does, and reaches the app over the existing control socket.
 
 Unlike the browser, **every verb goes over the control socket** — there is no CDP-equivalent second

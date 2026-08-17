@@ -57,7 +57,8 @@ enum TerminalLauncher {
         // decorate() lets every installed agent's supervisor stamp its env — including the port
         // opencode's server will listen on. Supervisors are attached by the agent-start signal
         // (Hooks), never here: a launched agent is not yet a reachable one.
-        let env = HookEnvironment.decorate(base, sessionID: session.id, socketPath: hookSocketPath)
+        let env = HookEnvironment.decorate(base, sessionID: session.id, socketPath: hookSocketPath,
+                                           cwd: cwd.path)
 
         let view = GhosttySurfaceView(session: session, cwd: cwd, env: env,
                                       command: TerminalLauncher.command, agentFlags: agentFlags, bus: bus)

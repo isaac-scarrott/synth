@@ -58,6 +58,9 @@ kind is still not liveness, exactly as ADR-0008 insisted.
 - Both agents get the bundled browser MCP server registered per worktree, each in its own schema:
   `.mcp.json` (`mcpServers`) for Claude Code, `opencode.json` (`mcp`, `type: "local"`) for OpenCode.
   The server reads `SYNTH_WORKTREE` because OpenCode sets no `CLAUDE_PROJECT_DIR`.
+  **Superseded 2026-08-17:** the schemas are unchanged but neither is a file any more — both ride
+  the launch through `synth-hook` (ADR-0011, amended), and every agent's entry carries
+  `SYNTH_WORKTREE`.
 - OpenCode's server is loopback-only and **unauthenticated**. `OPENCODE_SERVER_PASSWORD` would secure
   it, but OpenCode's own TUI races its credentials and dies on the resulting 401. A bare `opencode` in
   any terminal already serves an unauthenticated loopback port, so Synth does not widen the exposure —

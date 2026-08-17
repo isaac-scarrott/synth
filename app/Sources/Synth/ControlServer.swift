@@ -319,6 +319,12 @@ final class ControlServer: @unchecked Sendable {
         // logic — so exercising a verb exercises the product path.
         // `agent` names which one (an AgentID rawValue); absent means Claude Code, the verb's
         // original and only meaning.
+        // What a launch in this worktree would be handed for the bundled MCP servers. Synth
+        // writes no config into the tree any more, so this env IS the registration — and the
+        // only way the gate can assert it, or hand a real agent the same thing the PTY does.
+        case "automation.mcpLaunchEnv" where automation:
+            return ["ok": true, "env": MCPInstaller.launchEnv(worktree: worktreePath)]
+
         case "automation.newAgent" where automation, "automation.newClaude" where automation:
             let agent = (request["agent"] as? String).map(AgentID.init) ?? .claudeCode
             guard let session = store.newAgent(agent, in: branch) else {

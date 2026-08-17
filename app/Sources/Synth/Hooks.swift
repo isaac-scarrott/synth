@@ -310,8 +310,11 @@ final class HookServer: @unchecked Sendable {
         (path as NSString).lastPathComponent.hasPrefix("synth-zdotdir-")
     }
 
-    /// Overlay the hook correlation/callback env + shim PATH onto a base environment.
-    static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String) -> [String: String] {
+    /// Overlay the hook correlation/callback env + shim PATH onto a base environment. `cwd` is
+    /// where the shell will start — the worktree, for every terminal that has one — and decides
+    /// which worktree's MCP servers this launch may claim.
+    static func decorate(_ base: [String: String], sessionID: UUID, socketPath: String,
+                         cwd: String) -> [String: String] {
         var env = base
         // Sessions inside Synth are top-level, never child sessions — drop inherited agent
         // markers from the overlay too (setup()'s unsetenv is the real removal; this guards
@@ -365,6 +368,11 @@ final class HookServer: @unchecked Sendable {
         for agent in AgentRegistry.installed {
             AgentRegistry.supervisor(agent.id)?.decorate(&env, sessionID: sessionID, agent: agent)
         }
+        // The bundled MCP servers ride the launch rather than a file in the user's tree: the
+        // shim turns each of these into the registration its agent understands. One env per
+        // agent because the three schemas differ, all three set because any terminal may
+        // become any agent — the same reason the shim PATH above covers all of them.
+        for (key, value) in MCPInstaller.launchEnv(worktree: cwd) { env[key] = value }
         return env
     }
 }

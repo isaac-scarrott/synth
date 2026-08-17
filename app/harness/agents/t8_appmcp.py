@@ -15,6 +15,14 @@ def raw_call(sock_path, req, timeout=90):
     s.close()
     return json.loads(b.decode().strip() or "{}")
 
+
+# Nothing is written into the worktree any more — the servers ride each agent's launch — so
+# "registered" is read from the env a launch here would be handed. `agent` picks whose schema:
+# Claude and agy take `mcpServers`, opencode takes `mcp`.
+def registered(ctl, agent="CLAUDE", container="mcpServers"):
+    env = ctl("automation.mcpLaunchEnv").get("env", {})
+    return json.loads(env.get(f"SYNTH_MCP_{agent}", "{}")).get(container, {})
+
 kill_all(); repo = fresh_repo(); sd = seed_state(repo)
 
 # --- Phase A0: the shipped defaults. Both servers are on out of the box since 0.15.1 flipped
@@ -22,18 +30,18 @@ kill_all(); repo = fresh_repo(); sd = seed_state(repo)
 # confirmation that already existed). Asserted with no arguments at all, because the default is
 # the thing being claimed. ---
 p, sock = launch(sd, f"{H}/t8a0.log"); ctl = Ctl(sock, repo)
-time.sleep(3)  # MCPInstaller syncs on the autosave cadence
-m = json.loads((pathlib.Path(repo) / ".mcp.json").read_text())
-check("1. synth-browser registered by default", "synth-browser" in m.get("mcpServers", {}), list(m.get("mcpServers", {})))
-check("2. synth-app registered by default too", "synth-app" in m.get("mcpServers", {}), list(m.get("mcpServers", {})))
+time.sleep(3)  # the launch config syncs on the autosave cadence
+m = registered(ctl)
+check("1. synth-browser registered by default", "synth-browser" in m, list(m))
+check("2. synth-app registered by default too", "synth-app" in m, list(m))
 kill_all()
 
 # --- Phase A: toggled off — the server is unregistered and the verb refuses. Forced off by
 # argument now that off is no longer the default; the off-state still has to work. ---
 p, sock = launch(sd, f"{H}/t8a.log", extra_args=["-synth-mcp-app", "<false/>"]); ctl = Ctl(sock, repo)
 time.sleep(3)
-m = json.loads((pathlib.Path(repo) / ".mcp.json").read_text())
-check("3. synth-app unregistered while the toggle is off", "synth-app" not in m.get("mcpServers", {}), list(m.get("mcpServers", {})))
+m = registered(ctl)
+check("3. synth-app unregistered while the toggle is off", "synth-app" not in m, list(m))
 r = raw_call(sock, {"verb": "app.worktreeCreate", "worktreePath": str(repo), "branch": "feat/refused"})
 check("4. verb refused while toggle off", not r.get("ok") and "turned off" in r.get("error", ""), r)
 kill_all()
@@ -41,12 +49,12 @@ kill_all()
 # --- Phase B: toggle on (argument domain — per-process, no defaults pollution). ---
 p, sock = launch(sd, f"{H}/t8b.log", extra_args=["-synth-mcp-app", "<true/>"]); ctl = Ctl(sock, repo)
 time.sleep(3)
-m = json.loads((pathlib.Path(repo) / ".mcp.json").read_text())
-e = m.get("mcpServers", {}).get("synth-app", {})
-check("5. synth-app registered when enabled", bool(e), list(m.get("mcpServers", {})))
+m = registered(ctl)
+e = m.get("synth-app", {})
+check("5. synth-app registered when enabled", bool(e), list(m))
 check("6. entry points at app-server.mjs", "app-server.mjs" in " ".join(map(str, e.get("args", []))), e)
-o = json.loads((pathlib.Path(repo) / "opencode.json").read_text())
-check("7. opencode.json carries synth-app too", "synth-app" in o.get("mcp", {}), list(o.get("mcp", {})))
+o = registered(ctl, "OPENCODE", "mcp")
+check("7. opencode's own env carries synth-app too", "synth-app" in o, list(o))
 
 # Approve flow: the call parks until the prompt is answered.
 res = {}
@@ -96,14 +104,15 @@ check("15. existing row → immediate 'exists' with its path",
       r.get("decision") == "exists" and bool(r.get("worktreePath")), r)
 kill_all()
 
-# --- Phase C: relaunch with the toggle off — stale synth-app entries are removed. Forced off
-# by argument: since 0.15.1 "off" is no longer what a bare launch gives you. ---
+# --- Phase C: relaunch with the toggle off — synth-app stops being offered to any agent.
+# Forced off by argument: since 0.15.1 "off" is no longer what a bare launch gives you. ---
 p, sock = launch(sd, f"{H}/t8c.log", extra_args=["-synth-mcp-app", "<false/>"])
 time.sleep(3)
-m = json.loads((pathlib.Path(repo) / ".mcp.json").read_text())
-o = json.loads((pathlib.Path(repo) / "opencode.json").read_text())
-check("16. disabled → synth-app removed from .mcp.json", "synth-app" not in m.get("mcpServers", {}), list(m.get("mcpServers", {})))
-check("17. disabled → synth-app removed from opencode.json", "synth-app" not in o.get("mcp", {}), list(o.get("mcp", {})))
-check("18. synth-browser survives the reconcile", "synth-browser" in m.get("mcpServers", {}), list(m.get("mcpServers", {})))
+ctl = Ctl(sock, repo)
+m = registered(ctl)
+o = registered(ctl, "OPENCODE", "mcp")
+check("16. disabled → synth-app absent from Claude's launch env", "synth-app" not in m, list(m))
+check("17. disabled → synth-app absent from opencode's", "synth-app" not in o, list(o))
+check("18. synth-browser survives the reconcile", "synth-browser" in m, list(m))
 kill_all()
 sys.exit(result())

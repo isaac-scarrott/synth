@@ -18,6 +18,10 @@ import Glibc
 //                   one per workspace dir, added dirs included) so status arrives as hook
 //                   callbacks like Claude's, plus `--log-file` for the confirmation prompts
 //                   and interrupts no hook covers. agent-start/agent-end are reported around it.
+//     The bundled MCP servers ride the same interception (`$SYNTH_MCP_*`, built by
+//     `MCPInstaller.launchEnv`), each in the shape its agent takes one: `--mcp-config` for
+//     claude, `OPENCODE_CONFIG_CONTENT` for opencode, `.agents/mcp_config.json` in the added
+//     dir for agy. That is what keeps Synth from writing config into the user's worktree.
 //     Non-interactive invocations (`claude -p`, `opencode run`, `agy --print`, subcommands)
 //     pass through.
 //   • as `synth-hook event <Event>`: the EVENT role. Claude and agy fire this per hook (agy's
@@ -137,7 +141,13 @@ func runClaudeLaunch(binary: String, agentID: String, userArgs: [String]) -> Nev
     // `claude --resume <id>` — and hooks still fire because we keep injecting `--settings`.
     let resuming = args.contains { ["--resume", "-r", "--continue", "-c"].contains($0) }
     let idArgs = resuming ? [] : ["--session-id", UUID().uuidString]
-    spawnReportingExit(real, idArgs + ["--settings", settings] + args)
+    // The bundled MCP servers, as JSON on the command line rather than a `.mcp.json` in the
+    // user's worktree. The flag is repeatable and additive (no `--strict-mcp-config`), so a
+    // user's own configuration — theirs on this line included — is untouched. Servers arriving
+    // this way are also not the `.mcp.json` servers Claude asks to approve, so a fresh worktree
+    // now meets only its trust prompt.
+    let mcpArgs = env["SYNTH_MCP_CLAUDE"].flatMap { $0.isEmpty ? nil : ["--mcp-config", $0] } ?? []
+    spawnReportingExit(real, idArgs + ["--settings", settings] + mcpArgs + args)
 }
 
 /// opencode publishes its own event stream, so it needs no hooks — only a known port. The app
@@ -168,8 +178,37 @@ func runOpencodeLaunch(binary: String, agentID: String, userArgs: [String]) -> N
     // A user's own `--port` wins — they've asked for a specific one, and the supervisor simply
     // never connects rather than fighting them for the socket.
     let portArgs = userArgs.contains("--port") ? [] : ["--port", port]
+    mergeOpencodeMCPConfig()
     reportAgent("agent-start:\(agentID)")
     spawnReportingExit(real, portArgs + userArgs, agent: agentID)
+}
+
+/// The bundled MCP servers reach opencode through `OPENCODE_CONFIG_CONTENT`, so nothing is
+/// written into the worktree. opencode reads that variable last and merges it at project scope,
+/// which leaves a user's own `opencode.json` in force.
+///
+/// Merged into whatever the variable already holds rather than set: it is the user's to use too,
+/// and the login shell that runs this launch may have exported their value moments ago — the shim
+/// is the last thing standing between them and opencode, which is the only place the two can meet.
+/// An entry already under one of our names is left alone: a user who has registered
+/// `synth-browser` themselves has said how they want it run, and the name is all either side has
+/// to go on. Same rule as `--settings`, where the user's keys win. A value that doesn't parse is
+/// left alone entirely — opencode will reject it and say so, which is a better answer for the
+/// person who wrote it than Synth quietly replacing their config with its own.
+func mergeOpencodeMCPConfig() {
+    guard let ours = env["SYNTH_MCP_OPENCODE"], !ours.isEmpty,
+          let servers = parseJSONObject(ours)?["mcp"] as? [String: Any] else { return }
+    var root: [String: Any] = [:]
+    if let existing = env["OPENCODE_CONFIG_CONTENT"], !existing.isEmpty {
+        guard let theirs = parseJSONObject(existing) else { return }
+        root = theirs
+    }
+    var mcp = root["mcp"] as? [String: Any] ?? [:]
+    for (name, entry) in servers where mcp[name] == nil { mcp[name] = entry }
+    root["mcp"] = mcp
+    guard let data = try? JSONSerialization.data(withJSONObject: root),
+          let merged = String(data: data, encoding: .utf8) else { return }
+    setenv("OPENCODE_CONFIG_CONTENT", merged, 1)
 }
 
 /// agy (Antigravity CLI) is hook-driven like Claude Code, but it has no `--settings`: hooks are
@@ -202,7 +241,7 @@ func runAgyLaunch(binary: String, agentID: String, userArgs: [String]) -> Never 
 
     // A resume (`agy --conversation <id>`) needs no special case: the hooks ride the added dir,
     // not the conversation, so the same injection instruments both.
-    var injected = writeAgyHooks(agentID: agentID).map { ["--add-dir", $0] } ?? []
+    var injected = writeAgyWorkspace(agentID: agentID).map { ["--add-dir", $0] } ?? []
     if let log = env["SYNTH_ANTIGRAVITY_LOG"], !log.isEmpty, !hasFlag(userArgs, ["--log-file"]) {
         injected += ["--log-file", log]
     }
@@ -210,10 +249,17 @@ func runAgyLaunch(binary: String, agentID: String, userArgs: [String]) -> Never 
     spawnReportingExit(real, injected + userArgs, agent: agentID)
 }
 
-/// Materialise the Synth-owned workspace dir agy is handed via `--add-dir`, containing only
-/// `.agents/hooks.json` wired back to this binary's event role. Returns the dir, or nil when it
-/// can't be written — an uninstrumented session (no status, but running) beats no session.
-func writeAgyHooks(agentID: String) -> String? {
+/// Materialise the Synth-owned workspace dir agy is handed via `--add-dir`: `.agents/hooks.json`
+/// wired back to this binary's event role, and `.agents/mcp_config.json` registering the bundled
+/// servers. Returns the dir, or nil when the hooks can't be written — an uninstrumented session
+/// (no status, but running) beats no session.
+///
+/// agy has no `--mcp-config`, and its own docs name only a global and a per-plugin config, both
+/// machine-wide. An added dir is the third place: measured on agy 1.1.9, a server declared in an
+/// added dir's `.agents/mcp_config.json` is spawned and its tools listed, with the dir nowhere
+/// near the cwd. That is what keeps agy's registration out of the user's worktree, the same way
+/// its hooks already stay out.
+func writeAgyWorkspace(agentID: String) -> String? {
     let session = env["SYNTH_SESSION_ID"] ?? String(getpid())
     let dir = env["SYNTH_ANTIGRAVITY_HOOKS_DIR"].flatMap { $0.isEmpty ? nil : $0 }
         ?? NSTemporaryDirectory() + "synth-agy-" + session
@@ -247,6 +293,9 @@ func writeAgyHooks(agentID: String) -> String? {
     let agents = dir + "/.agents"
     guard (try? FileManager.default.createDirectory(atPath: agents, withIntermediateDirectories: true)) != nil,
           FileManager.default.createFile(atPath: agents + "/hooks.json", contents: data) else { return nil }
+    if let mcp = env["SYNTH_MCP_AGY"], !mcp.isEmpty {
+        FileManager.default.createFile(atPath: agents + "/mcp_config.json", contents: Data(mcp.utf8))
+    }
     return dir
 }
 
@@ -360,9 +409,14 @@ func buildSettingsJSON(userSettings: String?, agentID: String) -> String {
     return String(data: data, encoding: .utf8) ?? "{}"
 }
 
+/// An inline JSON object, and nothing else — `OPENCODE_CONFIG_CONTENT` is content, never a path.
+func parseJSONObject(_ value: String) -> [String: Any]? {
+    (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any]
+}
+
 /// A user `--settings` value is either an inline JSON object or a path to one.
 func parseSettings(_ value: String) -> [String: Any]? {
-    if let obj = (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any] { return obj }
+    if let obj = parseJSONObject(value) { return obj }
     if let data = FileManager.default.contents(atPath: value),
        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] { return obj }
     return nil

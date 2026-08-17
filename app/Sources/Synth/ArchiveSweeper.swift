@@ -242,7 +242,7 @@ enum ArchiveSweeper {
         // for a tree holding untracked source that exists in no commit and on no remote.
         guard let clean = GitService.cleanliness(at: c.worktree).value else { return .blocked(.probeFailed) }
         guard clean.tracked.isEmpty else { return .blocked(.uncommitted) }
-        guard userUntracked(clean, in: c.worktree).isEmpty else { return .blocked(.untracked) }
+        guard clean.untracked.isEmpty else { return .blocked(.untracked) }
 
         // B6 — a half-finished rebase leaves a clean worktree with unreplayed patches.
         guard let op = GitService.inProgressOperation(at: c.worktree).value else { return .blocked(.probeFailed) }
@@ -359,15 +359,6 @@ enum ArchiveSweeper {
         return scan(root, depth: 0)
     }
 
-    /// Untracked files that are the *user's*. Synth writes `.mcp.json` / `opencode.json` into
-    /// every managed worktree and no user repo ignores them, so its own droppings are untracked
-    /// in every candidate; discounting them is what keeps the sweeper from being permanently
-    /// inert. Only files the user has not touched are discounted — `isUnmodifiedSynthConfig`
-    /// proves that structurally rather than trusting the filename.
-    static func userUntracked(_ clean: GitService.Cleanliness, in worktree: URL) -> [String] {
-        clean.untracked.filter { !MCPInstaller.isUnmodifiedSynthConfig($0, inWorktree: worktree.path) }
-    }
-
     /// The cheap, fast-moving gates, re-read immediately before the rename inside the same
     /// serialised git chain. Everything in `evaluate` was a snapshot, and an agent may have
     /// written a file in the seconds since.
@@ -378,7 +369,7 @@ enum ArchiveSweeper {
     static func isSettled(at worktree: URL) -> Bool {
         guard case .known(let clean) = GitService.cleanliness(at: worktree),
               clean.tracked.isEmpty,
-              userUntracked(clean, in: worktree).isEmpty,
+              clean.untracked.isEmpty,
               !GitService.hasIndexLock(at: worktree)
         else { return false }
         return true

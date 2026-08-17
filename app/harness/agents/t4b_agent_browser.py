@@ -5,7 +5,7 @@ kill_all(); repo = fresh_repo()
 (pathlib.Path(repo) / "second.html").write_text("<!doctype html><title>SECOND PAGE</title><h1>second</h1>")
 sd = seed_state(repo)
 p, sock = launch(sd, f"{H}/t4b.log"); ctl = Ctl(sock, repo)
-time.sleep(3)   # let MCPInstaller write opencode.json
+time.sleep(3)   # let the launch config settle before the agent starts
 
 page1 = f"file://{repo}/index.html"
 page2 = f"file://{repo}/second.html"

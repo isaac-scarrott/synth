@@ -165,6 +165,14 @@ click-to-comment. Decisions that turned out to be load-bearing:
   contain `$CLAUDE_PROJECT_DIR`, resolving a nested `.worktree/<slice>` checkout to its deepest managed
   ancestor. Registration is a per-worktree `.mcp.json` the app writes (merge-preserving, never
   clobbering foreign servers), naming a stable install at `~/Library/Application Support/Synth/browser-mcp/`.
+- **Registration moved off disk (amended 2026-08-17).** Nothing is written into the worktree any
+  more: `MCPInstaller.launchEnv` hands the enabled servers to the launch and `synth-hook` turns them
+  into each agent's own registration (`claude --mcp-config`, opencode's `OPENCODE_CONFIG_CONTENT`,
+  `.agents/mcp_config.json` in the dir agy is `--add-dir`'d). A file in the user's repo that no user
+  repo ignores was untracked noise in every worktree, and one had already been committed by mistake.
+  Scoping is unchanged — the server still resolves its instance by worktree — except that
+  `SYNTH_WORKTREE` now names it for all three agents rather than only where `$CLAUDE_PROJECT_DIR`
+  was absent.
 - **Session↔target mapping is a shim-stamped `window.__synthSessionId`** (CEF `ExecuteJavaScript` on
   every main-frame load end), evaluated by the server to map page targets back to Synth sessions.
 - **Tool output must be capped.** A 30k-element page snapshots to ~1.5M chars (~400K tokens) — enough

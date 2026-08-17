@@ -17,12 +17,3 @@ __pycache__/
 !docs/
 !docs/adr/
 !docs/adr/**
-
-# MCPInstaller writes all of these into every managed worktree on the autosave cadence, so
-# a tracked copy is dirt in every checkout: the toggle state and the channel-dependent
-# install path both differ from whatever blob was committed. `opencode.json` and Antigravity's
-# `.agents/mcp_config.json` additionally carry a `SYNTH_WORKTREE` absolute path to *that*
-# worktree.
-/opencode.json
-/.mcp.json
-/.agents/mcp_config.json

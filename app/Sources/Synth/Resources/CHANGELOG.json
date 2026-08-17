@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.33.0",
+    "date": "2026-08-17",
+    "changes": [
+      "Settings ▸ Synth ▸ Agents now hosts your own commands: add `claude-personal`, a wrapper, or a build kept beside the release, and Synth works out which built-in drives it by reading its `--version`.",
+      "A custom agent shows up everywhere a built-in does — ⌘K, ⌘N, the split picker, session templates and the project's launch line — and reports itself under its own name in status, quit cards and notifications."
+    ]
+  },
+  {
     "version": "0.32.1",
     "date": "2026-08-16",
     "changes": [

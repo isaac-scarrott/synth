@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.34.0",
+    "date": "2026-08-17",
+    "changes": [
+      "Synth stops writing config files into your repo — `.mcp.json`, `opencode.json` and `.agents/mcp_config.json` are gone, and worktrees an older build dirtied are swept on launch. The browser, simulator and app servers now ride each agent's launch instead, so Claude no longer asks you to approve them one by one.",
+      "The trade: an agent you start outside Synth — `claude -p`, a subcommand, a claude launched from your own terminal — no longer sees the bundled servers."
+    ]
+  },
+  {
     "version": "0.33.0",
     "date": "2026-08-17",
     "changes": [

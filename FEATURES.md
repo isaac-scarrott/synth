@@ -2069,3 +2069,11 @@ disclosure to dive deeper.
   `agy` that read as product failures otherwise: it starts MCP servers lazily (no turn, no
   server), and it spends minutes on preamble before a first tool call — so its assertion is the
   process, not a model's choice inside a fixed window. 12 checks, in the gate's suite list.
+
+- **0.34.0 ships — Synth stops writing into your repo** — minor release carrying the launch-config
+  change: no more `.mcp.json` / `opencode.json` / `.agents/mcp_config.json` in managed worktrees,
+  servers ride each agent's launch, older worktrees swept on the way up. `CFBundleVersion` 609, tag
+  `v0.34.0`; dmg + zip notarized, stapled, verified credential-less with quarantine set; appcast
+  newest 0.34.0 at 609, `edSignature` on all 18 enclosures, 828KB delta from 605. The clean-tree
+  guard tripped on the very files the feature removes — the deleted `.gitignore` lines stopped
+  hiding them. No `synth-site` push; `landing/` unchanged since `v0.33.0`.

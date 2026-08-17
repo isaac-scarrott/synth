@@ -30,7 +30,7 @@ if ! SYNTH_AUTOMATION=1 "$APP/Contents/MacOS/Synth" --browser-check 2>&1 | grep 
   exit 1
 fi
 
-SUITES="t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t5_comment t6_abort
+SUITES="t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t4c_agent_mcp_tools t5_comment t6_abort
         t7_regression t8_appmcp t9_archive t10_toasts t11_update t12_scratch t13_termcontrast
         t14_antigravity_detect t15_antigravity t16_antigravity_resume t17_agent_quit
         t18_antigravity_states t19_agent_disable t20_comment_batch

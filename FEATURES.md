@@ -2060,3 +2060,12 @@ disclosure to dive deeper.
   the file; its folder-trust prompt is a property of the path and stays. Cost: an uninstrumented
   invocation (`claude -p`, subcommands, a claude started outside Synth) no longer sees the servers.
   New `automation.mcpLaunchEnv` verb keeps `t4a`/`t8` asserting the real thing.
+
+- **`t4c`: every hosted agent is proved to load the bundled servers, not merely handed them** —
+  the launch-config change left Claude Code and `agy` asserted only as far as "our registration
+  was on the command line". `t4c` watches for the server *process* each agent spawns off its own
+  registration (attributable by the channel's sandbox path, no model turn needed), and takes
+  Claude all the way to a `browser_navigate` that moves the real browser. Records two facts about
+  `agy` that read as product failures otherwise: it starts MCP servers lazily (no turn, no
+  server), and it spends minutes on preamble before a first tool call — so its assertion is the
+  process, not a model's choice inside a fixed window. 12 checks, in the gate's suite list.

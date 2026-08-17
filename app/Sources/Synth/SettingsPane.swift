@@ -114,8 +114,12 @@ struct SettingsPane: View {
             // with it. The row itself stays, at the same height — the switch that brings the
             // agent back has to be somewhere you can find it, and a collapsing row would shove
             // everything below it.
-            SetSection(label: "Agent defaults") {
-                ForEach(Array(AgentRegistry.installed.enumerated()), id: \.element.id) { i, agent in
+            // A built-in row leads with its binary, because the binary is the whole identity. The
+            // user's own agents follow, each stating the three things a built-in never has to:
+            // what it is called, what Synth runs, and whose machinery reads it.
+            SetSection(label: "Agents") {
+                let builtIns = AgentRegistry.installed.filter { !$0.isCustom }
+                ForEach(Array(builtIns.enumerated()), id: \.element.id) { i, agent in
                     if i > 0 { SetDivider() }
                     let on = store.isAgentEnabled(agent.id)
                     SetEditorRow(label: agent.binaryName,
@@ -132,6 +136,16 @@ struct SettingsPane: View {
                                   enabled: on)
                     }
                     .animation(.easeOut(duration: 0.15), value: on)
+                }
+                ForEach(store.customAgents) { agent in
+                    if !builtIns.isEmpty || agent.id != store.customAgents.first?.id { SetDivider() }
+                    CustomAgentRow(agent: agent)
+                }
+                SetDivider()
+                SetToggleRow(label: "Add an agent", desc: store.customAgents.isEmpty
+                    ? "Point Synth at a command of your own — a second Claude Code with its own config, say. It runs as one of the agents above, and looks like it."
+                    : "Another command Synth runs as one of the agents above.") {
+                    AddAgentButton()
                 }
             }
             SetSection(label: "Privacy") {
@@ -702,6 +716,240 @@ private struct FlagLineField: View {
     }
 }
 
+// MARK: - Custom agents (working.html .set-agent-*)
+
+/// A pill button in the add-bar's shape, for the one-off buttons that aren't in a bar.
+private struct SetPillButton: View {
+    let icon: String?
+    let title: String
+    var danger: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        TplHover { hovering in
+            Button(action: action) {
+                HStack(spacing: 5) {
+                    if let icon { Phos(path: icon, size: 12).foregroundStyle(Theme.inkFaint) }
+                    Text(title).font(.sans(12, 550))
+                        .foregroundStyle(danger ? Theme.danger : (hovering ? Theme.ink : Theme.ink3))
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 8)
+                    .fill(hovering ? (danger ? Theme.danger.opacity(0.08) : Theme.rowHover) : Theme.raised)
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(hovering ? (danger ? Theme.danger.opacity(0.35) : Theme.borderStrong) : Theme.line,
+                                      lineWidth: 0.5)))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Adding one opens nothing: a row appears at the end of the list, empty, and you type into it.
+/// An agent with no command has nothing to launch, so nothing offers it — which is exactly what
+/// lets the row exist before it is finished.
+private struct AddAgentButton: View {
+    @Environment(AppStore.self) private var store
+    var body: some View {
+        SetPillButton(icon: Phosphor.plus, title: "Add agent") {
+            withAnimation(.easeOut(duration: 0.15)) { _ = store.addCustomAgent() }
+        }
+    }
+}
+
+/// One user-defined agent. Name (a field, with a pencil to say so) on the label line; the base
+/// and the probe's answer under it; the command and its flags as one launch line in the same dark
+/// field a built-in puts its flags in. Everything is edited where it is shown.
+private struct CustomAgentRow: View {
+    @Environment(AppStore.self) private var store
+    let agent: CustomAgent
+
+    @State private var confirming = false
+    @State private var probeDebounce: Task<Void, Never>?
+    @FocusState private var nameFocused: Bool
+
+    private var on: Bool { store.agentEnabledPrefs[agent.id] ?? true }
+    private var probe: AgentProbeResult? { store.agentProbes[agent.id] }
+    private var clash: String? { store.customAgentClash(agent.id, binary: agent.binary) }
+    private var base: AgentDescriptor? { agent.base.flatMap(AgentRegistry.builtInDescriptor) }
+    private var missing: Bool { !agent.binary.isEmpty && probe?.state == .missing }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                // The registry resolves the mark from the id, so a row with no base yet gets the
+                // generic sparkle — nothing is claimed on its behalf before it says what it is.
+                SessionIcon(kind: .agent(agent.agentID), size: 15)
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                nameField
+                pencil.alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                Spacer(minLength: 8)
+                switchControl.alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                removeButton.alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            }
+            if confirming { removeStrip.padding(.top, 6) } else { behavesLike.padding(.top, 4) }
+            launchLine.padding(.top, 8)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .task(id: agent.binary) {
+            // The row asks on appearance and after every edit settles — a probe is a process
+            // launch, so it waits for the typing to stop rather than racing every keystroke.
+            guard !agent.binary.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(420))
+            guard !Task.isCancelled else { return }
+            store.probeCustomAgent(agent.id)
+        }
+    }
+
+    // The name is a field, but a field that looks like a label is a field nobody finds — so the
+    // pencil says so, and it is what puts the caret in.
+    private var nameField: some View {
+        TextField("Name", text: Binding(
+            get: { agent.name },
+            set: { v in
+                store.updateCustomAgent(agent.id) {
+                    $0.named = !v.trimmingCharacters(in: .whitespaces).isEmpty
+                    $0.name = v
+                }
+            }))
+            .textFieldStyle(.plain).font(.sans(13, 550))
+            .foregroundStyle(on ? Theme.ink : Theme.ink4)
+            .focused($nameFocused)
+            .fixedSize()
+    }
+
+    private var pencil: some View {
+        TplHover { hovering in
+            Button { nameFocused = true } label: {
+                Phos(path: Phosphor.pencil, size: 12)
+                    .foregroundStyle(hovering ? Theme.ink3 : Theme.inkFaint)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowHover : .clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("Rename")
+        }
+    }
+
+    private var switchControl: some View {
+        Toggle("", isOn: Binding(get: { on }, set: { store.agentEnabledPrefs[agent.id] = $0 }))
+            .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
+    }
+
+    /// ✕ asks on the row when something points at the agent, and removes outright when nothing
+    /// does — the ask is bolted to the consequence, not to the surface.
+    private var removeButton: some View {
+        TplHover { hovering in
+            Button {
+                if confirming { confirming = false; return }
+                if store.customAgentTemplateUses(agent.id) == 0 {
+                    withAnimation(.easeOut(duration: 0.15)) { store.removeCustomAgent(agent.id) }
+                } else {
+                    confirming = true
+                }
+            } label: {
+                Phos(path: Phosphor.close, size: 12)
+                    .foregroundStyle(hovering ? Theme.danger : Theme.inkFaint)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Theme.rowHover : .clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("Remove agent")
+        }
+    }
+
+    /// "Behaves like" is where this feature is honest: the base is not decoration, it is which
+    /// supervisor reads the session — status, comments, the quit card, MCP registration. So it is
+    /// a control on the row, beside what the probe found: what Synth saw, and what it will treat
+    /// it as.
+    private var behavesLike: some View {
+        HStack(spacing: 10) {
+            Text("Behaves like").font(.sans(12)).foregroundStyle(Theme.inkMuted)
+            Menu {
+                ForEach(AgentRegistry.builtIn) { b in
+                    Button(b.displayName) { store.updateCustomAgent(agent.id) { $0.base = b.id } }
+                }
+            } label: {
+                Text(base?.displayName ?? "Choose…")
+                    .font(.sans(12, 550))
+                    .foregroundStyle(on ? Theme.ink3 : Theme.ink4)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            Text(probeLine).font(.sans(11))
+                .foregroundStyle(probeWarn ? Self.warnInk : Theme.inkFaint)
+                .lineLimit(1).truncationMode(.tail)
+        }
+    }
+
+    /// The ask, on the row that asked it. One line: what goes, what doesn't, and the two verbs.
+    private var removeStrip: some View {
+        let uses = store.customAgentTemplateUses(agent.id)
+        return HStack(spacing: 8) {
+            Text("Drops \(uses) session\(uses == 1 ? "" : "s") from the new-worktree template. Sessions already running carry on.")
+                .font(.sans(12)).foregroundStyle(Theme.inkMuted)
+                .lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 8)
+            SetPillButton(icon: nil, title: "Cancel") { confirming = false }
+            SetPillButton(icon: nil, title: "Remove", danger: true) {
+                withAnimation(.easeOut(duration: 0.15)) { store.removeCustomAgent(agent.id) }
+            }
+        }
+    }
+
+    /// The command and its flags in the same dark field a built-in row puts its flags in, so the
+    /// card reads as one control repeated — the only difference is that this one has to say WHICH
+    /// command it is adding them to.
+    private var launchLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text("$").foregroundStyle(Color(hex: 0x8B8E96))
+            TextField("command", text: Binding(
+                get: { agent.binary },
+                set: { v in store.updateCustomAgent(agent.id) { $0.binary = v } }))
+                .textFieldStyle(.plain)
+                .foregroundStyle(missing ? Theme.working : Color(hex: 0xD4D6DC))
+                .fixedSize()
+            TextField(base?.exampleFlags ?? "flags", text: Binding(
+                get: { store.globalAgentFlags[agent.agentID] ?? "" },
+                set: { store.globalAgentFlags[agent.agentID] = $0 }))
+                .textFieldStyle(.plain)
+                .foregroundStyle(on ? Color(hex: 0xD4D6DC) : Color(hex: 0x8B8E96))
+                .disabled(!on)
+        }
+        .font(.mono(12))
+        .padding(.horizontal, 15).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.termBg))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5))
+    }
+
+    /// What the row says about the command, in the fewest words that answer "will this start?".
+    /// An empty command is the one state that isn't a complaint — the row was only just added.
+    private var probeLine: String {
+        if let clash { return clash }
+        if agent.binary.isEmpty { return "Type a command" }
+        guard let probe else { return "Checking…" }
+        switch probe.state {
+        case .missing: return "Not on your PATH"
+        // A command that answers but isn't a known agent says nothing: the picker still reads
+        // "Choose…", which is the only thing left to do about it.
+        case .unrecognised: return ""
+        case .recognised: return probe.version ?? (base?.displayName ?? "")
+        }
+    }
+
+    /// The same amber ⌘K uses for a warning that is text rather than a light: the flat
+    /// `Theme.working` is tuned for a dot on any surface and doesn't hold contrast as 11pt type.
+    private static let warnInk = Theme.dyn(0xC8811A, 0xF5A623)
+
+    private var probeWarn: Bool {
+        if clash != nil { return true }
+        guard !agent.binary.isEmpty, let probe else { return false }
+        return probe.state == .missing
+    }
+}
+
 // MARK: - Sessions (working.html .tpl-*)
 
 private extension SessionKind {
@@ -1027,7 +1275,10 @@ private struct TplAddBar: View {
                     } label: {
                         HStack(spacing: 5) {
                             Phos(path: Phosphor.plus, size: 12).foregroundStyle(Theme.inkFaint)
+                            // The bar is one fixed-height line: a long name (a user's own agent)
+                            // overflows sideways rather than wrapping and growing every button.
                             Text(kind.tplLabel).font(.sans(12, 550)).foregroundStyle(hovering ? Theme.ink : Theme.ink3)
+                                .lineLimit(1).fixedSize()
                         }
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : Theme.raised)

@@ -713,6 +713,98 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         return [base, tail].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
+    // MARK: Custom agents
+
+    /// The agents the user defined: a command of their own, hosted by a built-in's supervisor
+    /// (`CustomAgent`). Settings owns the editing; the registry is told after every change, which
+    /// is what puts a new one in ⌘K, in the template's add bar and on PATH as a shim.
+    ///
+    /// Persisted in state.json rather than UserDefaults, unlike the on/off switches beside them:
+    /// a switch is a fact about this machine, but which agents exist is setup you typed and would
+    /// hate to retype — the same tier as the setup script and the session template.
+    var customAgents: [CustomAgent] = [] {
+        didSet { AgentRegistry.setCustom(customAgents) }
+    }
+
+    /// What the last probe said about each custom agent's command, keyed by agent id. Not
+    /// persisted: it is a fact about the machine right now, and re-asking is cheap.
+    var agentProbes: [String: AgentProbeResult] = [:]
+
+    /// Ask a custom agent's command who it is, and adopt the answer. A probe that RECOGNISES the
+    /// command sets the base: repointing an agent at another command and leaving it on the old
+    /// supervisor is a row that says one thing and runs another. A probe that recognises nothing
+    /// leaves the base alone — that one was the user's assertion, not Synth's.
+    func probeCustomAgent(_ id: String) {
+        guard let agent = customAgents.first(where: { $0.id == id }) else { return }
+        let binary = agent.binary
+        Task { @MainActor in
+            let result = await AgentProbe.probe(binary)
+            // The command may have moved on while the shell was thinking; a stale answer is worse
+            // than none, because it would be read as a verdict on what is on screen now.
+            guard let i = customAgents.firstIndex(where: { $0.id == id }),
+                  customAgents[i].binary == binary else { return }
+            agentProbes[id] = result
+            if let base = result.base, customAgents[i].base != base { customAgents[i].base = base }
+            // A command that now resolves (or stopped resolving) changes what Synth may start.
+            AgentRegistry.invalidateInstalled()
+        }
+    }
+
+    /// A row that appears already in the one state an unfinished agent can be in: no command, so
+    /// nothing to launch, so nothing offers it. Returns its id so Settings can put the caret in it.
+    @discardableResult func addCustomAgent() -> String {
+        let agent = CustomAgent.draft()
+        customAgents.append(agent)
+        return agent.id
+    }
+
+    /// Rename, repoint, or re-base one. The name follows the command until the user types one of
+    /// their own — which is what `named` records.
+    func updateCustomAgent(_ id: String, _ edit: (inout CustomAgent) -> Void) {
+        guard let i = customAgents.firstIndex(where: { $0.id == id }) else { return }
+        var agent = customAgents[i]
+        edit(&agent)
+        if !agent.named { agent.name = CustomAgent.derivedName(agent.binary) }
+        guard agent != customAgents[i] else { return }
+        customAgents[i] = agent
+    }
+
+    /// How much typed setup a removal would take with it: the template entries that name it.
+    /// Sessions already running are NOT in this count — they carry on, exactly as they do when an
+    /// agent is switched off.
+    func customAgentTemplateUses(_ id: String) -> Int {
+        let kind = SessionKind.agent(AgentID(id))
+        return (globalSessionTemplate + wsSessionTemplates.values.flatMap { $0 })
+            .filter { $0.kind == kind }.count
+    }
+
+    /// Drop one, and everything that pointed at it. Its flags go with it; a session already
+    /// running it is left alone.
+    func removeCustomAgent(_ id: String) {
+        let agentID = AgentID(id)
+        let kind = SessionKind.agent(agentID)
+        customAgents.removeAll { $0.id == id }
+        agentProbes[id] = nil
+        globalAgentFlags[agentID] = nil
+        for ws in wsAgentFlags.keys { wsAgentFlags[ws]?[agentID] = nil }
+        globalSessionTemplate.removeAll { $0.kind == kind }
+        for ws in wsSessionTemplates.keys { wsSessionTemplates[ws]?.removeAll { $0.kind == kind } }
+        agentEnabledPrefs[id] = nil
+    }
+
+    /// Why a command won't do: something already runs it. Nil when it is free to use.
+    func customAgentClash(_ id: String, binary: String) -> String? {
+        let b = binary.trimmingCharacters(in: .whitespaces)
+        guard !b.isEmpty else { return nil }
+        if let builtIn = AgentRegistry.builtIn.first(where: { $0.binaryName == b }) {
+            return "\(builtIn.displayName) is already one of Synth’s agents"
+        }
+        if let dupe = customAgents.first(where: { $0.id != id && $0.binary == b }) {
+            return "“\(dupe.name.isEmpty ? b : dupe.name)” already runs \(b)"
+        }
+        return nil
+    }
+
     /// The ordered session set every new worktree starts with (working.html TPL_KINDS /
     /// globalTpl). Order is creation order — the first entry is the session that opens.
     var globalSessionTemplate: [SessionTemplateEntry] = []
@@ -3486,7 +3578,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             globalScript: globalScript,
             globalAgentFlags: globalAgentFlags.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
             globalSessionTemplate: globalSessionTemplate,
-            markdownOpen: markdownOpen.rawValue
+            markdownOpen: markdownOpen.rawValue,
+            customAgents: customAgents.isEmpty ? nil : customAgents
         )
     }
 
@@ -3554,6 +3647,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         if let gs = state.globalScript { globalScript = gs }
         if let gf = state.effectiveGlobalAgentFlags { globalAgentFlags.merge(gf) { _, new in new } }
         if let gt = state.globalSessionTemplate { globalSessionTemplate = gt }
+        // The registry learns about them here (customAgents' didSet), which is what puts a user's
+        // own command on PATH as a shim and into every "New …" for the rest of the run.
+        if let ca = state.customAgents { customAgents = ca }
         // An unrecognised value (a snapshot from a build that offered an editor this machine
         // no longer has) falls back to Synth's own surface rather than failing the load.
         markdownOpen = state.markdownOpen.flatMap(MarkdownOpen.init(rawValue:)) ?? .synth

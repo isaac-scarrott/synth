@@ -39,12 +39,12 @@ import OSLog
 
     // MARK: Launch
 
-    func decorate(_ env: inout [String: String], sessionID: UUID) {
-        guard let real = AgentRegistry.opencode.resolvedBinary else { return }
+    func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
+        guard let real = agent.resolvedBinary else { return }
         let port = ports[sessionID] ?? Self.freePort()
         ports[sessionID] = port
 
-        env[AgentRegistry.opencode.realBinaryEnvKey] = real
+        env[agent.realBinaryEnvKey] = real
         env["SYNTH_OPENCODE_PORT"] = String(port)
         // The `question` tool is what lets an agent stop and ask the user — the needs-input
         // signal Synth's unattended-agent notifications depend on. It is env-gated, and unlike
@@ -80,10 +80,10 @@ import OSLog
         return url
     }()
 
-    func launchCommand(resume: String?, flags: String) -> String {
+    func launchCommand(binary: String, resume: String?, flags: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags
-        if let resume { return "exec opencode --session \(shellQuoteAgentArg(resume))\(extra)" }
-        return "exec opencode\(extra)"
+        if let resume { return "exec \(binary) --session \(shellQuoteAgentArg(resume))\(extra)" }
+        return "exec \(binary)\(extra)"
     }
 
     // MARK: Supervision

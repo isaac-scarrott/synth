@@ -203,9 +203,11 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         // rather than trusting its format. The workspace's default flags are appended raw:
         // they're the user's own shell tokens (Settings → agent flags).
         var env = env
-        if let launch = kind.agentID
-            .flatMap({ AgentRegistry.supervisor($0) })
-            .map({ $0.launchCommand(resume: resumeAgentID, flags: agentFlags) }) {
+        // The binary comes from the descriptor, not the supervisor: a user's own command is run by
+        // a built-in's supervisor, and `exec`ing the built-in would be the wrong program.
+        if let agent = kind.agentID.flatMap({ AgentRegistry.descriptor($0) }),
+           let launch = AgentRegistry.supervisor(agent.id)?
+               .launchCommand(binary: agent.binaryName, resume: resumeAgentID, flags: agentFlags) {
             env["SYNTH_LAUNCH_COMMAND"] = launch
         }
         // Every session carries the synth-md palette and control socket, not just markdown

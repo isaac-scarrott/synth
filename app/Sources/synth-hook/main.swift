@@ -35,22 +35,50 @@ import Glibc
 let env = ProcessInfo.processInfo.environment
 let invokedName = (CommandLine.arguments[0] as NSString).lastPathComponent
 
-switch invokedName {
-case "claude":
-    runClaudeLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
-case "opencode":
-    runOpencodeLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
-case "agy":
-    runAgyLaunch(userArgs: Array(CommandLine.arguments.dropFirst()))
+/// One agent Synth hosts, as the app describes it in `SYNTH_AGENT_MAP`: the command, the role
+/// that drives it, and the id it reports as. The three are the same thing for a built-in and
+/// three different things for a user's own command — `claude-personal` is driven by Claude's
+/// role while reporting its own `AgentID`, which is what makes it its own row, its own flags and
+/// its own mark instead of a second Claude Code.
+struct HostedAgent {
+    let binary: String
+    let role: String
+    let id: String
+}
+
+func hostedAgent(_ binary: String) -> HostedAgent? {
+    for entry in (env["SYNTH_AGENT_MAP"] ?? "").split(separator: " ") {
+        let f = entry.split(separator: ":", maxSplits: 2).map(String.init)
+        if f.count == 3, f[0] == binary { return HostedAgent(binary: f[0], role: f[1], id: f[2]) }
+    }
+    return nil
+}
+
+// A shim is named after the command it stands in for, so the invoked name is the lookup key. With
+// no map to consult (a stale env, or a hand-run shim) the built-in names still mean themselves.
+let hosted = hostedAgent(invokedName)
+switch hosted?.role ?? invokedName {
+case AgentIDRaw.claudeCode, "claude":
+    runClaudeLaunch(binary: invokedName, agentID: hosted?.id ?? AgentIDRaw.claudeCode,
+                    userArgs: Array(CommandLine.arguments.dropFirst()))
+case AgentIDRaw.opencode:
+    runOpencodeLaunch(binary: invokedName, agentID: hosted?.id ?? AgentIDRaw.opencode,
+                      userArgs: Array(CommandLine.arguments.dropFirst()))
+case AgentIDRaw.antigravity, "agy":
+    runAgyLaunch(binary: invokedName, agentID: hosted?.id ?? AgentIDRaw.antigravity,
+                 userArgs: Array(CommandLine.arguments.dropFirst()))
 default:
     let sub = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
     switch sub {
     case "launch":
         // `synth-hook launch -- <args>` (explicit form, in case PATH-shim isn't used)
         let after = CommandLine.arguments.firstIndex(of: "--").map { Array(CommandLine.arguments[($0 + 1)...]) } ?? []
-        runClaudeLaunch(userArgs: after)
+        runClaudeLaunch(binary: "claude", agentID: AgentIDRaw.claudeCode, userArgs: after)
     case "event":
-        runEvent(name: CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "")
+        // The launch role bakes the agent's id into the hook commands it writes, because an event
+        // arrives as its own later process with nothing but this argv to say who it is about.
+        runEvent(name: CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "",
+                 agentID: CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : nil)
     case "report":
         runReport(args: Array(CommandLine.arguments.dropFirst(2)))
     default:
@@ -73,13 +101,20 @@ func reportAgent(_ signal: String) {
 /// dir). Exec'ing a shim would re-enter this launch role and self-exec forever, growing argv
 /// each pass until execv fails with E2BIG.
 func resolveAgentBinary(_ agent: String) -> String? {
-    let hinted = env["SYNTH_REAL_" + agent.uppercased()].flatMap { $0.isEmpty ? nil : $0 }
+    let hinted = env["SYNTH_REAL_" + envSuffix(agent)].flatMap { $0.isEmpty ? nil : $0 }
     return hinted.flatMap { isShim($0) ? nil : $0 } ?? resolveOnPath(agent)
 }
 
-func runClaudeLaunch(userArgs: [String]) -> Never {
-    guard let real = resolveAgentBinary("claude") else {
-        FileHandle.standardError.write(Data("synth: claude not found\n".utf8))
+/// The env-key spelling of a command name. A user's own command can hold characters an env var
+/// name can't (`claude-personal`), so everything outside `[A-Z0-9_]` becomes `_` — the same
+/// transform `AgentDescriptor.envSuffix` applies, and the only reason the two ends agree.
+func envSuffix(_ binary: String) -> String {
+    String(binary.uppercased().map { $0.isLetter || $0.isNumber ? $0 : "_" })
+}
+
+func runClaudeLaunch(binary: String, agentID: String, userArgs: [String]) -> Never {
+    guard let real = resolveAgentBinary(binary) else {
+        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
         exit(127)
     }
 
@@ -96,7 +131,7 @@ func runClaudeLaunch(userArgs: [String]) -> Never {
     // Claude keeps only one --settings and its precedence changed across CLI versions.
     var args = userArgs
     let userSettings = takeSettingsValue(&args)
-    let settings = buildSettingsJSON(userSettings: userSettings)
+    let settings = buildSettingsJSON(userSettings: userSettings, agentID: agentID)
     // A resume/continue carries its own session id, so don't mint a fresh `--session-id`
     // (Claude rejects both together). Synth uses this path to restore a Claude row —
     // `claude --resume <id>` — and hooks still fire because we keep injecting `--settings`.
@@ -112,9 +147,9 @@ func runClaudeLaunch(userArgs: [String]) -> Never {
 /// `agent-start` is reported by the shim rather than by the agent (as Claude's SessionStart hook
 /// does), because opencode has nothing to call back with — the shim's own lifetime *is* the
 /// session's.
-func runOpencodeLaunch(userArgs: [String]) -> Never {
-    guard let real = resolveAgentBinary("opencode") else {
-        FileHandle.standardError.write(Data("synth: opencode not found\n".utf8))
+func runOpencodeLaunch(binary: String, agentID: String, userArgs: [String]) -> Never {
+    guard let real = resolveAgentBinary(binary) else {
+        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
         exit(127)
     }
 
@@ -133,8 +168,8 @@ func runOpencodeLaunch(userArgs: [String]) -> Never {
     // A user's own `--port` wins — they've asked for a specific one, and the supervisor simply
     // never connects rather than fighting them for the socket.
     let portArgs = userArgs.contains("--port") ? [] : ["--port", port]
-    reportAgent("agent-start:\(AgentIDRaw.opencode)")
-    spawnReportingExit(real, portArgs + userArgs, agent: AgentIDRaw.opencode)
+    reportAgent("agent-start:\(agentID)")
+    spawnReportingExit(real, portArgs + userArgs, agent: agentID)
 }
 
 /// agy (Antigravity CLI) is hook-driven like Claude Code, but it has no `--settings`: hooks are
@@ -148,9 +183,9 @@ func runOpencodeLaunch(userArgs: [String]) -> Never {
 ///
 /// `agent-start` is the shim's to report, as with opencode: agy's first hook fires at the first
 /// turn, which may be minutes after the TUI is up and ready for text.
-func runAgyLaunch(userArgs: [String]) -> Never {
-    guard let real = resolveAgentBinary("agy") else {
-        FileHandle.standardError.write(Data("synth: agy not found\n".utf8))
+func runAgyLaunch(binary: String, agentID: String, userArgs: [String]) -> Never {
+    guard let real = resolveAgentBinary(binary) else {
+        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
         exit(127)
     }
 
@@ -167,18 +202,18 @@ func runAgyLaunch(userArgs: [String]) -> Never {
 
     // A resume (`agy --conversation <id>`) needs no special case: the hooks ride the added dir,
     // not the conversation, so the same injection instruments both.
-    var injected = writeAgyHooks().map { ["--add-dir", $0] } ?? []
+    var injected = writeAgyHooks(agentID: agentID).map { ["--add-dir", $0] } ?? []
     if let log = env["SYNTH_ANTIGRAVITY_LOG"], !log.isEmpty, !hasFlag(userArgs, ["--log-file"]) {
         injected += ["--log-file", log]
     }
-    reportAgent("agent-start:\(AgentIDRaw.antigravity)")
-    spawnReportingExit(real, injected + userArgs, agent: AgentIDRaw.antigravity)
+    reportAgent("agent-start:\(agentID)")
+    spawnReportingExit(real, injected + userArgs, agent: agentID)
 }
 
 /// Materialise the Synth-owned workspace dir agy is handed via `--add-dir`, containing only
 /// `.agents/hooks.json` wired back to this binary's event role. Returns the dir, or nil when it
 /// can't be written — an uninstrumented session (no status, but running) beats no session.
-func writeAgyHooks() -> String? {
+func writeAgyHooks(agentID: String) -> String? {
     let session = env["SYNTH_SESSION_ID"] ?? String(getpid())
     let dir = env["SYNTH_ANTIGRAVITY_HOOKS_DIR"].flatMap { $0.isEmpty ? nil : $0 }
         ?? NSTemporaryDirectory() + "synth-agy-" + session
@@ -196,7 +231,7 @@ func writeAgyHooks() -> String? {
     // produce a `PostToolUse` at all (agy defers long-running commands to a later status step),
     // so without it a `needsInput` the log tail set could stand until the turn ends.
     func handler(_ event: String) -> [String: Any] {
-        ["type": "command", "command": "\(q) event agy:\(event)", "timeout": 20]
+        ["type": "command", "command": "\(q) event agy:\(event) \(shellQuote(agentID))", "timeout": 20]
     }
     func matchingAnyTool(_ event: String) -> [String: Any] {
         ["matcher": "*", "hooks": [handler(event)]]
@@ -275,17 +310,21 @@ func takeSettingsValue(_ args: inout [String]) -> String? {
 
 /// Our hooks, deep-merged with any user-supplied settings (hook arrays concatenated so
 /// both fire; user scalar keys win). Returns a compact JSON string for `--settings`.
-func buildSettingsJSON(userSettings: String?) -> String {
+func buildSettingsJSON(userSettings: String?, agentID: String) -> String {
     let bin = env["SYNTH_HOOK_BIN"] ?? CommandLine.arguments[0]
     let q = shellQuote(bin)
+    // Every hook command carries the agent's id: the event role runs as its own later process, so
+    // this argv is the only thing that can tell it which row's agent it is reporting for. Without
+    // it a user's own `claude-personal` would announce itself as the built-in Claude Code.
+    let a = shellQuote(agentID)
     func hook(_ event: String, timeout: Int? = nil) -> [String: Any] {
-        var h: [String: Any] = ["type": "command", "command": "\(q) event \(event)"]
+        var h: [String: Any] = ["type": "command", "command": "\(q) event \(event) \(a)"]
         if let timeout { h["timeout"] = timeout }
         return ["hooks": [h]]
     }
     // A `*`-matched tool hook (any tool), for the post-execution "back to working" signals.
     func toolHook(_ event: String) -> [String: Any] {
-        ["matcher": "*", "hooks": [["type": "command", "command": "\(q) event \(event)"]]]
+        ["matcher": "*", "hooks": [["type": "command", "command": "\(q) event \(event) \(a)"]]]
     }
     let hooks: [String: Any] = [
         "SessionStart":     [hook("SessionStart")],
@@ -300,7 +339,7 @@ func buildSettingsJSON(userSettings: String?) -> String {
         // Under --dangerously-skip-permissions no PermissionRequest fires, so catch the two
         // tools that always block on the user directly.
         "PreToolUse": [["matcher": "AskUserQuestion|ExitPlanMode",
-                        "hooks": [["type": "command", "command": "\(q) event PreToolUse"]]]],
+                        "hooks": [["type": "command", "command": "\(q) event PreToolUse \(a)"]]]],
         // A tool finishing means Claude is unblocked and actively working again — this is
         // what clears `needsInput` after the user answers a question, approves a plan, or
         // grants a permission (none of which have a dedicated "resumed" hook). Matching every
@@ -377,15 +416,18 @@ func isShim(_ path: String) -> Bool {
 
 // MARK: - Event role
 
-func runEvent(name: String) -> Never {
+func runEvent(name: String, agentID: String?) -> Never {
     guard let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"] else { exit(0) }
     let stdin = FileHandle.standardInput.readDataToEndOfFile()
     let payload = (try? JSONSerialization.jsonObject(with: stdin)) as? [String: Any] ?? [:]
+    // An unnamed agent means a hook config written before ids rode along — the event's own family
+    // says which built-in it must have been.
+    let agent = agentID ?? (name.hasPrefix("agy:") ? AgentIDRaw.antigravity : AgentIDRaw.claudeCode)
 
     let signal: String?
     switch name {
-    case "SessionStart":     signal = "agent-start:\(AgentIDRaw.claudeCode)"
-    case "SessionEnd":       signal = "agent-end:\(AgentIDRaw.claudeCode)"
+    case "SessionStart":     signal = "agent-start:\(agent)"
+    case "SessionEnd":       signal = "agent-end:\(agent)"
     case "UserPromptSubmit": signal = "working"
     // A tool completing (or failing) means the user has answered / approved and Claude is
     // running again — clears whatever `needsInput` the preceding PreToolUse/PermissionRequest set.

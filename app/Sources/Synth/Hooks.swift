@@ -333,6 +333,14 @@ final class HookServer: @unchecked Sendable {
             env["SYNTH_HOOK_BIN"] = hookBin
             // The per-command reporter skips these words — each has its own supervisor.
             env["SYNTH_AGENT_BINS"] = AgentRegistry.installed.map(\.binaryName).joined(separator: " ")
+            // What each of those words means, for the shim that will be invoked under it:
+            // `<command>:<role>:<id>`. The three coincide for a built-in; for a command of the
+            // user's own they don't — `claude-personal` is driven by Claude's launch role while
+            // reporting its own id, which is what makes it its own row rather than a second
+            // Claude Code. Space-separated because a command name can't contain a space.
+            env["SYNTH_AGENT_MAP"] = AgentRegistry.installed
+                .map { "\($0.binaryName):\($0.hostID.rawValue):\($0.id.rawValue)" }
+                .joined(separator: " ")
             // Synth may itself be running inside another Synth's session (dev.sh in a claude
             // turn), so the inherited ZDOTDIR can be the *outer* instance's injected dir —
             // recording that as the user's would chase a dir that vanishes when the outer
@@ -351,8 +359,11 @@ final class HookServer: @unchecked Sendable {
         guard available else { return env }
         env["PATH"] = shimDir + ":" + (base["PATH"] ?? "/usr/bin:/bin")
         env["SYNTH_SHIM_DIR"] = shimDir
+        // Once per hosted agent, not once per supervisor: a supervisor shared by a built-in and a
+        // command of the user's own has to name each one's real binary separately, so which
+        // descriptor is being decorated is part of the question.
         for agent in AgentRegistry.installed {
-            AgentRegistry.supervisor(agent.id)?.decorate(&env, sessionID: sessionID)
+            AgentRegistry.supervisor(agent.id)?.decorate(&env, sessionID: sessionID, agent: agent)
         }
         return env
     }

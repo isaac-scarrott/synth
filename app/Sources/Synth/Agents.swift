@@ -10,6 +10,47 @@ struct AgentID: Hashable, Sendable, Codable, RawRepresentable {
     static let claudeCode = AgentID("claudeCode")
     static let opencode = AgentID("opencode")
     static let antigravity = AgentID("antigravity")
+
+    /// A user-defined agent's id is minted, not declared. It is persisted (in a `SessionKind`, in
+    /// a session template entry, in a flags dictionary), so it must survive the agent being
+    /// renamed or repointed at another command — which is why it is a uuid and not the command.
+    var isCustom: Bool { rawValue.hasPrefix(CustomAgent.idPrefix) }
+}
+
+/// A command of the user's own, hosted by an agent Synth already knows how to read: a second
+/// Claude Code with its own config, a build kept beside the release one, a wrapper script.
+///
+/// What it is NOT is a new kind of agent. Status, quit, paste delivery and MCP registration are
+/// per-supervisor (ADR-0012 — one `AgentDescriptor` plus one `AgentSupervisor` each), and none of
+/// that can be typed into a settings field. So every custom agent names a `base`: the built-in
+/// whose supervisor drives it, and whose mark and notification copy it wears. Until it has both a
+/// base and a command that resolves, it is simply not offered anywhere (`AgentRegistry.all`).
+struct CustomAgent: Codable, Identifiable, Hashable, Sendable {
+    static let idPrefix = "custom-"
+
+    var id: String
+    /// The word the user meets — in the tree, in every "New …", in Settings.
+    var name: String
+    /// The command Synth runs. Also the name of its PATH shim, so status reporting finds it.
+    var binary: String
+    /// The built-in whose supervisor drives it. Nil while the user (or the probe) hasn't said.
+    var base: AgentID?
+    /// Whether the name is the user's own. An unnamed agent's name follows its command as it is
+    /// typed, and stops the moment a name is typed over it.
+    var named: Bool = false
+
+    var agentID: AgentID { AgentID(id) }
+
+    static func draft() -> CustomAgent {
+        CustomAgent(id: idPrefix + UUID().uuidString.lowercased(), name: "", binary: "", base: nil)
+    }
+
+    /// `claude-personal` → "Claude Personal". Only ever a seed: the row renames it.
+    static func derivedName(_ binary: String) -> String {
+        binary.split(whereSeparator: { "-_. ".contains($0) })
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
 }
 
 /// Everything Synth needs to host one coding agent: how it's named, which binary a terminal
@@ -28,6 +69,10 @@ struct AgentDescriptor: Sendable {
     let binaryName: String
     /// The artwork its icon slot renders.
     let mark: AgentMark
+    /// Substrings that identify this agent in some other command's `--version` output — how a
+    /// custom command Synth has never seen is recognised as "this is Claude Code, wearing a
+    /// different name". Matched case-insensitively.
+    var versionMarkers: [String] = []
     /// Extra install locations to search when the launch PATH is bare (Dock / `open`).
     let installHints: [String]
     /// Path fragments that disqualify a candidate the PATH search would otherwise accept, matched
@@ -36,6 +81,9 @@ struct AgentDescriptor: Sendable {
     /// a terminal agent — and on a machine with both it sits ahead of homebrew on the login PATH,
     /// so a name match alone would hand a session the wrong program entirely.
     var rejectedPathFragments: [String] = []
+    /// For a user-defined agent, the built-in whose supervisor drives it (see `CustomAgent`).
+    /// Nil for a built-in: it drives itself.
+    var baseID: AgentID?
 
     /// Where this agent is really installed, resolved on the original PATH (before the shim dir
     /// is prepended). Search order matters: the login-shell PATH first (what a launched agent
@@ -62,12 +110,24 @@ struct AgentDescriptor: Sendable {
         return nil
     }
 
-    /// The env var carrying the real binary path through to the shim ("SYNTH_REAL_CLAUDE").
-    var realBinaryEnvKey: String { "SYNTH_REAL_" + binaryName.uppercased() }
+    /// Whose machinery reads this agent: its base if it has one, else itself.
+    var hostID: AgentID { baseID ?? id }
+    var isCustom: Bool { baseID != nil }
 
-    /// Shown in Settings as the "flags look like this" hint.
+    /// The env var carrying the real binary path through to the shim ("SYNTH_REAL_CLAUDE").
+    /// A user's command can hold characters an env var name can't (`claude-personal`), so
+    /// everything outside `[A-Z0-9_]` becomes `_` — the same transform `synth-hook` applies to
+    /// the name it was invoked as, which is the only way the two ends agree on the key.
+    var realBinaryEnvKey: String { "SYNTH_REAL_" + AgentDescriptor.envSuffix(binaryName) }
+
+    static func envSuffix(_ binary: String) -> String {
+        String(binary.uppercased().map { $0.isLetter || $0.isNumber ? $0 : "_" })
+    }
+
+    /// Shown in Settings as the "flags look like this" hint. A custom agent takes its base's:
+    /// the flags a second Claude Code accepts are Claude Code's.
     var exampleFlags: String {
-        switch id {
+        switch hostID {
         case .claudeCode: return "--dangerously-skip-permissions --model opus"
         case .opencode: return "--model anthropic/claude-opus-4-5 --agent build"
         case .antigravity: return "--model gemini-3.6-flash-high --mode accept-edits"
@@ -86,6 +146,7 @@ extension AgentDescriptor: Identifiable {}
         shortName: "Claude",
         binaryName: "claude",
         mark: .clawd,
+        versionMarkers: ["claude code"],
         installHints: ["~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin",
                        "~/.npm-global/bin", "~/.claude/local"]
     )
@@ -96,6 +157,7 @@ extension AgentDescriptor: Identifiable {}
         shortName: "OpenCode",
         binaryName: "opencode",
         mark: .openCode,
+        versionMarkers: ["opencode"],
         installHints: ["~/.opencode/bin", "~/.local/bin", "/opt/homebrew/bin",
                        "/usr/local/bin", "~/.npm-global/bin"]
     )
@@ -106,13 +168,68 @@ extension AgentDescriptor: Identifiable {}
         shortName: "Antigravity",
         binaryName: "agy",
         mark: .antigravity,
+        versionMarkers: ["antigravity", "agy"],
         installHints: ["/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin"],
         rejectedPathFragments: [".app/"]
     )
 
-    static let all: [AgentDescriptor] = [claudeCode, opencode, antigravity]
+    /// The three Synth ships with, each one a descriptor AND a supervisor.
+    static let builtIn: [AgentDescriptor] = [claudeCode, opencode, antigravity]
+
+    /// Every agent this machine may host: the built-ins, then the user's own in the order they
+    /// were added. A list rather than a constant, which is the whole of what custom agents change
+    /// structurally — everything downstream already reads the registry rather than naming agents.
+    static var all: [AgentDescriptor] { builtIn + customDescriptors }
 
     static func descriptor(_ id: AgentID) -> AgentDescriptor? { all.first { $0.id == id } }
+
+    // MARK: User-defined agents
+
+    /// The user's own, as Settings holds them (`AppStore.customAgents` is the owner; this is the
+    /// registry's copy of the same list). Half-finished ones are kept here but never reach `all`.
+    private(set) static var custom: [CustomAgent] = []
+    private static var customDescriptors: [AgentDescriptor] = []
+
+    /// Adopt the persisted list. Everything derived from the registry is rebuilt: the installed
+    /// cache (so PATH is re-searched for a command that just changed), the PATH shims (a new
+    /// command needs its own symlink to report status at all), and the change notification for
+    /// surfaces already on screen.
+    static func setCustom(_ list: [CustomAgent]) {
+        guard list != custom else { return }
+        custom = list
+        // A custom agent with no base has no supervisor to read it, so it is not something Synth
+        // can host yet — it stays in Settings and out of everything else.
+        customDescriptors = list.compactMap(descriptor(for:))
+        invalidateInstalled()
+    }
+
+    /// Re-search PATH for every hosted agent. Called when the registry itself changes, and when a
+    /// command the user is typing starts (or stops) resolving — `installed` is otherwise only
+    /// rebuilt by the login-PATH probe landing, which is a different question entirely.
+    static func invalidateInstalled() {
+        installedCache = nil
+        HookEnvironment.setup()
+        NotificationCenter.default.post(name: installedDidChange, object: nil)
+    }
+
+    /// The descriptor a custom agent stands for: its own name and command, everything else its
+    /// base's. Nil until it names a base and a command.
+    static func descriptor(for c: CustomAgent) -> AgentDescriptor? {
+        guard let base = c.base.flatMap(builtInDescriptor), !c.binary.isEmpty else { return nil }
+        return AgentDescriptor(
+            id: c.agentID,
+            displayName: c.name.isEmpty ? CustomAgent.derivedName(c.binary) : c.name,
+            shortName: c.name.isEmpty ? base.shortName : c.name,
+            binaryName: c.binary,
+            mark: base.mark,
+            versionMarkers: [],          // it is not something another command should be taken FOR
+            installHints: base.installHints,
+            rejectedPathFragments: base.rejectedPathFragments,
+            baseID: base.id
+        )
+    }
+
+    static func builtInDescriptor(_ id: AgentID) -> AgentDescriptor? { builtIn.first { $0.id == id } }
 
     private static var installedCache: [AgentDescriptor]?
 
@@ -167,7 +284,11 @@ extension AgentDescriptor: Identifiable {}
         ]
     }
 
-    static func supervisor(_ id: AgentID) -> (any AgentSupervisor)? { supervisors[id] }
+    /// A custom agent has no supervisor of its own — that is what "hosted by" means. It is read
+    /// by its base's, which is why the base is not cosmetic: the supervisor is the machinery.
+    static func supervisor(_ id: AgentID) -> (any AgentSupervisor)? {
+        supervisors[descriptor(id)?.hostID ?? id]
+    }
 }
 
 /// The per-session watcher that consumes an agent's raw event firehose locally and emits only
@@ -178,8 +299,10 @@ extension AgentDescriptor: Identifiable {}
     var id: AgentID { get }
 
     /// Overlay the env a PTY needs so a `binaryName` typed inside it reports back to Synth.
-    /// Called for every terminal, because any terminal may become this agent.
-    func decorate(_ env: inout [String: String], sessionID: UUID)
+    /// Called for every terminal, because any terminal may become this agent — and once per
+    /// descriptor this supervisor hosts, since a user's own command is a different binary at a
+    /// different path and its env has to name that one, not the built-in's.
+    func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor)
 
     /// The agent announced itself in `session` (the shim's agent-start). A transport-based
     /// supervisor connects here, and posts `.agentReady` once it actually can reach the agent.
@@ -194,8 +317,9 @@ extension AgentDescriptor: Identifiable {}
 
     /// The shell line a fresh PTY runs to become this agent, passed to the login shell as `-c`.
     /// `exec`, so the agent's exit is the PTY child's exit. `resume` restores a persisted
-    /// conversation.
-    func launchCommand(resume: String?, flags: String) -> String
+    /// conversation. `binary` is the command to run — the built-in's, or the user's own command
+    /// this supervisor is hosting.
+    func launchCommand(binary: String, resume: String?, flags: String) -> String
 }
 
 /// Shell-quote a string for the single-quoted context the launch command types into a shell.
@@ -215,9 +339,9 @@ func shellQuoteAgentArg(_ s: String) -> String {
 
     init(bus: EventBus) { self.bus = bus }
 
-    func decorate(_ env: inout [String: String], sessionID: UUID) {
-        guard let real = AgentRegistry.claudeCode.resolvedBinary else { return }
-        env[AgentRegistry.claudeCode.realBinaryEnvKey] = real
+    func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
+        guard let real = agent.resolvedBinary else { return }
+        env[agent.realBinaryEnvKey] = real
     }
 
     /// Claude announces itself only once it is running: `attach` is driven by its SessionStart
@@ -235,9 +359,9 @@ func shellQuoteAgentArg(_ s: String) -> String {
         TerminalManager.shared.submit(text, to: session)
     }
 
-    func launchCommand(resume: String?, flags: String) -> String {
+    func launchCommand(binary: String, resume: String?, flags: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags
-        if let resume { return "exec claude --resume \(shellQuoteAgentArg(resume))\(extra)" }
-        return "exec claude\(extra)"
+        if let resume { return "exec \(binary) --resume \(shellQuoteAgentArg(resume))\(extra)" }
+        return "exec \(binary)\(extra)"
     }
 }

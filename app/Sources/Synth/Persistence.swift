@@ -24,6 +24,9 @@ struct PersistedState: Codable {
     /// What a clicked markdown file opens in (ADR-0016), as MarkdownOpen.rawValue. Optional so
     /// a pre-markdown snapshot decodes unchanged.
     var markdownOpen: String?
+    /// The agents the user defined themselves (name, command, base). Typed setup, so it rides here
+    /// with the script and the template rather than in UserDefaults with the on/off switches.
+    var customAgents: [CustomAgent]?
 }
 
 struct PersistedWorkspace: Codable {

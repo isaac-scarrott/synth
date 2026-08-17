@@ -53,9 +53,9 @@ import OSLog
     /// The log is dropped here rather than left to the shim because the tail reads each launch
     /// from the top: a relaunch of the same row reuses the path, and replayed lines would resume
     /// the *previous* conversation and raise a permission prompt nobody is looking at.
-    func decorate(_ env: inout [String: String], sessionID: UUID) {
-        guard let real = AgentRegistry.antigravity.resolvedBinary else { return }
-        env[AgentRegistry.antigravity.realBinaryEnvKey] = real
+    func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
+        guard let real = agent.resolvedBinary else { return }
+        env[agent.realBinaryEnvKey] = real
         env["SYNTH_ANTIGRAVITY_HOOKS_DIR"] = Self.sessionDir(sessionID)
         env["SYNTH_ANTIGRAVITY_LOG"] = Self.logPath(sessionID)
         // An embedded agent must not self-update mid-session.
@@ -67,10 +67,10 @@ import OSLog
         try? FileManager.default.removeItem(atPath: Self.logPath(sessionID))
     }
 
-    func launchCommand(resume: String?, flags: String) -> String {
+    func launchCommand(binary: String, resume: String?, flags: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags
-        if let resume { return "exec agy --conversation \(shellQuoteAgentArg(resume))\(extra)" }
-        return "exec agy\(extra)"
+        if let resume { return "exec \(binary) --conversation \(shellQuoteAgentArg(resume))\(extra)" }
+        return "exec \(binary)\(extra)"
     }
 
     // MARK: Supervision

@@ -2569,12 +2569,109 @@
   .set-shared__skip { display: flex; align-items: center; gap: 7px; margin: 0 11px 10px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
   .set-shared__skip input { accent-color: var(--accent); }
 
-  /* agent flags as one launch line: shared tokens dim + locked, the project's tail editable */
+  /* agent flags as one launch line: shared tokens dim + locked, the project's tail editable.
+     The whole line is a command, so the whole line is mono — the tail carried the family alone
+     and the binary in front of it rendered in the row's sans. */
+  .set-cmd { font-family: var(--mono); font-size: 12px; line-height: 1.65; color: var(--tui-fg); }
   .set-cmd--edit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; }
+  .set-cmd__prompt { color: var(--tui-dim); }
   .set-cmd__bin { color: var(--tui-fg); }
   .set-cmd__shared { color: var(--tui-dim); }
+  .set-cmd__flag--dead { text-decoration: line-through; }
   .set-cmd__tail { flex: 1 1 90px; min-width: 90px; border: 0; padding: 0; background: none; outline: none; font-family: var(--mono); font-size: 12px; line-height: 1.65; color: var(--tui-blue); }
   .set-cmd__tail::placeholder { color: var(--tui-dim); }
+
+  /* ---- Custom agents: a command of your own, run by an agent Synth already hosts ----
+     The row states the three things a built-in never has to: what it's called, what Synth
+     runs, and whose machinery reads it. Name and command are edited in place — the command
+     IS the feature, so it's a field on the row, not a dialog behind it. */
+  .set-agent__id { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .set-agent__id .session__icon { flex-shrink: 0; }
+  .set-agent__name {
+    flex: 0 1 auto; min-width: 0;   /* sized by the name it holds, so the pencil stays beside it */
+    padding: 1px 5px; margin-left: -5px;
+    border: 0; border-radius: 5px; background: transparent;
+    font-family: inherit; font-size: 13px; font-weight: 550; color: var(--ink);
+    outline: none;
+  }
+  .set-agent__name:hover { background: var(--hover-soft); }
+  .set-agent__name:focus { background: var(--hover-soft); box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5); }
+  .set-agent__name::placeholder { color: var(--text-faint); font-weight: 500; }
+  /* The pencil is the affordance the field can't be: a text field styled as a label reads as a
+     label. It sits against the name (which sizes to its text) rather than at the row's edge. */
+  .set-agent__edit {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; padding: 0;
+    border: 0; border-radius: 6px; background: none;
+    color: var(--text-faint); cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .set-agent__edit svg { width: 12px; height: 12px; display: block; }
+  @media (hover: hover) and (pointer: fine) {
+    .set-agent__edit:hover { background: var(--hover); color: var(--ink-3); }
+  }
+
+  /* "Behaves like": the picker and the probe's answer on one line, in that order — what Synth
+     will run it as, then what Synth actually found when it asked. */
+  .set-agent__like { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .set-agent__like-lbl { flex-shrink: 0; font-size: 12px; color: var(--text-muted); }
+  /* A pop-up button, not a segmented control: the list of agents Synth hosts is a list that grows,
+     and this is one pick out of it — the same control AppKit would give it. The menu itself is the
+     system's, so it sizes and scrolls itself; only the closed button is ours. */
+  .set-pop { position: relative; display: flex; align-items: center; flex-shrink: 0; }
+  .set-pop__sel {
+    appearance: none; -webkit-appearance: none;
+    padding: 4px 24px 4px 9px;
+    border: 0.5px solid var(--line); border-radius: 7px;
+    background: var(--raised);
+    font-family: inherit; font-size: 12px; font-weight: 550; color: var(--ink-3);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .set-pop__sel:focus-visible { outline: none; box-shadow: 0 0 0 2.5px rgba(var(--accent-rgb),0.22); }
+  .set-pop__chev { position: absolute; right: 7px; display: flex; color: var(--text-faint); pointer-events: none; transform: rotate(90deg); }
+  .set-pop__chev svg { width: 11px; height: 11px; display: block; }
+  @media (hover: hover) and (pointer: fine) {
+    .set-pop__sel:hover { background: var(--hover-soft); border-color: var(--line-2); color: var(--ink); }
+  }
+  .set-row--off .set-pop__sel { color: var(--ink-4); }
+
+  /* The remove ask, in the place the ✕ was pressed. It replaces the behaves-like line rather than
+     appearing under it, so the row never grows a fourth line to hold a question. */
+  .set-agent__confirm { display: flex; align-items: center; gap: 8px; }
+  .set-agent__confirm-txt { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+  .tpl-add__btn--danger { color: var(--tui-red); }
+  @media (hover: hover) and (pointer: fine) {
+    .tpl-add__btn--danger:hover { background: rgba(255,59,48,0.08); border-color: rgba(255,59,48,0.35); color: var(--tui-red); }
+  }
+  /* The command and its flags go in the same dark field a built-in row puts its flags in, so the
+     card reads as one control repeated rather than two kinds of editor — the only difference is
+     that this one has to say WHICH command it is adding them to. Same surface, so the same
+     hardcoded ink as .set-code: --tui-* is tuned for the near-white terminal card, not for this. */
+  .set-cmd--box {
+    margin-top: 8px; padding: 12px 15px;
+    border-radius: 10px; background: var(--term-bg); color: #d4d6dc;
+    box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18);
+  }
+  .set-cmd--box:focus-within { box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.18), 0 0 0 2.5px rgba(var(--accent-rgb),0.22); }
+  .set-cmd--box .set-cmd__prompt { color: var(--set-inherit); }
+  /* the binary sizes to what it holds, so the flags after it start where the command ends */
+  .set-cmd__bin-edit {
+    flex: 0 0 auto; min-width: 40px;
+    padding: 0; border: 0; background: none; outline: none;
+    font-family: var(--mono); font-size: 12px; line-height: 1.65; color: #d4d6dc;
+  }
+  .set-cmd--box .set-cmd__tail { color: #d4d6dc; }
+  .set-cmd--box .set-cmd__tail::placeholder { color: rgba(212,214,220,0.30); }
+  /* Behaves-like is a fact you read, not a control you meet: it is set when the agent is added
+     (detected, or picked) and repaired from the palette on the rare occasion it's wrong. */
+  .set-agent__probe { font-size: 11px; color: var(--text-faint); }
+  .set-agent__probe--warn { color: #c8811a; }
+  /* A command that isn't there can't be launched, so the launch line says so where the command
+     is — the row keeps its switch, because "off" is your choice and this isn't. */
+  .set-row--missing .set-cmd__bin-edit { color: var(--work); }
+  .set-row--off .set-cmd__bin-edit,
+  .set-row--off .set-cmd--box .set-cmd__tail { color: var(--set-inherit); caret-color: transparent; }
 
   /* locked shared session rows sit above the project's own, joined into one stack */
   .tpl-stack { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
@@ -2889,6 +2986,8 @@
   :root[data-theme="dark"] .cmdk__meta--work  { color: var(--work); }
   :root[data-theme="dark"] .cmdk__meta--input { color: var(--input); }
   :root[data-theme="dark"] .cmdk__meta--error { color: var(--error); }
+  /* same amber, same reason: the light value was tuned for a white card */
+  :root[data-theme="dark"] .set-agent__probe--warn { color: var(--work); }
 
   /* ================================================================================
      Scratch terminal (⌘⇧T). A throwaway shell over a dimmed app. No chrome beyond the
@@ -6964,14 +7063,27 @@
     return a;   // 007: the split-create frame keeps the new row to bind it into a fresh pane
   }
   const addTerminal = (branchRow) => addSession(branchRow, 'terminal');
-  // Every coding agent Synth can host, in creation order (Agents.swift AgentRegistry).
-  const AGENTS = ['claude', 'opencode', 'antigravity'];
+  // Every coding agent Synth ships with, in creation order (Agents.swift AgentRegistry). Each one
+  // is a descriptor AND a supervisor: the machinery that reads its status, catches its quit,
+  // pastes into it and registers MCP for it. That machinery is what "hosted" means.
+  const BUILTIN = ['claude', 'opencode', 'antigravity'];
+  // AGENTS is the live registry — the built-ins plus whatever you've added yourself, which is
+  // why it is a list that grows rather than the constant it used to be.
+  const AGENTS = [...BUILTIN];
   // Which of them you actually run is a machine fact, not a per-project one, so it's one
-  // app-level switch each (Settings ▸ Synth ▸ Agent defaults). Off means Synth never STARTS
+  // app-level switch each (Settings ▸ Synth ▸ Agents). Off means Synth never STARTS
   // one — every "New …" surface drops it, and whatever is already running carries on.
   const agentOn = { claude: true, opencode: true, antigravity: true };
-  const agentEnabled = (k) => !(k in agentOn) || agentOn[k];   // terminals and browsers are never off
-  const liveAgents = () => AGENTS.filter((k) => agentOn[k]);
+  // A custom agent is a command of yours, run by a built-in's supervisor (see CUSTOM below).
+  const customOf = (k) => CUSTOM.find((c) => c.id === k) || null;
+  // Off is your choice; missing is the machine's. Synth only ever offered agents it found
+  // installed, and a command you typed is the one that can stop resolving — so both answers
+  // gate the same thing, and only the wording in Settings tells them apart.
+  // A custom agent is launchable once it has both halves: a command that resolves, and the base
+  // whose supervisor will read it. A half-finished row is simply not offered anywhere.
+  const agentInstalled = (k) => { const c = customOf(k); return !c || (!!c.base && c.probe.state !== 'missing'); };
+  const agentEnabled = (k) => !(k in agentOn) || (agentOn[k] && agentInstalled(k));   // terminals and browsers are never off
+  const liveAgents = () => AGENTS.filter(agentEnabled);
   // Each agent's own mark. An agent with no artwork falls back to the generic sparkle.
   const AGENT_ICON = { claude: ICON_CLAWD, opencode: ICON_OPENCODE, antigravity: ICON_ANTIGRAVITY };
   const agentIcon = (k) => AGENT_ICON[k] || ICON_AI;
@@ -8562,6 +8674,146 @@
   };
   const projOf = (name) => PROJ[name] || (PROJ[name] = {});
 
+  // ---- Custom agents ------------------------------------------------------------------
+  // You can point Synth at a command of your own — `claude-personal`, a wrapper with its own
+  // config, a build you keep beside the release one. What you CANNOT do is teach Synth a new
+  // kind of agent: status, quit, paste and MCP registration are per-supervisor (ADR-0012 —
+  // one AgentDescriptor + one AgentSupervisor each), and none of that can be typed into a
+  // settings field. So every custom agent names a `base`: the hosted agent whose supervisor
+  // drives it. That is the whole reason the type has to be KNOWN rather than assumed at launch,
+  // and it's why there is no "generic command" option here — a command Synth can't read is a
+  // terminal session, and the template already opens those.
+  //
+  // The base is also where the agent's identity comes from: its mark, its transcript, its
+  // notification copy. A second Claude Code looks like Claude Code, because it is.
+  const CUSTOM = [];
+  let customSeq = 0;
+
+  // Stands in for the real probe. The app runs `<command> --version` through the login shell —
+  // so a shim on PATH and a shell function both resolve — and matches the output against each
+  // hosted agent's signature (Claude Code answers `2.1.9 (Claude Code)`). Here a table plays the
+  // binary's part: in the table = installed, and a base = recognised.
+  const PROBE = {
+    'claude-personal': { base: 'claude',      ver: 'Claude Code 2.1.9' },
+    'claude-work':     { base: 'claude',      ver: 'Claude Code 2.1.9' },
+    'claude-canary':   { base: 'claude',      ver: 'Claude Code 2.2.0-rc1' },
+    'oc-nightly':      { base: 'opencode',    ver: 'OpenCode 0.14.2' },
+    'agy-canary':      { base: 'antigravity', ver: 'Antigravity 1.1.4' },
+    codex:             { base: null,          ver: 'codex 0.9.1' },   // answers, but Synth can't read it
+  };
+  const probeBin = (bin) => {
+    const hit = PROBE[(bin || '').trim()];
+    if (!hit) return { state: 'missing' };
+    return hit.base ? { state: 'found', base: hit.base, ver: hit.ver } : { state: 'unknown', ver: hit.ver };
+  };
+  // What the row says about the command, in the fewest words that answer "will this start?". An
+  // empty command is the one state that isn't a complaint — you have only just added the row.
+  // A command that answers but isn't a known agent says nothing at all: the picker still reads
+  // "Choose…", which is the only thing left to do about it, and a sentence about what the version
+  // string wasn't is a complaint the user can't act on.
+  const probeLine = (a) => a.clash ? a.clash
+    : !a.bin ? 'Type a command'
+    : a.probe.state === 'checking' ? 'Checking…'
+    : a.probe.state === 'missing' ? 'Not on your PATH'
+    : a.probe.state === 'unknown' ? ''
+    : a.probe.ver;
+  // Neutral while there's nothing to launch yet; amber once the row is asserting something wrong.
+  const probeWarn = (a) => !!a.clash || (!!a.bin && a.probe.state === 'missing');
+
+  // A custom agent joins the same maps the built-ins live in, so every surface that already
+  // knows how to offer an agent offers this one too — ⌘K, the new-session menus, the split
+  // picker, the template add bar, the project tab's launch line. Nothing downstream is aware
+  // that the registry grew, which is the point: `AgentID` is data in the native app as well.
+  function registerAgent(a) {
+    a.probe = probeBin(a.bin);
+    AGENTS.push(a.id);
+    agentOn[a.id] = a.on !== false;
+    AGENT_BIN[a.id] = a.bin;
+    DEF.flags[a.id] = a.flags || '';
+    applyBase(a);
+    CUSTOM.push(a);
+    return a;
+  }
+  // Everything the base lends: its mark, its example flags, its session shape. Re-run when the
+  // base changes, so one function is the only place that knows what a base actually gives you.
+  // A row you have only just added has no base yet — nothing may be asserted on its behalf, so it
+  // borrows the generic sparkle and stays unlaunchable until the probe or you name one.
+  function applyBase(a) {
+    const label = a.name || 'New agent';
+    if (!a.base) {
+      AGENT_ICON[a.id] = ICON_AI;
+      AGENT_EG[a.id] = '';
+      SESSION_KINDS[a.id] = { type: 'ai', name: label, icon: `<span class="session__icon">${ICON_AI}</span>`, ind: 'work' };
+      TPL_KINDS[a.id] = { label, start: label, icon: `<span class="session__icon">${ICON_AI}</span>` };
+      return;
+    }
+    AGENT_ICON[a.id] = AGENT_ICON[a.base];
+    AGENT_EG[a.id] = AGENT_EG[a.base];
+    SESSION_KINDS[a.id] = { ...SESSION_KINDS[a.base], name: label };
+    TPL_KINDS[a.id] = { ...TPL_KINDS[a.base], label, start: label };
+  }
+  // `claude-personal` → "Claude Personal". The name follows the command while you type, and stops
+  // following the moment you type a name of your own. It only ever seeds the row and the "New …"
+  // label, since an agent session retitles itself from the conversation.
+  const deriveName = (bin) => bin.split(/[-_.\s]+/).filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+
+  // Why a command won't do: something already runs it. Both answers are the same sentence to a
+  // user ("you already have this"), so they're one check with two wordings.
+  function binClash(bin, self) {
+    const b = bin.trim();
+    if (BUILTIN.some((k) => AGENT_BIN[k] === b)) return TPL_KINDS[BUILTIN.find((k) => AGENT_BIN[k] === b)].label + ' is already one of Synth’s agents';
+    const dupe = CUSTOM.find((c) => c !== self && c.bin === b);
+    return dupe ? '“' + dupe.name + '” already runs ' + b : null;
+  }
+
+  // Adding one opens nothing: a row appears at the end of the list, empty, with the cursor in its
+  // command field. An agent with no command has nothing to launch, so nothing offers it — which is
+  // what lets the row exist before it is finished. Type into it and the rest fills itself in.
+  //
+  // ids are stable and internal (the native app persists an AgentID): renaming the agent or
+  // repointing its command must not orphan a template entry that names it.
+  function addDraftAgent() {
+    const a = registerAgent({ id: 'custom' + (++customSeq), bin: '', base: null, name: '' });
+    renderSettings();
+    const f = content.querySelector(`[data-abin="${a.id}"]`);
+    if (f) { f.closest('.set-row').scrollIntoView({ block: 'center' }); f.focus(); }
+    return a;
+  }
+
+  // What a removal would take with it. Sessions already running are NOT in this list — they
+  // carry on, exactly as they do when an agent is switched off.
+  const agentRefs = (id) => [DEF, ...Object.values(PROJ)]
+    .reduce((n, o) => n + (o.sessions || []).filter((s) => s.kind === id).length, 0);
+
+  function removeAgent(a) {
+    confirmDel = null;
+    CUSTOM.splice(CUSTOM.indexOf(a), 1);
+    AGENTS.splice(AGENTS.indexOf(a.id), 1);
+    [agentOn, AGENT_BIN, AGENT_ICON, AGENT_EG, SESSION_KINDS, TPL_KINDS, DEF.flags].forEach((m) => delete m[a.id]);
+    DEF.sessions = DEF.sessions.filter((s) => s.kind !== a.id);
+    Object.values(PROJ).forEach((p) => {
+      if (p.sessions) p.sessions = p.sessions.filter((s) => s.kind !== a.id);
+      if (p.flags) delete p.flags[a.id];
+    });
+    refreshSettings();
+  }
+  // The ask is bolted to the consequence, not to the surface: an agent nothing points at is a row
+  // you can retype in ten seconds, and one that opens worktrees takes typed setup with it. When it
+  // does ask, it asks on the row — a settings row's own verb shouldn't move you to another surface
+  // to finish it, and the sentence it needs is one line long.
+  let confirmDel = null;   // id of the row currently showing its remove strip
+  function requestRemoveAgent(a) {
+    if (confirmDel === a.id) { confirmDel = null; renderSettings(); return; }   // ✕ again takes it back
+    if (!agentRefs(a.id)) { removeAgent(a); return; }
+    confirmDel = a.id;
+    renderSettings();
+  }
+
+  // One custom agent, so the shape is on screen the moment you open Settings.
+  registerAgent({ id: 'custom' + (++customSeq), bin: 'claude-personal', base: 'claude',
+    name: 'Claude Personal', named: true, flags: '--settings ~/.claude/personal.json' });
+
   // What a new worktree in this project actually opens: the shared base, then the project's own.
   // An entry whose agent is switched off is skipped rather than deleted — the template is a
   // wish list, and turning the agent back on restores the row without you retyping it.
@@ -8601,7 +8853,7 @@
       ${o.shared ? `<span class="tpl-name">${esc(s.name)}</span>`
                  : `<input class="tpl-name" value="${esc(s.name)}" spellcheck="false" aria-label="Session name" />`}
       <span class="tpl-opens">opens</span>
-      <span class="tpl-off">Off</span>
+      <span class="tpl-off">${agentInstalled(s.kind) ? 'Off' : 'Missing'}</span>
       <span class="tpl-kind">${k.label}</span>
       ${o.shared ? '<span class="tpl-syn">Synth</span>' : `<button class="tpl-x" title="Remove" aria-label="Remove session">${ICON_CLOSE}</button>`}
     </div>`;
@@ -8614,7 +8866,9 @@
     const first = opensAt(list);
     return list.map((s, i) => tplRow(s, i + 1, { idx: i, first: i === first })).join('');
   }
-  const tplAddBar = () => `<div class="tpl-add">${Object.keys(TPL_KINDS).map((k) =>
+  // Agents first, in registry order, so the ones you added sit with the ones they were added
+  // beside — then the two session kinds that are never an agent.
+  const tplAddBar = () => `<div class="tpl-add">${[...AGENTS, 'terminal', 'browser'].map((k) =>
     `<button class="tpl-add__btn${agentEnabled(k) ? '' : ' is-off'}" data-add="${k}">${ICON_PLUS}${TPL_KINDS[k].label}</button>`).join('')}</div>`;
 
   // ---- Layered project controls: shared base shown in place, delta added after ----------
@@ -8664,12 +8918,125 @@
   // The flags you'd set for an agent are exactly what you don't need once it's off, so the switch
   // and the field belong on one row: off greys the row and takes the field with it. The row itself
   // stays — the switch that brings the agent back has to be somewhere you can find it.
-  function agentRow(a) {
+  const agentRow = (k) => customOf(k) ? customRow(customOf(k)) : builtinRow(k);
+
+  function builtinRow(a) {
     const off = !agentOn[a];
     return row(AGENT_BIN[a], desc(`Flags added to every ${AGENT_BIN[a]} launch.`), switchCtl(!off, 'agent.' + a),
       `<textarea class="set-code set-code--flags" data-flags="${a}" spellcheck="false" placeholder="${esc(AGENT_EG[a])}"${off ? ' readonly tabindex="-1"' : ''}>${esc(DEF.flags[a] || '')}</textarea>`,
       off ? 'set-row--off' : '');
   }
+
+  // "Behaves like" is where this feature is honest: the base is not decoration, it is which
+  // supervisor reads the session — status, comments, the quit card, MCP registration. So it is a
+  // control on the row rather than a fact behind one, and it sits beside what the probe found:
+  // what Synth saw, and what it will treat it as.
+  function agentLike(a) {
+    return `<div class="set-agent__like">
+      <span class="set-agent__like-lbl">Behaves like</span>
+      <div class="set-pop">
+        <select class="set-pop__sel" data-abase="${a.id}" aria-label="Behaves like">
+          ${a.base ? '' : '<option value="" selected>Choose…</option>'}
+          ${BUILTIN.map((b) => `<option value="${b}"${a.base === b ? ' selected' : ''}>${esc(TPL_KINDS[b].label)}</option>`).join('')}
+        </select>
+        <span class="set-pop__chev">${ICON_CARET}</span>
+      </div>
+      <span class="set-agent__probe${probeWarn(a) ? ' set-agent__probe--warn' : ''}">${esc(probeLine(a))}</span>
+    </div>`;
+  }
+
+  // The ask, on the row that asked it. One line: what goes, what doesn't, and the two verbs.
+  function agentRemoveStrip(a) {
+    const n = agentRefs(a.id);
+    return `<div class="set-agent__confirm">
+      <span class="set-agent__confirm-txt">Drops ${n} session${n === 1 ? '' : 's'} from the new-worktree template. Sessions already running carry on.</span>
+      <button class="tpl-add__btn" data-adel-no="${a.id}">Cancel</button>
+      <button class="tpl-add__btn tpl-add__btn--danger" data-adel-yes="${a.id}">Remove</button>
+    </div>`;
+  }
+
+  // The picker is rebuilt whenever the line it lives on is, so it is bound by row.
+  const wireAgentBase = (scope) => scope.querySelectorAll('[data-abase]').forEach((sel) =>
+    sel.addEventListener('change', () => setBase(customOf(sel.dataset.abase), sel.value)));
+
+  // The name rides in three places at once — this row, the template's kind pill, the add bar's
+  // button. All three are one string, so they are patched together rather than re-rendered.
+  function syncAgentLabels(a) {
+    content.querySelectorAll(`.tpl-add__btn[data-add="${a.id}"]`).forEach((b) => { b.lastChild.textContent = a.name; });
+    content.querySelectorAll(`.tpl-row[data-kind="${a.id}"] .tpl-kind`).forEach((p) => { p.textContent = a.name; });
+  }
+
+  // Everything downstream of the base, patched into the row that owns it. Picking one by hand is
+  // exactly the case a re-probe must not overrule, so this is not setProbe with a different
+  // argument — the probe's verdict stands, and the base you chose stands beside it.
+  function setBase(a, base) {
+    a.base = base;
+    applyBase(a);
+    const field = content.querySelector(`[data-abin="${a.id}"]`);
+    if (!field) return;
+    const r = field.closest('.set-row');
+    r.querySelector('.set-agent__like').outerHTML = agentLike(a);
+    wireAgentBase(r);
+    r.querySelector('.set-agent__id .session__icon').outerHTML = SESSION_KINDS[a.id].icon;
+    r.querySelector('.set-cmd__tail').placeholder = AGENT_EG[a.id] || 'flags';
+    syncAgentLabels(a);
+    syncTplAvail();
+  }
+
+  // A fresh probe, patched into the row in place — the field it answers for is one the user is
+  // still typing in, and a re-render would take the caret with it.
+  //
+  // A probe that RECOGNISES the command overrules the base: repointing `claude-personal` at
+  // `oc-nightly` and leaving it on Claude's supervisor is a row that says one thing and runs
+  // another. A probe that recognises nothing leaves the base alone — that one was your assertion.
+  function setProbe(a, p) {
+    a.probe = p;
+    a.clash = binClash(a.bin, a);
+    if (p.state === 'found' && p.base !== a.base) { a.base = p.base; applyBase(a); }
+    const field = content.querySelector(`[data-abin="${a.id}"]`);
+    if (!field) return;
+    const r = field.closest('.set-row');
+    r.classList.toggle('set-row--missing', !!a.bin && p.state === 'missing');
+    const like = r.querySelector('.set-agent__like');
+    if (like) { like.outerHTML = agentLike(a); wireAgentBase(r); }
+    r.querySelector('.set-agent__id .session__icon').outerHTML = SESSION_KINDS[a.id].icon;
+    r.querySelector('.set-cmd__tail').placeholder = AGENT_EG[a.id];
+    syncTplAvail();
+  }
+
+  // A built-in row can lead with its binary, because the binary is the whole identity. A custom
+  // agent has three facts instead, and each one is put where you'd look for it: the name on the
+  // label line, the base and the probe's answer on the line under it, the command and its flags as
+  // one launch line you read left to right. Every one of them is edited where it is shown — none of
+  // this opens a dialog or a palette to finish a row you are already standing in.
+  function customRow(a) {
+    const off = !agentOn[a.id];
+    const missing = !!a.bin && a.probe.state === 'missing';
+    // The name is a field, but a field that looks like a label is a field nobody finds — so the
+    // pencil says so, and it is what puts the caret in. The input sizes to the name it holds, so
+    // the two stay together instead of the button drifting to the far side of an empty box.
+    const label = `<div class="set-agent__id">${SESSION_KINDS[a.id].icon}
+      <input class="set-agent__name" data-aname="${a.id}" value="${esc(a.name)}" size="${Math.max(8, a.name.length)}" placeholder="Name" spellcheck="false" aria-label="Agent name" />
+      <button class="set-agent__edit" data-aedit="${a.id}" title="Rename" aria-label="Rename agent">${ICON_RENAME}</button>
+    </div>`;
+    const ctl = switchCtl(!off, 'agent.' + a.id)
+      + `<button class="tpl-x" data-adel="${a.id}" title="Remove agent" aria-label="Remove ${esc(a.name)}">${ICON_CLOSE}</button>`;
+    const cmd = `<div class="set-cmd set-cmd--edit set-cmd--box">
+      <span class="set-cmd__prompt">$</span>
+      <input class="set-cmd__bin-edit" data-abin="${a.id}" value="${esc(a.bin)}" size="${Math.max(9, a.bin.length)}" placeholder="command" spellcheck="false" aria-label="Command" />
+      <input class="set-cmd__tail" data-aflags="${a.id}" value="${esc(DEF.flags[a.id] || '')}" placeholder="${esc(AGENT_EG[a.id] || 'flags')}" spellcheck="false" aria-label="Flags added to every launch"${off ? ' readonly tabindex="-1"' : ''} />
+    </div>`;
+    return row(label, confirmDel === a.id ? agentRemoveStrip(a) : agentLike(a), ctl, cmd,
+      (off ? 'set-row--off ' : '') + (missing ? 'set-row--missing' : ''));
+  }
+
+  // The way in. Its description carries the one thing a row can't: what a custom agent IS —
+  // your command, run by an agent above. Once you have one, the rows have said it, so it stops.
+  const addAgentRow = () => row('Add an agent',
+    desc(CUSTOM.length
+      ? 'Another command Synth runs as one of the agents above.'
+      : 'Point Synth at a command of your own — a second Claude Code with its own config, say. It runs as one of the agents above, and looks like it.'),
+    `<button class="tpl-add__btn" data-add-agent>${ICON_PLUS}Add agent</button>`);
 
   // ---- The two tabs ------------------------------------------------------------------
   const SCRIPT_NOTE = '$SYNTH_MAIN = primary checkout · 5 min limit';
@@ -8711,7 +9078,7 @@
           cap('setup.sh', SCRIPT_NOTE) + `<textarea class="set-code" data-edit="script" spellcheck="false" placeholder="# bash. Runs in the new worktree.">${esc(DEF.script)}</textarea>`)
       + row('Sessions', desc('Every new worktree opens with these. The first one opens.'), '',
           `<div class="tpl-list" data-tpl>${tplRows(DEF.sessions)}</div>` + tplAddBar()))
-    + sec('Agent defaults', AGENTS.map(agentRow).join(''))
+    + sec('Agents', AGENTS.map(agentRow).join('') + addAgentRow())
     + sec('Privacy', row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics')))
     + sec('Archived worktrees', archivePolicyRows())
     + sec('Experimental', row('Tabs', desc("Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview."), switchCtl(tabsMode, 'tabs')))
@@ -8871,12 +9238,27 @@
   function syncAgentUI(k, on) {
     const sw = content.querySelector(`[data-switch="agent.${k}"]`);
     if (sw) sw.closest('.set-row').classList.toggle('set-row--off', !on);
-    const flags = content.querySelector(`.set-code--flags[data-flags="${k}"]`);
     // the field keeps its place — height must not change — but there is nothing to edit for an
-    // agent that will never launch, so it goes read-only and drops out of the tab order
+    // agent that will never launch, so it goes read-only and drops out of the tab order.
+    // A custom agent's flags live on its launch line; the command beside them stays editable,
+    // because a command you can't fix is how a row gets stuck.
+    const flags = content.querySelector(`.set-code--flags[data-flags="${k}"], .set-cmd__tail[data-aflags="${k}"]`);
     if (flags) { flags.readOnly = !on; flags.tabIndex = on ? 0 : -1; }
-    content.querySelectorAll(`.tpl-row[data-kind="${k}"]`).forEach((t) => t.classList.toggle('tpl-row--off', !on));
-    content.querySelectorAll(`.tpl-add__btn[data-add="${k}"]`).forEach((b) => b.classList.toggle('is-off', !on));
+    syncTplAvail();
+  }
+
+  // Which agents the template lists as launchable, redrawn by class alone. Called for a switch
+  // and for a re-probe, because both change the same answer — and one of them fires while you
+  // are typing in the command field, which a re-render would take the caret out of.
+  function syncTplAvail() {
+    content.querySelectorAll('.tpl-row[data-kind]').forEach((t) => {
+      const k = t.dataset.kind;
+      t.classList.toggle('tpl-row--off', !agentEnabled(k));
+      const badge = t.querySelector('.tpl-off');
+      if (badge) badge.textContent = agentInstalled(k) ? 'Off' : 'Missing';
+    });
+    content.querySelectorAll('.tpl-add__btn[data-add]').forEach((b) =>
+      b.classList.toggle('is-off', !agentEnabled(b.dataset.add)));
     // "opens" belongs to the set, not to a row, so re-pick it wherever a session list is drawn
     content.querySelectorAll('.set-row').forEach((sr) => {
       const rows = [...sr.querySelectorAll('.tpl-row')];
@@ -8952,6 +9334,59 @@
       inp.closest('[data-flagline]').querySelectorAll('[data-sflag]').forEach((s) =>
         s.classList.toggle('set-cmd__flag--dead', names.has(s.dataset.sflag)));
     }));
+
+    // ---- Custom agent rows. Every field writes straight through, in place ----------------
+    // The name is the word you'll meet in the tree and in every "New …", so it updates those
+    // labels as you type rather than waiting for the next render to catch up. Emptying it hands
+    // the name back to the command, which is where it came from in the first place.
+    content.querySelectorAll('[data-aname]').forEach((inp) => inp.addEventListener('input', () => {
+      const a = customOf(inp.dataset.aname);
+      a.named = !!inp.value.trim();
+      a.name = a.named ? inp.value : deriveName(a.bin);
+      inp.size = Math.max(8, inp.value.length);
+      applyBase(a);
+      syncAgentLabels(a);
+    }));
+    content.querySelectorAll('[data-aedit]').forEach((b) => b.addEventListener('click', () => {
+      const inp = content.querySelector(`[data-aname="${b.dataset.aedit}"]`);
+      inp.focus(); inp.select(); document.body.classList.remove('kbd');
+    }));
+    // The command re-probes once you stop typing — it's a process launch, not a lookup — and says
+    // it's checking meanwhile, because a stale verdict under a half-typed command reads as a fact.
+    content.querySelectorAll('[data-abin]').forEach((inp) => {
+      let timer = null;
+      inp.addEventListener('input', () => {
+        const a = customOf(inp.dataset.abin);
+        a.bin = inp.value.trim();
+        AGENT_BIN[a.id] = a.bin;
+        inp.size = Math.max(9, inp.value.length);
+        // an unnamed row is named by its command, letter by letter, until you name it yourself
+        if (!a.named) {
+          a.name = deriveName(a.bin);
+          const nameInp = content.querySelector(`[data-aname="${a.id}"]`);
+          nameInp.value = a.name;
+          nameInp.size = Math.max(8, a.name.length);
+          applyBase(a);
+          syncAgentLabels(a);
+        }
+        clearTimeout(timer);
+        setProbe(a, { state: 'checking' });
+        timer = setTimeout(() => setProbe(a, probeBin(a.bin)), 420);
+      });
+    });
+    content.querySelectorAll('.set-cmd__tail[data-aflags]').forEach((inp) =>
+      inp.addEventListener('input', () => { DEF.flags[inp.dataset.aflags] = inp.value; }));
+    wireAgentBase(content);
+    // ✕ asks on the row (or takes the ask back), and the strip's own two verbs answer it.
+    content.querySelectorAll('[data-adel]').forEach((b) => b.addEventListener('click', () =>
+      requestRemoveAgent(customOf(b.dataset.adel))));
+    content.querySelectorAll('[data-adel-yes]').forEach((b) => b.addEventListener('click', () =>
+      removeAgent(customOf(b.dataset.adelYes))));
+    content.querySelectorAll('[data-adel-no]').forEach((b) => b.addEventListener('click', () => {
+      confirmDel = null; renderSettings();
+    }));
+    const addAg = content.querySelector('[data-add-agent]');
+    if (addAg) addAg.addEventListener('click', addDraftAgent);
 
     const list = () => proj ? (proj.sessions || (proj.sessions = [])) : DEF.sessions;
     content.querySelectorAll('.tpl-list[data-tpl]').forEach((el) => {
@@ -9078,6 +9513,7 @@
   function leaveSettingsMode() {
     app.classList.remove('settings');
     document.getElementById('openSettings').classList.remove('is-on');
+    confirmDel = null;   // an unanswered ask doesn't wait behind your back for the next visit
   }
   function exitSettings() {
     if (!app.classList.contains('settings')) return;
@@ -9097,8 +9533,10 @@
     if (seg) { stepSeg(seg, 1); return; }
     // An agent row carries a switch AND a field. ↵ goes to the field, because h / l already
     // works the switch — until the agent is off, where the field is hidden and ↵ turns it back on.
+    // On a custom agent that field is the command: the one thing on the row you'd come to change,
+    // and the name behind it is a shift-tab away.
     const f = r.classList.contains('set-row--off') ? null
-      : r.querySelector('.set-code:not([readonly]), .set-cmd__tail, input.tpl-name');
+      : r.querySelector('.set-code:not([readonly]), .set-cmd__bin-edit, .set-cmd__tail, input.tpl-name');
     const sw = r.querySelector('[data-switch]');
     if (!f && sw) { sw.click(); return; }
     if (f) { f.focus(); document.body.classList.remove('kbd'); return; }

@@ -2022,3 +2022,17 @@ disclosure to dive deeper.
   state (no device, the pane's own desktop viewport, the right way to check ordinary work),
   says a desktop viewport is the mode off rather than the widest device in the fleet, and drops
   `ipad-pro-13` from the `device` examples that agents were copying.
+
+## [2026-08-17](docs/features/2026-08-17.md)
+
+- **Custom agents: your own command, hosted by an agent Synth already knows (both designs + native
+  app)** — Settings ▸ Synth ▸ Agent defaults becomes **Agents** and grows the user's own: a command
+  (`claude-personal`), a name, and a **base** — the built-in whose supervisor drives it, since
+  status/quit/paste/MCP are per-supervisor and can't be typed into a field. `AgentProbe` runs
+  `<command> --version` in a login shell and recognises the base for you (and overrules a stale one
+  on re-probe); no command or no base means the agent isn't offered at all, like an uninstalled
+  built-in. Name, base and the launch line are all edited on the row; removing one asks inline only
+  when a template entry points at it. `AgentRegistry.all` stops being a constant, so ⌘K, ⌘N, the
+  split picker, the add bar, the PATH shims and the project launch lines pick one up for free;
+  `SYNTH_AGENT_MAP` plus a sanitised `SYNTH_REAL_<CMD>` teach `synth-hook` to take the base's launch
+  role while reporting the custom `AgentID`. Persisted in state.json with the script and template.

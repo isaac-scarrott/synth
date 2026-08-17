@@ -2040,3 +2040,10 @@ disclosure to dive deeper.
   split picker, the add bar, the PATH shims and the project launch lines pick one up for free;
   `SYNTH_AGENT_MAP` plus a sanitised `SYNTH_REAL_<CMD>` teach `synth-hook` to take the base's launch
   role while reporting the custom `AgentID`. Persisted in state.json with the script and template.
+
+- **0.33.0 ships — custom agents reach installed copies** — minor release carrying user-defined
+  agent commands. `CFBundleVersion` 605, tag `v0.33.0`; dmg + zip notarized, stapled, verified
+  credential-less; appcast newest 0.33.0 at 605, `edSignature` on all 18 enclosures, 1.1MB delta
+  from 602. Nearly shipped as nothing: a rebase left the feature commit below the 0.32.1 release
+  commits, where the log reads as released but the tag says otherwise — diff `<last tag>..HEAD`.
+  No `synth-site` push.

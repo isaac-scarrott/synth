@@ -440,19 +440,19 @@ the absence of it is why Google Identity fails outright in Cursor's pane.
 but a sidebar row that vanishes on its own is the only thing in Synth's sidebar not driven by the
 user.
 
-**Amended on building it (2026-08-18), because half of this does not survive contact with the
-engine.** A popup *window* ships; a popup *the engine creates* does not. Returning false from
-`OnBeforePopup` — with no modification at all to `windowInfo`, `client` or `settings` — hangs the
-opener's renderer inside `window.open()` permanently on this embedding: the pump is verifiably
-healthy throughout (`SYNTH_CEF_PUMP_TRACE` shows `DoWork` begin/end every 30ms while the opener has
-stopped answering CDP evaluates), the popup browser is never created, and the page never resumes. A
-Chrome-style popup window takes the process down instead. So the popup is cancelled, which is what
-keeps the renderer running, and Synth opens the URL in a transient window of its own on the
-opener's request context. The litter goes, which was the decision. What does **not** follow is the
-claim above that this is what makes third-party identity sign-in work: a window Synth opened has no
-`window.opener` and the page cannot close it, so a flow that posts its result back to the opener
-still does not complete — exactly as it did not with the session this replaces. Revisit if CEF's
-popup path changes.
+**What it took, measured 2026-08-18.** Two things about CEF's popup path on macOS, neither in
+the header docs, and both load-bearing. `CefWindowInfo` here has no `SetAsPopup` — `SetAsChild`
+is the only setter — and a popup left with no `parent_view` is never given a window at all: the
+browser is created, `OnAfterCreated` fires, and then nothing, with the opener's renderer stopped
+inside `window.open()` forever waiting for a window that is never coming. So the embedder
+supplies the window, and it has to be ordered in *before* `OnBeforePopup` returns; a window
+merely allocated is not enough (the same lesson as stage one's child-view creation). And even
+then CEF does not navigate it — the popup arrives with an empty main-frame URL and stays there,
+so the target is loaded explicitly once the browser exists. With both, the popup is a real one:
+`window.opener` is live, the page can close it, and nothing is left in the sidebar. The route
+not taken is worth recording: cancelling the popup and opening the URL in a window of Synth's
+own is easy and looks the same, and it is useless for the case this exists for — a window Synth
+opened has no opener to post a result back to, so a third-party sign-in never completes.
 
 ### What Synth's browser will never be
 
@@ -510,9 +510,11 @@ state-changing split on the tools — follows persistence.
 - Only one Synth per channel gets those profiles (stage five). A second instance browses on a
   throwaway root and forgets everything when it quits; the Settings row says so. This is the price
   of Chromium's per-root process singleton, not a choice.
-- A popup is a window Synth opens rather than one the engine hands over (stage five, amended), so
-  it has no `window.opener` and a page cannot close it. Third-party identity sign-in still does not
-  complete in the pane.
+- A popup is a real popup with a live `window.opener` (stage five), hosted in a transient window
+  Synth supplies because CEF gives a parentless popup no window on macOS. Synth is therefore on
+  the hook for that window's lifetime: it is closed when the page closes it, when the user closes
+  it, and at runtime shutdown, because a browser CEF still counts as alive holds the profile
+  singleton.
 - Synth's browser has written-down non-goals (stage five). The pane is the agent's eyes and a surface
   for checking work; bookmarks, a downloads manager, a PDF viewer, reader mode, extensions and a
   mainstream tab strip are refusals, not backlog, and a request for one is answered with this ADR.

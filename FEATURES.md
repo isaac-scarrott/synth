@@ -2114,3 +2114,12 @@ disclosure to dive deeper.
   engine drops them once the page moves on. The sandbox needed no vendoring — only the dev bundle's
   framework moving from a symlink to an APFS clone, since a sandboxed helper cannot `dlopen`
   outside its own app.
+
+- **Popups turn out to work properly, and the earlier line above is wrong** — the entry before this
+  one recorded that a popup the engine creates hangs the opener, so Synth cancelled it and opened
+  a window of its own, losing `window.opener` and with it third-party sign-in. That was the wrong
+  conclusion from a real symptom. `CefWindowInfo` on macOS has no `SetAsPopup`, only `SetAsChild`,
+  and a popup with no `parent_view` is never given a window — the renderer was waiting for a
+  window nobody was going to make. Supplied one (ordered in before `OnBeforePopup` returns) and
+  navigated it by hand, and the popup is real: `window.opener` live, the page can close it, no
+  sidebar row. Sign in with Google works.

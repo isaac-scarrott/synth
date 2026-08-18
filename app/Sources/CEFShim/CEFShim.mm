@@ -506,9 +506,6 @@ static void CopyToPasteboard(const CefString &text) {
   /// Origins with a question already on screen, so a page whose every subresource 401s
   /// raises one prompt rather than twenty.
   std::set<std::string> _authAsking;
-  /// This session's request context, kept so a popup opens on the same profile — a sign-in
-  /// window with its own cookie jar is not a sign-in window.
-  CefRefPtr<CefRequestContext> _context;
 }
 @property(nonatomic, strong) CEFShimContainerView *containerView;
 // Never-shown host for the container until the pane reparents it: CEF's child-view
@@ -530,7 +527,6 @@ static void CopyToPasteboard(const CefString &text) {
 - (void)handleAsk:(CEFShimAsk *)ask;
 - (void)withdrawDialogAsks;
 - (void)handleOpenExternal:(NSString *)url;
-- (void)openPopup:(NSString *)url width:(int)width height:(int)height;
 - (nullable NSString *)authorizationForOrigin:(const std::string &)origin;
 - (void)challengeOrigin:(std::string)origin realm:(nullable NSString *)realm;
 - (void)handleWithdrawPromptID:(uint64_t)promptID;
@@ -590,27 +586,29 @@ class MediaAccessShim : public CefPermissionPromptCallback {
 // left litter behind every time, and a popup that closed itself left a dead row. A popup is a
 // transient window now, and never a session (ADR-0011 stage five).
 //
-// It is a window Synth opens, not a popup the engine hands us, and that distinction is
-// measured rather than chosen. Letting CEF create the popup — return false from OnBeforePopup
-// — hangs the opener's renderer inside window.open() permanently on this embedding: with the
-// pump healthy (verified through SYNTH_CEF_PUMP_TRACE: DoWork begin/end every 30ms
-// throughout) and with NO modification to windowInfo, client or settings, the opener stops
-// answering CDP evaluates and the popup browser is never created. So the popup is cancelled,
-// which is what keeps the renderer running, and the URL is opened in a window of our own on
-// the next main-queue turn — using the same create-and-pump path the session browser uses,
-// which does work.
+// Two things about CEF's popup path on macOS had to be found by measurement, and both are
+// load-bearing:
 //
-// The cost, named rather than hidden: the window has no window.opener relationship to the
-// page that asked for it and the page cannot close it, so a third-party sign-in that posts
-// its result back to the opener still does not complete. That was equally true of the session
-// this replaces; what changes is that the flow no longer leaves a row behind.
+//   1. `CefWindowInfo` here has no SetAsPopup — SetAsChild is the only setter. A popup left
+//      with no `parent_view` is never given a window at all: the browser is created,
+//      OnAfterCreated fires, and then nothing. The opener's renderer stays stopped inside
+//      window.open() forever waiting for a window that is never coming. So the embedder has
+//      to supply the window, and it has to be ORDERED IN before OnBeforePopup returns — the
+//      spike's lesson about child-view creation needing a window-backed parent applies here
+//      too, and a window merely allocated is not enough.
+//   2. Even then CEF does not navigate it. The popup arrives with an empty main-frame URL and
+//      stays there, so the target URL is loaded explicitly once the browser exists.
+//
+// With both, a popup is a real popup: window.opener is live, the page can close it, and it
+// leaves nothing behind in the sidebar.
 
 @class CEFShimPopupWindow;
 static NSMutableArray<CEFShimPopupWindow *> *g_livePopups;
 
 @interface CEFShimPopupWindow : NSObject <NSWindowDelegate>
-+ (void)openURL:(NSString *)url
-        context:(CefRefPtr<CefRequestContext>)context
++ (void)prepare:(CefWindowInfo &)windowInfo
+         client:(CefRefPtr<CefClient> &)client
+            url:(NSString *)url
           width:(int)width
          height:(int)height;
 - (void)adopt:(CefRefPtr<CefBrowser>)browser;
@@ -622,7 +620,8 @@ class PopupClient : public CefClient,
                     public CefDisplayHandler,
                     public CefLifeSpanHandler {
  public:
-  explicit PopupClient(CEFShimPopupWindow *host) : host_(host) {}
+  PopupClient(CEFShimPopupWindow *host, std::string pending = std::string())
+      : host_(host), pending_(std::move(pending)) {}
 
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -630,6 +629,11 @@ class PopupClient : public CefClient,
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
     g_aliveBrowsers++;
     [host_ adopt:browser];
+    // CEF creates the popup but does not navigate it — measured, see the note above. An empty
+    // target is left empty on purpose: `window.open('', 'name')` wants about:blank to write into.
+    if (!pending_.empty() && browser->GetMainFrame()->GetURL().empty()) {
+      browser->GetMainFrame()->LoadURL(pending_);
+    }
   }
 
   void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
@@ -666,6 +670,7 @@ class PopupClient : public CefClient,
 
  private:
   __weak CEFShimPopupWindow *host_;
+  const std::string pending_;
 
   IMPLEMENT_REFCOUNTING(PopupClient);
   DISALLOW_COPY_AND_ASSIGN(PopupClient);
@@ -684,11 +689,12 @@ static NSSize PopupSize(const CefPopupFeatures &features) {
   BOOL _closing;
 }
 
-+ (void)openURL:(NSString *)url
-        context:(CefRefPtr<CefRequestContext>)context
+/// Builds the window CEF is about to create the popup inside, and the client that will own it.
++ (void)prepare:(CefWindowInfo &)windowInfo
+         client:(CefRefPtr<CefClient> &)client
+            url:(NSString *)url
           width:(int)width
          height:(int)height {
-  NSAssert(NSThread.isMainThread, @"popup windows are main-thread only");
   CEFShimPopupWindow *host = [[CEFShimPopupWindow alloc] init];
   const NSRect frame = NSMakeRect(0, 0, width, height);
   NSWindow *window = [[NSWindow alloc]
@@ -702,57 +708,24 @@ static NSSize PopupSize(const CefPopupFeatures &features) {
   window.delegate = host;
   [window center];
   host->_window = window;
-
   CEFShimContainerView *container = [[CEFShimContainerView alloc] initWithFrame:frame];
   container.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [window.contentView addSubview:container];
-
   if (g_automation) {
-    // The driven build's promise (Automation.park): a gate run happens on a real desktop while
-    // its owner is working, so nothing Synth opens may appear or take the pointer. This window
-    // is opened by the shim rather than by the app, so it parks itself.
     window.alphaValue = 0;
     window.ignoresMouseEvents = YES;
     window.level = (NSWindowLevel)CGWindowLevelForKey(kCGDesktopWindowLevelKey);
     window.collectionBehavior |= NSWindowCollectionBehaviorTransient |
                                  NSWindowCollectionBehaviorIgnoresCycle;
   }
-
-  CefWindowInfo windowInfo;
-  windowInfo.SetAsChild((__bridge void *)container,
-                        CefRect(0, 0, (int)width, (int)height));
-  windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
-  CefRefPtr<PopupClient> client(new PopupClient(host));
-  CefBrowserSettings settings;
-  // The opener's request context, so the popup is the same signed-in browser. A sign-in window
-  // with its own cookie jar is not a sign-in window.
-  if (!CefBrowserHost::CreateBrowser(windowInfo, client, url.UTF8String, settings, nullptr,
-                                     context)) {
-    [window close];
-    return;
-  }
+  [window makeKeyAndOrderFront:nil];
   if (!g_livePopups) {
     g_livePopups = [NSMutableArray array];
   }
   [g_livePopups addObject:host];
-  // Async creation only, pumped until OnAfterCreated — the session browser's path, and the
-  // reason this one works where letting CEF create the popup does not.
-  //
-  // Through PumpWork rather than CefDoMessageLoopWork directly, unlike the session browser's
-  // identical loop. This one can be reached from inside a nested runloop that drained the main
-  // queue while an outer pump was on the stack (a tracking menu, a modal), and CEF CHECKs on a
-  // reentrant DoMessageLoopWork. PumpWork's guard turns that into a popup that times out and
-  // closes its window, which is a far better failure than taking the app down.
-  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10.0];
-  while (!host->_browser && deadline.timeIntervalSinceNow > 0) {
-    PumpWork();
-    [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
-                          beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
-  }
-  if (!host->_browser) {
-    [g_livePopups removeObject:host];
-    [window close];
-  }
+  windowInfo.SetAsChild((__bridge void *)container, CefRect(0, 0, width, height));
+  windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  client = new PopupClient(host, std::string(url.UTF8String));
 }
 
 - (void)adopt:(CefRefPtr<CefBrowser>)browser {
@@ -814,16 +787,13 @@ bool PopupClient::OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFram
                                 CefBrowserSettings &settings,
                                 CefRefPtr<CefDictionaryValue> &extra_info,
                                 bool *no_javascript_access) {
-  NSString *url = @(target_url.ToString().c_str());
   const NSSize size = PopupSize(popupFeatures);
-  CefRefPtr<CefRequestContext> context = browser->GetHost()->GetRequestContext();
-  dispatch_async(dispatch_get_main_queue(), ^{
-    [CEFShimPopupWindow openURL:url
-                        context:context
-                          width:(int)size.width
-                         height:(int)size.height];
-  });
-  return true;
+  [CEFShimPopupWindow prepare:windowInfo
+                       client:client
+                          url:@(target_url.ToString().c_str())
+                        width:(int)size.width
+                       height:(int)size.height];
+  return false;
 }
 
 // ---- HTTP basic auth, in the resource path ---------------------------------------------
@@ -988,16 +958,12 @@ class ShimClient : public CefClient,
                      CefWindowInfo &windowInfo, CefRefPtr<CefClient> &client,
                      CefBrowserSettings &settings, CefRefPtr<CefDictionaryValue> &extra_info,
                      bool *no_javascript_access) override {
-    // Cancel, then open it ourselves — see the note above the popup window. Cancelling is what
-    // keeps the opener's renderer running; the window arrives on the next main-queue turn,
-    // because creating a browser pumps the loop and this is called from inside one.
-    NSString *url = @(target_url.ToString().c_str());
-    const NSSize size = PopupSize(popupFeatures);
-    __strong CEFShimBrowser *owner = owner_;
-    dispatch_async(dispatch_get_main_queue(), ^{
-      [owner openPopup:url width:(int)size.width height:(int)size.height];
-    });
-    return true;
+    [CEFShimPopupWindow prepare:windowInfo
+                         client:client
+                            url:@(target_url.ToString().c_str())
+                          width:(int)PopupSize(popupFeatures).width
+                         height:(int)PopupSize(popupFeatures).height];
+    return false;
   }
 
   // ---- The four handlers that were missing (ADR-0011 stage five) ----------------------
@@ -1427,7 +1393,6 @@ class ShimClient : public CefClient,
   CefString(&contextSettings.cache_path) = cachePath.UTF8String;
   CefRefPtr<CefRequestContext> context =
       CefRequestContext::CreateContext(contextSettings, nullptr);
-  _context = context;
 
   CefWindowInfo windowInfo;
   windowInfo.SetAsChild((__bridge void *)_containerView,
@@ -1653,9 +1618,6 @@ class ShimClient : public CefClient,
   [self.delegate cefBrowserDidRequestOpenExternal:url];
 }
 
-- (void)openPopup:(NSString *)url width:(int)width height:(int)height {
-  [CEFShimPopupWindow openURL:url context:_context width:width height:height];
-}
 
 - (nullable NSString *)authorizationForOrigin:(const std::string &)origin {
   if (origin.empty()) {

@@ -29,13 +29,24 @@ check("3. and it left no row in the sidebar — it is a window, not a session",
       ctl("browser.list").get("sessions"))
 check("4. the engine is hosting one more page than before",
       len(cdp_pages(port)) == targets_before + 1, len(cdp_pages(port)))
+check("5. and the popup loaded the URL it was opened with",
+      popped.get("title") == "POPPED", popped)
 
-# The popup is a window Synth opens rather than one the engine hands over, because letting CEF
-# create it hangs the opener's renderer on this embedding (see the note in CEFShim.mm). The
-# named cost of that: the page cannot close a window it did not itself open, so
-# window.close() from the flow is ignored and the window is the user's to close. Not asserted
-# here — a gate that pins a limitation in place is a trap — but recorded so the next person
-# reading this suite knows it was measured rather than missed.
+# The two things that make it a real popup rather than a second window that happens to be
+# open. Without them a sign-in flow cannot finish: it posts its result back through
+# window.opener and then closes itself.
+check("6. the opener is still running — window.open returned",
+      cdp_eval(port, "opener.html", "1+1") == "2")
+check("7. the popup can see its opener",
+      cdp_eval(port, "popped.html", "String(!!window.opener)") == "true")
+
+ctl("automation.browserGo", sessionId=bid, url=f"{opener}#close")
+gone = wait(lambda: (not any("popped.html" in t.get("url", "") for t in cdp_pages(port))) or None, 30)
+check("8. and the page can close it — every sign-in flow ends that way", bool(gone),
+      [t.get("url") for t in cdp_pages(port)])
+check("9. still no row left behind",
+      len(ctl("browser.list").get("sessions", [])) == rows_before,
+      ctl("browser.list").get("sessions"))
 
 # --- 2. Right-click has a menu ----------------------------------------------------------
 # A driven build never puts a native menu on screen, so what is asserted is the model it built
@@ -51,19 +62,19 @@ def menu(selector):
 titles = lambda items: [i["title"] for i in items if not i["separator"]]
 
 page_menu = menu("#hero")
-check("5. right-clicking the page offers history, reload and the inspector",
+check("10. right-clicking the page offers history, reload and the inspector",
       {"Back", "Forward", "Reload", "Inspect Element"} <= set(titles(page_menu)), titles(page_menu))
 
 link_menu = menu("#link")
-check("6. right-clicking a link offers the two things this pane can do with one",
+check("11. right-clicking a link offers the two things this pane can do with one",
       {"Open Link in Default Browser", "Copy Link Address"} <= set(titles(link_menu)),
       titles(link_menu))
-check("7. and not the ones it cannot — there is no tab strip and downloads are blocked",
+check("12. and not the ones it cannot — there is no tab strip and downloads are blocked",
       not any(t.startswith("Open Link in New") or t.startswith("Save ") for t in titles(link_menu)),
       titles(link_menu))
 
 field_menu = menu("#field")
-check("8. right-clicking a text field offers the editing verbs",
+check("13. right-clicking a text field offers the editing verbs",
       {"Cut", "Copy", "Paste", "Select All"} <= set(titles(field_menu)), titles(field_menu))
 
 # --- 3. Nothing outlives the app --------------------------------------------------------
@@ -73,7 +84,7 @@ check("8. right-clicking a text field offers the editing verbs",
 p.terminate(); p.wait(timeout=60)
 time.sleep(4)
 survivors = sh(f"pgrep -f '{APP}/Contents/Frameworks'")
-check("9. quitting takes the popup's engine processes with it", not survivors, survivors)
+check("14. quitting takes the popup's engine processes with it", not survivors, survivors)
 
 for s in servers: s.shutdown()
 sys.exit(result())

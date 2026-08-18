@@ -327,6 +327,17 @@ decided, and the user was not asked.
 ephemeral while investing in `storageState` seeding instead (tooling built to route around a
 constraint we impose on ourselves).
 
+**What persistence costs a second instance, measured 2026-08-18.** Chromium takes a process
+singleton lock on `root_cache_path`, so two Synths of one channel cannot share the root the
+profiles live under: pointed at the same root, the second `CefInitialize` fails outright (exit code
+21, verified by disabling the claim below). CEF cannot re-initialize after a failed init, so there
+is no retrying with different settings — the claim has to be settled first. Synth therefore takes
+its own `flock` beside the root before initializing: whoever holds it gets the persistent profiles,
+and a second instance falls back to a throwaway root, gets a working browser with an empty profile,
+and says so on the Settings row. The kernel drops the lock on exit or crash, so a Synth that died
+never locks the next one out. The alternative — a second instance with no browser at all — was
+rejected: `dev.sh` deliberately runs builds side by side.
+
 **Sequencing accepted knowingly:** persistence lands *before* the permission boundary below, so
 there is a window in which an unconstrained agent drives inside real authenticated sessions. Synth
 is a single-user tool on the user's own machine with the user's own logins, and the alternative —
@@ -392,7 +403,13 @@ feature but a silently broken web platform. Wiring, in order of what blocks work
 - **Certificate errors and HTTP basic auth.** A self-signed certificate has no proceed path and
   basic auth has no prompt, so a local HTTPS dev server and any basic-auth staging environment are
   simply unreachable from the pane whose stated job is checking your work. This is the bundle that
-  makes stage one's promise true.
+  makes stage one's promise true. *(2026-08-18, on building it: `GetAuthCredentials` — the handler
+  CEF documents for this — is never called for a 401 on a top-level navigation in an Alloy-style
+  window. Chrome's own login UI owns server authentication now and an Alloy window has nowhere to
+  put it, so the challenge is dropped and the page renders the empty 401 body. The handler stays
+  wired, because it is still the documented seam and it is what fires for a proxy; the challenge is
+  read off the response instead, and the answer becomes an `Authorization` header the shim puts on
+  the retry. Basic only — Digest and NTLM are Chromium's to negotiate.)*
 - **JS dialogs and page permissions.** `alert`/`confirm`/`prompt` are undefined and can block the
   page; camera, microphone, geolocation, notifications and clipboard are denied with no prompt and
   no way to grant. An app that uses any of them looks broken in Synth and fine in Chrome, which is
@@ -417,6 +434,20 @@ the absence of it is why Google Identity fails outright in Cursor's pane.
 *Rejected:* keeping the session and auto-closing it when the popup closes — it preserves the model,
 but a sidebar row that vanishes on its own is the only thing in Synth's sidebar not driven by the
 user.
+
+**Amended on building it (2026-08-18), because half of this does not survive contact with the
+engine.** A popup *window* ships; a popup *the engine creates* does not. Returning false from
+`OnBeforePopup` — with no modification at all to `windowInfo`, `client` or `settings` — hangs the
+opener's renderer inside `window.open()` permanently on this embedding: the pump is verifiably
+healthy throughout (`SYNTH_CEF_PUMP_TRACE` shows `DoWork` begin/end every 30ms while the opener has
+stopped answering CDP evaluates), the popup browser is never created, and the page never resumes. A
+Chrome-style popup window takes the process down instead. So the popup is cancelled, which is what
+keeps the renderer running, and Synth opens the URL in a transient window of its own on the
+opener's request context. The litter goes, which was the decision. What does **not** follow is the
+claim above that this is what makes third-party identity sign-in work: a window Synth opened has no
+`window.opener` and the page cannot close it, so a flow that posts its result back to the opener
+still does not complete — exactly as it did not with the session this replaces. Revisit if CEF's
+popup path changes.
 
 ### What Synth's browser will never be
 
@@ -471,6 +502,12 @@ state-changing split on the tools — follows persistence.
 - The browser holds durable user state (stage five): a per-workspace profile with real logins in it,
   under Application Support, cleared only when the user asks. It is a thing to back up, to migrate,
   and to reason about when a workspace is deleted.
+- Only one Synth per channel gets those profiles (stage five). A second instance browses on a
+  throwaway root and forgets everything when it quits; the Settings row says so. This is the price
+  of Chromium's per-root process singleton, not a choice.
+- A popup is a window Synth opens rather than one the engine hands over (stage five, amended), so
+  it has no `window.opener` and a page cannot close it. Third-party identity sign-in still does not
+  complete in the pane.
 - Synth's browser has written-down non-goals (stage five). The pane is the agent's eyes and a surface
   for checking work; bookmarks, a downloads manager, a PDF viewer, reader mode, extensions and a
   mainstream tab strip are refusals, not backlog, and a request for one is answered with this ADR.

@@ -108,11 +108,16 @@ async function connectedBrowser(inst) {
 }
 
 // ---------------------------------------------------------------------------
-// Page ↔ session mapping + per-page console capture.
+// Page ↔ session mapping, per-page console capture, per-page network log.
 
 const pageLogs = new WeakMap();    // Page -> [{ level, text, at }]
+const pageNet = new WeakMap();     // Page -> { seq, entries: [entry] }
+const netEntry = new WeakMap();    // Request -> entry
 const instrumented = new WeakSet();
 const CONSOLE_CAP = 200;
+// Metadata only — a Playwright Request is a handle, not a buffered body, so the log
+// costs kilobytes however heavy the traffic is. Bodies are fetched on demand.
+const NETWORK_CAP = 300;
 
 function instrument(page) {
   if (instrumented.has(page)) return;
@@ -125,6 +130,35 @@ function instrument(page) {
   };
   page.on("console", (msg) => push(msg.type(), msg.text()));
   page.on("pageerror", (err) => push("error", String(err?.message ?? err)));
+
+  const net = { seq: 0, entries: [] };
+  pageNet.set(page, net);
+  page.on("request", (req) => {
+    const entry = {
+      id: `r${++net.seq}`, method: req.method(), url: req.url(),
+      type: req.resourceType(), startedAt: Date.now(), status: null, ms: null,
+      bytes: null, failed: null, req,
+    };
+    netEntry.set(req, entry);
+    net.entries.push(entry);
+    if (net.entries.length > NETWORK_CAP) net.entries.splice(0, net.entries.length - NETWORK_CAP);
+  });
+  page.on("response", (res) => {
+    const entry = netEntry.get(res.request());
+    if (entry) entry.status = res.status();
+  });
+  page.on("requestfinished", (req) => {
+    const entry = netEntry.get(req);
+    if (!entry) return;
+    entry.ms = Date.now() - entry.startedAt;
+    req.sizes().then((s) => { entry.bytes = s.responseBodySize; }).catch(() => {});
+  });
+  page.on("requestfailed", (req) => {
+    const entry = netEntry.get(req);
+    if (!entry) return;
+    entry.ms = Date.now() - entry.startedAt;
+    entry.failed = req.failure()?.errorText ?? "failed";
+  });
 }
 
 async function evalWithTimeout(page, expression, ms) {
@@ -827,16 +861,185 @@ tool("browser_wait_for",
     return text(`${what} after ${Date.now() - started}ms`);
   });
 
+// ---------------------------------------------------------------------------
+// Capture. Both of these write to disk and return a path, and inline only when
+// asked (ADR-0011 stage five): an inlined screenshot is the single largest context
+// cost in agent browsing, and an opt-in disk path is one agents mostly don't take.
+
+/** Where a capture lands: the caller's path (relative to the worktree), else a
+ *  temp file. The directory is created either way. */
+function captureFile(outPath, fallbackName) {
+  const out = outPath ? path.resolve(projectDir, outPath)
+                      : path.join(os.tmpdir(), fallbackName);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  return out;
+}
+
+// Above this, an image is not worth putting in a model's context whatever it was
+// asked for — inlining it is how a single call costs six figures of tokens.
+const INLINE_MAX_BYTES = 4_000_000;
+
 tool("browser_screenshot",
-  "Screenshot the session's viewport (PNG).",
-  { sessionId: sessionIdParam },
-  async ({ sessionId }) => {
+  "Screenshot the session's page to a PNG file and return its path — the viewport " +
+  "by default, or the whole scrollable page (fullPage), or one element (ref or " +
+  "selector). It does NOT come back as an image unless you ask: pass inline:true " +
+  "when you actually need to look at it, and otherwise pass the path on to the user " +
+  "or to another tool. An inlined capture is the most expensive thing an agent can " +
+  "put in its own context, and a page you can already read with browser_snapshot " +
+  "rarely needs looking at.",
+  {
+    sessionId: sessionIdParam,
+    path: z.string().optional().describe(
+      "where to write the PNG (relative to the worktree). Default: a temp file"),
+    inline: z.boolean().optional().describe(
+      "also return the image itself, for when you need to see it"),
+    fullPage: z.boolean().optional().describe(
+      "capture the entire scrollable page, not just the viewport"),
+    ref: refParam,
+    selector: selectorParam,
+  },
+  async ({ sessionId, path: outPath, inline, fullPage, ref, selector }) => {
     const page = await targetPage(requireInstance(), sessionId);
-    const buf = await page.screenshot({ type: "png", timeout: 10000 });
+    const target = await resolveTarget(page, { ref, selector });
+    const out = captureFile(outPath, `synth-screenshot-${Date.now()}.png`);
+    const opts = { type: "png", timeout: 15000, path: out };
+    if (target) await target.screenshot(opts);
+    else await page.screenshot({ ...opts, fullPage: !!fullPage });
+    const bytes = fs.statSync(out).size;
+    const what = target ? targetLabel({ ref, selector }) : (fullPage ? "full page" : "viewport");
+    const summary = `${out}\n${what} of ${page.url()} — ${bytes} bytes`;
+    if (!inline) return text(summary);
+    if (bytes > INLINE_MAX_BYTES) {
+      return text(`${summary}\n\nToo big to inline (${bytes} bytes) — it is on disk at ` +
+                  "the path above. Capture one element, or the viewport instead of the " +
+                  "full page, if you need to see it here.");
+    }
     return {
-      content: [{ type: "image", data: buf.toString("base64"), mimeType: "image/png" }],
+      content: [
+        { type: "text", text: summary },
+        { type: "image", data: fs.readFileSync(out).toString("base64"), mimeType: "image/png" },
+      ],
     };
   });
+
+/** A response body written for the agent to read: text goes into the dump, anything
+ *  else lands beside it as bytes. A base64 image in a model's context is the exact
+ *  cost this tool exists to avoid. */
+function isTextual(contentType, buf) {
+  if (buf.includes(0)) return false;
+  return /^(text\/|application\/(json|xml|javascript|x-www-form-urlencoded|graphql))/
+    .test(contentType ?? "");
+}
+
+tool("browser_network",
+  "The session's network traffic. With no request id it lists what the page has " +
+  "asked for — method, URL, status, type, timing, size — which is enough to see a " +
+  "404, a CORS failure or a call that never went out. Name one entry's id and its " +
+  "headers and body are written to a FILE whose path comes back; bodies never come " +
+  "inline, because one JSON response can cost tens of thousands of tokens and " +
+  "because authorization headers should not land in your context by default. " +
+  "Requests are recorded from the moment these tools first touched the page, so " +
+  "reload it (browser_reload) if you need the page's own first load.",
+  {
+    sessionId: sessionIdParam,
+    request: z.string().optional().describe(
+      "an entry id from the list (e.g. r14) — writes that request's headers and body " +
+      "to disk and returns the path"),
+    filter: z.string().optional().describe("only entries whose URL contains this"),
+    type: z.string().optional().describe(
+      "only this resource type: document, stylesheet, script, image, xhr, fetch, font, …"),
+    failedOnly: z.boolean().optional().describe(
+      "only requests that failed outright or came back 4xx/5xx"),
+    limit: z.number().int().positive().optional().describe(
+      "how many of the most recent entries to list (default 50)"),
+    path: z.string().optional().describe(
+      "where to write the dump (relative to the worktree). Default: a temp file"),
+  },
+  async ({ sessionId, request: wantId, filter, type, failedOnly, limit = 50, path: outPath }) => {
+    const page = await targetPage(requireInstance(), sessionId);
+    const net = pageNet.get(page);
+    if (!net || net.entries.length === 0) {
+      return text(`nothing recorded on ${page.url()} yet — these tools only see ` +
+                  "requests made since they first attached to the page. Reload it " +
+                  "(browser_reload) and call this again.");
+    }
+
+    if (wantId) {
+      const entry = net.entries.find((e) => e.id === wantId);
+      if (!entry) {
+        throw new Error(`no request ${wantId} on this page — the list has ` +
+                        `${net.entries[0].id}…${net.entries[net.entries.length - 1].id} ` +
+                        `(the log keeps the last ${NETWORK_CAP})`);
+      }
+      return text(await dumpRequest(entry, outPath));
+    }
+
+    let rows = net.entries;
+    if (filter) rows = rows.filter((e) => e.url.includes(filter));
+    if (type) rows = rows.filter((e) => e.type === type);
+    if (failedOnly) rows = rows.filter((e) => e.failed || (e.status ?? 0) >= 400);
+    const shown = rows.slice(-limit);
+    if (shown.length === 0) return text("no requests match");
+    const lines = shown.map((e) =>
+      [e.id, e.method, e.failed ? `FAILED(${e.failed})` : (e.status ?? "pending"),
+       e.type, e.ms == null ? "" : `${e.ms}ms`,
+       e.bytes == null ? "" : `${e.bytes}B`, e.url]
+        .filter(Boolean).join("  "));
+    const dropped = rows.length - shown.length;
+    return text(
+      `${shown.length} of ${net.entries.length} recorded requests on ${page.url()}` +
+      `${dropped > 0 ? ` (${dropped} older ones not shown — raise limit)` : ""}\n` +
+      "Name an id in `request` to write its headers and body to a file.\n\n" +
+      lines.join("\n"));
+  });
+
+async function dumpRequest(entry, outPath) {
+  const { req } = entry;
+  const parts = [`${entry.method} ${entry.url}`, ""];
+  parts.push("--- request headers ---");
+  for (const h of await req.headersArray()) parts.push(`${h.name}: ${h.value}`);
+  const post = req.postData();
+  if (post) parts.push("", "--- request body ---", post);
+
+  let sidecar = null;
+  const res = await req.response().catch(() => null);
+  if (!res) {
+    parts.push("", entry.failed ? `--- no response: ${entry.failed} ---`
+                                : "--- no response yet ---");
+  } else {
+    parts.push("", `--- response ${res.status()} ${res.statusText()} ---`);
+    const headers = await res.headersArray();
+    for (const h of headers) parts.push(`${h.name}: ${h.value}`);
+    const contentType = headers.find((h) => h.name.toLowerCase() === "content-type")?.value;
+    let body = null;
+    try { body = await res.body(); }
+    catch (e) {
+      parts.push("", `--- response body unavailable: ${e.message} ---`,
+                 "(the engine drops bodies once the page has navigated away — " +
+                 "re-issue the request and dump it before navigating)");
+    }
+    if (body) {
+      if (isTextual(contentType, body)) {
+        parts.push("", `--- response body (${body.length} bytes) ---`, body.toString("utf8"));
+      } else {
+        sidecar = { body, contentType };
+        parts.push("", `--- response body: ${body.length} bytes of ` +
+                       `${contentType ?? "binary"}, written beside this file ---`);
+      }
+    }
+  }
+
+  const out = captureFile(outPath, `synth-request-${entry.id}-${Date.now()}.txt`);
+  if (sidecar) {
+    const binPath = out + ".bin";
+    fs.writeFileSync(binPath, sidecar.body);
+    parts.push(binPath);
+  }
+  fs.writeFileSync(out, parts.join("\n"));
+  return `${entry.method} ${entry.url}\n${entry.failed ?? entry.status ?? "pending"} — ` +
+         `headers and body written to:\n${out}` +
+         (sidecar ? `\n${out}.bin` : "");
+}
 
 // ---------------------------------------------------------------------------
 // Video recording — Page.startScreencast streams a JPEG per repaint (variable

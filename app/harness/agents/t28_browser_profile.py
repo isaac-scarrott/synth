@@ -27,29 +27,6 @@ def serve(directory):
         except OSError: time.sleep(0.1)
     return proc, port
 
-# Arguments ride the environment rather than argv: `node -e` shifts argv by one against every
-# other invocation, and a silently mis-indexed needle reads as a page that isn't there.
-CDP_EVAL_JS = """
-const path = require('path'), os = require('os');
-const PW = path.join(os.homedir(), 'Library/Application Support/Synth/browser-mcp/node_modules/playwright-core');
-const { chromium } = require(PW);
-(async () => {
-  const b = await chromium.connectOverCDP(`http://127.0.0.1:${process.env.PORT}`);
-  const pages = b.contexts().flatMap((c) => c.pages());
-  const page = pages.find((p) => p.url().includes(process.env.NEEDLE));
-  if (!page) { console.log('NOPAGE'); process.exit(0); }
-  console.log(String(await page.evaluate(process.env.EXPR)));
-  await b.close();
-})().catch((e) => { console.log('ERR ' + e.message); });
-"""
-
-def cdp_eval(port, needle, expression):
-    """Evaluate in the page whose URL contains `needle`, over the app's own CDP endpoint."""
-    env = dict(os.environ, PORT=str(port), NEEDLE=needle, EXPR=expression)
-    r = subprocess.run(["node", "-e", CDP_EVAL_JS], capture_output=True, text=True,
-                       timeout=120, env=env)
-    return r.stdout.strip()
-
 kill_all()
 repo = fresh_repo()
 (pathlib.Path(repo) / "cookie.html").write_text(COOKIE_PAGE)

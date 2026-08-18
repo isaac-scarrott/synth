@@ -306,6 +306,8 @@ final class CEFEngine: NSObject, BrowserEngine {
     private(set) var pageTitle: String?
     private(set) var canGoBack = false
     private(set) var canGoForward = false
+    /// Live asks, keyed by the shim object CEF will name when it withdraws one.
+    private var asks: [ObjectIdentifier: Ask] = [:]
 
     var view: NSView { shim.view }
 
@@ -327,6 +329,11 @@ final class CEFEngine: NSObject, BrowserEngine {
         super.init()
         shim.delegate = self
     }
+
+    func find(_ text: String, forward: Bool, matchCase: Bool, findNext: Bool) {
+        shim.find(text, forward: forward, matchCase: matchCase, findNext: findNext)
+    }
+    func stopFinding(activate: Bool) { shim.stopFinding(activate) }
 
     func navigate(to url: URL) { shim.navigate(url.absoluteString) }
     func goBack() { shim.goBack() }
@@ -366,6 +373,57 @@ extension CEFEngine: CEFShimBrowserDelegate {
             self.canGoBack = canGoBack
             self.canGoForward = canGoForward
             delegate?.engine(self, navigationStateDidChange: canGoBack, canGoForward: canGoForward)
+        }
+    }
+
+    /// The shim's ask, wearing the engine seam's protocol. One adapter per shim ask and kept
+    /// for its life, so `didWithdraw` names the same object the pane is showing.
+    private final class Ask: BrowserAsk {
+        private let shim: CEFShimAsk
+        init(_ shim: CEFShimAsk) { self.shim = shim }
+
+        var kind: BrowserAskKind {
+            switch shim.kind {
+            case .certificate:  return .certificate
+            case .auth:         return .auth
+            case .alert:        return .alert
+            case .confirm:      return .confirm
+            case .prompt:       return .prompt
+            case .beforeUnload: return .beforeUnload
+            case .permission:   return .permission
+            @unknown default:   return .alert
+            }
+        }
+        var origin: String { shim.origin }
+        var detail: String? { shim.detail }
+        var defaultText: String? { shim.defaultText }
+
+        func allow() { shim.allow() }
+        func allow(text: String) { shim.allow(withText: text) }
+        func allow(user: String, password: String) { shim.allow(withUser: user, password: password) }
+        func deny() { shim.deny() }
+    }
+
+    nonisolated func cefBrowserDidAsk(_ ask: CEFShimAsk) {
+        MainActor.assumeIsolated {
+            let wrapped = Ask(ask)
+            asks[ObjectIdentifier(ask)] = wrapped
+            delegate?.engine(self, didAsk: wrapped)
+        }
+    }
+
+    nonisolated func cefBrowserDidWithdrawAsk(_ ask: CEFShimAsk) {
+        MainActor.assumeIsolated {
+            guard let wrapped = asks.removeValue(forKey: ObjectIdentifier(ask)) else { return }
+            delegate?.engine(self, didWithdraw: wrapped)
+        }
+    }
+
+    nonisolated func cefBrowserDidFindMatch(_ activeIndex: Int32, of count: Int32,
+                                            final finalUpdate: Bool) {
+        MainActor.assumeIsolated {
+            delegate?.engine(self, didFindMatch: Int(activeIndex), of: Int(count),
+                             final: finalUpdate)
         }
     }
 

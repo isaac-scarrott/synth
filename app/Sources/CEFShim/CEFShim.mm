@@ -21,14 +21,23 @@
 #include <algorithm>
 #include <atomic>
 #include <list>
+#include <map>
+#include <mutex>
+#include <set>
 #include <string>
 
 #include "include/cef_app.h"
 #include "include/cef_application_mac.h"
+#include "include/cef_auth_callback.h"
 #include "include/cef_browser.h"
+#include "include/cef_callback.h"
 #include "include/cef_client.h"
 #include "include/cef_command_line.h"
+#include "include/cef_jsdialog_handler.h"
+#include "include/cef_permission_handler.h"
 #include "include/cef_request_context.h"
+#include "include/cef_request_handler.h"
+#include "include/cef_resource_request_handler.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
 
@@ -202,6 +211,204 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
   DISALLOW_COPY_AND_ASSIGN(ShimApp);
 };
 
+#pragma mark - CEFShimAsk
+
+// The four unwired handlers all have the same shape: CEF hands over a question and a
+// callback, the page stops until the callback runs, and the answer is the user's. So they
+// share one object rather than four near-identical delegate methods — the differences (a
+// password, a prompt's text, an allow/deny) are the answer, not the question.
+
+@interface CEFShimAsk () {
+ @public
+  CefRefPtr<CefCallback> _certCallback;
+  CefRefPtr<CefAuthCallback> _authCallback;
+  CefRefPtr<CefJSDialogCallback> _jsCallback;
+  CefRefPtr<CefPermissionPromptCallback> _permCallback;
+  uint64_t _promptId;
+  BOOL _answered;
+}
+/// For a question CEF has no callback for — the 401 path below, which the shim drives itself.
+@property(nonatomic, copy, nullable) void (^resolve)(BOOL allow, NSString *user, NSString *password);
+@property(nonatomic) CEFShimAskKind kind;
+@property(nonatomic, copy) NSString *origin;
+@property(nonatomic, copy, nullable) NSString *detail;
+@property(nonatomic, copy, nullable) NSString *defaultText;
+- (void)answer:(BOOL)allow
+          text:(nullable NSString *)text
+          user:(nullable NSString *)user
+      password:(nullable NSString *)password;
+/// CEF withdrew the question (navigation, browser close). Drop the callbacks unanswered —
+/// running them now would reach a request that no longer exists.
+- (void)abandon;
+@end
+
+@implementation CEFShimAsk
+
+- (void)allow {
+  [self answer:YES text:nil user:nil password:nil];
+}
+- (void)allowWithText:(NSString *)text {
+  [self answer:YES text:text user:nil password:nil];
+}
+- (void)allowWithUser:(NSString *)user password:(NSString *)password {
+  [self answer:YES text:nil user:user password:password];
+}
+- (void)deny {
+  [self answer:NO text:nil user:nil password:nil];
+}
+
+- (void)answer:(BOOL)allow
+          text:(nullable NSString *)text
+          user:(nullable NSString *)user
+      password:(nullable NSString *)password {
+  if (_answered) {
+    return;
+  }
+  _answered = YES;
+  if (_certCallback) {
+    if (allow) {
+      _certCallback->Continue();
+    } else {
+      _certCallback->Cancel();
+    }
+    _certCallback = nullptr;
+  } else if (_authCallback) {
+    if (allow) {
+      _authCallback->Continue(CefString(user.UTF8String ?: ""),
+                              CefString(password.UTF8String ?: ""));
+    } else {
+      _authCallback->Cancel();
+    }
+    _authCallback = nullptr;
+  } else if (_jsCallback) {
+    _jsCallback->Continue(allow, CefString(text.UTF8String ?: ""));
+    _jsCallback = nullptr;
+  } else if (_permCallback) {
+    _permCallback->Continue(allow ? CEF_PERMISSION_RESULT_ACCEPT
+                                  : CEF_PERMISSION_RESULT_DENY);
+    _permCallback = nullptr;
+  } else if (self.resolve) {
+    self.resolve(allow, user, password);
+    self.resolve = nil;
+  }
+}
+
+- (void)abandon {
+  _answered = YES;
+  self.resolve = nil;
+  _certCallback = nullptr;
+  _authCallback = nullptr;
+  _jsCallback = nullptr;
+  _permCallback = nullptr;
+}
+
+@end
+
+/// Every permission Chromium can prompt for, in the words a person would use. A prompt
+/// naming a bitmask, or naming nothing, is the "looks broken in Synth, fine in Chrome"
+/// failure with a card drawn over it.
+static NSString *PermissionNames(uint32_t mask) {
+  static const struct { uint32_t bit; const char *name; } kNames[] = {
+      {CEF_PERMISSION_TYPE_CAMERA_STREAM, "camera"},
+      {CEF_PERMISSION_TYPE_CAMERA_PAN_TILT_ZOOM, "camera controls"},
+      {CEF_PERMISSION_TYPE_MIC_STREAM, "microphone"},
+      {CEF_PERMISSION_TYPE_GEOLOCATION, "location"},
+      {CEF_PERMISSION_TYPE_NOTIFICATIONS, "notifications"},
+      {CEF_PERMISSION_TYPE_CLIPBOARD, "the clipboard"},
+      {CEF_PERMISSION_TYPE_MIDI_SYSEX, "MIDI devices"},
+      {CEF_PERMISSION_TYPE_IDLE_DETECTION, "idle detection"},
+      {CEF_PERMISSION_TYPE_LOCAL_FONTS, "your installed fonts"},
+      {CEF_PERMISSION_TYPE_STORAGE_ACCESS, "storage across sites"},
+      {CEF_PERMISSION_TYPE_TOP_LEVEL_STORAGE_ACCESS, "storage across sites"},
+      {CEF_PERMISSION_TYPE_WINDOW_MANAGEMENT, "your screen layout"},
+      {CEF_PERMISSION_TYPE_KEYBOARD_LOCK, "the keyboard"},
+      {CEF_PERMISSION_TYPE_POINTER_LOCK, "the pointer"},
+      {CEF_PERMISSION_TYPE_FILE_SYSTEM_ACCESS, "files on this Mac"},
+      {CEF_PERMISSION_TYPE_LOCAL_NETWORK_ACCESS, "devices on your network"},
+      {CEF_PERMISSION_TYPE_VR_SESSION, "virtual reality"},
+      {CEF_PERMISSION_TYPE_AR_SESSION, "augmented reality"},
+      {CEF_PERMISSION_TYPE_PROTECTED_MEDIA_IDENTIFIER, "protected media playback"},
+      {CEF_PERMISSION_TYPE_MULTIPLE_DOWNLOADS, "multiple downloads"},
+      {CEF_PERMISSION_TYPE_REGISTER_PROTOCOL_HANDLER, "handling links"},
+      {CEF_PERMISSION_TYPE_WEB_APP_INSTALLATION, "installing itself as an app"},
+      {CEF_PERMISSION_TYPE_DISK_QUOTA, "more disk space"},
+      {CEF_PERMISSION_TYPE_CAPTURED_SURFACE_CONTROL, "control of the captured window"},
+      {CEF_PERMISSION_TYPE_HAND_TRACKING, "hand tracking"},
+      {CEF_PERMISSION_TYPE_IDENTITY_PROVIDER, "signing you in"},
+  };
+  NSMutableArray<NSString *> *out = [NSMutableArray array];
+  for (const auto &entry : kNames) {
+    if ((mask & entry.bit) && ![out containsObject:@(entry.name)]) {
+      [out addObject:@(entry.name)];
+    }
+  }
+  if (out.count == 0) {
+    return @"something this build of Synth has no name for";
+  }
+  if (out.count == 1) {
+    return out[0];
+  }
+  NSString *last = out.lastObject;
+  [out removeLastObject];
+  return [NSString stringWithFormat:@"%@ and %@", [out componentsJoinedByString:@", "], last];
+}
+
+/// Why the engine won't vouch for the certificate, in one clause a person can act on. Only
+/// the ones a developer meets: a self-signed certificate on a dev box, one that has expired,
+/// one issued for a different name. Anything else says what it is and leaves the judgement
+/// where it belongs.
+static NSString *CertErrorReason(cef_errorcode_t code) {
+  switch (code) {
+    case ERR_CERT_AUTHORITY_INVALID:
+      return @"it was signed by an authority this Mac doesn't trust — which is what a "
+             @"self-signed certificate on a local server looks like";
+    case ERR_CERT_COMMON_NAME_INVALID:
+      return @"it was issued for a different address than the one being loaded";
+    case ERR_CERT_DATE_INVALID:
+      return @"it has expired, or isn't valid yet";
+    case ERR_CERT_REVOKED:
+      return @"it has been revoked by the authority that issued it";
+    case ERR_CERT_WEAK_SIGNATURE_ALGORITHM:
+    case ERR_CERT_WEAK_KEY:
+      return @"it is signed too weakly to be trusted";
+    case ERR_CERT_NAME_CONSTRAINT_VIOLATION:
+      return @"its issuer isn't allowed to vouch for this address";
+    case ERR_CERT_VALIDITY_TOO_LONG:
+      return @"it is valid for longer than certificates are allowed to be";
+    case ERR_CERT_INVALID:
+    case ERR_CERT_CONTAINS_ERRORS:
+      return @"it is malformed";
+    default:
+      return [NSString stringWithFormat:@"the engine rejected it (error %d)", (int)code];
+  }
+}
+
+/// scheme://host:port — the unit a credential belongs to. A password typed for
+/// staging.example.com must not travel to anything else.
+static std::string OriginOf(const std::string &url) {
+  NSURL *parsed = [NSURL URLWithString:@(url.c_str())];
+  if (!parsed.scheme || !parsed.host) {
+    return std::string();
+  }
+  NSString *origin = parsed.port
+      ? [NSString stringWithFormat:@"%@://%@:%@", parsed.scheme, parsed.host, parsed.port]
+      : [NSString stringWithFormat:@"%@://%@", parsed.scheme, parsed.host];
+  return std::string(origin.UTF8String);
+}
+
+/// The host a person recognises, out of a full URL. A prompt that says
+/// "https://staging.synth.dev:8443/admin/login?next=%2F is asking for a password" has
+/// buried the one thing the answer turns on.
+static NSString *HostOf(const CefString &url) {
+  NSString *raw = @(url.ToString().c_str());
+  NSURL *parsed = [NSURL URLWithString:raw];
+  NSString *host = parsed.host;
+  if (host.length == 0) {
+    return raw.length > 0 ? raw : @"this page";
+  }
+  return parsed.port ? [NSString stringWithFormat:@"%@:%@", host, parsed.port] : host;
+}
+
 #pragma mark - Browser container view
 
 @class CEFShimBrowser;
@@ -238,6 +445,14 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
  @public
   CefRefPtr<CefBrowser> _browser;
   BOOL _closeRequested;
+  /// origin -> "Basic <base64>", for as long as this browser lives. Touched only on the
+  /// main thread: the IO thread reads it through -authorizationForOrigin:, which is called
+  /// from OnBeforeResourceLoad, so it is a std::map under a lock rather than a bare read.
+  std::map<std::string, std::string> _authTokens;
+  std::mutex _authMutex;
+  /// Origins with a question already on screen, so a page whose every subresource 401s
+  /// raises one prompt rather than twenty.
+  std::set<std::string> _authAsking;
 }
 @property(nonatomic, strong) CEFShimContainerView *containerView;
 // Never-shown host for the container until the pane reparents it: CEF's child-view
@@ -247,12 +462,21 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
 @property(nonatomic, copy, nullable) NSString *cachedTitle;
 @property(nonatomic) BOOL cachedCanGoBack;
 @property(nonatomic) BOOL cachedCanGoForward;
+/// The questions this page is holding on, oldest first. More than one is normal — a page can
+/// call alert() twice, or ask for the camera while an auth challenge is still up — and each
+/// keeps its own callback, so answering one never touches another.
+@property(nonatomic, strong) NSMutableArray<CEFShimAsk *> *pendingAsks;
 
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser;
 - (void)handleAddressChange:(NSString *)url;
 - (void)handleTitleChange:(NSString *)title;
 - (void)handleLoadingStateChangeCanGoBack:(BOOL)canGoBack canGoForward:(BOOL)canGoForward;
 - (void)handlePopupRequest:(NSString *)url;
+- (void)handleAsk:(CEFShimAsk *)ask;
+- (nullable NSString *)authorizationForOrigin:(const std::string &)origin;
+- (void)challengeOrigin:(std::string)origin realm:(nullable NSString *)realm;
+- (void)handleWithdrawPromptID:(uint64_t)promptID;
+- (void)handleFindResult:(int)activeIndex count:(int)count final:(BOOL)finalUpdate;
 - (void)handleBeforeClose;
 @end
 
@@ -270,21 +494,66 @@ class AuxClient : public CefClient, public CefLifeSpanHandler {
   DISALLOW_COPY_AND_ASSIGN(AuxClient);
 };
 
+// getUserMedia answers through CefMediaAccessCallback, which wants the media permissions it
+// was asked about handed back; the generic prompt answers through CefPermissionPromptCallback,
+// which takes an accept/deny. This adapts the first to the second so the shim carries ONE
+// kind of pending answer, and a permission question is a permission question wherever it came
+// from.
+class MediaAccessShim : public CefPermissionPromptCallback {
+ public:
+  MediaAccessShim(CefRefPtr<CefMediaAccessCallback> callback, uint32_t requested)
+      : callback_(callback), requested_(requested) {}
+
+  void Continue(cef_permission_request_result_t result) override {
+    if (!callback_) {
+      return;
+    }
+    if (result == CEF_PERMISSION_RESULT_ACCEPT) {
+      callback_->Continue(requested_);
+    } else {
+      callback_->Cancel();
+    }
+    callback_ = nullptr;
+  }
+
+ private:
+  CefRefPtr<CefMediaAccessCallback> callback_;
+  const uint32_t requested_;
+
+  IMPLEMENT_REFCOUNTING(MediaAccessShim);
+  DISALLOW_COPY_AND_ASSIGN(MediaAccessShim);
+};
+
 // One client per CEFShimBrowser, so callbacks never need first-browser filtering —
 // DevTools gets AuxClient and popups are cancelled, so this client sees exactly one
 // browser for its whole life.
 class ShimClient : public CefClient,
                    public CefDisplayHandler,
+                   public CefFindHandler,
+                   public CefJSDialogHandler,
                    public CefLifeSpanHandler,
-                   public CefLoadHandler {
+                   public CefLoadHandler,
+                   public CefPermissionHandler,
+                   public CefRequestHandler,
+                   public CefResourceRequestHandler {
  public:
   ShimClient(CEFShimBrowser *owner, const std::string &sessionId)
       : owner_(owner),
         sessionTag_("window.__synthSessionId = \"" + sessionId + "\";") {}
 
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
+  CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+  CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
+  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
+      CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request,
+      bool is_navigation, bool is_download, const CefString &request_initiator,
+      bool &disable_default_handling) override {
+    return this;
+  }
 
   void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                        const CefString &url) override {
@@ -322,6 +591,196 @@ class ShimClient : public CefClient,
                      bool *no_javascript_access) override {
     [owner_ handlePopupRequest:@(target_url.ToString().c_str())];
     return true;  // Cancel — the delegate routes the URL into a new session.
+  }
+
+  // ---- The four handlers that were missing (ADR-0011 stage five) ----------------------
+  //
+  // An unwired handler is not an absent feature; it is a silently broken web platform. A
+  // self-signed certificate had no proceed path and basic auth had no prompt, so a local
+  // HTTPS dev server and any protected staging box were simply unreachable from the pane
+  // whose stated job is checking your work. alert/confirm/prompt were undefined and could
+  // block the page. Camera, microphone and location were denied with no prompt and no way
+  // to grant — which reads as our bug in someone else's code.
+  //
+  // Every one of these hands the question to Swift and keeps the page waiting. Nothing here
+  // decides on the user's behalf.
+
+  bool OnCertificateError(CefRefPtr<CefBrowser> browser, cef_errorcode_t cert_error,
+                          const CefString &request_url, CefRefPtr<CefSSLInfo> ssl_info,
+                          CefRefPtr<CefCallback> callback) override {
+    CEFShimAsk *ask = [[CEFShimAsk alloc] init];
+    ask.kind = CEFShimAskCertificate;
+    ask.origin = HostOf(request_url);
+    ask.detail = CertErrorReason(cert_error);
+    ask->_certCallback = callback;
+    [owner_ handleAsk:ask];
+    return true;
+  }
+
+  // The one handler CEF calls off the UI thread. The ask has to reach the main thread (the
+  // UI is there) but the callback is safe to run from wherever the answer comes back.
+  bool GetAuthCredentials(CefRefPtr<CefBrowser> browser, const CefString &origin_url,
+                          bool isProxy, const CefString &host, int port,
+                          const CefString &realm, const CefString &scheme,
+                          CefRefPtr<CefAuthCallback> callback) override {
+    CEFShimAsk *ask = [[CEFShimAsk alloc] init];
+    ask.kind = CEFShimAskAuth;
+    ask.origin = isProxy ? [NSString stringWithFormat:@"the proxy at %@", HostOf(host)]
+                         : HostOf(origin_url);
+    ask.detail = realm.empty() ? nil : @(realm.ToString().c_str());
+    ask->_authCallback = callback;
+    __strong CEFShimBrowser *owner = owner_;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [owner handleAsk:ask];
+    });
+    return true;
+  }
+
+  bool OnJSDialog(CefRefPtr<CefBrowser> browser, const CefString &origin_url,
+                  JSDialogType dialog_type, const CefString &message_text,
+                  const CefString &default_prompt_text,
+                  CefRefPtr<CefJSDialogCallback> callback, bool &suppress_message) override {
+    CEFShimAsk *ask = [[CEFShimAsk alloc] init];
+    switch (dialog_type) {
+      case JSDIALOGTYPE_ALERT:   ask.kind = CEFShimAskAlert; break;
+      case JSDIALOGTYPE_CONFIRM: ask.kind = CEFShimAskConfirm; break;
+      case JSDIALOGTYPE_PROMPT:  ask.kind = CEFShimAskPrompt; break;
+      default:                   ask.kind = CEFShimAskAlert; break;
+    }
+    ask.origin = HostOf(origin_url);
+    ask.detail = @(message_text.ToString().c_str());
+    if (dialog_type == JSDIALOGTYPE_PROMPT) {
+      ask.defaultText = @(default_prompt_text.ToString().c_str());
+    }
+    ask->_jsCallback = callback;
+    [owner_ handleAsk:ask];
+    return true;
+  }
+
+  bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> browser, const CefString &message_text,
+                            bool is_reload, CefRefPtr<CefJSDialogCallback> callback) override {
+    CEFShimAsk *ask = [[CEFShimAsk alloc] init];
+    ask.kind = CEFShimAskBeforeUnload;
+    ask.origin = HostOf(browser->GetMainFrame()->GetURL());
+    ask.detail = message_text.empty()
+        ? (is_reload ? @"Reload this page? Changes you made may not be saved."
+                     : @"Leave this page? Changes you made may not be saved.")
+        : @(message_text.ToString().c_str());
+    ask->_jsCallback = callback;
+    [owner_ handleAsk:ask];
+    return true;
+  }
+
+  // Navigation cancels whatever the old page was asking. CEF drops the callbacks itself, so
+  // the surface has to come down with them or it would collect an answer nothing receives.
+  void OnResetDialogState(CefRefPtr<CefBrowser> browser) override {
+    [owner_ handleWithdrawPromptID:0];
+  }
+
+  bool OnShowPermissionPrompt(CefRefPtr<CefBrowser> browser, uint64_t prompt_id,
+                              const CefString &requesting_origin,
+                              uint32_t requested_permissions,
+                              CefRefPtr<CefPermissionPromptCallback> callback) override {
+    CEFShimAsk *ask = [[CEFShimAsk alloc] init];
+    ask.kind = CEFShimAskPermission;
+    ask.origin = HostOf(requesting_origin);
+    ask.detail = PermissionNames(requested_permissions);
+    ask->_permCallback = callback;
+    ask->_promptId = prompt_id;
+    [owner_ handleAsk:ask];
+    return true;
+  }
+
+  void OnDismissPermissionPrompt(CefRefPtr<CefBrowser> browser, uint64_t prompt_id,
+                                 cef_permission_request_result_t result) override {
+    [owner_ handleWithdrawPromptID:prompt_id];
+  }
+
+  // getUserMedia takes its own path rather than the generic prompt, and Alloy's default for
+  // it is a silent deny — the exact failure this set is here to remove. Routed to the same
+  // question, so the user answers it once and in one place.
+  bool OnRequestMediaAccessPermission(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                                      const CefString &requesting_origin,
+                                      uint32_t requested_permissions,
+                                      CefRefPtr<CefMediaAccessCallback> callback) override {
+    uint32_t asked = 0;
+    if (requested_permissions & CEF_MEDIA_PERMISSION_DEVICE_VIDEO_CAPTURE) {
+      asked |= CEF_PERMISSION_TYPE_CAMERA_STREAM;
+    }
+    if (requested_permissions & CEF_MEDIA_PERMISSION_DEVICE_AUDIO_CAPTURE) {
+      asked |= CEF_PERMISSION_TYPE_MIC_STREAM;
+    }
+    CEFShimAsk *ask = [[CEFShimAsk alloc] init];
+    ask.kind = CEFShimAskPermission;
+    ask.origin = HostOf(requesting_origin);
+    ask.detail = PermissionNames(asked ? asked : requested_permissions);
+    // CefMediaAccessCallback wants the permissions it was asked about back, so the answer
+    // is wrapped rather than shared with the generic prompt's callback.
+    ask->_permCallback = new MediaAccessShim(callback, requested_permissions);
+    [owner_ handleAsk:ask];
+    return true;
+  }
+
+  // ---- HTTP basic auth, in the resource path ------------------------------------------
+  //
+  // GetAuthCredentials above is the seam CEF documents for this, and it stays wired — but it
+  // is not what runs. Measured on CEF 144: a 401 on a top-level navigation in an Alloy-style
+  // window never reaches it. Chrome's own login UI owns server authentication now, and an
+  // Alloy window has nowhere to put that UI, so the challenge is dropped and the page renders
+  // the empty 401 body. Which is the failure this stage exists to remove, so the challenge is
+  // read off the response instead and the credential is put on the retry by hand.
+  //
+  // Credentials live for the browser's lifetime and no longer: Chrome doesn't persist
+  // basic-auth credentials either, and a password kept in a profile that outlives the app is
+  // a bigger promise than this makes.
+
+  CefResourceRequestHandler::ReturnValue OnBeforeResourceLoad(
+      CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request,
+      CefRefPtr<CefCallback> callback) override {
+    const std::string origin = OriginOf(request->GetURL().ToString());
+    NSString *token = [owner_ authorizationForOrigin:origin];
+    if (token) {
+      request->SetHeaderByName("Authorization", token.UTF8String, /*overwrite=*/true);
+    }
+    return RV_CONTINUE;
+  }
+
+  bool OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                          CefRefPtr<CefRequest> request,
+                          CefRefPtr<CefResponse> response) override {
+    if (response->GetStatus() != 401) {
+      return false;
+    }
+    const std::string challenge =
+        response->GetHeaderByName("WWW-Authenticate").ToString();
+    // Basic only. Digest and NTLM are Chromium's to negotiate, and a prompt that collected a
+    // password we then sent as Basic would be worse than no prompt.
+    if (challenge.rfind("Basic", 0) != 0) {
+      return false;
+    }
+    std::string realm;
+    const std::string marker = "realm=\"";
+    const size_t at = challenge.find(marker);
+    if (at != std::string::npos) {
+      const size_t start = at + marker.size();
+      const size_t end = challenge.find('"', start);
+      if (end != std::string::npos) {
+        realm = challenge.substr(start, end - start);
+      }
+    }
+    const std::string origin = OriginOf(request->GetURL().ToString());
+    __strong CEFShimBrowser *owner = owner_;
+    NSString *realmText = realm.empty() ? nil : @(realm.c_str());
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [owner challengeOrigin:origin realm:realmText];
+    });
+    return false;   // let the 401 render; the retry rides the answer
+  }
+
+  void OnFindResult(CefRefPtr<CefBrowser> browser, int identifier, int count,
+                    const CefRect &selectionRect, int activeMatchOrdinal,
+                    bool finalUpdate) override {
+    [owner_ handleFindResult:activeMatchOrdinal count:count final:finalUpdate];
   }
 
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
@@ -594,6 +1053,21 @@ class ShimClient : public CefClient,
   return _browser && _browser->GetHost()->HasDevTools();
 }
 
+- (void)find:(NSString *)text
+     forward:(BOOL)forward
+   matchCase:(BOOL)matchCase
+    findNext:(BOOL)findNext {
+  if (_browser) {
+    _browser->GetHost()->Find(text.UTF8String, forward, matchCase, findNext);
+  }
+}
+
+- (void)stopFinding:(BOOL)activate {
+  if (_browser) {
+    _browser->GetHost()->StopFinding(activate);
+  }
+}
+
 - (void)close {
   if (!_browser || _closeRequested) {
     return;
@@ -649,8 +1123,92 @@ class ShimClient : public CefClient,
   [self.delegate cefBrowserDidRequestPopup:url];
 }
 
+- (void)handleAsk:(CEFShimAsk *)ask {
+  if (!self.pendingAsks) {
+    self.pendingAsks = [NSMutableArray array];
+  }
+  [self.pendingAsks addObject:ask];
+  [self.delegate cefBrowserDidAsk:ask];
+}
+
+/// CEF has taken a question back. `promptID` 0 means all of them (dialog state reset on
+/// navigation); anything else is one permission prompt.
+- (void)handleWithdrawPromptID:(uint64_t)promptID {
+  NSArray<CEFShimAsk *> *asks = [self.pendingAsks copy];
+  for (CEFShimAsk *ask in asks) {
+    if (promptID != 0 && ask->_promptId != promptID) {
+      continue;
+    }
+    [ask abandon];
+    [self.pendingAsks removeObject:ask];
+    [self.delegate cefBrowserDidWithdrawAsk:ask];
+  }
+}
+
+- (nullable NSString *)authorizationForOrigin:(const std::string &)origin {
+  if (origin.empty()) {
+    return nil;
+  }
+  std::lock_guard<std::mutex> lock(_authMutex);
+  const auto it = _authTokens.find(origin);
+  return it == _authTokens.end() ? nil : @(it->second.c_str());
+}
+
+/// A 401 came back from `origin`. Ask once, and on an answer store the credential and reload
+/// — the retry is the reload, because the response that carried the challenge is already
+/// spent.
+// `origin` by value, not by reference: the answer block outlives this call, and a block
+// capturing a reference parameter keeps the reference rather than the string.
+- (void)challengeOrigin:(std::string)origin realm:(nullable NSString *)realm {
+  if (origin.empty() || _authAsking.count(origin)) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(_authMutex);
+    if (_authTokens.count(origin)) {
+      // Already signed in and still refused: the credential is wrong, so drop it and ask
+      // again rather than reloading into the same 401 forever.
+      _authTokens.erase(origin);
+    }
+  }
+  _authAsking.insert(origin);
+  CEFShimAsk *ask = [[CEFShimAsk alloc] init];
+  ask.kind = CEFShimAskAuth;
+  ask.origin = HostOf(CefString(origin));
+  ask.detail = realm;
+  __weak CEFShimBrowser *weakSelf = self;
+  ask.resolve = ^(BOOL allow, NSString *user, NSString *password) {
+    CEFShimBrowser *strongSelf = weakSelf;
+    if (!strongSelf) {
+      return;
+    }
+    strongSelf->_authAsking.erase(origin);
+    if (!allow) {
+      return;
+    }
+    NSString *pair = [NSString stringWithFormat:@"%@:%@", user ?: @"", password ?: @""];
+    NSString *token = [@"Basic " stringByAppendingString:
+        [[pair dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0]];
+    {
+      std::lock_guard<std::mutex> lock(strongSelf->_authMutex);
+      strongSelf->_authTokens[origin] = std::string(token.UTF8String);
+    }
+    if (strongSelf->_browser) {
+      strongSelf->_browser->ReloadIgnoreCache();
+    }
+  };
+  [self handleAsk:ask];
+}
+
+- (void)handleFindResult:(int)activeIndex count:(int)count final:(BOOL)finalUpdate {
+  [self.delegate cefBrowserDidFindMatch:activeIndex of:count final:finalUpdate];
+}
+
 - (void)handleBeforeClose {
   _browser = nullptr;
+  // A page that closed mid-question takes its callbacks with it: answering afterwards would
+  // reach a request that no longer exists, and leaving the surface up would invite it.
+  [self handleWithdrawPromptID:0];
   [g_liveShimBrowsers removeObject:self];
 }
 

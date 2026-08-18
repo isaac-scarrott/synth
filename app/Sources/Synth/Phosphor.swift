@@ -66,6 +66,10 @@ enum Phosphor {
     // `caret` is the right one; reload there is `reset`, tabs is `copy`, and the pill's lock,
     // the iPad's sidebar and its new-tab plus reuse `lock` / `sidebar` / `plus`.
     static let caretLeft = "M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"
+    /// Find in page's previous/next. Up and down, not left and right: beside the toolbar's
+    /// real back and forward, horizontal chevrons would read as history.
+    static let caretUp = "M213.66,165.66a8,8,0,0,1-11.32,0L128,91.31,53.66,165.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0l80,80A8,8,0,0,1,213.66,165.66Z"
+    static let caretDown = "M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"
     static let export = "M208,112v96a16,16,0,0,1-16,16H64a16,16,0,0,1-16-16V112A16,16,0,0,1,64,96H88a8,8,0,0,1,0,16H64v96H192V112H168a8,8,0,0,1,0-16h24A16,16,0,0,1,208,112ZM93.66,69.66,120,43.31V136a8,8,0,0,0,16,0V43.31l26.34,26.35a8,8,0,0,0,11.32-11.32l-40-40a8,8,0,0,0-11.32,0l-40,40A8,8,0,0,0,93.66,69.66Z"
     static let bookmark = "M184,32H72A16,16,0,0,0,56,48V224a8,8,0,0,0,12.24,6.78L128,193.43l59.77,37.35A8,8,0,0,0,200,224V48A16,16,0,0,0,184,32Zm0,177.57-51.77-32.35a8,8,0,0,0-8.48,0L72,209.57V48H184Z"
     static let dotsVertical = "M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM128,72a12,12,0,1,0-12-12A12,12,0,0,0,128,72Zm0,112a12,12,0,1,0,12,12A12,12,0,0,0,128,184Z"

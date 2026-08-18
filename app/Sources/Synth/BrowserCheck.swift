@@ -17,6 +17,9 @@ enum BrowserCheck {
         func engine(_ engine: BrowserEngine, navigationStateDidChange canGoBack: Bool,
                     canGoForward: Bool) { navStateFired = true }
         func engine(_ engine: BrowserEngine, didRequestPopup url: URL) {}
+        func engine(_ engine: BrowserEngine, didAsk ask: any BrowserAsk) {}
+        func engine(_ engine: BrowserEngine, didWithdraw ask: any BrowserAsk) {}
+        func engine(_ engine: BrowserEngine, didFindMatch active: Int, of count: Int, final: Bool) {}
     }
 
     static func run() -> Never {

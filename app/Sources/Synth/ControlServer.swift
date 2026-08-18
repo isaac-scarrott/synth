@@ -553,6 +553,55 @@ final class ControlServer: @unchecked Sendable {
             }
             return ["ok": ctrl.go(url)]
 
+        // What the open page is holding for, and answering it — Settings has no part in this,
+        // so the verbs drive the card's own two buttons (BrowserAskCard).
+        case "automation.browserAsks" where automation:
+            guard let session = requestedSession(request, in: branch), session.kind == .browser,
+                  let ctrl = BrowserManager.shared.existing(session.id) else {
+                return ["ok": false, "error": "no live browser session for sessionId"]
+            }
+            return ["ok": true, "asks": ctrl.asks.map { ask in
+                var entry: [String: Any] = ["kind": ask.kind.rawValue, "origin": ask.origin]
+                if let detail = ask.detail { entry["detail"] = detail }
+                if let text = ask.defaultText { entry["defaultText"] = text }
+                return entry
+            }]
+
+        case "automation.browserAnswer" where automation:
+            guard let session = requestedSession(request, in: branch), session.kind == .browser,
+                  let ctrl = BrowserManager.shared.existing(session.id),
+                  let ask = ctrl.currentAsk else {
+                return ["ok": false, "error": "nothing is being asked in that session"]
+            }
+            let allow = request["allow"] as? Bool ?? true
+            ctrl.answer(ask) { a in
+                guard allow else { return a.deny() }
+                if let user = request["user"] as? String {
+                    a.allow(user: user, password: request["password"] as? String ?? "")
+                } else if let text = request["text"] as? String {
+                    a.allow(text: text)
+                } else {
+                    a.allow()
+                }
+            }
+            return ["ok": true]
+
+        // Find in page: the bar's own calls, and what it is showing.
+        case "automation.browserFind" where automation:
+            guard let session = requestedSession(request, in: branch), session.kind == .browser,
+                  let ctrl = BrowserManager.shared.controller(for: session) else {
+                return ["ok": false, "error": "no browser session for sessionId"]
+            }
+            if request["close"] as? Bool == true {
+                ctrl.closeFind()
+            } else {
+                ctrl.openFind()
+                if let text = request["text"] as? String { ctrl.setFindQuery(text) }
+                if let forward = request["step"] as? Bool { ctrl.stepFind(forward: forward) }
+            }
+            return ["ok": true, "open": ctrl.findOpen, "query": ctrl.findQuery,
+                    "active": ctrl.findActive, "count": ctrl.findCount]
+
         // Where this workspace's browser profile is, and whether it is the persistent one
         // (stage five). `persists` false means another Synth of this channel holds the shared
         // root and this instance is browsing on a throwaway — the fact the pane states too.

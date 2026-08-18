@@ -110,6 +110,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "]"], label: "Forward"),
             Shortcut(keys: ["⌘", "+"], label: "Zoom in", alt: ["⌘", "="]),
             Shortcut(keys: ["⌘", "−"], label: "Zoom out"),
+            Shortcut(keys: ["⌘", "F"], label: "Find in page"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "DevTools"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Device mode"),
         ]),

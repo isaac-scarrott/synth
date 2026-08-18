@@ -277,6 +277,69 @@ import AppKit
                        scale: deviceFitScale, urlHint: address)
     }
 
+    // MARK: The page's questions (ADR-0011 stage five)
+
+    /// What the page is holding on, oldest first. More than one is normal — a page can call
+    /// alert() twice, or ask for the camera while an auth challenge is still up — and the
+    /// pane shows the oldest, because that is the one the page has been stopped on longest.
+    private(set) var asks: [any BrowserAsk] = []
+
+    var currentAsk: (any BrowserAsk)? { asks.first }
+
+    /// Answering is always "take it off the list, then tell the page" — the engine's second
+    /// answer is a no-op, but a surface still showing an answered question is a lie.
+    func answer(_ ask: any BrowserAsk, _ send: (any BrowserAsk) -> Void) {
+        asks.removeAll { $0 === ask }
+        send(ask)
+    }
+
+    // MARK: Find in page (⌘F)
+
+    /// Open, and what the engine has reported for the query in it. `findCount` 0 with a
+    /// non-empty query is "no results" — distinct from an empty query, which is nothing yet.
+    private(set) var findOpen = false
+    private(set) var findQuery = ""
+    private(set) var findActive = 0
+    private(set) var findCount = 0
+    /// Whether this query has already been nudged onto its first match (see didFindMatch).
+    @ObservationIgnored private var steppedThisQuery = false
+
+    func openFind() {
+        guard !isHome else { return }   // the "go to" home has no page to search
+        findOpen = true
+    }
+
+    func closeFind() {
+        guard findOpen else { return }
+        findOpen = false
+        findQuery = ""
+        findActive = 0
+        findCount = 0
+        steppedThisQuery = false
+        engine.stopFinding(activate: false)
+    }
+
+    /// A new query restarts the search; an empty one clears it without closing the bar.
+    func setFindQuery(_ text: String) {
+        findQuery = text
+        findActive = 0
+        steppedThisQuery = false
+        guard !text.isEmpty else {
+            findActive = 0
+            findCount = 0
+            engine.stopFinding(activate: false)
+            return
+        }
+        engine.find(text, forward: true, matchCase: false, findNext: false)
+    }
+
+    /// Enter / ⇧Enter. findNext: true walks the running search rather than starting again —
+    /// restarting would send every press back to the first match.
+    func stepFind(forward: Bool) {
+        guard !findQuery.isEmpty else { return }
+        engine.find(findQuery, forward: forward, matchCase: false, findNext: true)
+    }
+
     /// Comment mode (ADR-0011 stage three), lazily created on first toggle — it holds
     /// a CDP attachment to this session's page target while on. The bar button reads
     /// `commentMode?.active` (also flipped off by the page's own exitMode binding call).
@@ -349,6 +412,23 @@ extension BrowserSessionController: BrowserEngineDelegate {
     }
     func engine(_ engine: BrowserEngine, didRequestPopup url: URL) {
         bus?.post(.browserPopupRequested(sessionID, url))
+    }
+    func engine(_ engine: BrowserEngine, didAsk ask: any BrowserAsk) {
+        asks.append(ask)
+    }
+    func engine(_ engine: BrowserEngine, didWithdraw ask: any BrowserAsk) {
+        asks.removeAll { $0 === ask }
+    }
+    func engine(_ engine: BrowserEngine, didFindMatch active: Int, of count: Int, final: Bool) {
+        findCount = count
+        if active > 0 { findActive = active }
+        // Measured on CEF 144: a fresh search reports its match count with no active match —
+        // the ordinal only arrives once something has been stepped to. "4 matches, none of
+        // them" is not a result a person can act on and not what any browser shows, so the
+        // first match is selected here, once per query.
+        guard final, count > 0, findActive == 0, !steppedThisQuery else { return }
+        steppedThisQuery = true
+        engine.find(findQuery, forward: true, matchCase: false, findNext: true)
     }
 }
 
@@ -440,6 +520,17 @@ struct BrowserPane: View {
                 }
                 if let notice = ctrl.commentMode?.notice {
                     CommentNotice(text: notice)
+                }
+                // The page's question and ⌘F both float over the page and belong to this
+                // pane alone — never an app-wide modal, which would stop the user reading
+                // the diff beside it while one browser waits on them.
+                if let ask = ctrl.currentAsk {
+                    BrowserAskCard(ctrl: ctrl, ask: ask)
+                        .id(ObjectIdentifier(ask))
+                }
+                if ctrl.findOpen {
+                    FindBar(ctrl: ctrl)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -679,6 +770,207 @@ private struct CommentNotice: View {
             .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
             .padding(.top, 10)
             .transition(.opacity)
+    }
+}
+
+// MARK: - The page's questions (working.html `.pane-ask`)
+
+/// One surface, four contents: a certificate the engine won't vouch for, an HTTP auth
+/// challenge, the page's own alert/confirm/prompt, a request for the camera. It docks under
+/// this pane's bar the way Chrome docks them under a tab — the question belongs to one page,
+/// and an app-wide modal would stop the user reading the diff in the pane beside it.
+private struct BrowserAskCard: View {
+    let ctrl: BrowserSessionController
+    let ask: any BrowserAsk
+
+    @State private var user = ""
+    @State private var password = ""
+    @State private var reply = ""
+    @FocusState private var focus: Field?
+    private enum Field { case user, password, reply }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title).font(.sans(13, 600)).foregroundStyle(Theme.ink)
+            line.padding(.top, 5)
+            // The page's own words, in a field of their own: a site that writes "Your session
+            // expired, sign in again" into an alert() must not borrow Synth's voice for it.
+            if quotesThePage, let said = ask.detail, !said.isEmpty {
+                ScrollView {
+                    Text(said)
+                        .font(.sans(12)).foregroundStyle(Theme.ink2)
+                        .lineSpacing(2.4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 150)
+                .padding(.vertical, 8).padding(.horizontal, 10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowHover))
+                .padding(.top, 9)
+            }
+            fields
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                actions
+            }
+            .padding(.top, 12)
+        }
+        .padding(14)
+        .frame(width: 420)
+        .background(Theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.17), radius: 18, y: 8)
+        .padding(.top, 10)
+        .onAppear {
+            reply = ask.defaultText ?? ""
+            focus = ask.kind == .auth ? .user : (ask.kind == .prompt ? .reply : nil)
+        }
+    }
+
+    private var quotesThePage: Bool {
+        switch ask.kind {
+        case .alert, .confirm, .prompt, .beforeUnload: return true
+        case .certificate, .auth, .permission: return false
+        }
+    }
+
+    private var title: String {
+        switch ask.kind {
+        case .certificate: return "This site’s certificate isn’t trusted"
+        case .auth:        return "Sign in"
+        case .permission:  return "Allow \(ask.detail ?? "this")?"
+        case .beforeUnload: return "Leave this page?"
+        case .alert, .confirm, .prompt: return "\(ask.origin) says"
+        }
+    }
+
+    @ViewBuilder private var line: some View {
+        switch ask.kind {
+        case .certificate:
+            paragraph("\(ask.origin) presented a certificate the engine cannot verify — "
+                    + (ask.detail ?? "") + ". Continue only if this is yours.")
+        case .auth:
+            paragraph(ask.detail.map { "\(ask.origin) is asking for a username and password for “\($0)”." }
+                      ?? "\(ask.origin) is asking for a username and password.")
+        case .permission:
+            paragraph("\(ask.origin) is asking to use \(ask.detail ?? "something").")
+        case .alert, .confirm, .prompt, .beforeUnload:
+            EmptyView()
+        }
+    }
+
+    private func paragraph(_ text: String) -> some View {
+        Text(text)
+            .font(.sans(12)).foregroundStyle(Theme.inkMuted)
+            .lineSpacing(2.4).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var fields: some View {
+        switch ask.kind {
+        case .auth:
+            askField("Username", text: $user, secure: false).focused($focus, equals: .user)
+            askField("Password", text: $password, secure: true).focused($focus, equals: .password)
+        case .prompt:
+            askField("", text: $reply, secure: false).focused($focus, equals: .reply)
+        default:
+            EmptyView()
+        }
+    }
+
+    private func askField(_ placeholder: String, text: Binding<String>, secure: Bool) -> some View {
+        Group {
+            if secure { SecureField(placeholder, text: text) }
+            else { TextField(placeholder, text: text) }
+        }
+        .textFieldStyle(.plain)
+        .font(.sans(12))
+        .padding(.vertical, 6).padding(.horizontal, 9)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 0.5))
+        .padding(.top, 8)
+        .onSubmit(accept)
+    }
+
+    @ViewBuilder private var actions: some View {
+        switch ask.kind {
+        case .certificate:
+            // Back to safety is the prominent one and Continue the quiet one, which is the
+            // opposite of every other ask here: a filled Continue is the loudest thing on the
+            // pane and would invite the click it exists to discourage.
+            Button("Continue") { ctrl.answer(ask) { $0.allow() } }
+            Button("Back to safety") { ctrl.answer(ask) { $0.deny() } }
+                .keyboardShortcut(.defaultAction)
+        case .auth:
+            Button("Cancel") { ctrl.answer(ask) { $0.deny() } }.keyboardShortcut(.cancelAction)
+            Button("Sign in", action: accept).keyboardShortcut(.defaultAction)
+        case .alert:
+            Button("OK", action: accept).keyboardShortcut(.defaultAction)
+        case .confirm, .prompt:
+            Button("Cancel") { ctrl.answer(ask) { $0.deny() } }.keyboardShortcut(.cancelAction)
+            Button("OK", action: accept).keyboardShortcut(.defaultAction)
+        case .beforeUnload:
+            Button("Stay") { ctrl.answer(ask) { $0.deny() } }.keyboardShortcut(.cancelAction)
+            Button("Leave", action: accept).keyboardShortcut(.defaultAction)
+        case .permission:
+            Button("Block") { ctrl.answer(ask) { $0.deny() } }.keyboardShortcut(.cancelAction)
+            Button("Allow", action: accept).keyboardShortcut(.defaultAction)
+        }
+    }
+
+    private func accept() {
+        switch ask.kind {
+        case .auth:   ctrl.answer(ask) { $0.allow(user: user, password: password) }
+        case .prompt: ctrl.answer(ask) { $0.allow(text: reply) }
+        default:      ctrl.answer(ask) { $0.allow() }
+        }
+    }
+}
+
+// MARK: - Find in page (working.html `.pane-find`)
+
+/// ⌘F. Enter is next, ⇧Enter previous, Esc closes and drops the highlights. It floats over
+/// the page at the top right rather than above it — a find bar that reflowed the page would
+/// move the thing you were looking for.
+private struct FindBar: View {
+    let ctrl: BrowserSessionController
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            TextField("Find in page", text: Binding(
+                get: { ctrl.findQuery }, set: { ctrl.setFindQuery($0) }))
+                .textFieldStyle(.plain)
+                .font(.sans(12))
+                .frame(width: 170)
+                .focused($focused)
+                .onSubmit { ctrl.stepFind(forward: true) }
+            Text(countText)
+                .font(.sans(11, tabular: true))
+                .foregroundStyle(noResults ? Theme.danger : Theme.inkFaint)
+                .frame(width: 54, alignment: .trailing)
+            PaneBarButton(icon: Phosphor.caretUp, help: "Previous match") {
+                ctrl.stepFind(forward: false)
+            }
+            PaneBarButton(icon: Phosphor.caretDown, help: "Next match") {
+                ctrl.stepFind(forward: true)
+            }
+            PaneBarButton(icon: Phosphor.close, help: "Close find") { ctrl.closeFind() }
+        }
+        .padding(.leading, 10).padding(.trailing, 6).padding(.vertical, 5)
+        .background(Theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 13, y: 6)
+        .padding(.top, 10).padding(.trailing, 10)
+        .onAppear { focused = true }
+    }
+
+    private var noResults: Bool { !ctrl.findQuery.isEmpty && ctrl.findCount == 0 }
+    private var countText: String {
+        if ctrl.findQuery.isEmpty { return "" }
+        return ctrl.findCount == 0 ? "No results" : "\(ctrl.findActive)/\(ctrl.findCount)"
     }
 }
 

@@ -588,6 +588,13 @@ struct RootView: View {
                 }
                 return event
             }
+            // Esc closes the find bar, before comment mode gets a look: with both up, the
+            // find bar is the thing the user just opened and the one Esc means.
+            if event.keyCode == 53, let open = store.openSession, open.kind == .browser,
+               let ctrl = BrowserManager.shared.existing(open.id), ctrl.findOpen {
+                ctrl.closeFind()
+                return nil
+            }
             // Esc exits browser comment mode (ADR-0011 stage three) — checked before the
             // page passthrough so it works while the page owns keys; the overlay's own
             // exitMode binding call flips the same state, so the button follows either path.
@@ -695,6 +702,9 @@ struct RootView: View {
                     if ctrl.canGoBack { ctrl.goBack() }; return nil
                 case "]":
                     if ctrl.canGoForward { ctrl.goForward() }; return nil
+                case "f" where !event.modifierFlags.contains(.shift)
+                                && !event.modifierFlags.contains(.option):
+                    ctrl.openFind(); return nil
                 case "i" where event.modifierFlags.contains(.option):
                     if !ctrl.isHome { ctrl.toggleDevTools() }; return nil
                 case "m" where event.modifierFlags.contains(.shift):

@@ -178,6 +178,38 @@ def wait(fn, secs=30, every=0.3):
         time.sleep(every)
     return None
 
+# --- Driving a live page over the app's own CDP endpoint ------------------------------------
+# Arguments ride the environment rather than argv: `node -e` shifts argv by one against every
+# other invocation, and a silently mis-indexed needle reads as a page that isn't there. The
+# connection is opened and closed per call on purpose — a client that stays attached changes
+# what the app under test is doing (a CDP client with the Page domain enabled answers
+# JavaScript dialogs itself, which is exactly what t29 is measuring the app's own handler for).
+
+CDP_EVAL_JS = """
+const path = require('path'), os = require('os');
+const PW = path.join(os.homedir(), 'Library/Application Support/Synth/browser-mcp/node_modules/playwright-core');
+const { chromium } = require(PW);
+(async () => {
+  const b = await chromium.connectOverCDP(`http://127.0.0.1:${process.env.PORT}`);
+  const pages = b.contexts().flatMap((c) => c.pages());
+  const page = pages.find((p) => p.url().includes(process.env.NEEDLE));
+  if (!page) { console.log('NOPAGE'); process.exit(0); }
+  console.log(String(await page.evaluate(process.env.EXPR)));
+  await b.close();
+})().catch((e) => { console.log('ERR ' + e.message); });
+"""
+
+def cdp_eval(port, needle, expression, timeout=120):
+    """Evaluate in the page whose URL contains `needle`. Returns its string result, 'NOPAGE'
+    when no page matches, or 'ERR …'."""
+    env = dict(os.environ, PORT=str(port), NEEDLE=needle, EXPR=expression)
+    try:
+        r = subprocess.run(["node", "-e", CDP_EVAL_JS], capture_output=True, text=True,
+                           timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return "ERR timed out"
+    return r.stdout.strip()
+
 # --- Antigravity (`agy`) --------------------------------------------------------------------
 # Two different programs answer to `agy`: the Antigravity CLI (the terminal agent Synth hosts)
 # and the Nov-2025 Antigravity IDE's launcher, which only opens the GUI. Both live on a stock

@@ -6,6 +6,41 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// What a page has put to the user, and the answer it is holding for (ADR-0011 stage five).
+/// One object per question: a certificate the engine won't vouch for, an HTTP auth challenge,
+/// the page's own alert/confirm/prompt, a request for the camera. Every one of these stops
+/// the page until it is answered, so exactly one answer must reach it — and the shim makes
+/// the second a no-op rather than a crash, because a UI can double-fire and a renderer left
+/// waiting forever is the failure this whole handler set exists to remove.
+typedef NS_ENUM(NSInteger, CEFShimAskKind) {
+  CEFShimAskCertificate,
+  CEFShimAskAuth,
+  CEFShimAskAlert,
+  CEFShimAskConfirm,
+  CEFShimAskPrompt,
+  CEFShimAskBeforeUnload,
+  CEFShimAskPermission,
+};
+
+@interface CEFShimAsk : NSObject
+
+@property(nonatomic, readonly) CEFShimAskKind kind;
+/// Who is asking: the host for a certificate error or an auth challenge, the origin for a
+/// JS dialog or a permission prompt.
+@property(nonatomic, readonly, copy) NSString *origin;
+/// The page's own words for a JS dialog; the realm for auth; what is being asked for on a
+/// permission prompt; the certificate error's name for a certificate.
+@property(nonatomic, readonly, copy, nullable) NSString *detail;
+/// window.prompt's default value; nil for everything else.
+@property(nonatomic, readonly, copy, nullable) NSString *defaultText;
+
+- (void)allow;
+- (void)allowWithText:(NSString *)text;                                  // prompt
+- (void)allowWithUser:(NSString *)user password:(NSString *)password;    // auth
+- (void)deny;
+
+@end
+
 @protocol CEFShimBrowserDelegate <NSObject>
 /// Fires for every main-frame address change, including CDP-initiated navigations.
 - (void)cefBrowserAddressDidChange:(NSString *)url;
@@ -14,6 +49,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// window.open / target=_blank. The popup itself was already cancelled inside the shim —
 /// letting it proceed blocks the renderer inside window.open() (spike LEARNINGS).
 - (void)cefBrowserDidRequestPopup:(NSString *)url;
+/// The page is holding for an answer. Present it and send exactly one.
+- (void)cefBrowserDidAsk:(CEFShimAsk *)ask;
+/// The question no longer applies — the page navigated out from under it, or CEF withdrew
+/// it. Take it off screen; answering it now would reach nothing.
+- (void)cefBrowserDidWithdrawAsk:(CEFShimAsk *)ask;
+/// Find-in-page progress for the active query: which match is current, how many there are.
+/// `finalUpdate` marks the last report for that query.
+- (void)cefBrowserDidFindMatch:(int)activeIndex of:(int)count final:(BOOL)finalUpdate;
 @end
 
 /// Process-wide CEF runtime. Main thread only.
@@ -70,7 +113,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)closeDevTools;
 /// Whether this page currently has a DevTools window open.
 - (BOOL)hasDevTools;
-/// Async close; cefBrowserDidClose fires when the browser is gone.
+/// Find in page. `forward`/`matchCase` apply to the search; `findNext` NO advances to the
+/// next match of the same query rather than starting a new search. Results arrive on
+/// cefBrowserDidFindMatch.
+- (void)find:(NSString *)text forward:(BOOL)forward matchCase:(BOOL)matchCase findNext:(BOOL)findNext;
+/// Ends the search and drops the highlights; `activate` leaves the last match selected.
+- (void)stopFinding:(BOOL)activate;
+
+/// Async close; the browser is gone shortly after.
 - (void)close;
 
 @end

@@ -457,6 +457,9 @@ struct PaletteFrame {
                         enter: { self.runAndClose {
                             if let url = live?.address { NSWorkspace.shared.open(url) }
                         } }),
+            PaletteItem(icon: .phosphor(Phosphor.search), label: "Find in page",
+                        kbd: ["⌘", "F"], disabled: home,
+                        enter: drive { $0.openFind() }),
             PaletteItem(icon: .phosphor(Phosphor.devtools),
                         label: live?.devToolsOpen == true ? "Hide DevTools" : "Show DevTools",
                         kbd: ["⌥", "⌘", "I"], disabled: home,

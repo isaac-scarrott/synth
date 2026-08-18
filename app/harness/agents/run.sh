@@ -35,7 +35,7 @@ SUITES="t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t4c_agen
         t14_antigravity_detect t15_antigravity t16_antigravity_resume t17_agent_quit
         t18_antigravity_states t19_agent_disable t20_comment_batch
         t21_escaped_reap t22_close_successor t23_projectgate t24_agentcontrast t25_opencodecontrast
-        t26_agycontrast t27_comment_parked t28_browser_profile t29_browser_asks t30_browser_popups t31_agent_tools"
+        t26_agycontrast t27_comment_parked t28_browser_profile t29_browser_asks t30_browser_popups t31_agent_tools t32_simulator_tools"
 
 P=0; F=0; S=0
 for t in ${*:-$SUITES}; do

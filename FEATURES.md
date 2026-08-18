@@ -2123,3 +2123,11 @@ disclosure to dive deeper.
   window nobody was going to make. Supplied one (ordered in before `OnBeforePopup` returns) and
   navigated it by hand, and the popup is real: `window.opener` live, the page can close it, no
   sidebar row. Sign in with Google works.
+
+- **The simulator's tools name their session too (ADR-0015 amended)** — `simulator_focus` and the
+  process-wide pointer behind it go, and `sessionId` becomes required on every tool that acts on a
+  device. Same removal as the browser's, same reason: one server process serves a whole agent
+  including its sub-agents, so a current-session pointer is one variable several agents write and
+  none can see each other change. `simulator_list` and `simulator_devices` still take none —
+  requiring a session there would ask for the answer in order to pose the question. Gated by
+  schema rather than by booting a device, because what changed is the contract.

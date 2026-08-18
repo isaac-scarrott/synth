@@ -16,10 +16,10 @@
 // own convention, so neither the pane's scale nor the device's pixel density reaches a caller.
 //
 // One server process serves a whole Claude session INCLUDING its sub-agents (they share the
-// parent's MCP connections, and calls carry no caller identity). So the "focused session" is a
-// single process-wide pointer — concurrent agents would fight over it. Every action tool therefore
-// takes an optional sessionId that targets a session directly; focus is only a single-agent
-// convenience.
+// parent's MCP connections, and calls carry no caller identity). Any process-wide "current
+// session" pointer is therefore shared by agents that cannot see each other — which is why there
+// isn't one (ADR-0011 stage five removed the browser's; this is the same removal, for the same
+// reason). Every tool that acts on a device names its sessionId.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -40,8 +40,6 @@ const tool = makeTool(server);
 // ---------------------------------------------------------------------------
 // Session targeting.
 
-let focusedSessionId = null;
-
 async function call(verb, body, options) {
   const scope = requireScope();
   const { ok, ...rest } = await controlCall(
@@ -53,37 +51,21 @@ async function sessions() {
   return (await call("simulator.list")).sessions ?? [];
 }
 
-/** The sessionId a tool acts on: the one it named, else the focused one. Explicit targeting does
- *  NOT move the focus — that is what keeps concurrent agents out of each other's sessions. A
- *  focus that has vanished is an ERROR, not a silent retarget onto whatever row is newest. */
+/** The session a tool acts on. Always named outright: this server is shared with every
+ *  sub-agent, so there is no current-session pointer to fall back on — one agent's retarget
+ *  would silently move another's. */
 async function targetSession(sessionId) {
   const rows = await sessions();
-  if (sessionId) {
-    if (!rows.some((s) => s.sessionId === sessionId)) {
-      throw new Error(`no simulator session ${sessionId} in this worktree — see simulator_list`);
-    }
-    return sessionId;
+  if (!rows.some((s) => s.sessionId === sessionId)) {
+    throw new Error(`no simulator session ${sessionId} in this worktree — see simulator_list`);
   }
-  if (focusedSessionId) {
-    if (rows.some((s) => s.sessionId === focusedSessionId)) return focusedSessionId;
-    const gone = focusedSessionId;
-    focusedSessionId = null;
-    throw new Error(
-      `the focused simulator session (${gone}) is gone — closed, or its row was deleted. ` +
-      "Call simulator_list, then simulator_focus (or simulator_create) to pick a target.");
-  }
-  if (rows.length === 0) {
-    throw new Error(
-      "no simulator sessions are open in this worktree — create one with simulator_create");
-  }
-  focusedSessionId = rows[rows.length - 1].sessionId;
-  return focusedSessionId;
+  return sessionId;
 }
 
-const sessionIdParam = z.string().optional().describe(
-  "session to act on (from simulator_create/simulator_list); overrides the focused session " +
-  "without moving the focus. ALWAYS pass this when running as one of several agents (sub-agents " +
-  "share this server, and the focus is a single process-wide pointer — last create/focus wins)");
+const sessionIdParam = z.string().describe(
+  "session to act on — the sessionId simulator_create returned, or one from simulator_list. " +
+  "Required: this server is shared with every sub-agent, so there is no ambient current session " +
+  "to inherit");
 
 const fraction = (what) => z.number().describe(
   `${what} as a fraction of the screen, 0..1 from the top-left — 0.5 is the middle. Not pixels: ` +
@@ -97,8 +79,7 @@ tool("simulator_list",
   "name, whether that device is booted, and whether Synth is attached to its framebuffer " +
   "(`booting` while a device is still coming up — attaching retries every second). A session with " +
   "no device yet is a normal state, not a fault: the user picks one in the pane. Returns the " +
-  "sessionId to pass to every other tool — do that whenever other agents may be driving " +
-  "simulators too, since the focus is one pointer shared by this server's whole process.",
+  "sessionId to pass to every other tool.",
   null,
   async () => {
     const scope = requireScope();
@@ -123,9 +104,10 @@ tool("simulator_create",
   "Create a Synth simulator session in this worktree's branch — a row in the sidebar showing one " +
   "device's live screen, which you and the user both act on. Boots the device if it is shut down " +
   "(that takes tens of seconds; simulator_list says when Synth has attached, and actions report " +
-  "\"still booting\" until then). Focuses the new session and returns its sessionId. Getting an " +
+  "\"still booting\" until then). Getting an " +
   "app onto the device is not this tool's job: build and install it yourself (simulator_install), " +
-  "or leave the user's `npm run ios` / `xcodebuild` to it.",
+  "or leave the user's `npm run ios` / `xcodebuild` to it. Returns the sessionId: keep it, and " +
+  "pass it as sessionId on every subsequent tool call.",
   {
     device: z.string().optional().describe(
       "device name or udid, e.g. \"iPhone 16 Pro\" (a prefix or substring is enough). Omitted: a " +
@@ -133,7 +115,6 @@ tool("simulator_create",
   },
   async ({ device }) => {
     const res = await call("simulator.create", { ...(device && { device }) });
-    focusedSessionId = res.sessionId;
     return text(JSON.stringify(res, null, 2));
   });
 
@@ -146,20 +127,9 @@ tool("simulator_close",
   { sessionId: z.string().describe("the sessionId to close (from simulator_create/simulator_list)") },
   async ({ sessionId }) => {
     const res = await call("simulator.close", { sessionId });
-    if (focusedSessionId === sessionId) focusedSessionId = null;
     return text(`closed ${sessionId} — ` + (res.deviceStaysBooted
       ? "another session still holds the device, so it stays booted"
       : "nothing else held the device, so it is shutting down"));
-  });
-
-tool("simulator_focus",
-  "Select which simulator session subsequent tools act on by default. The focus is one pointer " +
-  "for the whole Claude session (sub-agents included) — with several agents active, skip this and " +
-  "pass sessionId per call instead.",
-  { sessionId: z.string().describe("a sessionId from simulator_list") },
-  async ({ sessionId }) => {
-    focusedSessionId = await targetSession(sessionId);
-    return text(`focused ${focusedSessionId}`);
   });
 
 // ---------------------------------------------------------------------------

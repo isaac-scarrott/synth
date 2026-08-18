@@ -389,6 +389,25 @@ holds the tool list it was given — so `simulator.create` booted a device with 
 `simulator.*` verb now refuses unless the toggle is on and Xcode is present, and the refusal names the
 toggle, because an agent with a stale tool list needs to be told why rather than left guessing.
 
+## Amendment (2026-08-18): the tools name their session
+
+`simulator_focus` and the process-wide focused-session pointer behind it are removed, and
+`sessionId` becomes required on every tool that acts on a device. This is ADR-0011 stage five's
+removal, applied here for the same reason: one server process serves a whole coding-agent
+session *including its sub-agents* — they share its MCP connections and their calls carry no
+caller identity — so a "current session" pointer is one variable that several agents write and
+none of them can see each other change. It existed to save a parameter and cost correctness the
+moment two agents worked at once, which is exactly the multi-agent shape Synth is for.
+
+`simulator_list` and `simulator_devices` still take no session: one answers which sessions
+exist and the other which devices the machine has, and requiring a session on either would ask
+for the answer in order to pose the question.
+
+Breaking for anything that drove these tools without a `sessionId`. Gated by
+`t32_simulator_tools`, which asserts the schemas rather than booting a device — what changed is
+the contract, and a runtime that depends on which simulator runtimes a machine happens to have
+installed would be measuring the machine.
+
 ## Consequences
 
 - Synth gains a hard dependency on a full Xcode install, located through `xcode-select` / `DEVELOPER_DIR`

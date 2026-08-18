@@ -2171,3 +2171,14 @@ disclosure to dive deeper.
   none can see each other change. `simulator_list` and `simulator_devices` still take none —
   requiring a session there would ask for the answer in order to pose the question. Gated by
   schema rather than by booting a device, because what changed is the contract.
+
+- **Restoring an archived branch cuts its checkout again even mid-reap** — the reaper deletes a held
+  folder and prunes the repo afterwards, so for a moment git lists a worktree at a path with nothing
+  at it. Restore read that list, called the entry a checkout, and marked the row ready at a folder
+  that did not exist — silently, because the "git failed but the worktree materialised anyway"
+  recovery asked the same question the same way and turned git's refusal into a reported success.
+  A worktree now exists when its folder does, in every place that asked — restore,
+  both create paths, and the recovery; `worktree add` is
+  forced only over a registration for that exact path with nothing on disk, never over a branch
+  genuinely checked out elsewhere, and never by pruning — the hold depends on those entries. The
+  gate builds the half-done state by hand instead of racing for it.

@@ -137,6 +137,17 @@ enum GitService {
         return result
     }
 
+    /// The checkout the branch actually has: a registration git holds whose folder is really
+    /// on disk. A line in `worktree list` is not one. Archiving renames a folder aside without
+    /// pruning, and the reaper deletes a held folder before it prunes the repo — so between
+    /// those two steps git names a path with nothing at it, and a caller that read the list
+    /// alone marked the row ready at that path and never cut the checkout again.
+    static func liveWorktree(repo: URL, branch: String) -> WorktreeInfo? {
+        worktrees(at: repo).first {
+            $0.branch == branch && FileManager.default.fileExists(atPath: $0.path.path)
+        }
+    }
+
     /// Where the app materialises worktrees. Default location for now — will be
     /// user-configurable later.
     static func worktreeRoot(for repo: URL) -> URL {
@@ -215,11 +226,26 @@ enum GitService {
     private static func runWorktreeAdd(repo: URL, path: URL, branch: String, args: [String]) -> String? {
         try? FileManager.default.createDirectory(at: path.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        let (status, out) = runChecked(["-C", repo.path, "worktree", "add"] + args)
+        // git refuses to add at a path it still holds a registration for even when the folder
+        // that registration names is gone — "missing but already registered". Ours go missing
+        // by design: the reaper deletes a held folder and prunes the repo afterwards, so every
+        // restore that arrives between those two steps lands on this refusal. `-f` is scoped
+        // to exactly that — a registration for *this* path with nothing on disk — and is never
+        // used to step over a branch that is genuinely checked out somewhere else.
+        let stale = worktrees(at: repo).contains {
+            $0.path.resolvingSymlinksInPath().path == path.resolvingSymlinksInPath().path
+                && !FileManager.default.fileExists(atPath: $0.path.path)
+        }
+        let (status, out) = runChecked(["-C", repo.path, "worktree", "add"]
+                                       + (stale ? ["-f"] : []) + args)
         if status == 0 { return nil }
         let planned = path.resolvingSymlinksInPath().path
+        // A registration alone doesn't mean it materialised — the stale entry above matches
+        // branch and path exactly, so reading the list without asking the filesystem turned
+        // git's refusal into a reported success and the row went ready with no folder.
         if worktrees(at: repo).contains(where: {
             $0.branch == branch && $0.path.resolvingSymlinksInPath().path == planned
+                && FileManager.default.fileExists(atPath: $0.path.path)
         }) {
             NSLog("Synth: worktree add exited \(status) but \(branch) materialised — treating as success. git said: \(out.trimmingCharacters(in: .whitespacesAndNewlines))")
             return nil

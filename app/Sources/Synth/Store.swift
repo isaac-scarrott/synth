@@ -2332,10 +2332,12 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         Analytics.capture("worktree_restored", ["days_archived": days, "recut": !onDisk])
     }
 
-    /// Check the branch out again into the folder it used to occupy. The reaper prunes as it
-    /// deletes, so git holds no stale registration for the path and a plain `worktree add`
-    /// is enough. No session template runs: this is a restore, and a restore that spawned
-    /// sessions the archived row didn't have would be a create wearing its name.
+    /// Check the branch out again into the folder it used to occupy. The reaper deletes the
+    /// folder and prunes the repo afterwards, so a restore that arrives between those two
+    /// steps meets a registration git still holds for a path with nothing at it — which is
+    /// why the reuse below asks the filesystem and not `worktree list`. No session template
+    /// runs: this is a restore, and a restore that spawned sessions the archived row didn't
+    /// have would be a create wearing its name.
     private func recutWorktree(_ branch: Branch) {
         guard let ws = workspace(of: branch) else { return }
         let repo = ws.url
@@ -2344,7 +2346,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         branch.isPending = true
         materialize(branch, in: ws,
                     retry: { [weak self] in self?.createWorktree(in: ws, existingBranch: name) }) {
-            if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == name }) {
+            if let wt = GitService.liveWorktree(repo: repo, branch: name) {
                 return .ready(wt.path)
             }
             return GitService.addWorktree(repo: repo, path: path, branch: name)
@@ -3286,7 +3288,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         openWorktreeSetup(row)
         materialize(row, in: ws, spawningTemplate: true,
                     retry: { [weak self] in self?.createWorktree(in: ws, existingBranch: existingBranch) }) {
-            if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == existingBranch }) {
+            if let wt = GitService.liveWorktree(repo: repo, branch: existingBranch) {
                 return .ready(wt.path)
             }
             return GitService.addWorktree(repo: repo, path: planned, branch: existingBranch)
@@ -3446,7 +3448,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             }
         }
         materialize(row, in: ws, spawningTemplate: prompt.handoff == nil, onReady: onReady) {
-            if let wt = GitService.worktrees(at: repo).first(where: { $0.branch == name }) {
+            if let wt = GitService.liveWorktree(repo: repo, branch: name) {
                 return .ready(wt.path)
             }
             if GitService.allBranches(at: repo).contains(where: { $0.name == name }) {

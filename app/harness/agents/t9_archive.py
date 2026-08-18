@@ -45,6 +45,29 @@ def tree_branches(ctl):
     return [b for ws in ctl("automation.tree").get("workspaces", []) for b in ws["branches"]]
 
 
+def enter_row(ctl, label):
+    """Move the cursor onto `label` and press it, having checked it is the row under the cursor.
+
+    Move and Enter are two round trips, and the rows can change between them — this palette
+    fills its branch list off the main thread, so a frame re-sorts under a cursor that was
+    aimed at the old order. Pressing anyway runs whatever moved into that slot, and most rows
+    close the palette on the way out, so the miss surfaces three checks later as a picker that
+    dropped a row rather than as a navigation that went astray. Read the frame back and only
+    commit once the cursor is where it was aimed."""
+    for _ in range(6):
+        fr = ctl("automation.palette")
+        items = fr.get("items") or []
+        if label not in items: return fr
+        delta = items.index(label) - (fr.get("activeIndex") or 0)
+        if delta: ctl("automation.paletteMove", delta=delta)
+        landed = ctl("automation.palette")
+        on = (landed.get("items") or [])
+        if on and on[landed.get("activeIndex") or 0] == label:
+            ctl("automation.paletteEnter")
+            return ctl("automation.palette")
+    return dict(fr, items=[], missing=f"cursor never settled on {label}")
+
+
 def new_branch_frame(ctl, query):
     """⌘K's New-branch picker, filtered to `query`, with the cursor on the first row.
 
@@ -58,15 +81,11 @@ def new_branch_frame(ctl, query):
         items = fr.get("items", [])
         trail.append(items)
         if "New branch" in items:
-            i = items.index("New branch")
-            if i: ctl("automation.paletteMove", delta=i)
-            ctl("automation.paletteEnter")
+            enter_row(ctl, "New branch")
             return ctl("automation.paletteQuery", query=query)
         step = next((s for s in ("demo-project", "Projects") if s in items), None)
         if step is None: return dict(fr, items=[], missing="New branch", offered=trail)
-        i = items.index(step)
-        if i: ctl("automation.paletteMove", delta=i)
-        ctl("automation.paletteEnter")
+        enter_row(ctl, step)
         fr = ctl("automation.paletteQuery")
     return dict(fr, items=[], missing="New branch", offered=trail)
 
@@ -211,9 +230,7 @@ def main():
               f"items={frame.get('items')} note={frame.get('note')!r}")
         items = frame.get("items", [])
         if "has-untracked" in items:
-            if items.index("has-untracked"):
-                ctl("automation.paletteMove", delta=items.index("has-untracked"))
-            ctl("automation.paletteEnter")
+            enter_row(ctl, "has-untracked")
             check("picking it puts the row back in the tree",
                   bool(wait(lambda: "has-untracked" in tree_branches(ctl), secs=15)),
                   str(tree_branches(ctl)))
@@ -267,6 +284,34 @@ def main():
         porcelain = git(repo, "worktree list --porcelain")
         entry = next((blk for blk in porcelain.split("\n\n") if str(recut) in blk), "")
         check("the re-cut worktree is registered", bool(entry), porcelain[:200])
+
+        # The same restore, with the reaper's half-done state built by hand instead of waited
+        # for. The reaper deletes a held folder and prunes the repo afterwards, so for a moment
+        # `worktree list` names a path with nothing at it — and a restore that read the list
+        # alone called that a checkout, marked the row ready, and cut nothing. Landing in that
+        # window is a race the check above loses only sometimes; deleting the folder and
+        # leaving git's registration standing is the same state, every run.
+        sh(f"rm -rf '{recut}'")
+        stale_entry = next((blk for blk in git(repo, "worktree list --porcelain").split("\n\n")
+                            if str(recut) in blk), "")
+        check("git still holds a registration for the folder that just went",
+              "prunable" in stale_entry, stale_entry)
+        ctl("automation.archiveBranch", branch="with-stash")
+        ctl("automation.notifDrain")
+        wait(lambda: "with-stash" in status_map(ctl), secs=20)
+        over_stale = ctl("automation.archiveRestore", branch="with-stash")
+        check("restore reports success over a registration git hasn't pruned",
+              over_stale.get("ok") is True, str(over_stale))
+        check("and cuts the checkout again rather than trusting the registration",
+              bool(wait(lambda: recut.exists(), secs=30)),
+              str(list(recut.parent.iterdir())[:12]))
+        check("which is a real checkout of the branch",
+              git(recut, "rev-parse --abbrev-ref HEAD") == "with-stash",
+              git(recut, "rev-parse --abbrev-ref HEAD"))
+        entry = next((blk for blk in git(repo, "worktree list --porcelain").split("\n\n")
+                      if str(recut) in blk), "")
+        check("and is registered, with nothing stale left behind",
+              bool(entry) and "prunable" not in entry, entry)
 
     finally:
         kill_all()

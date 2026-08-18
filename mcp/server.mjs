@@ -219,6 +219,47 @@ const sessionIdParam = z.string().describe(
   "is no ambient current session to inherit");
 
 // ---------------------------------------------------------------------------
+// Addressing an element: a snapshot ref, or a CSS selector (ADR-0011 stage five).
+//
+// Both, not one. A ref is unambiguous for something the agent has just read, but
+// Synth's agents wrote the page they are testing — forbidding `#save` when the agent
+// authored `#save` would make a mandatory snapshot the price of every action.
+
+const refParam = z.string().optional().describe(
+  "element ref from this session's last browser_snapshot, e.g. e12 — the exact " +
+  "element you read, no selector guessing");
+const selectorParam = z.string().optional().describe(
+  "CSS selector, for an element you already know (the one you wrote); the first " +
+  "match is used. Pass this or ref, not both");
+
+/** The Locator a ref or a selector names.
+ *
+ *  A ref that no longer resolves is always STALE, never a wrong node: Playwright
+ *  keys each ref to the element object captured when the snapshot was taken and
+ *  drops it the moment that element leaves the document (a re-render, a
+ *  navigation, a new JS world). So the miss is reported as "re-snapshot", not left
+ *  to time out looking like a bad selector — and nothing was acted on. */
+async function resolveTarget(page, { ref, selector }) {
+  if (ref && selector) throw new Error("pass ref or selector, not both");
+  if (ref) {
+    const loc = page.locator(`aria-ref=${ref}`);
+    if (await loc.count() === 0) {
+      throw new Error(
+        `ref ${ref} doesn't point at anything on ${page.url()} any more — the page ` +
+        "has re-rendered or navigated since the snapshot that issued it, so the ref " +
+        "expired. Nothing was acted on. Call browser_snapshot again and use a ref " +
+        "from the new one (or pass a CSS selector instead).");
+    }
+    return loc;
+  }
+  if (selector) return page.locator(selector).first();
+  return null;
+}
+
+/** How an action names its target in a reply — the caller's own words. */
+const targetLabel = ({ ref, selector }) => ref ? `ref ${ref}` : selector;
+
+// ---------------------------------------------------------------------------
 // Helpers.
 
 /** working.html's browserNorm plus files: schemeless input gets https://, loopback
@@ -487,39 +528,303 @@ tool("browser_device_mode",
     return text(JSON.stringify(state, null, 2));
   });
 
-tool("browser_click",
-  "Click in the session's page: a CSS selector, or viewport coordinates.",
+// ---------------------------------------------------------------------------
+// Free viewport (ADR-0011 stage five). The six-device fleet above is the pane's
+// device chrome — hardware, for a human choosing a phone. It is also, without this,
+// the only viewport control there is, so a 1440px desktop or a 900px tablet
+// breakpoint cannot be checked at all.
+//
+// The override rides an open CDP session: Chromium reverts emulation when the
+// session that set it detaches (the same reason the pane's own DeviceEmulator holds
+// its client open for as long as device mode is on). So the session is kept, keyed
+// by Synth session, and the width/height are kept beside it — a dropped CDP
+// connection (a reconnect, a port change) is re-applied on the next call rather
+// than silently reverting for good.
+
+const viewports = new Map(); // synth sessionId -> { client, width, height, deviceScaleFactor, mobile }
+
+async function clearViewport(sid) {
+  const vp = viewports.get(sid);
+  if (!vp) return;
+  viewports.delete(sid);
+  try { await vp.client.send("Emulation.clearDeviceMetricsOverride"); } catch { /* gone */ }
+  await vp.client.detach().catch(() => {});
+}
+
+tool("browser_viewport",
+  "Read or set the size the page lays out at, in CSS pixels — the agent's own " +
+  "viewport control, free of the device fleet. This is how you check a desktop or " +
+  "tablet breakpoint (1440×900, 1024×768) that no phone in browser_device_mode " +
+  "covers. The page renders at exactly the size you name and is scaled down to fit " +
+  "the pane, so the user sees the whole layout; screenshots, snapshots and clicks " +
+  "all see the new viewport. With no width or height it reports the current state " +
+  "and changes nothing. The override lasts as long as this MCP server does — it " +
+  "goes when your session ends, and browser_device_mode replaces it while a device " +
+  "is on.",
   {
-    selector: z.string().optional().describe("CSS selector to click"),
-    x: z.number().optional().describe("viewport x (used with y when no selector)"),
+    sessionId: sessionIdParam,
+    width: z.number().int().positive().optional().describe("viewport width in CSS pixels"),
+    height: z.number().int().positive().optional().describe("viewport height in CSS pixels"),
+    deviceScaleFactor: z.number().positive().optional().describe(
+      "devicePixelRatio to report (default 1; 2 for a retina check)"),
+    mobile: z.boolean().optional().describe(
+      "render as a mobile browser would (touch, mobile user-agent layout); default false"),
+    reset: z.boolean().optional().describe(
+      "drop the override and give the page the pane's own viewport back"),
+  },
+  async ({ sessionId, width, height, deviceScaleFactor = 1, mobile = false, reset }) => {
+    const inst = requireInstance();
+    const { page, sessionId: sid } = await targetEntry(inst, sessionId);
+
+    if (reset) {
+      await clearViewport(sid);
+      const now = await page.evaluate("({ width: innerWidth, height: innerHeight })");
+      return text(JSON.stringify({ override: null, ...now }, null, 2));
+    }
+
+    const held = viewports.get(sid);
+    if (width == null && height == null) {
+      const now = await page.evaluate(
+        "({ width: innerWidth, height: innerHeight, deviceScaleFactor: devicePixelRatio })");
+      return text(JSON.stringify({
+        override: held ? { width: held.width, height: held.height } : null, ...now,
+      }, null, 2));
+    }
+
+    // Device mode draws a phone around the page and emulates its viewport from the
+    // app side. A free viewport inside that frame is a page laid out at 1440 inside a
+    // drawn iPhone — refuse rather than render a lie at the user.
+    const scope = requireScope();
+    const dm = await controlCall(scope.inst, {
+      verb: "browser.deviceMode", worktreePath: scope.path, sessionId: sid });
+    if (dm.on) {
+      throw new Error(
+        `session ${sid} is in device mode (${dm.device}), which owns the viewport and ` +
+        "draws that hardware around the page. Leave it with browser_device_mode " +
+        "on:false first, then set the viewport you want.");
+    }
+
+    // The pane's own size is what the page gets with no override — so measure it
+    // WITHOUT one, or a second call would fit the new viewport into the last one and
+    // the page would shrink a little further every time.
+    await clearViewport(sid);
+    const pane = await page.evaluate("({ w: innerWidth, h: innerHeight })");
+    const w = width ?? pane.w;
+    const h = height ?? pane.h;
+    // Scale DOWN to fit, never up (the device stage's rule): a viewport smaller than
+    // the pane stays life-size rather than being blown up to fill it.
+    const scale = Math.min(1, pane.w / w, pane.h / h);
+
+    const client = await page.context().newCDPSession(page);
+    await client.send("Emulation.setDeviceMetricsOverride",
+                      { width: w, height: h, deviceScaleFactor, mobile, scale });
+    const vp = { client, width: w, height: h, deviceScaleFactor, mobile };
+    viewports.set(sid, vp);
+    // A page that closes under us would otherwise strand the CDP session.
+    page.once("close", () => { if (viewports.get(sid) === vp) viewports.delete(sid); });
+
+    return text(JSON.stringify({
+      width: w, height: h, deviceScaleFactor, mobile,
+      renderedAt: `${Math.round(scale * 100)}% of the pane's ${pane.w}×${pane.h}`,
+    }, null, 2));
+  });
+
+tool("browser_click",
+  "Click in the session's page: a snapshot ref, a CSS selector, or viewport coordinates.",
+  {
+    ref: refParam,
+    selector: selectorParam,
+    x: z.number().optional().describe("viewport x (used with y when neither ref nor selector is given)"),
     y: z.number().optional().describe("viewport y"),
+    button: z.enum(["left", "right", "middle"]).optional().describe("mouse button (default left)"),
+    clickCount: z.number().int().positive().optional().describe("2 for a double-click"),
     sessionId: sessionIdParam,
   },
-  async ({ selector, x, y, sessionId }) => {
+  async ({ ref, selector, x, y, button = "left", clickCount = 1, sessionId }) => {
     const page = await targetPage(requireInstance(), sessionId);
-    if (selector) await page.click(selector, { timeout: 5000 });
-    else if (x != null && y != null) await page.mouse.click(x, y);
-    else throw new Error("pass selector, or both x and y");
+    const target = await resolveTarget(page, { ref, selector });
+    if (target) await target.click({ timeout: 5000, button, clickCount });
+    else if (x != null && y != null) await page.mouse.click(x, y, { button, clickCount });
+    else throw new Error("pass ref, selector, or both x and y");
     await settle(page);
-    return text(`clicked ${selector ?? `(${x}, ${y})`} — now at ${page.url()}`);
+    return text(`clicked ${targetLabel({ ref, selector }) ?? `(${x}, ${y})`}` +
+                ` — now at ${page.url()}`);
   });
 
 tool("browser_type",
-  "Type text into the session's page — into a selector (replacing its value) " +
+  "Type text into the session's page — into a ref or selector (replacing its value) " +
   "or the currently focused element; optionally press Enter after.",
   {
     text: z.string().describe("text to type"),
-    selector: z.string().optional().describe("CSS selector of the input (typed at the focused element when omitted)"),
+    ref: refParam,
+    selector: selectorParam,
     submit: z.boolean().optional().describe("press Enter afterwards"),
     sessionId: sessionIdParam,
   },
-  async ({ text: value, selector, submit, sessionId }) => {
+  async ({ text: value, ref, selector, submit, sessionId }) => {
     const page = await targetPage(requireInstance(), sessionId);
-    if (selector) await page.fill(selector, value, { timeout: 5000 });
+    const target = await resolveTarget(page, { ref, selector });
+    if (target) await target.fill(value, { timeout: 5000 });
     else await page.keyboard.type(value);
     if (submit) await page.keyboard.press("Enter");
     await settle(page);
-    return text(`typed into ${selector ?? "focused element"}${submit ? " and submitted" : ""}`);
+    return text(`typed into ${targetLabel({ ref, selector }) ?? "the focused element"}` +
+                `${submit ? " and submitted" : ""}`);
+  });
+
+tool("browser_hover",
+  "Hover the pointer over an element — the only way to reach a menu, tooltip or " +
+  "control that appears on hover. The hover persists until the pointer moves again, " +
+  "so snapshot or screenshot straight after.",
+  { ref: refParam, selector: selectorParam, sessionId: sessionIdParam },
+  async ({ ref, selector, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
+    const target = await resolveTarget(page, { ref, selector });
+    if (!target) throw new Error("pass ref or selector");
+    await target.hover({ timeout: 5000 });
+    await settle(page, 1000);
+    return text(`hovering ${targetLabel({ ref, selector })}`);
+  });
+
+tool("browser_press_key",
+  "Press a key in the session's page — Escape to dismiss, Tab to move focus, " +
+  "ArrowDown to walk a listbox, Enter to confirm. Naming an element focuses it " +
+  "first; otherwise the key goes wherever focus already is.",
+  {
+    key: z.string().describe(
+      "a Playwright key name: a single character, or Enter/Escape/Tab/Backspace/Delete/" +
+      "ArrowUp/ArrowDown/ArrowLeft/ArrowRight/Home/End/PageUp/PageDown/F1-F12, " +
+      "optionally with modifiers, e.g. Control+A or Shift+Tab"),
+    ref: refParam,
+    selector: selectorParam,
+    repeat: z.number().int().positive().optional().describe("press it this many times (default 1)"),
+    sessionId: sessionIdParam,
+  },
+  async ({ key, ref, selector, repeat = 1, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
+    const target = await resolveTarget(page, { ref, selector });
+    for (let i = 0; i < repeat; i++) {
+      if (target) await target.press(key, { timeout: 5000 });
+      else await page.keyboard.press(key);
+    }
+    await settle(page);
+    return text(`pressed ${key}${repeat > 1 ? ` ×${repeat}` : ""}` +
+                `${target ? ` on ${targetLabel({ ref, selector })}` : ""} — now at ${page.url()}`);
+  });
+
+tool("browser_select_option",
+  "Choose in a native <select>. Clicking one opens an OS menu the page cannot see, " +
+  "so this is the only way to change its value — pass the option's value, label or " +
+  "index. A multi-select takes several.",
+  {
+    ref: refParam,
+    selector: selectorParam,
+    values: z.array(z.string()).optional().describe("option values to select"),
+    labels: z.array(z.string()).optional().describe("option labels (visible text) to select"),
+    indexes: z.array(z.number().int().nonnegative()).optional().describe("option indexes to select"),
+    sessionId: sessionIdParam,
+  },
+  async ({ ref, selector, values, labels, indexes, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
+    const target = await resolveTarget(page, { ref, selector });
+    if (!target) throw new Error("pass ref or selector naming the <select>");
+    const wanted = [
+      ...(values ?? []).map((value) => ({ value })),
+      ...(labels ?? []).map((label) => ({ label })),
+      ...(indexes ?? []).map((index) => ({ index })),
+    ];
+    if (wanted.length === 0) throw new Error("pass values, labels or indexes");
+    const chosen = await target.selectOption(wanted, { timeout: 5000 });
+    await settle(page);
+    return text(`selected ${JSON.stringify(chosen)} in ${targetLabel({ ref, selector })}`);
+  });
+
+tool("browser_scroll",
+  "Scroll the page, or bring one element into view — how a lazy list loads its next " +
+  "page and how anything below the fold becomes clickable.",
+  {
+    ref: refParam,
+    selector: selectorParam,
+    to: z.enum(["top", "bottom"]).optional().describe(
+      "jump to the top or the bottom of the document (bottom is what triggers " +
+      "infinite scroll)"),
+    dy: z.number().optional().describe("scroll down by this many pixels (negative = up)"),
+    dx: z.number().optional().describe("scroll right by this many pixels (negative = left)"),
+    sessionId: sessionIdParam,
+  },
+  async ({ ref, selector, to, dy, dx, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
+    const target = await resolveTarget(page, { ref, selector });
+    let what;
+    if (target) {
+      await target.scrollIntoViewIfNeeded({ timeout: 5000 });
+      what = `scrolled ${targetLabel({ ref, selector })} into view`;
+    } else if (to) {
+      await page.evaluate(`window.scrollTo(0, ${to === "top" ? 0 : "document.body.scrollHeight"})`);
+      what = `scrolled to the ${to}`;
+    } else if (dy != null || dx != null) {
+      await page.mouse.wheel(dx ?? 0, dy ?? 0);
+      what = `scrolled by (${dx ?? 0}, ${dy ?? 0})`;
+    } else {
+      throw new Error("pass ref/selector, to, or dx/dy");
+    }
+    // Lazy lists fetch on scroll; give the fetch a beat before the agent reads the page.
+    await page.waitForTimeout(300);
+    const at = await page.evaluate("({ x: window.scrollX, y: window.scrollY, " +
+                                   "height: document.body.scrollHeight })");
+    return text(`${what} — now at y=${Math.round(at.y)} of ${Math.round(at.height)}`);
+  });
+
+tool("browser_wait_for",
+  "Wait for the page to reach a condition instead of guessing at a delay: text to " +
+  "appear or go, an element to become visible or leave, or a JS expression to turn " +
+  "truthy. Use this for anything that arrives a beat later — a spinner finishing, a " +
+  "toast, a route transition — rather than acting and reading a click timeout.",
+  {
+    text: z.string().optional().describe("wait until this text is visible on the page"),
+    textGone: z.string().optional().describe("wait until this text is no longer on the page"),
+    ref: refParam,
+    selector: selectorParam,
+    state: z.enum(["visible", "hidden", "attached", "detached"]).optional().describe(
+      "what the ref/selector element should reach (default visible)"),
+    expression: z.string().optional().describe(
+      "JS expression polled until it is truthy, e.g. window.__ready === true"),
+    timeout: z.number().optional().describe("milliseconds to wait (default 10000)"),
+    sessionId: sessionIdParam,
+  },
+  async ({ text: wantText, textGone, ref, selector, state = "visible", expression,
+           timeout = 10000, sessionId }) => {
+    const page = await targetPage(requireInstance(), sessionId);
+    const started = Date.now();
+    let what;
+    try {
+      if (wantText != null) {
+        await page.getByText(wantText).first().waitFor({ state: "visible", timeout });
+        what = `"${wantText}" appeared`;
+      } else if (textGone != null) {
+        await page.getByText(textGone).first().waitFor({ state: "hidden", timeout });
+        what = `"${textGone}" went`;
+      } else if (ref || selector) {
+        // A ref names an element captured at snapshot time, so "detached" is the only
+        // state it can newly reach — waiting for a ref to become visible is waiting on
+        // a node that already exists. Selectors carry the general case.
+        const target = await resolveTarget(page, { ref, selector });
+        await target.waitFor({ state, timeout });
+        what = `${targetLabel({ ref, selector })} is ${state}`;
+      } else if (expression != null) {
+        await page.waitForFunction(expression, undefined, { timeout });
+        what = `${expression} became truthy`;
+      } else {
+        throw new Error("pass text, textGone, ref/selector, or expression");
+      }
+    } catch (e) {
+      if (!isTimeout(e)) throw e;
+      throw new Error(
+        `still not true after ${timeout / 1000}s on ${page.url()} — the page did not ` +
+        "reach the condition. browser_snapshot shows what it did reach; " +
+        "browser_console often says why.");
+    }
+    return text(`${what} after ${Date.now() - started}ms`);
   });
 
 tool("browser_screenshot",
@@ -709,9 +1014,13 @@ tool("browser_record_stop",
 
 tool("browser_snapshot",
   "Accessibility-tree snapshot (aria) of the session's page — the fast, " +
-  "text-sized way to read page structure. A whole listing page runs to hundreds of " +
-  "thousands of characters, so scope it: selector for a region, maxDepth for shape " +
-  "without leaf detail.",
+  "text-sized way to read page structure. Every element carries a [ref=…] you can " +
+  "hand straight to browser_click, browser_type, browser_hover, browser_select_option " +
+  "and the rest, so you never have to guess a selector from source. Refs belong to " +
+  "the snapshot that issued them: after a re-render or a navigation they expire and " +
+  "say so — take a fresh snapshot rather than reusing old ones. " +
+  "A whole listing page runs to hundreds of thousands of characters, so scope it: " +
+  "selector for a region, maxDepth for shape without leaf detail.",
   {
     sessionId: sessionIdParam,
     selector: z.string().optional().describe(
@@ -725,15 +1034,11 @@ tool("browser_snapshot",
     if (await target.count() === 0) {
       throw new Error(`no element matches ${selector} on ${page.url()}`);
     }
-    let snap = await target.ariaSnapshot({ timeout: 10000 });
-    if (maxDepth) {
-      const lines = snap.split("\n");
-      const kept = lines.filter((l) => (l.length - l.trimStart().length) / 2 < maxDepth);
-      snap = kept.join("\n") +
-        (kept.length < lines.length
-          ? `\n…[${lines.length - kept.length} deeper lines omitted at maxDepth ${maxDepth}]`
-          : "");
-    }
+    // mode "ai": refs on every element, and <iframe> contents inlined (their refs
+    // carry the frame, so they resolve through it too).
+    const snap = await target.ariaSnapshot({
+      mode: "ai", timeout: 10000, ...(maxDepth && { depth: maxDepth }),
+    });
     const scope = selector === "body" ? "" : ` (${selector})`;
     return text(`${page.url()}${scope} — "${await page.title()}"\n\n${snap}`);
   });
@@ -884,11 +1189,13 @@ tool("browser_evaluate",
     return text(rendered);
   });
 
-// Release every persistent handle on parent death: any un-stopped recording (stop its
-// screencast, detach its CDP session, drop its frame dir — otherwise it strands a temp
-// dir of up to REC_MAX_FRAMES JPEGs) and the cached CDP browser (the open websocket that
-// would otherwise keep us alive indefinitely).
+// Release every persistent handle on parent death: any viewport override (whose CDP
+// session is what holds it), any un-stopped recording (stop its screencast, detach its
+// CDP session, drop its frame dir — otherwise it strands a temp dir of up to
+// REC_MAX_FRAMES JPEGs) and the cached CDP browser (the open websocket that would
+// otherwise keep us alive indefinitely).
 async function shutdownCleanup() {
+  for (const sid of [...viewports.keys()]) await clearViewport(sid);
   for (const rec of recordings.values()) {
     try { await rec.cdp.send("Page.stopScreencast"); } catch { /* already gone */ }
     try { await rec.cdp.detach(); } catch { /* already gone */ }

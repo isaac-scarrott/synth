@@ -168,6 +168,11 @@ function instrument(page) {
     if (!BODY_TYPES.has(entry.type)) return;
     req.response().then((res) => res?.body()).then((body) => {
       if (!body || body.length === 0 || body.length > BODY_MAX) return;
+      // This lands well after the request started, by which time the entry may have been
+      // pushed off the end of the log. Counting its bytes then would leak them: nothing left
+      // in `entries` can ever give them back, and once the phantom total passes the cap every
+      // body afterwards is evicted the instant it arrives.
+      if (!net.entries.includes(entry)) return;
       entry.body = body;
       net.held += body.length;
       // Oldest first: a body from ten navigations ago is the one nobody is about to ask for.
@@ -870,9 +875,12 @@ tool("browser_wait_for",
         await page.getByText(textGone).first().waitFor({ state: "hidden", timeout });
         what = `"${textGone}" went`;
       } else if (ref || selector) {
-        // A ref names an element captured at snapshot time, so "detached" is the only
-        // state it can newly reach — waiting for a ref to become visible is waiting on
-        // a node that already exists. Selectors carry the general case.
+        // A ref names an element captured at snapshot time, so "detached" is the only state it
+        // can newly reach — and a ref that no longer resolves IS detached, which is the answer
+        // rather than the expired-ref error resolveTarget would otherwise give.
+        if (ref && state === "detached" && await page.locator(`aria-ref=${ref}`).count() === 0) {
+          return text(`ref ${ref} is detached`);
+        }
         const target = await resolveTarget(page, { ref, selector });
         await target.waitFor({ state, timeout });
         what = `${targetLabel({ ref, selector })} is ${state}`;
@@ -966,8 +974,14 @@ function isTextual(contentType, buf) {
     return false;
   }
   // Round-trips through UTF-8 = someone can read it. Bounded, so a large body costs a fixed
-  // sample rather than a full copy.
-  const sample = buf.subarray(0, 64 * 1024);
+  // sample rather than a full copy — and cut back to a character boundary first, or any body
+  // over the sample size with an accent or an emoji near the cut reads as binary.
+  let end = Math.min(buf.length, 64 * 1024);
+  if (end < buf.length) {
+    while (end > 0 && (buf[end - 1] & 0xc0) === 0x80) end--;   // off the continuation bytes
+    if (end > 0 && buf[end - 1] >= 0xc0) end--;                // and off the lead byte they follow
+  }
+  const sample = buf.subarray(0, end);
   return Buffer.compare(Buffer.from(sample.toString("utf8"), "utf8"), sample) === 0;
 }
 

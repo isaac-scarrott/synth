@@ -71,14 +71,23 @@ enum FolderSize {
     /// re-render, so the dedupe is the whole point: without it a scrolling list would spawn a
     /// fresh walk of every archived worktree per frame.
     func warm(_ urls: [URL]) {
-        for url in urls where sizes[url] == nil && !inFlight.contains(url) {
-            inFlight.insert(url)
-            Task.detached(priority: .utility) {
-                let measured = FolderSize.bytes(of: url)
-                await MainActor.run {
-                    self.sizes[url] = measured
-                    self.inFlight.remove(url)
-                }
+        for url in urls where sizes[url] == nil { measure(url) }
+    }
+
+    /// Walk it again even though it has been measured — for the one folder that grows while
+    /// the user is looking away, a browser profile they keep signing into. The old value stays
+    /// on screen until the new one lands: clearing first would say "nothing kept yet" for a
+    /// second every time Settings opens, which is worse than a size a few seconds stale.
+    func refresh(_ url: URL) { measure(url) }
+
+    private func measure(_ url: URL) {
+        guard !inFlight.contains(url) else { return }
+        inFlight.insert(url)
+        Task.detached(priority: .utility) {
+            let measured = FolderSize.bytes(of: url)
+            await MainActor.run {
+                self.sizes[url] = measured
+                self.inFlight.remove(url)
             }
         }
     }

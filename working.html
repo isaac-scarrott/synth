@@ -9278,6 +9278,9 @@
   // lifecycle used to decide (a profile deleted on close, so nothing ever survived) and the
   // user was never asked, which was the whole thing that was wrong with it.
   let confirmClear = null;   // project name whose row is showing its clear strip
+  // The prototype has no second Synth to be refused by, so the refusal is behind a switch:
+  // set `clearRefused = true` in the console to see the row a live sibling instance produces.
+  let clearRefused = false;
   function browsingDataRow(name) {
     if (confirmClear === name) {
       return row('Browsing data', `<div class="set-agent__confirm">
@@ -9287,6 +9290,12 @@
     </div>`);
     }
     const mb = projOf(name).browsingMb || 0;
+    if (projOf(name).clearRefused) {
+      return row('Browsing data',
+        desc('Couldn\u2019t clear it — another Synth is using this project\u2019s browsing data. Quit it and try again.'),
+        `<span class="arc-total">${fmtSize(mb)}</span>`
+          + `<button class="tpl-add__btn" data-bclear="${esc(name)}">Clear\u2026</button>`);
+    }
     return row('Browsing data',
       desc(mb ? 'Cookies, logins and site data, shared by every browser session in this project. Kept until you clear it.'
               : 'Nothing kept yet. Sign in to a site in a browser session and it stays signed in — across branches, and across restarts.'),
@@ -9587,8 +9596,12 @@
     }));
     content.querySelectorAll('[data-bclear-yes]').forEach((b) => b.addEventListener('click', () => {
       // The row itself is the confirmation: the size goes, and the description turns back
-      // into the one a project that has never stored anything shows.
-      projOf(b.dataset.bclearYes).browsingMb = 0;
+      // into the one a project that has never stored anything shows. A refusal is the one
+      // thing that needs words — another Synth is live on this project's profile, and its
+      // data is not this window's to delete.
+      const name = b.dataset.bclearYes;
+      if (clearRefused) { projOf(name).clearRefused = true; }
+      else { projOf(name).browsingMb = 0; projOf(name).clearRefused = false; }
       confirmClear = null;
       renderSettings();
     }));

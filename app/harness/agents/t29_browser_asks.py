@@ -96,7 +96,10 @@ check("15. Block reaches the page as a real getUserMedia rejection", bool(denied
       cdp_eval(port, "dialogs.html", "window.__answer"))
 
 # --- 5. Find in page -------------------------------------------------------------------
-ctl("browser.close", sessionId=bid)
+# The dialogs session stays open for section 6. Closing it and opening another on the same URL
+# is what a target list cannot tell apart: the old page's window.__answer would answer for the
+# new one, and the suite would be reading the camera's verdict about a confirm.
+dialogs = bid
 bid = ctl("browser.create", url=f"http://127.0.0.1:{plain}/find.html")["sessionId"]
 wait(lambda: ("find.html" in address(bid)) or None, 40)
 
@@ -117,16 +120,13 @@ check("19. Esc closes it", r.get("open") is False, r)
 # The card's own .cancelAction cannot be relied on: a browser pane usually hands its keys to
 # the page's own view, so the key monitor takes Esc. It cancels and never proceeds — accepting
 # stays a click.
-ctl("browser.close", sessionId=bid)
-bid = ctl("browser.create", url=page)["sessionId"]
-wait(lambda: ("dialogs.html" in address(bid)) or None, 40)
-ctl("automation.jump", sessionId=bid)          # Esc belongs to the OPEN session's pane
+ctl("automation.jump", sessionId=dialogs)      # Esc belongs to the OPEN session's pane
 time.sleep(1)
-ctl("automation.browserGo", sessionId=bid, url=f"{page}#confirm")
-wait_ask(bid, "confirm")
+ctl("automation.browserGo", sessionId=dialogs, url=f"{page}#confirm")
+wait_ask(dialogs, "confirm")
 ctl("automation.key", keyCode=53)              # Esc
-gone = wait(lambda: (not asks(bid)) or None, 20)
-check("20. Esc takes the question off the pane", bool(gone), asks(bid))
+gone = wait(lambda: (not asks(dialogs)) or None, 20)
+check("20. Esc takes the question off the pane", bool(gone), asks(dialogs))
 check("21. and the page reads it as a cancel",
       wait(lambda: (cdp_eval(port, "dialogs.html", "window.__answer") == "false") or None, 20),
       cdp_eval(port, "dialogs.html", "window.__answer"))

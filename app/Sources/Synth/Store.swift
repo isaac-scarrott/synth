@@ -1784,16 +1784,21 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// only thing that deletes a profile now; the lifecycle deleting one on close, without
     /// ever asking, is what stage five reversed.
     ///
-    /// The workspace's live engines go first. A profile with a browser sitting on it is not
-    /// ours to delete, and a directory removed under a browser that still holds the session
-    /// in memory would leave the user signed in to a site whose cookies are gone. Each pane
-    /// rebuilds its engine on the next render and reopens the page it was on, signed out.
-    func clearBrowsingData(for workspace: Workspace) {
+    /// The workspace's live engines are asked to close first: a directory removed under a
+    /// browser that still holds the session in memory would leave the user signed in to a site
+    /// whose cookies are gone. Each pane rebuilds its engine on the next render and reopens the
+    /// page it was on, signed out.
+    ///
+    /// False when the profile could not be thrown away — another Synth is live on it. The size
+    /// is only forgotten on success, so a refusal leaves the row telling the truth.
+    @discardableResult
+    func clearBrowsingData(for workspace: Workspace) -> Bool {
         let browsers = workspace.branches.flatMap(\.sessions).filter { $0.kind == .browser }
         BrowserManager.shared.recycle(browsers.map(\.id))
         let key = workspace.browserProfileKey
+        guard BrowserEngineFactory.clearProfile(workspaceKey: key) else { return false }
         FolderSizeCache.shared.forget(BrowserEngineFactory.profileDirectory(workspaceKey: key))
-        BrowserEngineFactory.clearProfile(workspaceKey: key)
+        return true
     }
 
     /// A simulator session (ADR-0015): a claim on one device from the installed fleet, named by

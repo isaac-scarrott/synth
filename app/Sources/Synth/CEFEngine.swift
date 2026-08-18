@@ -213,27 +213,46 @@ final class BrowserProcessSupervisor {
 
     /// Throws away one workspace's profile — the only thing that deletes one now, and only
     /// because the user asked (stage five: the old lifecycle deleted every profile on close
-    /// and never asked anyone).
+    /// and never asked anyone). False when it could not be done, which is one case: another
+    /// Synth holds the profile root and its browsers are live on it.
     ///
-    /// The directory is renamed aside rather than emptied in place, so a new engine can be
-    /// built on the same path the same instant. The renamed copy is removed now and again at
-    /// +2s and +6s: CEF's profile flush can land after the browser is gone and resurrect a
-    /// just-closed profile as a husk, and a path that is never reused cannot catch a live
-    /// profile the way deleting in place could.
-    ///
-    /// Callers must have torn the workspace's engines down first — a profile with a live
-    /// browser on it is not the caller's to delete.
-    func clearProfile(workspaceKey: String) {
-        guard let root else { return }
-        let dir = root.appendingPathComponent(workspaceKey, isDirectory: true)
+    /// Callers ask this workspace's engines to close first, but closing a CEF browser is
+    /// asynchronous and they will still be flushing when this runs. That is exactly why the
+    /// directory is RENAMED aside rather than emptied in place: a browser on its way out keeps
+    /// writing through the file handles it already holds, which follow the inode into the
+    /// renamed copy, while a fresh engine starts on a clean path the same instant. The renamed
+    /// copy is removed now and again at +2s and +6s, because CEF's profile flush can land
+    /// after the browser is gone and resurrect one as a husk — and a path that is never reused
+    /// cannot catch a live profile the way deleting in place could.
+    @discardableResult
+    func clearProfile(workspaceKey: String) -> Bool {
+        // Before the first browser opens there is no root, and Settings has been measuring the
+        // persistent one — so clearing has to reach the same directory or the button does
+        // nothing at all. Nothing of OURS is on it then, but another Synth's engine may be, and
+        // its profile is not ours to delete. The root claim's own lock is the answer: taken
+        // briefly here, and refused means someone is live on it.
+        if let root {
+            remove(profile: root.appendingPathComponent(workspaceKey, isDirectory: true))
+            return true
+        }
+        let fd = open(Self.sharedLock.path, O_CREAT | O_RDWR, 0o644)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return false }
+        defer { flock(fd, LOCK_UN) }
+        remove(profile: Self.sharedRoot.appendingPathComponent(workspaceKey, isDirectory: true))
+        return true
+    }
+
+    private func remove(profile dir: URL) {
         let fm = FileManager.default
         guard fm.fileExists(atPath: dir.path) else { return }
         let aside = Self.profilesRoot.appendingPathComponent(
             ".cleared-\(UUID().uuidString)", isDirectory: true)
         guard (try? fm.moveItem(at: dir, to: aside)) != nil else {
-            // Nowhere to move it to (a full disk, a permissions change) — emptying in place
-            // is the honest fallback, and the husk it may leave is one profile's worth of
-            // files that the next clear takes out.
+            // Nowhere to move it to (a full disk, a permissions change) — emptying in place is
+            // the honest fallback, and the husk it may leave is one profile's worth of files
+            // that the next clear takes out.
             try? fm.removeItem(at: dir)
             return
         }
@@ -380,7 +399,14 @@ extension CEFEngine: CEFShimBrowserDelegate {
     /// for its life, so `didWithdraw` names the same object the pane is showing.
     private final class Ask: BrowserAsk {
         private let shim: CEFShimAsk
-        init(_ shim: CEFShimAsk) { self.shim = shim }
+        /// Drops this ask from the engine's table. Answering is the end of a question, and a
+        /// table that only ever grew would keep every question a chatty page ever asked.
+        private let forget: () -> Void
+
+        init(_ shim: CEFShimAsk, forget: @escaping () -> Void) {
+            self.shim = shim
+            self.forget = forget
+        }
 
         var kind: BrowserAskKind {
             switch shim.kind {
@@ -398,16 +424,20 @@ extension CEFEngine: CEFShimBrowserDelegate {
         var detail: String? { shim.detail }
         var defaultText: String? { shim.defaultText }
 
-        func allow() { shim.allow() }
-        func allow(text: String) { shim.allow(withText: text) }
-        func allow(user: String, password: String) { shim.allow(withUser: user, password: password) }
-        func deny() { shim.deny() }
+        func allow() { shim.allow(); forget() }
+        func allow(text: String) { shim.allow(withText: text); forget() }
+        func allow(user: String, password: String) {
+            shim.allow(withUser: user, password: password)
+            forget()
+        }
+        func deny() { shim.deny(); forget() }
     }
 
     nonisolated func cefBrowserDidAsk(_ ask: CEFShimAsk) {
         MainActor.assumeIsolated {
-            let wrapped = Ask(ask)
-            asks[ObjectIdentifier(ask)] = wrapped
+            let key = ObjectIdentifier(ask)
+            let wrapped = Ask(ask) { [weak self] in self?.asks[key] = nil }
+            asks[key] = wrapped
             delegate?.engine(self, didAsk: wrapped)
         }
     }

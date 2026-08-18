@@ -60,9 +60,13 @@ enum BrowserEngineFactory {
         #endif
     }
 
-    static func clearProfile(workspaceKey: String) {
+    /// False when the profile could not be thrown away — another Synth is live on it, or this
+    /// build has no engine and therefore nothing that owns one.
+    static func clearProfile(workspaceKey: String) -> Bool {
         #if canImport(CEFShim)
-        BrowserProcessSupervisor.shared.clearProfile(workspaceKey: workspaceKey)
+        return BrowserProcessSupervisor.shared.clearProfile(workspaceKey: workspaceKey)
+        #else
+        return false
         #endif
     }
 }

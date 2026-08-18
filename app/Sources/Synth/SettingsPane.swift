@@ -1312,6 +1312,9 @@ private struct BrowsingData: View {
     @Environment(AppStore.self) private var store
     let workspace: Workspace
     @State private var confirming = false
+    /// Set when a clear was refused — another Synth is live on this project's profile. Cleared
+    /// the moment the user asks again, so it never outlives the situation it describes.
+    @State private var refused = false
 
     private var directory: URL {
         BrowserEngineFactory.profileDirectory(workspaceKey: workspace.browserProfileKey)
@@ -1327,7 +1330,7 @@ private struct BrowsingData: View {
                     Spacer(minLength: 8)
                     SetPillButton(icon: nil, title: "Cancel") { confirming = false }
                     SetPillButton(icon: nil, title: "Clear", danger: true) {
-                        store.clearBrowsingData(for: workspace)
+                        refused = !store.clearBrowsingData(for: workspace)
                         confirming = false
                     }
                 }
@@ -1342,15 +1345,25 @@ private struct BrowsingData: View {
                             Text(FolderSize.format(bytes))
                                 .font(.sans(12, tabular: true)).foregroundStyle(Theme.inkMuted)
                         }
-                        SetPillButton(icon: nil, title: "Clear…") { confirming = true }
+                        SetPillButton(icon: nil, title: "Clear…") {
+                            refused = false
+                            confirming = true
+                        }
                     }
                 }
             }
         }
-        .onAppear { FolderSizeCache.shared.warm([directory]) }
+        // Re-walked on every visit, not once per launch: a profile grows every time the user
+        // signs into something, and a row whose whole job is to say how much is kept must not
+        // be quoting a number from this morning.
+        .onAppear { FolderSizeCache.shared.refresh(directory) }
     }
 
     private var description: String {
+        if refused {
+            return "Couldn’t clear it — another Synth is using this project’s browsing data. "
+                 + "Quit it and try again."
+        }
         if !BrowserEngineFactory.profilesPersist {
             return "Another Synth is using the saved profile, so this window's browsers start "
                  + "signed out and forget everything when it quits."

@@ -296,8 +296,17 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
 }
 
 - (void)abandon {
+  if (_answered) {
+    return;
+  }
   _answered = YES;
-  self.resolve = nil;
+  // Run the shim-side resolver rather than dropping it: it is what releases the origin from
+  // `_authAsking`, and an origin left in that set can never raise a sign-in card again for the
+  // life of the browser. A denial is the right answer to a question nobody can answer now.
+  if (self.resolve) {
+    self.resolve(NO, nil, nil);
+    self.resolve = nil;
+  }
   _certCallback = nullptr;
   _authCallback = nullptr;
   _jsCallback = nullptr;
@@ -519,6 +528,7 @@ static void CopyToPasteboard(const CefString &text) {
 - (void)handleTitleChange:(NSString *)title;
 - (void)handleLoadingStateChangeCanGoBack:(BOOL)canGoBack canGoForward:(BOOL)canGoForward;
 - (void)handleAsk:(CEFShimAsk *)ask;
+- (void)withdrawDialogAsks;
 - (void)handleOpenExternal:(NSString *)url;
 - (void)openPopup:(NSString *)url width:(int)width height:(int)height;
 - (nullable NSString *)authorizationForOrigin:(const std::string &)origin;
@@ -760,12 +770,18 @@ static NSSize PopupSize(const CefPopupFeatures &features) {
   }
 }
 
-/// The page closed itself, or the runtime is shutting down.
+/// The page closed itself, the user closed the window, or the runtime is going down.
 - (void)dismiss {
   if (_closing) {
     return;
   }
   _closing = YES;
+  // CloseBrowser first, always. Shutdown used to reach here without it and rely on the view's
+  // dealloc alone to decrement the alive count — and a browser still alive when the 8s
+  // close-wait expires is the surviving process that owns the profile singleton.
+  if (_browser) {
+    _browser->GetHost()->CloseBrowser(/*force_close=*/true);
+  }
   // The session browser's teardown, for the same reasons: close completion on macOS is the
   // CEF wrapper view's dealloc, and the local pool keeps a signal-initiated quit from stalling.
   @autoreleasepool {
@@ -783,10 +799,7 @@ static NSSize PopupSize(const CefPopupFeatures &features) {
 /// The user closed the window. The page has to be told, or a renderer is left running behind
 /// a window nobody can see.
 - (BOOL)windowShouldClose:(NSWindow *)sender {
-  if (_browser && !_closing) {
-    _browser->GetHost()->CloseBrowser(/*force_close=*/true);
-    [self dismiss];
-  }
+  [self dismiss];
   return YES;
 }
 
@@ -973,7 +986,10 @@ class ShimClient : public CefClient,
   // Navigation cancels whatever the old page was asking. CEF drops the callbacks itself, so
   // the surface has to come down with them or it would collect an answer nothing receives.
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override {
-    [owner_ handleWithdrawPromptID:0];
+    // JS dialogs only. This is CefJSDialogHandler's "the page moved, your dialogs are gone",
+    // and a certificate or permission request is neither — withdrawing those here would drop
+    // their callbacks unanswered and leave the site's promise hanging forever.
+    [owner_ withdrawDialogAsks];
   }
 
   bool OnShowPermissionPrompt(CefRefPtr<CefBrowser> browser, uint64_t prompt_id,
@@ -1546,12 +1562,39 @@ class ShimClient : public CefClient,
   [self.delegate cefBrowserDidAsk:ask];
 }
 
-/// CEF has taken a question back. `promptID` 0 means all of them (dialog state reset on
-/// navigation); anything else is one permission prompt.
+/// CEF has taken a question back. `promptID` 0 means all of them (the browser is going);
+/// anything else is one permission prompt.
 - (void)handleWithdrawPromptID:(uint64_t)promptID {
-  NSArray<CEFShimAsk *> *asks = [self.pendingAsks copy];
-  for (CEFShimAsk *ask in asks) {
-    if (promptID != 0 && ask->_promptId != promptID) {
+  [self withdraw:^BOOL(CEFShimAsk *ask) {
+    return promptID == 0 || ask->_promptId == promptID;
+  }];
+}
+
+/// Just the JavaScript dialogs — see OnResetDialogState.
+- (void)withdrawDialogAsks {
+  [self withdraw:^BOOL(CEFShimAsk *ask) {
+    switch (ask.kind) {
+      case CEFShimAskAlert:
+      case CEFShimAskConfirm:
+      case CEFShimAskPrompt:
+      case CEFShimAskBeforeUnload:
+        return YES;
+      default:
+        return NO;
+    }
+  }];
+}
+
+- (void)withdraw:(BOOL (^)(CEFShimAsk *))matches {
+  for (CEFShimAsk *ask in [self.pendingAsks copy]) {
+    // An answered ask is off the pane already; re-announcing it would take a live question's
+    // place on screen. It leaves the list here, which is also what keeps the list from growing
+    // for the life of a chatty page.
+    if (ask->_answered) {
+      [self.pendingAsks removeObject:ask];
+      continue;
+    }
+    if (!matches(ask)) {
       continue;
     }
     [ask abandon];

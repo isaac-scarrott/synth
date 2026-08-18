@@ -17,6 +17,10 @@ import AppKit
     static let shared = BrowserManager()
 
     @ObservationIgnored weak var bus: EventBus?
+    /// Which workspace a session belongs to — the profile an engine runs on (stage five).
+    /// The store is the only thing that knows, and every caller of `controller(for:)`
+    /// would otherwise have to carry the answer down to it.
+    @ObservationIgnored weak var store: AppStore?
     @ObservationIgnored private var controllers: [UUID: BrowserSessionController] = [:]
 
     /// Sessions already terminated. A pane re-render mid-delete must not lazily
@@ -52,7 +56,8 @@ import AppKit
         defer { creating.remove(session.id) }
         let engine: BrowserEngine
         do {
-            engine = try BrowserEngineFactory.make(sessionID: session.id)
+            engine = try BrowserEngineFactory.make(sessionID: session.id,
+                                                   workspaceKey: profileKey(for: session))
         } catch {
             failures[session.id] = error.localizedDescription
             generation += 1
@@ -68,6 +73,31 @@ import AppKit
     func failure(_ id: UUID) -> String? {
         _ = generation
         return failures[id]
+    }
+
+    /// The profile directory this session's engine runs on. A session whose workspace can't
+    /// be resolved (a row mid-teardown) gets its own, so it can never silently land in
+    /// another project's signed-in profile.
+    private func profileKey(for session: Session) -> String {
+        guard let store,
+              let branch = store.branch(of: session),
+              let workspace = store.workspace(of: branch) else { return "session-\(session.id.uuidString)" }
+        return workspace.browserProfileKey
+    }
+
+    /// Tears down every live engine in a workspace so its profile can be cleared, and clears
+    /// the tombstones so the panes rebuild — the rows are not going anywhere, only the
+    /// browsers on them. Returns the sessions that had one.
+    @discardableResult
+    func recycle(_ ids: [UUID]) -> [UUID] {
+        let live = ids.filter { controllers[$0] != nil }
+        for id in live {
+            controllers[id]?.shutdown()
+            controllers[id] = nil
+        }
+        for id in ids { dead.remove(id); failures.removeValue(forKey: id) }
+        generation += 1
+        return live
     }
 
     /// The live controller, if the session's pane has ever been opened — never spins

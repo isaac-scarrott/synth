@@ -878,6 +878,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         hookServer = HookServer(bus: bus)
         TerminalManager.shared.bus = bus
         BrowserManager.shared.bus = bus
+        BrowserManager.shared.store = self
         TerminalManager.shared.hookSocketPath = hookServer.socketPath
         AgentRegistry.startSupervisors(bus: bus)
         HookEnvironment.setup()
@@ -1785,6 +1786,23 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             DispatchQueue.main.async { _ = BrowserManager.shared.controller(for: session) }
         }
         return session
+    }
+
+    /// Throws away one project's browsing data — the cookies, logins and site data every
+    /// browser session in the workspace shares (ADR-0011 stage five). The user asking is the
+    /// only thing that deletes a profile now; the lifecycle deleting one on close, without
+    /// ever asking, is what stage five reversed.
+    ///
+    /// The workspace's live engines go first. A profile with a browser sitting on it is not
+    /// ours to delete, and a directory removed under a browser that still holds the session
+    /// in memory would leave the user signed in to a site whose cookies are gone. Each pane
+    /// rebuilds its engine on the next render and reopens the page it was on, signed out.
+    func clearBrowsingData(for workspace: Workspace) {
+        let browsers = workspace.branches.flatMap(\.sessions).filter { $0.kind == .browser }
+        BrowserManager.shared.recycle(browsers.map(\.id))
+        let key = workspace.browserProfileKey
+        FolderSizeCache.shared.forget(BrowserEngineFactory.profileDirectory(workspaceKey: key))
+        BrowserEngineFactory.clearProfile(workspaceKey: key)
     }
 
     /// A simulator session (ADR-0015): a claim on one device from the installed fleet, named by

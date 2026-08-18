@@ -62,6 +62,11 @@ enum FolderSize {
     /// claiming 0 MB is worse than a folder claiming nothing.
     func bytes(for url: URL) -> Int64? { sizes[url] }
 
+    /// Drop a measurement so the next `warm` walks the folder again. For the one folder that
+    /// legitimately changes under the user: a browser profile they have just cleared, where a
+    /// remembered size would be the strongest evidence that nothing happened.
+    func forget(_ url: URL) { sizes[url] = nil }
+
     /// Measure anything not already measured or in flight. Called from a SwiftUI body on every
     /// re-render, so the dedupe is the whole point: without it a scrolling list would spawn a
     /// fresh walk of every archived worktree per frame.

@@ -40,7 +40,10 @@ enum BrowserCheck {
         let engine: BrowserEngine
         #if canImport(CEFShim)
         do {
-            engine = try CEFEngine(initialURL: dataURL(title: "synth-boot"), sessionID: UUID())
+            // Its own profile key, so a check run never writes into a real project's
+            // signed-in profile — and never leaves anything behind that a clear would have to.
+            engine = try CEFEngine(initialURL: dataURL(title: "synth-boot"), sessionID: UUID(),
+                                   workspaceKey: "browser-check")
         } catch {
             report(false, "engine-created", error.localizedDescription)
             print("BROWSER-CHECK RESULT: FAIL")

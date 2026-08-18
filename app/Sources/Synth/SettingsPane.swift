@@ -243,6 +243,7 @@ struct SettingsPane: View {
                     }
                 }
             }
+            SetSection(label: "Browser") { BrowsingData(workspace: ws) }
             SetSection(label: "Archived") { ArchivedWorktrees(workspace: ws) }
         }
     }
@@ -1296,6 +1297,69 @@ private struct TplHover<Content: View>: View {
     @ViewBuilder var content: (Bool) -> Content
     @State private var hovering = false
     var body: some View { content(hovering).onHover { hovering = $0 } }
+}
+
+// MARK: - Browsing data (working.html browsingDataRow)
+
+/// What the project's browsers have kept, and the one place it is thrown away (ADR-0011
+/// stage five). The profile is per PROJECT, not per branch: branches of one repo are the same
+/// application, so a per-branch profile would charge a fresh login on every branch cut, and a
+/// global one would give up isolation between unrelated projects.
+///
+/// Clearing is destructive and reversible only by signing in again, so it asks — on the row,
+/// in the same strip a custom agent's removal uses, rather than in a modal of its own.
+private struct BrowsingData: View {
+    @Environment(AppStore.self) private var store
+    let workspace: Workspace
+    @State private var confirming = false
+
+    private var directory: URL {
+        BrowserEngineFactory.profileDirectory(workspaceKey: workspace.browserProfileKey)
+    }
+
+    var body: some View {
+        Group {
+            if confirming {
+                HStack(spacing: 8) {
+                    Text("Signs these browsers out of every site and forgets what they stored. Open pages reload.")
+                        .font(.sans(12)).foregroundStyle(Theme.inkMuted)
+                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: 8)
+                    SetPillButton(icon: nil, title: "Cancel") { confirming = false }
+                    SetPillButton(icon: nil, title: "Clear", danger: true) {
+                        store.clearBrowsingData(for: workspace)
+                        confirming = false
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 11).frame(minHeight: 44)
+            } else {
+                SetToggleRow(label: "Browsing data", desc: description) {
+                    HStack(spacing: 8) {
+                        // nil = not measured yet. A profile claiming 0 MB before the walk has
+                        // finished reads as "nothing here", which is the one thing it must not
+                        // say wrongly on the row whose button throws it away.
+                        if let bytes = FolderSizeCache.shared.bytes(for: directory), bytes > 0 {
+                            Text(FolderSize.format(bytes))
+                                .font(.sans(12, tabular: true)).foregroundStyle(Theme.inkMuted)
+                        }
+                        SetPillButton(icon: nil, title: "Clear…") { confirming = true }
+                    }
+                }
+            }
+        }
+        .onAppear { FolderSizeCache.shared.warm([directory]) }
+    }
+
+    private var description: String {
+        if !BrowserEngineFactory.profilesPersist {
+            return "Another Synth is using the saved profile, so this window's browsers start "
+                 + "signed out and forget everything when it quits."
+        }
+        let bytes = FolderSizeCache.shared.bytes(for: directory) ?? 0
+        return bytes > 0
+            ? "Cookies, logins and site data, shared by every browser session in this project. Kept until you clear it."
+            : "Nothing kept yet. Sign in to a site in a browser session and it stays signed in — across branches, and across restarts."
+    }
 }
 
 // MARK: - Archived worktrees (working.html .arc-*)

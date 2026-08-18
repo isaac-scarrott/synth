@@ -13,11 +13,14 @@ enum BrowserEngineFactory {
         var errorDescription: String? { reason }
     }
 
-    static func make(sessionID: UUID) throws -> BrowserEngine {
+    /// `workspaceKey` names the profile the engine runs on — per workspace, so every
+    /// browser session in one repo is the same signed-in browser (stage five).
+    static func make(sessionID: UUID, workspaceKey: String) throws -> BrowserEngine {
         #if canImport(CEFShim)
         // CEF needs a URL at browser creation; the home surface covers the view until
         // the session's first real navigation.
-        return try CEFEngine(initialURL: URL(string: "about:blank")!, sessionID: sessionID)
+        return try CEFEngine(initialURL: URL(string: "about:blank")!, sessionID: sessionID,
+                             workspaceKey: workspaceKey)
         #else
         throw Unavailable(reason:
             "this build has no browser engine — CEF wasn't compiled in. Run " +
@@ -30,6 +33,36 @@ enum BrowserEngineFactory {
     static func globalShutdown() {
         #if canImport(CEFShim)
         BrowserProcessSupervisor.shared.shutdownNow()
+        #endif
+    }
+
+    // The engine's profile facts, reachable from the store and Settings without either of
+    // them naming a CEF type — the #if lives here, once, like globalShutdown's.
+
+    /// Where a workspace's browser profile sits on disk. The live root while the engine is
+    /// up, the persistent one before that — so what Settings measures is what Clear removes.
+    static func profileDirectory(workspaceKey: String) -> URL {
+        #if canImport(CEFShim)
+        return BrowserProcessSupervisor.shared.profilePath(workspaceKey: workspaceKey)
+        #else
+        return AppSupport.dir("BrowserProfiles/shared")
+            .appendingPathComponent(workspaceKey, isDirectory: true)
+        #endif
+    }
+
+    /// False when another live Synth of this channel holds the persistent profile root and
+    /// this instance is browsing on a throwaway one.
+    static var profilesPersist: Bool {
+        #if canImport(CEFShim)
+        return BrowserProcessSupervisor.shared.profilesPersist
+        #else
+        return false
+        #endif
+    }
+
+    static func clearProfile(workspaceKey: String) {
+        #if canImport(CEFShim)
+        BrowserProcessSupervisor.shared.clearProfile(workspaceKey: workspaceKey)
         #endif
     }
 }

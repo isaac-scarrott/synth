@@ -652,7 +652,6 @@ class ShimClient : public CefClient,
 - (void)handleBeforeClose {
   _browser = nullptr;
   [g_liveShimBrowsers removeObject:self];
-  [self.delegate cefBrowserDidClose];
 }
 
 @end

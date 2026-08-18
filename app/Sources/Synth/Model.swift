@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 
@@ -334,4 +335,25 @@ func relativeAge(_ date: Date, now: Date) -> String {
     /// Archived list reads, what restore puts back, and what persists — so every surface that
     /// means "the rows the user has" must ask for these, not for `branches`.
     var liveBranches: [Branch] { branches.filter { !$0.isArchived } }
+}
+
+/// The browser profile a workspace's sessions share (ADR-0011 stage five). Keyed on the
+/// repo's path rather than the workspace's id, because a project removed from the sidebar
+/// and added back is the same repo and should still be signed in — the id would not be.
+/// The name rides in front of the digest so the directory is legible in Finder; the digest
+/// is what makes it unique, since two projects can share a folder name.
+extension Workspace {
+    var browserProfileKey: String {
+        let slug = name.lowercased()
+            .map { $0.isLetter || $0.isNumber ? $0 : "-" }
+            .reduce(into: "") { out, c in
+                if c == "-" && out.hasSuffix("-") { return }
+                out.append(c)
+            }
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let digest = SHA256.hash(data: Data(path.utf8))
+            .prefix(6).map { String(format: "%02x", $0) }.joined()
+        return "\(slug.isEmpty ? "project" : String(slug.prefix(40)))-\(digest)"
+    }
 }

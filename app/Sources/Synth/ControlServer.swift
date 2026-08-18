@@ -553,6 +553,27 @@ final class ControlServer: @unchecked Sendable {
             }
             return ["ok": ctrl.go(url)]
 
+        // Where this workspace's browser profile is, and whether it is the persistent one
+        // (stage five). `persists` false means another Synth of this channel holds the shared
+        // root and this instance is browsing on a throwaway — the fact the pane states too.
+        case "automation.browserProfile" where automation:
+            guard let workspace = store.workspace(of: branch) else {
+                return ["ok": false, "error": "no workspace for this branch"]
+            }
+            let dir = BrowserEngineFactory.profileDirectory(
+                workspaceKey: workspace.browserProfileKey)
+            return ["ok": true, "path": dir.path, "key": workspace.browserProfileKey,
+                    "persists": BrowserEngineFactory.profilesPersist,
+                    "exists": FileManager.default.fileExists(atPath: dir.path)]
+
+        // Settings ▸ <project> ▸ Browser ▸ Clear — the same store call the row makes.
+        case "automation.clearBrowsingData" where automation:
+            guard let workspace = store.workspace(of: branch) else {
+                return ["ok": false, "error": "no workspace for this branch"]
+            }
+            store.clearBrowsingData(for: workspace)
+            return ["ok": true]
+
         // Post a real key event through the app's own queue, so the RootView key
         // monitor sees it exactly as a typed key — the window-wide-shortcut test
         // path where TCC swallows CGEvent postToPid entirely.

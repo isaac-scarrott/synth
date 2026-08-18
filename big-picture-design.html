@@ -8670,6 +8670,7 @@
         { kind: 'browser',  name: 'localhost:3000' },
       ],
       flags: { claude: '--chrome' },                   // appended to the shared claude flags
+      browsingMb: 118,                                 // what its browser profile has kept
     },
   };
   const projOf = (name) => PROJ[name] || (PROJ[name] = {});
@@ -9122,7 +9123,30 @@
 
     return sec('New worktree', script + sessions)
       + (agents ? sec('Agents', agents) : '')
+      + sec('Browser', browsingDataRow(name))
       + sec('Archived', archivedSection(name));
+  }
+
+  // The browser's profile is per PROJECT — branches of one repo are the same application, so a
+  // per-branch profile would charge a fresh login on every branch cut, and a global one would
+  // give up isolation between unrelated projects. It is cleared here and nowhere else: the
+  // lifecycle used to decide (a profile deleted on close, so nothing ever survived) and the
+  // user was never asked, which was the whole thing that was wrong with it.
+  let confirmClear = null;   // project name whose row is showing its clear strip
+  function browsingDataRow(name) {
+    if (confirmClear === name) {
+      return row('Browsing data', `<div class="set-agent__confirm">
+      <span class="set-agent__confirm-txt">Signs these browsers out of every site and forgets what they stored. Open pages stay open.</span>
+      <button class="tpl-add__btn" data-bclear-no>Cancel</button>
+      <button class="tpl-add__btn tpl-add__btn--danger" data-bclear-yes="${esc(name)}">Clear</button>
+    </div>`);
+    }
+    const mb = projOf(name).browsingMb || 0;
+    return row('Browsing data',
+      desc(mb ? 'Cookies, logins and site data, shared by every browser session in this project. Kept until you clear it.'
+              : 'Nothing kept yet. Sign in to a site in a browser session and it stays signed in — across branches, and across restarts.'),
+      (mb ? `<span class="arc-total">${fmtSize(mb)}</span>` : '')
+        + `<button class="tpl-add__btn" data-bclear="${esc(name)}">Clear\u2026</button>`);
   }
 
   // Archiving only means "reversible" if the archive is somewhere you can stand and look at it.
@@ -9408,6 +9432,22 @@
       list().push({ kind: b.dataset.add, name: TPL_KINDS[b.dataset.add].start });
       renderSettings();
     }));
+    // Clear browsing data asks on the row, in the same strip a custom agent's removal uses —
+    // destructive, reversible only by signing in again, and not worth a modal of its own.
+    content.querySelectorAll('[data-bclear]').forEach((b) => b.addEventListener('click', () => {
+      confirmClear = b.dataset.bclear; renderSettings();
+    }));
+    content.querySelectorAll('[data-bclear-no]').forEach((b) => b.addEventListener('click', () => {
+      confirmClear = null; renderSettings();
+    }));
+    content.querySelectorAll('[data-bclear-yes]').forEach((b) => b.addEventListener('click', () => {
+      // The row itself is the confirmation: the size goes, and the description turns back
+      // into the one a project that has never stored anything shows.
+      projOf(b.dataset.bclearYes).browsingMb = 0;
+      confirmClear = null;
+      renderSettings();
+    }));
+
     const arcBy = (n) => liveArchive(name).find((a) => a.name === n);
     content.querySelectorAll('[data-arc-restore]').forEach((b) => b.addEventListener('click', () => {
       const a = arcBy(b.dataset.arcRestore);
@@ -9514,6 +9554,7 @@
     app.classList.remove('settings');
     document.getElementById('openSettings').classList.remove('is-on');
     confirmDel = null;   // an unanswered ask doesn't wait behind your back for the next visit
+    confirmClear = null;
   }
   function exitSettings() {
     if (!app.classList.contains('settings')) return;

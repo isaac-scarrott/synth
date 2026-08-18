@@ -2,24 +2,45 @@
 import AppKit
 import CEFShim
 
-/// Owns the process-wide CEF runtime and session hygiene (ADR-0011): per-instance
-/// root cache dir, per-session profile dirs deleted on close, one CDP port per app
-/// instance, and stale-profile sweeping — the spike's singleton trap means leftover
-/// dirs from a crashed instance must never be reused.
+/// Owns the process-wide CEF runtime and profile hygiene (ADR-0011): the cache root, the
+/// per-workspace profile directories under it, one CDP port per app instance, and
+/// stale-root sweeping.
+///
+/// Stage five made the profiles PERSIST, which decides the layout:
+///
+///     BrowserProfiles/shared/<workspace-key>/    kept; the user clears it, nothing else
+///     BrowserProfiles/instance-<pid>/<key>/      the fallback root, swept when the pid dies
+///
+/// `shared` is the root every instance wants, because that is where the logins are. It can
+/// only have one: Chromium takes a process-singleton lock on `root_cache_path` and a second
+/// CefInitialize against the same root is refused outright (cef_types.h: "Multiple
+/// application instances writing to the same root_cache_path directory could result in data
+/// corruption. A process singleton lock based on the root_cache_path value is therefore
+/// used"). CEF cannot be re-initialized after a failed init, so there is no retrying it —
+/// the claim has to be settled BEFORE CefInitialize. Hence our own flock beside the root: a
+/// second Synth of this channel loses it, falls back to a per-instance root, and gets a
+/// working browser with an empty profile rather than no browser at all. `profilesPersist`
+/// says which happened, so the fallback is a fact the app can state rather than a silent
+/// last-writer-wins.
 @MainActor
 final class BrowserProcessSupervisor {
     static let shared = BrowserProcessSupervisor()
 
     private(set) var cdpPort: UInt16 = 0
+    /// False when another live Synth of this channel holds the persistent root and this
+    /// instance is running on a throwaway one. Its browsers work; their logins die with it.
+    private(set) var profilesPersist = true
     private var initialized = false
-    private var instanceRoot: URL?
+    private var root: URL?
+    /// Set only for a root this instance owns outright — the one shutdown may delete.
+    private var transientRoot: URL?
+    private var lockFD: Int32 = -1
     private var terminationObserver: NSObjectProtocol?
     private var signalSources: [DispatchSourceSignal] = []
 
-    /// Roots live per app instance (instance-<pid>) because Chromium's process
-    /// singleton is per cache root: two Synth instances sharing one root would make
-    /// the second CefInitialize defer to the first.
     private static let profilesRoot = AppSupport.dir("BrowserProfiles")
+    private static let sharedRoot = profilesRoot.appendingPathComponent("shared", isDirectory: true)
+    private static let sharedLock = profilesRoot.appendingPathComponent("shared.lock")
 
     private init() {}
 
@@ -37,24 +58,35 @@ final class BrowserProcessSupervisor {
         try fm.createDirectory(at: Self.profilesRoot, withIntermediateDirectories: true)
         sweepDeadInstances()
 
-        let root = Self.profilesRoot.appendingPathComponent(
-            "instance-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+        let root: URL
+        if claimSharedRoot() {
+            root = Self.sharedRoot
+        } else {
+            profilesPersist = false
+            root = Self.profilesRoot.appendingPathComponent(
+                "instance-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+            transientRoot = root
+            NSLog("Synth: another Synth holds the persistent browser profile root — this " +
+                  "instance's browsers start signed out and forget everything on quit")
+        }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
         guard let port = Self.allocateCDPPort(range: 9300...9399) else {
-            try? fm.removeItem(at: root)
+            releaseSharedRoot()
+            if let transient = transientRoot { try? fm.removeItem(at: transient) }
             throw BrowserEngineFactory.Unavailable(reason: "no free CDP port in 9300-9399")
         }
 
         let automation = ProcessInfo.processInfo.environment["SYNTH_AUTOMATION"] == "1"
         guard CEFShimRuntime.initialize(
             withRootCachePath: root.path, cdpPort: port, automation: automation) else {
-            try? fm.removeItem(at: root)
+            releaseSharedRoot()
+            if let transient = transientRoot { try? fm.removeItem(at: transient) }
             throw BrowserEngineFactory.Unavailable(reason:
                 "CefInitialize failed — see cef.log under \(root.path)")
         }
 
-        instanceRoot = root
+        self.root = root
         cdpPort = port
         initialized = true
         // Advertise the endpoint to CDP clients (no-op in --browser-check mode).
@@ -93,17 +125,43 @@ final class BrowserProcessSupervisor {
         }
     }
 
-    /// Full teardown: force-close every browser, CefShutdown, delete this instance's
-    /// cache root. CEF cannot re-initialize afterwards; app-exit (or check-mode) only.
+    /// Full teardown: force-close every browser, CefShutdown, and let go of the root. CEF
+    /// cannot re-initialize afterwards; app-exit (or check-mode) only. The persistent root
+    /// survives — the whole point of stage five is that quitting is not a reason to forget
+    /// your logins — so only a throwaway root is deleted here.
     func shutdownNow() {
         guard initialized else { return }
         CEFShimRuntime.shutdown()
         initialized = false
         reapHelpers()
-        if let root = instanceRoot {
-            try? FileManager.default.removeItem(at: root)
-            instanceRoot = nil
+        if let transient = transientRoot {
+            try? FileManager.default.removeItem(at: transient)
+            transientRoot = nil
         }
+        releaseSharedRoot()
+        root = nil
+    }
+
+    // MARK: - The persistent root, and who holds it
+
+    /// Takes the flock guarding `shared`, or reports that someone else has it. Non-blocking
+    /// and held for the process's life: the kernel drops it on exit or crash, so a Synth
+    /// that died without tidying up never locks the next one out. This is deliberately OUR
+    /// lock rather than Chromium's — Chromium's answer only arrives as a failed
+    /// CefInitialize, which cannot be retried with different settings.
+    private func claimSharedRoot() -> Bool {
+        let fd = open(Self.sharedLock.path, O_CREAT | O_RDWR, 0o644)
+        guard fd >= 0 else { return false }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { close(fd); return false }
+        lockFD = fd
+        return true
+    }
+
+    private func releaseSharedRoot() {
+        guard lockFD >= 0 else { return }
+        flock(lockFD, LOCK_UN)
+        close(lockFD)
+        lockFD = -1
     }
 
     /// CefShutdown returns while children are still exiting gracefully (observed ~6s
@@ -134,35 +192,75 @@ final class BrowserProcessSupervisor {
             .split(separator: "\n").compactMap { pid_t($0) } ?? []
     }
 
-    func makeProfileDirectory() throws -> URL {
-        guard let root = instanceRoot else {
+    /// The profile every browser session in one workspace shares. One directory, not one
+    /// per session: the workspace is the unit the user thinks in, and two sessions on the
+    /// same repo being signed in as different people would be a surprise, not isolation.
+    func profileDirectory(workspaceKey: String) throws -> URL {
+        guard let root else {
             throw BrowserEngineFactory.Unavailable(reason: "browser runtime not initialized")
         }
-        let dir = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let dir = root.appendingPathComponent(workspaceKey, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 
-    func removeProfileDirectory(_ dir: URL) {
-        try? FileManager.default.removeItem(at: dir)
-        // CEF's profile flush lands AFTER cefBrowserDidClose for never-navigated
-        // profiles, resurrecting the dir as a husk of 3-4 files. Session dirs are
-        // UUID-unique and never reused, so delayed re-removal can't hit a live one.
+    /// Where a workspace's profile is right now: under the live root once the runtime is up,
+    /// under the persistent one before that — which is where it will land the moment a
+    /// browser opens. Settings measures this and Clear removes it, so they never disagree.
+    func profilePath(workspaceKey: String) -> URL {
+        (root ?? Self.sharedRoot).appendingPathComponent(workspaceKey, isDirectory: true)
+    }
+
+    /// Throws away one workspace's profile — the only thing that deletes one now, and only
+    /// because the user asked (stage five: the old lifecycle deleted every profile on close
+    /// and never asked anyone).
+    ///
+    /// The directory is renamed aside rather than emptied in place, so a new engine can be
+    /// built on the same path the same instant. The renamed copy is removed now and again at
+    /// +2s and +6s: CEF's profile flush can land after the browser is gone and resurrect a
+    /// just-closed profile as a husk, and a path that is never reused cannot catch a live
+    /// profile the way deleting in place could.
+    ///
+    /// Callers must have torn the workspace's engines down first — a profile with a live
+    /// browser on it is not the caller's to delete.
+    func clearProfile(workspaceKey: String) {
+        guard let root else { return }
+        let dir = root.appendingPathComponent(workspaceKey, isDirectory: true)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: dir.path) else { return }
+        let aside = Self.profilesRoot.appendingPathComponent(
+            ".cleared-\(UUID().uuidString)", isDirectory: true)
+        guard (try? fm.moveItem(at: dir, to: aside)) != nil else {
+            // Nowhere to move it to (a full disk, a permissions change) — emptying in place
+            // is the honest fallback, and the husk it may leave is one profile's worth of
+            // files that the next clear takes out.
+            try? fm.removeItem(at: dir)
+            return
+        }
+        try? fm.removeItem(at: aside)
         for delay in [2.0, 6.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                try? FileManager.default.removeItem(at: dir)
+                try? FileManager.default.removeItem(at: aside)
             }
         }
     }
 
-    /// Deletes instance roots whose owning pid is gone (crashed / killed instances).
+    /// Deletes throwaway roots whose owning pid is gone (crashed / killed instances), and
+    /// any `.cleared-*` copy a clear didn't finish removing before the app went away. The
+    /// persistent `shared` root is never a candidate — that is the one thing here that is
+    /// supposed to outlive every process.
     private func sweepDeadInstances() {
         let fm = FileManager.default
         let entries = (try? fm.contentsOfDirectory(
             at: Self.profilesRoot, includingPropertiesForKeys: nil)) ?? []
-        for entry in entries where entry.lastPathComponent.hasPrefix("instance-") {
-            guard let pid = Int32(entry.lastPathComponent.dropFirst("instance-".count))
-            else { continue }
+        for entry in entries {
+            let name = entry.lastPathComponent
+            if name.hasPrefix(".cleared-") {
+                try? fm.removeItem(at: entry)
+                continue
+            }
+            guard name.hasPrefix("instance-"),
+                  let pid = Int32(name.dropFirst("instance-".count)) else { continue }
             // kill(pid, 0): probe liveness without signaling. ESRCH means gone.
             if kill(pid, 0) != 0 && errno == ESRCH {
                 try? fm.removeItem(at: entry)
@@ -194,14 +292,14 @@ final class BrowserProcessSupervisor {
     }
 }
 
-/// The production BrowserEngine: CEF 144 behind the shim, one page per engine,
-/// isolated profile dir deleted when the browser is gone.
+/// The production BrowserEngine: CEF 144 behind the shim, one page per engine, on the
+/// workspace's profile — which it shares with every other session in that workspace and
+/// leaves behind when it closes (stage five).
 @MainActor
 final class CEFEngine: NSObject, BrowserEngine {
     weak var delegate: BrowserEngineDelegate?
 
     private let shim: CEFShimBrowser
-    private let profileDir: URL
     let cdpPort: UInt16
 
     private(set) var currentURL: URL?
@@ -211,21 +309,19 @@ final class CEFEngine: NSObject, BrowserEngine {
 
     var view: NSView { shim.view }
 
-    init(initialURL: URL, sessionID: UUID) throws {
+    init(initialURL: URL, sessionID: UUID, workspaceKey: String) throws {
         let supervisor = BrowserProcessSupervisor.shared
         try supervisor.ensureInitialized()
-        let profileDir = try supervisor.makeProfileDirectory()
+        let profileDir = try supervisor.profileDirectory(workspaceKey: workspaceKey)
         guard let shim = CEFShimBrowser(
             url: initialURL.absoluteString,
             cachePath: profileDir.path,
             sessionId: sessionID.uuidString,
             frame: NSRect(x: 0, y: 0, width: 900, height: 600)
         ) else {
-            supervisor.removeProfileDirectory(profileDir)
             throw BrowserEngineFactory.Unavailable(reason: "CEF refused to create a browser")
         }
         self.shim = shim
-        self.profileDir = profileDir
         self.cdpPort = supervisor.cdpPort
         self.currentURL = initialURL
         super.init()
@@ -243,7 +339,7 @@ final class CEFEngine: NSObject, BrowserEngine {
     var devToolsOpen: Bool { shim.hasDevTools() }
 
     func shutdown() {
-        shim.close()   // async; profile dir is deleted in cefBrowserDidClose
+        shim.close()   // async; the workspace's profile stays exactly where it is
     }
 }
 
@@ -277,12 +373,6 @@ extension CEFEngine: CEFShimBrowserDelegate {
         MainActor.assumeIsolated {
             guard let parsed = URL(string: url) else { return }
             delegate?.engine(self, didRequestPopup: parsed)
-        }
-    }
-
-    nonisolated func cefBrowserDidClose() {
-        MainActor.assumeIsolated {
-            BrowserProcessSupervisor.shared.removeProfileDirectory(profileDir)
         }
     }
 }

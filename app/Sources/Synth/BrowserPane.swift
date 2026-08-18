@@ -809,6 +809,12 @@ private struct CommentNotice: View {
     }
 }
 
+/// How tall the page's own words came out, so the well around them is that tall and no taller.
+private struct SaidHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 /// Carries one context menu's answer back to the page. NSMenu's action machinery needs an
 /// ObjC target, and the page is stopped until `choose` runs exactly once.
 @MainActor private final class MenuTarget: NSObject {
@@ -837,6 +843,7 @@ private struct BrowserAskCard: View {
     @State private var user = ""
     @State private var password = ""
     @State private var reply = ""
+    @State private var saidHeight: CGFloat = 0
     @FocusState private var focus: Field?
     private enum Field { case user, password, reply }
 
@@ -847,14 +854,17 @@ private struct BrowserAskCard: View {
             // The page's own words, in a field of their own: a site that writes "Your session
             // expired, sign in again" into an alert() must not borrow Synth's voice for it.
             if quotesThePage, let said = ask.detail, !said.isEmpty {
+                // Sized to what the page said, up to a point. The height is measured rather
+                // than proposed: a scroll view takes every pixel it is offered however it is
+                // constrained, and a one-line alert in a 150pt well of grey reads as a bug in
+                // the page.
                 ScrollView {
-                    Text(said)
-                        .font(.sans(12)).foregroundStyle(Theme.ink2)
-                        .lineSpacing(2.4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    quoted(said).background(GeometryReader { geo in
+                        Color.clear.preference(key: SaidHeight.self, value: geo.size.height)
+                    })
                 }
-                .frame(maxHeight: 150)
+                .frame(height: min(max(saidHeight, 17), 150))
+                .onPreferenceChange(SaidHeight.self) { saidHeight = $0 }
                 .padding(.vertical, 8).padding(.horizontal, 10)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowHover))
                 .padding(.top, 9)
@@ -877,6 +887,14 @@ private struct BrowserAskCard: View {
             reply = ask.defaultText ?? ""
             focus = ask.kind == .auth ? .user : (ask.kind == .prompt ? .reply : nil)
         }
+    }
+
+    private func quoted(_ said: String) -> some View {
+        Text(said)
+            .font(.sans(12)).foregroundStyle(Theme.ink2)
+            .lineSpacing(2.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
     }
 
     private var quotesThePage: Bool {

@@ -12,10 +12,10 @@
 // by the app's CEF shim on every main-frame load end).
 //
 // One server process serves a whole Claude session INCLUDING its sub-agents (they
-// share the parent's MCP connections, and calls carry no caller identity). So the
-// "focused session" is a single process-wide pointer — concurrent agents would
-// fight over it. Every action tool therefore takes an optional sessionId that
-// targets a session directly; focus is only a single-agent convenience.
+// share the parent's MCP connections, and calls carry no caller identity). Any
+// process-wide "current session" pointer is therefore shared by agents that cannot
+// see each other — which is why there isn't one (ADR-0011 stage five). Every tool
+// that acts on a page names its sessionId.
 
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -198,41 +198,10 @@ async function requireOwnSession(sessionId) {
     "the tools only reach your own branch's sessions.)");
 }
 
-let focusedSessionId = null;
-
-/** The { page, sessionId } subsequent tools act on: the focused session's target,
- *  defaulting to the most recently created mapped target only when nothing was
- *  ever focused. A vanished focus is an ERROR, not a silent retarget — acting on
- *  whatever page happens to be newest is how an agent wrecks the wrong session. */
-async function focusedEntry(inst) {
-  const mine = new Set((await worktreeSessions()).map((s) => s.sessionId));
-  const pages = await sessionPagesSeeking(inst,
-    focusedSessionId ? (p) => p.sessionId === focusedSessionId
-                     : (p) => p.sessionId && mine.has(p.sessionId));
-  const mapped = pages.filter((p) => p.sessionId && mine.has(p.sessionId));
-  if (mapped.length === 0) {
-    throw new Error(
-      "no Synth browser sessions are open in this worktree — create one with browser_create");
-  }
-  if (focusedSessionId) {
-    const hit = mapped.find((p) => p.sessionId === focusedSessionId);
-    if (hit) return hit;
-    const gone = focusedSessionId;
-    focusedSessionId = null;
-    throw new Error(
-      `the focused browser session (${gone}) is gone — deleted or closed. ` +
-      "Call browser_list, then browser_focus (or browser_create) to pick a target.");
-  }
-  const chosen = mapped[mapped.length - 1];
-  focusedSessionId = chosen.sessionId;
-  return chosen;
-}
-
-/** The { page, sessionId } a tool acts on: the explicitly named session, else the
- *  focused one. Explicit targeting does NOT move the focus — that's what keeps
- *  concurrent agents out of each other's sessions. */
+/** The { page, sessionId } a tool acts on. Always named outright: this server has no
+ *  current-session pointer to fall back on, because sub-agents share it and one
+ *  agent's retarget would silently move another's. */
 async function targetEntry(inst, sessionId) {
-  if (!sessionId) return focusedEntry(inst);
   await requireOwnSession(sessionId);
   const pages = await sessionPagesSeeking(inst, (p) => p.sessionId === sessionId);
   const hit = pages.find((p) => p.sessionId === sessionId);
@@ -244,11 +213,10 @@ async function targetPage(inst, sessionId) {
   return (await targetEntry(inst, sessionId)).page;
 }
 
-const sessionIdParam = z.string().optional().describe(
-  "session to act on (from browser_create/browser_list); overrides the focused " +
-  "session without moving the focus. ALWAYS pass this when running as one of " +
-  "several agents (sub-agents share this server, and the focus is a single " +
-  "process-wide pointer — last create/focus wins)");
+const sessionIdParam = z.string().describe(
+  "session to act on — the sessionId browser_create returned, or one from " +
+  "browser_list. Required: this server is shared with every sub-agent, so there " +
+  "is no ambient current session to inherit");
 
 // ---------------------------------------------------------------------------
 // Helpers.
@@ -314,10 +282,10 @@ tool("browser_list",
 
 tool("browser_create",
   "Create a new Synth browser session in this worktree's branch (visible in the " +
-  "sidebar, selected), optionally pre-navigated to a URL. Focuses the new session. " +
+  "sidebar, selected), optionally pre-navigated to a URL. " +
   "The browser belongs to this Claude session — user comments made in it are routed " +
   "back to this session. Returns the sessionId: keep it, and pass it as sessionId " +
-  "on every subsequent tool call if other agents may be driving browsers too. " +
+  "on every subsequent tool call. " +
   "Close it with browser_close once you're done, unless you opened it for the user.",
   { url: z.string().optional().describe("URL to open (scheme optional)") },
   async ({ url }) => {
@@ -328,7 +296,6 @@ tool("browser_create",
       ...(process.env.SYNTH_SESSION_ID &&
           { ownerSessionId: process.env.SYNTH_SESSION_ID }),
     });
-    focusedSessionId = res.sessionId;
     // The engine (and, first time, the whole CDP endpoint) spins up async — wait
     // for the session's page target, re-reading the instance file for the port.
     const deadline = Date.now() + 15000;
@@ -345,7 +312,6 @@ tool("browser_create",
     // A row whose page never came up is an orphan: unusable by the agent, and left
     // for the user to clear. Roll it back so the call either yields a working
     // session or leaves nothing behind.
-    focusedSessionId = null;
     let rolledBack = true;
     try {
       await controlCall(scope.inst, {
@@ -384,7 +350,6 @@ tool("browser_close",
       ...(process.env.SYNTH_SESSION_ID &&
           { ownerSessionId: process.env.SYNTH_SESSION_ID }),
     });
-    if (focusedSessionId === sessionId) focusedSessionId = null;
     if (!page) return text(`closed ${sessionId}`);
     const deadline = Date.now() + 3000;
     while (!page.isClosed() && Date.now() < deadline) {
@@ -400,22 +365,6 @@ tool("browser_close",
         `not close (${e.message}) — an orphan tab is holding a renderer. It shows up in ` +
         "browser_health; tell the user, it needs the engine restarting.");
     }
-  });
-
-tool("browser_focus",
-  "Select which browser session subsequent tools act on by default. The focus is " +
-  "one pointer for the whole Claude session (sub-agents included) — with several " +
-  "agents active, skip this and pass sessionId per call instead.",
-  { sessionId: z.string().describe("a sessionId from browser_list") },
-  async ({ sessionId }) => {
-    await requireOwnSession(sessionId);
-    const pages = await sessionPagesSeeking(
-      requireInstance(), (p) => p.sessionId === sessionId);
-    if (!pages.some((p) => p.sessionId === sessionId)) {
-      throw new Error(`no live browser session ${sessionId} — see browser_list`);
-    }
-    focusedSessionId = sessionId;
-    return text(`focused ${sessionId}`);
   });
 
 /** A navigation that ran out of time is not a navigation that failed: the request
@@ -437,7 +386,7 @@ function stillLoading(page, dest, before, ms) {
 const isTimeout = (e) => /Timeout .* exceeded/.test(e.message);
 
 tool("browser_navigate",
-  "Navigate a browser session to a URL (the focused session unless sessionId names one). " +
+  "Navigate a browser session to a URL. " +
   "Waits for DOM-ready by default, not every subresource; a timeout here reports the " +
   "navigation as still in flight rather than as a failure.",
   {
@@ -527,7 +476,7 @@ tool("browser_device_mode",
   },
   async ({ sessionId, on, device, landscape }) => {
     const scope = requireScope();
-    // targetEntry resolves the focused-session fallback and errors on a dead target.
+    // targetEntry proves the session is this worktree's and has a live target.
     const { sessionId: sid } = await targetEntry(requireInstance(), sessionId);
     const { ok, ...state } = await controlCall(scope.inst, {
       verb: "browser.deviceMode", worktreePath: scope.path, sessionId: sid,
@@ -718,10 +667,8 @@ tool("browser_record_stop",
       "picks the format). Default: a temp file, mp4 when ffmpeg allows"),
     sessionId: sessionIdParam,
   },
-  async ({ path: outPath, sessionId }) => {
-    let sid = sessionId ?? focusedSessionId;
-    if (!sid && recordings.size === 1) sid = recordings.keys().next().value;
-    const rec = sid ? recordings.get(sid) : null;
+  async ({ path: outPath, sessionId: sid }) => {
+    const rec = recordings.get(sid);
     if (!rec) {
       const active = [...recordings.keys()];
       throw new Error(active.length > 0

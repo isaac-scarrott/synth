@@ -2099,3 +2099,18 @@ disclosure to dive deeper.
   surviving cross-page navigation was the hard part and is done. `no_sandbox` stops being an open
   item and is scheduled ahead of the agent permission boundary; persistence deliberately lands before
   that boundary, so an unconstrained agent drives inside real logins for a while.
+
+- **Building stage five: four decisions came back different, each with a measurement behind it** —
+  two Synths cannot share the profile root (Chromium's singleton lock; the second `CefInitialize`
+  exits 21), so Synth claims it with an `flock` first and the loser browses on a throwaway profile
+  and says so. `GetAuthCredentials` is never called for a 401 in an Alloy-style window, so the
+  challenge is read off the response and the credential put on the retry by hand. A popup the
+  engine creates hangs the opener's renderer permanently, so the popup is cancelled and Synth opens
+  a transient window itself — the sidebar litter goes, but `window.opener` does not come with it,
+  so third-party identity sign-in still does not complete. And a fresh find selects no match, so
+  the first one is selected once per query. Right-click is an `NSMenu` and a popup is a real
+  window, both following the DevTools window's precedent of an OS surface Synth opens rather than
+  chrome the design mocks. `browser_network` holds text-shaped bodies as they finish, because the
+  engine drops them once the page moves on. The sandbox needed no vendoring — only the dev bundle's
+  framework moving from a symlink to an APFS clone, since a sandboxed helper cannot `dlopen`
+  outside its own app.

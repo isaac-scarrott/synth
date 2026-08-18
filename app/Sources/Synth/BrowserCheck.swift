@@ -16,10 +16,12 @@ enum BrowserCheck {
         func engine(_ engine: BrowserEngine, titleDidChange title: String) { titleFired = true }
         func engine(_ engine: BrowserEngine, navigationStateDidChange canGoBack: Bool,
                     canGoForward: Bool) { navStateFired = true }
-        func engine(_ engine: BrowserEngine, didRequestPopup url: URL) {}
         func engine(_ engine: BrowserEngine, didAsk ask: any BrowserAsk) {}
         func engine(_ engine: BrowserEngine, didWithdraw ask: any BrowserAsk) {}
         func engine(_ engine: BrowserEngine, didFindMatch active: Int, of count: Int, final: Bool) {}
+        func engine(_ engine: BrowserEngine, didRequestContextMenu items: [BrowserMenuItem],
+                    at point: CGPoint, choose: @escaping (Int) -> Void) { choose(0) }
+        func engine(_ engine: BrowserEngine, didRequestOpenExternal url: URL) {}
     }
 
     static func run() -> Never {

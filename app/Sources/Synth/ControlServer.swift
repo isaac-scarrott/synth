@@ -602,6 +602,18 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true, "open": ctrl.findOpen, "query": ctrl.findQuery,
                     "active": ctrl.findActive, "count": ctrl.findCount]
 
+        // The last right-click menu the page raised. A driven build never puts one on screen
+        // (Automation), so this is where the model it would have shown is read.
+        case "automation.browserContextMenu" where automation:
+            guard let session = requestedSession(request, in: branch), session.kind == .browser,
+                  let ctrl = BrowserManager.shared.existing(session.id) else {
+                return ["ok": false, "error": "no live browser session for sessionId"]
+            }
+            return ["ok": true, "items": ctrl.lastContextMenu.map {
+                ["title": $0.title, "commandId": $0.commandID, "enabled": $0.enabled,
+                 "separator": $0.isSeparator]
+            }]
+
         // Where this workspace's browser profile is, and whether it is the persistent one
         // (stage five). `persists` false means another Synth of this channel holds the shared
         // root and this instance is browsing on a throwaway — the fact the pane states too.

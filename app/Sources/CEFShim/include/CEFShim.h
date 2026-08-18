@@ -41,19 +41,34 @@ typedef NS_ENUM(NSInteger, CEFShimAskKind) {
 
 @end
 
+/// One row of the page's right-click menu, as it will be drawn. An empty title is a
+/// separator — the model is CEF's, so the shim reports what CEF built rather than inventing
+/// a second vocabulary for it.
+@interface CEFShimMenuItem : NSObject
+@property(nonatomic, readonly, copy) NSString *title;
+@property(nonatomic, readonly) int commandID;
+@property(nonatomic, readonly) BOOL enabled;
+@property(nonatomic, readonly, getter=isSeparator) BOOL separator;
+@end
+
 @protocol CEFShimBrowserDelegate <NSObject>
 /// Fires for every main-frame address change, including CDP-initiated navigations.
 - (void)cefBrowserAddressDidChange:(NSString *)url;
 - (void)cefBrowserTitleDidChange:(NSString *)title;
 - (void)cefBrowserNavigationStateDidChange:(BOOL)canGoBack canGoForward:(BOOL)canGoForward;
-/// window.open / target=_blank. The popup itself was already cancelled inside the shim —
-/// letting it proceed blocks the renderer inside window.open() (spike LEARNINGS).
-- (void)cefBrowserDidRequestPopup:(NSString *)url;
 /// The page is holding for an answer. Present it and send exactly one.
 - (void)cefBrowserDidAsk:(CEFShimAsk *)ask;
 /// The question no longer applies — the page navigated out from under it, or CEF withdrew
 /// it. Take it off screen; answering it now would reach nothing.
 - (void)cefBrowserDidWithdrawAsk:(CEFShimAsk *)ask;
+/// The page was right-clicked. Display `items` at `point` (in the engine view's coordinates)
+/// and call `choose` exactly once — with the picked item's commandID, or 0 for a dismissal.
+- (void)cefBrowserDidRequestContextMenu:(NSArray<CEFShimMenuItem *> *)items
+                                atPoint:(NSPoint)point
+                                 choose:(void (^)(int commandID))choose;
+/// A context-menu item Synth performs rather than the engine: open this URL in the user's
+/// real browser, the same thing the pane's own toolbar button does.
+- (void)cefBrowserDidRequestOpenExternal:(NSString *)url;
 /// Find-in-page progress for the active query: which match is current, how many there are.
 /// `finalUpdate` marks the last report for that query.
 - (void)cefBrowserDidFindMatch:(int)activeIndex of:(int)count final:(BOOL)finalUpdate;

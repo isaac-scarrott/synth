@@ -419,6 +419,24 @@ extension CEFEngine: CEFShimBrowserDelegate {
         }
     }
 
+    nonisolated func cefBrowserDidRequestContextMenu(_ items: [CEFShimMenuItem],
+                                                     at point: NSPoint,
+                                                     choose: @escaping (Int32) -> Void) {
+        MainActor.assumeIsolated {
+            delegate?.engine(self, didRequestContextMenu: items.map {
+                BrowserMenuItem(title: $0.title, commandID: Int($0.commandID),
+                                enabled: $0.enabled)
+            }, at: point) { choose(Int32($0)) }
+        }
+    }
+
+    nonisolated func cefBrowserDidRequestOpenExternal(_ url: String) {
+        MainActor.assumeIsolated {
+            guard let parsed = URL(string: url) else { return }
+            delegate?.engine(self, didRequestOpenExternal: parsed)
+        }
+    }
+
     nonisolated func cefBrowserDidFindMatch(_ activeIndex: Int32, of count: Int32,
                                             final finalUpdate: Bool) {
         MainActor.assumeIsolated {
@@ -427,11 +445,5 @@ extension CEFEngine: CEFShimBrowserDelegate {
         }
     }
 
-    nonisolated func cefBrowserDidRequestPopup(_ url: String) {
-        MainActor.assumeIsolated {
-            guard let parsed = URL(string: url) else { return }
-            delegate?.engine(self, didRequestPopup: parsed)
-        }
-    }
 }
 #endif

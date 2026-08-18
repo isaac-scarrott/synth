@@ -210,6 +210,44 @@ def cdp_eval(port, needle, expression, timeout=120):
         return "ERR timed out"
     return r.stdout.strip()
 
+CDP_CLICK_JS = """
+const path = require('path'), os = require('os');
+const PW = path.join(os.homedir(), 'Library/Application Support/Synth/browser-mcp/node_modules/playwright-core');
+const { chromium } = require(PW);
+(async () => {
+  const b = await chromium.connectOverCDP(`http://127.0.0.1:${process.env.PORT}`);
+  const pages = b.contexts().flatMap((c) => c.pages());
+  const page = pages.find((p) => p.url().includes(process.env.NEEDLE));
+  if (!page) { console.log('NOPAGE'); process.exit(0); }
+  await page.click(process.env.SELECTOR, { button: process.env.BUTTON || 'left' });
+  console.log('CLICKED');
+  await b.close();
+})().catch((e) => { console.log('ERR ' + e.message); });
+"""
+
+def cdp_click(port, needle, selector, button="left"):
+    """A real click, dispatched as trusted input. It has to be trusted: Chromium's popup
+    blocker only lets window.open through on a user gesture, and el.click() from a script is
+    not one — a gate that clicked in JavaScript would be measuring the blocker."""
+    env = dict(os.environ, PORT=str(port), NEEDLE=needle, SELECTOR=selector, BUTTON=button)
+    try:
+        r = subprocess.run(["node", "-e", CDP_CLICK_JS], capture_output=True, text=True,
+                           timeout=120, env=env)
+    except subprocess.TimeoutExpired:
+        return "ERR timed out"
+    return r.stdout.strip()
+
+
+def cdp_pages(port):
+    """Every page target the engine is hosting, straight off /json/list."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=5) as r:
+            return [t for t in json.loads(r.read()) if t.get("type") == "page"]
+    except Exception:
+        return []
+
+
 # --- Antigravity (`agy`) --------------------------------------------------------------------
 # Two different programs answer to `agy`: the Antigravity CLI (the terminal agent Synth hosts)
 # and the Nov-2025 Antigravity IDE's launcher, which only opens the GUI. Both live on a stock

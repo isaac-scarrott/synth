@@ -304,6 +304,10 @@ import AppKit
     /// Whether this query has already been nudged onto its first match (see didFindMatch).
     @ObservationIgnored private var steppedThisQuery = false
 
+    /// The last right-click menu built for this page. Kept for the gate: a driven build never
+    /// puts a menu on screen, so this is where the model it would have shown is asserted.
+    @ObservationIgnored private(set) var lastContextMenu: [BrowserMenuItem] = []
+
     func openFind() {
         guard !isHome else { return }   // the "go to" home has no page to search
         findOpen = true
@@ -410,15 +414,47 @@ extension BrowserSessionController: BrowserEngineDelegate {
         self.canGoBack = canGoBack
         self.canGoForward = canGoForward
     }
-    func engine(_ engine: BrowserEngine, didRequestPopup url: URL) {
-        bus?.post(.browserPopupRequested(sessionID, url))
-    }
     func engine(_ engine: BrowserEngine, didAsk ask: any BrowserAsk) {
         asks.append(ask)
     }
     func engine(_ engine: BrowserEngine, didWithdraw ask: any BrowserAsk) {
         asks.removeAll { $0 === ask }
     }
+    /// The page's right-click menu, as a real NSMenu — the way every native app draws one, and
+    /// the reason it is nowhere in working.html: it is an OS surface Synth opens, like the
+    /// DevTools window, not Synth chrome the mock draws.
+    func engine(_ engine: BrowserEngine, didRequestContextMenu items: [BrowserMenuItem],
+                at point: CGPoint, choose: @escaping (Int) -> Void) {
+        lastContextMenu = items
+        // A driven build takes no screen (Automation), and a native menu would be a modal
+        // runloop nobody can answer. The model is recorded — which is the part with judgement
+        // in it — and the page is let go.
+        guard !Automation.isDriven else { return choose(0) }
+        let target = MenuTarget(choose: choose)
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for item in items {
+            if item.isSeparator {
+                menu.addItem(.separator())
+                continue
+            }
+            let entry = NSMenuItem(title: item.title, action: #selector(MenuTarget.pick(_:)),
+                                   keyEquivalent: "")
+            entry.target = target
+            entry.tag = item.commandID
+            entry.isEnabled = item.enabled
+            menu.addItem(entry)
+        }
+        menu.popUp(positioning: nil, at: point, in: engine.view)
+        // popUp is modal and returns once the menu is gone; a dismissal fires no action, and
+        // the page is still waiting on an answer either way.
+        if !target.answered { choose(0) }
+    }
+
+    func engine(_ engine: BrowserEngine, didRequestOpenExternal url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
     func engine(_ engine: BrowserEngine, didFindMatch active: Int, of count: Int, final: Bool) {
         findCount = count
         if active > 0 { findActive = active }
@@ -770,6 +806,21 @@ private struct CommentNotice: View {
             .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
             .padding(.top, 10)
             .transition(.opacity)
+    }
+}
+
+/// Carries one context menu's answer back to the page. NSMenu's action machinery needs an
+/// ObjC target, and the page is stopped until `choose` runs exactly once.
+@MainActor private final class MenuTarget: NSObject {
+    private let choose: (Int) -> Void
+    private(set) var answered = false
+
+    init(choose: @escaping (Int) -> Void) { self.choose = choose }
+
+    @objc func pick(_ sender: NSMenuItem) {
+        guard !answered else { return }
+        answered = true
+        choose(sender.tag)
     }
 }
 

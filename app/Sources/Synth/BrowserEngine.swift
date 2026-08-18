@@ -72,6 +72,15 @@ protocol BrowserAsk: AnyObject {
     func deny()
 }
 
+/// One row of the page's right-click menu. The model is CEF's, so this reports what the engine
+/// built rather than inventing a second vocabulary for it.
+struct BrowserMenuItem {
+    let title: String
+    let commandID: Int
+    let enabled: Bool
+    var isSeparator: Bool { title.isEmpty }
+}
+
 @MainActor
 protocol BrowserEngineDelegate: AnyObject {
     /// Fires for every address change, including navigations the engine's CDP clients
@@ -79,10 +88,6 @@ protocol BrowserEngineDelegate: AnyObject {
     func engine(_ engine: BrowserEngine, addressDidChange url: URL)
     func engine(_ engine: BrowserEngine, titleDidChange title: String)
     func engine(_ engine: BrowserEngine, navigationStateDidChange canGoBack: Bool, canGoForward: Bool)
-    /// window.open / target=_blank. The receiver routes this into a NEW browser session
-    /// (one page per session); the engine itself must have suppressed the default popup —
-    /// an unhandled popup blocks the renderer inside window.open() forever.
-    func engine(_ engine: BrowserEngine, didRequestPopup url: URL)
     /// The page is holding for an answer.
     func engine(_ engine: BrowserEngine, didAsk ask: any BrowserAsk)
     /// The question was taken back (the page navigated, the browser closed). Take it off
@@ -91,4 +96,12 @@ protocol BrowserEngineDelegate: AnyObject {
     /// Find-in-page progress: which match is current (1-based, 0 for none), how many there
     /// are, and whether this is the last report for the query.
     func engine(_ engine: BrowserEngine, didFindMatch active: Int, of count: Int, final: Bool)
+    /// The page was right-clicked. Show `items` at `point` in the engine's view and call
+    /// `choose` exactly once — the picked item's commandID, or 0 for a dismissal. The page
+    /// waits on that call.
+    func engine(_ engine: BrowserEngine, didRequestContextMenu items: [BrowserMenuItem],
+                at point: CGPoint, choose: @escaping (Int) -> Void)
+    /// A menu item Synth performs rather than the engine: open this URL in the user's real
+    /// browser, the same thing the pane's toolbar button does.
+    func engine(_ engine: BrowserEngine, didRequestOpenExternal url: URL)
 }

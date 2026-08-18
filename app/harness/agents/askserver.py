@@ -38,6 +38,19 @@ DIALOG_PAGE = """<!doctype html><title>DIALOGS</title><body>
   fire();
 </script></body>"""
 
+# window.open must come off a real click: Chromium's popup blocker lets it through only on a
+# user gesture, so the gate clicks with trusted input rather than calling it from a script.
+POPUP_PAGE = """<!doctype html><title>OPENER</title><body>
+<h1 id="hero">opener</h1><button id="go">open</button>
+<script>
+  window.__popup = null;
+  document.getElementById('go').onclick = () => {
+    window.__popup = window.open('/popped.html', '_blank', 'width=420,height=520');
+  };
+  const close = () => { if (window.__popup) window.__popup.close(); };
+  window.addEventListener('hashchange', () => { if (location.hash === '#close') setTimeout(close, 60); });
+</script></body>"""
+
 FIND_PAGE = ("<!doctype html><title>FIND</title><body><h1 id='hero'>find</h1>"
              "<p>Checkout. Review your order before you pay. Your order is held for 20 "
              "minutes. Order summary. Order total. Return to basket.</p></body>")
@@ -104,6 +117,15 @@ def make_pages(root):
     # be able to answer a later phase's question about "did the page load".
     (root / "secure.html").write_text("<!doctype html><title>SECURE</title><h1 id='hero'>secure</h1>")
     (root / "protected.html").write_text("<!doctype html><title>PROTECTED</title><h1 id='hero'>protected</h1>")
+    (root / "opener.html").write_text(POPUP_PAGE)
+    (root / "menu.html").write_text(
+        "<!doctype html><title>MENU</title><h1 id='hero'>menu</h1>"
+        "<p><a id='link' href='https://example.com/deep'>a link</a></p>"
+        "<p><input id='field' value='typed'></p>")
+    (root / "popped.html").write_text(
+        "<!doctype html><title>POPPED</title><h1 id='hero'>popped</h1>"
+        "<p><a id='link' href='https://example.com/deep'>a link</a></p>"
+        "<p><input id='field' value='typed'></p>")
     return root
 
 

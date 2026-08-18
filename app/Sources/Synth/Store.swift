@@ -38,7 +38,6 @@ enum SessionEvent: Sendable {
     case browserPageTitled(UUID, String)
     /// window.open / target=_blank: one page per session, so a popup becomes a NEW
     /// browser session in the same branch, pre-navigated and selected.
-    case browserPopupRequested(UUID, URL)
     /// A link clicked in a terminal surface (libghostty OPEN_URL). The UUID is the clicking
     /// session (nil for an app-scoped action → the on-screen session). Scheme + host route
     /// it: loopback dev-server pages open in the in-app browser, everything else to the OS.
@@ -1061,14 +1060,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                   let i = br.browserRecents.firstIndex(where: { $0.url == url.absoluteString })
             else { return }
             if br.browserRecents[i].title != title { br.browserRecents[i].title = title }
-        case let .browserPopupRequested(id, url):
-            guard let s = session(id) else { return }
-            // A popup opened from an owned browser inherits the owner (stage four) —
-            // it's the same claude's surface, just a second page. Owned means
-            // agent-driven (a CDP click looks like a real one), so it announces via
-            // the unread bullet; a popup from a browser the user drives opens in front.
-            let popupOwner = owner(of: s)
-            newBrowser(in: branch(of: s), at: url, ownedBy: popupOwner, focus: popupOwner == nil)
         case let .openURLRequested(sourceID, url):
             openTerminalLink(url, from: sourceID)
         }

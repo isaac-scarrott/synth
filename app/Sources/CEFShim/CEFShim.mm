@@ -33,6 +33,7 @@
 #include "include/cef_callback.h"
 #include "include/cef_client.h"
 #include "include/cef_command_line.h"
+#include "include/cef_context_menu_handler.h"
 #include "include/cef_jsdialog_handler.h"
 #include "include/cef_permission_handler.h"
 #include "include/cef_request_context.h"
@@ -409,6 +410,48 @@ static NSString *HostOf(const CefString &url) {
   return parsed.port ? [NSString stringWithFormat:@"%@:%@", host, parsed.port] : host;
 }
 
+#pragma mark - Context menu
+
+// Right-click. CEF builds a default model and can display it itself, but the menu Synth wants
+// is not Chrome's: there is no tab strip to open a link into and downloads are blocked
+// (ADR-0011 stage five), so "Open Link in New Tab" and "Save Image As…" are items that would
+// do nothing. The model is replaced with the verbs this pane actually has, and the display is
+// the delegate's — a native NSMenu, the way every other native app draws one, and the same
+// seam a driven build uses to record the menu instead of putting it on someone's screen.
+
+enum : int {
+  kMenuOpenExternal = MENU_ID_USER_FIRST,
+  kMenuCopyLink,
+  kMenuCopyImage,
+  kMenuInspect,
+};
+
+@interface CEFShimMenuItem ()
+@property(nonatomic, copy) NSString *title;
+@property(nonatomic) int commandID;
+@property(nonatomic) BOOL enabled;
+@end
+
+@implementation CEFShimMenuItem
+- (BOOL)isSeparator {
+  return self.title.length == 0;
+}
+@end
+
+static CEFShimMenuItem *MenuItem(NSString *title, int commandID, BOOL enabled) {
+  CEFShimMenuItem *item = [[CEFShimMenuItem alloc] init];
+  item.title = title ?: @"";
+  item.commandID = commandID;
+  item.enabled = enabled;
+  return item;
+}
+
+static void CopyToPasteboard(const CefString &text) {
+  NSPasteboard *pb = [NSPasteboard generalPasteboard];
+  [pb clearContents];
+  [pb setString:@(text.ToString().c_str()) forType:NSPasteboardTypeString];
+}
+
 #pragma mark - Browser container view
 
 @class CEFShimBrowser;
@@ -453,6 +496,9 @@ static NSString *HostOf(const CefString &url) {
   /// Origins with a question already on screen, so a page whose every subresource 401s
   /// raises one prompt rather than twenty.
   std::set<std::string> _authAsking;
+  /// This session's request context, kept so a popup opens on the same profile — a sign-in
+  /// window with its own cookie jar is not a sign-in window.
+  CefRefPtr<CefRequestContext> _context;
 }
 @property(nonatomic, strong) CEFShimContainerView *containerView;
 // Never-shown host for the container until the pane reparents it: CEF's child-view
@@ -471,8 +517,9 @@ static NSString *HostOf(const CefString &url) {
 - (void)handleAddressChange:(NSString *)url;
 - (void)handleTitleChange:(NSString *)title;
 - (void)handleLoadingStateChangeCanGoBack:(BOOL)canGoBack canGoForward:(BOOL)canGoForward;
-- (void)handlePopupRequest:(NSString *)url;
 - (void)handleAsk:(CEFShimAsk *)ask;
+- (void)handleOpenExternal:(NSString *)url;
+- (void)openPopup:(NSString *)url width:(int)width height:(int)height;
 - (nullable NSString *)authorizationForOrigin:(const std::string &)origin;
 - (void)challengeOrigin:(std::string)origin realm:(nullable NSString *)realm;
 - (void)handleWithdrawPromptID:(uint64_t)promptID;
@@ -524,10 +571,246 @@ class MediaAccessShim : public CefPermissionPromptCallback {
   DISALLOW_COPY_AND_ASSIGN(MediaAccessShim);
 };
 
+#pragma mark - Transient popup windows
+
+// window.open used to route into a NEW Synth browser session — a permanent sidebar row that
+// outlived the flow that opened it. Consistent with one-page-per-session and wrong in
+// practice: the overwhelming use of a popup is OAuth, so signing into your own staging app
+// left litter behind every time, and a popup that closed itself left a dead row. A popup is a
+// transient window now, and never a session (ADR-0011 stage five).
+//
+// It is a window Synth opens, not a popup the engine hands us, and that distinction is
+// measured rather than chosen. Letting CEF create the popup — return false from OnBeforePopup
+// — hangs the opener's renderer inside window.open() permanently on this embedding: with the
+// pump healthy (verified through SYNTH_CEF_PUMP_TRACE: DoWork begin/end every 30ms
+// throughout) and with NO modification to windowInfo, client or settings, the opener stops
+// answering CDP evaluates and the popup browser is never created. So the popup is cancelled,
+// which is what keeps the renderer running, and the URL is opened in a window of our own on
+// the next main-queue turn — using the same create-and-pump path the session browser uses,
+// which does work.
+//
+// The cost, named rather than hidden: the window has no window.opener relationship to the
+// page that asked for it and the page cannot close it, so a third-party sign-in that posts
+// its result back to the opener still does not complete. That was equally true of the session
+// this replaces; what changes is that the flow no longer leaves a row behind.
+
+@class CEFShimPopupWindow;
+static NSMutableArray<CEFShimPopupWindow *> *g_livePopups;
+
+@interface CEFShimPopupWindow : NSObject <NSWindowDelegate>
++ (void)openURL:(NSString *)url
+        context:(CefRefPtr<CefRequestContext>)context
+          width:(int)width
+         height:(int)height;
+- (void)adopt:(CefRefPtr<CefBrowser>)browser;
+- (void)retitle:(NSString *)title;
+- (void)dismiss;
+@end
+
+class PopupClient : public CefClient,
+                    public CefDisplayHandler,
+                    public CefLifeSpanHandler {
+ public:
+  explicit PopupClient(CEFShimPopupWindow *host) : host_(host) {}
+
+  CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+
+  void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
+    g_aliveBrowsers++;
+    [host_ adopt:browser];
+  }
+
+  void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                       const CefString &url) override {
+    if (frame->IsMain()) {
+      // The origin, not the page's <title>: the whole reason a sign-in window has a title bar
+      // is so the user can see which site is collecting the password, and a page chooses its
+      // own title. Re-set on every navigation, because a sign-in flow is several.
+      [host_ retitle:HostOf(url)];
+    }
+  }
+
+  // A popup that opens a popup gets its own window too, by the same route.
+  bool OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int popup_id,
+                     const CefString &target_url, const CefString &target_frame_name,
+                     CefLifeSpanHandler::WindowOpenDisposition target_disposition,
+                     bool user_gesture, const CefPopupFeatures &popupFeatures,
+                     CefWindowInfo &windowInfo, CefRefPtr<CefClient> &client,
+                     CefBrowserSettings &settings, CefRefPtr<CefDictionaryValue> &extra_info,
+                     bool *no_javascript_access) override;
+
+  bool DoClose(CefRefPtr<CefBrowser> browser) override {
+    // true, like the session browser: the window is ours, so the teardown is ours. CEF's own
+    // completion path performClose:'s the hosting window, which here would be right — but the
+    // view teardown is what actually completes a close on macOS, so it stays in one place.
+    [host_ dismiss];
+    return true;
+  }
+
+  void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
+    g_aliveBrowsers--;
+    [g_livePopups removeObject:host_];
+  }
+
+ private:
+  __weak CEFShimPopupWindow *host_;
+
+  IMPLEMENT_REFCOUNTING(PopupClient);
+  DISALLOW_COPY_AND_ASSIGN(PopupClient);
+};
+
+/// The size window.open asked for, or a sign-in window's shape — which is what almost every
+/// popup is.
+static NSSize PopupSize(const CefPopupFeatures &features) {
+  return NSMakeSize(features.widthSet && features.width > 100 ? features.width : 520,
+                    features.heightSet && features.height > 100 ? features.height : 660);
+}
+
+@implementation CEFShimPopupWindow {
+  CefRefPtr<CefBrowser> _browser;
+  NSWindow *_window;
+  BOOL _closing;
+}
+
++ (void)openURL:(NSString *)url
+        context:(CefRefPtr<CefRequestContext>)context
+          width:(int)width
+         height:(int)height {
+  NSAssert(NSThread.isMainThread, @"popup windows are main-thread only");
+  CEFShimPopupWindow *host = [[CEFShimPopupWindow alloc] init];
+  const NSRect frame = NSMakeRect(0, 0, width, height);
+  NSWindow *window = [[NSWindow alloc]
+      initWithContentRect:frame
+                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                          NSWindowStyleMaskResizable
+                  backing:NSBackingStoreBuffered
+                    defer:NO];
+  window.releasedWhenClosed = NO;
+  window.title = HostOf(CefString(url.UTF8String));
+  window.delegate = host;
+  [window center];
+  host->_window = window;
+
+  CEFShimContainerView *container = [[CEFShimContainerView alloc] initWithFrame:frame];
+  container.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  [window.contentView addSubview:container];
+
+  if (g_automation) {
+    // The driven build's promise (Automation.park): a gate run happens on a real desktop while
+    // its owner is working, so nothing Synth opens may appear or take the pointer. This window
+    // is opened by the shim rather than by the app, so it parks itself.
+    window.alphaValue = 0;
+    window.ignoresMouseEvents = YES;
+    window.level = (NSWindowLevel)CGWindowLevelForKey(kCGDesktopWindowLevelKey);
+    window.collectionBehavior |= NSWindowCollectionBehaviorTransient |
+                                 NSWindowCollectionBehaviorIgnoresCycle;
+  }
+
+  CefWindowInfo windowInfo;
+  windowInfo.SetAsChild((__bridge void *)container,
+                        CefRect(0, 0, (int)width, (int)height));
+  windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  CefRefPtr<PopupClient> client(new PopupClient(host));
+  CefBrowserSettings settings;
+  // The opener's request context, so the popup is the same signed-in browser. A sign-in window
+  // with its own cookie jar is not a sign-in window.
+  if (!CefBrowserHost::CreateBrowser(windowInfo, client, url.UTF8String, settings, nullptr,
+                                     context)) {
+    [window close];
+    return;
+  }
+  if (!g_livePopups) {
+    g_livePopups = [NSMutableArray array];
+  }
+  [g_livePopups addObject:host];
+  // Async creation only, pumped until OnAfterCreated — the session browser's path, and the
+  // reason this one works where letting CEF create the popup does not.
+  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10.0];
+  while (!host->_browser && deadline.timeIntervalSinceNow > 0) {
+    CefDoMessageLoopWork();
+    [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
+                          beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+  }
+  if (!host->_browser) {
+    [g_livePopups removeObject:host];
+    [window close];
+  }
+}
+
+- (void)adopt:(CefRefPtr<CefBrowser>)browser {
+  _browser = browser;
+  NSView *cefView = (__bridge NSView *)browser->GetHost()->GetWindowHandle();
+  NSView *container = _window.contentView.subviews.firstObject ?: _window.contentView;
+  cefView.frame = container.bounds;
+  [container addSubview:cefView];
+  [_window makeKeyAndOrderFront:nil];
+}
+
+- (void)retitle:(NSString *)title {
+  if (title.length > 0) {
+    _window.title = title;
+  }
+}
+
+/// The page closed itself, or the runtime is shutting down.
+- (void)dismiss {
+  if (_closing) {
+    return;
+  }
+  _closing = YES;
+  // The session browser's teardown, for the same reasons: close completion on macOS is the
+  // CEF wrapper view's dealloc, and the local pool keeps a signal-initiated quit from stalling.
+  @autoreleasepool {
+    if (_browser) {
+      NSView *cefView = (__bridge NSView *)_browser->GetHost()->GetWindowHandle();
+      [cefView removeFromSuperview];
+    }
+  }
+  _browser = nullptr;
+  _window.delegate = nil;
+  [_window close];
+  _window = nil;
+}
+
+/// The user closed the window. The page has to be told, or a renderer is left running behind
+/// a window nobody can see.
+- (BOOL)windowShouldClose:(NSWindow *)sender {
+  if (_browser && !_closing) {
+    _browser->GetHost()->CloseBrowser(/*force_close=*/true);
+    [self dismiss];
+  }
+  return YES;
+}
+
+@end
+
+bool PopupClient::OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                                int popup_id, const CefString &target_url,
+                                const CefString &target_frame_name,
+                                CefLifeSpanHandler::WindowOpenDisposition target_disposition,
+                                bool user_gesture, const CefPopupFeatures &popupFeatures,
+                                CefWindowInfo &windowInfo, CefRefPtr<CefClient> &client,
+                                CefBrowserSettings &settings,
+                                CefRefPtr<CefDictionaryValue> &extra_info,
+                                bool *no_javascript_access) {
+  NSString *url = @(target_url.ToString().c_str());
+  const NSSize size = PopupSize(popupFeatures);
+  CefRefPtr<CefRequestContext> context = browser->GetHost()->GetRequestContext();
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [CEFShimPopupWindow openURL:url
+                        context:context
+                          width:(int)size.width
+                         height:(int)size.height];
+  });
+  return true;
+}
+
 // One client per CEFShimBrowser, so callbacks never need first-browser filtering —
-// DevTools gets AuxClient and popups are cancelled, so this client sees exactly one
-// browser for its whole life.
+// DevTools gets AuxClient and popups are opened as windows of ours, so this client sees
+// exactly one browser for its whole life.
 class ShimClient : public CefClient,
+                   public CefContextMenuHandler,
                    public CefDisplayHandler,
                    public CefFindHandler,
                    public CefJSDialogHandler,
@@ -541,6 +824,7 @@ class ShimClient : public CefClient,
       : owner_(owner),
         sessionTag_("window.__synthSessionId = \"" + sessionId + "\";") {}
 
+  CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
@@ -589,8 +873,16 @@ class ShimClient : public CefClient,
                      CefWindowInfo &windowInfo, CefRefPtr<CefClient> &client,
                      CefBrowserSettings &settings, CefRefPtr<CefDictionaryValue> &extra_info,
                      bool *no_javascript_access) override {
-    [owner_ handlePopupRequest:@(target_url.ToString().c_str())];
-    return true;  // Cancel — the delegate routes the URL into a new session.
+    // Cancel, then open it ourselves — see the note above the popup window. Cancelling is what
+    // keeps the opener's renderer running; the window arrives on the next main-queue turn,
+    // because creating a browser pumps the loop and this is called from inside one.
+    NSString *url = @(target_url.ToString().c_str());
+    const NSSize size = PopupSize(popupFeatures);
+    __strong CEFShimBrowser *owner = owner_;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [owner openPopup:url width:(int)size.width height:(int)size.height];
+    });
+    return true;
   }
 
   // ---- The four handlers that were missing (ADR-0011 stage five) ----------------------
@@ -719,6 +1011,117 @@ class ShimClient : public CefClient,
     ask->_permCallback = new MediaAccessShim(callback, requested_permissions);
     [owner_ handleAsk:ask];
     return true;
+  }
+
+  // ---- Right-click ----------------------------------------------------------------------
+
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                           CefRefPtr<CefContextMenuParams> params,
+                           CefRefPtr<CefMenuModel> model) override {
+    model->Clear();
+    const uint32_t type = params->GetTypeFlags();
+    const uint32_t edit = params->GetEditStateFlags();
+
+    if (type & CM_TYPEFLAG_LINK) {
+      model->AddItem(kMenuOpenExternal, "Open Link in Default Browser");
+      model->AddItem(kMenuCopyLink, "Copy Link Address");
+      model->AddSeparator();
+    }
+    if ((type & CM_TYPEFLAG_MEDIA) &&
+        params->GetMediaType() == CM_MEDIATYPE_IMAGE) {
+      model->AddItem(kMenuCopyImage, "Copy Image Address");
+      model->AddSeparator();
+    }
+    if (type & CM_TYPEFLAG_EDITABLE) {
+      model->AddItem(MENU_ID_UNDO, "Undo");
+      model->SetEnabled(MENU_ID_UNDO, (edit & CM_EDITFLAG_CAN_UNDO) != 0);
+      model->AddItem(MENU_ID_REDO, "Redo");
+      model->SetEnabled(MENU_ID_REDO, (edit & CM_EDITFLAG_CAN_REDO) != 0);
+      model->AddSeparator();
+      model->AddItem(MENU_ID_CUT, "Cut");
+      model->SetEnabled(MENU_ID_CUT, (edit & CM_EDITFLAG_CAN_CUT) != 0);
+      model->AddItem(MENU_ID_COPY, "Copy");
+      model->SetEnabled(MENU_ID_COPY, (edit & CM_EDITFLAG_CAN_COPY) != 0);
+      model->AddItem(MENU_ID_PASTE, "Paste");
+      model->SetEnabled(MENU_ID_PASTE, (edit & CM_EDITFLAG_CAN_PASTE) != 0);
+      model->AddItem(MENU_ID_SELECT_ALL, "Select All");
+      model->SetEnabled(MENU_ID_SELECT_ALL, (edit & CM_EDITFLAG_CAN_SELECT_ALL) != 0);
+      model->AddSeparator();
+    } else if (!params->GetSelectionText().empty()) {
+      model->AddItem(MENU_ID_COPY, "Copy");
+      model->AddSeparator();
+    } else if (!(type & CM_TYPEFLAG_LINK)) {
+      // Plain page: history and reload, the three controls the bar already carries — reachable
+      // without travelling back to it.
+      model->AddItem(MENU_ID_BACK, "Back");
+      model->SetEnabled(MENU_ID_BACK, browser->CanGoBack());
+      model->AddItem(MENU_ID_FORWARD, "Forward");
+      model->SetEnabled(MENU_ID_FORWARD, browser->CanGoForward());
+      model->AddItem(MENU_ID_RELOAD, "Reload");
+      model->AddSeparator();
+    }
+    model->AddItem(kMenuInspect, "Inspect Element");
+  }
+
+  bool RunContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                      CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model,
+                      CefRefPtr<CefRunContextMenuCallback> callback) override {
+    // The model must not outlive this call, so it is copied out before anything can be
+    // displayed. Displaying runs a nested runloop, and this is called from inside
+    // CefDoMessageLoopWork — so it happens on the next main-queue turn rather than here.
+    NSMutableArray<CEFShimMenuItem *> *items = [NSMutableArray array];
+    for (size_t i = 0; i < model->GetCount(); i++) {
+      const bool separator = model->GetTypeAt(i) == MENUITEMTYPE_SEPARATOR;
+      [items addObject:MenuItem(separator ? @"" : @(model->GetLabelAt(i).ToString().c_str()),
+                                separator ? 0 : model->GetCommandIdAt(i),
+                                separator ? YES : model->IsEnabledAt(i))];
+    }
+    const NSPoint point = NSMakePoint(params->GetXCoord(), params->GetYCoord());
+    __strong CEFShimBrowser *owner = owner_;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (!owner) {
+        callback->Cancel();
+        return;
+      }
+      __block BOOL answered = NO;
+      [owner.delegate cefBrowserDidRequestContextMenu:items
+                                              atPoint:point
+                                               choose:^(int commandID) {
+        if (answered) {
+          return;
+        }
+        answered = YES;
+        if (commandID == 0) {
+          callback->Cancel();
+        } else {
+          callback->Continue(commandID, EVENTFLAG_NONE);
+        }
+      }];
+    });
+    return true;
+  }
+
+  bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                            CefRefPtr<CefContextMenuParams> params, int command_id,
+                            EventFlags event_flags) override {
+    switch (command_id) {
+      case kMenuOpenExternal:
+        [owner_ handleOpenExternal:@(params->GetLinkUrl().ToString().c_str())];
+        return true;
+      case kMenuCopyLink:
+        CopyToPasteboard(params->GetUnfilteredLinkUrl());
+        return true;
+      case kMenuCopyImage:
+        CopyToPasteboard(params->GetSourceUrl());
+        return true;
+      case kMenuInspect:
+        browser->GetHost()->ShowDevTools(CefWindowInfo(), new AuxClient(),
+                                         CefBrowserSettings(),
+                                         CefPoint(params->GetXCoord(), params->GetYCoord()));
+        return true;
+      default:
+        return false;
+    }
   }
 
   // ---- HTTP basic auth, in the resource path ------------------------------------------
@@ -893,6 +1296,11 @@ class ShimClient : public CefClient,
   for (CEFShimBrowser *browser in g_liveShimBrowsers.allObjects) {
     [browser close];
   }
+  // A popup window is not a session and is not in that table, but its browser counts toward
+  // g_aliveBrowsers all the same — and a survivor owns the profile singleton (spike LEARNINGS).
+  for (CEFShimPopupWindow *popup in [g_livePopups copy]) {
+    [popup dismiss];
+  }
   NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:8.0];
   while (g_aliveBrowsers.load() > 0 && deadline.timeIntervalSinceNow > 0) {
     // Fresh pool each pass: close completion rides on the CEF view's dealloc
@@ -947,6 +1355,7 @@ class ShimClient : public CefClient,
   CefString(&contextSettings.cache_path) = cachePath.UTF8String;
   CefRefPtr<CefRequestContext> context =
       CefRequestContext::CreateContext(contextSettings, nullptr);
+  _context = context;
 
   CefWindowInfo windowInfo;
   windowInfo.SetAsChild((__bridge void *)_containerView,
@@ -1119,10 +1528,6 @@ class ShimClient : public CefClient,
   [self.delegate cefBrowserNavigationStateDidChange:canGoBack canGoForward:canGoForward];
 }
 
-- (void)handlePopupRequest:(NSString *)url {
-  [self.delegate cefBrowserDidRequestPopup:url];
-}
-
 - (void)handleAsk:(CEFShimAsk *)ask {
   if (!self.pendingAsks) {
     self.pendingAsks = [NSMutableArray array];
@@ -1143,6 +1548,14 @@ class ShimClient : public CefClient,
     [self.pendingAsks removeObject:ask];
     [self.delegate cefBrowserDidWithdrawAsk:ask];
   }
+}
+
+- (void)handleOpenExternal:(NSString *)url {
+  [self.delegate cefBrowserDidRequestOpenExternal:url];
+}
+
+- (void)openPopup:(NSString *)url width:(int)width height:(int)height {
+  [CEFShimPopupWindow openURL:url context:_context width:width height:height];
 }
 
 - (nullable NSString *)authorizationForOrigin:(const std::string &)origin {

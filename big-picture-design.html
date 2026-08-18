@@ -712,6 +712,34 @@
   .pane-drop { position: absolute; top: 41px; left: 10px; right: 10px; z-index: 5; padding: 8px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 14px 36px rgba(0,0,0,0.17); animation: pane-drop-in 140ms var(--ease-out); }
   .pane-drop .pane-rec__label { margin-top: 12px; }
   @keyframes pane-drop-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  /* ---- The page's own questions (ADR-0011 stage five) -----------------------------------
+     A certificate the engine won't vouch for, an HTTP auth challenge, the page's
+     alert/confirm/prompt, a request for the camera. Each belongs to ONE page, so it docks
+     under that pane's bar the way Chrome docks them under a tab — never as an app-wide modal,
+     which would stop you reading the diff in the pane beside it while a browser waits on you.
+     One surface, four contents: our title, our line, what the page said, the fields it needs,
+     the two verbs. */
+  .pane-ask { position: absolute; top: 41px; left: 50%; transform: translateX(-50%); z-index: 6; width: min(420px, calc(100% - 24px)); padding: 14px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 14px 36px rgba(0,0,0,0.17); animation: pane-drop-in 140ms var(--ease-out); }
+  .pane-ask__title { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .pane-ask__line { margin-top: 5px; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+  .pane-ask__host { font-family: var(--mono); color: var(--ink-2); word-break: break-all; }
+  /* The page's own words, in a field of their own. A site that writes "Your session expired,
+     sign in again" into an alert() must not get to borrow Synth's voice for it. */
+  .pane-ask__said { margin-top: 9px; padding: 8px 10px; border-radius: 8px; background: var(--hover); font-size: 12px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; max-height: 150px; overflow-y: auto; }
+  .pane-ask__field { display: block; width: 100%; margin-top: 8px; padding: 6px 9px; border: 0.5px solid var(--line); border-radius: 8px; background: var(--raised); font-family: inherit; font-size: 12px; color: var(--ink); }
+  .pane-ask__field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.16); }
+  .pane-ask__acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+  /* ---- Find in page (⌘F) ---------------------------------------------------------------
+     Enter is next, ⇧Enter previous, Esc closes. It floats at the top right of the page,
+     where every browser puts it, and over the page rather than above it — a find bar that
+     reflowed the page would move the thing you are looking for. */
+  .pane-find { position: absolute; top: 41px; right: 10px; z-index: 6; display: flex; align-items: center; gap: 4px; padding: 5px 6px 5px 10px; background: var(--panel); border: 0.5px solid var(--border-strong); border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,0.15); animation: pane-drop-in 120ms var(--ease-out); }
+  .pane-find__input { width: 170px; border: 0; background: none; font-family: inherit; font-size: 12px; color: var(--ink); }
+  .pane-find__input:focus { outline: none; }
+  .pane-find__input::placeholder { color: var(--text-faint); }
+  .pane-find__count { flex-shrink: 0; min-width: 54px; text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-faint); }
+  .pane-find__count.is-none { color: var(--error); }
   .pane-btn.is-on { background: var(--hover); color: var(--ink); }
 
   /* ---- Comment mode (ADR-0011 stages three/four, batched) ------------------------------
@@ -4737,6 +4765,8 @@
   const ICON_NAV_FWD    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg>';
   const ICON_NAV_RELOAD = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.67,186.37a8,8,0,0,1,0,11.29C196.58,198.73,170.82,224,128,224c-37.39,0-64.53-22.4-80-39.85V208a8,8,0,0,1-16,0V160a8,8,0,0,1,8-8H88a8,8,0,0,1,0,16H55.44C67.76,183.35,93,208,128,208c36,0,58.14-21.46,58.36-21.68A8,8,0,0,1,197.67,186.37ZM216,40a8,8,0,0,0-8,8V71.85C192.53,54.4,165.39,32,128,32,85.18,32,59.42,57.27,58.34,58.34a8,8,0,0,0,11.3,11.34C69.86,69.46,92,48,128,48c35,0,60.24,24.65,72.56,40H168a8,8,0,0,0,0,16h48a8,8,0,0,0,8-8V48A8,8,0,0,0,216,40Z"/></svg>';
   const ICON_NAV_LOCK   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208Z"/></svg>';
+  const ICON_CHEV_UP    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,165.66a8,8,0,0,1-11.32,0L128,91.31,53.66,165.66a8,8,0,0,1-11.32-11.32l80-80a8,8,0,0,1,11.32,0l80,80A8,8,0,0,1,213.66,165.66Z"/></svg>';
+  const ICON_CHEV_DOWN  = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></svg>';
   const ICON_DEVTOOLS   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></svg>';
   const ICON_COMMENT    = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm-40-76a12,12,0,1,1,12-12A12,12,0,0,1,88,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,128,140Zm40,0a12,12,0,1,1,12-12A12,12,0,0,1,168,140Z"/></svg>';
   const ICON_EXTERNAL   = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></svg>';
@@ -4748,9 +4778,31 @@
     { url: 'localhost:8733',         name: 'Synth dev server' },
     { url: 'localhost:8733/palette', name: 'Command menu' },
     { url: 'app.synth.dev/checkout', name: 'Checkout flow' },
+    { url: 'dev.synth.local',        name: 'Local HTTPS dev server' },
+    { url: 'staging.synth.dev',      name: 'Staging (protected)' },
+    { url: 'meet.synth.dev',         name: 'Video call' },
     { url: 'github.com/synth/synth', name: 'Repository' },
     { url: 'linear.app/synth',       name: 'Linear' },
   ];
+  // Which page raises which question. In a real session these come from CEF's client handlers
+  // — a certificate the engine won't vouch for, an HTTP auth challenge, the page's own
+  // confirm(), a getUserMedia() call. Here the address stands in for the situation, so each one
+  // is reachable from Recent the way it would be from a dev server or a staging box.
+  const BROWSER_ASKS = {
+    'dev.synth.local':        'cert',
+    'staging.synth.dev':      'auth',
+    'app.synth.dev/checkout': 'dialog',
+    'meet.synth.dev':         'camera',
+  };
+  // The pane's page is a skeleton, so find has no words to count. This is what those grey bars
+  // stand for — the one place the mock names the page's text, named once.
+  const PAGE_SAMPLE = `Checkout. Review your order before you pay. Your order is held for 20 minutes.
+    Delivery address. Payment. Order summary. Two items in your order. Continue to payment.
+    Order total. Estimated delivery. Return to basket. Need help with this order?`;
+  const findMatches = (q) => {
+    const needle = q.trim().toLowerCase();
+    return needle ? PAGE_SAMPLE.toLowerCase().split(needle).length - 1 : 0;
+  };
   const browserIsHome = (name) => !/[./:]/.test(name || '');
   const browserHost = (s) => (s || '').replace(/^https?:\/\//, '');
   const browserNorm = (s) => (s.includes('://') ? s : 'https://' + s);
@@ -4899,6 +4951,59 @@
       BROWSER_RECENTS.map((r) => `<button class="pane-rec__item" data-goto="${esc(r.url)}">${ICON_BROWSER}<span class="pane-rec__key">${esc(r.url)}</span><span class="pane-rec__name">${esc(r.name)}</span></button>`).join('') +
       `</div>`;
   }
+  // Each question's own words. Nothing here is generic: the point of wiring CEF's handlers is
+  // that an unwired one is a silently broken web platform, and a prompt that doesn't say which
+  // site is asking, or what for, is the same failure with a card drawn over it.
+  const ASK_BODY = {
+    cert: (h) => ({
+      title: 'This site\u2019s certificate isn\u2019t trusted',
+      line: `<span class="pane-ask__host">${esc(h)}</span> presented a certificate the engine cannot verify \u2014 normally a self-signed one on a local server. Continue only if this is yours.`,
+      // Back to safety is the prominent one and Continue is the quiet one, which is the
+      // opposite of every other ask here: a filled red Continue is the loudest thing on the
+      // pane, and it would be inviting the click it exists to discourage.
+      acts: '<button class="dialog__btn" data-ask-yes>Continue</button>'
+          + '<button class="dialog__btn dialog__btn--primary" data-ask-no>Back to safety</button>',
+    }),
+    auth: (h) => ({
+      title: 'Sign in',
+      line: `<span class="pane-ask__host">${esc(h)}</span> is asking for a username and password.`,
+      fields: '<input class="pane-ask__field" data-ask-user placeholder="Username" autocomplete="off" spellcheck="false">'
+            + '<input class="pane-ask__field" type="password" data-ask-pass placeholder="Password">',
+      acts: '<button class="dialog__btn" data-ask-no>Cancel</button>'
+          + '<button class="dialog__btn dialog__btn--primary" data-ask-yes>Sign in</button>',
+    }),
+    dialog: (h) => ({
+      title: `${esc(h.split('/')[0])} says`,
+      said: 'Restore the basket you left last time?',
+      acts: '<button class="dialog__btn" data-ask-no>Cancel</button>'
+          + '<button class="dialog__btn dialog__btn--primary" data-ask-yes>OK</button>',
+    }),
+    camera: (h) => ({
+      title: 'Use your camera and microphone?',
+      line: `<span class="pane-ask__host">${esc(h)}</span> is asking for the camera and microphone. The answer is remembered for this site.`,
+      acts: '<button class="dialog__btn" data-ask-no>Block</button>'
+          + '<button class="dialog__btn dialog__btn--primary" data-ask-yes>Allow</button>',
+    }),
+  };
+  function askHTML(kind, host) {
+    const a = ASK_BODY[kind](host);
+    return `<div class="pane-ask" data-ask="${kind}">
+      <div class="pane-ask__title">${a.title}</div>
+      ${a.line ? `<div class="pane-ask__line">${a.line}</div>` : ''}
+      ${a.said ? `<div class="pane-ask__said">${esc(a.said)}</div>` : ''}
+      ${a.fields || ''}
+      <div class="pane-ask__acts">${a.acts}</div>
+    </div>`;
+  }
+  function findHTML() {
+    return `<div class="pane-find" data-find>
+      <input class="pane-find__input" data-find-input placeholder="Find in page" autocomplete="off" spellcheck="false">
+      <span class="pane-find__count" data-find-count></span>
+      <button class="pane-btn" data-find-prev aria-label="Previous match">${ICON_CHEV_UP}</button>
+      <button class="pane-btn" data-find-next aria-label="Next match">${ICON_CHEV_DOWN}</button>
+      <button class="pane-btn" data-find-close aria-label="Close find">${ICON_CLOSE}</button>
+    </div>`;
+  }
   // A skeleton stands in for the live WKWebView / Chromium surface a real session would host — a
   // static mock can't render the actual page.
   function browserPageHTML() {
@@ -4978,6 +5083,8 @@
   // The open browser pane's zoom controls, for ⌘+/⌘− and the ⌘K page verbs. Zoom steps a
   // fixed ladder; the omnibox %-badge appears off 100% and clicks back to it.
   let browserZoomAPI = { in: () => {}, out: () => {}, reset: () => {}, canReset: () => false };
+  // The open browser pane's find bar, for \u2318F and the \u2318K page verb.
+  let browserFindAPI = { open: () => {}, close: () => {} };
   // The open simulator pane's device controls, for ⌘K and the window-wide device keys.
   let simDriveAPI = null;
   // The batch's own notice: something the surface has to say about what just happened, said
@@ -5390,6 +5497,62 @@
       if (titleEl) titleEl.textContent = label;
       if (nameEl) nameEl.textContent = label;
       bindBar(); if (devOpen) wireDevtools(); spin();
+      // The paint above took the old page's question and find bar with it. A new question
+      // arrives with the response rather than with the click, so it lands a beat later.
+      clearTimeout(askTimer);
+      const asks = BROWSER_ASKS[label];
+      if (asks) askTimer = setTimeout(() => raiseAsk(asks, label), 420);
+    }
+    // ---- The page's questions, and \u2318F -------------------------------------------------
+    let askTimer = null;
+    function dropAsk() {
+      clearTimeout(askTimer);
+      const el = host.querySelector('[data-ask]');
+      if (el) el.remove();
+    }
+    function raiseAsk(kind, label) {
+      dropAsk();
+      host.insertAdjacentHTML('beforeend', askHTML(kind, label));
+      const el = host.querySelector('[data-ask]');
+      // Both verbs dismiss: what they DO differs (proceed past the certificate, send the
+      // credentials, resolve the page's confirm()), and none of that exists in a mock.
+      el.querySelectorAll('[data-ask-no],[data-ask-yes]').forEach((b) => b.onclick = dropAsk);
+      el.querySelectorAll('.pane-ask__field').forEach((f) => f.addEventListener('keydown', (e) => e.stopPropagation()));
+      const first = el.querySelector('.pane-ask__field');
+      if (first) first.focus();
+    }
+    function closeFind() {
+      const bar = host.querySelector('[data-find]');
+      if (bar) bar.remove();
+    }
+    function openFind() {
+      if (idx < 0) return;                       // the "go to" home has no page to search
+      const open = host.querySelector('[data-find-input]');
+      if (open) { open.focus(); open.select(); return; }
+      host.insertAdjacentHTML('beforeend', findHTML());
+      const bar = host.querySelector('[data-find]');
+      const input = bar.querySelector('[data-find-input]');
+      const count = bar.querySelector('[data-find-count]');
+      let at = 0, total = 0;
+      function repaint() {
+        count.textContent = !input.value ? '' : (total ? `${at}/${total}` : 'No results');
+        count.classList.toggle('is-none', !!input.value && !total);
+      }
+      // Wrapping is the point: a find that stops at the last match makes you re-open it to
+      // get back to the first.
+      const step = (d) => { if (total) { at = ((at - 1 + d + total) % total) + 1; repaint(); } };
+      input.addEventListener('input', () => {
+        total = findMatches(input.value); at = total ? 1 : 0; repaint();
+      });
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();                     // the field owns its own keys
+        if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+      });
+      bar.querySelector('[data-find-prev]').onclick = () => step(-1);
+      bar.querySelector('[data-find-next]').onclick = () => step(1);
+      bar.querySelector('[data-find-close]').onclick = closeFind;
+      input.focus();
     }
     function bindBar() {
       const back = host.querySelector('[data-nav="back"]');
@@ -5504,6 +5667,7 @@
 
     commentAPI = comments;   // the last-wired pane owns the ⌘K / Esc comment verbs
     browserZoomAPI = { in: () => zoomStep(1), out: () => zoomStep(-1), reset: resetZoom, canReset: () => zoom !== 100 };
+    browserFindAPI = { open: openFind, close: closeFind };
 
     if (host.hasAttribute('data-home')) {
       bindBar();
@@ -6417,6 +6581,7 @@
       if (k === ']') { e.preventDefault(); bpress('[data-nav="fwd"]'); return; }
       if (e.altKey && e.code === 'KeyI') { e.preventDefault(); bpress('[data-nav="devtools"]'); return; }
       if (e.shiftKey && e.code === 'KeyM') { e.preventDefault(); bpress('[data-nav="device"]'); return; }
+      if ((k === 'f' || k === 'F') && !e.shiftKey && !e.altKey) { e.preventDefault(); browserFindAPI.open(); return; }
       if (k === '=' || k === '+') { e.preventDefault(); browserZoomAPI.in(); return; }
       if (k === '-' || k === '_') { e.preventDefault(); browserZoomAPI.out(); return; }
     }
@@ -8033,6 +8198,7 @@
       { icon: ICON_NAV_FWD,    label: 'Forward', kbd: ['⌘', ']'], disabled: navOff('fwd'), enter: () => press('[data-nav="fwd"]') },
       { icon: ICON_COPY,       label: 'Copy URL', disabled: home, enter: () => runAndClose(() => { if (url && navigator.clipboard) navigator.clipboard.writeText(browserNorm(url)); }) },
       { icon: ICON_EXTERNAL,   label: 'Open in default browser', disabled: home, enter: () => runAndClose(() => { if (url) window.open(browserNorm(url), '_blank'); }) },
+      { icon: ICON_SEARCH,     label: 'Find in page', kbd: ['⌘', 'F'], disabled: home, enter: () => drive(() => browserFindAPI.open()) },
       { icon: ICON_DEVTOOLS,   label: (live && live.querySelector('[data-dock]')) ? 'Hide DevTools' : 'Show DevTools', kbd: ['⌥', '⌘', 'I'], disabled: home, enter: () => press('[data-nav="devtools"]') },
       { icon: ICON_DEVICE,     label: (live && live.querySelector('[data-nav="device"].is-on')) ? 'Exit device mode' : 'Enter device mode', kbd: ['⌘', '⇧', 'M'], disabled: home, enter: () => press('[data-nav="device"]') },
       { icon: ICON_PLUS,       label: 'Zoom in',  kbd: ['⌘', '+'], disabled: home, enter: () => drive(() => browserZoomAPI.in()) },
@@ -9136,7 +9302,7 @@
   function browsingDataRow(name) {
     if (confirmClear === name) {
       return row('Browsing data', `<div class="set-agent__confirm">
-      <span class="set-agent__confirm-txt">Signs these browsers out of every site and forgets what they stored. Open pages stay open.</span>
+      <span class="set-agent__confirm-txt">Signs these browsers out of every site and forgets what they stored. Open pages reload.</span>
       <button class="tpl-add__btn" data-bclear-no>Cancel</button>
       <button class="tpl-add__btn tpl-add__btn--danger" data-bclear-yes="${esc(name)}">Clear</button>
     </div>`);

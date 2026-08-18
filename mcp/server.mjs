@@ -905,12 +905,24 @@ tool("browser_wait_for",
 // asked (ADR-0011 stage five): an inlined screenshot is the single largest context
 // cost in agent browsing, and an opt-in disk path is one agents mostly don't take.
 
-/** Where a capture lands: the caller's path (relative to the worktree), else a
- *  temp file. The directory is created either way. */
+/** Where a capture lands: the caller's path (relative to the worktree), else a temp file.
+ *  The directory is created either way. `ours` says which — a file WE put in a shared temp
+ *  directory is written owner-only, because a request dump carries whatever the page sent
+ *  (Authorization, Cookie) and /tmp is readable by every account on the machine. A path the
+ *  caller named is the caller's, umask and all. */
 function captureFile(outPath, fallbackName) {
-  const out = outPath ? path.resolve(projectDir, outPath)
-                      : path.join(os.tmpdir(), fallbackName);
+  const ours = !outPath;
+  const out = ours ? path.join(os.tmpdir(), fallbackName)
+                   : path.resolve(projectDir, outPath);
   fs.mkdirSync(path.dirname(out), { recursive: true });
+  return { out, ours };
+}
+
+/** writeFileSync's `mode` only applies when it creates the file, so an existing one is
+ *  chmod'ed after the fact. */
+function writeCapture({ out, ours }, data) {
+  fs.writeFileSync(out, data, ours ? { mode: 0o600 } : undefined);
+  if (ours) fs.chmodSync(out, 0o600);
   return out;
 }
 
@@ -940,10 +952,13 @@ tool("browser_screenshot",
   async ({ sessionId, path: outPath, inline, fullPage, ref, selector }) => {
     const page = await targetPage(requireInstance(), sessionId);
     const target = await resolveTarget(page, { ref, selector });
-    const out = captureFile(outPath, `synth-screenshot-${Date.now()}.png`);
+    const file = captureFile(outPath, `synth-screenshot-${Date.now()}.png`);
+    const out = file.out;
     const opts = { type: "png", timeout: 15000, path: out };
     if (target) await target.screenshot(opts);
     else await page.screenshot({ ...opts, fullPage: !!fullPage });
+    // Playwright creates the file, so the mode is applied after it exists.
+    if (file.ours) fs.chmodSync(out, 0o600);
     const bytes = fs.statSync(out).size;
     const what = target ? targetLabel({ ref, selector }) : (fullPage ? "full page" : "viewport");
     const summary = `${out}\n${what} of ${page.url()} — ${bytes} bytes`;
@@ -1090,13 +1105,11 @@ async function dumpRequest(entry, outPath) {
     }
   }
 
-  const out = captureFile(outPath, `synth-request-${entry.id}-${Date.now()}.txt`);
+  const file = captureFile(outPath, `synth-request-${entry.id}-${Date.now()}.txt`);
   if (sidecar) {
-    const binPath = out + ".bin";
-    fs.writeFileSync(binPath, sidecar.body);
-    parts.push(binPath);
+    parts.push(writeCapture({ out: file.out + ".bin", ours: file.ours }, sidecar.body));
   }
-  fs.writeFileSync(out, parts.join("\n"));
+  const out = writeCapture(file, parts.join("\n"));
   return `${entry.method} ${entry.url}\n${entry.failed ?? entry.status ?? "pending"} — ` +
          `headers and body written to:\n${out}` +
          (sidecar ? `\n${out}.bin` : "");

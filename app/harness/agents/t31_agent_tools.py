@@ -150,18 +150,20 @@ dump, err = mcp.call("browser_network", sessionId=sid, request=entry.group(1))
 path = [l for l in dump.splitlines() if l.startswith("/")][0]
 check("23. naming one writes its headers and body to a file", not err and os.path.exists(path), dump)
 body = open(path).read()
-check("24. which holds the request headers and the response body, and the body is NOT inline",
+check("24. and it is readable only by its owner — a dump carries whatever the page sent",
+      oct(os.stat(path).st_mode & 0o777) == oct(0o600), oct(os.stat(path).st_mode & 0o777))
+check("25. which holds the request headers and the response body, and the body is NOT inline",
       "--- request headers ---" in body and '{"ok": "fetched"}' in body
       and '{"ok": "fetched"}' not in dump, dump[:200])
 
 # --- 6. Free viewport ---------------------------------------------------------------------
 out, err = mcp.call("browser_viewport", sessionId=sid, width=1440, height=900)
-check("25. the agent can lay the page out at a desktop breakpoint no phone covers",
+check("26. the agent can lay the page out at a desktop breakpoint no phone covers",
       not err and json.loads(out).get("width") == 1440, out)
 inner = mcp.call("browser_evaluate", sessionId=sid, expression="window.innerWidth")[0]
-check("26. and the page really is that wide", inner.strip() == "1440", inner)
+check("27. and the page really is that wide", inner.strip() == "1440", inner)
 out, err = mcp.call("browser_viewport", sessionId=sid, reset=True)
-check("27. reset gives the pane's own viewport back",
+check("28. reset gives the pane's own viewport back",
       not err and json.loads(out).get("override") is None
       and mcp.call("browser_evaluate", sessionId=sid, expression="window.innerWidth")[0].strip() != "1440",
       out)

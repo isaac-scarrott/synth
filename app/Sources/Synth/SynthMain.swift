@@ -1,5 +1,5 @@
-// Process entry: `--browser-check` and `--simulator-check` run the engine self-checks instead
-// of the UI (SynthApp keeps everything else).
+// Process entry: `--browser-check`, `--simulator-check` and `--agent-check` run the self-checks
+// instead of the UI (SynthApp keeps everything else).
 import Foundation
 
 @main
@@ -17,6 +17,10 @@ enum SynthMain {
         }
         if CommandLine.arguments.contains("--simulator-check") {
             SimulatorCheck.run()
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--agent-check"),
+           i + 1 < CommandLine.arguments.count {
+            AgentCheck.run(CommandLine.arguments[i + 1])
         }
         SynthApp.main()
     }

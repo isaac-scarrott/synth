@@ -2085,3 +2085,21 @@ disclosure to dive deeper.
   `v0.34.1`; dmg + zip notarized, stapled, verified credential-less with quarantine set; appcast
   newest 0.34.1 at 611, `edSignature` on all 18 enclosures, 72KB delta from 609. No `synth-site`
   push; landing links unchanged.
+
+- **An agent can be named by a shell alias** — `claude-personal` read "Not on your PATH" when it
+  was an alias, which only an interactive shell can see. The login-shell probe now brings zsh's
+  `$aliases` back with the PATH, the name is expanded the way the shell would (chains followed,
+  pinned flags kept as the launch's leading arguments, shell fragments refused as unrunnable), and
+  the session PTY drops agent aliases so one can't shadow the shim that instruments it — the bug
+  that silently cost hooks, session id and status to anyone who had aliased `claude` at all.
+  `Synth --agent-check` prints the resolution; `t28_alias_agent` gates it, launch included.
+
+- **`claude setup-token` runs again inside Synth** — the shim injected `--mcp-config` last, and
+  that flag takes a LIST, so it swallowed the subcommand behind it ("MCP config file not found:
+  <cwd>/setup-token"); the always-present single-valued `--settings` now closes the list before
+  the user's arguments start. The pass-through subcommand list was also the six names written when
+  the feature landed — it now carries every command the binary answers to, hidden ones (`attach`,
+  `daemon`, `logs`, `remote-control`, `respawn`, `rm`, `self-hosted-runner`, `stop`) included. Everything else the
+  shim assumes about Claude was re-checked against the CLI and hooks references, injected hooks
+  merge with the user's rather than replacing them. `t29_claude_argv` gates the argv, against the
+  real parser.

@@ -40,11 +40,11 @@ import OSLog
     // MARK: Launch
 
     func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
-        guard let real = agent.resolvedBinary else { return }
+        guard agent.resolvedCommand != nil else { return }
         let port = ports[sessionID] ?? Self.freePort()
         ports[sessionID] = port
 
-        env[agent.realBinaryEnvKey] = real
+        agent.exportRealCommand(into: &env)
         env["SYNTH_OPENCODE_PORT"] = String(port)
         // The `question` tool is what lets an agent stop and ask the user — the needs-input
         // signal Synth's unattended-agent notifications depend on. It is env-gated, and unlike

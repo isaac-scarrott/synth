@@ -8689,10 +8689,23 @@
   const CUSTOM = [];
   let customSeq = 0;
 
-  // Stands in for the real probe. The app runs `<command> --version` through the login shell —
-  // so a shim on PATH and a shell function both resolve — and matches the output against each
-  // hosted agent's signature (Claude Code answers `2.1.9 (Claude Code)`). Here a table plays the
-  // binary's part: in the table = installed, and a base = recognised.
+  // Stands in for the real probe. The app follows the name through the shell's own aliases
+  // first, then runs `<command> --version` through the login shell — so a shim on PATH, a
+  // wrapper and an alias all resolve — and matches the output against each hosted agent's
+  // signature (Claude Code answers `2.1.9 (Claude Code)`). Here two tables play the shell's
+  // part: ALIASES is what the name stands for, PROBE is what answers — in it = installed, and
+  // a base = recognised.
+  //
+  // The alias matters more than it looks. An alias exists only inside an interactive shell, so
+  // nothing Synth spawns can see one: unresolved, a command the user runs every day reads as
+  // "not on your PATH". Resolved, the row can say what it actually found, the launch execs the
+  // program the alias named with the arguments it carried, and the session drops the alias so
+  // it can't shadow the shim that instruments it.
+  const ALIASES = {
+    'claude-personal': 'claudewho-personal',
+    'claude-sonnet':   'claude-work --model sonnet',
+    'claude-piped':    'claude-work | tee ~/turns.log',   // a shell line, not a program
+  };
   const PROBE = {
     'claude-personal': { base: 'claude',      ver: 'Claude Code 2.1.9' },
     'claude-work':     { base: 'claude',      ver: 'Claude Code 2.1.9' },
@@ -8701,21 +8714,46 @@
     'agy-canary':      { base: 'antigravity', ver: 'Antigravity 1.1.4' },
     codex:             { base: null,          ver: 'codex 0.9.1' },   // answers, but Synth can't read it
   };
+  // Following an alias is the shell's own rule: re-expand the first word while it names another
+  // alias, and the rest ride along as arguments. An expansion carrying shell syntax is a shell
+  // line rather than a program — there is nothing there to exec, so it resolves to nothing.
+  const expandAlias = (bin) => {
+    let words = [bin], seen = new Set();
+    while (ALIASES[words[0]] && !seen.has(words[0])) {
+      seen.add(words[0]);
+      const exp = ALIASES[words[0]];
+      if (/[|&;<>()`$*?{}[\]'"\\]/.test(exp)) return null;
+      words = exp.split(/\s+/).concat(words.slice(1));
+    }
+    return words;
+  };
   const probeBin = (bin) => {
-    const hit = PROBE[(bin || '').trim()];
-    if (!hit) return { state: 'missing' };
-    return hit.base ? { state: 'found', base: hit.base, ver: hit.ver } : { state: 'unknown', ver: hit.ver };
+    const name = (bin || '').trim();
+    const words = expandAlias(name);
+    if (!words) return { state: 'missing', alias: true };
+    const via = words.join(' ') === name ? null : words.join(' ');
+    const hit = PROBE[words[0]];
+    if (!hit) return { state: 'missing', alias: !!ALIASES[name] };
+    return hit.base ? { state: 'found', base: hit.base, ver: hit.ver, via }
+                    : { state: 'unknown', ver: hit.ver, via };
   };
   // What the row says about the command, in the fewest words that answer "will this start?". An
   // empty command is the one state that isn't a complaint — you have only just added the row.
   // A command that answers but isn't a known agent says nothing at all: the picker still reads
   // "Choose…", which is the only thing left to do about it, and a sentence about what the version
   // string wasn't is a complaint the user can't act on.
+  // An alias Synth followed and still couldn't run stands apart from a name that is simply
+  // absent: the command IS there, in the shell, and what's wrong is that it stands for a shell
+  // line rather than a program — which no amount of PATH would fix. And a name that went
+  // somewhere says where: the row is naming a command the PATH hasn't got, and the alias it
+  // followed is the whole explanation.
   const probeLine = (a) => a.clash ? a.clash
     : !a.bin ? 'Type a command'
     : a.probe.state === 'checking' ? 'Checking…'
-    : a.probe.state === 'missing' ? 'Not on your PATH'
+    : a.probe.state === 'missing' ? (a.probe.alias ? 'That alias runs a shell command, not a program'
+                                                   : 'Not on your PATH')
     : a.probe.state === 'unknown' ? ''
+    : a.probe.via ? `${a.probe.ver} · alias for ${a.probe.via}`
     : a.probe.ver;
   // Neutral while there's nothing to launch yet; amber once the row is asserting something wrong.
   const probeWarn = (a) => !!a.clash || (!!a.bin && a.probe.state === 'missing');

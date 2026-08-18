@@ -268,7 +268,14 @@ final class HookServer: @unchecked Sendable {
         // binary and sessions run without hooks (no --settings, no status signals, no
         // session id). Re-prepend after the user's config has had its say.
         let shimfix = "[[ -n \"$SYNTH_SHIM_DIR\" && -d \"$SYNTH_SHIM_DIR\" ]] && PATH=\"$SYNTH_SHIM_DIR:$PATH\"\n"
-        try? (histfix + "_synth_source_user .zshrc\n" + shimfix + reporter).write(toFile: zdotDir + "/.zshrc", atomically: true, encoding: .utf8)
+        // An alias beats PATH, so a user who runs their agent through one (`claude-personal`,
+        // or a `claude` that pins a flag) would reach the real binary directly and the shim not
+        // at all — a session with no hooks, no session id and no status. Their alias is not lost
+        // by dropping it here: the app resolved it before launch and the shim puts back both the
+        // program it named and the arguments it carried (`SYNTH_REAL_*`, `AgentDescriptor`).
+        let unalias = "for _synth_bin in ${=SYNTH_AGENT_BINS}; do unalias -- \"$_synth_bin\" 2>/dev/null; done\n"
+            + "unset _synth_bin\n"
+        try? (histfix + "_synth_source_user .zshrc\n" + shimfix + unalias + reporter).write(toFile: zdotDir + "/.zshrc", atomically: true, encoding: .utf8)
     }
 
     /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts, the per-session

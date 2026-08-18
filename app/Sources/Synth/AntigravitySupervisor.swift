@@ -54,8 +54,8 @@ import OSLog
     /// from the top: a relaunch of the same row reuses the path, and replayed lines would resume
     /// the *previous* conversation and raise a permission prompt nobody is looking at.
     func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
-        guard let real = agent.resolvedBinary else { return }
-        env[agent.realBinaryEnvKey] = real
+        guard agent.resolvedCommand != nil else { return }
+        agent.exportRealCommand(into: &env)
         env["SYNTH_ANTIGRAVITY_HOOKS_DIR"] = Self.sessionDir(sessionID)
         env["SYNTH_ANTIGRAVITY_LOG"] = Self.logPath(sessionID)
         // An embedded agent must not self-update mid-session.

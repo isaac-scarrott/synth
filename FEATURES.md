@@ -2077,3 +2077,11 @@ disclosure to dive deeper.
   newest 0.34.0 at 609, `edSignature` on all 18 enclosures, 828KB delta from 605. The clean-tree
   guard tripped on the very files the feature removes — the deleted `.gitignore` lines stopped
   hiding them. No `synth-site` push; `landing/` unchanged since `v0.33.0`.
+
+## [2026-08-18](docs/features/2026-08-18.md)
+
+- **0.34.1 ships — Claude opens again** — patch release fixing the production-only launch-hook
+  crash when Claude received Synth's bundled MCP configuration. `CFBundleVersion` 611, tag
+  `v0.34.1`; dmg + zip notarized, stapled, verified credential-less with quarantine set; appcast
+  newest 0.34.1 at 611, `edSignature` on all 18 enclosures, 72KB delta from 609. No `synth-site`
+  push; landing links unchanged.

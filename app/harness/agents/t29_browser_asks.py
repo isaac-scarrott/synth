@@ -113,6 +113,24 @@ check("18. Enter walks to the next match rather than restarting the search", boo
 r = ctl("automation.browserFind", sessionId=bid, close=True)
 check("19. Esc closes it", r.get("open") is False, r)
 
+# --- 6. Esc answers the question ---------------------------------------------------------
+# The card's own .cancelAction cannot be relied on: a browser pane usually hands its keys to
+# the page's own view, so the key monitor takes Esc. It cancels and never proceeds — accepting
+# stays a click.
+ctl("browser.close", sessionId=bid)
+bid = ctl("browser.create", url=page)["sessionId"]
+wait(lambda: ("dialogs.html" in address(bid)) or None, 40)
+ctl("automation.jump", sessionId=bid)          # Esc belongs to the OPEN session's pane
+time.sleep(1)
+ctl("automation.browserGo", sessionId=bid, url=f"{page}#confirm")
+wait_ask(bid, "confirm")
+ctl("automation.key", keyCode=53)              # Esc
+gone = wait(lambda: (not asks(bid)) or None, 20)
+check("20. Esc takes the question off the pane", bool(gone), asks(bid))
+check("21. and the page reads it as a cancel",
+      wait(lambda: (cdp_eval(port, "dialogs.html", "window.__answer") == "false") or None, 20),
+      cdp_eval(port, "dialogs.html", "window.__answer"))
+
 p.terminate()
 for s in servers: s.shutdown()
 sys.exit(result())

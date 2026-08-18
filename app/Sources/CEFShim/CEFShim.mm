@@ -727,9 +727,15 @@ static NSSize PopupSize(const CefPopupFeatures &features) {
   [g_livePopups addObject:host];
   // Async creation only, pumped until OnAfterCreated — the session browser's path, and the
   // reason this one works where letting CEF create the popup does not.
+  //
+  // Through PumpWork rather than CefDoMessageLoopWork directly, unlike the session browser's
+  // identical loop. This one can be reached from inside a nested runloop that drained the main
+  // queue while an outer pump was on the stack (a tracking menu, a modal), and CEF CHECKs on a
+  // reentrant DoMessageLoopWork. PumpWork's guard turns that into a popup that times out and
+  // closes its window, which is a far better failure than taking the app down.
   NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10.0];
   while (!host->_browser && deadline.timeIntervalSinceNow > 0) {
-    CefDoMessageLoopWork();
+    PumpWork();
     [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
                           beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
   }

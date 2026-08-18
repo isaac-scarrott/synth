@@ -300,6 +300,13 @@ const selectorParam = z.string().optional().describe(
 async function resolveTarget(page, { ref, selector }) {
   if (ref && selector) throw new Error("pass ref or selector, not both");
   if (ref) {
+    // Refs are e12, or f1e12 for one inside an iframe. Checked before it becomes a selector, so
+    // a mistyped ref reads as a mistyped ref rather than as Playwright's parser complaining.
+    if (!/^(f\d+)?e\d+$/.test(ref)) {
+      throw new Error(
+        `"${ref}" isn't a ref. A ref looks like e12 (or f1e12 inside an iframe) and comes from ` +
+        "browser_snapshot — if you meant a CSS selector, pass it as `selector`.");
+    }
     const loc = page.locator(`aria-ref=${ref}`);
     if (await loc.count() === 0) {
       throw new Error(

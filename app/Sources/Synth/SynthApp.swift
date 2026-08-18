@@ -588,6 +588,16 @@ struct RootView: View {
                 }
                 return event
             }
+            // Esc answers the page's question, ahead of everything else: a page holding on a
+            // dialog is the most modal thing on screen, and Esc is the safe direction — it
+            // cancels, and never proceeds past a certificate or grants a camera. Accepting
+            // stays a click, deliberately. The card's own .cancelAction cannot be relied on
+            // here: a browser pane usually hands its keys to the page's own view.
+            if event.keyCode == 53, let open = store.openSession, open.kind == .browser,
+               let ctrl = BrowserManager.shared.existing(open.id), let ask = ctrl.currentAsk {
+                ctrl.answer(ask) { $0.deny() }
+                return nil
+            }
             // Esc closes the find bar, before comment mode gets a look: with both up, the
             // find bar is the thing the user just opened and the one Esc means.
             if event.keyCode == 53, let open = store.openSession, open.kind == .browser,

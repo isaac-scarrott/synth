@@ -84,6 +84,20 @@ enum BrowserCheck {
         report(fetchCDPVersion(port: engine.cdpPort) != nil, "cdp-endpoint",
                fetchCDPVersionCache ?? "no response from /json/version")
 
+        // The Chromium sandbox, asserted from outside the process (ADR-0011 stage five). macOS
+        // Chromium hands every sandboxed child a seatbelt client fd on its command line and
+        // gives an unsandboxed one --no-sandbox instead, so the two are told apart by what the
+        // helpers were actually launched with rather than by the setting we passed in. This
+        // runs in the gate's precheck, so no suite can go green with the sandbox off.
+        let launched = helperCommandLines()
+        let unsandboxed = launched.filter {
+            !$0.contains("--seatbelt-client=") || $0.contains("--no-sandbox")
+        }
+        report(!launched.isEmpty && unsandboxed.isEmpty, "sandboxed-helpers",
+               launched.isEmpty ? "no helper processes to check"
+                                : (unsandboxed.isEmpty ? "\(launched.count) helpers, all sandboxed"
+                                                       : "\(unsandboxed.count) of \(launched.count) unsandboxed"))
+
         engine.shutdown()
         pump(until: { false }, timeout: 0.5)   // let the async close land
         BrowserEngineFactory.globalShutdown()  // pumps until every browser is gone, then CefShutdown
@@ -133,6 +147,32 @@ enum BrowserCheck {
             pump(until: { false }, timeout: 0.5)
         }
         return nil
+    }
+
+    /// How each of this bundle's live helpers was launched. Same pgrep as the count below,
+    /// then `ps` per pid — the command line is the sandbox evidence.
+    private static func helperCommandLines() -> [String] {
+        let pids = run("/usr/bin/pgrep",
+                       ["-f", Bundle.main.bundlePath + "/Contents/Frameworks/Synth Helper"])
+            .split(separator: "\n").map(String.init)
+        return pids.compactMap { pid in
+            let line = run("/bin/ps", ["-o", "command=", "-p", pid])
+            return line.isEmpty ? nil : line
+        }
+    }
+
+    private static func run(_ path: String, _ arguments: [String]) -> String {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = arguments
+        let out = Pipe()
+        task.standardOutput = out
+        task.standardError = Pipe()
+        guard (try? task.run()) != nil else { return "" }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        return String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     /// CEF helper processes spawned from THIS bundle (other Synth instances on the

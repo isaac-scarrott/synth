@@ -10,7 +10,7 @@
 #
 # Launches a minimal .app bundle rather than the bare binary: CEF resolves its
 # framework + helper apps relative to Contents/, so the bare binary has no browser.
-# The 200MB framework is symlinked, binaries copied — a rebuild refresh is instant.
+# The 200MB framework is APFS-cloned, binaries copied — a rebuild refresh is instant.
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
@@ -62,7 +62,9 @@ cp -cf "$BIN/synth-hook" "$APP/Contents/MacOS/synth-hook" 2>/dev/null || cp -f "
 write_info_plist "$APP" "$NAME" "$BID"
 
 if $HAS_CEF; then
-  ./vendor/bundle-cef.sh "$APP" "$BIN" symlink
+  # clone, not symlink: the Chromium sandbox refuses a framework that lives outside the app
+  # bundle the helper was launched from. APFS clonefile keeps it instant.
+  ./vendor/bundle-cef.sh "$APP" "$BIN" clone
 fi
 
 stage_resources "$APP" "$BIN" "$ICON"

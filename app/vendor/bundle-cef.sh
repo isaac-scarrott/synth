@@ -2,13 +2,14 @@
 # Assemble the CEF runtime into a Synth.app bundle: the Chromium framework plus the
 # four helper apps CEF requires on macOS (one stub binary under four names). CEF can't
 # run from a bare executable — the framework/helpers are resolved relative to the
-# bundle (Contents/Frameworks). Shared by dev.sh (symlink mode: no 200MB copy per
-# build) and dist.sh (copy mode: self-contained artifact).
+# bundle (Contents/Frameworks). Shared by dev.sh (clone mode: APFS clonefile, so the 200MB
+# framework is inside the bundle — which the sandbox requires — at no cost) and dist.sh
+# (copy mode: a self-contained artifact that survives being moved off this machine).
 set -euo pipefail
 
 APP="$1"        # path to Synth.app
 BIN="$2"        # swift build bin dir containing SynthBrowserHelper
-MODE="${3:-copy}"  # copy | symlink
+MODE="${3:-copy}"  # copy | clone | symlink
 
 # Helpers hang off the host app's bundle id, so the two channels' helpers stay distinct in
 # Launch Services. CEFEngine finds them by path, never by id, so the suffix is free to vary.
@@ -26,6 +27,17 @@ FW_DST="$FRAMEWORKS/Chromium Embedded Framework.framework"
 if [ "$MODE" = "symlink" ]; then
   rm -rf "$FW_DST"
   ln -sfn "$FW_SRC" "$FW_DST"
+elif [ "$MODE" = "clone" ]; then
+  # The framework has to be INSIDE the bundle, not symlinked to the checkout: with the
+  # Chromium sandbox on (ADR-0011 stage five) a helper may not dlopen a framework that lives
+  # outside the app it was launched from, and every helper dies with "file system sandbox
+  # blocked open()". APFS clonefile makes that free — no bytes copied, no time — and it is
+  # redone only when the framework itself is newer than the one staged.
+  if [ -L "$FW_DST" ] || [ ! -d "$FW_DST" ] ||
+     [ "$FW_SRC/Chromium Embedded Framework" -nt "$FW_DST/Chromium Embedded Framework" ]; then
+    rm -rf "$FW_DST"
+    cp -Rc "$FW_SRC" "$FW_DST" 2>/dev/null || rsync -a --delete "$FW_SRC/" "$FW_DST/"
+  fi
 else
   [ -L "$FW_DST" ] && rm -f "$FW_DST"
   rsync -a --delete "$FW_SRC/" "$FW_DST/"

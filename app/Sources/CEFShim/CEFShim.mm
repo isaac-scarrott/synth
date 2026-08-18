@@ -11,6 +11,7 @@
 //   renderer inside window.open() forever.
 // - --use-mock-keychain under automation: keychain (os_crypt) lookups crash or hang
 //   startup in harness-spawned contexts, taking the CDP server with them.
+// - The Chromium sandbox is on; the helpers engage it (SynthBrowserHelper/main.cc).
 
 #import "CEFShim.h"
 
@@ -1244,7 +1245,10 @@ class ShimClient : public CefClient,
   CefMainArgs mainArgs(*_NSGetArgc(), *_NSGetArgv());
 
   CefSettings settings;
-  settings.no_sandbox = true;
+  // The sandbox is on (stage five). The helpers engage it themselves — see
+  // Sources/SynthBrowserHelper/main.cc — and a helper that could not would exit rather than
+  // run unsandboxed, so this browser would fail loudly rather than quietly downgrade.
+  settings.no_sandbox = false;
   settings.external_message_pump = true;
   settings.remote_debugging_port = cdpPort;
   settings.log_severity = LOGSEVERITY_WARNING;

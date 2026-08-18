@@ -31,6 +31,12 @@ import AppKit
     /// one of them leaked).
     @ObservationIgnored private var creating: Set<UUID> = []
 
+    /// Why a session has no engine, when the factory refused to make one (stage five:
+    /// there is no fallback engine to hide behind). Sticky — the reasons are structural
+    /// (no CEF in the build, no free CDP port), so retrying on every render would only
+    /// re-fail, and the pane needs something to say either way.
+    @ObservationIgnored private var failures: [UUID: String] = [:]
+
     /// Bumped when an engine finishes bootstrapping. A pane that rendered nil during
     /// a reentrant render (the `creating` guard) observes this and re-renders now that
     /// the controller is cached — the nudge the old `.statusChanged(.running)` post
@@ -39,14 +45,29 @@ import AppKit
 
     func controller(for session: Session) -> BrowserSessionController? {
         _ = generation   // subscribe the calling render to engine-creation completions
-        guard !dead.contains(session.id), !creating.contains(session.id) else { return nil }
+        guard !dead.contains(session.id), !creating.contains(session.id),
+              failures[session.id] == nil else { return nil }
         if let existing = controllers[session.id] { return existing }
         creating.insert(session.id)
         defer { creating.remove(session.id) }
-        let ctrl = BrowserSessionController(session: session, bus: bus)
+        let engine: BrowserEngine
+        do {
+            engine = try BrowserEngineFactory.make(sessionID: session.id)
+        } catch {
+            failures[session.id] = error.localizedDescription
+            generation += 1
+            return nil
+        }
+        let ctrl = BrowserSessionController(session: session, engine: engine, bus: bus)
         controllers[session.id] = ctrl
         generation += 1
         return ctrl
+    }
+
+    /// The refusal to show in the pane, if this session's engine could not be made.
+    func failure(_ id: UUID) -> String? {
+        _ = generation
+        return failures[id]
     }
 
     /// The live controller, if the session's pane has ever been opened — never spins
@@ -136,10 +157,10 @@ import AppKit
         return pendingFocusAddress
     }
 
-    init(session: Session, bus: EventBus?) {
+    init(session: Session, engine: BrowserEngine, bus: EventBus?) {
         self.sessionID = session.id
         self.bus = bus
-        self.engine = BrowserEngineFactory.make(sessionID: session.id)
+        self.engine = engine
         engine.delegate = self
         // A restored (or popup-born) session reopens its page in the fresh engine.
         if let url = session.browserURL { navigate(to: url) }
@@ -320,6 +341,8 @@ struct BrowserPane: View {
     var body: some View {
         if let ctrl = BrowserManager.shared.paneEngine(for: session) {
             pane(ctrl)
+        } else if let reason = BrowserManager.shared.failure(session.id) {
+            refusal(reason)
         } else if !BrowserManager.shared.isDead(session.id) {
             // Engine not up yet: paint the pane's card immediately, then bootstrap the engine on
             // the next runloop turn (the focus:false create's proven deferral, Store.newBrowser) so
@@ -330,6 +353,28 @@ struct BrowserPane: View {
                     DispatchQueue.main.async { _ = BrowserManager.shared.controller(for: session) }
                 }
         }
+    }
+
+    /// No engine, and there never will be one for this session (stage five: the
+    /// WKWebView fallback is gone, so a build without CEF makes no browser rather than a
+    /// pane that renders fine and answers no agent tool). Says what is wrong in the card
+    /// the page would have filled, in the home surface's own quiet register.
+    private func refusal(_ reason: String) -> some View {
+        VStack(spacing: 10) {
+            Phos(path: Phosphor.globe, size: 34).foregroundStyle(Theme.inkFaint)
+            Text("No browser engine")
+                .font(.sans(13, 600)).foregroundStyle(Theme.ink)
+            Text(reason)
+                .font(.sans(12)).foregroundStyle(Theme.inkFaint)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 440)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.raised)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
+        .padding(EdgeInsets(top: 4, leading: 14, bottom: 14, trailing: 14))
     }
 
     /// The pane's chrome with no engine yet — matches `pane`'s outer card so the swap to the live

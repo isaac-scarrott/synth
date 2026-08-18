@@ -69,10 +69,6 @@ import Observation
 
     func enter(store: AppStore, urlHint: URL?) {
         guard !engaged else { return }
-        guard cdpPort != 0 else {
-            showNotice("Comment mode needs the Chromium engine (no CDP endpoint)")
-            return
-        }
         self.store = store
         // Where the next comment lands. Unowned means Synth would start an agent to take it —
         // unless every agent is switched off, and then the chip says so before anything is

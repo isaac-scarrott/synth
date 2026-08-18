@@ -1,10 +1,11 @@
 import Foundation
-import os.log
 
 /// The one place an engine is chosen (ADR-0011's reversible seam, in code). CEF is the
-/// engine; WKWebView is the sanctioned hedge, taken only when CEF isn't built in (bare-binary
-/// run, assets not fetched) or fails to start — the pane keeps working, but with no CDP
-/// endpoint for stage two, so the fallback is loud in the log, never silent.
+/// engine, and the only one: a build without it makes no browser at all rather than a
+/// degraded one. The WKWebView hedge that used to stand here rendered pages perfectly
+/// and had no CDP endpoint, so every agent tool failed against something the user could
+/// watch painting correctly — refusing to make a browser, loudly, is the better failure
+/// (stage five).
 @MainActor
 enum BrowserEngineFactory {
     struct Unavailable: LocalizedError {
@@ -12,21 +13,15 @@ enum BrowserEngineFactory {
         var errorDescription: String? { reason }
     }
 
-    private static let log = Logger(subsystem: bundleIdentifier, category: "browser")
-
-    static func make(sessionID: UUID) -> BrowserEngine {
+    static func make(sessionID: UUID) throws -> BrowserEngine {
         #if canImport(CEFShim)
-        do {
-            // CEF needs a URL at browser creation; the home surface covers the view until
-            // the session's first real navigation.
-            return try CEFEngine(initialURL: URL(string: "about:blank")!, sessionID: sessionID)
-        } catch {
-            log.error("CEF engine unavailable, falling back to WKWebView (no CDP): \(error.localizedDescription)")
-            return WKWebViewEngine()
-        }
+        // CEF needs a URL at browser creation; the home surface covers the view until
+        // the session's first real navigation.
+        return try CEFEngine(initialURL: URL(string: "about:blank")!, sessionID: sessionID)
         #else
-        log.error("CEF not built into this binary (run app/vendor/fetch-cef.sh, launch via dev.sh) — WKWebView fallback, no CDP")
-        return WKWebViewEngine()
+        throw Unavailable(reason:
+            "this build has no browser engine — CEF wasn't compiled in. Run " +
+            "app/vendor/fetch-cef.sh and launch a bundle assembled by app/dev.sh.")
         #endif
     }
 

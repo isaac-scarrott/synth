@@ -288,7 +288,7 @@ extension HardwareDevice {
 /// Ops are chained so a rapid device/rotate/fit burst never interleaves sends on the
 /// socket; the client stays attached across navigations (CDP metrics overrides persist
 /// per target). Failures degrade gracefully — the frame still draws around an
-/// un-emulated page. `cdpPort == 0` (the WKWebView hedge) skips emulation entirely.
+/// un-emulated page.
 @MainActor final class DeviceEmulator {
     private let sessionID: UUID
     private let cdpPort: UInt16
@@ -302,7 +302,6 @@ extension HardwareDevice {
 
     func apply(width: Int, height: Int, deviceScaleFactor: Double, scale: Double,
                urlHint: URL?) {
-        guard cdpPort != 0 else { return }
         enqueue { [weak self] in
             guard let self else { return }
             if self.client == nil {

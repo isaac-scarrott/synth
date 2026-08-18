@@ -35,8 +35,8 @@ enum BrowserCheck {
                 + Data(html.utf8).base64EncodedString())!
         }
 
-        // Constructs CEFEngine directly, not via the factory — this check exists to prove
-        // the CEF path, and the factory's WKWebView fallback would mask a broken one.
+        // Constructs CEFEngine directly, not via the factory — the check exists to prove
+        // the CEF path, and it should read the same whatever the factory grows into.
         let engine: BrowserEngine
         #if canImport(CEFShim)
         do {

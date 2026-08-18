@@ -1,9 +1,10 @@
 import AppKit
 
 /// The seam that keeps the engine decision reversible (ADR-0011): the browser pane, session
-/// model, and keybindings talk to this protocol, never to CEF/WebKit directly. The spike
-/// proved two engines swap freely behind it; the production engine is CEF, with WKWebView as
-/// the sanctioned no-CDP hedge.
+/// model, and keybindings talk to this protocol, never to CEF directly. The spike proved two
+/// engines swap freely behind it; CEF is the one that ships, and stage five removed the
+/// WKWebView hedge that stood beside it — an engine with no CDP is not a browser Synth can
+/// offer.
 @MainActor
 protocol BrowserEngine: AnyObject {
     /// The live web content view, parented into the pane by the caller.
@@ -15,8 +16,8 @@ protocol BrowserEngine: AnyObject {
     var canGoBack: Bool { get }
     var canGoForward: Bool { get }
 
-    /// The engine's Chrome DevTools Protocol port, 0 if the engine has none (WKWebView).
-    /// Stage two (the bundled MCP server) attaches here; it must be live from day one.
+    /// The engine's Chrome DevTools Protocol port. Stage two (the bundled MCP server)
+    /// attaches here; an engine without one has no business being behind this protocol.
     var cdpPort: UInt16 { get }
 
     func navigate(to url: URL)

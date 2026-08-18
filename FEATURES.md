@@ -2069,3 +2069,33 @@ disclosure to dive deeper.
   `agy` that read as product failures otherwise: it starts MCP servers lazily (no turn, no
   server), and it spends minutes on preamble before a first tool call — so its assertion is the
   process, not a model's choice inside a fixed window. 12 checks, in the gate's suite list.
+
+## [2026-08-18](docs/features/2026-08-18.md)
+
+- **Browser completeness: the profile persists, the agent gets five verbs, and the non-goals are
+  written down (ADR-0011 stage five)** — a 133-capability audit against Claude Code's Chrome
+  integration, Cursor, Antigravity, Codex, Copilot/VS Code, Windsurf, Replit, Devin, Cline,
+  Playwright MCP, Chrome DevTools MCP and mainstream Chrome (`docs/research/browser-capability-
+  landscape.md`) found the gaps clustered rather than spread. **State survives:** the per-session
+  profile dir deleted on close is replaced by one **per workspace** that outlives launches, cleared
+  only by a user action — branches of a repo are the same app, so per-branch profiles charge a fresh
+  login per branch cut, and global gives up isolation. **The agent can act:** hover, key press,
+  select-option, scroll and wait-for-condition, over a new addressing contract where snapshots stamp
+  refs and the actuation tools take *either* a ref or a CSS selector (the agent wrote the page it is
+  testing). **New `browser_network`** — metadata inline, headers and body to disk on request; and
+  `browser_screenshot` inverts to path-by-default with `inline: true`, matching `browser_record_stop`
+  and cutting the largest context cost in agent browsing. **CEF handlers wired:** certificate errors
+  and basic auth (a local HTTPS dev server was unreachable from the pane whose job is checking your
+  work), JS dialogs and page permissions (an app using `confirm()` or the camera looked broken in
+  Synth and fine in Chrome), right-click and ⌘F. Downloads stay blocked, with the consequence named.
+  **Popups become transient windows** instead of permanent sidebar sessions, which is what makes
+  OAuth stop leaving litter and third-party identity sign-in work at all. **Non-goals, not backlog:**
+  bookmarks, downloads manager, PDF viewer, reader mode, extensions, mainstream tab strip — plus two
+  architectural absences recorded so nobody re-litigates them (Lighthouse lives in Chrome's DevTools
+  bundle, and CEF ships without Chrome's browser-layer safety services). **Removed:** `browser_focus`
+  (one pointer shared with every sub-agent; `sessionId` becomes required) and the WKWebView fallback
+  (a pane that renders fine with no CDP, so every agent tool fails against something that looks
+  healthy). Video recording was proposed for removal and kept — it is a real lead, and frames
+  surviving cross-page navigation was the hard part and is done. `no_sandbox` stops being an open
+  item and is scheduled ahead of the agent permission boundary; persistence deliberately lands before
+  that boundary, so an unconstrained agent drives inside real logins for a while.

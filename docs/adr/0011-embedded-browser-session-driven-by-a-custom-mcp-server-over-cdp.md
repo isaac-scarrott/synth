@@ -5,7 +5,8 @@ row in the designs). This ADR commits to what that session *is* and, more conseq
 architecture that lets Claude Code drive it later — because the engine we pick for the visible browser
 in stage one is constrained by the way we want Claude to control it in stage two.
 
-The feature has three stages, and only **stage one** is being built now:
+The feature had three stages when this was written, and only **stage one** was being built. It has
+five now; stages one to four are built, stage five is decided and not yet built:
 
 1. **A browser you can use.** An embedded, Chromium-based browser that lives as a session inside a
    branch's worktree — navigable like any browser, opened at the same level as a terminal or a Claude
@@ -19,6 +20,9 @@ The feature has three stages, and only **stage one** is being built now:
    located context, and Claude acts on them.
 4. **A browser that belongs to a Claude session.** (Added 2026-07-06.) Ownership becomes a real,
    visible containment relationship — see the stage-four section below.
+5. **A browser that lasts, and knows what it is not.** (Added 2026-08-18.) State survives the
+   session, the agent can drive a real page rather than a simple one, and the long tail of
+   browser-shaped features Synth will never build is written down — see the stage-five section.
 
 The stages are recorded here together because stage one must not paint stages two and three into a
 corner. Everything below is the decision; the reasoning that ruled out the alternatives follows.
@@ -60,7 +64,9 @@ modern macOS and breaks the sandbox; every serious project (Zed, the CEF communi
 The choice is genuinely binary — bring Chromium in-process (CEF) or accept a detached companion window
 — and a detached window fails the "same surface" requirement above. If CEF integration proves too slow
 to stand up, the sanctioned fallback is a WKWebView stage one *behind the engine protocol below*,
-accepting a later engine swap; it is a schedule hedge, not the target.
+accepting a later engine swap; it is a schedule hedge, not the target. **(Retired 2026-08-18 — the
+hedge was spent the day CEF shipped, and a fallback engine with no CDP is worse than no browser;
+see stage five.)**
 
 **The seam that makes the engine swappable.** The browser panel is built against a `BrowserEngine`
 protocol (navigate, back/forward, reload, current URL, title, snapshot) with the CDP endpoint exposed
@@ -146,6 +152,9 @@ macOS). The integration hardened into constraints that bind all future engine wo
 - **CDP is one port per app instance (9300–9399 bind-probed), not per session.**
   `remote_debugging_port` is a global `CefSettings`; each browser session is a page target on the
   shared endpoint. See the stage-two section for what this means for the MCP server's tools.
+- **Every browser session gets its own profile dir, deleted when it closes.** *(Amended 2026-08-18:
+  the isolation was right, the deletion was not — it made every browser incognito without the user
+  choosing it. The profile is now per workspace and survives. See stage five.)*
 - **The app must run from a bundle for CEF** — the framework and four helper apps resolve relative to
   `Contents/`. `dev.sh` assembles a symlinked dev bundle; a bare-binary run gets the loud WKWebView
   fallback (no CDP). The release bundle is ~309 MB, `--deep` ad-hoc signed.
@@ -284,6 +293,167 @@ lifecycle, and deterministic comment routing — not merely a stored routing hin
   when an active one sits on the branch (re-parent first to route there instead), and an adopted ⌘K
   browser cascade-deletes with its spawned claude despite predating it (the confirm is the guard).
 
+## Stage five: the browser lasts, and its non-goals get named (decided 2026-08-18)
+
+Stages one to four asked what the browser *is*. Stage five came from asking what it is *missing*,
+by auditing Synth's surface against Claude Code's Chrome integration, Cursor, Antigravity, Codex,
+Copilot/VS Code, Windsurf, Replit, Devin, Cline, Playwright MCP, Chrome DevTools MCP and a
+mainstream browser — 133 capabilities, read from our own source on one side and from shipped
+binaries and vendor docs on the other.
+
+The useful finding was that the gaps were not spread evenly. They clustered in two places — **what
+survives a session** and **what the agent can do to a page** — with a long tail of browser-shaped
+features that only look like gaps if you believe Synth is building a browser. So this stage decides
+both halves: what gets built, and what gets written down as never.
+
+### The profile persists, and it is keyed to the workspace
+
+Stage one's per-session profile directory, deleted on close, is reversed. Isolation from the user's
+real Chrome was correct and stays; throwing the profile away was not. It made every browser session
+incognito without the user ever choosing incognito: no login survived, so an agent could not check
+the same authenticated page twice in a row, and `browser_cookies` was the only door into an
+authenticated state — a tool built to work around a problem we were creating. Synth was, across the
+whole audit, the only product that actively deleted its own profile; every other isolated-profile
+product treats persistence as the feature.
+
+The profile is per **workspace** — the repo — not per branch and not global. Branches of one repo
+are the same application, so per-branch profiles buy an isolation nobody asked for and charge for it
+with a fresh login on every branch cut, which is the exact pain the deletion caused. A single global
+profile abandons isolation between unrelated projects. Clearing is a user action ("Clear browsing
+data"), never a lifecycle side effect: the reason the old behaviour was wrong is that the lifecycle
+decided, and the user was not asked.
+
+*Rejected:* per-branch (re-auth on every branch cut), global (no isolation at all), and staying
+ephemeral while investing in `storageState` seeding instead (tooling built to route around a
+constraint we impose on ourselves).
+
+**Sequencing accepted knowingly:** persistence lands *before* the permission boundary below, so
+there is a window in which an unconstrained agent drives inside real authenticated sessions. Synth
+is a single-user tool on the user's own machine with the user's own logins, and the alternative —
+shipping half a permission model early — buys less than doing it properly after. This is the
+choice, not an oversight.
+
+### Elements get refs, and CSS selectors stay
+
+`browser_snapshot` returns an aria tree and `browser_click` takes a CSS selector, with nothing
+joining them: the agent reads a page in one vocabulary and acts on it in another, guessing selectors
+from source. Against generated class names that guess is where most click timeouts come from, and
+every comparable product addresses elements by reference instead.
+
+Snapshots will stamp refs, and the actuation tools will accept **either** a ref or a selector. Both,
+not one: a ref is unambiguous for something the agent has just read, but Synth's agents write the
+page they are testing, and forbidding `#save` when the agent authored `#save` would make a mandatory
+snapshot the price of every action. A stale ref must fail with a message that says so and says to
+re-snapshot — a ref that silently resolves to the wrong node after a re-render is worse than one
+that errors.
+
+*Rejected:* refs only (mandatory snapshot before every action, tokens spent re-reading a page the
+agent wrote), and selectors only (cheapest, and leaves the gap that causes the failures).
+
+### The agent gets the five verbs it is missing, and a network tool
+
+Actuation today is click and type. Hover, key press, select-option, scroll and wait-for-condition
+are each one driver call behind a tool definition, and together they are the difference between
+driving a simple page and driving an application: a hover menu, a native `<select>`, a lazy list and
+an element that appears a beat later are all currently unreachable, and each one fails as a click
+timeout rather than as "I cannot do this".
+
+`browser_network` follows the shape Chrome DevTools MCP settled on: **metadata inline, bodies to
+disk**. The list returns method, URL, status, type and timing; a second call writes one request's
+headers and body to a file and returns the path. Inline bodies were rejected because a single JSON
+response can cost tens of thousands of tokens and because authorization headers would land in the
+model's context by default; metadata-only was rejected because "the API returned the wrong shape" is
+exactly the bug the tool exists for. The CDP session is already attached — this is a tool
+definition, not new plumbing.
+
+### Screenshots go to disk by default
+
+`browser_screenshot` will return a **path**, with `inline: true` for when the agent actually needs
+to look. The category's own evidence is that opt-in disk paths do not get opted into — Claude Code
+ships `save_to_disk` and agents mostly do not reach for it — while inlined captures are the single
+largest context cost in agent browsing, with reports of one screenshot at 232k tokens and a hard
+model failure above 8000px per dimension. Defaulting the cheap path and making the expensive one
+explicit puts the choice where the cost is. `browser_record_stop` already returns a path; this makes
+capture consistent with itself. Full-page and element-scoped capture come with it.
+
+### Free viewport for the agent, the device fleet for the user
+
+The six-device fleet is the pane's device chrome and stays exactly as it is — it is real
+`Emulation.setDeviceMetricsOverride`, which Cursor and Claude Code both lack, and it is a fleet of
+*hardware*, which is the right register for a human choosing a phone. It is also, today, the only
+viewport control that exists, so a 1440px desktop or a 900px tablet breakpoint cannot be checked at
+all. The agent gets a free width × height; the pane's chip row does not grow a numeric field.
+
+### The CEF handler set gets wired — except one, deliberately
+
+`ShimClient` implements three of CEF's client handlers, and an unwired handler is not a missing
+feature but a silently broken web platform. Wiring, in order of what blocks work:
+
+- **Certificate errors and HTTP basic auth.** A self-signed certificate has no proceed path and
+  basic auth has no prompt, so a local HTTPS dev server and any basic-auth staging environment are
+  simply unreachable from the pane whose stated job is checking your work. This is the bundle that
+  makes stage one's promise true.
+- **JS dialogs and page permissions.** `alert`/`confirm`/`prompt` are undefined and can block the
+  page; camera, microphone, geolocation, notifications and clipboard are denied with no prompt and
+  no way to grant. An app that uses any of them looks broken in Synth and fine in Chrome, which is
+  the worst possible failure — it reads as our bug in *their* code.
+- **Context menu and find-in-page.** Right-click and ⌘F. Ergonomics on a surface people stare at.
+
+**Downloads are deliberately left blocked.** A downloads *manager* is a non-goal (below), and wiring
+`CefDownloadHandler` only to drop a file in `~/Downloads` was judged not to earn its place yet. The
+consequence is named rather than hidden: an export link produces nothing, with no feedback to the
+page and none to the user, and it will be reported as a bug because it looks like one. Revisit when
+someone hits it.
+
+### Popups become transient windows, not sessions
+
+`didRequestPopup` currently routes `window.open` into a **new browser session** — a permanent
+sidebar row that outlives the flow that opened it. That is consistent with one-page-per-session and
+wrong in practice: the overwhelming use of a popup is OAuth, so signing into your own staging app
+leaves litter behind every time, and a popup that closes itself leaves a dead row. Popups get a real
+transient child window instead. This is also what makes third-party identity sign-in work at all —
+the absence of it is why Google Identity fails outright in Cursor's pane.
+
+*Rejected:* keeping the session and auto-closing it when the popup closes — it preserves the model,
+but a sidebar row that vanishes on its own is the only thing in Synth's sidebar not driven by the
+user.
+
+### What Synth's browser will never be
+
+The pane's job is **the agent's eyes, and a surface for checking your work**. It is not a browser
+you live in, and the following are non-goals, not backlog: bookmarks, a downloads manager, a
+built-in PDF viewer, reader mode, translation, a user-installable extension platform, and a
+mainstream tab strip with groups, pinning and tear-off. Each was measured against the audit and each
+is real in Chrome; none of them serves checking a page you just built, and all of them cost the
+"simple at a glance" the product is for.
+
+Two further absences are architectural rather than chosen, and are recorded so nobody re-litigates
+them: **Lighthouse cannot run here** — it lives in Chrome's DevTools front-end bundle, not CEF's —
+and **none of Chrome's browser-layer safety services exist in CEF**, so Safe Browsing, HTTPS
+interstitials, mixed-content blocking and tracker blocking are not features Synth declined to build.
+
+### Two things are removed, and one survived being removed
+
+- **`browser_focus` goes; `sessionId` becomes required.** One focus pointer is shared by an agent and
+  every sub-agent it spawns, which the tool's own description already warns about — it exists to save
+  a parameter and costs correctness the moment two agents work at once.
+- **The WKWebView fallback engine goes.** It produces a pane that looks like a working browser and
+  has no CDP, so every agent tool fails against something the user can see rendering fine. Refusing
+  to make a browser, loudly, is the better failure. Cost, named: a bare-binary run (no assembled
+  bundle) gets no browser at all rather than a degraded one.
+- **Video recording was proposed for removal and kept.** The argument against it was that the agent
+  cannot watch its own output and the ffmpeg dependency is real; the argument that won is that it is
+  a genuine capability lead — Cursor's local browser has the plumbing and no recorder — and the hard
+  part, frames surviving cross-page navigation, is already solved and working.
+
+### The sandbox item is now scheduled
+
+`no_sandbox` has sat in Consequences as an open item since stage one. It is the only entry in the
+whole audit that is a regression against every competitor rather than an absent feature, and it
+blocks notarization regardless. Wiring `cef_sandbox` through the SwiftPM build is scheduled ahead of
+the agent permission boundary; the boundary — an origin allowlist plus a read-only versus
+state-changing split on the tools — follows persistence.
+
 ## Consequences
 
 - The browser is its own subsystem with a Chromium/CEF engine, a bundle-size and notarization cost, and
@@ -296,7 +466,17 @@ lifecycle, and deterministic comment routing — not merely a stored routing hin
   stage three and is out of bounds.
 - Distribution is Developer ID + notarization, not the Mac App Store.
 - Stage one ships with the Chromium sandbox disabled (`no_sandbox`). Wiring `cef_sandbox` through the
-  SwiftPM build is an open item that blocks notarization/distribution.
+  SwiftPM build is an open item that blocks notarization/distribution. *(2026-08-18: scheduled — it is
+  the one place the browser is behind every competitor on security rather than on features.)*
+- The browser holds durable user state (stage five): a per-workspace profile with real logins in it,
+  under Application Support, cleared only when the user asks. It is a thing to back up, to migrate,
+  and to reason about when a workspace is deleted.
+- Synth's browser has written-down non-goals (stage five). The pane is the agent's eyes and a surface
+  for checking work; bookmarks, a downloads manager, a PDF viewer, reader mode, extensions and a
+  mainstream tab strip are refusals, not backlog, and a request for one is answered with this ADR.
+- The agent may act on any origin the user's profile is authenticated to, and will be able to before
+  the permission boundary exists. Accepted deliberately for a single-user local tool; it is the first
+  thing to revisit if Synth is ever driven by someone other than its owner.
 - Comment delivery is gated on hook-confirmed Claude liveness — the shell-injection boundary above — so
   it depends on ADR-0008's hook seam being live; a session Synth can't confirm is never written to.
 - Open follow-ups surfaced by the gates, orthogonal to the feature: a second co-resident CEF instance
@@ -307,6 +487,8 @@ lifecycle, and deterministic comment routing — not merely a stored routing hin
 
 - Supporting research (claims verified 2026-07-05, stage-3 prior art, CEF practicalities) —
   `docs/research/browser-agent-integration.md`
+- Stage-five capability audit (133 capabilities, Synth vs. 12 agent browsers and the mainstream
+  baseline, 2026-08-18) — `docs/research/browser-capability-landscape.md`
 - Claude Code Chrome integration — https://code.claude.com/docs/en/chrome.md
 - Claude Code MCP (transport, scopes, local/stdio servers) — https://code.claude.com/docs/en/mcp.md
 - Model Context Protocol — https://modelcontextprotocol.io/

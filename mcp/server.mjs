@@ -115,9 +115,18 @@ const pageNet = new WeakMap();     // Page -> { seq, entries: [entry] }
 const netEntry = new WeakMap();    // Request -> entry
 const instrumented = new WeakSet();
 const CONSOLE_CAP = 200;
-// Metadata only — a Playwright Request is a handle, not a buffered body, so the log
-// costs kilobytes however heavy the traffic is. Bodies are fetched on demand.
 const NETWORK_CAP = 300;
+// Bodies are kept, but only the ones worth keeping. Fetching a body on demand is what the
+// tool's shape asks for and what its cost argument is about — but the engine drops a finished
+// response's body the moment the page moves on, and "the API returned the wrong shape" is
+// usually asked about a request from before the last navigation. So the text-shaped responses
+// are read off the wire as they finish and held, under a total cap; anything bigger, or of a
+// type nobody diagnoses by reading (images, fonts, media), is left to the on-demand path and
+// its honest failure. Nothing here ever reaches the model — the body still only leaves as a
+// file path.
+const BODY_TYPES = new Set(["xhr", "fetch", "document", "script", "stylesheet", "manifest"]);
+const BODY_MAX = 512 * 1024;        // one response worth keeping
+const BODY_TOTAL_MAX = 8 * 1024 * 1024;
 
 function instrument(page) {
   if (instrumented.has(page)) return;
@@ -131,17 +140,21 @@ function instrument(page) {
   page.on("console", (msg) => push(msg.type(), msg.text()));
   page.on("pageerror", (err) => push("error", String(err?.message ?? err)));
 
-  const net = { seq: 0, entries: [] };
+  const net = { seq: 0, entries: [], held: 0 };
   pageNet.set(page, net);
   page.on("request", (req) => {
     const entry = {
       id: `r${++net.seq}`, method: req.method(), url: req.url(),
       type: req.resourceType(), startedAt: Date.now(), status: null, ms: null,
-      bytes: null, failed: null, req,
+      bytes: null, failed: null, body: null, req,
     };
     netEntry.set(req, entry);
     net.entries.push(entry);
-    if (net.entries.length > NETWORK_CAP) net.entries.splice(0, net.entries.length - NETWORK_CAP);
+    if (net.entries.length > NETWORK_CAP) {
+      for (const dropped of net.entries.splice(0, net.entries.length - NETWORK_CAP)) {
+        if (dropped.body) net.held -= dropped.body.length;
+      }
+    }
   });
   page.on("response", (res) => {
     const entry = netEntry.get(res.request());
@@ -152,6 +165,17 @@ function instrument(page) {
     if (!entry) return;
     entry.ms = Date.now() - entry.startedAt;
     req.sizes().then((s) => { entry.bytes = s.responseBodySize; }).catch(() => {});
+    if (!BODY_TYPES.has(entry.type)) return;
+    req.response().then((res) => res?.body()).then((body) => {
+      if (!body || body.length === 0 || body.length > BODY_MAX) return;
+      entry.body = body;
+      net.held += body.length;
+      // Oldest first: a body from ten navigations ago is the one nobody is about to ask for.
+      for (const older of net.entries) {
+        if (net.held <= BODY_TOTAL_MAX) break;
+        if (older.body) { net.held -= older.body.length; older.body = null; }
+      }
+    }).catch(() => { /* already gone, or not readable — the dump says so */ });
   });
   page.on("requestfailed", (req) => {
     const entry = netEntry.get(req);
@@ -922,13 +946,22 @@ tool("browser_screenshot",
     };
   });
 
-/** A response body written for the agent to read: text goes into the dump, anything
- *  else lands beside it as bytes. A base64 image in a model's context is the exact
- *  cost this tool exists to avoid. */
+/** Whether a response body belongs in the dump or beside it as bytes.
+ *
+ *  The bytes decide, not the declared type. Content-Type is only a veto here — a body served
+ *  as an image or a font is never worth reading — because a response revalidated out of cache
+ *  arrives with no Content-Type at all, and answering "17 bytes of binary, written beside this
+ *  file" about a JSON reply is the tool being unhelpful about the exact case it exists for. */
 function isTextual(contentType, buf) {
   if (buf.includes(0)) return false;
-  return /^(text\/|application\/(json|xml|javascript|x-www-form-urlencoded|graphql))/
-    .test(contentType ?? "");
+  if (/^(image\/|audio\/|video\/|font\/|application\/(octet-stream|pdf|zip|gzip|wasm|x-protobuf))/
+      .test(contentType ?? "")) {
+    return false;
+  }
+  // Round-trips through UTF-8 = someone can read it. Bounded, so a large body costs a fixed
+  // sample rather than a full copy.
+  const sample = buf.subarray(0, 64 * 1024);
+  return Buffer.compare(Buffer.from(sample.toString("utf8"), "utf8"), sample) === 0;
 }
 
 tool("browser_network",
@@ -1011,14 +1044,21 @@ async function dumpRequest(entry, outPath) {
     const headers = await res.headersArray();
     for (const h of headers) parts.push(`${h.name}: ${h.value}`);
     const contentType = headers.find((h) => h.name.toLowerCase() === "content-type")?.value;
-    let body = null;
-    try { body = await res.body(); }
-    catch (e) {
-      parts.push("", `--- response body unavailable: ${e.message} ---`,
-                 "(the engine drops bodies once the page has navigated away — " +
-                 "re-issue the request and dump it before navigating)");
+    let body = entry.body ?? null;
+    if (!body) {
+      try { body = await res.body(); }
+      catch (e) {
+        parts.push("", `--- response body unavailable: ${e.message} ---`,
+                   "(the engine keeps text-shaped bodies as they finish, but drops anything " +
+                   "bigger once the page has moved on — re-issue the request and dump it " +
+                   "before navigating)");
+      }
     }
-    if (body) {
+    if (body && body.length === 0) {
+      // A 200 with nothing in it — a cache hit, a 204-shaped reply. Saying so beats writing a
+      // zero-byte file beside the dump and calling it the body.
+      parts.push("", "--- response body: empty ---");
+    } else if (body) {
       if (isTextual(contentType, body)) {
         parts.push("", `--- response body (${body.length} bytes) ---`, body.toString("utf8"));
       } else {

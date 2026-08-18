@@ -146,8 +146,15 @@ func runClaudeLaunch(binary: String, agentID: String, userArgs: [String]) -> Nev
     // user's own configuration — theirs on this line included — is untouched. Servers arriving
     // this way are also not the `.mcp.json` servers Claude asks to approve, so a fresh worktree
     // now meets only its trust prompt.
-    let mcpArgs = env["SYNTH_MCP_CLAUDE"].flatMap { $0.isEmpty ? nil : ["--mcp-config", $0] } ?? []
-    spawnReportingExit(real, idArgs + ["--settings", settings] + mcpArgs + args)
+    var launchArgs = idArgs
+    launchArgs.append("--settings")
+    launchArgs.append(settings)
+    if let mcpConfig = env["SYNTH_MCP_CLAUDE"], !mcpConfig.isEmpty {
+        launchArgs.append("--mcp-config")
+        launchArgs.append(mcpConfig)
+    }
+    launchArgs.append(contentsOf: args)
+    spawnReportingExit(real, launchArgs)
 }
 
 /// opencode publishes its own event stream, so it needs no hooks — only a known port. The app

@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.34.1",
+    "date": "2026-08-18",
+    "changes": [
+      "Claude Code opens again inside Synth. The bundled MCP configuration added in 0.34.0 could crash Synth's launch hook before Claude reached the screen."
+    ]
+  },
+  {
     "version": "0.34.0",
     "date": "2026-08-17",
     "changes": [

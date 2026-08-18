@@ -85,20 +85,74 @@ struct AgentDescriptor: Sendable {
     /// Nil for a built-in: it drives itself.
     var baseID: AgentID?
 
-    /// Where this agent is really installed, resolved on the original PATH (before the shim dir
-    /// is prepended). Search order matters: the login-shell PATH first (what a launched agent
+    /// The program a launch must exec to become this agent, and the arguments its name already
+    /// carried. The two are one answer because the name a user gives Synth need not be a program:
+    /// `claude-personal` is as likely to be a shell alias (`claude-personal=claudewho-personal`,
+    /// or one that pins a flag) as a file on PATH, and an alias exists only inside an interactive
+    /// shell — nothing Synth spawns would ever see it. So the name is expanded first, and it is
+    /// the program the alias stood for that gets located and exec'd, with the alias's own
+    /// arguments handed to the shim to put back in front of the user's.
+    ///
+    /// Nil when nothing on the machine answers to the name — which is what "not installed" means
+    /// everywhere else in the app.
+    var resolvedCommand: (path: String, args: [String])? {
+        guard let words = Self.expandAliases(binaryName), let head = words.first else { return nil }
+        guard let path = locate(head) else { return nil }
+        return (path, Array(words.dropFirst()))
+    }
+
+    /// Where this agent is really installed. Kept as its own name because most of the app only
+    /// ever wants the program: `installed`, the shims, teardown.
+    var resolvedBinary: String? { resolvedCommand?.path }
+
+    /// Follow an alias to the command line it stands for, as the shell would: the first word is
+    /// re-expanded while it names another alias, and the rest ride along. Returns the words of
+    /// the command, or nil for an expansion Synth can't exec.
+    ///
+    /// What can't be exec'd is anything whose meaning comes from the shell rather than from the
+    /// program: a pipe, a substitution, a second command — but also quoting, globs and brace
+    /// expansion, because splitting those on whitespace and handing them to `execv` produces
+    /// arguments the user's own shell would never have passed. An alias like that is a shell
+    /// fragment, not a program, and the row says so rather than launching something else.
+    ///
+    /// A name that isn't an alias comes back as itself, so this is on the path of every agent,
+    /// built-in included: a user who has aliased `claude` gets the same treatment.
+    static func expandAliases(_ command: String) -> [String]? {
+        let aliases = ShellEnvironment.loginAliases ?? [:]
+        var words = [command]
+        var seen: Set<String> = []
+        while let head = words.first, let expansion = aliases[head], seen.insert(head).inserted {
+            guard !expansion.contains(where: { "|&;<>()`$\n{}*?[]'\"\\".contains($0) }) else { return nil }
+            let expanded = expansion.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard !expanded.isEmpty else { return nil }
+            words = expanded + words.dropFirst()
+        }
+        return words.isEmpty ? nil : words
+    }
+
+    /// Resolve one command word to a program, on the original PATH (before the shim dir is
+    /// prepended). Search order matters: the login-shell PATH first (what a launched agent
     /// actually resolves, and the only place a Dock launch sees version-manager shims), then the
     /// app process's PATH, then `installHints` as a last-ditch guess. A candidate that resolves
     /// to `synth-hook` is one of our own shims — exec'ing it would re-enter the launch role
     /// forever (E2BIG), so skip it, as with anything `rejectedPathFragments` rules out.
-    var resolvedBinary: String? {
+    ///
+    /// A word with a slash in it is a path already — the shell wouldn't search PATH for it, and
+    /// neither does this.
+    private func locate(_ command: String) -> String? {
         let home = NSHomeDirectory()
-        let processDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
-            .split(separator: ":").map(String.init)
-        let searchDirs = (ShellEnvironment.loginPathDirs ?? []) + processDirs
-            + installHints.map { $0.replacingOccurrences(of: "~", with: home) }
-        for dir in searchDirs {
-            let candidate = dir + "/" + binaryName
+        let expandTilde = { (p: String) in p.hasPrefix("~") ? home + p.dropFirst() : p }
+        let candidates: [String]
+        if command.contains("/") {
+            candidates = [expandTilde(command)]
+        } else {
+            let processDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+                .split(separator: ":").map(String.init)
+            let searchDirs = (ShellEnvironment.loginPathDirs ?? []) + processDirs
+                + installHints.map(expandTilde)
+            candidates = searchDirs.map { $0 + "/" + command }
+        }
+        for candidate in candidates {
             guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
             // Resolve the whole chain, not one link: an impostor can be reached through several
             // hops (~/.antigravity/…/agy → /Applications/Antigravity.app/…/antigravity).
@@ -119,6 +173,20 @@ struct AgentDescriptor: Sendable {
     /// everything outside `[A-Z0-9_]` becomes `_` — the same transform `synth-hook` applies to
     /// the name it was invoked as, which is the only way the two ends agree on the key.
     var realBinaryEnvKey: String { "SYNTH_REAL_" + AgentDescriptor.envSuffix(binaryName) }
+
+    /// Its companion: the arguments the command's name already carried, for a name that was a
+    /// shell alias. `\u{01}`-separated because an argument may contain spaces and this is the one
+    /// channel where re-quoting would have to be undone exactly right.
+    var realArgsEnvKey: String { "SYNTH_REAL_ARGS_" + AgentDescriptor.envSuffix(binaryName) }
+
+    /// Tell the shim which program to exec, and with what already in front. Every supervisor's
+    /// `decorate` goes through here: the pair has to be set together or the shim runs the right
+    /// program without the flags its name promised.
+    func exportRealCommand(into env: inout [String: String]) {
+        guard let command = resolvedCommand else { return }
+        env[realBinaryEnvKey] = command.path
+        if !command.args.isEmpty { env[realArgsEnvKey] = command.args.joined(separator: "\u{01}") }
+    }
 
     static func envSuffix(_ binary: String) -> String {
         String(binary.uppercased().map { $0.isLetter || $0.isNumber ? $0 : "_" })
@@ -340,8 +408,7 @@ func shellQuoteAgentArg(_ s: String) -> String {
     init(bus: EventBus) { self.bus = bus }
 
     func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
-        guard let real = agent.resolvedBinary else { return }
-        env[agent.realBinaryEnvKey] = real
+        agent.exportRealCommand(into: &env)
     }
 
     /// Claude announces itself only once it is running: `attach` is driven by its SessionStart

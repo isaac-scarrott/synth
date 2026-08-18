@@ -1,5 +1,29 @@
 [
   {
+    "version": "0.35.0",
+    "date": "2026-08-18",
+    "changes": [
+      "An agent's command can now be a shell alias. `claude-personal` and friends live only inside your interactive shell, so Synth used to report them as \"Not on your PATH\" — it now follows the alias to the program it names, keeps any flags the alias pinned, and says what it found on the row.",
+      "Fixed: `claude` subcommands typed inside a Synth session — `setup-token`, `auth`, `mcp`, `rm` and the rest — ran into \"Invalid MCP configuration\" or were handed a session's flags. They pass through untouched again.",
+      "Fixed: an alias for an agent's own name (`alias claude=…`) quietly cost that session its hooks — no status light, no session id. Synth now steps in front of it."
+    ]
+  },
+  {
+    "version": "0.34.1",
+    "date": "2026-08-18",
+    "changes": [
+      "Claude Code opens again inside Synth. The bundled MCP configuration added in 0.34.0 could crash Synth's launch hook before Claude reached the screen."
+    ]
+  },
+  {
+    "version": "0.34.0",
+    "date": "2026-08-17",
+    "changes": [
+      "Synth stops writing config files into your repo — `.mcp.json`, `opencode.json` and `.agents/mcp_config.json` are gone, and worktrees an older build dirtied are swept on launch. The browser, simulator and app servers now ride each agent's launch instead, so Claude no longer asks you to approve them one by one.",
+      "The trade: an agent you start outside Synth — `claude -p`, a subcommand, a claude launched from your own terminal — no longer sees the bundled servers."
+    ]
+  },
+  {
     "version": "0.33.0",
     "date": "2026-08-17",
     "changes": [

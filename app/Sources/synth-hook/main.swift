@@ -109,6 +109,28 @@ func resolveAgentBinary(_ agent: String) -> String? {
     return hinted.flatMap { isShim($0) ? nil : $0 } ?? resolveOnPath(agent)
 }
 
+/// The arguments the invoked name itself carried, for a name that was a shell alias
+/// (`alias claude-personal='claude --model opus'`). The app resolved the alias — only an
+/// interactive shell can — and passes what it stood for through `SYNTH_REAL_ARGS_<AGENT>`,
+/// `\u{01}`-separated so an argument with a space in it survives the trip. They go in front of
+/// the user's own, which is where the shell would have put them.
+func aliasArgs(_ agent: String) -> [String] {
+    guard let raw = env["SYNTH_REAL_ARGS_" + envSuffix(agent)], !raw.isEmpty else { return [] }
+    return raw.components(separatedBy: "\u{01}").filter { !$0.isEmpty }
+}
+
+/// The alias's arguments in front of the user's own. Built by appending rather than with `+`:
+/// 0.34.0 shipped a launch line assembled by chained concatenation and the release optimizer
+/// miscompiled it into a trap (docs/features/2026-08-18.md), and this is the same argv on the
+/// same path.
+func withLeading(_ leading: [String], _ args: [String]) -> [String] {
+    guard !leading.isEmpty else { return args }
+    var out: [String] = []
+    out.append(contentsOf: leading)
+    out.append(contentsOf: args)
+    return out
+}
+
 /// The env-key spelling of a command name. A user's own command can hold characters an env var
 /// name can't (`claude-personal`), so everything outside `[A-Z0-9_]` becomes `_` — the same
 /// transform `AgentDescriptor.envSuffix` applies, and the only reason the two ends agree.
@@ -121,15 +143,26 @@ func runClaudeLaunch(binary: String, agentID: String, userArgs: [String]) -> Nev
         FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
         exit(127)
     }
+    let leading = aliasArgs(binary)
 
     // Only instrument interactive sessions started inside Synth. A one-shot (`-p`) or a
-    // subcommand isn't a session — pass it straight through so behaviour is unchanged.
-    let subcommands: Set<String> = ["mcp", "config", "update", "doctor", "migrate-installer", "install", "--version", "-v"]
+    // subcommand isn't a session — pass it straight through so behaviour is unchanged. The list
+    // is every command the CLI answers to, which is more than `claude --help` prints: `attach`,
+    // `daemon`, `logs`, `remote-control`, `respawn`, `rm`, `self-hosted-runner` and `stop` are
+    // real and hidden, and `config`/`migrate-installer` survive on older installs. It errs
+    // towards listing: a name missing here gets a session's flags and the subcommand fails
+    // outright, while a name listed in error only costs that invocation its instrumentation.
+    let subcommands: Set<String> = ["agents", "attach", "auth", "auto-mode", "config", "daemon",
+                                    "doctor", "gateway", "import", "install", "logs", "mcp",
+                                    "migrate-installer", "plugin", "plugins", "project",
+                                    "remote-control", "respawn", "rm", "self-hosted-runner",
+                                    "setup-token", "stop", "ultrareview", "update", "upgrade",
+                                    "--version", "-v", "--help", "-h"]
     let isOneShot = userArgs.contains("-p") || userArgs.contains("--print")
     let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
     let instrument = env["SYNTH_SESSION_ID"] != nil && !isOneShot && !isSubcommand
 
-    guard instrument else { execReal(real, userArgs) }
+    guard instrument else { execReal(real, withLeading(leading, userArgs)) }
 
     // Pull the user's own --settings (if any) out of the args so we can merge, not clobber —
     // Claude keeps only one --settings and its precedence changed across CLI versions.
@@ -146,8 +179,25 @@ func runClaudeLaunch(binary: String, agentID: String, userArgs: [String]) -> Nev
     // user's own configuration — theirs on this line included — is untouched. Servers arriving
     // this way are also not the `.mcp.json` servers Claude asks to approve, so a fresh worktree
     // now meets only its trust prompt.
-    let mcpArgs = env["SYNTH_MCP_CLAUDE"].flatMap { $0.isEmpty ? nil : ["--mcp-config", $0] } ?? []
-    spawnReportingExit(real, idArgs + ["--settings", settings] + mcpArgs + args)
+    //
+    // `--mcp-config` takes a LIST (`<configs...>`), so whatever follows its value is read as
+    // another config path until a flag ends the list — an injected one sitting last would eat
+    // the user's first word, and a subcommand we failed to recognise died as
+    // "MCP config file not found: <cwd>/setup-token". `--settings` always follows it (it is
+    // always injected) and takes exactly one value, so nothing the user typed can be swallowed
+    // whatever it is.
+    var launchArgs = idArgs
+    if let mcpConfig = env["SYNTH_MCP_CLAUDE"], !mcpConfig.isEmpty {
+        launchArgs.append("--mcp-config")
+        launchArgs.append(mcpConfig)
+    }
+    launchArgs.append("--settings")
+    launchArgs.append(settings)
+    // Appended one array at a time, never concatenated into a temporary: a chained `+` here is
+    // what the release optimizer miscompiled in 0.34.0 (docs/features/2026-08-18.md).
+    launchArgs.append(contentsOf: leading)
+    launchArgs.append(contentsOf: args)
+    spawnReportingExit(real, launchArgs)
 }
 
 /// opencode publishes its own event stream, so it needs no hooks — only a known port. The app
@@ -162,6 +212,7 @@ func runOpencodeLaunch(binary: String, agentID: String, userArgs: [String]) -> N
         FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
         exit(127)
     }
+    let leading = aliasArgs(binary)
 
     // Only the bare TUI is a session. `opencode run …`, `serve`, and the management
     // subcommands pass through untouched, exactly as `claude -p` does.
@@ -173,14 +224,14 @@ func runOpencodeLaunch(binary: String, agentID: String, userArgs: [String]) -> N
     let port = env["SYNTH_OPENCODE_PORT"].flatMap { $0.isEmpty ? nil : $0 }
     let instrument = env["SYNTH_SESSION_ID"] != nil && !isSubcommand && port != nil
 
-    guard instrument, let port else { execReal(real, userArgs) }
+    guard instrument, let port else { execReal(real, withLeading(leading, userArgs)) }
 
     // A user's own `--port` wins — they've asked for a specific one, and the supervisor simply
     // never connects rather than fighting them for the socket.
     let portArgs = userArgs.contains("--port") ? [] : ["--port", port]
     mergeOpencodeMCPConfig()
     reportAgent("agent-start:\(agentID)")
-    spawnReportingExit(real, portArgs + userArgs, agent: agentID)
+    spawnReportingExit(real, portArgs + withLeading(leading, userArgs), agent: agentID)
 }
 
 /// The bundled MCP servers reach opencode through `OPENCODE_CONFIG_CONTENT`, so nothing is
@@ -227,6 +278,7 @@ func runAgyLaunch(binary: String, agentID: String, userArgs: [String]) -> Never 
         FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
         exit(127)
     }
+    let leading = aliasArgs(binary)
 
     // Only the interactive TUI is a session. Note `agy version` is not a subcommand — it opens
     // the TTY like a session would — so only `--version` passes through.
@@ -237,7 +289,7 @@ func runAgyLaunch(binary: String, agentID: String, userArgs: [String]) -> Never 
     let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
     let instrument = env["SYNTH_SESSION_ID"] != nil && !isOneShot && !isSubcommand
 
-    guard instrument else { execReal(real, userArgs) }
+    guard instrument else { execReal(real, withLeading(leading, userArgs)) }
 
     // A resume (`agy --conversation <id>`) needs no special case: the hooks ride the added dir,
     // not the conversation, so the same injection instruments both.
@@ -246,7 +298,7 @@ func runAgyLaunch(binary: String, agentID: String, userArgs: [String]) -> Never 
         injected += ["--log-file", log]
     }
     reportAgent("agent-start:\(agentID)")
-    spawnReportingExit(real, injected + userArgs, agent: agentID)
+    spawnReportingExit(real, injected + withLeading(leading, userArgs), agent: agentID)
 }
 
 /// Materialise the Synth-owned workspace dir agy is handed via `--add-dir`: `.agents/hooks.json`

@@ -932,11 +932,22 @@ private struct CustomAgentRow: View {
         if agent.binary.isEmpty { return "Type a command" }
         guard let probe else { return "Checking…" }
         switch probe.state {
-        case .missing: return "Not on your PATH"
+        // An alias Synth followed and still couldn't run stands apart from a name that is simply
+        // absent: the command IS there, in the shell, and what's wrong is that it stands for a
+        // shell line rather than a program — which no amount of PATH would fix.
+        case .missing:
+            return ShellEnvironment.loginAliases?[agent.binary] != nil
+                ? "That alias runs a shell command, not a program"
+                : "Not on your PATH"
         // A command that answers but isn't a known agent says nothing: the picker still reads
         // "Choose…", which is the only thing left to do about it.
         case .unrecognised: return ""
-        case .recognised: return probe.version ?? (base?.displayName ?? "")
+        case .recognised:
+            let said = probe.version ?? (base?.displayName ?? "")
+            // Where the name went, when it went somewhere: the row names a command the user's
+            // PATH hasn't got, and the alias it followed is the whole explanation.
+            guard let via = probe.via else { return said }
+            return said.isEmpty ? "alias for \(via)" : "\(said) · alias for \(via)"
         }
     }
 

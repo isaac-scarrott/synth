@@ -2103,3 +2103,11 @@ disclosure to dive deeper.
   shim assumes about Claude was re-checked against the CLI and hooks references, injected hooks
   merge with the user's rather than replacing them. `t29_claude_argv` gates the argv, against the
   real parser.
+
+- **0.35.0 ships — your own name for an agent works** — minor release carrying alias resolution for
+  an agent's command, plus the two fixes it uncovered: `claude` subcommands swallowed by the shim's
+  injected `--mcp-config`, and an alias shadowing the shim that instruments a session.
+  `CFBundleVersion` 613, tag `v0.35.0`; dmg + zip notarized, stapled, verified credential-less with
+  quarantine set; appcast newest 0.35.0 at 613, `edSignature` on all 18 enclosures, 1.1MB delta
+  from 611. No `synth-site` push; `landing/` unchanged since `v0.33.0`.
+

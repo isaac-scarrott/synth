@@ -50,6 +50,27 @@ check("7. it carries the server's realm, so you know which credentials it wants"
 ctl("automation.browserAnswer", sessionId=bid, allow=True, user="dev", password="hunter2")
 signed_in = wait(lambda: (cdp_eval(port, "protected.html", "document.title") == "PROTECTED") or None, 40, 0.5)
 check("8. the credentials go to the server and the page loads", bool(signed_in))
+
+# A password belongs to the document it was typed for, not merely to the host it was typed at.
+# Chromium partitions its own auth cache by top-frame site and refuses cross-origin subresource
+# auth for exactly this reason, and doing basic auth by hand means keeping that rule by hand.
+# In the SAME session that just signed in — a credential is held per browser, so a second
+# session proves nothing. This is the tab navigating on to another site, which is the shape the
+# risk actually takes.
+import json as _json, urllib.request
+borrow = f"http://127.0.0.1:{plain}/borrow.html?at=http://127.0.0.1:{auth}"
+ctl("automation.browserGo", sessionId=bid, url=borrow)
+wait(lambda: ("borrow.html" in address(bid)) or None, 40)
+wait(lambda: (cdp_eval(port, "borrow.html", "window.__borrowed") == "sent") or None, 30)
+time.sleep(2)
+with urllib.request.urlopen(f"http://127.0.0.1:{auth}/seen", timeout=10) as r:
+    seen = _json.loads(r.read())
+borrowed = [e for e in seen if e["path"].startswith("/borrowed")]
+check("9. a page on another origin reached the protected host", bool(borrowed), seen)
+check("10. and carried no credential — the password stays with the page it was typed for",
+      borrowed and not any(e["authorized"] for e in borrowed), borrowed)
+check("11. while the page it WAS typed for still gets one",
+      any(e["authorized"] for e in seen if e["path"].startswith("/protected")), seen)
 ctl("browser.close", sessionId=bid)
 
 # --- 3. alert / confirm / prompt are defined again -------------------------------------
@@ -64,23 +85,23 @@ fire = lambda kind: ctl("automation.browserGo", sessionId=bid, url=f"{page}#{kin
 
 fire("alert")
 a = wait_ask(bid, "alert")
-check("9. alert() raises the page's own words, attributed to the page",
+check("12. alert() raises the page's own words, attributed to the page",
       a and a.get("detail") == "the page has something to say", a)
 ctl("automation.browserAnswer", sessionId=bid, allow=True)
-check("10. answering it lets the page carry on",
+check("13. answering it lets the page carry on",
       wait(lambda: (cdp_eval(port, "dialogs.html", "window.__answer") == "alerted") or None, 20))
 
 fire("confirm")
 wait_ask(bid, "confirm")
 ctl("automation.browserAnswer", sessionId=bid, allow=False)
-check("11. confirm() returns false when the user cancels",
+check("14. confirm() returns false when the user cancels",
       wait(lambda: (cdp_eval(port, "dialogs.html", "window.__answer") == "false") or None, 20))
 
 fire("prompt")
 a = wait_ask(bid, "prompt")
-check("12. prompt() offers the page's default text", a and a.get("defaultText") == "nobody", a)
+check("15. prompt() offers the page's default text", a and a.get("defaultText") == "nobody", a)
 ctl("automation.browserAnswer", sessionId=bid, allow=True, text="isaac")
-check("13. and returns what was typed",
+check("16. and returns what was typed",
       wait(lambda: (cdp_eval(port, "dialogs.html", "window.__answer") == "isaac") or None, 20))
 
 # --- 4. The camera can be granted ------------------------------------------------------
@@ -88,11 +109,11 @@ check("13. and returns what was typed",
 # in Synth and fine in Chrome, which reads as our bug in their code.
 fire("camera")
 a = wait_ask(bid, "permission")
-check("14. getUserMedia asks, in words rather than a bitmask",
+check("17. getUserMedia asks, in words rather than a bitmask",
       a and "camera" in (a.get("detail") or ""), a)
 ctl("automation.browserAnswer", sessionId=bid, allow=False)
 denied = wait(lambda: (str(cdp_eval(port, "dialogs.html", "window.__answer")).startswith("denied")) or None, 25)
-check("15. Block reaches the page as a real getUserMedia rejection", bool(denied),
+check("18. Block reaches the page as a real getUserMedia rejection", bool(denied),
       cdp_eval(port, "dialogs.html", "window.__answer"))
 
 # --- 5. Find in page -------------------------------------------------------------------
@@ -106,15 +127,15 @@ wait(lambda: ("find.html" in address(bid)) or None, 40)
 ctl("automation.browserFind", sessionId=bid, text="order")
 wait(lambda: ((ctl("automation.browserFind", sessionId=bid) or {}).get("active") or 0) or None, 20)
 r = ctl("automation.browserFind", sessionId=bid)
-check("16. find counts the matches the engine found", (r.get("count") or 0) >= 4, r)
-check("17. and marks one of them current", (r.get("active") or 0) >= 1, r)
+check("19. find counts the matches the engine found", (r.get("count") or 0) >= 4, r)
+check("20. and marks one of them current", (r.get("active") or 0) >= 1, r)
 first = r.get("active")
 ctl("automation.browserFind", sessionId=bid, step=True)
 moved = wait(lambda: (((ctl("automation.browserFind", sessionId=bid) or {}).get("active") != first) or None), 20)
-check("18. Enter walks to the next match rather than restarting the search", bool(moved),
+check("21. Enter walks to the next match rather than restarting the search", bool(moved),
       ctl("automation.browserFind", sessionId=bid))
 r = ctl("automation.browserFind", sessionId=bid, close=True)
-check("19. Esc closes it", r.get("open") is False, r)
+check("22. Esc closes it", r.get("open") is False, r)
 
 # --- 6. Esc answers the question ---------------------------------------------------------
 # The card's own .cancelAction cannot be relied on: a browser pane usually hands its keys to
@@ -126,8 +147,8 @@ ctl("automation.browserGo", sessionId=dialogs, url=f"{page}#confirm")
 wait_ask(dialogs, "confirm")
 ctl("automation.key", keyCode=53)              # Esc
 gone = wait(lambda: (not asks(dialogs)) or None, 20)
-check("20. Esc takes the question off the pane", bool(gone), asks(dialogs))
-check("21. and the page reads it as a cancel",
+check("23. Esc takes the question off the pane", bool(gone), asks(dialogs))
+check("24. and the page reads it as a cancel",
       wait(lambda: (cdp_eval(port, "dialogs.html", "window.__answer") == "false") or None, 20),
       cdp_eval(port, "dialogs.html", "window.__answer"))
 

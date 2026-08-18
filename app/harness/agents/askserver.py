@@ -11,7 +11,7 @@ certificate nothing trusts, and a basic-auth prompt only exists if a server real
 
 Each returns (process, port). Kill the process to stop it.
 """
-import http.server, os, pathlib, socket, ssl, subprocess, sys, tempfile, threading, time
+import http.server, json, os, pathlib, socket, ssl, subprocess, sys, tempfile, threading, time
 
 # The dialogs fire off the fragment, so the gate triggers them by NAVIGATING — the app's own
 # "go to" call — rather than over CDP. A CDP client with the Page domain enabled answers
@@ -95,10 +95,25 @@ class _Static(http.server.SimpleHTTPRequestHandler):
 
 class _BasicAuth(_Static):
     """Refuses until Authorization arrives, then serves the tree. The realm is asserted, so it
-    has to be a realm someone would recognise rather than a placeholder."""
+    has to be a realm someone would recognise rather than a placeholder.
+
+    It also keeps a log of what it was sent, readable at /seen without a credential. That log
+    is the only way to answer the question a browser will not answer from the outside: did a
+    password typed for THIS origin travel on a request some other page made to it."""
     REALM = "Staging"
+    SEEN = []
 
     def do_GET(self):
+        if self.path == "/seen":
+            body = json.dumps(self.SEEN).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.SEEN.append({"path": self.path,
+                          "authorized": bool(self.headers.get("Authorization"))})
         if not self.headers.get("Authorization"):
             self.send_response(401)
             self.send_header("WWW-Authenticate", f'Basic realm="{self.REALM}"')
@@ -117,7 +132,16 @@ def make_pages(root):
     # be able to answer a later phase's question about "did the page load".
     (root / "secure.html").write_text("<!doctype html><title>SECURE</title><h1 id='hero'>secure</h1>")
     (root / "protected.html").write_text("<!doctype html><title>PROTECTED</title><h1 id='hero'>protected</h1>")
+    (root / "borrowed.html").write_text("<!doctype html><title>BORROWED</title><h1 id='hero'>borrowed</h1>")
     (root / "opener.html").write_text(POPUP_PAGE)
+    # A page on ANOTHER origin that reaches for the protected one. What it can read is not the
+    # question — whether the browser lends it a password someone typed elsewhere is.
+    (root / "borrow.html").write_text(
+        "<!doctype html><title>BORROW</title><h1 id='hero'>borrow</h1><script>"
+        "window.__borrowed = 'pending';"
+        "fetch(new URLSearchParams(location.search).get('at') + '/borrowed.html',"
+        " { mode: 'no-cors' }).then(() => { window.__borrowed = 'sent'; })"
+        " .catch(() => { window.__borrowed = 'sent'; });</script>")
     (root / "menu.html").write_text(
         "<!doctype html><title>MENU</title><h1 id='hero'>menu</h1>"
         "<p><a id='link' href='https://example.com/deep'>a link</a></p>"

@@ -409,7 +409,12 @@ feature but a silently broken web platform. Wiring, in order of what blocks work
   put it, so the challenge is dropped and the page renders the empty 401 body. The handler stays
   wired, because it is still the documented seam and it is what fires for a proxy; the challenge is
   read off the response instead, and the answer becomes an `Authorization` header the shim puts on
-  the retry. Basic only — Digest and NTLM are Chromium's to negotiate.)*
+  the retry. Basic only — Digest and NTLM are Chromium's to negotiate. Doing it by hand also
+  means keeping by hand the rule Chromium keeps quietly: a credential belongs to the document
+  it was typed for, not merely to the host it was typed at. Chromium partitions its auth cache
+  by top-frame site and refuses cross-origin subresource auth, so the shim attaches the header
+  only on a main-frame navigation or when the requesting document is on that very origin —
+  otherwise a password given to a staging box would ride any later page's `fetch()` to it.)*
 - **JS dialogs and page permissions.** `alert`/`confirm`/`prompt` are undefined and can block the
   page; camera, microphone, geolocation, notifications and clipboard are denied with no prompt and
   no way to grant. An app that uses any of them looks broken in Synth and fine in Chrome, which is

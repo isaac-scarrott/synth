@@ -826,6 +826,100 @@ bool PopupClient::OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFram
   return true;
 }
 
+// ---- HTTP basic auth, in the resource path ---------------------------------------------
+//
+// CefRequestHandler::GetAuthCredentials is the seam CEF documents for this, and it stays wired
+// — but it is not what runs. Measured on CEF 144: a 401 on a top-level navigation in an
+// Alloy-style window never reaches it. Chrome's own login UI owns server authentication now,
+// and an Alloy window has nowhere to put that UI, so the challenge is dropped and the page
+// renders the empty 401 body. Which is the failure this stage exists to remove, so the
+// challenge is read off the response instead and the credential is put on the retry by hand.
+//
+// Doing it by hand means doing the part Chromium does quietly: a credential belongs to the
+// document it was typed for, not merely to the host it was typed at. Chromium partitions its
+// auth cache by top-frame site and refuses cross-origin subresource auth precisely so that a
+// password given to staging.internal cannot ride a fetch() that some other page makes to it.
+// One handler per request, holding the initiator, is what lets that rule be kept here.
+//
+// Credentials live for the browser's lifetime and no longer: Chrome doesn't persist basic-auth
+// credentials either, and a password kept in a profile that outlives the app is a bigger
+// promise than this makes.
+
+class ShimResourceHandler : public CefResourceRequestHandler {
+ public:
+  ShimResourceHandler(CEFShimBrowser *owner, std::string initiator, bool navigation)
+      : owner_(owner), initiator_(std::move(initiator)), navigation_(navigation) {}
+
+  ReturnValue OnBeforeResourceLoad(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                                   CefRefPtr<CefRequest> request,
+                                   CefRefPtr<CefCallback> callback) override {
+    const std::string origin = OriginOf(request->GetURL().ToString());
+    if (!MayCarryCredential(frame, origin)) {
+      return RV_CONTINUE;
+    }
+    NSString *token = [owner_ authorizationForOrigin:origin];
+    if (token) {
+      request->SetHeaderByName("Authorization", token.UTF8String, /*overwrite=*/true);
+    }
+    return RV_CONTINUE;
+  }
+
+  bool OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                          CefRefPtr<CefRequest> request,
+                          CefRefPtr<CefResponse> response) override {
+    if (response->GetStatus() != 401) {
+      return false;
+    }
+    const std::string challenge = response->GetHeaderByName("WWW-Authenticate").ToString();
+    // Basic only. Digest and NTLM are Chromium's to negotiate, and a prompt that collected a
+    // password we then sent as Basic would be worse than no prompt.
+    if (challenge.rfind("Basic", 0) != 0) {
+      return false;
+    }
+    const std::string origin = OriginOf(request->GetURL().ToString());
+    // The same rule as attaching one: a cross-origin subresource must not be able to raise a
+    // sign-in card naming a host the user is not on.
+    if (!MayCarryCredential(frame, origin)) {
+      return false;
+    }
+    std::string realm;
+    const std::string marker = "realm=\"";
+    const size_t at = challenge.find(marker);
+    if (at != std::string::npos) {
+      const size_t start = at + marker.size();
+      const size_t end = challenge.find('"', start);
+      if (end != std::string::npos) {
+        realm = challenge.substr(start, end - start);
+      }
+    }
+    __strong CEFShimBrowser *owner = owner_;
+    NSString *realmText = realm.empty() ? nil : @(realm.c_str());
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [owner challengeOrigin:origin realm:realmText];
+    });
+    return false;   // let the 401 render; the retry rides the answer
+  }
+
+ private:
+  /// Whether this request is one a credential for `origin` may travel on. A main-frame
+  /// navigation is the user going somewhere, and Chrome supplies the cached credential for
+  /// those. Everything else has to come from a document on the very origin the password was
+  /// typed for.
+  bool MayCarryCredential(CefRefPtr<CefFrame> frame, const std::string &origin) const {
+    if (navigation_ && frame && frame->IsMain()) {
+      return true;
+    }
+    return !initiator_.empty() && initiator_ == origin;
+  }
+
+  __weak CEFShimBrowser *owner_;
+  const std::string initiator_;
+  const bool navigation_;
+
+  IMPLEMENT_REFCOUNTING(ShimResourceHandler);
+  DISALLOW_COPY_AND_ASSIGN(ShimResourceHandler);
+};
+
 // One client per CEFShimBrowser, so callbacks never need first-browser filtering —
 // DevTools gets AuxClient and popups are opened as windows of ours, so this client sees
 // exactly one browser for its whole life.
@@ -837,8 +931,7 @@ class ShimClient : public CefClient,
                    public CefLifeSpanHandler,
                    public CefLoadHandler,
                    public CefPermissionHandler,
-                   public CefRequestHandler,
-                   public CefResourceRequestHandler {
+                   public CefRequestHandler {
  public:
   ShimClient(CEFShimBrowser *owner, const std::string &sessionId)
       : owner_(owner),
@@ -852,11 +945,13 @@ class ShimClient : public CefClient,
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  // One handler per request, carrying WHO asked. Returning `this` would leave the credential
+  // decision below able to see only the target origin, and the initiator is the whole of it.
   CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
       CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request,
       bool is_navigation, bool is_download, const CefString &request_initiator,
       bool &disable_default_handling) override {
-    return this;
+    return new ShimResourceHandler(owner_, OriginOf(request_initiator.ToString()), is_navigation);
   }
 
   void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
@@ -1046,7 +1141,14 @@ class ShimClient : public CefClient,
     const uint32_t edit = params->GetEditStateFlags();
 
     if (type & CM_TYPEFLAG_LINK) {
-      model->AddItem(kMenuOpenExternal, "Open Link in Default Browser");
+      // Only http(s) is offered to the default browser. Every other scheme is handed to
+      // LaunchServices, which will open whatever app claims it — and a menu item that names
+      // the browser has no business starting a screen-sharing or file-server client because a
+      // page put the scheme in an href.
+      const std::string link = params->GetLinkUrl().ToString();
+      if (link.rfind("http://", 0) == 0 || link.rfind("https://", 0) == 0) {
+        model->AddItem(kMenuOpenExternal, "Open Link in Default Browser");
+      }
       model->AddItem(kMenuCopyLink, "Copy Link Address");
       model->AddSeparator();
     }
@@ -1145,62 +1247,6 @@ class ShimClient : public CefClient,
       default:
         return false;
     }
-  }
-
-  // ---- HTTP basic auth, in the resource path ------------------------------------------
-  //
-  // GetAuthCredentials above is the seam CEF documents for this, and it stays wired — but it
-  // is not what runs. Measured on CEF 144: a 401 on a top-level navigation in an Alloy-style
-  // window never reaches it. Chrome's own login UI owns server authentication now, and an
-  // Alloy window has nowhere to put that UI, so the challenge is dropped and the page renders
-  // the empty 401 body. Which is the failure this stage exists to remove, so the challenge is
-  // read off the response instead and the credential is put on the retry by hand.
-  //
-  // Credentials live for the browser's lifetime and no longer: Chrome doesn't persist
-  // basic-auth credentials either, and a password kept in a profile that outlives the app is
-  // a bigger promise than this makes.
-
-  CefResourceRequestHandler::ReturnValue OnBeforeResourceLoad(
-      CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request,
-      CefRefPtr<CefCallback> callback) override {
-    const std::string origin = OriginOf(request->GetURL().ToString());
-    NSString *token = [owner_ authorizationForOrigin:origin];
-    if (token) {
-      request->SetHeaderByName("Authorization", token.UTF8String, /*overwrite=*/true);
-    }
-    return RV_CONTINUE;
-  }
-
-  bool OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
-                          CefRefPtr<CefRequest> request,
-                          CefRefPtr<CefResponse> response) override {
-    if (response->GetStatus() != 401) {
-      return false;
-    }
-    const std::string challenge =
-        response->GetHeaderByName("WWW-Authenticate").ToString();
-    // Basic only. Digest and NTLM are Chromium's to negotiate, and a prompt that collected a
-    // password we then sent as Basic would be worse than no prompt.
-    if (challenge.rfind("Basic", 0) != 0) {
-      return false;
-    }
-    std::string realm;
-    const std::string marker = "realm=\"";
-    const size_t at = challenge.find(marker);
-    if (at != std::string::npos) {
-      const size_t start = at + marker.size();
-      const size_t end = challenge.find('"', start);
-      if (end != std::string::npos) {
-        realm = challenge.substr(start, end - start);
-      }
-    }
-    const std::string origin = OriginOf(request->GetURL().ToString());
-    __strong CEFShimBrowser *owner = owner_;
-    NSString *realmText = realm.empty() ? nil : @(realm.c_str());
-    dispatch_async(dispatch_get_main_queue(), ^{
-      [owner challengeOrigin:origin realm:realmText];
-    });
-    return false;   // let the 401 render; the retry rides the answer
   }
 
   void OnFindResult(CefRefPtr<CefBrowser> browser, int identifier, int count,

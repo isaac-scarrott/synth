@@ -2182,3 +2182,16 @@ disclosure to dive deeper.
   forced only over a registration for that exact path with nothing on disk, never over a branch
   genuinely checked out elsewhere, and never by pruning — the hold depends on those entries. The
   gate builds the half-done state by hand instead of racing for it.
+
+- **0.36.0 ships — the browser pane stops being a demo** — minor release carrying ADR-0011 stage
+  five: a per-workspace profile that survives launches, the four unwired CEF handlers (certificates,
+  basic auth, JS dialogs, page permissions), right-click, ⌘F, the Chromium sandbox, and real popups
+  with a live `window.opener` — the withdrawn claim about third-party identity sign-in restored, and
+  Sign in with Google working. Agents gain hover / key press / select option / scroll / wait-for over
+  ref-or-selector addressing, plus `browser_network` and path-by-default screenshots. Breaking:
+  `browser_focus` and `simulator_focus` are gone and `sessionId` is required on every page and device
+  tool. Also: a basic-auth password stays with the page it was typed for, and restoring an archived
+  branch cuts its checkout again mid-reap. `CFBundleVersion` 637, tag `v0.36.0`; dmg + zip notarized,
+  stapled, verified credential-less with quarantine set; appcast newest 0.36.0 at 637, `edSignature`
+  on all 18 enclosures, 1.3MB delta from 613. No `synth-site` push; `landing/` unchanged since
+  `v0.33.0`.

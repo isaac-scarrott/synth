@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.36.0",
+    "date": "2026-08-19",
+    "changes": [
+      "The browser pane remembers you. Its profile now belongs to the project and outlives launches, so a login survives quitting Synth and cutting a new branch — cleared only when you ask, in Settings ▸ Browser.",
+      "Sign in with Google works. `window.open` opens a real popup window with a live `window.opener`, so a third-party sign-in posts its result back and the page can close it — and an OAuth flow no longer leaves a dead sidebar row behind.",
+      "The pane stops silently failing the web platform: a self-signed certificate gets a proceed card, a 401 gets a sign-in card, `alert`/`confirm`/`prompt` are answerable (Esc cancels), and camera, microphone and location can be granted. An app that uses any of them looked broken in Synth and fine in Chrome.",
+      "Right-click has a menu, and ⌘F finds in the page.",
+      "The Chromium sandbox is on — every engine helper takes it before anything else runs, or refuses to start.",
+      "Agents get the five verbs they were missing — hover, key press, select option, scroll and wait-for — addressing elements by refs a snapshot stamps or by a CSS selector. New `browser_network` reports what the page requested and writes headers and bodies to disk on request, and `browser_screenshot` now returns a path by default rather than an image in the transcript.",
+      "Breaking: `browser_focus` and `simulator_focus` are gone and `sessionId` is required on every page and device tool. One process serves a whole agent including its sub-agents, so a shared current-session pointer was wrong the moment two of them worked at once.",
+      "Fixed: restoring an archived branch sometimes brought the row back without its checkout, and said nothing. A worktree exists when its folder does."
+    ]
+  },
+  {
     "version": "0.35.0",
     "date": "2026-08-18",
     "changes": [
@@ -390,7 +404,7 @@
     "version": "0.8.0",
     "date": "2026-07-22",
     "changes": [
-      "A working session now shows a cyan lattice that beats outward from its centre, replacing the amber dot \u2014 easier to tell apart from the blue unread mark, and it reads as alive at a glance."
+      "A working session now shows a cyan lattice that beats outward from its centre, replacing the amber dot — easier to tell apart from the blue unread mark, and it reads as alive at a glance."
     ]
   },
   {

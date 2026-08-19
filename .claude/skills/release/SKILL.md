@@ -57,6 +57,12 @@ git commit -am "Synth 0.1.1"          # or fold into the release's real commits
 cd app && ./release.sh
 ```
 
+**Run it unpiped.** A shell reports a pipeline's exit status from its *last* command, so
+`./release.sh | tail` reports `tail`'s success no matter how the release ended — every guard below
+turns into a silent pass, and the run reads as shipped when nothing did. There is nothing to gain
+by piping: the script tees its own full transcript to `app/release-<version>.log`, so read the tail
+of that file afterwards instead.
+
 `release.sh` is non-interactive and guards itself: it aborts on a dirty tree, an existing tag, a
 missing Developer ID certificate, an ad-hoc signature, an unreachable bucket, or a published feed
 that is not anonymously readable. A failure means nothing shipped. **Never** work around a guard —

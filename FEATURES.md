@@ -2195,3 +2195,10 @@ disclosure to dive deeper.
   stapled, verified credential-less with quarantine set; appcast newest 0.36.0 at 637, `edSignature`
   on all 18 enclosures, 1.3MB delta from 613. No `synth-site` push; `landing/` unchanged since
   `v0.33.0`.
+
+- **`release.sh` keeps its own log, and the skill says not to pipe it** — piping the release into
+  `tail` reports the pipeline's last command as the exit code, so a guard that aborts a release
+  reads as a success, and the window keeps the upload while discarding the build and both
+  notarizations. The script now tees its full transcript to a gitignored `release-<version>.log`
+  before the first guard runs, and the skill's "Run it" says to run it unpiped and read that file.
+

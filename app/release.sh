@@ -29,6 +29,13 @@ TAG="v$VERSION"
 ARCHIVE="releases"          # every published zip, kept so generate_appcast can build deltas
 TOOLS="vendor/sparkle-tools"
 
+# Keep the whole transcript whatever the caller does with our output. A release is ~20 minutes
+# nobody watches to the end, so it gets piped into a `tail` that keeps a window of it and throws
+# the build and the notarization away — exactly the part you need when something looks wrong
+# afterwards. `*.log` is gitignored, so this cannot trip the dirty-tree guard below.
+LOG="release-$VERSION.log"
+exec > >(tee "$LOG") 2>&1
+
 die() { echo "release: $*" >&2; exit 1; }
 s3() { aws s3 "$@" --endpoint-url "$TIGRIS_ENDPOINT" --profile "$AWS_PROFILE_NAME"; }
 

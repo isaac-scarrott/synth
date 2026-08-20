@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.37.0",
+    "date": "2026-08-20",
+    "changes": [
+      "Merged branches are archived for you. A worktree whose branch is merged, clean, pushed and idle leaves the sidebar on its own — one digest card per sweep, restorable from ⌘K → Archived — so a finished checkout no longer sits on disk forever just because nobody archived it. The folder itself still goes only once the work is safely on a remote, and the git branch is never deleted.",
+      "Stray folders under Synth's worktrees are reconciled at launch: empty leftovers are removed, and anything git doesn't know that still holds files is pointed out with Reveal rather than touched."
+    ]
+  },
+  {
     "version": "0.36.0",
     "date": "2026-08-19",
     "changes": [

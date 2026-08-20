@@ -2489,6 +2489,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// which is a wart to copy from, not a pattern.
     func startArchiveSweep() {
         sweepTask?.cancel()
+        // Once per launch: the worktree root reconciled against git, and one card for whatever
+        // it could not account for. Before the first tick so a stray never sits under a row the
+        // sweeper is about to judge.
+        Task { [weak self] in
+            let strays = await Task.detached(priority: .background) {
+                GitService.reconcileStrayWorktreeFolders()
+            }.value
+            guard !strays.isEmpty else { return }
+            self?.raiseStrayFoldersCard(strays)
+        }
         sweepTask = Task { [weak self] in
             // Let a cold `gh`, the network, and MCPInstaller's npm install settle first.
             try? await Task.sleep(for: .seconds(90))
@@ -2592,6 +2602,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             }
         }
 
+        // After the archived rows, never before: a row archived here starts its grace now and
+        // meets the gate chain as an archived row on the next tick, not this one.
+        let finished = await autoArchiveFinishedRows(cwdPaths: cwdPaths, foreign: foreign)
+        if !finished.isEmpty { raiseFinishedDigest(finished) }
+
         logTick(eligible: eligible.count)
         guard !eligible.isEmpty else { return }
 
@@ -2624,6 +2639,94 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                                 "grace_days": archiveGraceDays])
         }
         if !held.isEmpty { raiseSweepDigest(held) }
+    }
+
+    /// Archive, on the user's behalf, every live row whose work is finished. A merged branch left
+    /// in the tree is noise at a glance and — the real cost — a folder the sweeper could never
+    /// reach: it only ever evaluated archived rows, so a merged checkout nobody archived by hand
+    /// stayed on disk for good. Sixty of them at 400 GB was how that was found.
+    ///
+    /// The bar is the full hold predicate with no grace — merged, clean, pushed, nothing attached,
+    /// nothing running inside, read clean twice a day apart (`ArchiveSweeper.evaluate`) — or, for
+    /// a row whose folder is already gone, the branch's own half of it (`evaluateVanished`).
+    /// Archiving touches no disk and is one ⌘K away from undone, so a lower bar would be
+    /// defensible; the higher one means a row never leaves the tree while there is anything in
+    /// its folder the user might be in the middle of.
+    ///
+    /// Only Synth's own worktrees: a hand-made checkout Synth merely adopted is the user's to put
+    /// away. And a cheap merged-or-not gate runs first, because `relevance` asks GitHub about
+    /// anything that isn't an ancestor of the default branch — one `gh` call per unmerged row per
+    /// tick, forever, is not a tick.
+    private func autoArchiveFinishedRows(cwdPaths: Set<String>,
+                                         foreign: Set<String>) async -> [(Workspace, Branch)] {
+        var archived: [(Workspace, Branch)] = []
+        for ws in workspaces {
+            let repo = ws.url
+            let root = GitService.worktreeRoot(for: repo).standardized.path
+            for branch in ws.liveBranches
+            where !branch.isPending && branch.sessions.isEmpty
+                && branch.worktreeURL.deletingLastPathComponent().standardized.path == root {
+                let wt = branch.worktreeURL, name = branch.name, pr = branch.pr
+                let candidate = ArchiveSweeper.Candidate(
+                    branchID: branch.id, name: name, repo: repo, worktree: wt, archivedAt: Date(),
+                    lastCleanEval: branch.lastCleanSweepEval, hasSessions: false,
+                    foreignInstancePaths: foreign)
+                let verdict = await runGit(repo: repo) { () -> ArchiveSweeper.Verdict? in
+                    let base = GitService.defaultBase(at: repo)
+                    let ancestor = base != "HEAD" && GitService.isAncestor(name, of: base, at: repo).value == true
+                    guard ancestor || pr?.state == .merged else { return nil }
+                    return FileManager.default.fileExists(atPath: wt.path)
+                        ? ArchiveSweeper.evaluate(candidate, graceSeconds: 0, cwdPaths: cwdPaths)
+                        : ArchiveSweeper.evaluateVanished(candidate)
+                }
+                // The row may have gained a session, or been archived by hand, while git answered.
+                guard let live = workspaces.first(where: { $0.id == ws.id })?
+                        .branches.first(where: { $0.id == candidate.branchID }),
+                      !live.isArchived, live.sessions.isEmpty
+                else { continue }
+                switch verdict {
+                case .needsSecondOpinion?:
+                    if live.lastCleanSweepEval == nil { live.lastCleanSweepEval = Date() }
+                case .eligible?:
+                    guard !archiveDryRun else {
+                        ArchiveSweeper.log.info("dry-run: would archive \(live.name, privacy: .public)")
+                        continue
+                    }
+                    archiveFinishedRow(live)
+                    archived.append((ws, live))
+                default:
+                    live.lastCleanSweepEval = nil
+                }
+            }
+        }
+        return archived
+    }
+
+    /// The finished-row pass's commit: `softArchiveBranch` without the undo card. There is nothing
+    /// to tear down (no sessions is one of its gates), the tick raises one digest for all of them,
+    /// and the way back is the same as ever — ⌘K → Archived.
+    private func archiveFinishedRow(_ branch: Branch) {
+        let homes = archiveDetach(branch)
+        archiveReattach(branch, to: homes, archived: true)
+        Analytics.capture("worktree_archived", ["trigger": "merged"])
+    }
+
+    private func raiseFinishedDigest(_ rows: [(Workspace, Branch)]) {
+        let message = rows.count == 1 ? "Archived \(rows[0].1.name) — merged"
+                                      : "Archived \(rows.count) merged branches"
+        raiseArchiveNotif(message, tier: .ambient, drains: true,
+                          action: NotifAction(label: "Review"),
+                          run: { [weak self] in self?.openArchivedList(rows[0].0) })
+    }
+
+    /// Folders under Synth's worktree root that git doesn't list and that hold files. Never
+    /// touched by anything automatic; shown once per launch, pointing at where they are.
+    private func raiseStrayFoldersCard(_ strays: [URL]) {
+        let what = strays.count == 1 ? "1 folder" : "\(strays.count) folders"
+        raiseArchiveNotif("\(what) under Synth's worktrees that git doesn't know",
+                          tier: .attention, drains: false,
+                          action: NotifAction(label: "Reveal"),
+                          run: { NSWorkspace.shared.activateFileViewerSelecting(strays) })
     }
 
     /// Worktree paths claimed by *other* live Synth instances. Archived paths deliberately stay

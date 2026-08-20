@@ -161,8 +161,8 @@ struct SettingsPane: View {
             // configure, and unlike the agent rows there's no field here whose absence would hide
             // the way back.
             SetSection(label: "Archived worktrees") {
-                switchRow("Clean up archived worktrees",
-                          "Only once the work is safely on a remote. The git branch is never deleted.",
+                switchRow("Clean up finished worktrees",
+                          "Merged branches are archived for you. A folder goes only once the work is safely on a remote, and the git branch is never deleted.",
                           bind(\.archiveSweepEnabled))
                 if store.archiveSweepEnabled {
                     SetDivider()

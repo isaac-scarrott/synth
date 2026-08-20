@@ -392,6 +392,69 @@ enum GitService {
         }
     }
 
+    // MARK: Stray folders
+
+    /// Launch reconcile of the worktree root against git. A folder under a repo's root that git
+    /// doesn't list as a worktree is a stray: a create that failed between mkdir and checkout, a
+    /// registration git pruned once the folder was emptied by hand, a row removed with its folder
+    /// left behind. Nothing else ever looks at them again — the sweeper reads rows, the reaper
+    /// reads `.archived-` names — so they accumulated unseen.
+    ///
+    /// A stray with no regular file anywhere inside is deleted; there is nothing in it to lose.
+    /// Anything holding a file is returned for the caller to show, and not touched: the sweeper's
+    /// invariant needs git to prove a folder reconstructible, and a folder git doesn't know can't
+    /// be proved anything.
+    static func reconcileStrayWorktreeFolders(now: Date = Date()) -> [URL] {
+        let fm = FileManager.default
+        var strays: [URL] = []
+        var listed: [URL: Set<String>] = [:]
+        forEachWorktreeRootEntry { root, entry in
+            let name = entry.lastPathComponent
+            guard !name.hasPrefix("."),
+                  let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey]),
+                  values.isDirectory == true
+            else { return }
+            // A create in flight: git makes the folder, then writes `.git`, then checks out.
+            if let modified = values.contentModificationDate, now.timeIntervalSince(modified) < 300 { return }
+            if listed[root] == nil { listed[root] = registeredWorktreePaths(under: root) }
+            guard !listed[root]!.contains(entry.standardized.path) else { return }
+            if containsRegularFile(entry) { strays.append(entry) } else { try? fm.removeItem(at: entry) }
+        }
+        return strays
+    }
+
+    /// The worktree paths git lists for the repo behind one root — resolved the way
+    /// `pruneRepoBehind` does, through any entry that is still a checkout. A root where nothing
+    /// resolves names no repo, and everything under it is a stray.
+    private static func registeredWorktreePaths(under root: URL) -> Set<String> {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return [] }
+        for entry in entries where !entry.lastPathComponent.hasPrefix(".") {
+            let (status, out) = runChecked(["-C", entry.path, "rev-parse", "--path-format=absolute",
+                                            "--git-common-dir"], timeout: 10)
+            guard status == 0 else { continue }
+            let common = out.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !common.isEmpty else { continue }
+            let repo = URL(fileURLWithPath: common).deletingLastPathComponent()
+            return Set(worktrees(at: repo).filter { !$0.isPrunable }.map { $0.path.standardized.path })
+        }
+        return []
+    }
+
+    /// Anything at all worth keeping, `.DS_Store` aside.
+    private static func containsRegularFile(_ folder: URL) -> Bool {
+        guard let walk = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            return true
+        }
+        for case let item as URL in walk {
+            guard item.lastPathComponent != ".DS_Store",
+                  (try? item.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+            else { continue }
+            return true
+        }
+        return false
+    }
+
     private static func forEachWorktreeRootEntry(_ body: (_ root: URL, _ entry: URL) -> Void) {
         let fm = FileManager.default
         let root = AppSupport.dir("worktrees")
@@ -453,8 +516,10 @@ enum GitService {
     /// cut off `origin/main` has upstream `origin/main`, so "ahead 3" only means "not in
     /// main" and says nothing about whether the commits are pushed anywhere. Branches with no
     /// upstream at all make `@{upstream}` an error rather than an answer.
-    static func commitsOnNoRemote(at wt: URL) -> Probe<Int> {
-        let (status, out) = runChecked(["-C", wt.path, "rev-list", "--count", "HEAD", "--not", "--remotes"],
+    /// `ref` defaults to the worktree's HEAD; a branch name lets the question be asked of a row
+    /// whose folder is already gone, at the repo itself.
+    static func commitsOnNoRemote(_ ref: String = "HEAD", at wt: URL) -> Probe<Int> {
+        let (status, out) = runChecked(["-C", wt.path, "rev-list", "--count", ref, "--not", "--remotes"],
                                        timeout: probeTimeout)
         guard status == 0, let n = Int(out.trimmingCharacters(in: .whitespacesAndNewlines)) else { return .unknown }
         return .known(n)

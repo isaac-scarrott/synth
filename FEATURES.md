@@ -2202,3 +2202,14 @@ disclosure to dive deeper.
   notarizations. The script now tees its full transcript to a gitignored `release-<version>.log`
   before the first guard runs, and the skill's "Run it" says to run it unpiped and read that file.
 
+## [2026-08-20](docs/features/2026-08-20.md)
+
+- **Finished worktrees are archived for you, and stray folders are reconciled** — the sweeper
+  only ever evaluated archived rows, so a merged branch nobody archived kept its checkout for good
+  (118 worktrees, ~400 GB, on one machine). Every tick now ends with a finished-row pass that
+  archives a live row once it clears the full hold predicate with no grace — merged, clean,
+  pushed, nothing attached, nothing running inside, read clean twice a day apart — with one digest
+  per tick and ⌘K → Archived as the way back; a row whose folder is already gone is judged on its
+  branch alone. Launch reconciles the worktree root against git: empty strays are deleted, strays
+  holding files are shown once with Reveal and never touched. The Settings switch reads "Clean up
+  finished worktrees"; `t9_archive` gates the pass and the new `merged-gone` scenario.

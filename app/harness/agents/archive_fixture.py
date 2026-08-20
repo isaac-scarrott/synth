@@ -34,6 +34,7 @@ def file_url(path):
 EXPECTED = {
     "merged-clean":   None,
     "with-stash":     None,
+    "merged-gone":    None,
     "has-untracked":  "untracked files",
     "has-edits":      "uncommitted changes",
     "not-pushed":     "commits not pushed anywhere",
@@ -120,6 +121,12 @@ def build(sandbox_root: pathlib.Path, support_dir: pathlib.Path):
     inner = made["has-nested"] / "vendored"
     inner.mkdir()
     sh(f"git init -q '{inner}'")
+
+    # Merged and pushed like merged-clean; the gate deletes its folder once Synth is up (restore
+    # drops a row whose folder is already missing, so the state can't seed one). The row then
+    # sits in the sidebar with nothing on disk behind it, and the finished-row pass archives it
+    # on the branch's evidence alone.
+    made["merged-gone"] = merged("merged-gone")
 
     # Never merged — the parked-spike case the naive "no open PR" rule would have deleted.
     git(repo, "checkout -q -b never-merged main")

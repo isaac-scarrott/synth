@@ -111,31 +111,60 @@ def main():
     ])
     ctl = Ctl(sock, repo)
     try:
+        # --- the finished-row pass ------------------------------------------------------
+        # A merged, clean, pushed row nobody archived is archived for them — the sweeper used
+        # to evaluate archived rows only, so such a folder stayed on disk for good. Same
+        # two-reading rule as a hold: the first tick banks a reading, the second acts. And the
+        # same refusals: a row with anything unrecoverable in its folder stays in the tree.
+        check("every scenario row starts in the tree",
+              all(name in tree_branches(ctl) for name in made), str(tree_branches(ctl)))
+        # A folder that goes mid-session — by hand, or another tool's cleanup — leaves its row
+        # live with nothing behind it until the next launch drops it. (At launch, restore
+        # already leaves such a row out, which is why this is done here and not in the fixture.)
+        sh(f"rm -rf '{made['merged-gone']}'")
+        git(repo, "worktree prune")
+        ctl("automation.archiveSweep")
+        time.sleep(6)
+        check("one clean reading archives nothing",
+              all(name in tree_branches(ctl) for name in made), str(tree_branches(ctl)))
+        ctl("automation.archiveSweep")
+        finished = {"merged-clean", "with-stash", "merged-gone"}
+        auto = wait(lambda: finished <= set(status_map(ctl)), secs=20)
+        check("merged + clean + pushed rows are archived for the user", bool(auto),
+              str(sorted(status_map(ctl))))
+        check("the folder-less merged row is archived on the branch's evidence alone",
+              "merged-gone" in status_map(ctl), str(sorted(status_map(ctl))))
+        check("archived-for-you rows leave the tree",
+              not finished & set(tree_branches(ctl)), str(tree_branches(ctl)))
+        kept_live = [n for n in made if n not in finished and n not in tree_branches(ctl)]
+        check("every row with something to lose stays in the tree", not kept_live, str(kept_live))
+
         # --- undo semantics -------------------------------------------------------------
         # archivedAt is stamped on COMMIT, not on the gesture: the 8s window must change
         # nothing. If this regresses, undo puts a row back that the archive filter then hides,
-        # and the row is unreachable except through ⌘K.
-        check("the row starts in the tree", "merged-clean" in tree_branches(ctl))
-        first = ctl("automation.archiveBranch", branch="merged-clean")
+        # and the row is unreachable except through ⌘K. On a row the pass above can't take,
+        # so nothing but the gesture is what moves it.
+        check("the row starts in the tree", "has-untracked" in tree_branches(ctl))
+        first = ctl("automation.archiveBranch", branch="has-untracked")
         check("archiveBranch verb finds the row", first.get("ok") is True, str(first))
         immediately = status_map(ctl)
         check("archive is not committed during the undo window",
-              "merged-clean" not in immediately, f"saw {list(immediately)}")
+              "has-untracked" not in immediately, f"saw {list(immediately)}")
 
         # Let the window elapse. Headless, the drain is held (the card would still be there
         # for a returning user), so say so explicitly rather than sleeping forever.
         ctl("automation.notifDrain")
-        landed = wait(lambda: "merged-clean" in status_map(ctl), secs=20)
+        landed = wait(lambda: "has-untracked" in status_map(ctl), secs=20)
         check("archive lands once the undo window drains", bool(landed))
 
         # The commit puts the row back in `branches` so the Archived list can reach it. It must
         # not put it back on screen: the sidebar drew straight from `branches`, so archiving a
         # row made it vanish for the length of the undo window and then reappear.
         check("the archived row stays out of the tree once committed",
-              "merged-clean" not in tree_branches(ctl), str(tree_branches(ctl)))
+              "has-untracked" not in tree_branches(ctl), str(tree_branches(ctl)))
 
         for name in made:
-            if name != "merged-clean":
+            if name not in finished | {"has-untracked"}:
                 ctl("automation.archiveBranch", branch=name)
                 ctl("automation.notifDrain")
         wait(lambda: len(status_map(ctl)) == len(made), secs=25)

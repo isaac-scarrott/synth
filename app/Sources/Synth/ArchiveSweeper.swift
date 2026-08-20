@@ -1,7 +1,9 @@
 import Foundation
 import os
 
-/// Decides whether an archived worktree's folder may be reclaimed, and does the reclaiming.
+/// Decides whether an archived worktree's folder may be reclaimed, and does the reclaiming. The
+/// same evidence pass, with no grace, decides whether a row still in the sidebar is finished
+/// and may be archived on the user's behalf (`AppStore.autoArchiveFinishedRows`).
 ///
 /// The invariant every condition below refines, and the one thing to check a *new* condition
 /// against: **every byte in this folder is reconstructible from a remote or from the repo's
@@ -274,15 +276,46 @@ enum ArchiveSweeper {
         // Everything above answers "is the work recoverable". What follows answers the
         // separate question "is the folder still wanted" — and conflating the two is what made
         // the original "no open PR" condition unsafe.
-        let verdict = relevance(c)
+        let verdict = relevance(c, ref: "HEAD", at: c.worktree)
         if case .blocked = verdict { return verdict }
+        return secondOpinion(on: verdict, lastCleanEval: c.lastCleanEval, now: now)
+    }
 
-        // The second-opinion rule, last, so a candidate that fails anything above never banks a
-        // clean reading it didn't earn.
-        if let last = c.lastCleanEval, now.timeIntervalSince(last) >= secondOpinionGap {
-            if case .eligible = verdict { return verdict }
-        }
+    /// The second-opinion rule, applied last, so a candidate that fails anything before it never
+    /// banks a clean reading it didn't earn.
+    private static func secondOpinion(on verdict: Verdict, lastCleanEval: Date?, now: Date) -> Verdict {
+        if let last = lastCleanEval, now.timeIntervalSince(last) >= secondOpinionGap,
+           case .eligible = verdict { return verdict }
         return .needsSecondOpinion
+    }
+
+    // MARK: Live rows
+
+    /// The same decision for a row still in the sidebar whose folder is already gone — deleted by
+    /// hand, or by another tool's cleanup — and which git no longer lists. There is nothing on
+    /// disk to lose, so the only questions left are the branch's own: on a remote, and merged.
+    /// Everything else in `evaluate` is about the folder and has no subject here.
+    ///
+    /// This exists for the store's finished-row pass (`AppStore.autoArchiveFinishedRows`), which is
+    /// what closes the gap the original sweeper left: it only ever evaluated *archived* rows, so a
+    /// merged branch nobody archived by hand kept its checkout on disk for good.
+    static func evaluateVanished(_ c: Candidate, now: Date = Date()) -> Verdict {
+        let path = c.worktree.standardized.path
+        guard !FileManager.default.fileExists(atPath: path),
+              !GitService.worktrees(at: c.repo).contains(where: {
+                  !$0.isPrunable && $0.path.standardized.path == path
+              })
+        else { return .blocked(.probeFailed) }
+        guard !c.hasSessions else { return .blocked(.sessions) }
+        guard let remotes = GitService.remotes(at: c.repo).value else { return .blocked(.probeFailed) }
+        guard !remotes.isEmpty else { return .blocked(.noRemote) }
+        guard let unpushed = GitService.commitsOnNoRemote(c.name, at: c.repo).value else {
+            return .blocked(.probeFailed)
+        }
+        guard unpushed == 0 else { return .blocked(.unpushed) }
+        let verdict = relevance(c, ref: c.name, at: c.repo)
+        if case .blocked = verdict { return verdict }
+        return secondOpinion(on: verdict, lastCleanEval: c.lastCleanEval, now: now)
     }
 
     /// Is this folder still wanted? Satisfied by an affirmative merged PR, or — for repos with
@@ -292,7 +325,10 @@ enum ArchiveSweeper {
     /// rejected or abandoned the work, which is the strongest possible reason to keep the
     /// folder, and "no PR at all" describes every parked spike branch — the exact case Archive
     /// exists to serve.
-    private static func relevance(_ c: Candidate) -> Verdict {
+    ///
+    /// `ref` at `path` is what gets compared: a worktree's HEAD, or — for a row with no folder
+    /// left — the branch itself at the repo.
+    private static func relevance(_ c: Candidate, ref: String, at path: URL) -> Verdict {
         // The offline path first: it needs no `gh`, no auth, and no GitHub remote, so a repo
         // hosted anywhere else is not silently inert forever.
         //
@@ -303,7 +339,7 @@ enum ArchiveSweeper {
         // `defaultBase` is the same resolution the create path uses: origin/HEAD, else ask the
         // remote once, else local main/master.
         let base = GitService.defaultBase(at: c.repo)
-        if base != "HEAD", case .known(true) = GitService.isAncestor("HEAD", of: base, at: c.worktree) {
+        if base != "HEAD", case .known(true) = GitService.isAncestor(ref, of: base, at: path) {
             return .eligible(mergedPR: nil)
         }
 
@@ -320,8 +356,7 @@ enum ArchiveSweeper {
         }
         // B20 — you merge, then commit more on the same branch; `gh` still says MERGED.
         if !pr.baseRefName.isEmpty {
-            guard case .known(true) = GitService.isAncestor("HEAD", of: "origin/\(pr.baseRefName)",
-                                                           at: c.worktree)
+            guard case .known(true) = GitService.isAncestor(ref, of: "origin/\(pr.baseRefName)", at: path)
             else { return .blocked(.postMerge) }
         }
         return .eligible(mergedPR: pr.number)

@@ -9257,8 +9257,8 @@
     const p = appSet.archive;
     const pick = (key, opts, label) => `<div class="seg seg--slide set-seg set-seg--4" role="group" aria-label="${label}"><span class="seg__thumb" data-thumb></span>${
       opts.map(([v, t]) => `<button class="seg__btn${p[key] === v ? ' is-on' : ''}" data-arc-opt="${key}" data-arc-val="${v}">${t}</button>`).join('')}</div>`;
-    const sweep = row('Clean up archived worktrees',
-      desc('Only once the work is safely on a remote. The git branch is never deleted.'),
+    const sweep = row('Clean up finished worktrees',
+      desc('Merged branches are archived for you. A folder goes only once the work is safely on a remote, and the git branch is never deleted.'),
       switchCtl(p.sweep, 'archive.sweep'));
     if (!p.sweep) return sweep;
     // A budget can only bring an unblocked folder's turn forward — it never lets one through a

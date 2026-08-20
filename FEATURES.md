@@ -2213,3 +2213,11 @@ disclosure to dive deeper.
   branch alone. Launch reconciles the worktree root against git: empty strays are deleted, strays
   holding files are shown once with Reveal and never touched. The Settings switch reads "Clean up
   finished worktrees"; `t9_archive` gates the pass and the new `merged-gone` scenario.
+
+- **0.37.0 ships — finished worktrees put themselves away** — minor release: the sweeper's
+  finished-row pass archives a merged, clean, pushed, idle worktree on its own (two clean readings a
+  day apart, one digest card, restorable from ⌘K → Archived); launch reconciles the worktree root
+  against git, removing empty strays and pointing out the rest; Settings reads "Clean up finished
+  worktrees". `CFBundleVersion` 641, tag `v0.37.0`; dmg + zip notarized, stapled, verified
+  credential-less with quarantine set; appcast newest 0.37.0 at 641, `edSignature` on all 18
+  enclosures, deltas from 605–637. No `synth-site` push; landing links unchanged.

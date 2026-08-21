@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.38.0",
+    "date": "2026-08-21",
+    "changes": [
+      "The markdown reader's column width is yours. It opens at 96 columns instead of a fixed 84, and ⌃W steps small (80) → medium (96) → large (fills the pane, gutters aside). The current measure is named in the read-mode status line beside ⌃F and ⌃O and flashed as it lands. Ctrl-only and reader-only, so ⌃W stays delete-word-backward inside an editor.",
+      "The measure you pick sticks: the next markdown document opens at the width the last one was left at."
+    ]
+  },
+  {
     "version": "0.37.0",
     "date": "2026-08-20",
     "changes": [

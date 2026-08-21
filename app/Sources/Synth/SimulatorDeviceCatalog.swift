@@ -215,8 +215,18 @@ enum SimulatorDeviceCatalog {
     /// race below fires, because losing a boot race means somebody else started it.
     @discardableResult
     static func boot(udid: String) throws -> SimulatorBootOutcome {
-        let device = try device(udid: udid)
+        var device = try device(udid: udid)
         guard device.isAvailable else { throw SimulatorCatalogFailure.unavailableRuntime(udid: udid) }
+        // `simctl boot` refuses a device that is on its way down, and a device on its way down is
+        // routinely one Synth itself is releasing: the launch sweep shutting down what a dead run
+        // left booted while a restored row asks for that same device back. Refusing there recorded
+        // a boot failure for a device that was a few seconds from bootable, and the pane never
+        // asked again. Waiting the shutdown out is the whole difference.
+        let settling = Date().addingTimeInterval(30)
+        while device.state == .shuttingDown, Date() < settling {
+            usleep(250_000)
+            device = try self.device(udid: udid)
+        }
         switch device.state {
         case .booted, .booting: return .alreadyRunning
         case .creating, .shutdown, .shuttingDown:
@@ -442,12 +452,14 @@ enum SimulatorDeviceCatalog {
 /// gone — the same shape, and the same pid-reuse caveat, as `InstanceRegistry`'s advertisements.
 enum SimulatorClaims {
     private static let lock = NSLock()
-    /// Devices this process booted and therefore owes a shutdown.
-    private static var booted: Set<String> = []
+    /// Devices this process booted and therefore owes a shutdown, keyed canonically and holding
+    /// the caller's own string: that, never the key, is what goes back to `simctl`.
+    private static var booted: [String: String] = [:]
     /// Devices this process has *asked* for, booted by us or not. Never a licence to shut one down.
     /// It exists so the launch sweep does not turn off a device a restored session of this instance
     /// is in the middle of attaching to.
     private static var interest: Set<String> = []
+    private static var pending: Set<String> = []
     private static var bootFailures: [String: String] = [:]
 
     private static var directory: URL { AppSupport.dir("simulator-claims") }
@@ -482,7 +494,7 @@ enum SimulatorClaims {
     /// resurrect a claim that had been given up or drop one that had just been made.
     static func record(_ udid: String) {
         lock.lock(); defer { lock.unlock() }
-        guard booted.insert(key(udid)).inserted else { return }
+        guard booted.updateValue(udid, forKey: key(udid)) == nil else { return }
         persist(booted)
     }
 
@@ -491,14 +503,58 @@ enum SimulatorClaims {
     @discardableResult
     static func forget(_ udid: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        guard booted.remove(key(udid)) != nil else { return false }
+        guard booted.removeValue(forKey: key(udid)) != nil else { return false }
         persist(booted)
         return true
     }
 
     static func synthBooted(_ udid: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return booted.contains(key(udid))
+        return booted[key(udid)] != nil
+    }
+
+    /// Every device this process booted, for the quit path. The set of open panes is *not* this
+    /// set: a row created in a background workspace has a claim and no pane, and so does a device
+    /// whose row closed while its boot was still under way. Quitting by the panes alone left both
+    /// booted until the next launch's sweep, and only if the sweep got to them first.
+    static func allBooted() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return booted.values.sorted()
+    }
+
+    /// Forgets the claim on a device nobody in this process wants any more, answering whether it
+    /// did — i.e. whether the caller now owes the device a shutdown. Interest and claim are read
+    /// under one lock on purpose: a row closing and a new row opening on the same device a moment
+    /// later must not interleave with this and shut the new row's device down under it.
+    ///
+    /// This is the end of a boot whose row closed before the boot finished. `release` found no
+    /// claim to forget — the boot had not recorded one yet — so the shutdown it would have run
+    /// has to happen here, once the claim exists.
+    @discardableResult
+    static func abandonIfUnwanted(_ udid: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let key = key(udid)
+        guard !interest.contains(key), booted.removeValue(forKey: key) != nil else { return false }
+        persist(booted)
+        return true
+    }
+
+    // MARK: Boots under way
+
+    /// A `simctl boot` this process has issued and not yet heard back from. Not a claim — the
+    /// outcome is what decides that — but the answer to "will closing this row leave the device
+    /// booted?" differs while one is in flight, and the close tool is asked exactly then.
+    static func markBootPending(_ udid: String) {
+        lock.lock(); pending.insert(key(udid)); lock.unlock()
+    }
+
+    static func clearBootPending(_ udid: String) {
+        lock.lock(); pending.remove(key(udid)); lock.unlock()
+    }
+
+    static func isBootPending(_ udid: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return pending.contains(key(udid))
     }
 
     // MARK: Boot failures
@@ -530,8 +586,17 @@ enum SimulatorClaims {
     // So a boot is recorded when it happens and reconciled on the next launch, the way the browser
     // sweeps profile directories orphaned by a dead instance. Only a *dead* instance's file is read:
     // a live sibling's devices are its own business, and a device nobody recorded was never Synth's.
+    //
+    // A dead run's claim is either released or *inherited* — never dropped. The first version
+    // skipped a device a restored row of this instance was already attaching to, which was right
+    // about not shutting it down and wrong about everything after: the row's own claim had come
+    // back `.alreadyRunning` (the device was up), so no instance held a claim, closing the row
+    // released nothing, quitting released nothing, and the next launch had no file to sweep. Every
+    // crash or force-quit with a simulator row open turned that row's device into a permanently
+    // booted orphan. Taking the claim over is what makes the row's close and the quit path work.
 
-    /// Shut down devices a previous run of Synth booted and never released. Off the main actor: each
+    /// Shut down devices a previous run of Synth booted and never released, and take over the
+    /// claim on any of them a restored row of this run is already using. Off the main actor: each
     /// shutdown is a `simctl` spawn.
     static func reconcileOrphanedInstances() {
         let orphans = orphanedFiles()
@@ -544,9 +609,13 @@ enum SimulatorClaims {
                 uniquingKeysWith: { first, _ in first })
             for claimed in abandoned {
                 guard let udid = bootedNow[claimed] else { continue }
-                // A restored session of *this* instance may already be attaching to it. Shutting it
-                // down here would be the same fault this whole file exists to fix, one instance later.
-                guard !wanted(claimed) else { continue }
+                if wanted(claimed) {
+                    // Synth booted it and a row of this run is on it: this run now owes the
+                    // shutdown, and the row's release is what will pay it.
+                    NSLog("Synth: inheriting simulator %@ booted by a previous run", udid)
+                    record(udid)
+                    continue
+                }
                 NSLog("Synth: releasing simulator %@ left booted by a previous run", udid)
                 try? SimulatorDeviceCatalog.shutdown(udid: udid)
             }
@@ -560,11 +629,11 @@ enum SimulatorClaims {
         directory.appendingPathComponent("\(pid).json")
     }
 
-    private static func persist(_ udids: Set<String>) {
+    private static func persist(_ claims: [String: String]) {
         let url = file(pid: getpid())
-        guard !udids.isEmpty else { try? FileManager.default.removeItem(at: url); return }
+        guard !claims.isEmpty else { try? FileManager.default.removeItem(at: url); return }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        guard let data = try? JSONSerialization.data(withJSONObject: Array(udids).sorted()) else {
+        guard let data = try? JSONSerialization.data(withJSONObject: claims.values.sorted()) else {
             return
         }
         try? data.write(to: url, options: .atomic)
@@ -628,6 +697,7 @@ enum SimulatorClaims {
     /// ninety seconds, and "no screen" with no reason is the worst version of that.
     func claim(_ udid: String) {
         SimulatorClaims.noteInterest(in: udid)
+        SimulatorClaims.markBootPending(udid)
         Task.detached(priority: .userInitiated) {
             do {
                 if try SimulatorDeviceCatalog.boot(udid: udid) == .booted {
@@ -640,6 +710,16 @@ enum SimulatorClaims {
             } catch {
                 SimulatorClaims.recordBootFailure(String(describing: error), for: udid)
                 NSLog("Synth: simulator %@ would not boot: %@", udid, String(describing: error))
+            }
+            SimulatorClaims.clearBootPending(udid)
+            // A cold boot takes tens of seconds, and a row can close inside them. Its release
+            // found no claim to forget — this task had not recorded one yet — so the device it
+            // asked for would come up with nothing pointing at it and stay up until the next
+            // launch. The boot that made the claim is the one that has to check it is still wanted.
+            if SimulatorClaims.abandonIfUnwanted(udid) {
+                NSLog("Synth: simulator %@ was released before its boot finished; shutting it down",
+                      udid)
+                try? SimulatorDeviceCatalog.shutdown(udid: udid)
             }
             // Refresh so the picker shows the device as booted. `self`, not `Simulators.fleet`:
             // the cache being updated must be the one this claim came through.

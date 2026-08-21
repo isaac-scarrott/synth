@@ -138,7 +138,10 @@ also **per Synth instance** (`simulator-claims/<pid>.json`, swept by dead pid th
 `InstanceRegistry` sweeps its advertisements): it used to be one shared `UserDefaults` key, so
 starting a second Synth shut down the device the first one was displaying. Getting this wrong costs
 the user their app state and any attached Xcode debug session, silently, which is why it is worth this
-much prose.
+much prose. The sweep has one more rule: a dead run's claim is released or **inherited**, never
+dropped. When a restored row of the new run is already on the device, the new run takes the claim over
+and owes the shutdown — skipping the device and discarding the file left it booted with no claim
+anywhere, so nothing would ever turn it off.
 
 **Whether a session row belongs to an agent is a separate question**, and the original text answered it
 by mistake — it argued from "a device is shared" to "a simulator row cannot be owned", which does not

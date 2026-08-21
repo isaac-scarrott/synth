@@ -61,6 +61,31 @@ enum SimulatorCheck {
             report(false, "persist-roundtrip", "\(error)")
         }
 
+        // MARK: claim bookkeeping, on a UDID no device has
+        //
+        // The rules that decide whether Synth may ever shut a device down, asserted without a
+        // device: a claim survives while any row is interested, is given up exactly once when
+        // none is, and the quit path sees every claim — including one with no pane behind it.
+        do {
+            let fake = "synth-check-claim-\(UUID().uuidString.lowercased())"
+            SimulatorClaims.noteInterest(in: fake)
+            SimulatorClaims.record(fake)
+            report(SimulatorClaims.synthBooted(fake), "claim-recorded")
+            report(SimulatorClaims.allBooted().contains(fake), "claim-listed-for-quit",
+                   "as the caller's string, not the canonical key")
+            report(!SimulatorClaims.abandonIfUnwanted(fake) && SimulatorClaims.synthBooted(fake),
+                   "claim-kept-while-wanted")
+            SimulatorClaims.dropInterest(in: fake)
+            report(SimulatorClaims.abandonIfUnwanted(fake) && !SimulatorClaims.synthBooted(fake),
+                   "claim-abandoned-when-unwanted")
+            report(!SimulatorClaims.abandonIfUnwanted(fake) && !SimulatorClaims.forget(fake),
+                   "claim-given-up-once")
+            SimulatorClaims.markBootPending(fake)
+            report(SimulatorClaims.isBootPending(fake), "boot-pending-marked")
+            SimulatorClaims.clearBootPending(fake)
+            report(!SimulatorClaims.isBootPending(fake), "boot-pending-cleared")
+        }
+
         // MARK: pick a device
 
         let udid: String

@@ -51,19 +51,21 @@ final class SimulatorManager {
     /// the process. Without this, quitting Synth with a simulator row open left a booted device
     /// behind — well over a gigabyte and dozens of processes each — with nothing in any UI to say so.
     ///
-    /// Only devices Synth booted. A controller is *not* the test for that — a row attached to a
-    /// device the user already had running has one too — so the decision goes through
-    /// `SimulatorClaims`, which only knows about devices a Synth boot turned on.
+    /// Only devices Synth booted, and *every* device Synth booted. A controller is neither test: a
+    /// row attached to a device the user already had running has one, and a row that never drew
+    /// (created in a background workspace, or closed while its device was still booting) has none.
+    /// So the list comes from `SimulatorClaims`, which is the record of what a Synth boot turned
+    /// on; the controllers only say what to stop first.
     func shutdownAll() {
         let held = Set(controllers.values.map(\.udid))
-        let ours = held.filter(SimulatorClaims.synthBooted)
+        let ours = SimulatorClaims.allBooted()
         NSLog("Synth: simulator shutdownAll — %d controller(s), %d device(s) to release, "
               + "%d left booted (Synth did not start them)",
-              controllers.count, ours.count, held.count - ours.count)
+              controllers.count, ours.count, held.subtracting(ours).count)
         for (_, controller) in controllers { controller.stop() }
         controllers.removeAll()
         dead.removeAll()
-        for udid in held { SimulatorCatalogFleet.releaseSynchronously(udid) }
+        for udid in ours { SimulatorCatalogFleet.releaseSynchronously(udid) }
     }
 }
 

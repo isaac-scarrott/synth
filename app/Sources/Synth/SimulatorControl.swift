@@ -164,9 +164,17 @@ enum SimulatorControl {
                 store.allSessions.contains { $0.id != session.id && $0.simulatorUDID == held }
             } ?? false
             let synthBooted = udid.map(SimulatorClaims.synthBooted) ?? false
+            // A boot Synth issued and has not heard back from is not a claim yet, but it is not
+            // "Synth did not start it" either — the claim lands when the boot does, and the
+            // release this close could not perform runs then.
+            let booting = udid.map(SimulatorClaims.isBootPending) ?? false
             store.closeSession(session)
-            var response: [String: Any] = ["ok": true, "deviceStaysBooted": shared || !synthBooted]
-            if !shared, !synthBooted {
+            var response: [String: Any] = [
+                "ok": true, "deviceStaysBooted": shared || !(synthBooted || booting)]
+            if !shared, !synthBooted, booting {
+                response["note"] = "Synth's boot of this device is still under way; it is shut down "
+                    + "as soon as the boot completes."
+            } else if !shared, !synthBooted {
                 response["note"] = "the device stays booted: Synth did not start it, so it is not "
                     + "Synth's to stop."
             }

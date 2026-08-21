@@ -2238,3 +2238,12 @@ disclosure to dive deeper.
   dmg + zip notarized, stapled, verified credential-less with quarantine set; appcast newest 0.38.0
   at 644, `edSignature` on all 18 enclosures, deltas from 609–641. No `synth-site` push; landing
   links unchanged.
+
+- **A simulator Synth booted is a simulator Synth shuts down — on every path** — the rule is
+  unchanged (only devices Synth's own boot turned on, ADR-0015) but four holes in the bookkeeping
+  are closed: the launch sweep *inherits* a dead run's claim on a device a restored row is already
+  using instead of deleting it (a crash or force-quit with a simulator row open used to orphan
+  the device permanently); a row closed while its device was still booting is shut down when the
+  boot lands; quit releases every claim, not just devices with a pane; and `boot` waits out a
+  "Shutting Down" device rather than failing against the sweep. `simulator_close` says so while a
+  boot is in flight; the self-check asserts the claim rules on a fake UDID.

@@ -2230,3 +2230,11 @@ disclosure to dive deeper.
   lands. ctrl-only and reader-only, so ⌃W stays delete-word-backward inside an editor. The choice
   is written to `md-column` in the app's sandbox (`SYNTH_MD_STATE_DIR`), so the next document
   opens at the measure the last one was left at.
+
+- **0.38.0 ships — the reader's measure is the reader's** — minor release: the markdown reader
+  opens at 96 columns instead of a fixed 84 and ⌃W steps small (80) → medium (96) → large (fills
+  the pane), named in the read-mode status line and persisted to `md-column` so the next document
+  opens where the last was left; ctrl-only and reader-only. `CFBundleVersion` 644, tag `v0.38.0`;
+  dmg + zip notarized, stapled, verified credential-less with quarantine set; appcast newest 0.38.0
+  at 644, `edSignature` on all 18 enclosures, deltas from 609–641. No `synth-site` push; landing
+  links unchanged.

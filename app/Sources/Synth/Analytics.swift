@@ -43,10 +43,11 @@ enum Analytics {
         // Session replay, element-interaction capture, and surveys are iOS-only in the SDK —
         // absent on macOS, so there's nothing to disable here; the screen is never recorded.
         config.optOut = optedOut                    // honour the saved preference from event one
-        // Native crash capture with real stacks. CrashReporter's signal handlers only ever see a
-        // crash libghostty's Breakpad didn't take first (Mach exceptions preempt signals), so this
-        // is what actually reports the crashes that kill Synth. Needs exception autocapture enabled
-        // on the PostHog project too — the SDK skips the integration when remote config says no.
+        // Native crash capture with real stacks: PLCrashReporter's Mach handler, the process's
+        // only one — libghostty's Breakpad is evicted right after ghostty_init (MachExceptionPorts),
+        // because stacked under this it deadlocks the forward and a crash becomes a hang. Needs
+        // exception autocapture enabled on the PostHog project too — the SDK skips the integration
+        // when remote config says no.
         config.errorTrackingConfig.autoCapture = true
         if allowDev { config.flushAt = 1 }          // forced-dev testing: send each event at once
         PostHogSDK.shared.setup(config)

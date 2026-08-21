@@ -2247,3 +2247,10 @@ disclosure to dive deeper.
   boot lands; quit releases every claim, not just devices with a pane; and `boot` waits out a
   "Shutting Down" device rather than failing against the sweep. `simulator_close` says so while a
   boot is in flight; the self-check asserts the claim rules on a fake UDID.
+- **A crash is a crash again** — the 21 Aug lockup was a ⌘Z into a freed undo target that
+  PLCrashReporter caught and forwarded to libghostty's Breakpad, which never answered: every
+  main-thread crash would have frozen the app instead of killing it. `MachExceptionPorts` restores
+  the task's exception ports straight after `ghostty_init`, so PLCrash is the only Mach handler
+  (verified: SIGSEGV death, `.ips`, marker, `app_crashed`). ⌘Z / ⌘⇧Z are swallowed unless a text
+  view or browser page has focus, and `UndoStackGuard` empties the window's undo manager whenever
+  focus leaves a text view. `DEBUG` builds take `SYNTH_DEBUG_CRASH=<seconds>` to re-prove the path.

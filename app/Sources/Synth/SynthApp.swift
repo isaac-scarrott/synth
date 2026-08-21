@@ -57,12 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Kill the per-focus password-autofill key-view walk before any field can focus — it stalls
         // every native text field by 250–400ms on a loaded tree (see AutoFillSuppression).
         AutoFillSuppression.install()
-        // Start the terminal engine before analytics. libghostty's `ghostty_init` brings up a
-        // statically linked sentry-native/Breakpad handler that claims the task's Mach exception
-        // ports, and Mach exceptions preempt POSIX signals — so whatever registers last wins the
-        // crash. Starting it here lets PostHog's Mach handler (below) layer on top and chain back
-        // to Breakpad, instead of Breakpad silently swallowing every crash on first terminal use.
+        // Start the terminal engine before analytics, and hand the Mach exception ports back the
+        // moment it has claimed them. libghostty's `ghostty_init` brings up a statically linked
+        // sentry-native/Breakpad handler, and Mach exceptions preempt POSIX signals — so left in
+        // place it swallows every crash, and layered under PostHog's handler it deadlocks the
+        // forward and turns every crash into a hang (MachExceptionPorts). Restoring leaves
+        // PLCrashReporter (below) as the one Mach handler, with the OS behind it.
+        let ports = MachExceptionPorts.capture()
         GhosttyApp.shared.start()
+        if let ports { MachExceptionPorts.restore(ports) }
         // Anonymous usage analytics — off on the dev channel and honouring the saved opt-out
         // (read straight from defaults so it doesn't wait on the store). No-ops until a key is set.
         Analytics.bootstrap(optedOut: !AppStore.loadBoolPref(AppStore.analyticsKey, default: true))
@@ -70,6 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (after bootstrap, so an `app_crashed` event has somewhere to go).
         CrashReporter.install()
         CrashReporter.reportPending()
+        #if DEBUG
+        // SYNTH_DEBUG_CRASH=<seconds> faults the main thread after that delay: the way to prove
+        // the handler chain ends in a dead process and an .ips, not a suspended one.
+        if let delay = ProcessInfo.processInfo.environment["SYNTH_DEBUG_CRASH"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                UnsafeMutablePointer<Int>(bitPattern: 0x10)!.pointee = 1
+            }
+        }
+        #endif
         // Start Sparkle here rather than leaving it to the first person who opens the app menu:
         // the updater is what finds and stages a build in the background, and a build nobody
         // ever staged is a card nobody ever sees. No-ops on the dev channel (Updates.controller).
@@ -279,6 +291,7 @@ struct RootView: View {
         // loop doesn't walk the whole app tree. This zero-size probe drives that panel from the
         // main window's tree, reacting to `store.palette`.
         .background(PalettePresenter(palette: store.palette, store: store))
+        .background(UndoStackGuard())
         .overlay {
             if store.shortcutsOpen {
                 ModalBackdrop(onDismiss: { store.shortcutsOpen = false }) {
@@ -379,6 +392,18 @@ struct RootView: View {
                 return event   // ⌘↵ Send + typing pass through to the sheet
             }
             let key = event.charactersIgnoringModifiers?.lowercased()
+
+            // ⌘Z / ⌘⇧Z only mean anything inside a text view (or a browser page, which answers
+            // undo: itself). From anywhere else the menu's Undo walks the responder chain to the
+            // window's NSUndoManager and pops whatever is there — including actions a torn-down
+            // TextEditor registered against a now-freed target (registerUndo(withTarget:) holds it
+            // unretained): EXC_BAD_ACCESS in popAndInvoke (21 Aug 2026). UndoStackGuard empties
+            // that stack as focus leaves a text view; this keeps the chord off it regardless.
+            if key == "z", event.modifierFlags.contains(.command) {
+                let fr = event.window?.firstResponder
+                let editing = fr is NSText || fr is NSTextView || BrowserManager.shared.ownsFirstResponder(fr)
+                return editing ? event : nil
+            }
 
             // ⌘⇧T summons / dismisses the scratch terminal (working.html). It sits above every
             // other binding because while it is up it owns the keyboard outright: a fully

@@ -69,6 +69,10 @@ export async function open(
   const dir = await mkdtemp(join(tmpdir(), "synth-md-"))
   const path = join(dir, options.name ?? "doc.md")
   await writeFile(path, content, "utf8")
+  // The reading width persists (column.ts), so a run that read the developer's own saved
+  // choice would open at whatever measure they last used. Point the state at this test's
+  // temp dir: every harness starts from the default and can assert what a ⌃W wrote.
+  process.env.SYNTH_MD_STATE_DIR = dir
 
   const setup = await createTestRenderer({
     width: options.width ?? 90,

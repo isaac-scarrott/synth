@@ -80,6 +80,10 @@ enum MarkdownSession {
         var env: [String: String] = [
             "SYNTH_MD_APPEARANCE": dark ? "dark" : "light",
             "SYNTH_CTL_SOCKET": socketPath,
+            // The little the TUI remembers between openings — today the reading width ⌃W
+            // steps. It goes in the app's own sandbox so the stable and development channels
+            // keep their own, exactly like every other piece of Synth's state.
+            "SYNTH_MD_STATE_DIR": AppSupport.root.path,
         ]
         let both = ["dark": palette(dark: true), "light": palette(dark: false)]
         if let data = try? JSONSerialization.data(withJSONObject: both),

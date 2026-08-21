@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test"
-import { writeFile } from "node:fs/promises"
+import { readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { colOf, open, rowOf, trim } from "./harness"
 
@@ -72,8 +72,9 @@ describe("rendering", () => {
     await h.dispose()
   }, 30000)
 
+  // A terminal wider than the default measure, so the gutter these two are about exists.
   test("centres the column and leaves a gutter on both sides", async () => {
-    const h = await open("# Heading\n", { width: 100 })
+    const h = await open("# Heading\n", { width: 120 })
     const frame = await h.frame()
     expect(colOf(frame, "Heading")).toBeGreaterThan(2)
     await h.dispose()
@@ -81,7 +82,7 @@ describe("rendering", () => {
 
   test("a long paragraph wraps inside the column instead of running off the page", async () => {
     const words = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ")
-    const h = await open(`# Title\n\n${words}\n`, { width: 100 })
+    const h = await open(`# Title\n\n${words}\n`, { width: 120 })
     const frame = await h.frame()
 
     // Every word is on screen — nothing was clipped at the right edge…
@@ -90,7 +91,54 @@ describe("rendering", () => {
     expect(flat).toContain("word39")
     // …because the paragraph broke across lines rather than holding one long one.
     expect(rowOf(frame, "word39")).toBeGreaterThan(rowOf(frame, "word0"))
-    for (const line of frame.split("\n")) expect(line.replace(/\s+$/, "").length).toBeLessThanOrEqual(95)
+    // The gutter (12) plus the medium measure (96) — no row reaches past the column.
+    for (const line of frame.split("\n")) expect(line.replace(/\s+$/, "").length).toBeLessThanOrEqual(108)
+    await h.dispose()
+  }, 30000)
+
+  test("⌃W steps the reading measure small → medium → large and round again", async () => {
+    const h = await open("# Heading\n\nSome prose under it.\n", { width: 140 })
+    // Medium is the default: 96 columns, centred in the 140-wide terminal.
+    const medium = colOf(await h.frame(), "Heading")
+    expect(medium).toBe(22)
+
+    h.keys.pressKey("w", { ctrl: true })
+    const large = await h.frame()
+    // Large has no ceiling of its own — it fills the pane down to the minimum gutter.
+    expect(colOf(large, "Heading")).toBe(2)
+    expect(large).toContain("large width")
+
+    h.keys.pressKey("w", { ctrl: true })
+    expect(colOf(await h.frame(), "Heading")).toBe(30) // small: 80 columns
+
+    h.keys.pressKey("w", { ctrl: true })
+    expect(colOf(await h.frame(), "Heading")).toBe(medium)
+    await h.dispose()
+  }, 30000)
+
+  test("the measure is remembered for the next document opened", async () => {
+    const first = await open("# One\n", { width: 140 })
+    first.keys.pressKey("w", { ctrl: true })
+    await first.frame()
+    const saved = await readFile(join(dirname(first.path), "md-column"), "utf8")
+    expect(saved.trim()).toBe("large")
+    await first.dispose()
+  }, 30000)
+
+  test("⌃W in an open block deletes a word instead of resizing", async () => {
+    const h = await open("# Heading\n\nalpha beta\n", { width: 140 })
+    const before = colOf(await h.frame(), "Heading")
+    h.mouse.click(colOf(await h.frame(), "alpha") + 10, rowOf(await h.frame(), "alpha"))
+    await h.frame()
+    h.keys.pressKey("w", { ctrl: true })
+    await h.frame()
+    h.keys.pressEscape()
+    const frame = await h.frame()
+
+    expect(trim(frame)).toContain("alpha")
+    expect(trim(frame)).not.toContain("beta")
+    // …and the column never moved.
+    expect(colOf(frame, "Heading")).toBe(before)
     await h.dispose()
   }, 30000)
 

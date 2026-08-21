@@ -2221,3 +2221,12 @@ disclosure to dive deeper.
   worktrees". `CFBundleVersion` 641, tag `v0.37.0`; dmg + zip notarized, stapled, verified
   credential-less with quarantine set; appcast newest 0.37.0 at 641, `edSignature` on all 18
   enclosures, deltas from 605–637. No `synth-site` push; landing links unchanged.
+
+## [2026-08-21](docs/features/2026-08-21.md)
+
+- **The markdown reader's measure is the reader's, on a ⌃W ladder** — the reading column was
+  locked at 84 columns. It now opens at 96 and ⌃W steps small (80) → medium (96) → large (fills
+  the pane, gutters aside), named in the read-mode status line beside ⌃F and ⌃O and flashed as it
+  lands. ctrl-only and reader-only, so ⌃W stays delete-word-backward inside an editor. The choice
+  is written to `md-column` in the app's sandbox (`SYNTH_MD_STATE_DIR`), so the next document
+  opens at the measure the last one was left at.

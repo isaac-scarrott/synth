@@ -16,13 +16,19 @@ import { splitFrontmatter, type Frontmatter } from "./frontmatter"
 import { continueList, indentItem, renumber, renumberPreservingCursor } from "./smartlist"
 import { currentOffset, find, matchesWithin, NO_MATCHES, step, type Matches } from "./search"
 import { anchorSlug, linkAt, linksIn } from "./links"
+import {
+  COLUMN_CEILING,
+  nextColumnSize,
+  readColumnSize,
+  writeColumnSize,
+  type ColumnSize,
+} from "./column"
 import { OverlayScrollbar } from "./scrollbar"
 import type { Theme } from "./theme"
 
-/// The reading column's ceiling. Prose stops being comfortable somewhere past 80 columns and
-/// the "breathing room" half of the locked look is the margin either side, so the column
-/// caps and centres rather than filling a wide terminal.
-const COLUMN_MAX = 84
+/// The margin either side is the "breathing room" half of the locked look, so the column
+/// centres inside the terminal instead of starting at its edge. How wide it may grow before
+/// it does that is the reader's, on a three-step ladder (column.ts).
 const GUTTER_MIN = 2
 
 /// Entries the document-level undo stack keeps. One entry is one committed mutation, so a
@@ -110,6 +116,11 @@ export class DocumentView {
   private blocks: Block[] = []
   private views: BlockView[] = []
   private frontView: BoxRenderable | null = null
+  /// The hairline under the frontmatter block, kept so a column resize can redraw it to the
+  /// new measure. Null whenever the document has no frontmatter.
+  private frontRule: TextRenderable | null = null
+  /// The reading measure, restored from the last document the reader set it in.
+  private columnSize: ColumnSize = readColumnSize()
 
   private revealed = -1
   /// The trailing newlines stripped off the revealed block's raw so the editor box hugs its
@@ -227,7 +238,8 @@ export class DocumentView {
       position: "absolute",
       left: 4,
       top: 2,
-      width: COLUMN_MAX - 8,
+      // No width here: the overlay tracks the reading column, which relayout() sizes at the
+      // end of mount and again on every resize — one frame before it can be visible.
       flexDirection: "column",
       visible: false,
       zIndex: 100,
@@ -391,6 +403,7 @@ export class DocumentView {
     this.views = []
     this.frontView?.destroyRecursively()
     this.frontView = null
+    this.frontRule = null
 
     if (this.front && this.front.entries.length > 0) {
       this.frontView = this.buildFrontmatter(this.front)
@@ -438,7 +451,10 @@ export class DocumentView {
       row.add(new TextRenderable(this.renderer, { content: entry.value, fg: p.fg, flexGrow: 1 }))
       box.add(row)
     }
-    box.add(new TextRenderable(this.renderer, { content: "─".repeat(COLUMN_MAX - 4), fg: p.rule, height: 1 }))
+    // Held, not just added: the rule is drawn from repeated glyphs, so it is the one piece of
+    // the page whose text has to be rewritten when the column changes width.
+    this.frontRule = new TextRenderable(this.renderer, { content: this.ruleGlyphs(), fg: p.rule, height: 1 })
+    box.add(this.frontRule)
     return box
   }
 
@@ -925,6 +941,17 @@ export class DocumentView {
     if (cmd && key.name === "o") {
       key.preventDefault()
       this.openOutline()
+      return
+    }
+    // Step the reading measure: small → medium → large → small.
+    //
+    // ctrl ONLY, and only from the reader. ⌘W is the app's close-session and never reaches
+    // the PTY, so there is nothing to pair with here; and inside an editor ⌃W is
+    // delete-word-backward, which a writer mid-sentence needs far more than a width. The
+    // search bar's own input owns it for the same reason.
+    if (key.ctrl && key.name === "w" && !editing && this.mode === "read") {
+      key.preventDefault()
+      this.cycleColumn()
       return
     }
     if (cmd && key.name === "s") {
@@ -1519,14 +1546,32 @@ export class DocumentView {
 
   // MARK: chrome
 
+  /// The width is a preference, not a per-document mode: it is written back the moment it
+  /// changes, so the next document opens at the measure this one was left at. Open editors
+  /// re-wrap off the layout change exactly as they do when the terminal itself is resized.
+  private cycleColumn() {
+    this.columnSize = nextColumnSize(this.columnSize)
+    writeColumnSize(this.columnSize)
+    this.relayout()
+    this.flash(`${this.columnSize} width`)
+  }
+
+  /// The frontmatter hairline, drawn to the column's current measure. It stops short of the
+  /// text's own edges so it reads as a rule under the block rather than a border around it.
+  private ruleGlyphs(): string {
+    const width = typeof this.column.width === "number" ? this.column.width : 0
+    return "─".repeat(Math.max(4, width - 4))
+  }
+
   private relayout() {
     const width = this.renderer.width
-    const columnWidth = Math.max(20, Math.min(COLUMN_MAX, width - GUTTER_MIN * 2))
+    const columnWidth = Math.max(20, Math.min(COLUMN_CEILING[this.columnSize], width - GUTTER_MIN * 2))
     const gutter = Math.max(GUTTER_MIN, Math.floor((width - columnWidth) / 2))
     this.column.width = columnWidth
     this.column.marginLeft = gutter
     this.overlay.left = gutter
     this.overlay.width = Math.min(columnWidth, width - gutter * 2)
+    if (this.frontRule) this.frontRule.content = this.ruleGlyphs()
     this.renderer.requestRender()
   }
 
@@ -1556,8 +1601,8 @@ export class DocumentView {
     else if (this.revealed >= 0) parts.push("⏎ edit · esc to render")
     // ⌃] earns its cells only in a document that has links to open; pressing it from here
     // answers with the two-step rather than a scolding, so the hint never dead-ends.
-    else if (this.hasLinks) parts.push("⌃F find · ⌃O outline · ⌃] links · click to edit")
-    else parts.push("⌃F find · ⌃O outline · click to edit")
+    else if (this.hasLinks) parts.push("⌃F find · ⌃O outline · ⌃] links · ⌃W width · click to edit")
+    else parts.push("⌃F find · ⌃O outline · ⌃W width · click to edit")
 
     this.statusBar.content = parts.join("  ·  ")
     this.statusBar.fg = this.conflicted

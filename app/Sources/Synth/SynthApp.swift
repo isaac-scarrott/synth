@@ -314,8 +314,8 @@ struct RootView: View {
             }
         }
         // Above every sheet: while a scratch terminal is up it owns the screen as well as the
-        // keyboard. No tap-to-dismiss — the dismissal is explicit, always (⌘⇧T / ⌘W / Esc / exit),
-        // because a stray click landing on the dim would kill a running command.
+        // keyboard. A click on the dim dismisses it under Esc's rule and no other — idle only —
+        // so a stray click still can't land on a running command.
         .overlay {
             if let scratch = store.scratch {
                 ScratchTerminalOverlay(scratch: scratch).environment(store)

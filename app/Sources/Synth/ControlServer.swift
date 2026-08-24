@@ -666,6 +666,7 @@ final class ControlServer: @unchecked Sendable {
             switch request["action"] as? String ?? "state" {
             case "open":    store.openScratchTerminal()
             case "close":   store.requestCloseScratchTerminal()
+            case "clickOutside": store.dismissScratchTerminalFromOutside()
             case "confirm": store.closeScratchTerminal()
             case "cancel":  store.scratchConfirmOpen = false
             case "run":

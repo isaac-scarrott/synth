@@ -13,7 +13,8 @@ reporter rather than faking the state:
   • Dismissing kills it, so nothing is ever left running that the sidebar doesn't show. Which is
     exactly why closing it mid-job confirms first (ADR-0013) and names what it ends.
   • Esc closes only at an idle prompt. With a job in the foreground Esc belongs to the shell, or
-    it isn't a fully fledged terminal — you couldn't leave insert mode in vim.
+    it isn't a fully fledged terminal — you couldn't leave insert mode in vim. A click on the dim
+    outside the card is that same rule, so it too is nothing at all while a job is running.
 """
 import sys, time, uuid
 sys.path.insert(0, ".")
@@ -75,6 +76,11 @@ key(17, ("cmd", "shift"), "t")
 key(ESC)
 check("7. Esc at an idle prompt closes it", scr().get("open") is False)
 
+# --- A click outside is that same Esc, from the mouse --------------------------------------------
+key(17, ("cmd", "shift"), "t")
+scr(action="clickOutside")
+check("7b. a click on the dim at an idle prompt closes it", scr().get("open") is False)
+
 # --- A real foreground job, through the real zsh reporter ---------------------------------------
 scr(action="open")
 time.sleep(0.6)
@@ -89,6 +95,12 @@ check("10. a running job still raises no row", len(rows()) == baseline_rows)
 key(ESC)
 check("11. Esc while busy does NOT close it — the shell gets it", scr().get("open") is True)
 check("12. and it is still running", scr().get("busy") is True)
+# The click follows Esc all the way, including into doing nothing: it must not even confirm, or
+# a stray click would put a dialog over a job you were only trying to watch.
+scr(action="clickOutside")
+check("12b. a click on the dim while busy does nothing at all",
+      scr().get("open") is True and scr().get("busy") is True
+      and scr().get("confirmOpen") is False)
 
 # --- Closing while busy confirms, and names what it ends (ADR-0013) ------------------------------
 key(17, ("cmd", "shift"), "t")

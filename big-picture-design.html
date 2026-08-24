@@ -9942,6 +9942,8 @@
        • Esc closes only at an idle, empty prompt. Otherwise it reaches the shell and
          shows nothing for it, exactly as a real terminal would; the busy dot beside
          the branch name is the only tell for which meaning is live.
+       • A click on the dim outside the card is that same Esc — one rule, so one tell:
+         it dismisses at an idle, empty prompt and does nothing at all otherwise.
        • ⌃C and ⌃D are always the shell's. `exit` / ⌃D end it for real.
        • cwd resolves through contextBranch(), exactly like ⌘T/⌘N. On a dormant branch
          the summon is what lazily creates the worktree, the same as ⌘T (ADR-0004).
@@ -10043,6 +10045,10 @@
     scrPaint();
   }
 
+  // Esc and a click on the dim share this one rule, so the busy dot is the tell for both — and a
+  // stray click can never end a running job.
+  const scrDismissable = () => !scrJob && scrLine === '';
+
   // Every key while the scratch terminal is up. Esc is the only one with two meanings,
   // and it resolves on (idle && empty line) — otherwise the shell keeps it.
   function scratchKey(e) {
@@ -10065,7 +10071,7 @@
       e.preventDefault();
       // Idle and empty, Esc dismisses. Otherwise it goes to the shell and, exactly like a
       // real terminal, shows nothing for it — the busy dot is the only tell.
-      if (!scrJob && scrLine === '') closeScratch();
+      if (scrDismissable()) closeScratch();
       return;
     }
     if (scrJob) { e.preventDefault(); return; }             // the job owns stdin
@@ -10092,6 +10098,7 @@
     scrLine = ''; scrJob = null; scrJobCmd = '';
     scrDim = document.createElement('div');
     scrDim.className = 'scr-dim';
+    scrDim.addEventListener('mousedown', () => { if (scrDismissable()) closeScratch(); });
     scrEl = document.createElement('div');
     scrEl.className = 'scr scr--overlay';
     scrEl.innerHTML = scrMarkup(ctx);

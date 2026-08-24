@@ -2254,3 +2254,11 @@ disclosure to dive deeper.
   (verified: SIGSEGV death, `.ips`, marker, `app_crashed`). ⌘Z / ⌘⇧Z are swallowed unless a text
   view or browser page has focus, and `UndoStackGuard` empties the window's undo manager whenever
   focus leaves a text view. `DEBUG` builds take `SYNTH_DEBUG_CRASH=<seconds>` to re-prove the path.
+
+## [2026-08-24](docs/features/2026-08-24.md)
+
+- **A click outside the scratch terminal closes it** — ⌘⇧T's dim was the one overlay in Synth a
+  click couldn't dismiss. It now dismisses under Esc's rule and no other: idle prompt only, and
+  with a job in the foreground the click does nothing at all — not a close, not even the
+  busy-close confirm, which stays with the chords (⌘⇧T / ⌘W) you meant. One rule, one tell (the
+  amber dot); `t12_scratch` pins both halves.

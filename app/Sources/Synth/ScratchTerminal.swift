@@ -52,11 +52,20 @@ extension AppStore {
         Analytics.capture("scratch_terminal_opened", [:])
     }
 
-    /// The dismissal every route goes through — ⌘⇧T, ⌘W, Esc at an idle prompt.
+    /// The dismissal every route goes through — ⌘⇧T, ⌘W, Esc or a click on the dim at an idle
+    /// prompt.
     func requestCloseScratchTerminal() {
         guard let s = scratch else { return }
         if s.busy { scratchConfirmOpen = true; return }
         closeScratchTerminal()
+    }
+
+    /// A click on the dim outside the card is Esc's other hand: one rule, so the amber dot answers
+    /// for both. With a job in the foreground Esc is the shell's and the click is nothing at all,
+    /// which is what keeps a stray click off a running command.
+    func dismissScratchTerminalFromOutside() {
+        guard scratch?.busy == false else { return }
+        requestCloseScratchTerminal()
     }
 
     /// Kills the PTY. Nothing survives to come back to — that is the whole contract.
@@ -117,6 +126,7 @@ struct ScratchTerminalOverlay: View {
             Rectangle().fill(Theme.scratchScrim)
                 .ignoresSafeArea()
                 .opacity(shown ? 1 : 0)
+                .onTapGesture { store.dismissScratchTerminalFromOutside() }
 
             GeometryReader { geo in
                 card

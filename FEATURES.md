@@ -2262,3 +2262,14 @@ disclosure to dive deeper.
   with a job in the foreground the click does nothing at all — not a close, not even the
   busy-close confirm, which stays with the chords (⌘⇧T / ⌘W) you meant. One rule, one tell (the
   amber dot); `t12_scratch` pins both halves.
+
+## [2026-08-27](docs/features/2026-08-27.md)
+
+- **Device mode becomes three conditions, each resting at Normal** — the browser's chip row of
+  phones becomes a bar of three menus that fail apart: Screen (Phones / Tablets / Desktops, name
+  left and viewport right), Network and CPU, carrying Chromium's own preset numbers. The fleet
+  gains four bezel-less desktop screens grounded in Statcounter's July 2026 desktop shares (1080p
+  monitor, Windows laptop, Budget laptop, Older laptop, all at 1×, emulated `mobile: false`).
+  Every axis rests at "Normal" — the same word in all three, because we have only left it alone —
+  the bar opens at Normal and closing it puts all three back. `browser.deviceMode` takes `network`
+  and `cpu` independently of `device`; ⌘⇧M and the toolbar button now say Conditions.

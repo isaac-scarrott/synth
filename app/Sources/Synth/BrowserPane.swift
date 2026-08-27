@@ -220,37 +220,77 @@ import AppKit
         devToolsOpen = !open
     }
 
-    // Device mode (working.html devframe): like devToolsOpen, controller state — it
-    // survives navigating away and back, and page navigations (like comment mode).
-    private(set) var deviceModeOn = false
-    private(set) var device: HardwareDevice = .initial
+    // The conditions bar (working.html `.browser__condbar`): like devToolsOpen, controller
+    // state — it survives navigating away and back, and page navigations (like comment mode).
+    // Three axes that fail apart, each resting at Normal: no screen emulated, no throttle on
+    // the wire, no slowdown on the processor. The bar is either on screen saying what it is
+    // doing or doing nothing at all, so closing it puts all three back — a throttle nobody
+    // can see is a bug report waiting to be written.
+    private(set) var conditionsOn = false
+    /// nil is Normal: the page at the pane's own viewport, no frame drawn.
+    private(set) var device: HardwareDevice?
     private(set) var deviceLandscape = false
+    private(set) var network: NetworkCondition = .normal
+    private(set) var cpu: CPUThrottle = .normal
     /// The stage's fit scale, reported by the pane — folded into the CDP override so
     /// the w×h viewport renders exactly into the (w·s)×(h·s) engine view.
     @ObservationIgnored private var deviceFitScale: Double = 1
     @ObservationIgnored private var deviceEmulator: DeviceEmulator?
 
-    func toggleDeviceMode() {
-        deviceModeOn.toggle()
-        if deviceModeOn { applyDeviceEmulation() } else { deviceEmulator?.clear() }
+    /// A screen is being emulated — which is the question anything downstream of the
+    /// override asks (a comment crop can't survive one), not whether the bar is open.
+    var isEmulatingScreen: Bool { conditionsOn && device != nil }
+
+    /// A monitor doesn't turn. Decided once, here, so the frame, the override, the readout
+    /// and the verb's reply can't disagree about which way up the screen is.
+    var landscape: Bool { deviceLandscape && !(device?.isDesktopScreen ?? false) }
+
+    func toggleConditions() {
+        conditionsOn.toggle()
+        guard !conditionsOn else {
+            // Whatever is already set takes effect as the bar opens, so a caller that names
+            // a condition before asking for the mode gets the same result as one that asks
+            // in the other order.
+            applyScreenEmulation()
+            applyMachine()
+            return
+        }
+        device = nil
+        network = .normal
+        cpu = .normal
+        deviceEmulator?.clear()
     }
 
-    func setDevice(_ d: HardwareDevice) {
+    func setScreen(_ d: HardwareDevice?) {
         guard d != device else { return }
         device = d
-        applyDeviceEmulation()
+        guard conditionsOn else { return }
+        if d == nil { deviceEmulator?.clearMetrics() } else { applyScreenEmulation() }
+    }
+
+    func setNetwork(_ c: NetworkCondition) {
+        guard conditionsOn, c != network else { return }
+        network = c
+        applyMachine()
+    }
+
+    func setCPU(_ c: CPUThrottle) {
+        guard conditionsOn, c != cpu else { return }
+        cpu = c
+        applyMachine()
     }
 
     func rotateDevice() {
+        guard !(device?.isDesktopScreen ?? false) else { return }
         deviceLandscape.toggle()
-        applyDeviceEmulation()
+        applyScreenEmulation()
     }
 
     // Absolute setters for the control-socket verb (browser.deviceMode) — an agent
     // states the mode it wants; toggles would race a user flipping the same switch.
-    func setDeviceMode(on: Bool) {
-        guard on != deviceModeOn else { return }
-        toggleDeviceMode()
+    func setConditions(on: Bool) {
+        guard on != conditionsOn else { return }
+        toggleConditions()
     }
 
     func setDeviceLandscape(_ landscape: Bool) {
@@ -261,20 +301,33 @@ import AppKit
     func reportDeviceFitScale(_ s: Double) {
         guard abs(s - deviceFitScale) > 0.0005 else { return }
         deviceFitScale = s
-        if deviceModeOn { applyDeviceEmulation() }
+        applyScreenEmulation()
     }
 
-    private func applyDeviceEmulation() {
-        guard deviceModeOn else { return }
-        let emulator = deviceEmulator
-            ?? DeviceEmulator(sessionID: sessionID, cdpPort: engine.cdpPort)
-        deviceEmulator = emulator
+    private func emulator() -> DeviceEmulator {
+        let e = deviceEmulator ?? DeviceEmulator(sessionID: sessionID, cdpPort: engine.cdpPort)
+        deviceEmulator = e
+        return e
+    }
+
+    /// The wire and the processor. Nothing is sent while the bar is shut, because the bar
+    /// being shut *is* the promise that nothing is being emulated.
+    private func applyMachine() {
+        guard conditionsOn else { return }
+        emulator().applyNetwork(network, urlHint: address)
+        emulator().applyCPU(cpu, urlHint: address)
+    }
+
+    private func applyScreenEmulation() {
+        guard conditionsOn, let device else { return }
         // The viewport the device's own browser leaves the page, not the whole screen —
-        // its bars are drawn, so the page is emulated at the height it really gets.
-        let page = device.pageViewport(landscape: deviceLandscape)
-        emulator.apply(width: Int(page.width), height: Int(page.height),
-                       deviceScaleFactor: device.deviceScaleFactor,
-                       scale: deviceFitScale, urlHint: address)
+        // its bars are drawn, so the page is emulated at the height it really gets. A
+        // monitor draws no bars, so there the two are the same number.
+        let page = device.pageViewport(landscape: landscape)
+        emulator().apply(width: Int(page.width), height: Int(page.height),
+                         deviceScaleFactor: device.deviceScaleFactor,
+                         scale: deviceFitScale, mobile: !device.isDesktopScreen,
+                         urlHint: address)
     }
 
     // MARK: The page's questions (ADR-0011 stage five)
@@ -477,6 +530,8 @@ struct BrowserPane: View {
     let session: Session
 
     @State private var dropOpen = false
+    /// Which conditions menu is open, if any — pane state, like the omnibox drop.
+    @State private var condMenu: ConditionAxis?
     /// Bumped when the home-state omnibox is clicked → refocus the home "Go to…" field.
     @State private var homeFocusNonce = 0
 
@@ -536,14 +591,14 @@ struct BrowserPane: View {
     private func pane(_ ctrl: BrowserSessionController) -> some View {
         VStack(spacing: 0) {
             BrowserBar(ctrl: ctrl, dropOpen: $dropOpen, homeFocusNonce: $homeFocusNonce)
-            if ctrl.deviceModeOn && !ctrl.isHome {
-                DeviceBar(ctrl: ctrl)
+            if ctrl.conditionsOn && !ctrl.isHome {
+                ConditionsBar(ctrl: ctrl, open: $condMenu)
             }
             ZStack(alignment: .top) {
                 if ctrl.isHome {
                     BrowserHome(recents: recents, focusNonce: homeFocusNonce) { ctrl.go($0) }
-                } else if ctrl.deviceModeOn {
-                    DeviceStage(ctrl: ctrl)
+                } else if ctrl.conditionsOn, let d = ctrl.device {
+                    DeviceStage(ctrl: ctrl, d: d)
                 } else {
                     EngineHost(engineView: ctrl.engine.view)
                 }
@@ -576,6 +631,27 @@ struct BrowserPane: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderStrong, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
         .padding(EdgeInsets(top: 4, leading: 14, bottom: 14, trailing: 14))
+        // The open menu is placed from the picker's own bounds and drawn last, so it hangs
+        // over the page rather than under it — the same trick the omnibox drop plays.
+        .overlayPreferenceValue(ConditionAnchorKey.self) { anchors in
+            GeometryReader { geo in
+                if let axis = condMenu, let anchor = anchors[axis.rawValue] {
+                    let pick = geo[anchor]
+                    ZStack(alignment: .topLeading) {
+                        // The catcher starts under the bar: a click on another picker has to
+                        // reach it, or switching axes would cost two clicks — one to dismiss
+                        // and one to open.
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture { condMenu = nil }
+                            .padding(.top, pick.maxY)
+                        ConditionMenu(ctrl: ctrl, axis: axis) { condMenu = nil }
+                            .offset(x: pick.minX, y: pick.maxY + 6)
+                    }
+                }
+            }
+        }
+        .onChange(of: ctrl.conditionsOn) { _, on in if !on { condMenu = nil } }
         // ⌘L / palette "Go to address…" — same routing as clicking the omnibox pill.
         // onChange serves the live pane; onAppear one the action's jump just mounted.
         .onChange(of: ctrl.pendingFocusAddress) { _, pending in
@@ -615,36 +691,73 @@ private struct EngineHost: NSViewRepresentable {
 
 // MARK: - Device mode
 
-/// working.html `.browser__devicebar`: the fleet chips, the live W × H readout
-/// (swaps on rotate), and the rotate button, on a second chrome strip below the bar.
-private struct DeviceBar: View {
+/// The three things a worst case is made of. Each opens its own menu and answers for one
+/// axis only: what the page thinks it is being shown on, how fast the wire is, how fast the
+/// processor is.
+enum ConditionAxis: String, Identifiable {
+    case screen, network, cpu
+    var id: String { rawValue }
+    /// Named on the button, because at rest all three read Normal and the value alone
+    /// would leave you guessing which menu you were about to open.
+    var label: String {
+        switch self {
+        case .screen:  return "Screen"
+        case .network: return "Network"
+        case .cpu:     return "CPU"
+        }
+    }
+}
+
+/// Each picker publishes its bounds; the pane reads the open one's to hang the menu under it.
+struct ConditionAnchorKey: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [String: Anchor<CGRect>],
+                       nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// working.html `.browser__condbar`: the three menus, the live viewport readout (which
+/// swaps on rotate), and the rotate button, on a second chrome strip below the bar.
+private struct ConditionsBar: View {
     let ctrl: BrowserSessionController
+    @Binding var open: ConditionAxis?
 
     var body: some View {
-        HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 3) {
-                    ForEach(HardwareDevice.fleet) { d in
-                        DeviceChip(name: d.name, active: d == ctrl.device) {
-                            ctrl.setDevice(d)
-                        }
+        HStack(spacing: 4) {
+            ConditionPicker(axis: .screen, value: ctrl.device?.name ?? "Normal",
+                            offBaseline: ctrl.device != nil, open: $open,
+                            help: ctrl.device?.note
+                                ?? "Normal — the pane’s own viewport, at whatever size the pane is")
+            ConditionPicker(axis: .network, value: ctrl.network.name,
+                            offBaseline: ctrl.network != .normal, open: $open,
+                            help: "Network: \(ctrl.network.name) — \(ctrl.network.detail)")
+            ConditionPicker(axis: .cpu, value: ctrl.cpu.name,
+                            offBaseline: ctrl.cpu != .normal, open: $open,
+                            help: "CPU: \(ctrl.cpu.name) — \(ctrl.cpu.detail)")
+            Spacer(minLength: 8)
+            if let d = ctrl.device {
+                // The screen, which is the number the menu row you picked showed — one
+                // device cannot have two heights in one bar. (What the page actually gets
+                // is this minus the device browser's own bars, and that is what the CDP
+                // override emulates.) The ratio rides along because it is the fact no menu
+                // label carries: at 1× a page shows the hairlines a Retina Mac rounds away.
+                let screen = d.screenSize(landscape: ctrl.landscape)
+                // verbatim: Text's Int interpolation adds locale grouping ("1,032") —
+                // the readout is a CSS pixel count, not a quantity.
+                Text(verbatim: "\(Int(screen.width)) × \(Int(screen.height)) @\(Int(d.deviceScaleFactor))×")
+                    .font(.mono(11))
+                    .foregroundStyle(Theme.inkFaint)
+                    .lineLimit(1).fixedSize()
+                // The device glyph turned to the orientation a press would give — a
+                // circular arrow here reads as reload next to the toolbar's real one.
+                // A monitor doesn't turn, so it isn't offered one.
+                if !d.isDesktopScreen {
+                    PaneBarButton(icon: Phosphor.deviceMobile, help: "Rotate device",
+                                  rotation: ctrl.landscape ? 0 : 90) {
+                        ctrl.rotateDevice()
                     }
                 }
-            }
-            // The page's viewport, not the screen's: with the device's own browser bars
-            // drawn, the height a media query sees is what's left under them.
-            let page = ctrl.device.pageViewport(landscape: ctrl.deviceLandscape)
-            // verbatim: Text's Int interpolation adds locale grouping ("1,032") —
-            // the readout is a CSS pixel count, not a quantity.
-            Text(verbatim: "\(Int(page.width)) × \(Int(page.height))")
-                .font(.mono(11))
-                .foregroundStyle(Theme.inkFaint)
-                .lineLimit(1).fixedSize()
-            // The device glyph turned to the orientation a press would give — a
-            // circular arrow here reads as reload next to the toolbar's real one.
-            PaneBarButton(icon: Phosphor.deviceMobile, help: "Rotate device",
-                          rotation: ctrl.deviceLandscape ? 0 : 90) {
-                ctrl.rotateDevice()
             }
         }
         .padding(.vertical, 6).padding(.horizontal, 10)
@@ -655,22 +768,141 @@ private struct DeviceBar: View {
     }
 }
 
-/// `.devicebar__chip`: capsule device names; the active one holds the hover look.
-private struct DeviceChip: View {
+/// `.condbar__pick`: the axis, its current value, and a caret. Copper is the app's "what you
+/// are looking at is not yours" mark, and an axis held away from this Mac's own is exactly
+/// that — so a slow run is never a mystery you go looking for.
+private struct ConditionPicker: View {
+    let axis: ConditionAxis
+    let value: String
+    let offBaseline: Bool
+    @Binding var open: ConditionAxis?
+    let help: String
+    @State private var hovering = false
+
+    var body: some View {
+        Button { open = (open == axis) ? nil : axis } label: {
+            HStack(spacing: 5) {
+                Text(axis.label)
+                    .font(.sans(11, 500))
+                    .foregroundStyle(offBaseline ? Theme.copper : Theme.inkFaint)
+                Text(value)
+                    .font(.mono(11))
+                    .foregroundStyle(offBaseline ? Theme.copper
+                                     : (lit ? Theme.ink : Theme.inkMuted))
+                Phos(path: Phosphor.caretDown, size: 9)
+                    .foregroundStyle(offBaseline ? Theme.copper : Theme.inkMuted)
+                    .opacity(0.6)
+            }
+            .lineLimit(1).fixedSize()
+            .padding(.vertical, 4)
+            .padding(.leading, 9).padding(.trailing, 7)
+            .background(RoundedRectangle(cornerRadius: 7).fill(fill))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .onHover { hovering = $0 }
+        .anchorPreference(key: ConditionAnchorKey.self, value: .bounds) {
+            [axis.rawValue: $0]
+        }
+    }
+
+    private var lit: Bool { hovering || open == axis }
+    private var fill: Color {
+        if offBaseline { return Theme.copper.opacity(0.13) }
+        return lit ? Theme.rowHover : .clear
+    }
+}
+
+/// working.html `.cond-menu`: one menu shape for all three, hung under the button that
+/// opened it. Opaque, unlike the app's other popovers: this one hangs over the page you are
+/// judging, and a translucent coat would tint the very thing you opened it to look at.
+private struct ConditionMenu: View {
+    let ctrl: BrowserSessionController
+    let axis: ConditionAxis
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch axis {
+            case .screen:
+                // Normal at the top because leaving is as much a choice as arriving, then
+                // the fleet grouped the way you reach for it. Every row reads the same way —
+                // what the machine is, then the viewport it hands the page — so the eye can
+                // run down one column rather than two.
+                row(name: "Normal", detail: "this pane, at its own size",
+                    on: ctrl.device == nil) { ctrl.setScreen(nil) }
+                ForEach(HardwareDevice.Tier.allCases, id: \.self) { tier in
+                    group(tier.rawValue)
+                    ForEach(HardwareDevice.fleet.filter { $0.tier == tier }) { d in
+                        row(name: d.name,
+                            detail: "\(Int(d.width)) × \(Int(d.height)) @\(Int(d.deviceScaleFactor))×",
+                            on: ctrl.device == d) { ctrl.setScreen(d) }
+                    }
+                }
+            case .network:
+                ForEach(NetworkCondition.allCases) { c in
+                    row(name: c.name, detail: c.detail, on: ctrl.network == c) {
+                        ctrl.setNetwork(c)
+                    }
+                }
+            case .cpu:
+                ForEach(CPUThrottle.allCases) { c in
+                    row(name: c.name, detail: c.detail, on: ctrl.cpu == c) { ctrl.setCPU(c) }
+                }
+            }
+        }
+        .padding(6)
+        .frame(width: 284, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 11).fill(Theme.raised))
+        .overlay(RoundedRectangle(cornerRadius: 11)
+            .strokeBorder(Theme.borderStrong, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.17), radius: 18, y: 7)
+    }
+
+    private func group(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.sans(11, 600))
+            .kerning(0.44)
+            .foregroundStyle(Theme.inkFaint)
+            .padding(.horizontal, 6)
+            .padding(.top, 10).padding(.bottom, 5)
+    }
+
+    private func row(name: String, detail: String, on: Bool,
+                     action: @escaping () -> Void) -> some View {
+        ConditionRow(name: name, detail: detail, on: on) { action(); close() }
+    }
+}
+
+/// `.cond-menu .pane-rec__item`: a tick only the current row shows, what the thing is, and
+/// what it costs you on the right.
+private struct ConditionRow: View {
     let name: String
-    let active: Bool
+    let detail: String
+    let on: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Text(name)
-                .font(.sans(11, 500))
-                .foregroundStyle(active ? Theme.ink : Theme.inkMuted)
-                .lineLimit(1).fixedSize()
-                .padding(.vertical, 4).padding(.horizontal, 10)
-                .background(Capsule().fill(active || hovering ? Theme.rowHover : .clear))
-                .contentShape(Capsule())
+            HStack(spacing: 8) {
+                Phos(path: Phosphor.check, size: 12)
+                    .foregroundStyle(Theme.copper)
+                    .opacity(on ? 1 : 0)
+                Text(name)
+                    .font(.sans(12))
+                    .foregroundStyle(Theme.ink)
+                Spacer(minLength: 10)
+                Text(detail)
+                    .font(.sans(12))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .lineLimit(1)
+            .padding(.vertical, 6).padding(.horizontal, 8)
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(hovering ? Theme.rowHover : .clear))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -684,11 +916,11 @@ private struct DeviceChip: View {
 /// viewport times s, and the CDP override's `scale: s` renders that viewport into it.
 private struct DeviceStage: View {
     let ctrl: BrowserSessionController
+    let d: HardwareDevice
 
     var body: some View {
         GeometryReader { geo in
-            let d = ctrl.device
-            let land = ctrl.deviceLandscape
+            let land = ctrl.landscape
             let screen = d.screenSize(landscape: land)
             let bez = d.bezels(landscape: land)
             let frameW = screen.width + bez.leading + bez.trailing
@@ -756,8 +988,8 @@ private struct BrowserBar: View {
                 .overlay(alignment: .topTrailing) {
                     if pendingComments > 0 { CommentCountBadge(count: pendingComments) }
                 }
-            PaneBarButton(icon: Phosphor.deviceMobile, help: "Device mode",
-                          disabled: ctrl.isHome, on: ctrl.deviceModeOn) { ctrl.toggleDeviceMode() }
+            PaneBarButton(icon: Phosphor.deviceMobile, help: "Conditions",
+                          disabled: ctrl.isHome, on: ctrl.conditionsOn) { ctrl.toggleConditions() }
             PaneBarButton(icon: Phosphor.devtools, help: "DevTools",
                           disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
             PaneBarButton(icon: Phosphor.external, help: "Open in default browser",

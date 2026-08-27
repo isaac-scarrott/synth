@@ -1,9 +1,10 @@
 import Foundation
 import SwiftUI
 
-// Device mode (working.html `.browser__devicebar` / `.devframe`): the live page rendered
-// inside a hardware device frame at a real device viewport. This file carries the fleet
-// catalog and the CDP emulation seam; the strip and frame are drawn by BrowserPane.
+// Conditions (working.html `.browser__condbar`): the three axes a worst case is made of —
+// the screen the live page is rendered at (inside a hardware frame, when the screen is one
+// you hold), the network and the CPU. This file carries the fleet catalog, the two machine
+// axes and the CDP emulation seam; the bar and frame are drawn by BrowserPane.
 //
 // The device model here serves two surfaces, not one (ADR-0015): the browser's device mode, whose
 // viewport it emulates over CDP, and the simulator pane, which draws the same hardware around a
@@ -19,11 +20,20 @@ import SwiftUI
 /// pane width, where a single tuned constant is only right at one.
 struct HardwareDevice: Identifiable, Equatable {
     /// The cutout the display is punched around, and what else the front carries.
-    enum Face { case island, punch, homeButton, cameraTop, cameraSide }
+    /// `plain` is a screen with nothing punched into it — a monitor, which has no front
+    /// worth drawing.
+    enum Face { case island, punch, homeButton, cameraTop, cameraSide, plain }
 
     /// The browser the device runs. Its bars are part of how a page renders there, so
-    /// they take their space off the page rather than floating over it.
-    enum OnScreen { case safariPhone, safariPad, chromeAndroid }
+    /// they take their space off the page rather than floating over it. `desktop` runs
+    /// whatever browser the person has: we don't know its chrome, so we draw none and
+    /// hand the page the whole screen.
+    enum OnScreen { case safariPhone, safariPad, chromeAndroid, desktop }
+
+    /// How the fleet is grouped where it is offered.
+    enum Tier: String, CaseIterable {
+        case phone = "Phones", tablet = "Tablets", desktop = "Desktops"
+    }
 
     /// Bezel thickness per edge, portrait, in device points. Per edge because rotating
     /// walks each one place round — an SE's tall forehead ends up on the left, not
@@ -43,6 +53,8 @@ struct HardwareDevice: Identifiable, Equatable {
 
     let id: String
     let name: String
+    /// Who is on it and why it is worth checking — the picker's tooltip.
+    let note: String
     let width: CGFloat
     let height: CGFloat
     let deviceScaleFactor: Double
@@ -62,11 +74,15 @@ struct HardwareDevice: Identifiable, Equatable {
 
     var isTablet: Bool { onScreen == .safariPad }
     var drawsHomeIndicator: Bool { face != .homeButton }
+    /// A screen rather than hardware you hold: no bezel, no cutout, no software of its own.
+    var isDesktopScreen: Bool { onScreen == .desktop }
+    var tier: Tier { isDesktopScreen ? .desktop : (isTablet ? .tablet : .phone) }
 
     /// The popular current devices, smallest viewport to biggest, so a page is checked
     /// at both extremes rather than one convenient middle (working.html DEVICES).
     static let fleet: [HardwareDevice] = [
         HardwareDevice(id: "iphone-se", name: "iPhone SE",
+                      note: "The small phone that is still in pockets.",
                       width: 375, height: 667, deviceScaleFactor: 2,
                       face: .homeButton, onScreen: .safariPhone,
                       bezel: Bezel(top: 96, trailing: 28, bottom: 118, leading: 28),
@@ -75,6 +91,7 @@ struct HardwareDevice: Identifiable, Equatable {
                       statusBarLeading: 16, statusBarTrailing: 16,
                       homeIndicatorHeight: 10),
         HardwareDevice(id: "iphone-16", name: "iPhone 16",
+                      note: "The current mid-size iPhone.",
                       width: 393, height: 852, deviceScaleFactor: 3,
                       face: .island, onScreen: .safariPhone,
                       bezel: .uniform(12), frameRadius: 62, screenRadius: 50,
@@ -82,6 +99,7 @@ struct HardwareDevice: Identifiable, Equatable {
                       statusBarLeading: 30, statusBarTrailing: 22,
                       homeIndicatorHeight: 21),
         HardwareDevice(id: "iphone-16-pm", name: "iPhone 16 Pro Max",
+                      note: "The biggest phone viewport worth checking.",
                       width: 440, height: 956, deviceScaleFactor: 3,
                       face: .island, onScreen: .safariPhone,
                       bezel: .uniform(12), frameRadius: 66, screenRadius: 54,
@@ -89,6 +107,7 @@ struct HardwareDevice: Identifiable, Equatable {
                       statusBarLeading: 34, statusBarTrailing: 24,
                       homeIndicatorHeight: 21),
         HardwareDevice(id: "galaxy-s25u", name: "Galaxy S25 Ultra",
+                      note: "Android’s flagship, and Chrome’s own chrome around the page.",
                       width: 412, height: 952, deviceScaleFactor: 3,
                       face: .punch, onScreen: .chromeAndroid,
                       bezel: .uniform(8), frameRadius: 32, screenRadius: 24,
@@ -96,6 +115,7 @@ struct HardwareDevice: Identifiable, Equatable {
                       statusBarLeading: 18, statusBarTrailing: 16,
                       homeIndicatorHeight: 24),
         HardwareDevice(id: "ipad-mini", name: "iPad mini",
+                      note: "The tablet breakpoint most layouts get wrong.",
                       width: 744, height: 1133, deviceScaleFactor: 2,
                       face: .cameraTop, onScreen: .safariPad,
                       bezel: .uniform(52), frameRadius: 74, screenRadius: 22,
@@ -103,12 +123,53 @@ struct HardwareDevice: Identifiable, Equatable {
                       statusBarLeading: 26, statusBarTrailing: 26,
                       homeIndicatorHeight: 20),
         HardwareDevice(id: "ipad-pro-13", name: "iPad Pro 13″",
+                      note: "A desktop-width page on a touch device.",
                       width: 1032, height: 1376, deviceScaleFactor: 2,
                       face: .cameraSide, onScreen: .safariPad,
                       bezel: .uniform(44), frameRadius: 64, screenRadius: 22,
                       statusBarHeight: 24, statusBarTopInset: 0,
                       statusBarLeading: 28, statusBarTrailing: 28,
                       homeIndicatorHeight: 20),
+        // Desktops (working.html DEVICES, kind: 'screen'): named like every other row —
+        // the machine on the left, the viewport on the right — because a bare resolution
+        // is a number you have to decode and "Budget laptop" is the thing you were asked
+        // to check. The point of the tier is the bottom of the range rather than the top:
+        // shares are Statcounter's worldwide desktop resolutions for July 2026 (1920×1080
+        // 22%, 1536×864 7%, 1366×768 5%, 1280×720 5%), so a page that holds together on
+        // the last of them holds for all but a sliver of the people who visit it. All at
+        // 1×, where the hairlines and half-pixel borders a Retina Mac rounds away come back.
+        HardwareDevice(id: "mon-1080p", name: "1080p monitor",
+                      note: "The modal desktop — about 22% of desktop visitors, and the one screen here that needs no excuses made for it.",
+                      width: 1920, height: 1080, deviceScaleFactor: 1,
+                      face: .plain, onScreen: .desktop,
+                      bezel: .uniform(0), frameRadius: 6, screenRadius: 6,
+                      statusBarHeight: 0, statusBarTopInset: 0,
+                      statusBarLeading: 0, statusBarTrailing: 0,
+                      homeIndicatorHeight: 0),
+        HardwareDevice(id: "mon-1536", name: "Windows laptop",
+                      note: "A 1080p laptop at 125% scaling — about 7%, and the most common screen that is smaller than it looks.",
+                      width: 1536, height: 864, deviceScaleFactor: 1,
+                      face: .plain, onScreen: .desktop,
+                      bezel: .uniform(0), frameRadius: 6, screenRadius: 6,
+                      statusBarHeight: 0, statusBarTopInset: 0,
+                      statusBarLeading: 0, statusBarTrailing: 0,
+                      homeIndicatorHeight: 0),
+        HardwareDevice(id: "mon-1366", name: "Budget laptop",
+                      note: "Roughly 1 in 10 desktop visitors are on this screen or a smaller one.",
+                      width: 1366, height: 768, deviceScaleFactor: 1,
+                      face: .plain, onScreen: .desktop,
+                      bezel: .uniform(0), frameRadius: 6, screenRadius: 6,
+                      statusBarHeight: 0, statusBarTopInset: 0,
+                      statusBarLeading: 0, statusBarTrailing: 0,
+                      homeIndicatorHeight: 0),
+        HardwareDevice(id: "mon-1280", name: "Older laptop",
+                      note: "The worst screen worth designing for: hold together here and about 95% of desktop visitors are covered.",
+                      width: 1280, height: 720, deviceScaleFactor: 1,
+                      face: .plain, onScreen: .desktop,
+                      bezel: .uniform(0), frameRadius: 6, screenRadius: 6,
+                      statusBarHeight: 0, statusBarTopInset: 0,
+                      statusBarLeading: 0, statusBarTrailing: 0,
+                      homeIndicatorHeight: 0),
     ]
 
     /// iPhone 16 — the mainstream middle of the fleet, the mode's default.
@@ -222,7 +283,8 @@ extension HardwareDevice {
     /// template's because they are the hardware's; the screen is the device's own.
     private func hosting(screen: CGSize, scale: Double, id: String,
                          name: String) -> HardwareDevice {
-        HardwareDevice(id: id, name: name, width: screen.width, height: screen.height,
+        HardwareDevice(id: id, name: name, note: note,
+                      width: screen.width, height: screen.height,
                       deviceScaleFactor: scale, face: face, onScreen: onScreen, bezel: bezel,
                       frameRadius: frameRadius, screenRadius: screenRadius,
                       statusBarHeight: statusBarHeight, statusBarTopInset: statusBarTopInset,
@@ -267,6 +329,10 @@ extension HardwareDevice {
             // Landscape iPhone hides the status bar and folds every control into one top bar.
             if landscape { return (DeviceBars.safariTopBar, homeIndicatorHeight) }
             return (statusBarHeight, DeviceBars.safariBottomBar + homeIndicatorHeight)
+        case .desktop:
+            // Someone else's browser draws its own chrome outside the page, exactly as
+            // ours does — so the screen is the viewport.
+            return (0, 0)
         }
     }
 
@@ -278,6 +344,72 @@ extension HardwareDevice {
         let chrome = browserChrome(landscape: landscape)
         return CGSize(width: screen.width,
                       height: max(1, screen.height - chrome.top - chrome.bottom))
+    }
+}
+
+// MARK: - The two axes that aren't the screen
+
+// A worst case is three separate things and they fail apart: a page can hold together at
+// 1280 and fall over on a slow processor, or the other way round. So the screen, the wire and
+// the processor are set apart, and every one of them rests at "Normal" — the same word in all
+// three, because we don't know what the wire is or how fast this Mac is, only that we have
+// left it alone. What normal means for each axis is the caption's job, not the name's.
+
+/// The wire, in Chromium's own presets, so the label is what the engine does.
+enum NetworkCondition: String, CaseIterable, Identifiable {
+    case normal, fast4g, slow4g, threeG = "3g", offline
+
+    var id: String { rawValue }
+
+    var name: String {
+        switch self {
+        case .normal:  return "Normal"
+        case .fast4g:  return "Fast 4G"
+        case .slow4g:  return "Slow 4G"
+        case .threeG:  return "3G"
+        case .offline: return "Offline"
+        }
+    }
+
+    /// What it costs you, shown beside the name.
+    var detail: String {
+        switch self {
+        case .normal:  return "no throttle"
+        case .fast4g:  return "9 Mb/s · 165 ms"
+        case .slow4g:  return "1.44 Mb/s · 562 ms"
+        case .threeG:  return "400 kb/s · 2 s"
+        case .offline: return "nothing resolves"
+        }
+    }
+
+    /// Network.emulateNetworkConditions' own units: bytes per second and milliseconds.
+    var cdp: (offline: Bool, latency: Double, down: Double, up: Double)? {
+        switch self {
+        case .normal:  return nil
+        case .fast4g:  return (false, 165, 9_000_000 / 8, 1_500_000 / 8)
+        case .slow4g:  return (false, 562.5, 1_440_000 / 8, 675_000 / 8)
+        case .threeG:  return (false, 2_000, 400_000 / 8, 400_000 / 8)
+        case .offline: return (true, 0, 0, 0)
+        }
+    }
+}
+
+/// The processor, as a slowdown against *this* Mac — the only honest way to say it, since
+/// 4× on a 16-inch is a mid-tier machine and the same 4× on a lesser one is not.
+enum CPUThrottle: Int, CaseIterable, Identifiable {
+    case normal = 1, x2 = 2, x4 = 4, x6 = 6
+
+    var id: Int { rawValue }
+
+    var name: String { self == .normal ? "Normal" : "\(rawValue)× slower" }
+
+    var detail: String {
+        switch self {
+        case .normal: return "this Mac"
+        case .x2:     return "a current phone"
+        case .x4:     return "mid-tier"
+        case .x6:     return "low-end"
+        }
     }
 }
 
@@ -301,36 +433,75 @@ extension HardwareDevice {
     }
 
     func apply(width: Int, height: Int, deviceScaleFactor: Double, scale: Double,
-               urlHint: URL?) {
+               mobile: Bool, urlHint: URL?) {
         enqueue { [weak self] in
-            guard let self else { return }
-            if self.client == nil {
-                self.client = try? await CDPClient.attach(port: self.cdpPort,
-                                                          synthSessionID: self.sessionID,
-                                                          urlHint: urlHint)
-                guard self.client != nil else {
-                    NSLog("Synth: device mode CDP attach failed for %@ — frame only",
-                          self.sessionID.uuidString)
-                    return
-                }
-            }
-            guard let client = self.client else { return }
+            guard let client = await self?.connect(urlHint: urlHint) else { return }
             _ = try? await client.send("Emulation.setDeviceMetricsOverride", [
                 "width": width, "height": height,
                 "deviceScaleFactor": deviceScaleFactor,
-                "mobile": true, "scale": scale,
+                // A monitor is a desktop browser: touch and a mobile user agent would be a
+                // claim about the machine that the resolution never made.
+                "mobile": mobile, "scale": scale,
             ])
         }
     }
 
+    /// The screen back to the pane's own, with the wire and the processor left as they are —
+    /// three axes, three switches.
+    func clearMetrics() {
+        enqueue { [weak self] in
+            guard let client = self?.client else { return }
+            _ = try? await client.send("Emulation.clearDeviceMetricsOverride", [:], timeout: 5)
+        }
+    }
+
+    func applyNetwork(_ condition: NetworkCondition, urlHint: URL?) {
+        enqueue { [weak self] in
+            guard let client = await self?.connect(urlHint: urlHint) else { return }
+            _ = try? await client.send("Network.enable", [:])
+            let c = condition.cdp ?? (offline: false, latency: 0, down: -1, up: -1)
+            _ = try? await client.send("Network.emulateNetworkConditions", [
+                "offline": c.offline, "latency": c.latency,
+                "downloadThroughput": c.down, "uploadThroughput": c.up,
+            ])
+        }
+    }
+
+    func applyCPU(_ throttle: CPUThrottle, urlHint: URL?) {
+        enqueue { [weak self] in
+            guard let client = await self?.connect(urlHint: urlHint) else { return }
+            _ = try? await client.send("Emulation.setCPUThrottlingRate",
+                                       ["rate": Double(throttle.rawValue)])
+        }
+    }
+
+    /// Everything back to this Mac's own, and the socket closed — the bar has been shut.
     func clear() {
         enqueue { [weak self] in
             guard let self, let client = self.client else { return }
-            _ = try? await client.send("Emulation.clearDeviceMetricsOverride", [:],
-                                       timeout: 5)
+            _ = try? await client.send("Emulation.clearDeviceMetricsOverride", [:], timeout: 5)
+            _ = try? await client.send("Emulation.setCPUThrottlingRate", ["rate": 1.0], timeout: 5)
+            _ = try? await client.send("Network.emulateNetworkConditions", [
+                "offline": false, "latency": 0,
+                "downloadThroughput": -1, "uploadThroughput": -1,
+            ], timeout: 5)
             client.close()
             self.client = nil
         }
+    }
+
+    /// One socket serves all three axes; the first of them to be set opens it.
+    private func connect(urlHint: URL?) async -> CDPClient? {
+        if client == nil {
+            client = try? await CDPClient.attach(port: cdpPort,
+                                                 synthSessionID: sessionID,
+                                                 urlHint: urlHint)
+            if client == nil {
+                NSLog("Synth: conditions CDP attach failed for %@ — frame only",
+                      sessionID.uuidString)
+            }
+        }
+        return client
     }
 
     /// Synchronous cleanup — session close / app quit (no CDP goodbyes).

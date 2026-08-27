@@ -112,7 +112,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "−"], label: "Zoom out"),
             Shortcut(keys: ["⌘", "F"], label: "Find in page"),
             Shortcut(keys: ["⌥", "⌘", "I"], label: "DevTools"),
-            Shortcut(keys: ["⌘", "⇧", "M"], label: "Device mode"),
+            Shortcut(keys: ["⌘", "⇧", "M"], label: "Conditions"),
         ]),
         // Simulator sessions are behind the Experimental toggle (ADR-0015), but the sheet lists what
         // exists rather than what is switched on: a binding missing from here is a binding the user

@@ -267,51 +267,102 @@ final class ControlServer: @unchecked Sendable {
             store.closeSession(session)
             return ["ok": true]
 
-        // Device mode (working.html devframe): read or set a browser session's device
-        // frame, so an agent can check the page it is working on at a phone or tablet
-        // viewport. Any agent may drive any browser (stage four: driving isn't
-        // destroying), so unlike browser.close there is no ownership gate.
+        // Conditions (working.html `.browser__condbar`): read or set the three axes a
+        // worst case is made of — the screen the page is emulated at, the wire and the
+        // processor — so an agent can check the page it is working on somewhere worse than
+        // this Mac. Kept under the old verb name because it is an installed contract. Any
+        // agent may drive any browser (stage four: driving isn't destroying), so unlike
+        // browser.close there is no ownership gate.
         case "browser.deviceMode":
             guard let session = requestedSession(request, in: branch), session.kind == .browser,
                   let ctrl = BrowserManager.shared.controller(for: session) else {
                 return ["ok": false, "error": "no browser session for sessionId"]
             }
             let wantsChange = request["on"] != nil || request["device"] != nil
-                           || request["landscape"] != nil
+                           || request["landscape"] != nil || request["network"] != nil
+                           || request["cpu"] != nil
             if wantsChange {
+                // "none" is the screen axis's own Normal: the page back at the pane's
+                // own viewport, with the wire and the processor left exactly as they are.
                 var picked: HardwareDevice?
+                var clearScreen = false
                 if let id = request["device"] as? String {
-                    guard let d = HardwareDevice.fleet.first(where: { $0.id == id }) else {
-                        return ["ok": false,
-                                "error": "unknown device '\(id)' — one of: " +
-                                         HardwareDevice.fleet.map(\.id).joined(separator: ", ")]
+                    if id == "none" {
+                        clearScreen = true
+                    } else {
+                        guard let d = HardwareDevice.fleet.first(where: { $0.id == id }) else {
+                            return ["ok": false,
+                                    "error": "unknown device '\(id)' — none, or one of: " +
+                                             HardwareDevice.fleet.map(\.id)
+                                                 .joined(separator: ", ")]
+                        }
+                        picked = d
                     }
-                    picked = d
                 }
                 guard !ctrl.isHome else {
                     return ["ok": false,
-                            "error": "the session shows the \"go to\" home — device mode needs a page; navigate first"]
+                            "error": "the session shows the \"go to\" home — conditions need a page; navigate first"]
                 }
-                if let d = picked { ctrl.setDevice(d) }
+                // The wire and the processor: separate axes, so naming one says nothing
+                // about the other two.
+                var net: NetworkCondition?
+                if let n = request["network"] as? String {
+                    guard let c = NetworkCondition(rawValue: n) else {
+                        return ["ok": false,
+                                "error": "unknown network '\(n)' — one of: " +
+                                         NetworkCondition.allCases.map(\.rawValue)
+                                             .joined(separator: ", ")]
+                    }
+                    net = c
+                }
+                var throttle: CPUThrottle?
+                if let r = request["cpu"] as? Int {
+                    guard let c = CPUThrottle(rawValue: r) else {
+                        return ["ok": false,
+                                "error": "unknown cpu '\(r)' — one of: " +
+                                         CPUThrottle.allCases.map { String($0.rawValue) }
+                                             .joined(separator: ", ")]
+                    }
+                    throttle = c
+                }
+                if let d = picked { ctrl.setScreen(d) }
                 if let land = request["landscape"] as? Bool { ctrl.setDeviceLandscape(land) }
-                // Naming a device or orientation is asking for the mode; only an
-                // explicit on:false turns it off.
-                ctrl.setDeviceMode(on: request["on"] as? Bool ?? true)
+                // Naming any condition is asking for the mode; only an explicit on:false
+                // turns it off.
+                ctrl.setConditions(on: request["on"] as? Bool ?? true)
+                if let net { ctrl.setNetwork(net) }
+                if let throttle { ctrl.setCPU(throttle) }
+                // The bar opens at Normal on every axis, but a bare on:true is this verb's
+                // oldest question — device mode, no arguments — so it still lands on the
+                // fleet's middle rather than on nothing.
+                if clearScreen { ctrl.setScreen(nil) }
+                if ctrl.conditionsOn, ctrl.device == nil, picked == nil, !clearScreen,
+                   net == nil, throttle == nil {
+                    ctrl.setScreen(.initial)
+                }
             }
             // `viewport` is what the page gets — the screen minus the device browser's
             // own bars, which is the number a media query sees; `screen` is the hardware.
-            let page = ctrl.device.pageViewport(landscape: ctrl.deviceLandscape)
-            let screen = ctrl.device.screenSize(landscape: ctrl.deviceLandscape)
-            return ["ok": true,
-                    "on": ctrl.deviceModeOn,
-                    "device": ctrl.device.id,
-                    "landscape": ctrl.deviceLandscape,
-                    "viewport": ["width": Int(page.width), "height": Int(page.height)],
-                    "screen": ["width": Int(screen.width), "height": Int(screen.height)],
-                    "devices": HardwareDevice.fleet.map {
-                        ["id": $0.id, "name": $0.name,
-                         "width": Int($0.width), "height": Int($0.height)]
-                    }]
+            let d = ctrl.device
+            let page = d?.pageViewport(landscape: ctrl.landscape)
+            let screen = d?.screenSize(landscape: ctrl.landscape)
+            var reply: [String: Any] = [
+                "ok": true,
+                "on": ctrl.conditionsOn,
+                "device": d?.id ?? "none",
+                "landscape": ctrl.landscape,
+                "network": ctrl.network.rawValue,
+                "cpu": ctrl.cpu.rawValue,
+                "devices": HardwareDevice.fleet.map {
+                    ["id": $0.id, "name": $0.name,
+                     "width": Int($0.width), "height": Int($0.height)]
+                },
+            ]
+            if let page, let screen {
+                reply["viewport"] = ["width": Int(page.width), "height": Int(page.height)]
+                reply["screen"] = ["width": Int(screen.width), "height": Int(screen.height)]
+            }
+            return reply
 
         // Automation verbs (SYNTH_AUTOMATION=1 only): the self-verify harness's
         // stand-in for driving the real UI on machines whose TCC denies synthetic

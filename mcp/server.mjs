@@ -565,27 +565,38 @@ tool("browser_reload", "Reload the session's page.",
   });
 
 tool("browser_device_mode",
-  "Read or set the session's device mode — the page inside a hardware device frame at a " +
-  "real device viewport (Chrome device-toolbar emulation: true innerWidth/innerHeight, " +
-  "devicePixelRatio, mobile layout), visible to the user in the pane. A session runs with " +
-  "no device — the page at the pane's own desktop viewport — and that is the right way to " +
-  "check ordinary work: only enter device mode when the task itself is about phone or " +
-  "tablet layout, and leave it with on:false once that check is done. The fleet is phones " +
-  "and tablets; a desktop viewport is this mode off, not the widest device in the list. " +
-  "Screenshots and clicks see the emulated viewport too. With no arguments it reports the " +
-  "current state plus the fleet (smallest → biggest) and changes nothing. Naming a device " +
-  "or orientation switches the mode on; it persists across navigations until turned off.",
+  "Read or set the session's conditions — the three things that make a machine worse than " +
+  "this one, each independent of the others and each resting at normal: the SCREEN the page " +
+  "is emulated at (Chrome device-toolbar emulation: true innerWidth/innerHeight, " +
+  "devicePixelRatio, and mobile layout on the handhelds), the NETWORK and the CPU. All three " +
+  "are visible to the user in the pane, and screenshots and clicks see the emulated viewport " +
+  "too. A session runs with all three normal, which is the right way to check ordinary work: " +
+  "set a condition only when the task is about that condition, and put it back with on:false " +
+  "once the check is done. The fleet is phones, tablets and desktop screens — the desktops " +
+  "are for checking a page on a screen smaller than this Mac's (mon-1366 and mon-1280 are " +
+  "roughly the worst one visitor in ten is on), NOT for ordinary desktop work, which is this " +
+  "mode off. Naming any condition switches the mode on; they persist across navigations " +
+  "until turned off. With no arguments it reports the current state plus the fleet and " +
+  "changes nothing. Setting network or cpu leaves the screen alone, and vice versa.",
   {
     sessionId: sessionIdParam,
     on: z.boolean().optional().describe(
-      "false returns the page to the desktop viewport (default true when any other " +
-      "setting is passed)"),
+      "false puts all three conditions back to normal — the page at the pane's own " +
+      "viewport, unthrottled (default true when any other setting is passed)"),
     device: z.string().optional().describe(
-      "fleet device id the task calls for, e.g. iphone-se or iphone-16 (full list in the " +
-      "no-arg reply)"),
-    landscape: z.boolean().optional().describe("true = landscape, false = portrait"),
+      "fleet screen id the task calls for, e.g. iphone-se, iphone-16 or mon-1366 (full " +
+      "list in the no-arg reply); \"none\" puts the screen back to the pane's own " +
+      "viewport without touching network or cpu"),
+    landscape: z.boolean().optional().describe(
+      "true = landscape, false = portrait (handhelds only; a monitor doesn't turn)"),
+    network: z.enum(["normal", "fast4g", "slow4g", "3g", "offline"]).optional().describe(
+      "the wire, in Chromium's own presets: fast4g 9 Mb/s at 165 ms, slow4g 1.44 Mb/s at " +
+      "562 ms, 3g 400 kb/s at 2 s"),
+    cpu: z.union([z.literal(1), z.literal(2), z.literal(4), z.literal(6)]).optional().describe(
+      "processor slowdown against this Mac: 1 normal, 2 a current phone, 4 mid-tier, " +
+      "6 low-end"),
   },
-  async ({ sessionId, on, device, landscape }) => {
+  async ({ sessionId, on, device, landscape, network, cpu }) => {
     const scope = requireScope();
     // targetEntry proves the session is this worktree's and has a live target.
     const { sessionId: sid } = await targetEntry(requireInstance(), sessionId);
@@ -594,6 +605,8 @@ tool("browser_device_mode",
       ...(on !== undefined && { on }),
       ...(device !== undefined && { device }),
       ...(landscape !== undefined && { landscape }),
+      ...(network !== undefined && { network }),
+      ...(cpu !== undefined && { cpu }),
     });
     return text(JSON.stringify(state, null, 2));
   });
@@ -623,9 +636,9 @@ async function clearViewport(sid) {
 
 tool("browser_viewport",
   "Read or set the size the page lays out at, in CSS pixels — the agent's own " +
-  "viewport control, free of the device fleet. This is how you check a desktop or " +
-  "tablet breakpoint (1440×900, 1024×768) that no phone in browser_device_mode " +
-  "covers. The page renders at exactly the size you name and is scaled down to fit " +
+  "viewport control, free of the device fleet. This is how you check an exact " +
+  "breakpoint (1440×900, 1024×768) that no screen in browser_device_mode's fleet " +
+  "sits on. The page renders at exactly the size you name and is scaled down to fit " +
   "the pane, so the user sees the whole layout; screenshots, snapshots and clicks " +
   "all see the new viewport. With no width or height it reports the current state " +
   "and changes nothing. The override lasts as long as this MCP server does — it " +
@@ -661,17 +674,18 @@ tool("browser_viewport",
       }, null, 2));
     }
 
-    // Device mode draws a phone around the page and emulates its viewport from the
+    // A picked screen draws hardware around the page and emulates its viewport from the
     // app side. A free viewport inside that frame is a page laid out at 1440 inside a
-    // drawn iPhone — refuse rather than render a lie at the user.
+    // drawn iPhone — refuse rather than render a lie at the user. The other two axes own
+    // nothing here, so a throttled session at Screen: Normal is fine.
     const scope = requireScope();
     const dm = await controlCall(scope.inst, {
       verb: "browser.deviceMode", worktreePath: scope.path, sessionId: sid });
-    if (dm.on) {
+    if (dm.device && dm.device !== "none") {
       throw new Error(
-        `session ${sid} is in device mode (${dm.device}), which owns the viewport and ` +
-        "draws that hardware around the page. Leave it with browser_device_mode " +
-        "on:false first, then set the viewport you want.");
+        `session ${sid} is emulating a screen (${dm.device}), which owns the viewport and ` +
+        "draws that hardware around the page. Put it back with browser_device_mode " +
+        "device:\"none\" first, then set the viewport you want.");
     }
 
     // The pane's own size is what the page gets with no override — so measure it

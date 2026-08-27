@@ -19,6 +19,8 @@ private enum DeviceInk {
     static let frame = Color(hex: 0x08090B)
     static let cutout = Color.black
     static let rail = Color.white.opacity(0.22)
+    /// A monitor has no rail — just the hairline that says where the viewport stops.
+    static let screenEdge = Color.black.opacity(0.14)
     static let button = Color(hex: 0x32363C)
     static let glass = Color.white
     static let ink = Color(hex: 0x0B0C0E)
@@ -92,16 +94,28 @@ struct DeviceFrame<Screen: View>: View {
             .padding(.bottom, bez.bottom * s)
             .padding(.leading, bez.leading * s)
             .background(RoundedRectangle(cornerRadius: device.frameRadius * s,
-                                         style: .continuous).fill(DeviceInk.frame))
+                                         style: .continuous).fill(bodyFill))
             .overlay(RoundedRectangle(cornerRadius: device.frameRadius * s,
                                       style: .continuous)
-                .strokeBorder(DeviceInk.rail, lineWidth: 1))
+                .strokeBorder(device.isDesktopScreen ? DeviceInk.screenEdge : DeviceInk.rail,
+                              lineWidth: device.isDesktopScreen ? 0.5 : 1))
             .overlay { bezelHardware(bez: bez) }
-            .overlay { DeviceSideButtons(device: device, landscape: landscape,
-                                         s: s, frameSize: frameSize) }
-            .shadow(color: .black.opacity(0.30), radius: 22 * s, y: 16 * s)
+            .overlay {
+                // A monitor has no rail to stand buttons proud of.
+                if !device.isDesktopScreen {
+                    DeviceSideButtons(device: device, landscape: landscape,
+                                      s: s, frameSize: frameSize)
+                }
+            }
+            .shadow(color: .black.opacity(device.isDesktopScreen ? 0.16 : 0.30),
+                    radius: (device.isDesktopScreen ? 17 : 22) * s,
+                    y: (device.isDesktopScreen ? 12 : 16) * s)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    /// The body behind the glass. A monitor has no bezel to show it through, so it is the
+    /// page's own white rather than a black slab nobody can see.
+    private var bodyFill: Color { device.isDesktopScreen ? DeviceInk.glass : DeviceInk.frame }
 
     // MARK: Cutout
 
@@ -112,7 +126,7 @@ struct DeviceFrame<Screen: View>: View {
         case .punch:
             lens(diameter: 12 * s)
                 .padding(landscape ? .leading : .top, 13 * s)
-        case .homeButton, .cameraTop, .cameraSide:
+        case .homeButton, .cameraTop, .cameraSide, .plain:
             EmptyView()
         }
     }
@@ -153,7 +167,7 @@ struct DeviceFrame<Screen: View>: View {
         case .cameraSide:
             // The landscape camera lives on the long edge — the left one in portrait.
             bezelItem(band: landscape ? .top : .leading, bez: bez) { lens(diameter: 9 * s) }
-        case .island, .punch:
+        case .island, .punch, .plain:
             EmptyView()
         }
     }
@@ -246,6 +260,8 @@ private struct DeviceSideButtons: View {
             return [Rail(id: "pwr", edge: .top, start: 0.680, length: 0.090),
                     Rail(id: "vup", edge: .trailing, start: 0.050, length: 0.034),
                     Rail(id: "vdn", edge: .trailing, start: 0.094, length: 0.034)]
+        case .plain:
+            return []
         }
     }
 
@@ -325,8 +341,10 @@ struct BrowserDeviceScreen: View {
     }
 
     /// Landscape iPhone drops the status bar — the reason a page gets height back there.
+    /// A desktop screen has no software of ours on it at all: someone else's browser draws
+    /// its chrome outside the page, exactly as ours does.
     private var showsStatusBar: Bool {
-        !(device.onScreen == .safariPhone && landscape)
+        device.onScreen != .desktop && !(device.onScreen == .safariPhone && landscape)
     }
 
     @ViewBuilder private var topBar: some View {
@@ -337,6 +355,8 @@ struct BrowserDeviceScreen: View {
             ChromeAndroidBar(host: host, s: s)
         case .safariPhone:
             if landscape { SafariPhoneTopBar(device: device, host: host, s: s) }
+        case .desktop:
+            EmptyView()
         }
     }
 

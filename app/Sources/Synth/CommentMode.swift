@@ -318,7 +318,7 @@ import Observation
         // than no PNG, so under device mode the batch carries the viewport shot alone and the
         // comments lean on selector + position, which are unaffected. Cropping host-side from
         // one full-page capture would fix this properly; until then it degrades honestly.
-        let emulating = BrowserManager.shared.existing(sessionID)?.deviceModeOn == true
+        let emulating = BrowserManager.shared.existing(sessionID)?.isEmulatingScreen == true
 
         var elementPaths: [String?] = []
         for (i, comment) in comments.enumerated() {

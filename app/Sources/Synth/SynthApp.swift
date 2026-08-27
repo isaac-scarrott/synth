@@ -743,7 +743,7 @@ struct RootView: View {
                 case "i" where event.modifierFlags.contains(.option):
                     if !ctrl.isHome { ctrl.toggleDevTools() }; return nil
                 case "m" where event.modifierFlags.contains(.shift):
-                    if !ctrl.isHome { ctrl.toggleDeviceMode() }; return nil
+                    if !ctrl.isHome { ctrl.toggleConditions() }; return nil
                 case "=", "+":
                     if !ctrl.isHome { ctrl.zoomIn() }; return nil
                 case "-", "_":

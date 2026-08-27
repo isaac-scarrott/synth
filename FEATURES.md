@@ -2273,3 +2273,12 @@ disclosure to dive deeper.
   Every axis rests at "Normal" — the same word in all three, because we have only left it alone —
   the bar opens at Normal and closing it puts all three back. `browser.deviceMode` takes `network`
   and `cpu` independently of `device`; ⌘⇧M and the toolbar button now say Conditions.
+
+- **0.39.0 ships — the browser's conditions bar** — minor release: the browser's chip row of phones
+  becomes a bar of three menus that fail apart (Screen / Network / CPU, each resting at "Normal",
+  carrying Chromium's own preset numbers) with four bezel-less desktop screens in the fleet; riding
+  along, a crash kills Synth again instead of freezing it, the scratch terminal closes on a click
+  outside, and a simulator Synth booted is one Synth shuts down on every path. `CFBundleVersion`
+  651, tag `v0.39.0`; dmg + zip notarized, stapled, verified credential-less with quarantine set;
+  appcast newest 0.39.0 at 651, `edSignature` on all 18 enclosures, deltas from 611–644. No
+  `synth-site` push; landing links unchanged.

@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.39.0",
+    "date": "2026-08-27",
+    "changes": [
+      "The browser's row of phone chips becomes a Conditions bar: three menus that fail apart — Screen (Phones / Tablets / Desktops, name left and viewport right), Network and CPU — carrying Chromium's own preset numbers. Setting one leaves the other two alone.",
+      "Four desktop screens join the fleet (1080p monitor, Windows laptop, Budget laptop, Older laptop), drawn bezel-less at 1× — a monitor is not hardware you hold, and it doesn't turn.",
+      "Every axis rests at \"Normal\": the bar opens there, and closing it puts all three back. A throttle nobody can see is a bug report waiting to be written. ⌘⇧M and the toolbar button now say Conditions.",
+      "A crash kills Synth again instead of freezing it. libghostty's Breakpad was catching main-thread crashes and never answering; Synth now takes the exception ports back at launch, so every crash reaches the reporter and the app dies as it should. ⌘Z is also kept off dead undo targets, which is what triggered it.",
+      "The scratch terminal (⌘⇧T) closes on a click outside, under Esc's rule and no other: idle prompt only, and with a job running the click does nothing at all.",
+      "A simulator Synth booted is a simulator Synth shuts down, on every path — a crash or force-quit with a simulator open no longer leaves the device running forever, and a row closed mid-boot shuts down when the boot lands."
+    ]
+  },
+  {
     "version": "0.38.0",
     "date": "2026-08-21",
     "changes": [

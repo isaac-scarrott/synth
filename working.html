@@ -875,21 +875,44 @@
   .skel--cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 26px; }
   .skel--card { height: 96px; }
 
-  /* Device mode: the page previewed at a real device viewport inside a hardware frame.
-     The frame renders at true CSS-viewport size and scales down to fit the pane, never up. */
-  .browser__devicebar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--chrome); border-bottom: 0.5px solid var(--border); }
-  .devicebar__chips { flex: 1; min-width: 0; display: flex; gap: 3px; overflow-x: auto; scrollbar-width: none; }
-  .devicebar__chips::-webkit-scrollbar { display: none; }
-  .devicebar__chip { flex-shrink: 0; padding: 4px 10px; border: 0; border-radius: 999px; background: transparent; font-size: 11px; font-weight: 500; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: background 110ms ease, color 110ms ease; }
-  .devicebar__chip:hover { background: var(--hover); }
-  .devicebar__chip.is-active { background: var(--hover); color: var(--ink); }
-  .devicebar__dims { flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+  /* The conditions bar: the three things that make a machine worse than ours, each on its own
+     menu because they fail apart — a page can hold at 1280 and fall over on a slow CPU, or the
+     other way round. The screen it draws renders at true CSS-viewport size and scales down to
+     fit the pane, never up. */
+  .browser__condbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px; background: var(--chrome); border-bottom: 0.5px solid var(--border); }
+  .condbar__wrap { position: relative; flex-shrink: 0; }
+  .condbar__pick { display: flex; align-items: center; gap: 5px; padding: 4px 7px 4px 9px; border: 0; border-radius: 7px; background: transparent; font-family: var(--mono); font-size: 11px; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: background 110ms ease, color 110ms ease; }
+  .condbar__pick:hover, .condbar__pick.is-open { background: var(--hover); color: var(--ink); }
+  /* copper is the app's "what you are looking at is not yours" mark, and an axis held away from
+     this Mac's own is exactly that — so a slow run is never a mystery you go looking for */
+  .condbar__pick.is-off-baseline { background: rgba(var(--copper-rgb), 0.13); color: var(--copper); }
+  .condbar__pick svg { width: 9px; height: 9px; opacity: 0.6; }
+  /* the axis is named on the button, because at rest all three read Normal and the value alone
+     would leave you guessing which menu you were about to open */
+  .condbar__axis { font-family: inherit; font-weight: 500; color: var(--text-faint); }
+  .condbar__dims { margin-left: auto; flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+  /* One menu shape for all three, hung under the button that opened it. Opaque, unlike the
+     app's other popovers: this one hangs over the page you are judging, and a translucent coat
+     would tint the very thing you opened it to look at. */
+  .cond-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 6; min-width: 236px; padding: 6px; background: var(--raised); border: 0.5px solid var(--border-strong); border-radius: 11px; box-shadow: 0 14px 36px rgba(0,0,0,0.17); animation: pane-drop-in 130ms var(--ease-out); }
+  .cond-menu .pane-rec__label { margin: 10px 6px 5px; }
+  .cond-menu .pane-rec__label:first-child { margin-top: 2px; }
+  .cond-menu .pane-rec__item { padding: 6px 8px; gap: 8px; }
+  .cond-menu .pane-rec__item svg { width: 12px; height: 12px; color: var(--copper); opacity: 0; }
+  .cond-menu .pane-rec__item.is-on svg { opacity: 1; }
+  .cond-menu .pane-rec__key { font-family: inherit; font-size: 12px; }
   /* rotate previews the orientation a press would give — the device glyph turned, never
      a circular arrow (reads as reload beside the toolbar's real one) */
   .pane-btn--turned svg { transform: rotate(90deg); }
   .browser--device .pane-view, .pane-view--flush { padding: 0; overflow: hidden; }
   .devstage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--chrome); }
   .dev-box { position: relative; flex-shrink: 0; }
+  /* A monitor is not hardware you hold. There is no bezel worth drawing and no browser chrome
+     of its own to draw it in — so it is the page at that screen's size and nothing else, lifted
+     off the stage by a shadow so you can see where the viewport ends. */
+  .dev--screen { background: #fff; box-shadow: 0 12px 34px rgba(0,0,0,0.16), 0 0 0 0.5px rgba(0,0,0,0.14); }
+  .dev--screen .devui__page { padding: 28px 32px 0; }
+  .dev--screen .devui__page .skel--cards { grid-template-columns: repeat(3, 1fr); }
 
   /* ---- Device hardware -----------------------------------------------------------------
      One model behind every device we draw — the browser's device mode and the simulator pane.
@@ -4807,24 +4830,78 @@
   // so is every other number here: bezel per edge (top, right, bottom, left), body and screen
   // corner radii, status-bar height and inset, home-indicator strip. Drawing the frame from the
   // hardware's own measurements is what keeps it a device instead of a black rectangle.
+  //
+  // `dpr` is the one number that isn't about size: at 1× a page shows the hairlines and
+  // half-pixel borders a Retina Mac quietly rounds away, and every monitor here is 1×.
   const DEVICES = [
     { id: 'iphone-se',    name: 'iPhone SE',         w: 375,  h: 667,  os: 'ios',     ui: 'safari',     face: 'button',
+      dpr: 2, note: 'The small phone that is still in pockets.',
       bz: [96, 28, 118, 28], frameR: 42, screenR: 3,  sb: 20, sbTop: 0, sbPad: [16, 16], home: 10 },
     { id: 'iphone-16',    name: 'iPhone 16',         w: 393,  h: 852,  os: 'ios',     ui: 'safari',     face: 'island',
+      dpr: 3, note: 'The current mid-size iPhone.',
       bz: [12, 12, 12, 12],  frameR: 62, screenR: 50, sb: 54, sbTop: 6, sbPad: [30, 22], home: 21 },
     { id: 'iphone-16-pm', name: 'iPhone 16 Pro Max', w: 440,  h: 956,  os: 'ios',     ui: 'safari',     face: 'island',
+      dpr: 3, note: 'The biggest phone viewport worth checking.',
       bz: [12, 12, 12, 12],  frameR: 66, screenR: 54, sb: 56, sbTop: 6, sbPad: [34, 24], home: 21 },
     { id: 'galaxy-s25u',  name: 'Galaxy S25 Ultra',  w: 412,  h: 952,  os: 'android', ui: 'chrome',     face: 'punch',
+      dpr: 3, note: 'Android’s flagship, and Chrome’s own chrome around the page.',
       bz: [8, 8, 8, 8],      frameR: 32, screenR: 24, sb: 30, sbTop: 0, sbPad: [18, 16], home: 24 },
     { id: 'ipad-mini',    name: 'iPad mini',         w: 744,  h: 1133, os: 'ios',     ui: 'safari-pad', face: 'cam-top',  kind: 'pad',
+      dpr: 2, note: 'The tablet breakpoint most layouts get wrong.',
       bz: [52, 52, 52, 52],  frameR: 74, screenR: 22, sb: 24, sbTop: 0, sbPad: [26, 26], home: 20 },
     { id: 'ipad-pro-13',  name: 'iPad Pro 13″',      w: 1032, h: 1376, os: 'ios',     ui: 'safari-pad', face: 'cam-side', kind: 'pad',
+      dpr: 2, note: 'A desktop-width page on a touch device.',
       bz: [44, 44, 44, 44],  frameR: 64, screenR: 22, sb: 24, sbTop: 0, sbPad: [28, 28], home: 20 },
+    // Desktops: named like every other row here — the machine on the left, the viewport on the
+    // right — because a bare resolution is a number you have to decode and "Budget laptop" is
+    // the thing you were actually asked to check. The whole point of the tier is the bottom of
+    // the range rather than the top: shares are Statcounter's worldwide desktop resolutions for
+    // July 2026 (1920×1080 22%, 1536×864 7%, 1366×768 5%, 1280×720 5%), so a page that holds
+    // together on the last of them holds for all but a sliver of the people who visit it. They
+    // draw no bezel and no browser chrome, because a monitor is not hardware you hold.
+    { id: 'mon-1080p',    name: '1080p monitor',     w: 1920, h: 1080, kind: 'screen',
+      dpr: 1, note: 'The modal desktop — about 22% of desktop visitors, and the one screen here that needs no excuses made for it.',
+      bz: [0, 0, 0, 0],      frameR: 6,  screenR: 6,  sb: 0,  sbTop: 0, sbPad: [0, 0],   home: 0 },
+    { id: 'mon-1536',     name: 'Windows laptop',    w: 1536, h: 864,  kind: 'screen',
+      dpr: 1, note: 'A 1080p laptop at 125% scaling — about 7%, and the most common screen that is smaller than it looks.',
+      bz: [0, 0, 0, 0],      frameR: 6,  screenR: 6,  sb: 0,  sbTop: 0, sbPad: [0, 0],   home: 0 },
+    { id: 'mon-1366',     name: 'Budget laptop',     w: 1366, h: 768,  kind: 'screen',
+      dpr: 1, note: 'Roughly 1 in 10 desktop visitors are on this screen or a smaller one.',
+      bz: [0, 0, 0, 0],      frameR: 6,  screenR: 6,  sb: 0,  sbTop: 0, sbPad: [0, 0],   home: 0 },
+    { id: 'mon-1280',     name: 'Older laptop',      w: 1280, h: 720,  kind: 'screen',
+      dpr: 1, note: 'The worst screen worth designing for: hold together here and about 95% of desktop visitors are covered.',
+      bz: [0, 0, 0, 0],      frameR: 6,  screenR: 6,  sb: 0,  sbTop: 0, sbPad: [0, 0],   home: 0 },
   ];
+  // The other two axes, in the numbers Chromium throttles by, so what the bar claims is what the
+  // engine does. Nothing here is bundled into a device: picking a small screen doesn't secretly
+  // slow the machine down, because the two are separate questions and only one is usually wrong.
+  //
+  // Every axis rests at Normal, and Normal is the same word in all three menus: nothing is being
+  // emulated on this one. It is not Wi-Fi and not full speed — we don't know what the wire is or
+  // how fast the Mac is, only that we have left it alone. What normal means for each axis is the
+  // caption's job, not the name's.
+  const NETS = [
+    { id: 'normal', name: 'Normal',  cap: 'no throttle' },
+    { id: 'fast4g', name: 'Fast 4G', cap: '9 Mb/s · 165 ms' },
+    { id: 'slow4g', name: 'Slow 4G', cap: '1.44 Mb/s · 562 ms' },
+    { id: '3g',     name: '3G',      cap: '400 kb/s · 2 s' },
+    { id: 'off',    name: 'Offline', cap: 'nothing resolves' },
+  ];
+  // Slowdowns against this Mac, which is the only honest way to say it: 4× on a 16-inch is a
+  // mid-tier machine, and the same 4× on a lesser one is not.
+  const CPUS = [
+    { id: 1, name: 'Normal',    cap: 'this Mac' },
+    { id: 2, name: '2× slower', cap: 'a current phone' },
+    { id: 4, name: '4× slower', cap: 'mid-tier' },
+    { id: 6, name: '6× slower', cap: 'low-end' },
+  ];
+  const netOf = (id) => NETS.find((n) => n.id === id);
+  const cpuOf = (id) => CPUS.find((c) => c.id === id);
   // Rotating counter-clockwise walks every edge one place round, bezels included — which is why
   // an iPhone SE's tall forehead ends up on the left, not still on top.
   const devBezel = (d, land) => (land ? [d.bz[1], d.bz[2], d.bz[3], d.bz[0]] : d.bz);
   function deviceClasses(d, land) {
+    if (d.kind === 'screen') return 'dev dev--screen';
     const c = ['dev', 'dev--' + (d.face === 'button' ? 'face-button' : d.face)];
     if (d.os === 'android') c.push('dev--android');
     if (d.kind === 'pad') c.push('dev--pad');
@@ -4834,6 +4911,7 @@
   // The hardware you can see from the front: the cutout the display is punched around, and the
   // side buttons standing proud of the rail.
   function deviceHardwareHTML(d) {
+    if (d.kind === 'screen') return '';
     const face = d.face === 'island' ? '<span class="dev__island"></span>'
       : d.face === 'punch' ? '<span class="dev__punch"></span>'
       : d.face === 'button' ? '<span class="dev__speaker"></span><span class="dev__cam"></span><span class="dev__homebtn"></span>'
@@ -4892,18 +4970,48 @@
   function deviceScreenHTML(d, land, host) {
     const home = d.home ? '<div class="devui__home"></div>' : '';
     const page = `<div class="devui__page">${browserPageHTML()}</div>`;
+    if (d.kind === 'screen') return page;      // a monitor draws nothing of its own around the page
     if (d.ui === 'safari-pad') return statusBarHTML() + safariPadHTML(host) + page + home;
     if (d.ui === 'chrome') return statusBarHTML() + chromeAndroidHTML(host) + page + home;
     if (land) return safariPhoneHTML(host, true, '') + page + home;    // landscape iPhone hides the status bar
     return statusBarHTML() + page + safariPhoneHTML(host, false, home);
   }
-  function devicebarHTML(deviceId, landscape) {
-    const d = DEVICES.find((x) => x.id === deviceId);
-    const w = landscape ? d.h : d.w, h = landscape ? d.w : d.h;
-    return `<div class="browser__devicebar" data-devicebar>
-      <div class="devicebar__chips">${DEVICES.map((x) => `<button class="devicebar__chip ${x.id === deviceId ? 'is-active' : ''}" data-device="${x.id}">${esc(x.name)}</button>`).join('')}</div>
-      <span class="devicebar__dims">${w} × ${h}</span>
-      <button class="pane-btn${landscape ? '' : ' pane-btn--turned'}" data-rotate aria-label="Rotate device">${ICON_DEVICE}</button>
+  // One row of the same item: a tick that only the current row shows, what the thing is, and
+  // what it costs you on the right.
+  const condRow = (val, name, cap, on) =>
+    `<button class="pane-rec__item${on ? ' is-on' : ''}" data-pick="${esc(String(val))}">${ICON_CHECK_CRUMB}` +
+    `<span class="pane-rec__key">${esc(name)}</span><span class="pane-rec__name">${esc(cap)}</span></button>`;
+  // Screens, grouped the way you reach for them, and Normal at the top because leaving is as
+  // much a choice as arriving. Every row reads the same way — what the machine is, then the
+  // viewport it hands the page — so the eye can run down one column rather than two.
+  function screenMenuHTML(deviceId) {
+    const group = (label, list) => `<div class="pane-rec__label">${label}</div><div class="pane-rec">` +
+      list.map((d) => condRow(d.id, d.name, `${d.w} × ${d.h} @${d.dpr}×`, d.id === deviceId)).join('') + `</div>`;
+    const of = (f) => DEVICES.filter(f);
+    return `<div class="cond-menu" data-menu="screen">` +
+      `<div class="pane-rec">${condRow('none', 'Normal', 'this pane, at its own size', !deviceId)}</div>` +
+      group('Phones', of((d) => !d.kind)) +
+      group('Tablets', of((d) => d.kind === 'pad')) +
+      group('Desktops', of((d) => d.kind === 'screen')) +
+      `</div>`;
+  }
+  const listMenuHTML = (key, list, cur) => `<div class="cond-menu" data-menu="${key}"><div class="pane-rec">` +
+    list.map((x) => condRow(x.id, x.name, x.cap, x.id === cur)).join('') + `</div></div>`;
+  // Three menus and the dims. The dims are the fact no menu label carries — the viewport the
+  // page is actually being handed, pixel ratio included.
+  function condbarHTML(deviceId, landscape, net, cpu) {
+    const d = deviceId ? DEVICES.find((x) => x.id === deviceId) : null;
+    const n = netOf(net), c = cpuOf(cpu);
+    const w = d && landscape ? d.h : d && d.w, h = d && landscape ? d.w : d && d.h;
+    const pick = (key, axis, label, off, title) =>
+      `<div class="condbar__wrap"><button class="condbar__pick${off ? ' is-off-baseline' : ''}" data-open="${key}" title="${esc(title)}">` +
+      `<span class="condbar__axis">${axis}</span><span>${esc(label)}</span>${ICON_CHEV_DOWN}</button></div>`;
+    return `<div class="browser__condbar" data-condbar>
+      ${pick('screen', 'Screen', d ? d.name : 'Normal', !!d, d ? d.note : 'Normal — the pane’s own viewport, at whatever size the pane is')}
+      ${pick('net', 'Network', n.name, n.id !== 'normal', `Network: ${n.name} — ${n.cap}`)}
+      ${pick('cpu', 'CPU', c.id === 1 ? 'Normal' : `${c.id}× slower`, c.id !== 1, `CPU: ${c.name} — ${c.cap}`)}
+      <span class="condbar__dims">${d ? `${w} × ${h} @${d.dpr}×` : ''}</span>
+      ${d && d.kind !== 'screen' ? `<button class="pane-btn${landscape ? '' : ' pane-btn--turned'}" data-rotate aria-label="Rotate device">${ICON_DEVICE}</button>` : ''}
     </div>`;
   }
   function deviceFrameHTML(deviceId, landscape, host) {
@@ -5025,7 +5133,7 @@
       <button class="pane-omni" data-omni><span class="pane-omni__mark">${ICON_NAV_LOCK}</span><span class="pane-omni__text">${esc(url)}</span></button>
       <button class="pane-badge" data-zoom aria-label="Reset zoom">100%</button>
       <span class="pane-btnwrap"><button class="pane-btn" data-nav="comment" aria-label="Comment mode">${ICON_COMMENT}</button><span class="pane-cnt" data-cnt hidden></span></span>
-      <button class="pane-btn" data-nav="device" aria-label="Device mode">${ICON_DEVICE}</button>
+      <button class="pane-btn" data-nav="device" aria-label="Conditions">${ICON_DEVICE}</button>
       <button class="pane-btn" data-nav="devtools" aria-label="DevTools">${ICON_DEVTOOLS}</button>
       <button class="pane-btn" data-nav="external" aria-label="Open in default browser">${ICON_EXTERNAL}</button>
     </div>`;
@@ -5041,7 +5149,7 @@
           </div>
           <button class="pane-omni" data-omni><span class="pane-omni__text pane-omni__text--ph">Search or enter address</span></button>
           <button class="pane-btn" data-nav="comment" disabled aria-label="Comment mode">${ICON_COMMENT}</button>
-          <button class="pane-btn" data-nav="device" disabled aria-label="Device mode">${ICON_DEVICE}</button>
+          <button class="pane-btn" data-nav="device" disabled aria-label="Conditions">${ICON_DEVICE}</button>
           <button class="pane-btn" data-nav="devtools" disabled aria-label="DevTools">${ICON_DEVTOOLS}</button>
           <button class="pane-btn" data-nav="external" disabled aria-label="Open in default browser">${ICON_EXTERNAL}</button>
         </div>
@@ -5459,7 +5567,8 @@
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
     let devOpen = false, devTab = 'Elements';
-    let deviceOn = false, deviceId = DEVICES[1].id, deviceLand = false, deviceRO = null;
+    let deviceOn = false, deviceId = null, deviceLand = false, deviceRO = null;
+    let condNet = 'normal', condCpu = 1;   // the two axes that are nothing to do with the screen
     const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
     let zoom = 100;
 
@@ -5565,18 +5674,22 @@
       scale: () => zoom / 100,                   // ⌘+/⌘− zooms the view under the overlay
       spawn: () => spawnOwnerClaude(openEl),     // unowned → this browser gets its own Claude
     });
-    // Device mode: the page reflowed at a real device viewport inside a hardware frame, with a
-    // strip to hop across the fleet and rotate. Survives navigation, exactly like comment mode.
+    // The conditions bar: a screen to reflow into, and the two machine axes that have nothing to
+    // do with it. Survives navigation, exactly like comment mode. It opens at Normal on all three
+    // and closing puts all three back, so the bar is either on screen saying what it is doing or
+    // doing nothing at all — a throttle nobody can see is a bug report waiting to be written.
     function toggleDevice() {
-      if (idx < 0) return;                       // the "go to" home has no page to frame
+      if (idx < 0) return;                       // the "go to" home has nothing to render
       deviceOn = !deviceOn;
+      if (!deviceOn) { deviceId = null; condNet = 'normal'; condCpu = 1; }
       updateDeviceUI();
     }
     function updateDeviceUI() {
-      host.classList.toggle('browser--device', deviceOn);
+      const dev = deviceOn && deviceId ? DEVICES.find((x) => x.id === deviceId) : null;
+      host.classList.toggle('browser--device', !!dev);
       const btn = host.querySelector('[data-nav="device"]');
       if (btn) btn.classList.toggle('is-on', deviceOn);
-      const bar = host.querySelector('[data-devicebar]');
+      const bar = host.querySelector('[data-condbar]');
       const view = host.querySelector('.pane-view');
       if (!deviceOn || !view) {
         if (bar) bar.remove();
@@ -5584,17 +5697,47 @@
         if (view && view.querySelector('[data-stage]')) view.innerHTML = browserPageHTML();
         return;
       }
-      const strip = devicebarHTML(deviceId, deviceLand);
+      const land = dev && dev.kind !== 'screen' ? deviceLand : false;   // a monitor doesn't turn
+      const strip = condbarHTML(deviceId, land, condNet, condCpu);
       if (bar) bar.outerHTML = strip; else view.insertAdjacentHTML('beforebegin', strip);
-      // the device runs its own browser, so it shows the page's address in its own address bar
-      view.innerHTML = deviceFrameHTML(deviceId, deviceLand, browserHost(hist[idx] || ''));
-      const nb = host.querySelector('[data-devicebar]');
-      nb.querySelectorAll('[data-device]').forEach((b) => b.onclick = () => { deviceId = b.dataset.device; updateDeviceUI(); });
-      nb.querySelector('[data-rotate]').onclick = () => { deviceLand = !deviceLand; updateDeviceUI(); };
-      if (deviceRO) deviceRO.disconnect();
-      deviceRO = new ResizeObserver(() => fitFrame(host.querySelector('[data-stage]')));
-      deviceRO.observe(view.querySelector('[data-stage]'));
-      fitFrame(host.querySelector('[data-stage]'));
+      // a device runs its own browser, so it shows the page's address in its own address bar;
+      // with no device the pane simply keeps the page it already had, at its own size
+      view.innerHTML = dev ? deviceFrameHTML(deviceId, land, browserHost(hist[idx] || '')) : browserPageHTML();
+      const nb = host.querySelector('[data-condbar]');
+      const rot = nb.querySelector('[data-rotate]');
+      if (rot) rot.onclick = () => { deviceLand = !deviceLand; updateDeviceUI(); };
+      nb.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openCondMenu(b));
+      if (deviceRO) { deviceRO.disconnect(); deviceRO = null; }
+      const stage = view.querySelector('[data-stage]');
+      if (stage) {
+        deviceRO = new ResizeObserver(() => fitFrame(host.querySelector('[data-stage]')));
+        deviceRO.observe(stage);
+        fitFrame(stage);
+      }
+    }
+    // Each menu hangs under the button that opened it and answers for one axis only: what the
+    // page thinks it is being shown on, how fast the wire is, how fast the processor is.
+    function openCondMenu(btn) {
+      const wrap = btn.parentElement;
+      if (wrap.querySelector('.cond-menu')) return;
+      const key = btn.dataset.open;
+      wrap.insertAdjacentHTML('beforeend',
+        key === 'screen' ? screenMenuHTML(deviceId)
+        : key === 'net' ? listMenuHTML('net', NETS, condNet)
+        : listMenuHTML('cpu', CPUS, condCpu));
+      const menu = wrap.querySelector('.cond-menu');
+      btn.classList.add('is-open');
+      function close() { document.removeEventListener('mousedown', onDoc); menu.remove(); btn.classList.remove('is-open'); }
+      function onDoc(e) { if (!menu.contains(e.target) && !btn.contains(e.target)) close(); }
+      menu.querySelectorAll('[data-pick]').forEach((row) => row.onclick = () => {
+        const v = row.dataset.pick;
+        if (key === 'screen') deviceId = v === 'none' ? null : v;
+        else if (key === 'net') condNet = v;
+        else condCpu = Number(v);
+        close();
+        updateDeviceUI();
+      });
+      setTimeout(() => document.addEventListener('mousedown', onDoc), 0);
     }
     // Page zoom (⌘+/⌘−): steps a fixed ladder, re-applied after every paint so it rides
     // through navigation and reload — real per-tab zoom. The badge shows only off 100%.
@@ -7674,7 +7817,7 @@
       [['⌘', '+'], 'Zoom in', ['⌘', '=']],
       [['⌘', '−'], 'Zoom out'],
       [['⌥', '⌘', 'I'], 'DevTools'],
-      [['⌘', '⇧', 'M'], 'Device mode'],
+      [['⌘', '⇧', 'M'], 'Conditions'],
     ]],
     ['Simulator', [
       [['⌘', 'L'], 'Open app or URL'],

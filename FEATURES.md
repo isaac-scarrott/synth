@@ -2272,3 +2272,10 @@ disclosure to dive deeper.
   globe mark, adjacent, close cascades — now transitively), one per browser (asking again returns
   to it), opening in a split under the page: the classic bottom dock as a real pane. CONTEXT.md
   gains **Inspect**; native port pending.
+- **Inspect session primitive: native port (app)** — the pane hosts the *real* Chromium inspector:
+  parented `ShowDevTools` is a hard CEF 144 crash, so an inspect session runs its own engine
+  loading the DevTools frontend off the instance's CDP endpoint, inheriting the whole browser
+  lifecycle (the engine's devtools seam and `AuxClient` are deleted). Containment, transitive
+  cascade + reorder, one-per-browser col-split, shim → Swift Inspect routing, and all chrome/verbs
+  ported per the designs; audit-driven hardening included. Known limitation: a mid-run page-target
+  swap can't re-resolve the frontend until the inspect is reopened.

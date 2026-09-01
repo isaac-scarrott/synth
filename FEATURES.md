@@ -2292,3 +2292,10 @@ disclosure to dive deeper.
   first spawn. `TerminalLauncher.command` now rewrites the script whenever it isn't on disk, so
   the sweep costs nothing; `t33_login_script` deletes it under a live app and proves the next row
   still comes up.
+
+- **0.39.1 ships — sessions after a long uptime** — patch release carrying the entry above and
+  nothing else: a Synth left running for days can open sessions again, its login wrapper rewritten
+  on demand rather than trusted from startup. `CFBundleVersion` 654, tag `v0.39.1`; dmg + zip
+  notarized, stapled, verified credential-less with quarantine set; appcast newest 0.39.1 at 654,
+  `edSignature` on all 18 enclosures, deltas from 613–651. No `synth-site` push; landing links
+  unchanged.

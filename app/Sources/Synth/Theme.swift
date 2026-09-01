@@ -241,6 +241,7 @@ extension SessionKind {
         case .browser:  return Phosphor.globe
         case .simulator: return Phosphor.deviceMobile
         case .markdown: return Phosphor.fileText
+        case .inspect:  return Phosphor.devtools
         }
     }
     var tint: Color {
@@ -248,7 +249,7 @@ extension SessionKind {
         case .agent: return Theme.copper
         // A document is content the user owns, not a live thing Synth is running, so it wears
         // the same quiet ink as a terminal rather than the agent's copper.
-        case .terminal, .browser, .simulator, .markdown: return Theme.sessionIcon
+        case .terminal, .browser, .simulator, .markdown, .inspect: return Theme.sessionIcon
         }
     }
 }

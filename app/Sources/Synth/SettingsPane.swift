@@ -972,6 +972,7 @@ private extension SessionKind {
         case .browser:   return "Browser"
         case .simulator: return "Simulator"
         case .markdown:  return "Document"
+        case .inspect:   return "DevTools"
         }
     }
 }

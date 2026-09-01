@@ -42,6 +42,9 @@ enum SessionEvent: Sendable {
     /// session (nil for an app-scoped action → the on-screen session). Scheme + host route
     /// it: loopback dev-server pages open in the in-app browser, everything else to the OS.
     case openURLRequested(UUID?, URL)
+    /// The page's right-click → Inspect (features 2026-09-01): DevTools as a session, not a
+    /// window the engine opens itself. Carries the browser session being inspected.
+    case inspectRequested(UUID)
 }
 
 /// The transient transport carrying derived facts to the single consumer (the store).
@@ -1012,11 +1015,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             }
         case let .kindChanged(id, kind):
             guard let s = session(id) else { break }
-            // A browser or simulator session never runs an agent, so an agent lifecycle signal
-            // carrying its id is spurious — applying it would flip the pane to a terminal while
-            // the engine still holds the browser controller / device claim, desyncing the two and
-            // wedging ⌘K on that row.
-            if s.spawnedKind == .browser || s.spawnedKind == .simulator { break }
+            // A browser, simulator or inspect session never runs an agent, so an agent lifecycle
+            // signal carrying its id is spurious — applying it would flip the pane to a terminal
+            // while the engine still holds the browser controller / device claim, desyncing the
+            // two and wedging ⌘K on that row.
+            if s.spawnedKind == .browser || s.spawnedKind == .simulator || s.spawnedKind == .inspect { break }
             // A session spawned as an agent never reverts to a plain terminal: it exec'd the
             // agent, so an agent-end is either the process about to exit (the child-exited
             // signal closes the row moments later) or a /clear's end/start pair — neither
@@ -1048,10 +1051,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         case let .browserNavigated(id, url):
             guard let s = session(id) else { return }
             s.browserURL = url
+            // An inspect's URL is the DevTools frontend — engine plumbing, not a page the
+            // user visited: no auto-name, no recents entry.
+            guard s.kind != .inspect else { return }
             if !s.titleIsCustom { s.title = url.browserHostPath }
             noteBrowserRecent(url, for: s)
         case let .browserPageTitled(id, title):
-            guard let s = session(id), !title.isEmpty else { return }
+            guard let s = session(id), s.kind != .inspect, !title.isEmpty else { return }
             // The page title is the row's auto-name — .browserNavigated already set the
             // host+path fallback, which stands until this arrives (or for untitled pages).
             if !s.titleIsCustom, s.title != title { s.title = title }
@@ -1062,6 +1068,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             if br.browserRecents[i].title != title { br.browserRecents[i].title = title }
         case let .openURLRequested(sourceID, url):
             openTerminalLink(url, from: sourceID)
+        case let .inspectRequested(id):
+            guard let s = session(id) else { return }
+            openInspect(for: s)
         }
     }
 
@@ -1793,8 +1802,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// is only forgotten on success, so a refusal leaves the row telling the truth.
     @discardableResult
     func clearBrowsingData(for workspace: Workspace) -> Bool {
-        let browsers = workspace.branches.flatMap(\.sessions).filter { $0.kind == .browser }
-        BrowserManager.shared.recycle(browsers.map(\.id))
+        // Inspect engines run on the same workspace profile as the pages they inspect, so they
+        // recycle too — and their stamped frontend URL points at the old engine's target id, so
+        // it is cleared for the pane to resolve a fresh one against the rebuilt page.
+        let engines = workspace.branches.flatMap(\.sessions)
+            .filter { $0.kind == .browser || $0.kind == .inspect }
+        for s in engines where s.kind == .inspect { s.browserURL = nil }
+        BrowserManager.shared.recycle(engines.map(\.id))
         let key = workspace.browserProfileKey
         guard BrowserEngineFactory.clearProfile(workspaceKey: key) else { return false }
         FolderSizeCache.shared.forget(BrowserEngineFactory.profileDirectory(workspaceKey: key))
@@ -1862,6 +1876,35 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         return session
     }
 
+    /// The browser's inspect session, if it has one — at most one per browser.
+    func inspectSession(of browser: Session) -> Session? {
+        ownedSessions(of: browser).first { $0.kind == .inspect }
+    }
+
+    /// Right-click → Inspect, ⌥⌘I, the bar's `</>`, the palette verb — every road to DevTools
+    /// lands here (features 2026-09-01). One inspect per browser: asking again returns to the
+    /// one that exists. A fresh one is born attached (`ownedBy`) and opens in a split under
+    /// its browser — DevTools' classic bottom dock, as a real pane you can move — falling back
+    /// to a plain open when the browser has no pane on screen. The pane resolves the DevTools
+    /// frontend URL and boots the inspect's own engine (InspectPane).
+    func openInspect(for browser: Session) {
+        guard browser.kind == .browser else { return }
+        if let existing = inspectSession(of: browser) { jump(to: existing); return }
+        guard let br = branch(of: browser),
+              let inspect = addSession(kind: .inspect, title: "DevTools", status: .idle,
+                                       in: br, ownedBy: browser, focus: false,
+                                       agentInitiated: false)
+        else { return }
+        // The frontend URL the pane will stamp is engine plumbing, not a page the user chose:
+        // the row is named DevTools for life, never by navigation.
+        inspect.titleIsCustom = true
+        if let target = leaf(of: browser.id) {
+            splitActiveWith(session: inspect.id, dir: .col, before: false, target: target)
+        } else {
+            open(inspect)
+        }
+    }
+
     /// Spawn a session for a split *without* opening it (focus:false), so the pending create
     /// doesn't clobber the layout before it's bound into the new pane (007's keyboard create /
     /// 010's "New …" drag-in). The caller then `splitActiveWith`s the returned session.
@@ -1879,18 +1922,25 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             return newSimulator(in: branch, device: device, focus: false)
         case .markdown:
             return newMarkdown(in: branch, focus: false)
+        case .inspect:
+            // An inspect is only ever born from its browser (openInspect) — no split-picker
+            // "New DevTools", because it would have no page to inspect.
+            return nil
         }
     }
 
     @discardableResult
     private func addSession(kind: SessionKind, title: String, status: SessionStatus,
                             in branch: Branch?, ownedBy owner: Session? = nil,
-                            focus: Bool = true) -> Session? {
+                            focus: Bool = true, agentInitiated: Bool? = nil) -> Session? {
         // A pending branch has no checkout to run in yet — sessions wait for the worktree.
         guard let br = branch ?? defaultBranch(), !br.isPending else { return nil }
         let session = Session(kind: kind, title: title, status: status)
         // Feature-usage signal: which session type, and whether an agent spun it up vs the user.
-        Analytics.capture("session_created", ["kind": kind.rawValue, "agent_initiated": !focus])
+        // focus:false usually means agent-initiated; a caller that defers focus for its own
+        // reasons (openInspect binds the row into a split) says so explicitly.
+        Analytics.capture("session_created", ["kind": kind.rawValue,
+                                              "agent_initiated": agentInitiated ?? !focus])
         br.sessions.append(session)
         if let owner { adopt(session, by: owner) }
         br.markActivity()
@@ -1908,12 +1958,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     func closeSession(_ session: Session) {
         let owned = ownedSessions(of: session)
-        // Taken before anything leaves the tree, and blind to the browsers going with it.
-        let successor = successorSession(for: session, alsoLeaving: Set(owned.map(\.id)))
+        let cascade = cascadeSessions(of: session)
+        // Taken before anything leaves the tree, and blind to everything going with it —
+        // transitively, so a claude's browser's inspect can't be picked as successor.
+        let successor = successorSession(for: session, alsoLeaving: Set(cascade.map(\.id)))
         // An open browser of this row's own is still "the surface you closed".
-        let wasOpen = openSessionID.map { id in ([session] + owned).contains { $0.id == id } } ?? false
+        let wasOpen = openSessionID.map { id in ([session] + cascade).contains { $0.id == id } } ?? false
         // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
-        // live and die with it — the delete confirm names them before this runs.
+        // live and die with it — and a browser's inspect with the browser (the recursion
+        // carries the cascade the rest of the way down). The delete confirm names them.
         for browser in owned { closeSession(browser) }
         // The cursor follows the row that inherits, and only falls to the branch row when the
         // branch is empty — a close never hands the next ⌘W a whole branch to archive.
@@ -1972,62 +2025,90 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         if !stillHeld { Simulators.fleet.release(udid) }
     }
 
-    // MARK: Containment (ADR-0011 stage four: a browser can belong to an agent session)
+    // MARK: Containment (ADR-0011 stage four; generalised for inspect, features 2026-09-01)
+    // The relation is one level of service: a browser or simulator belongs to the agent that
+    // made it, an inspect belongs to the browser it inspects — the same shape one level down.
 
-    /// The agent row owning `session`, or nil — a dangling owner id (owner deleted out
-    /// from under a snapshot) resolves to nil, i.e. the browser is effectively unowned.
+    /// The row owning `session`, or nil — a dangling owner id (owner deleted out
+    /// from under a snapshot) resolves to nil, i.e. the row is effectively unowned.
     func owner(of session: Session) -> Session? {
         guard let id = session.ownerSessionID else { return nil }
-        return branch(of: session)?.sessions.first { $0.id == id && $0.kind.isAgent }
+        return branch(of: session)?.sessions.first { $0.id == id }
     }
 
-    /// The rows an agent owns, in sidebar order — browsers and simulators both, since ownership is
-    /// containment and keys off the row id rather than the kind (ADR-0015 corrects ADR-0011's
-    /// browser-only framing here).
+    /// The rows `session` directly owns, in sidebar order. Ownership is containment and keys
+    /// off the row id rather than the kind (ADR-0015 corrects ADR-0011's browser-only framing;
+    /// a browser owning its inspect widened it past agents).
     func ownedSessions(of session: Session) -> [Session] {
-        guard session.kind.isAgent, let br = branch(of: session) else { return [] }
+        guard let br = branch(of: session) else { return [] }
         return br.sessions.filter { $0.ownerSessionID == session.id }
     }
 
-    /// Make `browser` belong to `agent` (creation stamping, the kebab's "Attach to…", or a
+    /// Everything a close of `session` takes with it, transitively: an agent takes its
+    /// browsers, and a browser its DevTools (working.html softRemove's transitive targets).
+    func cascadeSessions(of session: Session) -> [Session] {
+        var out: [Session] = []
+        var queue = ownedSessions(of: session)
+        while !queue.isEmpty {
+            let s = queue.removeFirst()
+            out.append(s)
+            queue.append(contentsOf: ownedSessions(of: s))
+        }
+        return out
+    }
+
+    /// Make `child` belong to `owner` (creation stamping, the kebab's "Attach to…", or a
     /// comment-spawned agent adopting its browser). Ownership keys off the Synth row id,
     /// so it survives agent exits and resumes.
-    func adopt(_ browser: Session, by agent: Session) {
-        // Browsers and simulators both. ADR-0015 originally argued a simulator row could not be
-        // owned because its *device* is shared machine state — which is true of the device and does
-        // not follow for the row. Ownership here is containment: this row exists because that agent
-        // made it, and closing the agent closes it. The device stays reference-counted either way,
-        // so an owned row going away only decrements; the last holder is still what shuts it down.
-        guard browser.kind == .browser || browser.kind == .simulator, agent.kind.isAgent,
-              let br = branch(of: browser),
-              br.sessions.contains(where: { $0.id == agent.id })
+    func adopt(_ child: Session, by owner: Session) {
+        // Exactly two shapes exist. Browsers and simulators belong to agents — ADR-0015
+        // originally argued a simulator row could not be owned because its *device* is shared
+        // machine state, which is true of the device and does not follow for the row. And an
+        // inspect belongs to the browser it inspects (never to an agent, never detachable).
+        let agentChild = (child.kind == .browser || child.kind == .simulator) && owner.kind.isAgent
+        let browserInspect = child.kind == .inspect && owner.kind == .browser
+        guard agentChild || browserInspect,
+              let br = branch(of: child),
+              br.sessions.contains(where: { $0.id == owner.id })
         else { return }
-        browser.ownerSessionID = agent.id
+        child.ownerSessionID = owner.id
         snapOwned(in: br)
     }
 
     /// Release `browser` back to an unowned branch-tier sibling — the cascade escape hatch.
     /// It keeps its slot just below the block it left (snapOwned pulls the still-owned
-    /// rows up past it).
+    /// rows up past it). An inspect never detaches: it is attached to its browser for life.
     func detach(_ browser: Session) {
-        guard browser.ownerSessionID != nil, let br = branch(of: browser) else { return }
+        guard browser.kind != .inspect,
+              browser.ownerSessionID != nil, let br = branch(of: browser) else { return }
         browser.ownerSessionID = nil
         snapOwned(in: br)
     }
 
     /// Containment's array invariant: owned rows sit contiguously right after their owner,
     /// preserving relative order — the flat `br.sessions` order IS the sidebar order, so
-    /// nesting is adjacency, not a second tree (working.html's snapOwned).
+    /// nesting is adjacency, not a second tree (working.html's snapOwned). Owners can
+    /// themselves be owned (agent → browser → inspect), so each unowned root expands
+    /// depth-first: the row, then each owned row followed by its own owned rows.
     private func snapOwned(in br: Branch) {
         var rows = br.sessions
+        let ids = Set(rows.map(\.id))
         var ownedByOwner: [UUID: [Session]] = [:]
-        let ownerIDs = Set(rows.filter { $0.kind.isAgent }.map(\.id))
         rows.removeAll { row in
-            guard let o = row.ownerSessionID, ownerIDs.contains(o) else { return false }
+            guard let o = row.ownerSessionID, o != row.id, ids.contains(o) else { return false }
             ownedByOwner[o, default: []].append(row)
             return true
         }
-        br.sessions = rows.flatMap { [$0] + (ownedByOwner[$0.id] ?? []) }
+        var emitted = Set<UUID>()
+        func expand(_ row: Session) -> [Session] {
+            guard emitted.insert(row.id).inserted else { return [] }
+            return [row] + (ownedByOwner[row.id] ?? []).flatMap(expand)
+        }
+        var out = rows.flatMap(expand)
+        // A corrupt snapshot's ownership cycle reaches no unowned root; those rows still
+        // exist, so they land at the tail rather than silently vanishing from the sidebar.
+        out += br.sessions.filter { !emitted.contains($0.id) }
+        br.sessions = out
     }
 
     /// Sessions a quit would kill mid-flight — an agent taking a turn or a live process
@@ -2066,20 +2147,18 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// Close-confirm copy for a session: closing an owning claude row cascades, so the
     /// confirm names what goes with it (both confirm surfaces — palette + `d` menu — share it).
     func deleteSessionHint(_ session: Session) -> String {
-        let owned = ownedSessions(of: session)
+        let owned = cascadeSessions(of: session)
         guard !owned.isEmpty else { return "Close this session?" }
-        // Named by kind, because "this also closes its browser" in front of a simulator row is the
-        // kind of small lie that makes a confirm dialog untrustworthy.
-        let kinds = Set(owned.map(\.kind))
-        let what: String
-        if owned.count == 1 {
-            what = kinds.contains(.simulator) ? "simulator" : "browser"
-        } else if kinds.count > 1 {
-            what = "\(owned.count) browsers and simulators"
-        } else {
-            what = kinds.contains(.simulator) ? "\(owned.count) simulators" : "\(owned.count) browsers"
-        }
-        return "Close this session? This also closes its \(what)."
+        // Named per kind, because "this also closes its browser" in front of a simulator row is
+        // the kind of small lie that makes a confirm dialog untrustworthy.
+        let browsers = owned.filter { $0.kind == .browser }.count
+        let simulators = owned.filter { $0.kind == .simulator }.count
+        let inspects = owned.filter { $0.kind == .inspect }.count
+        var parts: [String] = []
+        if browsers > 0 { parts.append(browsers == 1 ? "browser" : "\(browsers) browsers") }
+        if simulators > 0 { parts.append(simulators == 1 ? "simulator" : "\(simulators) simulators") }
+        if inspects > 0 { parts.append("DevTools") }   // plural-proof, at most one per browser
+        return "Close this session? This also closes its \(parts.joined(separator: " and "))."
     }
 
     // MARK: Soft delete + undo (working.html softRemove)
@@ -2143,7 +2222,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// tree but keep their live processes; only the undo's commit tears them down (working.html
     /// softRemove of a session leaf + its ADR-0011 browser cascade).
     func softCloseSession(_ session: Session) {
-        let victims = [session] + ownedSessions(of: session)
+        let victims = [session] + cascadeSessions(of: session)
         var homes: [(branch: Branch, index: Int, session: Session)] = []
         for v in victims {
             if let br = branch(of: v), let i = br.sessions.firstIndex(where: { $0.id == v.id }) {
@@ -3060,6 +3139,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             case .browser:   kind = "Browser"
             case .simulator: kind = "Simulator"
             case .markdown:  kind = "Document"
+            case .inspect:   kind = "DevTools"
             }
             lines.append("Here: \(kind) · \(branch(of: s)?.name ?? "—")")
         }
@@ -3668,7 +3748,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                 PersistedSession(id: s.id, kind: s.kind.rawValue, title: s.title,
                                                  titleIsCustom: s.titleIsCustom,
                                                  agentSessionID: s.agentSessionID,
-                                                 browserURL: s.browserURL,
+                                                 // An inspect's URL is this run's DevTools frontend
+                                                 // (per-run CDP port + target id) — a restored row
+                                                 // must resolve a fresh one, so nil rides to disk.
+                                                 browserURL: s.kind == .inspect ? nil : s.browserURL,
                                                  ownerSessionID: s.ownerSessionID,
                                                  simulatorUDID: s.simulatorUDID,
                                                  markdownPath: s.markdownPath)
@@ -3723,13 +3806,20 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 // launch: the Archived list forgot the branch, and any folder still on hold was
                 // orphaned with nothing but the reaper's clock left to touch it.
                 guard pb.archivedAt != nil || !confirmedMissing(pb.worktreeURL) else { return nil }
-                let sessions = pb.sessions.map { ps in
+                var sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
                             agentSessionID: ps.resumeID, browserURL: ps.browserURL,
                             ownerSessionID: ps.ownerSessionID,
                             simulatorUDID: ps.simulatorUDID,
                             markdownPath: ps.markdownPath)
+                }
+                // An inspect whose browser didn't survive the snapshot is meaningless — the
+                // live cascade guarantees the pair closes together, so a dangling one can only
+                // be a partial snapshot. Reap it rather than restore a row with nothing to show.
+                let ids = Set(sessions.map(\.id))
+                sessions.removeAll { s in
+                    s.kind == .inspect && (s.ownerSessionID.map { !ids.contains($0) } ?? true)
                 }
                 // Scrub hostless recents (about:blank) recorded before the filter existed.
                 let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }

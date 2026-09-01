@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 // The browser session's pane (ADR-0011 stage one): working.html's `.pane-surface` chrome —
-// back/forward/reload, the lock+URL omnibox pill, the DevTools toggle — around the live
+// back/forward/reload, the lock+URL omnibox pill, the Inspect verb — around the live
 // engine view, with the "go to" home surface and its floating dropdown twin. Everything
 // here talks to `BrowserEngine`, never a concrete engine (the factory picks one).
 
@@ -57,7 +57,8 @@ import AppKit
         let engine: BrowserEngine
         do {
             engine = try BrowserEngineFactory.make(sessionID: session.id,
-                                                   workspaceKey: profileKey(for: session))
+                                                   workspaceKey: profileKey(for: session),
+                                                   nativeContextMenus: session.kind == .inspect)
         } catch {
             failures[session.id] = error.localizedDescription
             generation += 1
@@ -153,9 +154,9 @@ import AppKit
 }
 
 /// Per-session seam between the engine and the two state layers (ADR-0001): pane-local,
-/// higher-frequency facts (address shown, back/forward, DevTools on) live here as
-/// observable state; store-level facts (row rename, recents, popup→new session) are
-/// posted onto the bus as events.
+/// higher-frequency facts (address shown, back/forward, device mode) live here as
+/// observable state; store-level facts (row rename, recents, popup→new session, the
+/// page's Inspect verb) are posted onto the bus as events.
 @MainActor @Observable final class BrowserSessionController {
     let sessionID: UUID
     let engine: BrowserEngine
@@ -167,9 +168,6 @@ import AppKit
     private(set) var address: URL?
     private(set) var canGoBack = false
     private(set) var canGoForward = false
-    /// The bar toggle's on-state, resynced from the engine at each toggle — the user
-    /// can close the native DevTools window directly, behind the chrome's back.
-    var devToolsOpen = false
     /// Bumped on every navigation — drives the reload button's one-shot spin.
     private(set) var spinNonce = 0
     /// Set by ⌘L / the palette's "Go to address…" — the pane consumes it and presses
@@ -214,14 +212,9 @@ import AppKit
     func goForward() { engine.goForward(); spinNonce += 1 }
     func reload() { engine.reload(); spinNonce += 1 }
 
-    func toggleDevTools() {
-        let open = engine.devToolsOpen
-        if open { engine.closeDevTools() } else { engine.showDevTools() }
-        devToolsOpen = !open
-    }
 
-    // The conditions bar (working.html `.browser__condbar`): like devToolsOpen, controller
-    // state — it survives navigating away and back, and page navigations (like comment mode).
+    // The conditions bar (working.html `.browser__condbar`): controller state — it survives
+    // navigating away and back, and page navigations (like comment mode).
     // Three axes that fail apart, each resting at Normal: no screen emulated, no throttle on
     // the wire, no slowdown on the processor. The bar is either on screen saying what it is
     // doing or doing nothing at all, so closing it puts all three back — a throttle nobody
@@ -414,7 +407,7 @@ import AppKit
         cm.enter(store: store, urlHint: address)
     }
 
-    // Page zoom (⌘+/⌘−), controller state like devToolsOpen: it steps a fixed ladder and
+    // Page zoom (⌘+/⌘−), controller state like device mode: it steps a fixed ladder and
     // rides navigation (re-applied in the address delegate) — the native twin of the mock's
     // re-apply-after-paint. `zoom` is a factor (1 = 100%); the engine maps it to its scale.
     static let zoomSteps: [Double] = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
@@ -473,9 +466,9 @@ extension BrowserSessionController: BrowserEngineDelegate {
     func engine(_ engine: BrowserEngine, didWithdraw ask: any BrowserAsk) {
         asks.removeAll { $0 === ask }
     }
-    /// The page's right-click menu, as a real NSMenu — the way every native app draws one, and
-    /// the reason it is nowhere in working.html: it is an OS surface Synth opens, like the
-    /// DevTools window, not Synth chrome the mock draws.
+    /// The page's right-click menu, as a real NSMenu — the way every native app draws one,
+    /// where the mock draws its own `.pagemenu` chrome. Same items, same order; Inspect
+    /// routes to the store's inspect session rather than anything of the engine's.
     func engine(_ engine: BrowserEngine, didRequestContextMenu items: [BrowserMenuItem],
                 at point: CGPoint, choose: @escaping (Int) -> Void) {
         lastContextMenu = items
@@ -493,6 +486,12 @@ extension BrowserSessionController: BrowserEngineDelegate {
             }
             let entry = NSMenuItem(title: item.title, action: #selector(MenuTarget.pick(_:)),
                                    keyEquivalent: "")
+            // The one item with a Synth binding shows it, the way the mock's menu does.
+            // By title: the shim's command ids are its own (MENU_ID_USER_FIRST offsets).
+            if item.title == "Inspect" {
+                entry.keyEquivalent = "i"
+                entry.keyEquivalentModifierMask = [.command, .option]
+            }
             entry.target = target
             entry.tag = item.commandID
             entry.isEnabled = item.enabled
@@ -506,6 +505,11 @@ extension BrowserSessionController: BrowserEngineDelegate {
 
     func engine(_ engine: BrowserEngine, didRequestOpenExternal url: URL) {
         NSWorkspace.shared.open(url)
+    }
+
+    func engineDidRequestInspect(_ engine: BrowserEngine) {
+        // Store-level: the answer is an inspect session (row + split), not pane state.
+        bus?.post(.inspectRequested(sessionID))
     }
 
     func engine(_ engine: BrowserEngine, didFindMatch active: Int, of count: Int, final: Bool) {
@@ -590,7 +594,7 @@ struct BrowserPane: View {
 
     private func pane(_ ctrl: BrowserSessionController) -> some View {
         VStack(spacing: 0) {
-            BrowserBar(ctrl: ctrl, dropOpen: $dropOpen, homeFocusNonce: $homeFocusNonce)
+            BrowserBar(session: session, ctrl: ctrl, dropOpen: $dropOpen, homeFocusNonce: $homeFocusNonce)
             if ctrl.conditionsOn && !ctrl.isHome {
                 ConditionsBar(ctrl: ctrl, open: $condMenu)
             }
@@ -943,9 +947,10 @@ private struct DeviceStage: View {
 // MARK: - Bar
 
 /// working.html `.pane-bar`: nav cluster · omnibox pill · comment-mode toggle ·
-/// DevTools toggle, on the chrome-grey strip with a hairline below.
+/// Inspect, on the chrome-grey strip with a hairline below.
 private struct BrowserBar: View {
     @Environment(AppStore.self) private var store
+    let session: Session
     let ctrl: BrowserSessionController
     @Binding var dropOpen: Bool
     @Binding var homeFocusNonce: Int
@@ -990,8 +995,12 @@ private struct BrowserBar: View {
                 }
             PaneBarButton(icon: Phosphor.deviceMobile, help: "Conditions",
                           disabled: ctrl.isHome, on: ctrl.conditionsOn) { ctrl.toggleConditions() }
-            PaneBarButton(icon: Phosphor.devtools, help: "DevTools",
-                          disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
+            // Lit while this browser's inspect session exists; pressing returns to it
+            // rather than making a second (working.html `[data-nav="devtools"]` is-on).
+            PaneBarButton(icon: Phosphor.devtools, help: "Inspect",
+                          disabled: ctrl.isHome, on: store.inspectSession(of: session) != nil) {
+                store.openInspect(for: session)
+            }
             PaneBarButton(icon: Phosphor.external, help: "Open in default browser",
                           disabled: ctrl.isHome) {
                 if let url = ctrl.address { NSWorkspace.shared.open(url) }

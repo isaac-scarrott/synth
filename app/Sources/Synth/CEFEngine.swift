@@ -330,7 +330,8 @@ final class CEFEngine: NSObject, BrowserEngine {
 
     var view: NSView { shim.view }
 
-    init(initialURL: URL, sessionID: UUID, workspaceKey: String) throws {
+    init(initialURL: URL, sessionID: UUID, workspaceKey: String,
+         nativeContextMenus: Bool = false) throws {
         let supervisor = BrowserProcessSupervisor.shared
         try supervisor.ensureInitialized()
         let profileDir = try supervisor.profileDirectory(workspaceKey: workspaceKey)
@@ -346,6 +347,7 @@ final class CEFEngine: NSObject, BrowserEngine {
         self.cdpPort = supervisor.cdpPort
         self.currentURL = initialURL
         super.init()
+        shim.nativeContextMenus = nativeContextMenus
         shim.delegate = self
     }
 
@@ -360,10 +362,6 @@ final class CEFEngine: NSObject, BrowserEngine {
     func reload() { shim.reload() }
     // CEF zoom is logarithmic: factor = 1.2^level, so level = log₁.₂(factor).
     func setZoom(_ factor: Double) { shim.setZoomLevel(factor > 0 ? log(factor) / log(1.2) : 0) }
-    func showDevTools() { shim.showDevTools() }
-    func closeDevTools() { shim.closeDevTools() }
-    var devToolsOpen: Bool { shim.hasDevTools() }
-
     func shutdown() {
         shim.close()   // async; the workspace's profile stays exactly where it is
     }
@@ -464,6 +462,12 @@ extension CEFEngine: CEFShimBrowserDelegate {
         MainActor.assumeIsolated {
             guard let parsed = URL(string: url) else { return }
             delegate?.engine(self, didRequestOpenExternal: parsed)
+        }
+    }
+
+    nonisolated func cefBrowserDidRequestInspect() {
+        MainActor.assumeIsolated {
+            delegate?.engineDidRequestInspect(self)
         }
     }
 

@@ -327,6 +327,8 @@ private struct SessionPane: View {
     @ViewBuilder private var paneBody: some View {
         if session.kind == .browser {
             BrowserPane(session: session)
+        } else if session.kind == .inspect {
+            InspectPane(session: session)
         } else if session.kind == .simulator {
             SimulatorPane(session: session)
         } else if let cwd = store.cwd(for: session) {

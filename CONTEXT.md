@@ -17,8 +17,8 @@ A git branch within a project, auto-discovered. Sessions run inside a branch.
 _Avoid_: Ref (when a branch specifically is meant).
 
 **Session**:
-A live thing running inside a branch — an agent, a terminal, a browser, or a simulator. Each carries
-a live status that drives the sidebar indicators.
+A live thing running inside a branch — an agent, a terminal, a browser, a simulator, or an inspect.
+Each carries a live status that drives the sidebar indicators.
 _Avoid_: Tab (a session is never *called* a tab — the tab is only its handle; see Tab), pane, process
 (a session may own a process but is not synonymous with one).
 
@@ -165,12 +165,24 @@ one strip; a split is a bonded cluster within it); child/nested tab (a browser t
 mark, never nests under it).
 
 **Belongs to**:
-The relation between a browser session and the agent that opened it. The browser sits as a sibling
-row wearing its owner's mark; it is never indented under it (with Tabs on, that sibling row is a peer
+The relation between a session and the session one level up that it serves: a browser belongs to the
+agent that opened it, an inspect belongs to the browser it inspects. The owned row sits as a sibling
+wearing its owner's mark; it is never indented under it (with Tabs on, that sibling row is a peer
 tab wearing the same mark — the relation is unchanged, only its display moves). **Attach to** and
-**Detach** are the two verbs that make and break the relation. A browser you opened yourself belongs
-to nobody.
+**Detach** are the two verbs that make and break the relation for a browser — one you opened
+yourself belongs to nobody. An inspect is born attached and stays attached for life; closing the
+owner closes everything that belongs to it, transitively.
 _Avoid_: Move under, nested, child, parent (all claim an indentation the sidebar does not draw).
+
+**Inspect**:
+The category of session that hosts Chromium's DevTools for one browser session. Right-click →
+Inspect on the page, ⌥⌘I, or the browser bar's `</>` all make it — or return to the one that
+already exists, since a browser has at most one. It is a session like any other — a sidebar row (a
+peer tab with Tabs on), a pane, a split member, closed with ⌘W — that opens in a split under its
+browser (the classic bottom dock, as a real pane you can move) and belongs to it for life. The row
+is *named* DevTools; the primitive is an inspect.
+_Avoid_: DevTools panel / dock (the presentation it replaced — nothing docks under a page any
+more), child tab, subwindow.
 
 **Comment**:
 A note you leave on an element of a live page in a browser session. Synth delivers it to the agent

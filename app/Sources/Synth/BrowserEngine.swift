@@ -33,12 +33,6 @@ protocol BrowserEngine: AnyObject {
     /// Sets page zoom as a factor (1.0 = 100%); the engine maps it to its native scale
     /// (CEF's logarithmic zoom level, WebKit's linear pageZoom).
     func setZoom(_ factor: Double)
-    func showDevTools()
-    func closeDevTools()
-    /// Read at toggle time, not cached — the user can close the native DevTools
-    /// window directly, behind the chrome's back.
-    var devToolsOpen: Bool { get }
-
     /// Hard teardown: the engine's processes must be gone when this returns or shortly
     /// after — a surviving instance owns the profile singleton and silently absorbs the
     /// next launch (spike LEARNINGS).
@@ -104,4 +98,7 @@ protocol BrowserEngineDelegate: AnyObject {
     /// A menu item Synth performs rather than the engine: open this URL in the user's real
     /// browser, the same thing the pane's toolbar button does.
     func engine(_ engine: BrowserEngine, didRequestOpenExternal url: URL)
+    /// The page's right-click → Inspect. Synth answers with an inspect session (features
+    /// 2026-09-01) — the engine never opens a DevTools window of its own.
+    func engineDidRequestInspect(_ engine: BrowserEngine)
 }

@@ -15,12 +15,15 @@ enum BrowserEngineFactory {
 
     /// `workspaceKey` names the profile the engine runs on — per workspace, so every
     /// browser session in one repo is the same signed-in browser (stage five).
-    static func make(sessionID: UUID, workspaceKey: String) throws -> BrowserEngine {
+    /// `nativeContextMenus` leaves the page's own right-click menus in place instead of
+    /// Synth's — the inspect session's DevTools frontend brings menus of its own.
+    static func make(sessionID: UUID, workspaceKey: String,
+                     nativeContextMenus: Bool = false) throws -> BrowserEngine {
         #if canImport(CEFShim)
         // CEF needs a URL at browser creation; the home surface covers the view until
         // the session's first real navigation.
         return try CEFEngine(initialURL: URL(string: "about:blank")!, sessionID: sessionID,
-                             workspaceKey: workspaceKey)
+                             workspaceKey: workspaceKey, nativeContextMenus: nativeContextMenus)
         #else
         throw Unavailable(reason:
             "this build has no browser engine — CEF wasn't compiled in. Run " +

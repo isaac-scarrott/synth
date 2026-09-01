@@ -371,6 +371,14 @@ struct PaletteFrame {
                                      group: g, ctx: open.title,
                                      enter: { self.push(self.renameFrame(.session(open))) }))
             items += containmentItems(open, group: g)
+            // An inspect is attached for life — no Attach/Detach; its one extra verb walks
+            // back to the browser it inspects (working.html's inspect "Go to").
+            if open.kind == .inspect, let target = store.owner(of: open), target.kind == .browser {
+                items.append(PaletteItem(icon: .phosphor(Phosphor.globe),
+                                         label: "Go to “\(target.title)”",
+                                         group: g, ctx: open.title,
+                                         enter: { self.runAndClose { self.store.jump(to: target) } }))
+            }
             // Unsplit (013): the flat route out of a split, beside Close — detach the pane and
             // reflow the sibling, without killing the session. Offered only inside a split.
             if store.inSplit(open.id) {
@@ -460,10 +468,12 @@ struct PaletteFrame {
             PaletteItem(icon: .phosphor(Phosphor.search), label: "Find in page",
                         kbd: ["⌘", "F"], disabled: home,
                         enter: drive { $0.openFind() }),
+            // Inspect makes (or returns to) this browser's inspect session — a layout change,
+            // not a control the `drive` closure presses, so it goes straight to the store.
             PaletteItem(icon: .phosphor(Phosphor.devtools),
-                        label: live?.devToolsOpen == true ? "Hide DevTools" : "Show DevTools",
+                        label: store.inspectSession(of: s) != nil ? "Go to DevTools" : "Inspect",
                         kbd: ["⌥", "⌘", "I"], disabled: home,
-                        enter: drive { if !$0.isHome { $0.toggleDevTools() } }),
+                        enter: { self.runAndClose { self.store.openInspect(for: s) } }),
             PaletteItem(icon: .phosphor(Phosphor.deviceMobile),
                         label: live?.conditionsOn == true ? "Hide conditions" : "Show conditions",
                         kbd: ["⌘", "⇧", "M"], disabled: home,

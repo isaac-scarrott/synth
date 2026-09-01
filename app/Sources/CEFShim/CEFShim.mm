@@ -527,26 +527,13 @@ static void CopyToPasteboard(const CefString &text) {
 - (void)handleAsk:(CEFShimAsk *)ask;
 - (void)withdrawDialogAsks;
 - (void)handleOpenExternal:(NSString *)url;
+- (void)handleInspect;
 - (nullable NSString *)authorizationForOrigin:(const std::string &)origin;
 - (void)challengeOrigin:(std::string)origin realm:(nullable NSString *)realm;
 - (void)handleWithdrawPromptID:(uint64_t)promptID;
 - (void)handleFindResult:(int)activeIndex count:(int)count final:(BOOL)finalUpdate;
 - (void)handleBeforeClose;
 @end
-
-// Life-span bookkeeping for browsers we don't surface (DevTools windows): they must
-// count toward g_aliveBrowsers or shutdown would proceed under them.
-class AuxClient : public CefClient, public CefLifeSpanHandler {
- public:
-  AuxClient() = default;
-  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-  void OnAfterCreated(CefRefPtr<CefBrowser> browser) override { g_aliveBrowsers++; }
-  void OnBeforeClose(CefRefPtr<CefBrowser> browser) override { g_aliveBrowsers--; }
-
- private:
-  IMPLEMENT_REFCOUNTING(AuxClient);
-  DISALLOW_COPY_AND_ASSIGN(AuxClient);
-};
 
 // getUserMedia answers through CefMediaAccessCallback, which wants the media permissions it
 // was asked about handed back; the generic prompt answers through CefPermissionPromptCallback,
@@ -891,8 +878,8 @@ class ShimResourceHandler : public CefResourceRequestHandler {
 };
 
 // One client per CEFShimBrowser, so callbacks never need first-browser filtering —
-// DevTools gets AuxClient and popups are opened as windows of ours, so this client sees
-// exactly one browser for its whole life.
+// popups are opened as windows of ours (and DevTools is a plain second CEFShimBrowser
+// on the frontend URL), so this client sees exactly one browser for its whole life.
 class ShimClient : public CefClient,
                    public CefContextMenuHandler,
                    public CefDisplayHandler,
@@ -1102,6 +1089,9 @@ class ShimClient : public CefClient,
   void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                            CefRefPtr<CefContextMenuParams> params,
                            CefRefPtr<CefMenuModel> model) override {
+    if (owner_ && owner_.nativeContextMenus) {
+      return;   // the page's own menus stand (DevTools frontend)
+    }
     model->Clear();
     const uint32_t type = params->GetTypeFlags();
     const uint32_t edit = params->GetEditStateFlags();
@@ -1151,12 +1141,15 @@ class ShimClient : public CefClient,
       model->AddItem(MENU_ID_RELOAD, "Reload");
       model->AddSeparator();
     }
-    model->AddItem(kMenuInspect, "Inspect Element");
+    model->AddItem(kMenuInspect, "Inspect");
   }
 
   bool RunContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                       CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model,
                       CefRefPtr<CefRunContextMenuCallback> callback) override {
+    if (owner_ && owner_.nativeContextMenus) {
+      return false;   // CEF displays the untouched model itself
+    }
     // The model must not outlive this call, so it is copied out before anything can be
     // displayed. Displaying runs a nested runloop, and this is called from inside
     // CefDoMessageLoopWork — so it happens on the next main-queue turn rather than here.
@@ -1206,9 +1199,9 @@ class ShimClient : public CefClient,
         CopyToPasteboard(params->GetSourceUrl());
         return true;
       case kMenuInspect:
-        browser->GetHost()->ShowDevTools(CefWindowInfo(), new AuxClient(),
-                                         CefBrowserSettings(),
-                                         CefPoint(params->GetXCoord(), params->GetYCoord()));
+        // Not the shim's to answer any more: Synth turns Inspect into an inspect session
+        // whose own pane hosts the DevTools frontend off the CDP endpoint.
+        [owner_ handleInspect];
         return true;
       default:
         return false;
@@ -1477,28 +1470,6 @@ class ShimClient : public CefClient,
   }
 }
 
-- (void)showDevTools {
-  if (!_browser) {
-    return;
-  }
-  // Empty CefWindowInfo: CEF opens its own native DevTools window (spike-verified).
-  // AuxClient keeps it out of this browser's callback stream.
-  CefWindowInfo windowInfo;
-  CefBrowserSettings settings;
-  _browser->GetHost()->ShowDevTools(windowInfo, new AuxClient(), settings, CefPoint());
-}
-
-- (void)closeDevTools {
-  if (!_browser) {
-    return;
-  }
-  _browser->GetHost()->CloseDevTools();
-}
-
-- (BOOL)hasDevTools {
-  return _browser && _browser->GetHost()->HasDevTools();
-}
-
 - (void)find:(NSString *)text
      forward:(BOOL)forward
    matchCase:(BOOL)matchCase
@@ -1616,6 +1587,10 @@ class ShimClient : public CefClient,
 
 - (void)handleOpenExternal:(NSString *)url {
   [self.delegate cefBrowserDidRequestOpenExternal:url];
+}
+
+- (void)handleInspect {
+  [self.delegate cefBrowserDidRequestInspect];
 }
 
 

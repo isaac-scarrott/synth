@@ -1089,6 +1089,9 @@ class ShimClient : public CefClient,
   void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                            CefRefPtr<CefContextMenuParams> params,
                            CefRefPtr<CefMenuModel> model) override {
+    if (owner_ && owner_.nativeContextMenus) {
+      return;   // the page's own menus stand (DevTools frontend)
+    }
     model->Clear();
     const uint32_t type = params->GetTypeFlags();
     const uint32_t edit = params->GetEditStateFlags();
@@ -1144,6 +1147,9 @@ class ShimClient : public CefClient,
   bool RunContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                       CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model,
                       CefRefPtr<CefRunContextMenuCallback> callback) override {
+    if (owner_ && owner_.nativeContextMenus) {
+      return false;   // CEF displays the untouched model itself
+    }
     // The model must not outlive this call, so it is copied out before anything can be
     // displayed. Displaying runs a nested runloop, and this is called from inside
     // CefDoMessageLoopWork — so it happens on the next main-queue turn rather than here.

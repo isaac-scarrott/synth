@@ -419,7 +419,7 @@ private struct HoverCardSessionRow: View {
         if session.ownerSessionID != nil, let owner = store.owner(of: session) {
             OwnedIndicator(ownerKind: owner.kind)
         } else if session.ownerSessionID != nil {
-            OwnedIndicator()
+            OwnedIndicator.fallback(for: session.kind)
         } else {
             StatusIndicator(status: session.status)
         }

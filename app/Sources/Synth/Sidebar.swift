@@ -664,7 +664,7 @@ private struct SessionRow: View {
                                let owner = store.owner(of: session) {
                                 OwnedIndicator(ownerKind: owner.kind)
                             } else if session.ownerSessionID != nil {
-                                OwnedIndicator()
+                                OwnedIndicator.fallback(for: session.kind)
                             } else {
                                 StatusIndicator(status: session.status)
                             }
@@ -1040,6 +1040,12 @@ struct OwnedIndicator: View {
             SessionIcon(kind: ownerKind, size: 12)
                 .opacity(0.9)
         }
+    }
+
+    /// The mark when the owner row can't be resolved (a dangling snapshot id): inferred
+    /// from what the orphan is — an inspect belonged to a browser, anything else to an agent.
+    static func fallback(for kind: SessionKind) -> OwnedIndicator {
+        OwnedIndicator(ownerKind: kind == .inspect ? .browser : .agent(.claudeCode))
     }
 }
 

@@ -203,15 +203,18 @@ extension AppStore {
     }
 
     /// `shift` at containment granularity (ADR-0011 stage four): sessions group into
-    /// blocks — an unowned row plus the owned browsers riding directly behind it — and
-    /// the block with `id` at its head moves `delta` block positions. Owned rows never
-    /// head a block (the caller no-ops them), so an owner always moves with its browsers.
+    /// blocks — an unowned row plus the whole ownership chain riding directly behind it
+    /// (a claude, its browsers, and each browser's inspect) — and the block with `id` at
+    /// its head moves `delta` block positions. Owned rows never head a block (the caller
+    /// no-ops them), so an owner always moves with everything that belongs to it.
     private static func shiftSessionBlock(_ array: inout [Session], id: UUID, by delta: Int) -> Bool {
         var blocks: [[Session]] = []
-        var blockOf: [UUID: Int] = [:]   // owner id → its block's index
+        var blockOf: [UUID: Int] = [:]   // row id → its block's index
         for row in array {
             if let o = row.ownerSessionID, let i = blockOf[o] {
                 blocks[i].append(row)
+                // An owned row can itself own (browser → inspect): the chain joins one block.
+                blockOf[row.id] = i
             } else {
                 blockOf[row.id] = blocks.count
                 blocks.append([row])

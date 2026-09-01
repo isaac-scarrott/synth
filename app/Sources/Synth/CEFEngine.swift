@@ -330,7 +330,8 @@ final class CEFEngine: NSObject, BrowserEngine {
 
     var view: NSView { shim.view }
 
-    init(initialURL: URL, sessionID: UUID, workspaceKey: String) throws {
+    init(initialURL: URL, sessionID: UUID, workspaceKey: String,
+         nativeContextMenus: Bool = false) throws {
         let supervisor = BrowserProcessSupervisor.shared
         try supervisor.ensureInitialized()
         let profileDir = try supervisor.profileDirectory(workspaceKey: workspaceKey)
@@ -346,6 +347,7 @@ final class CEFEngine: NSObject, BrowserEngine {
         self.cdpPort = supervisor.cdpPort
         self.currentURL = initialURL
         super.init()
+        shim.nativeContextMenus = nativeContextMenus
         shim.delegate = self
     }
 

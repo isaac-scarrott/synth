@@ -101,6 +101,10 @@ typedef NS_ENUM(NSInteger, CEFShimAskKind) {
 @interface CEFShimBrowser : NSObject
 
 @property(nonatomic, weak, nullable) id<CEFShimBrowserDelegate> delegate;
+/// YES leaves Chromium's own context menus in place instead of replacing them with
+/// Synth's page menu — the DevTools frontend brings menus of its own (inspect pane),
+/// and Synth's Back/Reload/Inspect would clobber them with dead verbs.
+@property(nonatomic) BOOL nativeContextMenus;
 /// Container view to parent into the pane; the CEF child view tracks its bounds.
 @property(nonatomic, readonly) NSView *view;
 @property(nonatomic, readonly, nullable) NSString *currentURL;

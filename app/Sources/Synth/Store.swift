@@ -1015,11 +1015,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             }
         case let .kindChanged(id, kind):
             guard let s = session(id) else { break }
-            // A browser or simulator session never runs an agent, so an agent lifecycle signal
-            // carrying its id is spurious — applying it would flip the pane to a terminal while
-            // the engine still holds the browser controller / device claim, desyncing the two and
-            // wedging ⌘K on that row.
-            if s.spawnedKind == .browser || s.spawnedKind == .simulator { break }
+            // A browser, simulator or inspect session never runs an agent, so an agent lifecycle
+            // signal carrying its id is spurious — applying it would flip the pane to a terminal
+            // while the engine still holds the browser controller / device claim, desyncing the
+            // two and wedging ⌘K on that row.
+            if s.spawnedKind == .browser || s.spawnedKind == .simulator || s.spawnedKind == .inspect { break }
             // A session spawned as an agent never reverts to a plain terminal: it exec'd the
             // agent, so an agent-end is either the process about to exit (the child-exited
             // signal closes the row moments later) or a /clear's end/start pair — neither
@@ -1802,8 +1802,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// is only forgotten on success, so a refusal leaves the row telling the truth.
     @discardableResult
     func clearBrowsingData(for workspace: Workspace) -> Bool {
-        let browsers = workspace.branches.flatMap(\.sessions).filter { $0.kind == .browser }
-        BrowserManager.shared.recycle(browsers.map(\.id))
+        // Inspect engines run on the same workspace profile as the pages they inspect, so they
+        // recycle too — and their stamped frontend URL points at the old engine's target id, so
+        // it is cleared for the pane to resolve a fresh one against the rebuilt page.
+        let engines = workspace.branches.flatMap(\.sessions)
+            .filter { $0.kind == .browser || $0.kind == .inspect }
+        for s in engines where s.kind == .inspect { s.browserURL = nil }
+        BrowserManager.shared.recycle(engines.map(\.id))
         let key = workspace.browserProfileKey
         guard BrowserEngineFactory.clearProfile(workspaceKey: key) else { return false }
         FolderSizeCache.shared.forget(BrowserEngineFactory.profileDirectory(workspaceKey: key))
@@ -1887,7 +1892,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         if let existing = inspectSession(of: browser) { jump(to: existing); return }
         guard let br = branch(of: browser),
               let inspect = addSession(kind: .inspect, title: "DevTools", status: .idle,
-                                       in: br, ownedBy: browser, focus: false)
+                                       in: br, ownedBy: browser, focus: false,
+                                       agentInitiated: false)
         else { return }
         // The frontend URL the pane will stamp is engine plumbing, not a page the user chose:
         // the row is named DevTools for life, never by navigation.
@@ -1926,12 +1932,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     @discardableResult
     private func addSession(kind: SessionKind, title: String, status: SessionStatus,
                             in branch: Branch?, ownedBy owner: Session? = nil,
-                            focus: Bool = true) -> Session? {
+                            focus: Bool = true, agentInitiated: Bool? = nil) -> Session? {
         // A pending branch has no checkout to run in yet — sessions wait for the worktree.
         guard let br = branch ?? defaultBranch(), !br.isPending else { return nil }
         let session = Session(kind: kind, title: title, status: status)
         // Feature-usage signal: which session type, and whether an agent spun it up vs the user.
-        Analytics.capture("session_created", ["kind": kind.rawValue, "agent_initiated": !focus])
+        // focus:false usually means agent-initiated; a caller that defers focus for its own
+        // reasons (openInspect binds the row into a split) says so explicitly.
+        Analytics.capture("session_created", ["kind": kind.rawValue,
+                                              "agent_initiated": agentInitiated ?? !focus])
         br.sessions.append(session)
         if let owner { adopt(session, by: owner) }
         br.markActivity()
@@ -2086,14 +2095,20 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let ids = Set(rows.map(\.id))
         var ownedByOwner: [UUID: [Session]] = [:]
         rows.removeAll { row in
-            guard let o = row.ownerSessionID, ids.contains(o) else { return false }
+            guard let o = row.ownerSessionID, o != row.id, ids.contains(o) else { return false }
             ownedByOwner[o, default: []].append(row)
             return true
         }
+        var emitted = Set<UUID>()
         func expand(_ row: Session) -> [Session] {
-            [row] + (ownedByOwner[row.id] ?? []).flatMap(expand)
+            guard emitted.insert(row.id).inserted else { return [] }
+            return [row] + (ownedByOwner[row.id] ?? []).flatMap(expand)
         }
-        br.sessions = rows.flatMap(expand)
+        var out = rows.flatMap(expand)
+        // A corrupt snapshot's ownership cycle reaches no unowned root; those rows still
+        // exist, so they land at the tail rather than silently vanishing from the sidebar.
+        out += br.sessions.filter { !emitted.contains($0.id) }
+        br.sessions = out
     }
 
     /// Sessions a quit would kill mid-flight — an agent taking a turn or a live process
@@ -2134,22 +2149,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     func deleteSessionHint(_ session: Session) -> String {
         let owned = cascadeSessions(of: session)
         guard !owned.isEmpty else { return "Close this session?" }
-        // Named by kind, because "this also closes its browser" in front of a simulator row is the
-        // kind of small lie that makes a confirm dialog untrustworthy.
-        let kinds = Set(owned.map(\.kind))
-        let what: String
-        if owned.count == 1 {
-            what = kinds.contains(.simulator) ? "simulator"
-                 : kinds.contains(.inspect) ? "DevTools" : "browser"
-        } else if kinds.contains(.inspect) {
-            // A cascade that reaches an inspect is mixed by construction (its browser is in it).
-            what = "\(owned.count) sessions"
-        } else if kinds.count > 1 {
-            what = "\(owned.count) browsers and simulators"
-        } else {
-            what = kinds.contains(.simulator) ? "\(owned.count) simulators" : "\(owned.count) browsers"
-        }
-        return "Close this session? This also closes its \(what)."
+        // Named per kind, because "this also closes its browser" in front of a simulator row is
+        // the kind of small lie that makes a confirm dialog untrustworthy.
+        let browsers = owned.filter { $0.kind == .browser }.count
+        let simulators = owned.filter { $0.kind == .simulator }.count
+        let inspects = owned.filter { $0.kind == .inspect }.count
+        var parts: [String] = []
+        if browsers > 0 { parts.append(browsers == 1 ? "browser" : "\(browsers) browsers") }
+        if simulators > 0 { parts.append(simulators == 1 ? "simulator" : "\(simulators) simulators") }
+        if inspects > 0 { parts.append("DevTools") }   // plural-proof, at most one per browser
+        return "Close this session? This also closes its \(parts.joined(separator: " and "))."
     }
 
     // MARK: Soft delete + undo (working.html softRemove)
@@ -3797,13 +3806,20 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 // launch: the Archived list forgot the branch, and any folder still on hold was
                 // orphaned with nothing but the reaper's clock left to touch it.
                 guard pb.archivedAt != nil || !confirmedMissing(pb.worktreeURL) else { return nil }
-                let sessions = pb.sessions.map { ps in
+                var sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
                             title: ps.title, status: .idle, titleIsCustom: ps.titleIsCustom,
                             agentSessionID: ps.resumeID, browserURL: ps.browserURL,
                             ownerSessionID: ps.ownerSessionID,
                             simulatorUDID: ps.simulatorUDID,
                             markdownPath: ps.markdownPath)
+                }
+                // An inspect whose browser didn't survive the snapshot is meaningless — the
+                // live cascade guarantees the pair closes together, so a dangling one can only
+                // be a partial snapshot. Reap it rather than restore a row with nothing to show.
+                let ids = Set(sessions.map(\.id))
+                sessions.removeAll { s in
+                    s.kind == .inspect && (s.ownerSessionID.map { !ids.contains($0) } ?? true)
                 }
                 // Scrub hostless recents (about:blank) recorded before the filter existed.
                 let recents = (pb.browserRecents ?? []).filter { URL(string: $0.url)?.host != nil }

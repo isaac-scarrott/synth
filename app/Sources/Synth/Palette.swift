@@ -373,7 +373,7 @@ struct PaletteFrame {
             items += containmentItems(open, group: g)
             // An inspect is attached for life — no Attach/Detach; its one extra verb walks
             // back to the browser it inspects (working.html's inspect "Go to").
-            if open.kind == .inspect, let target = store.owner(of: open) {
+            if open.kind == .inspect, let target = store.owner(of: open), target.kind == .browser {
                 items.append(PaletteItem(icon: .phosphor(Phosphor.globe),
                                          label: "Go to “\(target.title)”",
                                          group: g, ctx: open.title,

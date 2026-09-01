@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.39.1",
+    "date": "2026-09-01",
+    "changes": [
+      "A Synth left running for days can open sessions again. The wrapper script every session's shell is launched through lives in the temp dir macOS sweeps after three days, and Synth wrote it only once at startup — so a long-running instance eventually met every new row with \"Claude quit\" while the sessions already up carried on. It is now rewritten whenever it has gone missing."
+    ]
+  },
+  {
     "version": "0.39.0",
     "date": "2026-08-27",
     "changes": [

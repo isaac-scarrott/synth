@@ -2262,3 +2262,13 @@ disclosure to dive deeper.
   with a job in the foreground the click does nothing at all — not a close, not even the
   busy-close confirm, which stays with the chords (⌘⇧T / ⌘W) you meant. One rule, one tell (the
   amber dot); `t12_scratch` pins both halves.
+
+## [2026-09-01](docs/features/2026-09-01.md)
+
+- **Inspect is a session primitive, not a docked panel (both designs)** — right-click → Inspect
+  (new at-cursor page menu), ⌥⌘I, and the bar's `</>` now make an inspect *session* at the
+  browser's own level — a row, a peer tab, a movable pane — instead of docking DevTools under the
+  page. It attaches to its browser the way an owned browser attaches to its Claude (`data-owner` +
+  globe mark, adjacent, close cascades — now transitively), one per browser (asking again returns
+  to it), opening in a split under the page: the classic bottom dock as a real pane. CONTEXT.md
+  gains **Inspect**; native port pending.

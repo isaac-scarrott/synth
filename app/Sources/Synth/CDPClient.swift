@@ -119,6 +119,7 @@ extension CDPClient {
         let type: String
         let url: String
         let webSocketDebuggerUrl: String?
+        let id: String?
     }
 
     /// The instance endpoint's page targets (`GET /json/list`) — one per browser session.
@@ -154,6 +155,37 @@ extension CDPClient {
                 return client
             }
             client.close()
+        }
+        throw CDPError(description: "no CDP page target for session \(want) on port \(port)")
+    }
+
+    /// The DevTools frontend URL for a Synth browser session's page — what an inspect
+    /// session's own engine loads (features 2026-09-01). The frontend is the one Chromium
+    /// serves off the instance's CDP endpoint, pointed at the session's page target; the
+    /// target is found the way `attach` finds it (`window.__synthSessionId`), because the
+    /// endpoint is per instance, not per session.
+    static func devToolsFrontendURL(port: UInt16, synthSessionID: UUID,
+                                    urlHint: URL? = nil) async throws -> URL {
+        var candidates = try await listPages(port: port)
+        if let hint = urlHint?.absoluteString {
+            candidates.sort { ($0.url == hint ? 0 : 1) < ($1.url == hint ? 0 : 1) }
+        }
+        let want = synthSessionID.uuidString
+        for target in candidates {
+            guard let id = target.id,
+                  let ws = target.webSocketDebuggerUrl, let wsURL = URL(string: ws) else { continue }
+            let client = CDPClient(url: wsURL)
+            let reply = try? await client.send(
+                "Runtime.evaluate",
+                ["expression": "window.__synthSessionId || null", "returnByValue": true],
+                timeout: 5)
+            client.close()
+            if let result = reply?["result"] as? [String: Any],
+               result["value"] as? String == want,
+               let url = URL(string: "http://127.0.0.1:\(port)/devtools/inspector.html"
+                             + "?ws=127.0.0.1:\(port)/devtools/page/\(id)") {
+                return url
+            }
         }
         throw CDPError(description: "no CDP page target for session \(want) on port \(port)")
     }

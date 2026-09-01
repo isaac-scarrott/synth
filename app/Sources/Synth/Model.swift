@@ -13,6 +13,11 @@ enum SessionKind: Codable, Sendable, Hashable {
     /// agent row it is a terminal session whose launch command is fixed; unlike one it carries
     /// no liveness of its own — the row is `.idle` for life.
     case markdown
+    /// Chromium DevTools for one browser session, as a session of its own (features
+    /// 2026-09-01) — a row, a tab, a movable pane, not a panel docked under the page. Born
+    /// attached to its browser (`ownerSessionID`) and attached for life; at most one per
+    /// browser. Status-less like the browser it inspects.
+    case inspect
 
     /// The agent hosted by this session, if it is one.
     var agentID: AgentID? {
@@ -32,6 +37,7 @@ extension SessionKind: RawRepresentable {
         case .browser: return "browser"
         case .simulator: return "simulator"
         case .markdown: return "markdown"
+        case .inspect: return "inspect"
         case .agent(let id): return id.rawValue
         }
     }
@@ -44,6 +50,7 @@ extension SessionKind: RawRepresentable {
         case "browser": self = .browser
         case "simulator": self = .simulator
         case "markdown": self = .markdown
+        case "inspect": self = .inspect
         default: self = .agent(AgentID(rawValue))
         }
     }
@@ -118,9 +125,10 @@ enum SessionStatus: Equatable, Sendable {
     /// A browser session's current page (ADR-0011). Persisted so a restored browser reopens
     /// its URL in a fresh engine; nil for non-browsers and a fresh "go to" home surface.
     var browserURL: URL?
-    /// The Claude Code session that owns this browser (ADR-0011 stage four containment) —
-    /// the Synth row's id, not Claude's own session id, so ownership survives claude exits
-    /// and `--resume`. nil for unowned browsers and every non-browser session.
+    /// The session one level up that this row belongs to (ADR-0011 stage four containment):
+    /// a browser or simulator belongs to the agent that made it, an inspect to the browser it
+    /// inspects. The Synth row's id, not an agent's own session id, so ownership survives
+    /// agent exits and `--resume`. nil for unowned rows.
     var ownerSessionID: UUID?
     /// The simulator device this session drives, by UDID — what a simulator session *is*
     /// (ADR-0015), the analogue of a browser's `browserURL`. Persisted, so a restored row
@@ -180,6 +188,9 @@ extension SessionKind {
         case .browser:       return "Browser"
         case .simulator:     return "Simulator"
         case .markdown:      return "Document"
+        // Never in a template — an inspect is only born from its browser — but the switch
+        // is exhaustive and the row's stock name is real.
+        case .inspect:       return "DevTools"
         }
     }
 }

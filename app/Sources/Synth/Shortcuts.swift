@@ -111,7 +111,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "+"], label: "Zoom in", alt: ["⌘", "="]),
             Shortcut(keys: ["⌘", "−"], label: "Zoom out"),
             Shortcut(keys: ["⌘", "F"], label: "Find in page"),
-            Shortcut(keys: ["⌥", "⌘", "I"], label: "DevTools"),
+            Shortcut(keys: ["⌥", "⌘", "I"], label: "Inspect"),
             Shortcut(keys: ["⌘", "⇧", "M"], label: "Device mode"),
         ]),
         // Simulator sessions are behind the Experimental toggle (ADR-0015), but the sheet lists what

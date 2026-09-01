@@ -69,6 +69,9 @@ typedef NS_ENUM(NSInteger, CEFShimAskKind) {
 /// A context-menu item Synth performs rather than the engine: open this URL in the user's
 /// real browser, the same thing the pane's own toolbar button does.
 - (void)cefBrowserDidRequestOpenExternal:(NSString *)url;
+/// The page's right-click → Inspect. Synth answers with an inspect session (its own pane),
+/// so the shim never opens a DevTools window here.
+- (void)cefBrowserDidRequestInspect;
 /// Find-in-page progress for the active query: which match is current, how many there are.
 /// `finalUpdate` marks the last report for that query.
 - (void)cefBrowserDidFindMatch:(int)activeIndex of:(int)count final:(BOOL)finalUpdate;
@@ -122,12 +125,6 @@ typedef NS_ENUM(NSInteger, CEFShimAskKind) {
 - (void)reload;
 /// Sets the page zoom level (CEF's logarithmic scale: factor = 1.2^level, 0 = 100%).
 - (void)setZoomLevel:(double)level;
-/// Opens Chromium DevTools for this page in its own native window.
-- (void)showDevTools;
-/// Closes this page's DevTools window if one is open.
-- (void)closeDevTools;
-/// Whether this page currently has a DevTools window open.
-- (BOOL)hasDevTools;
 /// Find in page. `forward`/`matchCase` apply to the search; `findNext` NO advances to the
 /// next match of the same query rather than starting a new search. Results arrive on
 /// cefBrowserDidFindMatch.

@@ -721,7 +721,7 @@ struct RootView: View {
             }
 
             // An open browser session claims the standard page verbs window-wide: ⌘L
-            // address, ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I DevTools — each presses the
+            // address, ⌘R reload, ⌘[ / ⌘] history, ⌥⌘I Inspect — each presses the
             // visible toolbar control, so disabled states (home page, empty history)
             // are respected for free. Before the passthrough guard: a focused page
             // must not eat the chords (⌘-modified keys never edit text anyway).
@@ -741,7 +741,7 @@ struct RootView: View {
                                 && !event.modifierFlags.contains(.option):
                     ctrl.openFind(); return nil
                 case "i" where event.modifierFlags.contains(.option):
-                    if !ctrl.isHome { ctrl.toggleDevTools() }; return nil
+                    if !ctrl.isHome { store.openInspect(for: open) }; return nil
                 case "m" where event.modifierFlags.contains(.shift):
                     if !ctrl.isHome { ctrl.toggleDeviceMode() }; return nil
                 case "=", "+":

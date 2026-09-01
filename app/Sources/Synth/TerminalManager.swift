@@ -15,7 +15,13 @@ import GhosttyKit
 /// `xec claude`. As an argument the line cannot be consumed by whatever the user's rc files do,
 /// on any shell.
 enum TerminalLauncher {
-    static let command: String = {
+    /// Written on demand rather than once at startup: the per-user temp dir is swept of
+    /// anything untouched for three days while the app is still running, and a Synth left up
+    /// over a long weekend lost the wrapper under itself — every new row then exec'd a path
+    /// that no longer existed, died on the spot, and was reported as the agent quitting.
+    static var command: String {
+        let path = NSTemporaryDirectory() + "synth-login-\(getpid()).sh"
+        guard !FileManager.default.isExecutableFile(atPath: path) else { return path }
         let script = """
         #!/bin/sh
         strip() { printf '%s' "$1" | sed -e 's#[^:]*[Gg]hostty[^:]*:##g' -e 's#:[^:]*[Gg]hostty[^:]*##g'; }
@@ -26,11 +32,10 @@ enum TerminalLauncher {
         [ -n "$launch" ] && exec "${SHELL:-/bin/zsh}" -l -i -c "$launch"
         exec "${SHELL:-/bin/zsh}" -l -i
         """
-        let path = NSTemporaryDirectory() + "synth-login-\(getpid()).sh"
         try? script.write(toFile: path, atomically: true, encoding: .utf8)
         chmod(path, 0o755)
         return path
-    }()
+    }
 }
 
 /// Owns the live terminal NSViews, keyed by session id, *outside* the SwiftUI view tree —

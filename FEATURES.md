@@ -2282,3 +2282,13 @@ disclosure to dive deeper.
   651, tag `v0.39.0`; dmg + zip notarized, stapled, verified credential-less with quarantine set;
   appcast newest 0.39.0 at 651, `edSignature` on all 18 enclosures, deltas from 611–644. No
   `synth-site` push; landing links unchanged.
+
+## [2026-09-01](docs/features/2026-09-01.md)
+
+- **A Synth left running for days can still open a session** — four days into one run, every new
+  row died on the spot and parked as "Claude quit": the login wrapper every session's shell is
+  exec'd through lives in the per-user temp dir, which macOS sweeps of anything untouched for
+  three days *while the app is still running*, and its path was cached in a `static let` from the
+  first spawn. `TerminalLauncher.command` now rewrites the script whenever it isn't on disk, so
+  the sweep costs nothing; `t33_login_script` deletes it under a live app and proves the next row
+  still comes up.

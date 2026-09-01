@@ -167,9 +167,6 @@ import AppKit
     private(set) var address: URL?
     private(set) var canGoBack = false
     private(set) var canGoForward = false
-    /// The bar toggle's on-state, resynced from the engine at each toggle — the user
-    /// can close the native DevTools window directly, behind the chrome's back.
-    var devToolsOpen = false
     /// Bumped on every navigation — drives the reload button's one-shot spin.
     private(set) var spinNonce = 0
     /// Set by ⌘L / the palette's "Go to address…" — the pane consumes it and presses
@@ -214,11 +211,6 @@ import AppKit
     func goForward() { engine.goForward(); spinNonce += 1 }
     func reload() { engine.reload(); spinNonce += 1 }
 
-    func toggleDevTools() {
-        let open = engine.devToolsOpen
-        if open { engine.closeDevTools() } else { engine.showDevTools() }
-        devToolsOpen = !open
-    }
 
     // Device mode (working.html devframe): like devToolsOpen, controller state — it
     // survives navigating away and back, and page navigations (like comment mode).
@@ -455,6 +447,11 @@ extension BrowserSessionController: BrowserEngineDelegate {
         NSWorkspace.shared.open(url)
     }
 
+    func engineDidRequestInspect(_ engine: BrowserEngine) {
+        // Store-level: the answer is an inspect session (row + split), not pane state.
+        bus?.post(.inspectRequested(sessionID))
+    }
+
     func engine(_ engine: BrowserEngine, didFindMatch active: Int, of count: Int, final: Bool) {
         findCount = count
         if active > 0 { findActive = active }
@@ -535,7 +532,7 @@ struct BrowserPane: View {
 
     private func pane(_ ctrl: BrowserSessionController) -> some View {
         VStack(spacing: 0) {
-            BrowserBar(ctrl: ctrl, dropOpen: $dropOpen, homeFocusNonce: $homeFocusNonce)
+            BrowserBar(session: session, ctrl: ctrl, dropOpen: $dropOpen, homeFocusNonce: $homeFocusNonce)
             if ctrl.deviceModeOn && !ctrl.isHome {
                 DeviceBar(ctrl: ctrl)
             }
@@ -711,9 +708,10 @@ private struct DeviceStage: View {
 // MARK: - Bar
 
 /// working.html `.pane-bar`: nav cluster · omnibox pill · comment-mode toggle ·
-/// DevTools toggle, on the chrome-grey strip with a hairline below.
+/// Inspect, on the chrome-grey strip with a hairline below.
 private struct BrowserBar: View {
     @Environment(AppStore.self) private var store
+    let session: Session
     let ctrl: BrowserSessionController
     @Binding var dropOpen: Bool
     @Binding var homeFocusNonce: Int
@@ -758,8 +756,12 @@ private struct BrowserBar: View {
                 }
             PaneBarButton(icon: Phosphor.deviceMobile, help: "Device mode",
                           disabled: ctrl.isHome, on: ctrl.deviceModeOn) { ctrl.toggleDeviceMode() }
-            PaneBarButton(icon: Phosphor.devtools, help: "DevTools",
-                          disabled: ctrl.isHome, on: ctrl.devToolsOpen) { ctrl.toggleDevTools() }
+            // Lit while this browser's inspect session exists; pressing returns to it
+            // rather than making a second (working.html `[data-nav="devtools"]` is-on).
+            PaneBarButton(icon: Phosphor.devtools, help: "Inspect",
+                          disabled: ctrl.isHome, on: store.inspectSession(of: session) != nil) {
+                store.openInspect(for: session)
+            }
             PaneBarButton(icon: Phosphor.external, help: "Open in default browser",
                           disabled: ctrl.isHome) {
                 if let url = ctrl.address { NSWorkspace.shared.open(url) }

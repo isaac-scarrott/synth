@@ -22,6 +22,7 @@ enum BrowserCheck {
         func engine(_ engine: BrowserEngine, didRequestContextMenu items: [BrowserMenuItem],
                     at point: CGPoint, choose: @escaping (Int) -> Void) { choose(0) }
         func engine(_ engine: BrowserEngine, didRequestOpenExternal url: URL) {}
+        func engineDidRequestInspect(_ engine: BrowserEngine) {}
     }
 
     static func run() -> Never {

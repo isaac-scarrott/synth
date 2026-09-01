@@ -474,7 +474,9 @@ final class ControlServer: @unchecked Sendable {
                     "isHome": ctrl.isHome,
                     "canGoBack": ctrl.canGoBack,
                     "canGoForward": ctrl.canGoForward,
-                    "devToolsOpen": ctrl.devToolsOpen]
+                    // Stable key, new meaning: DevTools is an inspect session now, so
+                    // "open" is "this browser has one" (features 2026-09-01).
+                    "devToolsOpen": store.inspectSession(of: session) != nil]
 
         // Drill the palette to a session row's frame — the row kebab's exact call.
         case "automation.rowActions" where automation:

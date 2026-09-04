@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.40.0",
+    "date": "2026-09-04",
+    "changes": [
+      "DevTools is a session, not a panel docked under the page. Right-click → Inspect (a new page menu at the cursor: Back / Forward / Reload / Inspect), ⌥⌘I, or the bar's </> opens it as a row of its own — a pane you drag the seam of, move to another split, or full-screen; a peer tab when Tabs is on; ⌘W closes it. It opens in a split under the page, so the classic bottom dock is now a real pane.",
+      "The pane hosts the real Chromium inspector — Elements, Console, Network, Sources — driving the page off the browser's own debugging endpoint, not a mock of it.",
+      "An inspect belongs to its browser the way a browser belongs to its Claude: named DevTools, wearing the browser's globe, sitting directly beneath it. One per browser, so asking again returns to the one you have, and closing the browser — or the Claude above it — takes it along."
+    ]
+  },
+  {
     "version": "0.39.1",
     "date": "2026-09-01",
     "changes": [

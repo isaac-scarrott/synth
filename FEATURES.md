@@ -2313,3 +2313,10 @@ disclosure to dive deeper.
   cascade + reorder, one-per-browser col-split, shim → Swift Inspect routing, and all chrome/verbs
   ported per the designs; audit-driven hardening included. Known limitation: a mid-run page-target
   swap can't re-resolve the frontend until the inspect is reopened.
+- **0.40.0 ships — Inspect is a session** — release carrying the two entries above: DevTools is a
+  row, a pane and a tab instead of a dock, one per browser, hosting the real Chromium inspector and
+  cascading closed with the browser it belongs to. `CFBundleVersion` 663, tag `v0.40.0`; dmg + zip
+  notarized, stapled, verified credential-less with quarantine set (the app inside the image
+  validates on its own); appcast newest 0.40.0 at 663, `edSignature` on all 18 enclosures, deltas
+  from 637–654 at ~1 MB against a 164 MB full download. No `synth-site` push; landing unchanged
+  since 0.37.0.

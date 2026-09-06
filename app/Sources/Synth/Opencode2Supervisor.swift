@@ -70,10 +70,11 @@ import OSLog
     // MARK: Supervision
 
     /// A resumed row's `session.created` never fires for its own conversation — only for a
-    /// subagent's, if any turn ever starts one — so `isRowSession` would otherwise wait forever
-    /// to learn which id is "its own" and treat everything as its own meanwhile (`:200`'s `nil`
-    /// fallback). Seeding it here, before `attach` starts the stream, means the very first event
-    /// is already correctly filtered instead of racing a subagent for the slot.
+    /// subagent's, if any turn ever starts one — so `isRowSession`'s own fallback (treat an event
+    /// as the row's own until some id is known) would otherwise wait forever to learn which id is
+    /// "its own", and would treat a subagent's as that answer the first time one shows up. Seeding
+    /// it here, before `attach` starts the stream, means the very first event is already correctly
+    /// filtered instead of racing a subagent for the slot.
     func seedResume(session: UUID, resumeID: String) {
         agentSessionIDs[session] = resumeID
     }

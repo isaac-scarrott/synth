@@ -279,10 +279,10 @@ func mergeOpencodeMCPConfig() {
 ///      server", so starting the TUI before this returns true is a coin flip on every launch, not
 ///      an occasional glitch.
 ///   3. register Synth's bundled MCP servers into it over `PUT /api/mcp/<name>` — the one part of
-///      v1's approach that does NOT carry over: `OPENCODE_CONFIG_CONTENT` is still a real env var
-///      the binary reads (`strings` confirms it), but verified twice, with both v1's and v2's own
-///      nested `mcp.servers` shape, that a server injected through it never appears in
-///      `GET /api/mcp` — while a `PUT` to that same endpoint registers one immediately.
+///      v1's approach that does NOT carry over as-is: `OPENCODE_CONFIG_CONTENT` is a real env var
+///      v2 does read, but its MCP subsystem initialises lazily, ~10-30s after `/api/health`
+///      already answers — too slow for a fresh row's first turn, which can start well inside that
+///      window. `PUT` to the same endpoint registers one immediately and deterministically instead.
 ///   4. start the visible TUI as `opencode2 --server http://127.0.0.1:<port>`, and report its exit
 ///      as the row's own (`spawnReportingExit`'s `cleanup` tears the server down alongside it) —
 ///      so from the app's side this still looks like the one-process-per-row v1 is.
@@ -294,15 +294,22 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
     let leading = aliasArgs(binary)
 
     // Only the bare TUI is a session. Every real subcommand — including `serve` itself, in case
-    // someone types it directly inside a Synth terminal — passes through untouched.
+    // someone types it directly inside a Synth terminal — passes through untouched. `uninstall`
+    // is deliberately absent: verified against the installed binary that it isn't a real v2
+    // subcommand at all (a bare word falls through to the `[<directory>]` positional), so treating
+    // it as one would be the same unverified-copy mistake as leaving it out of `update`'s spot.
     let subcommands: Set<String> = ["run", "serve", "attach", "acp", "api", "debug", "console",
                                     "auth", "mcp", "plugin", "models", "stats", "export", "import",
-                                    "mini", "service", "pair", "upgrade", "uninstall",
-                                    "--version", "-v"]
+                                    "mini", "service", "pair", "upgrade", "update"]
+    // Global flags that print something and exit rather than opening a session — `--help`/`-h`
+    // included, since typing it would otherwise spawn `serve`, wait on its health, and PUT the
+    // MCP servers in just to print usage and quit.
+    let isOneShot = hasFlag(userArgs, ["--version", "-v", "--help", "-h", "--completions", "--wizard"])
     let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
     let port = env["SYNTH_OPENCODE2_PORT"].flatMap { $0.isEmpty ? nil : $0 }
     let password = env["SYNTH_OPENCODE2_PASSWORD"].flatMap { $0.isEmpty ? nil : $0 }
-    let instrument = env["SYNTH_SESSION_ID"] != nil && !isSubcommand && port != nil && password != nil
+    let instrument = env["SYNTH_SESSION_ID"] != nil && !isOneShot && !isSubcommand
+                      && port != nil && password != nil
 
     guard instrument, let port, let password else { execReal(real, withLeading(leading, userArgs)) }
 

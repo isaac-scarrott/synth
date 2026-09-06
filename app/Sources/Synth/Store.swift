@@ -701,6 +701,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     var globalAgentFlags: [AgentID: String] = [
         .claudeCode: "",
         .opencode: "",
+        .opencode2: "",
         .antigravity: "",
     ]
     var wsAgentFlags: [UUID: [AgentID: String]] = [:]
@@ -3123,7 +3124,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// of its worktrees (both carry the full tree).
     private static func isSynthRepo(_ repo: URL) -> Bool {
         let fm = FileManager.default
-        return fm.fileExists(atPath: repo.appendingPathComponent("big-picture-design.html").path)
+        return fm.fileExists(atPath: repo.appendingPathComponent("working.html").path)
             && fm.fileExists(atPath: repo.appendingPathComponent("app/Sources/Synth/SynthApp.swift").path)
     }
 
@@ -3328,54 +3329,101 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     // MARK: Pull requests (PRService)
 
-    /// Refresh every workspace's PR state from `gh`. Called at launch and on app activation;
-    /// cheap to repeat — a missing `gh` or a non-GitHub repo simply yields no PRs.
+    /// Refresh every workspace's PR state. Called at launch and on app activation; cheap to
+    /// repeat — a repo with no GitHub remote, or a branch with no credential to ask GitHub
+    /// with, simply yields no PRs.
     func refreshPullRequests() {
-        guard PRService.ghPath != nil else { return }
         for ws in workspaces { refreshPullRequests(in: ws) }
     }
 
     /// In-flight and last-completed reads, keyed by workspace. `didBecomeActive` fires on
-    /// every ⌘-tab back, and without these a burst of activations spawns unbounded `gh`
-    /// subprocesses — two network calls each, per workspace.
+    /// every ⌘-tab back, and without these a burst of activations spawns unbounded network
+    /// calls — up to two per branch (list + merge-queue), fanned out concurrently.
     @ObservationIgnored private var prRefreshInFlight: Set<UUID> = []
     @ObservationIgnored private var lastPRRefresh: [UUID: Date] = [:]
     private static let prRefreshFloor: TimeInterval = 60
+    /// In-flight PR lookups per workspace refresh. Bounds both the blocking network calls
+    /// (GitHub's own concurrent-request comfort zone) and the GCD threads they occupy while
+    /// blocked — a repo with 100+ worktrees must not spawn 100+ live threads at once.
+    private static let prRefreshConcurrency = 6
 
-    /// One workspace's read: the blocking `gh pr list` (a cold call hits the network) runs
-    /// off the main thread; the result is folded back onto the branches on the main actor.
+    /// One workspace's read: one PRService call per branch, asking about whatever's actually
+    /// checked out in that branch's own worktree folder (not the name the model last
+    /// recorded) so a manual `git checkout` inside it doesn't leave a stale badge. A branch
+    /// with no folder on disk (archived, or still mid-create) falls back to asking by the
+    /// name the model has. Calls run off the main thread and bounded-concurrently with each
+    /// other (`prRefreshConcurrency` in flight at once — a repo with 100+ worktrees must not
+    /// fire that many blocking network calls, and subprocesses, onto GCD's global queue at
+    /// once); the result is folded back onto the branches on the main actor.
     @discardableResult
     private func refreshPullRequests(in workspace: Workspace, force: Bool = false) -> Task<Void, Never>? {
-        guard PRService.ghPath != nil else { return nil }
         let id = workspace.id
         guard !prRefreshInFlight.contains(id) else { return nil }
         if !force, let last = lastPRRefresh[id], Date().timeIntervalSince(last) < Self.prRefreshFloor {
             return nil
         }
         let repo = workspace.url
+        let candidates = workspace.branches.map { (id: $0.id, name: $0.name, worktreeURL: $0.worktreeURL) }
+        guard !candidates.isEmpty else { return nil }
+        // Captured as a local rather than read as `Self.prRefreshConcurrency` inside the
+        // detached closure below: `Store` is `@MainActor`, so its static members are too,
+        // and reading one from a non-isolated context needs `await` under Swift 6's actor
+        // rules even though it's a constant — read it here, on the actor, instead.
+        let concurrency = Self.prRefreshConcurrency
         prRefreshInFlight.insert(id)
         return Task { [weak self] in
-            let prs = await Task.detached(priority: .utility) {
-                PRService.pullRequests(at: repo)
+            let results = await Task.detached(priority: .utility) { () -> [(UUID, PRInfo??)] in
+                // Resolved once per repo, not once per branch: `git credential fill` is a
+                // subprocess call (a Keychain round trip in the worst case), and every
+                // branch shares the same repo's credential.
+                let token = PRService.authToken(at: repo)
+                var out = [(UUID, PRInfo??)]()
+                out.reserveCapacity(candidates.count)
+                let lock = NSLock()
+                // Chunked, not one `concurrentPerform` over every branch: a semaphore/group
+                // `.wait()` is unavailable in an async context (Swift 6 refuses it outright —
+                // it can starve the cooperative thread pool), and `concurrentPerform` alone
+                // grows its own worker pool to cover blocked threads on I/O-bound work — fine
+                // at this chunk size, a real thread-explosion risk at "every branch in a
+                // 100-worktree repo" size. `concurrentPerform` blocks the calling thread
+                // until its chunk finishes, so chunks are naturally sequenced with no extra
+                // synchronization.
+                var index = 0
+                while index < candidates.count {
+                    let end = min(index + concurrency, candidates.count)
+                    let chunk = Array(candidates[index..<end])
+                    DispatchQueue.concurrentPerform(iterations: chunk.count) { i in
+                        let c = chunk[i]
+                        let asked = FileManager.default.fileExists(atPath: c.worktreeURL.path)
+                            ? PRService.pullRequest(at: c.worktreeURL, token: token)
+                            : PRService.pullRequest(branch: c.name, at: repo, token: token)
+                        lock.lock(); out.append((c.id, asked)); lock.unlock()
+                    }
+                    index = end
+                }
+                return out
             }.value
             guard let self else { return }
             self.prRefreshInFlight.remove(id)
-            // nil is "couldn't ask" — offline, no `gh`, not a GitHub repo. Keep whatever we
-            // last knew rather than clearing every badge; a stale PR number is closer to the
-            // truth than none, and the sweeper reads this state.
-            guard let prs else { return }
-            self.lastPRRefresh[id] = Date()
             guard let ws = self.workspaces.first(where: { $0.id == id }) else { return }
-            for branch in ws.branches where branch.pr != prs[branch.name] {
-                branch.pr = prs[branch.name]
+            var askedAny = false
+            for (branchID, asked) in results {
+                guard let branch = ws.branches.first(where: { $0.id == branchID }) else { continue }
+                // Outer nil is "couldn't ask" for this branch — offline, no GitHub remote,
+                // no credential. Keep whatever we last knew rather than clearing the badge;
+                // a stale PR number is closer to the truth than none, and the sweeper reads
+                // this state independently anyway.
+                guard let inner = asked else { continue }
+                askedAny = true
+                if branch.pr != inner { branch.pr = inner }
             }
+            if askedAny { self.lastPRRefresh[id] = Date() }
         }
     }
 
     /// Refresh every workspace and wait for it, so a caller that needs fresh PR state —
     /// the archive sweeper — reads it after the answer lands rather than beside it.
     func refreshPullRequestsAndWait(force: Bool = false) async {
-        guard PRService.ghPath != nil else { return }
         let tasks = workspaces.compactMap { refreshPullRequests(in: $0, force: force) }
         for task in tasks { await task.value }
     }

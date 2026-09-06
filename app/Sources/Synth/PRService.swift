@@ -1,13 +1,13 @@
 import Foundation
 
 /// A branch's pull-request state, as GitHub sees it. Derived like session status (not
-/// persisted): read from `gh` on launch and refreshed on activation, never snapshotted.
+/// persisted): read from GitHub on launch and refreshed on activation, never snapshotted.
 enum PRState: String, Sendable {
     case open = "OPEN"
     case merged = "MERGED"
     case closed = "CLOSED"
-    /// Not a `gh` state — an open PR sitting in GitHub's merge queue, promoted from `.open`
-    /// when the GraphQL `mergeQueueEntry` is present (see `pullRequests`).
+    /// Not a state the API reports directly — an open PR sitting in GitHub's merge queue,
+    /// promoted from `.open` when the query's own `mergeQueueEntry` field is present.
     case queued = "QUEUED"
 
     /// Rank for picking one PR per branch when several share a head ref: a queued PR (already
@@ -27,7 +27,7 @@ struct PRInfo: Sendable, Equatable {
     let state: PRState
     let url: String
     /// The branch this PR merges *into*. The sweeper needs it to catch commits made after a
-    /// merge — `gh` still reports MERGED while the local tip has moved past the merge commit.
+    /// merge — GitHub still reports MERGED while the local tip has moved past the merge commit.
     var baseRefName: String = ""
     /// A draft reads OPEN today, so nothing depends on this yet. It's here so that the next
     /// person to simplify the state check can't accidentally make drafts sweepable.
@@ -37,112 +37,111 @@ struct PRInfo: Sendable, Equatable {
     var headRepositoryOwner: String = ""
 }
 
-/// Reads pull requests from the GitHub CLI (`gh`). Everything the tree shows about a
-/// branch's PR comes from here — no mock data. A repo with no GitHub remote, a missing or
-/// unauthenticated `gh`, all resolve to "no PRs" rather than an error.
+/// Reads pull requests straight from GitHub's GraphQL API — no `gh` binary. Auth comes from
+/// whatever git itself already has on file (`GitService.credential`, so osxkeychain/Git
+/// Credential Manager/`gh`'s own credential helper if that's what's configured) or
+/// `GH_TOKEN`/`GITHUB_TOKEN`; Synth never manages a token of its own. A repo whose `origin`
+/// isn't `github.com`, or with nothing to authenticate with, both resolve to "no PRs" rather
+/// than an error — matching `gh` itself, which also refuses to answer unauthenticated.
+///
+/// Every read is scoped to one named branch via GraphQL's `headRefName` filter — never a
+/// repo-wide "list everything" call, which silently truncates on a busy repo (a page cap
+/// pushes an older branch's PR off the tail, and that reads exactly like "this branch has no
+/// PR"). This also has to be GraphQL and not REST's `pulls?head=owner:branch` filter: that
+/// filter's `owner` must name the *head* repo's owner, which for a PR opened from a fork is
+/// the fork owner, not this repo's — information Synth doesn't have going in, since finding
+/// it out is the point of the call. `headRefName` takes a bare branch name and searches
+/// correctly regardless of which fork it lives in (confirmed against `gh`'s own query, which
+/// hits this same field).
 enum PRService {
-    /// Where `gh` really lives, resolved once on the launch PATH (bare under Dock/`open`,
-    /// so the common Homebrew locations are searched too, mirroring AgentDescriptor).
-    static let ghPath: String? = {
+    /// The PR for whatever branch is actually checked out at `worktree` right now — asks
+    /// git what's really there (`checkedOutBranch`) rather than trusting the model, so a
+    /// `git checkout` run by hand inside the folder doesn't leave a stale badge. Nil when
+    /// detached HEAD, or when nothing could be asked (see `pullRequest(branch:at:)`).
+    static func pullRequest(at worktree: URL) -> PRInfo?? {
+        pullRequest(at: worktree, token: authToken(at: worktree))
+    }
+
+    /// Same as `pullRequest(at:)`, but with the auth token already resolved — what a batch
+    /// refresh over many branches uses, so `git credential fill` (a subprocess call, possibly
+    /// a Keychain round trip) runs once per repo instead of once per branch.
+    static func pullRequest(at worktree: URL, token: String?) -> PRInfo?? {
+        guard let branch = GitService.checkedOutBranch(at: worktree) else { return .none }
+        return pullRequest(branch: branch, at: worktree, token: token)
+    }
+
+    /// One named branch's PR, regardless of what's checked out where — what the sweeper
+    /// uses for a worktree that's already gone from disk, keyed by the branch name it last
+    /// knew.
+    ///
+    /// **nil means "couldn't ask"** — no GitHub remote, no credential to authenticate with,
+    /// offline, unparseable answer — and is not the same as `.some(nil)`, which means "asked,
+    /// and this branch has no PR". Display can treat both as "no badge"; nothing that
+    /// *deletes* anything may.
+    static func pullRequest(branch: String, at repo: URL) -> PRInfo?? {
+        pullRequest(branch: branch, at: repo, token: authToken(at: repo))
+    }
+
+    /// Same as `pullRequest(branch:at:)`, but with the auth token already resolved (see
+    /// `pullRequest(at:token:)`). GraphQL answers nothing unauthenticated, so no token means
+    /// "couldn't ask" outright — there is no unauthenticated fallback to try.
+    static func pullRequest(branch: String, at repo: URL, token: String?) -> PRInfo?? {
+        guard let (owner, name) = githubOwnerRepo(at: repo), let token else { return .none }
+        guard let data = query(owner: owner, name: name, branch: branch, token: token),
+              let candidates = parseNodes(data)
+        else { return .none }
+        guard let best = strongest(candidates) else { return .some(nil) }
+        return .some(best)
+    }
+
+    /// `owner/name`, when `origin` is a `github.com` remote (https, ssh, or `git@` scp-style)
+    /// — nil for any other host, or no `origin` at all.
+    private static func githubOwnerRepo(at repo: URL) -> (owner: String, name: String)? {
+        guard let raw = GitService.remoteURL("origin", at: repo) else { return nil }
+        var rest: String?
+        if raw.hasPrefix("git@github.com:") {
+            rest = String(raw.dropFirst("git@github.com:".count))
+        } else if let url = URL(string: raw), url.host?.lowercased() == "github.com" {
+            rest = url.path
+        }
+        guard var path = rest else { return nil }
+        if path.hasPrefix("/") { path.removeFirst() }
+        if path.hasSuffix(".git") { path.removeLast(4) }
+        let parts = path.split(separator: "/")
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return (String(parts[0]), String(parts[1]))
+    }
+
+    /// A token to authenticate with. Exposed (not `private`) so a batch caller (Store) can
+    /// resolve this once per repo and pass it to every branch's call, rather than each
+    /// branch re-spawning `git credential fill`.
+    static func authToken(at repo: URL) -> String? {
+        let env = ProcessInfo.processInfo.environment
+        if let t = env["GH_TOKEN"], !t.isEmpty { return t }
+        if let t = env["GITHUB_TOKEN"], !t.isEmpty { return t }
+        if let t = GitService.credential(protocol: "https", host: "github.com")?.password { return t }
+        return ghAuthToken()
+    }
+
+    /// Last-resort fallback, tried only when nothing else answered: `gh auth token`, if `gh`
+    /// happens to be installed and signed in. Not a dependency — every path above works with
+    /// `gh` completely absent — but a real gap without it: someone who ran `gh auth login`
+    /// and chose SSH as their git protocol has no reason to ever have an HTTPS credential
+    /// cached for github.com, so `GitService.credential` alone leaves them with no PR badges
+    /// at all despite being fully authenticated. `gh auth token` is a local keyring read
+    /// (no network), so this costs nothing when `gh` isn't there and one fast subprocess
+    /// when it is.
+    private static func ghAuthToken() -> String? {
         let home = NSHomeDirectory()
         let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
             .split(separator: ":").map(String.init)
         let hints = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin"]
-        for dir in pathDirs + hints {
-            let candidate = dir + "/gh"
-            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
-        }
-        return nil
-    }()
-
-    /// Open, closed and merged PRs for `repo`, keyed by head branch name (`gh`'s
-    /// `headRefName`). One entry per branch — the highest-precedence, then most recent PR
-    /// when a branch has several.
-    ///
-    /// **nil means "couldn't ask"** — `gh` absent, unauthenticated, no GitHub remote,
-    /// offline, unparseable answer — and is not the same as an empty map, which means "asked,
-    /// and this repo has no PRs". The display can treat both as "no badge"; nothing that
-    /// *deletes* anything may. Before this distinction existed, an offline laptop and "every
-    /// PR merged" were byte-identical to a caller.
-    static func pullRequests(at repo: URL) -> [String: PRInfo]? {
-        guard let ghPath else { return nil }
-        guard var best = list(at: repo, ghPath: ghPath) else { return nil }
-        // Promote any open PR that's sitting in the merge queue to `.queued`. This is a second,
-        // GraphQL read (`mergeQueueEntry`) because `gh pr list` only ever reports OPEN/MERGED/
-        // CLOSED — the queue is a sub-state of open. Skipped when there are no PRs to promote,
-        // and degrades to "nothing queued" on any error (repo without a merge queue, older gh).
-        guard let sample = best.values.first else { return best }
-        let queued = mergeQueued(at: repo, ghPath: ghPath, sample: sample)
-        for (branch, pr) in best where pr.state == .open && queued.contains(pr.number) {
-            best[branch] = PRInfo(number: pr.number, state: .queued, url: pr.url)
-        }
-        return best
-    }
-
-    /// The raw `gh pr list` read — one PR per head branch (strongest, then most recent),
-    /// before any merge-queue promotion. nil when `gh` couldn't answer.
-    private static func list(at repo: URL, ghPath: String) -> [String: PRInfo]? {
-        run(["pr", "list", "--state", "all", "--limit", "100", "--json", jsonFields],
-            at: repo, ghPath: ghPath).flatMap(parse)
-    }
-
-    /// One branch's PR, asked for by name. The bulk read is capped at 100 and a busy repo
-    /// will push an older branch's PR off the tail — invisible, and it reads exactly like
-    /// "this branch has no PR". Anything gating a delete asks per-branch instead.
-    ///
-    /// nil means "couldn't ask"; `.some(nil)` means "asked, no PR for this branch".
-    static func pullRequest(head: String, at repo: URL) -> PRInfo?? {
-        guard let ghPath else { return .none }
-        guard let data = run(["pr", "list", "--head", head, "--state", "all", "--limit", "20",
-                              "--json", jsonFields], at: repo, ghPath: ghPath),
-              let byBranch = parse(data)
-        else { return .none }
-        return .some(byBranch[head])
-    }
-
-    private static let jsonFields =
-        "number,state,url,headRefName,baseRefName,isDraft,headRepositoryOwner"
-
-    /// A `gh` invocation that distinguishes "it said nothing" from "it couldn't be asked".
-    private static func run(_ args: [String], at repo: URL, ghPath: String) -> Data? {
-        // `Process.currentDirectoryURL` throws an uncaught NSException (crashing the app,
-        // not catchable by the `do`/`try` below) when the path doesn't exist on disk — a
-        // workspace whose folder has been moved or unmounted must fail quiet, not abort.
-        guard FileManager.default.fileExists(atPath: repo.path) else { return nil }
+        guard let ghPath = (pathDirs + hints).map({ "\($0)/gh" })
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+        else { return nil }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: ghPath)
-        process.arguments = args
-        process.currentDirectoryURL = repo
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()   // swallow "no default remote" / auth chatter
-        do {
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            return data
-        } catch {
-            return nil
-        }
-    }
-
-    /// Numbers of the repo's open PRs that are currently in the merge queue, via GraphQL
-    /// (`pullRequests.mergeQueueEntry`). Owner/name are lifted from a PR url we already hold,
-    /// so no extra `repo view`. Empty on any failure — merge queue absent, field unavailable,
-    /// or the CLI unauthenticated — matching the rest of the service's fail-quiet contract.
-    private static func mergeQueued(at repo: URL, ghPath: String, sample: PRInfo) -> Set<Int> {
-        guard FileManager.default.fileExists(atPath: repo.path) else { return [] }
-        guard let url = URL(string: sample.url), url.pathComponents.count >= 3 else { return [] }
-        let owner = url.pathComponents[1]
-        let name = url.pathComponents[2]
-        let query = "query($owner:String!,$name:String!){repository(owner:$owner,name:$name)"
-            + "{pullRequests(states:OPEN,first:100){nodes{number mergeQueueEntry{position}}}}}"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: ghPath)
-        process.arguments = ["api", "graphql", "-f", "query=\(query)",
-                             "-F", "owner=\(owner)", "-F", "name=\(name)"]
-        process.currentDirectoryURL = repo
+        process.arguments = ["auth", "token"]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = Pipe()
@@ -150,55 +149,94 @@ enum PRService {
             try process.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return [] }
-            return parseQueued(data)
+            guard process.terminationStatus == 0 else { return nil }
+            let token = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (token?.isEmpty == false) ? token : nil
         } catch {
-            return []
-        }
-    }
-
-    /// PR numbers whose `mergeQueueEntry` came back non-null.
-    private static func parseQueued(_ data: Data) -> Set<Int> {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let dataObj = root["data"] as? [String: Any],
-              let repo = dataObj["repository"] as? [String: Any],
-              let prs = repo["pullRequests"] as? [String: Any],
-              let nodes = prs["nodes"] as? [[String: Any]]
-        else { return [] }
-        var out: Set<Int> = []
-        for node in nodes where node["mergeQueueEntry"] is [String: Any] {
-            if let number = node["number"] as? Int { out.insert(number) }
-        }
-        return out
-    }
-
-    /// Fold `gh`'s JSON array into one PR per head branch, keeping the strongest.
-    /// nil when the payload wasn't the array we asked for — that's a failed read, not an
-    /// empty one.
-    private static func parse(_ data: Data) -> [String: PRInfo]? {
-        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             return nil
         }
-        var best: [String: PRInfo] = [:]
-        for row in rows {
-            guard let branch = row["headRefName"] as? String,
-                  let number = row["number"] as? Int,
-                  let stateRaw = row["state"] as? String,
-                  let state = PRState(rawValue: stateRaw),
-                  let url = row["url"] as? String
-            else { continue }
-            let pr = PRInfo(number: number, state: state, url: url,
-                            baseRefName: row["baseRefName"] as? String ?? "",
-                            isDraft: row["isDraft"] as? Bool ?? false,
-                            headRepositoryOwner: (row["headRepositoryOwner"] as? [String: Any])?["login"] as? String ?? "")
-            if let existing = best[branch] {
-                let stronger = pr.state.precedence < existing.state.precedence
-                    || (pr.state.precedence == existing.state.precedence && pr.number > existing.number)
-                if stronger { best[branch] = pr }
-            } else {
-                best[branch] = pr
-            }
+    }
+
+    /// Every PR (any state) whose head ref is exactly `branch`, newest first, with the
+    /// merge-queue field already inline — one request in, no separate merge-queue round
+    /// trip. 20, not fewer: a branch reopened a few times has one PR per reopen, all sharing
+    /// this head name, and `strongest` needs every candidate in the page to pick correctly.
+    private static func query(owner: String, name: String, branch: String, token: String) -> Data? {
+        guard let url = URL(string: "https://api.github.com/graphql") else { return nil }
+        let text = """
+        query($owner:String!,$name:String!,$head:String!){\
+        repository(owner:$owner,name:$name){\
+        pullRequests(headRefName:$head,states:[OPEN,CLOSED,MERGED],first:20,\
+        orderBy:{field:CREATED_AT,direction:DESC}){nodes{\
+        number state url isDraft baseRefName headRepositoryOwner{login} \
+        mergeQueueEntry{position}}}}}
+        """
+        let payload: [String: Any] = [
+            "query": text,
+            "variables": ["owner": owner, "name": name, "head": branch]
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return perform(request)
+    }
+
+    /// Blocking request/response, matching the rest of the codebase's convention of doing
+    /// I/O synchronously and leaving callers to dispatch it off the main thread (GitService's
+    /// `Process` calls do the same). A short timeout plus a non-2xx check stand in for the
+    /// exit-code check on a subprocess.
+    private static func perform(_ request: URLRequest) -> Data? {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: Data?
+        var status: Int?
+        let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            status = (response as? HTTPURLResponse)?.statusCode
+            result = data
+            semaphore.signal()
+        }
+        task.resume()
+        semaphore.wait()
+        guard let status, (200..<300).contains(status) else { return nil }
+        return result
+    }
+
+    /// Fold a branch's PR list down to the one worth showing: the strongest state, then the
+    /// most recent when a branch was reopened and so has several.
+    private static func strongest(_ prs: [PRInfo]) -> PRInfo? {
+        var best: PRInfo?
+        for pr in prs {
+            guard let existing = best else { best = pr; continue }
+            let stronger = pr.state.precedence < existing.state.precedence
+                || (pr.state.precedence == existing.state.precedence && pr.number > existing.number)
+            if stronger { best = pr }
         }
         return best
+    }
+
+    /// The GraphQL response's `data.repository.pullRequests.nodes` into `PRInfo`s. GraphQL's
+    /// `PullRequestState` enum is OPEN/CLOSED/MERGED directly — no REST-style `merged_at`
+    /// timestamp heuristic needed, and its raw strings already match `PRState`'s.
+    private static func parseNodes(_ data: Data) -> [PRInfo]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let d = root["data"] as? [String: Any],
+              let repository = d["repository"] as? [String: Any],
+              let prs = repository["pullRequests"] as? [String: Any],
+              let nodes = prs["nodes"] as? [[String: Any]]
+        else { return nil }
+        return nodes.compactMap { node in
+            guard let number = node["number"] as? Int,
+                  let stateRaw = node["state"] as? String,
+                  var state = PRState(rawValue: stateRaw),
+                  let url = node["url"] as? String
+            else { return nil }
+            if state == .open, node["mergeQueueEntry"] is [String: Any] { state = .queued }
+            let owner = (node["headRepositoryOwner"] as? [String: Any])?["login"] as? String ?? ""
+            return PRInfo(number: number, state: state, url: url,
+                          baseRefName: node["baseRefName"] as? String ?? "",
+                          isDraft: node["isDraft"] as? Bool ?? false, headRepositoryOwner: owner)
+        }
     }
 }

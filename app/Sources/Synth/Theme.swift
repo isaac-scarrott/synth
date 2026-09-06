@@ -99,22 +99,21 @@ enum Theme {
     /// The brand accent: the icon's champagne mark in dark. Light can't use it — at 87% lightness
     /// it fails contrast on white — so light takes a copper of the same warm family (4.78:1).
     /// Spent only on focus, selection, the ⌘K active row and the open-session tint.
-    static let accent      = dyn(0xA86038, 0xEEE0CD)
+    static let accent      = dyn(0xA86038, 0xF1DDD7)
     /// The mark's own pair — charcoal on light, champagne on dark (--focus).
-    static let focus       = dyn(0x1E2126, 0xEEE0CD)
+    static let focus       = dyn(0x1E2126, 0xF1DDD7)
     /// The app icon's champagne, worn only by the waiting-build foot button — which is why it is
     /// not an accent: the accents mean states, this means Synth itself. Like `accent` it flips per
     /// theme rather than holding one hex — the mark on dark, and on light the same hue taken down
     /// far enough to read on a near-white panel (5.2:1), because a pale champagne tint over a pale
     /// panel is no tint at all and light's bronze goes olive on the dark sidebar (--update-ink).
-    static let updateInk   = dyn(0x7F6130, 0xEEE0CD)
+    static let updateInk   = dyn(0x7F6130, 0xF1DDD7)
     /// The wash and its hairline both take their opacities off this (--update-rgb). Dark restores
-    /// the mark's chroma to do it: #EEE0CD's own low saturation reads grey at 13% alpha. The glyph
+    /// the mark's chroma to do it: #F1DDD7's own low saturation reads grey at 13% alpha. The glyph
     /// above stays the mark itself, which is why these two are not one token.
-    static let updateWash  = dyn(0x7F6130, 0xECCE9B)
+    static let updateWash  = dyn(0x7F6130, 0xF6C7B4)
     static let run         = Color(hex: 0x34C759)   // green liveness
-    static let working     = Color(hex: 0xF5A623)   // amber (working) — 4° off champagne, so it
-                                                    // stays put and the accent keeps clear of it
+    static let working     = Color(hex: 0xF5A623)   // amber (working)
     /// Liveness (running / working), working.html `--live-lift` → `--live-deep`: the two ends of
     /// the sphere's ramp, near face to rim. Violet is the one hue no other right-side indicator
     /// claims — the needs-input ? is slate-blue and the error ! is red, and the old cyan sat

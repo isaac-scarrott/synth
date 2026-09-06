@@ -43,7 +43,7 @@ struct UsagePane: View {
     private var head: some View {
         HStack(spacing: 10) {
             if store.sidebarCollapsed { SidebarToggle().padding(.trailing, 2) }
-            UsageMark(size: 16).foregroundStyle(Theme.inkMuted).frame(width: 18)
+            Phos(path: Phosphor.usage, size: 16).foregroundStyle(Theme.inkMuted).frame(width: 18)
             Text("Usage")
                 .font(.sans(13, 600))
                 .foregroundStyle(Theme.ink)
@@ -234,25 +234,5 @@ private struct UsageEntrance: ViewModifier {
 private extension View {
     func usageEntrance(index: Int, appeared: Bool) -> some View {
         modifier(UsageEntrance(index: index, appeared: appeared))
-    }
-}
-
-/// working.html's `ICON_USAGE`: three bars, drawn rather than pathed — Phosphor carries no chart
-/// mark, and three rounded rects are cheaper to read than a traced outline of them.
-private struct UsageMark: View {
-    var size: CGFloat = 16
-
-    var body: some View {
-        let unit = size / 256
-        HStack(alignment: .bottom, spacing: 24 * unit) {
-            ForEach([CGFloat(80), 128, 176], id: \.self) { bar in
-                RoundedRectangle(cornerRadius: 8 * unit, style: .continuous)
-                    .frame(width: 48 * unit, height: bar * unit)
-            }
-        }
-        .padding(.horizontal, 32 * unit)
-        .padding(.top, 48 * unit)
-        .padding(.bottom, 32 * unit)
-        .frame(width: size, height: size)
     }
 }

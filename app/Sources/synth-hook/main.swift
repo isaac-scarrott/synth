@@ -294,16 +294,19 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
     let leading = aliasArgs(binary)
 
     // Only the bare TUI is a session. Every real subcommand — including `serve` itself, in case
-    // someone types it directly inside a Synth terminal — passes through untouched. `uninstall`
-    // is deliberately absent: verified against the installed binary that it isn't a real v2
-    // subcommand at all (a bare word falls through to the `[<directory>]` positional), so treating
-    // it as one would be the same unverified-copy mistake as leaving it out of `update`'s spot.
-    let subcommands: Set<String> = ["run", "serve", "attach", "acp", "api", "debug", "console",
+    // someone types it directly inside a Synth terminal — passes through untouched. Every entry
+    // here (and `uninstall`'s deliberate absence) is checked against the installed binary itself,
+    // not copied from v1's own list: `attach` is real for v1 (`opencode attach <url>`) but not for
+    // v2 — carrying it over here was exactly the same unverified-copy mistake `uninstall` was.
+    let subcommands: Set<String> = ["run", "serve", "acp", "api", "debug", "console",
                                     "auth", "mcp", "plugin", "models", "stats", "export", "import",
                                     "mini", "service", "pair", "upgrade", "update"]
-    // Global flags that print something and exit rather than opening a session — `--help`/`-h`
-    // included, since typing it would otherwise spawn `serve`, wait on its health, and PUT the
-    // MCP servers in just to print usage and quit.
+    // Global flags that print something and don't open a row's own agent session — `--help`/`-h`
+    // included, since typing it would otherwise spawn `serve`, wait on its health, and PUT the MCP
+    // servers in just to print usage and quit. `--wizard` walks an interactive prompt to build a
+    // command line rather than being one itself (confirmed live: it can end by running the command
+    // it built, including the bare TUI) — kept out of instrumentation for the same reason as the
+    // others, a CLI-authoring flow, not this row's own conversation.
     let isOneShot = hasFlag(userArgs, ["--version", "-v", "--help", "-h", "--completions", "--wizard"])
     let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
     let port = env["SYNTH_OPENCODE2_PORT"].flatMap { $0.isEmpty ? nil : $0 }

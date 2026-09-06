@@ -701,6 +701,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     var globalAgentFlags: [AgentID: String] = [
         .claudeCode: "",
         .opencode: "",
+        .opencode2: "",
         .antigravity: "",
     ]
     var wsAgentFlags: [UUID: [AgentID: String]] = [:]

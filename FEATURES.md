@@ -2382,3 +2382,28 @@ disclosure to dive deeper.
 - **The figures follow the reader's theme** — each is a `<picture>` with the dark capture under
   `prefers-color-scheme` and the light one on the `<img>`, which holds intrinsic dimensions correct
   for both since every pair matches exactly. A viewer downloads one variant: 529KB against 523KB.
+
+## [2026-09-06](docs/features/2026-09-06.md)
+
+- **OpenCode 2 joins as Synth's fourth hosted agent** — `opencode2` (OpenCode's v2 preview CLI),
+  added as one `AgentDescriptor` plus one `AgentSupervisor` (`Opencode2Supervisor`), sharing
+  OpenCode's own mark. v2 splits its server out of the TUI process and gates every route behind
+  HTTP Basic auth, so the shim now runs `serve` and the visible TUI as two processes sharing one
+  pinned password and one process group (`serve --port <assigned>`, waited healthy, then the TUI
+  over `--server <url>`); v1's `/tui/append-prompt` has no v2 equivalent, so delivery falls back to
+  the same terminal paste Claude Code's supervisor uses; MCP registration moved from
+  `OPENCODE_CONFIG_CONTENT` (real in v2, but loads 10–30s after health — too slow to depend on) to
+  the immediate, deterministic `PUT /api/mcp/<name>`; v2's event vocabulary gained dedicated
+  `session.execution.*` outcomes and a Form system superseding `question.*`.
+  Fixed alongside it: `AgentProbe`'s custom-agent detection now picks the longest matching
+  version-marker rather than the first in registration order, since opencode2's own `--version`
+  answer contains v1's marker as a substring. An independent review then caught three more: a
+  resumed row could latch onto a subagent's conversation id before its own arrived (fixed via a new
+  `AgentSupervisor.seedResume`, default no-op for every other agent), the delivery retry loop could
+  keep pasting into a row that had already gone away, and the subcommand-recognition list had
+  gaps in both directions against the real binary (missing `update`/`--standalone`/`-h`/`--help`/
+  `--completions`/`--wizard`; wrongly carrying over `uninstall` and `attach` from v1's own list,
+  neither real for v2) — two further rounds settled it against the binary's own command table.
+  Known gap: the shared-config-dir light-theme correction (`OpencodeTheme`) does not carry over to
+  v2's TUI — verified empirically, left unaddressed rather than reverse-engineered against a
+  still-moving preview theme format.

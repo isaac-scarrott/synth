@@ -49,6 +49,8 @@ def kill_all():
     sh(f"pkill -f '{exe}'")
     sh(f"pkill -f '{APP}/Contents/Frameworks'")   # our CEF helpers, which hold the CDP port
     sh("pkill -f 'opencode --port'")
+    sh("pkill -f 'opencode2 serve --port'")
+    sh("pkill -f 'opencode2 --server'")
     for _ in range(50):
         if not sh(f"pgrep -f '{exe}'"): break
         time.sleep(0.2)

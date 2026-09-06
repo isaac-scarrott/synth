@@ -2313,6 +2313,8 @@ disclosure to dive deeper.
   cascade + reorder, one-per-browser col-split, shim → Swift Inspect routing, and all chrome/verbs
   ported per the designs; audit-driven hardening included. Known limitation: a mid-run page-target
   swap can't re-resolve the frontend until the inspect is reopened.
+## [2026-09-06](docs/features/2026-09-06.md)
+
 - **0.40.0 ships — Inspect is a session** — release carrying the two entries above: DevTools is a
   row, a pane and a tab instead of a dock, one per browser, hosting the real Chromium inspector and
   cascading closed with the browser it belongs to. `CFBundleVersion` 663, tag `v0.40.0`; dmg + zip
@@ -2436,3 +2438,37 @@ disclosure to dive deeper.
   the batch refresh (now bounded, 6 branches at a time). 28/28 checks green in a standalone
   harness against real merged/open/draft/closed/cross-fork PRs. Known regression: only
   `github.com` is recognised, not GitHub Enterprise.
+- **The conditions bar gains Theme, a fourth axis for what colour scheme the page sees** — Normal
+  now means the page follows *Synth's* theme setting (System still means the raw OS decides), and
+  Light/Dark force it either way, isolated to that one browser via `data-page-theme` on its own
+  pane. Sits right after CPU, at Normal by default like the other three.
+- **Theme's native port** — `PageTheme` + `Emulation.setEmulatedMedia` (app), `browser.deviceMode`
+  gains `theme`. A colour-scheme-only CDP change doesn't force CEF 144 to repaint on its own, so
+  `applyPageTheme()` piggybacks on a device-metrics re-send (a real viewport change always paints)
+  or a throwaway metrics nudge when no screen override is active — and retries up to four times
+  over ~1.8s (`kickPageTheme`), since measured a single nudge wasn't reliable either.
+- **Settings loses its "Experimental" drawer** — Tabs and Simulator sessions weren't experimental,
+  just off by default, so the section that grouped them by maturity is gone and each row moves to
+  where you'd look for it. Appearance takes the sessions view mode as a Sidebar/Tabs choice and
+  loses "Open .md in" (markdown opens in Synth, full stop); "MCP servers" becomes Integrations,
+  takes the simulator gate and renames "Synth app" to "Worktrees"; Privacy's analytics folds into
+  About. Nine App-tab sections become seven. The simulator's second switch goes with the reorg —
+  `mcpSimulatorEnabled` is deleted and turning the sessions on is what registers `synth-simulator`,
+  since "a simulator no agent may drive" is not a distinction anybody was drawing.
+- **Settings has scopes, and they are tabs like any other** — the app scope is "General" (it sat
+  beside a project named synth, and two tabs differing by one capital letter is a collision anyone
+  naming a project after their app would hit), and every project gets a tab rather than only the one
+  the sidebar last had open. The strip is the session strip's own `.tab`, so the close button's
+  tighter right padding moves onto the tabs that carry one and the two can't drift apart.
+- **The session template is a list you add a row to** — "Add session" is the list's next row, dashed
+  and plus-led, picking the kind from a menu, in place of a bar carrying one button per kind. The
+  "opens" tag and the kind pill go: the row above says the first one opens, and the icon already
+  says what kind it is. Agent rows are titled Claude Code / OpenCode / Antigravity rather than by
+  binary, and "Flags added to every claude launch" goes with them.
+- **Settings is ported to the app, and its defaults change** — `TabShell` is extracted from
+  `TabChip` so Settings' scopes and the branch's sessions are one tab component with two strips;
+  `[`/`]` walk the whole strip, which an audit caught had left projects two onwards mouse-only.
+  Out of the box Synth now shows sessions as tabs, ships all three notification sounds silent, and
+  offers simulator sessions (inert without a full Xcode). Each flipped default's doc comment was
+  rewritten rather than left arguing the opposite. `markdownOpen` is deleted end to end —
+  `MarkdownOpener.swift` with it — and markdown opens in Synth.

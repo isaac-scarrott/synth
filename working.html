@@ -1584,18 +1584,31 @@
     display: flex; align-items: center; gap: 3px;
     overflow: hidden;                       /* no scroll — tabs shrink to fit so the + stays visible */
   }
+  /* ---- .tab is one component with two strips: the branch's sessions (.tabstrip, in tabs mode)
+     and Settings' own scopes (.set-tabs). Same height, radius, type, hover and the same raised
+     card for the open one, so the two can never drift into looking like different ideas. What
+     differs between them belongs to the strip, never to .tab — the settings strip sets its own
+     spacing and gives its tabs a pointer, and that is the whole of the difference.
+     The button resets are here rather than on .set-tab so a <button class="tab"> and a
+     <div class="tab"> are the same object. ---- */
   .tab {
     flex: 0 1 auto; min-width: 34px;         /* shrink to fit; the name ellipsizes, the + never scrolls off */
     position: relative;
     display: flex; align-items: center; gap: 6px;
     height: 28px; max-width: 200px;
-    padding: 0 5px 0 9px;
-    border-radius: 8px;
-    font-size: 12px; font-weight: 500;
+    /* Even on both sides. The tighter right edge below is the close button's, not the tab's —
+       charging it to every tab left the ones without a close button (Settings' scopes) with their
+       label 9px off one edge and 5px off the other, which is what read as bad spacing. */
+    padding: 0 9px;
+    border: 0; border-radius: 8px;
+    background: none;
+    font-family: inherit; font-size: 12px; font-weight: 500;
     color: var(--text-muted);
     cursor: default; white-space: nowrap;
     transition: background-color 110ms ease, color 110ms ease;
   }
+  /* a tab that carries a close button gives back the space the button occupies */
+  .tab:has(.tab__close) { padding-right: 5px; }
   @media (hover: hover) and (pointer: fine) {
     /* the open tab holds its raised fill under the pointer — hovering it must not wash it back down */
     .tab:not(.tab--active):hover { background: var(--hover); }
@@ -2506,31 +2519,17 @@
   .set-body__inner { max-width: 660px; }
   .set-body__inner.usage-body__inner { max-width: 760px; }
 
-  /* tab strip, in .pane__head after the title */
-  .set-tabs { display: flex; align-self: stretch; gap: 2px; margin-left: 18px; }
-  .set-tab {
-    position: relative;
-    display: flex; align-items: center; gap: 7px;
-    padding: 0 10px;
-    border: 0; background: none; cursor: pointer;
-    font-family: inherit; font-size: 13px; font-weight: 550;
-    color: var(--ink-4);
-    transition: color 120ms ease;
-  }
-  .set-tab .repo__chip { width: 17px; height: 17px; font-size: 10px; border-radius: 5px; }
-  .set-tab:hover { color: var(--ink-2); }
-  .set-tab.is-on { color: var(--ink); }
-  .set-tab::after {
-    content: ''; position: absolute; left: 10px; right: 10px; bottom: -0.5px; height: 2px;
-    border-radius: 1px; background: var(--accent);
-    opacity: 0; transform: scaleX(0.6);
-    transition: opacity 140ms ease, transform 180ms var(--ease-out);
-  }
-  .set-tab.is-on::after { opacity: 1; transform: none; }
+  /* The settings strip, in .pane__head after the title. Its tabs are .tab — the same component
+     the branch's session strip paints — so everything about how a tab looks is declared once,
+     up with .tab, and this block is only the strip: where it sits, how it spaces its own, and
+     that these ones are pressable. */
+  .set-tabs { display: flex; align-items: center; gap: 3px; margin-left: 18px; }
+  .set-tabs .tab { cursor: pointer; }
+  .set-tabs .repo__chip { width: 14px; height: 14px; font-size: 9px; border-radius: 4px; }
   /* the project tab's label changes when the tree retargets it — a short fade so the swap
      is felt rather than silent */
   @keyframes tab-retarget { from { opacity: 0.35; } to { opacity: 1; } }
-  .set-tab.retarget { animation: tab-retarget 220ms var(--ease-out); }
+  .set-tabs .tab.retarget { animation: tab-retarget 220ms var(--ease-out); }
 
   @keyframes set-tab-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
   .set-body__inner { animation: set-tab-in 130ms var(--ease-out); }
@@ -2562,6 +2561,10 @@
   .set-row__ctl .set-seg { width: 216px; margin: 0; }
   /* four options in the width built for three wraps every label onto two lines */
   .set-row__ctl .set-seg--4 { width: 272px; }
+  /* The archive's three rows all take the five-wide width, though only the wait has five options:
+     stacked segs that start at different x read as a misalignment, not as three controls each
+     sized to its own contents. */
+  .set-row__ctl .set-seg--5 { width: 330px; }
   .set-override__word { font-size: 12px; font-weight: 500; color: var(--text-muted); transition: color 160ms ease; }
   .set-override.is-on .set-override__word { color: var(--ink-3); }
 
@@ -2898,14 +2901,10 @@
   }
   input.tpl-name:hover { background: var(--hover-soft); }
   input.tpl-name:focus { background: var(--hover-soft); box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5); }
-  .tpl-kind { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; background: var(--hover); font-size: 11px; font-weight: 550; color: var(--text-muted); }
-  /* the one that opens — the sidebar's own open tint, so the list needs no preview to say which */
+  /* the one that opens — the sidebar's own open tint, so the list needs no preview to say which,
+     and no word either: the row above it says the first one opens, and this is the first one */
   .tpl-row--first { background: rgba(var(--accent-rgb),0.10); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),0.26); border-color: transparent; }
   .tpl-row--first .tpl-name { color: var(--ink-open); font-weight: 600; }
-  /* every row carries the badge and only the opener shows it, so a switched-off agent can hand
-     "opens" to the next row by class alone — the list is never redrawn to move it */
-  .tpl-opens { display: none; flex-shrink: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
-  .tpl-row--first .tpl-opens { display: block; }
   /* an entry whose agent is switched off: struck, like the shared setup a project skips — it
      keeps its slot and its name, it just doesn't run */
   .tpl-row--off .tpl-name { color: var(--text-faint); text-decoration: line-through; }
@@ -2956,6 +2955,35 @@
   .tpl-add__btn:active { transform: scale(0.97); }
   @media (hover: hover) and (pointer: fine) {
     .tpl-add__btn:hover { background: var(--hover-soft); border-color: var(--line-2); color: var(--ink); }
+  }
+  /* "Add session" is the list's next row with a real <select> laid over it, so the kind is picked
+     in the platform's own menu — one control that grows with the roster instead of a bar that does.
+     It borrows .tpl-row outright: a row that adds a row should be the same object as the rows it
+     adds, which is also what keeps the two from drifting apart. */
+  .tpl-add__pick { position: relative; display: block; flex: 1; }
+  .tpl-add__pick select {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; cursor: pointer; font-family: inherit; font-size: 12px;
+  }
+  .tpl-row--add {
+    /* dashed, like .tpl-empty: the slot is offered rather than filled, and the border is the only
+       thing saying so once the row is otherwise identical to a real one */
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--line);
+    box-shadow: none;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .tpl-add__plus { flex-shrink: 0; display: flex; width: 16px; height: 16px; color: var(--text-faint); }
+  .tpl-add__plus svg { width: 16px; height: 16px; display: block; }
+  .tpl-add__label { font-size: 13px; font-weight: 500; }
+  .tpl-add__pick:focus-within .tpl-row--add { box-shadow: 0 0 0 2.5px rgba(var(--accent-rgb),0.22); }
+  @media (hover: hover) and (pointer: fine) {
+    .tpl-add__pick:hover .tpl-row--add {
+      background: var(--raised); border-style: solid; border-color: var(--border-strong); color: var(--ink);
+    }
+    .tpl-add__pick:hover .tpl-add__plus { color: var(--accent); }
   }
 
   /* ---- Archived worktrees: the folders this project still has on disk. The list is capped
@@ -3036,7 +3064,7 @@
     .cmdk__panel { transform: none !important; }
     .row-enter, .row-exit { animation: none; }
     .seg--slide .seg__thumb, .switch, .switch::after { transition: none; }
-    .set-tab::after, .set-body__inner, .set-reset { animation: none; transition: none; }
+    .set-body__inner, .set-reset { animation: none; transition: none; }
   }
 
   /* ============================ Dark mode ============================ */
@@ -3140,6 +3168,24 @@
   }
   :root[data-theme="dark"] .dev__screen .skel {
     background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05));
+    background-size: 200% 100%;
+  }
+  /* The conditions bar's Theme axis forces the page's own colour scheme and surface regardless
+     of Synth's — scoped to this one browser via [data-page-theme] on its pane rather than :root,
+     so it can win or lose against both the app theme and the "a device stays lit" rule above
+     without touching either. */
+  :root [data-page-theme="light"] .pane-view, :root [data-page-theme="light"] .devui__page {
+    background: #ffffff; color: #1c1e23;
+  }
+  :root [data-page-theme="dark"] .pane-view, :root [data-page-theme="dark"] .devui__page {
+    background: #282b30; color: #e6e8ed;
+  }
+  :root [data-page-theme="light"] .skel {
+    background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05));
+    background-size: 200% 100%;
+  }
+  :root [data-page-theme="dark"] .skel, :root [data-page-theme="dark"] .dev__screen .skel {
+    background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.09), rgba(255,255,255,0.05));
     background-size: 200% 100%;
   }
   /* ⌘K palette: the active-row label + status meta were tuned for a white panel —
@@ -4993,14 +5039,16 @@
       dpr: 1, note: 'The worst screen worth designing for: hold together here and about 95% of desktop visitors are covered.',
       bz: [0, 0, 0, 0],      frameR: 6,  screenR: 6,  sb: 0,  sbTop: 0, sbPad: [0, 0],   home: 0 },
   ];
-  // The other two axes, in the numbers Chromium throttles by, so what the bar claims is what the
-  // engine does. Nothing here is bundled into a device: picking a small screen doesn't secretly
-  // slow the machine down, because the two are separate questions and only one is usually wrong.
+  // The other three axes, in the numbers Chromium throttles by, so what the bar claims is what
+  // the engine does. Nothing here is bundled into a device: picking a small screen doesn't
+  // secretly slow the machine down, because these are separate questions and only one is usually
+  // wrong.
   //
-  // Every axis rests at Normal, and Normal is the same word in all three menus: nothing is being
-  // emulated on this one. It is not Wi-Fi and not full speed — we don't know what the wire is or
-  // how fast the Mac is, only that we have left it alone. What normal means for each axis is the
-  // caption's job, not the name's.
+  // Every axis rests at Normal, and Normal is the same word in all four menus: nothing is being
+  // emulated on this one. It is not Wi-Fi and not full speed and not a colour scheme we've
+  // decided for the page — we don't know what the wire is or how fast the Mac is or what the
+  // page should look like, only that we have left it alone. What normal means for each axis is
+  // the caption's job, not the name's.
   const NETS = [
     { id: 'normal', name: 'Normal',  cap: 'no throttle' },
     { id: 'fast4g', name: 'Fast 4G', cap: '9 Mb/s · 165 ms' },
@@ -5016,8 +5064,19 @@
     { id: 4, name: '4× slower', cap: 'mid-tier' },
     { id: 6, name: '6× slower', cap: 'low-end' },
   ];
+  // What colour scheme the page is handed. Normal defers to Synth's own theme — dark app, dark
+  // page, following the *app's* setting rather than the raw OS one, so a Synth pinned to Light
+  // on a dark Mac still hands pages a light `prefers-color-scheme` — and Light/Dark force the
+  // page one way regardless, isolated to this browser: forcing one tab dark doesn't touch Synth
+  // or any other browser's pages.
+  const THEMES = [
+    { id: 'app',   name: 'Normal', cap: 'follows Synth’s theme' },
+    { id: 'light', name: 'Light',  cap: 'forced light, any theme' },
+    { id: 'dark',  name: 'Dark',   cap: 'forced dark, any theme' },
+  ];
   const netOf = (id) => NETS.find((n) => n.id === id);
   const cpuOf = (id) => CPUS.find((c) => c.id === id);
+  const themeOf = (id) => THEMES.find((t) => t.id === id);
   // Rotating counter-clockwise walks every edge one place round, bezels included — which is why
   // an iPhone SE's tall forehead ends up on the left, not still on top.
   const devBezel = (d, land) => (land ? [d.bz[1], d.bz[2], d.bz[3], d.bz[0]] : d.bz);
@@ -5118,11 +5177,11 @@
   }
   const listMenuHTML = (key, list, cur) => `<div class="cond-menu" data-menu="${key}"><div class="pane-rec">` +
     list.map((x) => condRow(x.id, x.name, x.cap, x.id === cur)).join('') + `</div></div>`;
-  // Three menus and the dims. The dims are the fact no menu label carries — the viewport the
+  // Four menus and the dims. The dims are the fact no menu label carries — the viewport the
   // page is actually being handed, pixel ratio included.
-  function condbarHTML(deviceId, landscape, net, cpu) {
+  function condbarHTML(deviceId, landscape, net, cpu, theme) {
     const d = deviceId ? DEVICES.find((x) => x.id === deviceId) : null;
-    const n = netOf(net), c = cpuOf(cpu);
+    const n = netOf(net), c = cpuOf(cpu), t = themeOf(theme);
     const w = d && landscape ? d.h : d && d.w, h = d && landscape ? d.w : d && d.h;
     const pick = (key, axis, label, off, title) =>
       `<div class="condbar__wrap"><button class="condbar__pick${off ? ' is-off-baseline' : ''}" data-open="${key}" title="${esc(title)}">` +
@@ -5131,6 +5190,7 @@
       ${pick('screen', 'Screen', d ? d.name : 'Normal', !!d, d ? d.note : 'Normal — the pane’s own viewport, at whatever size the pane is')}
       ${pick('net', 'Network', n.name, n.id !== 'normal', `Network: ${n.name} — ${n.cap}`)}
       ${pick('cpu', 'CPU', c.id === 1 ? 'Normal' : `${c.id}× slower`, c.id !== 1, `CPU: ${c.name} — ${c.cap}`)}
+      ${pick('theme', 'Theme', t.name, t.id !== 'app', `Theme: ${t.name} — ${t.cap}`)}
       <span class="condbar__dims">${d ? `${w} × ${h} @${d.dpr}×` : ''}</span>
       ${d && d.kind !== 'screen' ? `<button class="pane-btn${landscape ? '' : ' pane-btn--turned'}" data-rotate aria-label="Rotate device">${ICON_DEVICE}</button>` : ''}
     </div>`;
@@ -5733,7 +5793,7 @@
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
     let deviceOn = false, deviceId = null, deviceLand = false, deviceRO = null;
-    let condNet = 'normal', condCpu = 1;   // the two axes that are nothing to do with the screen
+    let condNet = 'normal', condCpu = 1, condTheme = 'app';   // the three axes nothing to do with the screen
     const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
     let zoom = 100;
 
@@ -5839,17 +5899,26 @@
       scale: () => zoom / 100,                   // ⌘+/⌘− zooms the view under the overlay
       spawn: () => spawnOwnerClaude(openEl),     // unowned → this browser gets its own Claude
     });
-    // The conditions bar: a screen to reflow into, and the two machine axes that have nothing to
-    // do with it. Survives navigation, exactly like comment mode. It opens at Normal on all three
-    // and closing puts all three back, so the bar is either on screen saying what it is doing or
-    // doing nothing at all — a throttle nobody can see is a bug report waiting to be written.
+    // The conditions bar: a screen to reflow into, and the three machine-and-page axes that have
+    // nothing to do with it. Survives navigation, exactly like comment mode. It opens at Normal
+    // on all four and closing puts all four back, so the bar is either on screen saying what it
+    // is doing or doing nothing at all — a throttle nobody can see is a bug report waiting to be
+    // written.
     function toggleDevice() {
       if (idx < 0) return;                       // the "go to" home has nothing to render
       deviceOn = !deviceOn;
-      if (!deviceOn) { deviceId = null; condNet = 'normal'; condCpu = 1; }
+      if (!deviceOn) { deviceId = null; condNet = 'normal'; condCpu = 1; condTheme = 'app'; }
       updateDeviceUI();
     }
+    // Theme rides on the host itself rather than the stage, so it reaches the page whether it's
+    // sitting in a device frame or shown plain — and it's this browser's own attribute, so
+    // forcing one tab dark never touches Synth's theme or any other browser's pages.
+    function applyPageTheme() {
+      if (condTheme === 'app') host.removeAttribute('data-page-theme');
+      else host.setAttribute('data-page-theme', condTheme);
+    }
     function updateDeviceUI() {
+      applyPageTheme();
       const dev = deviceOn && deviceId ? DEVICES.find((x) => x.id === deviceId) : null;
       host.classList.toggle('browser--device', !!dev);
       const btn = host.querySelector('[data-nav="device"]');
@@ -5863,7 +5932,7 @@
         return;
       }
       const land = dev && dev.kind !== 'screen' ? deviceLand : false;   // a monitor doesn't turn
-      const strip = condbarHTML(deviceId, land, condNet, condCpu);
+      const strip = condbarHTML(deviceId, land, condNet, condCpu, condTheme);
       if (bar) bar.outerHTML = strip; else view.insertAdjacentHTML('beforebegin', strip);
       // a device runs its own browser, so it shows the page's address in its own address bar;
       // with no device the pane simply keeps the page it already had, at its own size
@@ -5881,7 +5950,8 @@
       }
     }
     // Each menu hangs under the button that opened it and answers for one axis only: what the
-    // page thinks it is being shown on, how fast the wire is, how fast the processor is.
+    // page thinks it is being shown on, how fast the wire is, how fast the processor is, what
+    // colour scheme it's handed.
     function openCondMenu(btn) {
       const wrap = btn.parentElement;
       if (wrap.querySelector('.cond-menu')) return;
@@ -5889,7 +5959,8 @@
       wrap.insertAdjacentHTML('beforeend',
         key === 'screen' ? screenMenuHTML(deviceId)
         : key === 'net' ? listMenuHTML('net', NETS, condNet)
-        : listMenuHTML('cpu', CPUS, condCpu));
+        : key === 'cpu' ? listMenuHTML('cpu', CPUS, condCpu)
+        : listMenuHTML('theme', THEMES, condTheme));
       const menu = wrap.querySelector('.cond-menu');
       btn.classList.add('is-open');
       function close() { document.removeEventListener('mousedown', onDoc); menu.remove(); btn.classList.remove('is-open'); }
@@ -5898,7 +5969,8 @@
         const v = row.dataset.pick;
         if (key === 'screen') deviceId = v === 'none' ? null : v;
         else if (key === 'net') condNet = v;
-        else condCpu = Number(v);
+        else if (key === 'cpu') condCpu = Number(v);
+        else condTheme = v;
         close();
         updateDeviceUI();
       });
@@ -9131,6 +9203,7 @@
   const appSet = {
     sounds: { done: true, input: true, fail: false },
     mcp: { browser: true, app: false },
+    simSessions: false,
     analytics: true,
     // Mirrors SettingsPane.swift's Archived worktrees section and Store's defaults
     // (archiveSweepEnabled = true, archiveGraceDays = 7). maxCount/maxGb are the disk budget
@@ -9138,7 +9211,7 @@
     // forward, never skip the gates it still has to clear.
     archive: { sweep: true, graceDays: 7, maxCount: 25, maxGb: 50 },
   };
-  const GRACE_OPTS = [[0, 'Never'], [7, '7 days'], [14, '14 days'], [30, '30 days']];
+  const GRACE_OPTS = [[0, 'Never'], [1, '1 day'], [7, '7 days'], [14, '14 days'], [30, '30 days']];
   const COUNT_OPTS = [[10, '10'], [25, '25'], [50, '50'], [0, 'No cap']];
   const GB_OPTS = [[20, '20 GB'], [50, '50 GB'], [100, '100 GB'], [0, 'No cap']];
   const SOUNDS = [
@@ -9146,10 +9219,20 @@
     ['input', 'Needs input',      'An agent is waiting on you.'],
     ['fail',  'Command failed',   'A terminal command exited non-zero.'],
   ];
+  // No tool counts in these lines: the browser row claimed 13 for months while the server grew
+  // past 20, and a number nobody can see is wrong is worse than none.
+  // Named for what the agent gets, not for the server that carries it: "Synth app" described the
+  // plumbing and left you to guess what it let anything do.
   const MCP = [
-    ['browser', 'Browser',   '13 tools to drive and inspect browser sessions.'],
-    ['app',     'Synth app', 'Lets an agent create worktrees.'],
+    ['browser', 'Browser',   'Lets an agent drive and inspect browser sessions.'],
+    ['app',     'Worktrees', 'Lets an agent create worktrees and hand work off to them.'],
   ];
+  // One switch, not two. The simulator used to carry a second one for whether an agent could drive
+  // the sessions the first allowed — a distinction nobody was drawing, and one that put two rows
+  // called Simulator next to each other, the lower inert whenever the upper was off. It sits below
+  // the mapped servers because it is the one row here that is not itself a server toggle.
+  const SIM_SESSIONS_DESC = 'Run an iOS simulator as a session: its live screen in a pane, tappable,'
+    + ' and drivable by Claude. Needs a full Xcode.';
 
   // ---- Worktree defaults, and each project's override of them ------------------------
   const AGENT_BIN = { claude: 'claude', opencode: 'opencode', antigravity: 'agy' };
@@ -9256,16 +9339,12 @@
   // A command that answers but isn't a known agent says nothing at all: the picker still reads
   // "Choose…", which is the only thing left to do about it, and a sentence about what the version
   // string wasn't is a complaint the user can't act on.
-  // An alias Synth followed and still couldn't run stands apart from a name that is simply
-  // absent: the command IS there, in the shell, and what's wrong is that it stands for a shell
-  // line rather than a program — which no amount of PATH would fix. And a name that went
-  // somewhere says where: the row is naming a command the PATH hasn't got, and the alias it
-  // followed is the whole explanation.
+  // A name that went somewhere says where: the row is naming a command the PATH hasn't got, and
+  // the alias it followed is the whole explanation.
   const probeLine = (a) => a.clash ? a.clash
     : !a.bin ? 'Type a command'
     : a.probe.state === 'checking' ? 'Checking…'
-    : a.probe.state === 'missing' ? (a.probe.alias ? 'That alias runs a shell command, not a program'
-                                                   : 'Not on your PATH')
+    : a.probe.state === 'missing' ? 'Not on your PATH'
     : a.probe.state === 'unknown' ? ''
     : a.probe.via ? `${a.probe.ver} · alias for ${a.probe.via}`
     : a.probe.ver;
@@ -9404,10 +9483,8 @@
       ${k.icon}
       ${o.shared ? `<span class="tpl-name">${esc(s.name)}</span>`
                  : `<input class="tpl-name" value="${esc(s.name)}" spellcheck="false" aria-label="Session name" />`}
-      <span class="tpl-opens">opens</span>
       <span class="tpl-off">${agentInstalled(s.kind) ? 'Off' : 'Missing'}</span>
-      <span class="tpl-kind">${k.label}</span>
-      ${o.shared ? '<span class="tpl-syn">Synth</span>' : `<button class="tpl-x" title="Remove" aria-label="Remove session">${ICON_CLOSE}</button>`}
+      ${o.shared ? '<span class="tpl-syn">General</span>' : `<button class="tpl-x" title="Remove" aria-label="Remove session">${ICON_CLOSE}</button>`}
     </div>`;
   }
   // Which entry actually opens the worktree: the first one whose agent is still switched on.
@@ -9418,10 +9495,25 @@
     const first = opensAt(list);
     return list.map((s, i) => tplRow(s, i + 1, { idx: i, first: i === first })).join('');
   }
-  // Agents first, in registry order, so the ones you added sit with the ones they were added
-  // beside — then the two session kinds that are never an agent.
-  const tplAddBar = () => `<div class="tpl-add">${[...AGENTS, 'terminal', 'browser'].map((k) =>
-    `<button class="tpl-add__btn${agentEnabled(k) ? '' : ' is-off'}" data-add="${k}">${ICON_PLUS}${TPL_KINDS[k].label}</button>`).join('')}</div>`;
+  // One way in, not one per kind. A button per session kind put the whole roster on screen at all
+  // times — five today, more as agents are added — to be read in full every time you wanted one
+  // more session. You add a session; the kind is the question the menu asks. Agents come first, in
+  // registry order, so the ones you added sit with the ones they were added beside.
+  //
+  // It is the next row of the list, not a control beside it: same height, same radius, same left
+  // edge, with the plus where a session's icon goes — so pressing it reads as writing the row it
+  // is standing in rather than as operating something on the list.
+  const tplAddBar = () => `<div class="tpl-add"><span class="tpl-add__pick">
+    <span class="tpl-row tpl-row--add">
+      <span class="tpl-add__plus">${ICON_PLUS}</span>
+      <span class="tpl-add__label">Add session</span>
+    </span>
+    <select data-add-kind aria-label="Add session">
+      <option value="" selected>Add session…</option>
+      ${[...AGENTS, 'terminal', 'browser'].map((k) =>
+        `<option value="${k}" data-kind="${k}"${agentEnabled(k) ? '' : ' disabled hidden'}>${esc(TPL_KINDS[k].label)}</option>`).join('')}
+    </select>
+  </span></div>`;
 
   // ---- Layered project controls: shared base shown in place, delta added after ----------
   // Setup script: the shared base collapses into a strip above the project's own steps, so the
@@ -9430,8 +9522,8 @@
     return `<div class="set-shared${scriptSharedOpen ? ' is-open' : ''}">
       <div class="set-shared__head" data-shared-toggle>
         <span class="set-shared__chev">${ICON_CARET}</span>
-        <span class="set-shared__label">Shared Synth setup · ${lineCount(DEF.script)} lines</span>
-        <button class="set-link" data-goto-synth>Edit in Synth</button>
+        <span class="set-shared__label">Shared setup · ${lineCount(DEF.script)} lines</span>
+        <button class="set-link" data-goto-synth>Edit in General</button>
       </div>
       <div class="set-shared__body"><div>
         <pre class="set-shared__code${p.skipScript ? ' set-shared__code--skip' : ''}">${esc(DEF.script)}</pre>
@@ -9472,9 +9564,12 @@
   // stays — the switch that brings the agent back has to be somewhere you can find it.
   const agentRow = (k) => customOf(k) ? customRow(customOf(k)) : builtinRow(k);
 
+  // The row is titled the way the agent is named everywhere else in the app, not by its binary,
+  // and the line that said the field held flags is gone — a dark field under an agent, holding
+  // flags, on a row with a switch, was never going to be read as anything else.
   function builtinRow(a) {
     const off = !agentOn[a];
-    return row(AGENT_BIN[a], desc(`Flags added to every ${AGENT_BIN[a]} launch.`), switchCtl(!off, 'agent.' + a),
+    return row(TPL_KINDS[a].label, '', switchCtl(!off, 'agent.' + a),
       `<textarea class="set-code set-code--flags" data-flags="${a}" spellcheck="false" placeholder="${esc(AGENT_EG[a])}"${off ? ' readonly tabindex="-1"' : ''}>${esc(DEF.flags[a] || '')}</textarea>`,
       off ? 'set-row--off' : '');
   }
@@ -9511,11 +9606,10 @@
   const wireAgentBase = (scope) => scope.querySelectorAll('[data-abase]').forEach((sel) =>
     sel.addEventListener('change', () => setBase(customOf(sel.dataset.abase), sel.value)));
 
-  // The name rides in three places at once — this row, the template's kind pill, the add bar's
-  // button. All three are one string, so they are patched together rather than re-rendered.
+  // Renaming an agent renames it in the add menu too, which is now the only other place the name
+  // is written — patched rather than re-rendered, because this fires on every keystroke.
   function syncAgentLabels(a) {
-    content.querySelectorAll(`.tpl-add__btn[data-add="${a.id}"]`).forEach((b) => { b.lastChild.textContent = a.name; });
-    content.querySelectorAll(`.tpl-row[data-kind="${a.id}"] .tpl-kind`).forEach((p) => { p.textContent = a.name; });
+    content.querySelectorAll(`[data-add-kind] option[data-kind="${a.id}"]`).forEach((o) => { o.textContent = a.name; });
   }
 
   // Everything downstream of the base, patched into the row that owns it. Picking one by hand is
@@ -9602,7 +9696,7 @@
   // and unlike the agent rows there's no field here whose absence would hide the way back.
   function archivePolicyRows() {
     const p = appSet.archive;
-    const pick = (key, opts, label) => `<div class="seg seg--slide set-seg set-seg--4" role="group" aria-label="${label}"><span class="seg__thumb" data-thumb></span>${
+    const pick = (key, opts, label) => `<div class="seg seg--slide set-seg set-seg--5" role="group" aria-label="${label}"><span class="seg__thumb" data-thumb></span>${
       opts.map(([v, t]) => `<button class="seg__btn${p[key] === v ? ' is-on' : ''}" data-arc-opt="${key}" data-arc-val="${v}">${t}</button>`).join('')}</div>`;
     const sweep = row('Clean up finished worktrees',
       desc('Merged branches are archived for you. A folder goes only once the work is safely on a remote, and the git branch is never deleted.'),
@@ -9619,28 +9713,34 @@
 
   function appTab() {
     const sec = (label, cards) => `<section class="set-grp"><div class="set-grp__label">${label}</div><div class="set-card">${cards}</div></section>`;
+    // Sessions are somewhere in both modes, so this is a choice of where and never an on/off:
+    // "Tabs, off" asks you to know what is lost, where "Sidebar / Tabs" names both answers.
     return sec('Appearance',
       row('Theme', desc('Follows macOS unless you pin it.'),
         `<div class="seg seg--slide set-seg" role="group" aria-label="Theme"><span class="seg__thumb" data-thumb></span>${
-          ['system', 'light', 'dark'].map((v) => `<button class="seg__btn${themePref === v ? ' is-on' : ''}" data-theme-opt="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div>`))
+          ['system', 'light', 'dark'].map((v) => `<button class="seg__btn${themePref === v ? ' is-on' : ''}" data-theme-opt="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div>`)
+      + row('Show sessions in', desc("Under their branch in the sidebar, or in a tab strip above the panes."),
+        `<div class="seg seg--slide set-seg" role="group" aria-label="Show sessions in"><span class="seg__thumb" data-thumb></span>${
+          [['sidebar', 'Sidebar'], ['tabs', 'Tabs']].map(([v, t]) => `<button class="seg__btn${(tabsMode ? 'tabs' : 'sidebar') === v ? ' is-on' : ''}" data-tabs-opt="${v}">${t}</button>`).join('')}</div>`))
     + sec('Notification sounds', SOUNDS.map(([k, l, d]) => row(l, desc(d), switchCtl(appSet.sounds[k], 'sounds.' + k))).join(''))
-    + sec('MCP servers', MCP.map(([k, l, d]) => row(l, desc(d), switchCtl(appSet.mcp[k], 'mcp.' + k))).join(''))
+    + sec('Integrations', MCP.map(([k, l, d]) => row(l, desc(d), switchCtl(appSet.mcp[k], 'mcp.' + k))).join('')
+      + row('Simulator sessions', desc(SIM_SESSIONS_DESC), switchCtl(appSet.simSessions, 'simSessions')))
     + sec('New worktree defaults',
         row('Setup script', desc("Runs once in each new worktree, after it's created."), '',
           cap('setup.sh', SCRIPT_NOTE) + `<textarea class="set-code" data-edit="script" spellcheck="false" placeholder="# bash. Runs in the new worktree.">${esc(DEF.script)}</textarea>`)
       + row('Sessions', desc('Every new worktree opens with these. The first one opens.'), '',
           `<div class="tpl-list" data-tpl>${tplRows(DEF.sessions)}</div>` + tplAddBar()))
     + sec('Agents', AGENTS.map(agentRow).join('') + addAgentRow())
-    + sec('Privacy', row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics')))
     + sec('Archived worktrees', archivePolicyRows())
-    + sec('Experimental', row('Tabs', desc("Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview."), switchCtl(tabsMode, 'tabs')))
     // The row and the foot button are one fact seen twice, so About states the update outright and
     // offers the same Restart rather than a Check that would only re-find what is already here.
-    + sec('About', update.version
+    + sec('About',
+        row('Anonymous analytics', desc('Usage counts only. No code, prompts or paths.'), switchCtl(appSet.analytics, 'analytics'))
+      + (update.version
         ? row('Synth ' + APP_VERSION + ' (317)', desc('Synth ' + update.version + ' is ready · installs when you quit'),
             '<button class="tpl-add__btn" data-restart>Restart</button>')
         : row('Synth ' + APP_VERSION + ' (317)', desc('Up to date · checked 2 hours ago'),
-            '<button class="tpl-add__btn" data-check>Check for updates</button>'));
+            '<button class="tpl-add__btn" data-check>Check for updates</button>')));
   }
 
   // The project tab is nothing but deltas layered on the shared base. Each row shows the
@@ -9664,18 +9764,23 @@
     // A switched-off agent drops out here entirely rather than greying: the switch is app-level,
     // so repeating a dead row in every project is the clutter this is meant to remove. The
     // project's flags for it stay in the delta, waiting.
+    // Titled like the Synth tab's rows, and the description no longer repeats the binary: the
+    // launch line under it already reads `$ claude <shared> <yours>`, which is the whole fact.
     const agents = liveAgents().map((a) => {
       const sharedFlags = (DEF.flags[a] || '').trim();
       const tail = (p.flags && p.flags[a]) || '';
-      const d = desc(sharedFlags ? `Added after the shared ${AGENT_BIN[a]} flags.` : `Flags for ${AGENT_BIN[a]} launches.`)
+      const d = desc(sharedFlags ? 'Added after the shared flags.' : 'Flags for this project.')
         + (tail.trim() ? clearBtn('flags.' + a) : '');
-      return row(AGENT_BIN[a], d, '', flagLine(a, sharedFlags, tail));
+      return row(TPL_KINDS[a].label, d, '', flagLine(a, sharedFlags, tail));
     }).join('');
 
-    return sec('New worktree', script + sessions)
+    // Section labels are the Synth tab's, verbatim: the two pages are the same settings at two
+    // scopes, and a project's "New worktree" beside Synth's "New worktree defaults" reads as a
+    // different feature rather than as the same one, one layer down.
+    return sec('New worktree defaults', script + sessions)
       + (agents ? sec('Agents', agents) : '')
       + sec('Browser', browsingDataRow(name))
-      + sec('Archived', archivedSection(name));
+      + sec('Archived worktrees', archivedSection(name));
   }
 
   // The browser's profile is per PROJECT — branches of one repo are the same application, so a
@@ -9979,9 +10084,31 @@
     if (!setProject) setProject = restoreProject();
     if (!setProject && setTab === 'project') setTab = 'app';
 
+    // Every project gets a tab, not just the one you happened to be standing in. A project's
+    // settings are a place you go to compare and to fix, and reaching one used to mean leaving
+    // Settings, opening a branch of that project, and coming back.
+    //
+    // These are .tab — the same tabs the branch's session strip paints — so a scope you switch
+    // between looks like a scope you switch between wherever you are in the app.
+    const setTabEl = (on, attrs, icon, label) =>
+      `<button class="tab${on ? ' tab--active' : ''}" role="tab" aria-selected="${on}" ${attrs}>`
+        + (icon ? `<span class="tab__icon">${icon}</span>` : '')
+        + `<span class="tab__name">${esc(label)}</span></button>`;
+    // "General", not "Synth": the app scope sat directly beside a project named synth, and two
+    // tabs differing only in a capital letter is a collision every user with a project named
+    // after their app would hit. General is also what the first pane of Settings is called on
+    // this platform, so there is nothing to learn.
+    //
+    // It carries no mark of its own either: the head's title is already a gear, and a second one
+    // beside it read as a stutter. The projects are their chips, and the app is the one plain
+    // label among them — which is the distinction the strip is drawing anyway.
     const tabs = `<div class="set-tabs">
-      <button class="set-tab${setTab === 'app' ? ' is-on' : ''}" data-tab="app">Synth</button>
-      ${setProject ? `<button class="set-tab${setTab === 'project' ? ' is-on' : ''}" data-tab="project">${wsChip(setProject)}${esc(wsName(setProject))}</button>` : ''}
+      ${setTabEl(setTab === 'app', 'data-tab="app"', '', 'General')}
+      ${projectHeads().map((h) => {
+        const n = wsName(h);
+        const on = setTab === 'project' && setProject && wsName(setProject) === n;
+        return setTabEl(on, `data-tab="project" data-proj="${esc(n)}"`, wsChip(h), n);
+      }).join('')}
     </div>`;
 
     content.innerHTML = `<div class="pane">
@@ -10046,8 +10173,9 @@
       const badge = t.querySelector('.tpl-off');
       if (badge) badge.textContent = agentInstalled(k) ? 'Off' : 'Missing';
     });
-    content.querySelectorAll('.tpl-add__btn[data-add]').forEach((b) =>
-      b.classList.toggle('is-off', !agentEnabled(b.dataset.add)));
+    content.querySelectorAll('[data-add-kind] option[data-kind]').forEach((o) => {
+      o.disabled = o.hidden = !agentEnabled(o.dataset.kind);
+    });
     // "opens" belongs to the set, not to a row, so re-pick it wherever a session list is drawn
     content.querySelectorAll('.set-row').forEach((sr) => {
       const rows = [...sr.querySelectorAll('.tpl-row')];
@@ -10064,11 +10192,19 @@
     const name = setProject ? wsName(setProject) : null;
     const proj = setTab === 'project' ? projOf(name) : null;
 
-    content.querySelectorAll('.set-tab').forEach((b) => b.addEventListener('click', () => {
-      setTab = b.dataset.tab; renderSettings();
+    content.querySelectorAll('.set-tabs .tab').forEach((b) => b.addEventListener('click', () => {
+      // A project tab names which project it is, so the click picks the project as well as the tab
+      // — the pane no longer follows whatever the sidebar last had open.
+      if (b.dataset.proj) setProject = headByName(b.dataset.proj) || setProject;
+      setTab = b.dataset.tab;
+      renderSettings();
     }));
     content.querySelectorAll('[data-theme-opt]').forEach((b) =>
       b.addEventListener('click', () => setTheme(b.dataset.themeOpt)));
+    content.querySelectorAll('[data-tabs-opt]').forEach((b) => b.addEventListener('click', () => {
+      setTabsMode(b.dataset.tabsOpt === 'tabs');   // view mode: changes the shell, so it rebuilds
+      renderSettings();
+    }));
     // Every archive knob changes which folders are due, so each one rebuilds — the verdict on
     // every row in the project tab is downstream of these three numbers.
     content.querySelectorAll('[data-arc-opt]').forEach((b) => b.addEventListener('click', () => {
@@ -10076,7 +10212,6 @@
       renderSettings();
     }));
     content.querySelectorAll('[data-switch]').forEach((b) => b.addEventListener('click', () => {
-      if (b.dataset.switch === 'tabs') { setTabsMode(!tabsMode); renderSettings(); return; }   // view mode: changes the shell, so it does rebuild
       const [grp, k] = b.dataset.switch.split('.');
       // Nothing else here changes the shape of the pane, so nothing else rebuilds it.
       if (grp === 'agent') { setSwitch(b, agentOn[k] = !agentOn[k]); syncAgentUI(k, agentOn[k]); return; }
@@ -10193,8 +10328,11 @@
         if (e.target.closest('.tpl-grip')) startTplDrag(e, el, list());
       });
     });
-    content.querySelectorAll('.tpl-add__btn[data-add]').forEach((b) => b.addEventListener('click', () => {
-      list().push({ kind: b.dataset.add, name: TPL_KINDS[b.dataset.add].start });
+    content.querySelectorAll('[data-add-kind]').forEach((sel) => sel.addEventListener('change', () => {
+      const kind = sel.value;
+      sel.value = '';           // back to the prompt, so the pill never reads as a current choice
+      if (!kind) return;
+      list().push({ kind, name: TPL_KINDS[kind].start });
       renderSettings();
     }));
     // Clear browsing data asks on the row, in the same strip a custom agent's removal uses —
@@ -10301,7 +10439,7 @@
     try { localStorage.setItem(PROJ_KEY, wsName(head)); } catch (e) {}
     if (!app.classList.contains('settings')) return;
     renderSettings();
-    const tab = content.querySelector('.set-tab[data-tab="project"]');
+    const tab = [...content.querySelectorAll('.set-tabs .tab')].find((t) => t.dataset.proj === wsName(head));
     if (tab) { tab.classList.add('retarget'); tab.addEventListener('animationend', () => tab.classList.remove('retarget'), { once: true }); }
   }
 
@@ -10351,7 +10489,10 @@
     const sw = r.querySelector('[data-switch]');
     if (!f && sw) { sw.click(); return; }
     if (f) { f.focus(); document.body.classList.remove('kbd'); return; }
-    const btn = r.querySelector('.tpl-add__btn');
+    // A native menu can't be opened from script, so ↵ hands it the focus and the keyboard opens it.
+    const pick = r.querySelector('[data-add-kind]');
+    if (pick) { pick.focus(); document.body.classList.remove('kbd'); return; }
+    const btn = r.querySelector('button.tpl-add__btn');
     if (btn) btn.click();
   }
   // h / l walk a segmented control's options; ↵ advances it
@@ -10369,9 +10510,9 @@
     return !!sw;
   }
   const stepSettingsTab = (dir) => {
-    const tabs = [...content.querySelectorAll('.set-tab')];
+    const tabs = [...content.querySelectorAll('.set-tabs .tab')];
     if (tabs.length < 2) return;
-    const i = tabs.findIndex((t) => t.classList.contains('is-on'));
+    const i = tabs.findIndex((t) => t.classList.contains('tab--active'));
     tabs[(i + dir + tabs.length) % tabs.length].click();
   };
 

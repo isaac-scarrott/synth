@@ -267,12 +267,12 @@ final class ControlServer: @unchecked Sendable {
             store.closeSession(session)
             return ["ok": true]
 
-        // Conditions (working.html `.browser__condbar`): read or set the three axes a
-        // worst case is made of — the screen the page is emulated at, the wire and the
-        // processor — so an agent can check the page it is working on somewhere worse than
-        // this Mac. Kept under the old verb name because it is an installed contract. Any
-        // agent may drive any browser (stage four: driving isn't destroying), so unlike
-        // browser.close there is no ownership gate.
+        // Conditions (working.html `.browser__condbar`): read or set the axes a worst case
+        // is made of — the screen the page is emulated at, the wire, the processor, and what
+        // colour scheme the page is handed — so an agent can check the page it is working on
+        // somewhere worse than this Mac. Kept under the old verb name because it is an
+        // installed contract. Any agent may drive any browser (stage four: driving isn't
+        // destroying), so unlike browser.close there is no ownership gate.
         case "browser.deviceMode":
             guard let session = requestedSession(request, in: branch), session.kind == .browser,
                   let ctrl = BrowserManager.shared.controller(for: session) else {
@@ -280,7 +280,7 @@ final class ControlServer: @unchecked Sendable {
             }
             let wantsChange = request["on"] != nil || request["device"] != nil
                            || request["landscape"] != nil || request["network"] != nil
-                           || request["cpu"] != nil
+                           || request["cpu"] != nil || request["theme"] != nil
             if wantsChange {
                 // "none" is the screen axis's own Normal: the page back at the pane's
                 // own viewport, with the wire and the processor left exactly as they are.
@@ -325,6 +325,16 @@ final class ControlServer: @unchecked Sendable {
                     }
                     throttle = c
                 }
+                var theme: PageTheme?
+                if let t = request["theme"] as? String {
+                    guard let p = PageTheme(rawValue: t) else {
+                        return ["ok": false,
+                                "error": "unknown theme '\(t)' — one of: " +
+                                         PageTheme.allCases.map(\.rawValue)
+                                             .joined(separator: ", ")]
+                    }
+                    theme = p
+                }
                 if let d = picked { ctrl.setScreen(d) }
                 if let land = request["landscape"] as? Bool { ctrl.setDeviceLandscape(land) }
                 // Naming any condition is asking for the mode; only an explicit on:false
@@ -332,12 +342,13 @@ final class ControlServer: @unchecked Sendable {
                 ctrl.setConditions(on: request["on"] as? Bool ?? true)
                 if let net { ctrl.setNetwork(net) }
                 if let throttle { ctrl.setCPU(throttle) }
+                if let theme { ctrl.setPageTheme(theme) }
                 // The bar opens at Normal on every axis, but a bare on:true is this verb's
                 // oldest question — device mode, no arguments — so it still lands on the
                 // fleet's middle rather than on nothing.
                 if clearScreen { ctrl.setScreen(nil) }
                 if ctrl.conditionsOn, ctrl.device == nil, picked == nil, !clearScreen,
-                   net == nil, throttle == nil {
+                   net == nil, throttle == nil, theme == nil {
                     ctrl.setScreen(.initial)
                 }
             }
@@ -353,6 +364,7 @@ final class ControlServer: @unchecked Sendable {
                 "landscape": ctrl.landscape,
                 "network": ctrl.network.rawValue,
                 "cpu": ctrl.cpu.rawValue,
+                "theme": ctrl.pageTheme.rawValue,
                 "devices": HardwareDevice.fleet.map {
                     ["id": $0.id, "name": $0.name,
                      "width": Int($0.width), "height": Int($0.height)]

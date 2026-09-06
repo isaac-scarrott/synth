@@ -571,13 +571,14 @@ struct RootView: View {
                 store.exitUsage(); return nil
             }
 
-            // [ / ] walk the Settings tabs (Synth ⇄ current project), matching working.html —
-            // a no-op when there's no project tab to switch to.
+            // [ / ] walk the Settings tabs, matching working.html's stepSettingsTab: General and
+            // then every project, wrapping. It steps the whole strip rather than flipping between
+            // two, because the strip stopped being two the moment every project got a tab of its
+            // own — a keyboard that could only reach the first project would leave the rest of
+            // them mouse-only.
             if store.settingsOpen, event.keyCode == 33 || event.keyCode == 30,
                event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
-                if store.settingsProject != nil {
-                    store.settingsTab = store.settingsTab == .app ? .project : .app
-                }
+                store.stepSettingsTab(event.keyCode == 30 ? 1 : -1)
                 return nil
             }
 
@@ -696,8 +697,8 @@ struct RootView: View {
                 if !opt, !shift, let n = Self.splitDigit(event.keyCode), n >= 2 {
                     store.focusPane(n); focusContent(store); return nil
                 }
-                // Tabs (experimental): ⌘⇧[ / ⌘⇧] step the branch's tabs. Guarded by tabsMode so a
-                // tabs-off build is untouched (bare ⌘[ / ⌘] stay the browser's history verbs, below).
+                // Tabs: ⌘⇧[ / ⌘⇧] step the branch's tabs. Guarded by tabsMode so sidebar mode keeps
+                // the chord free (bare ⌘[ / ⌘] stay the browser's history verbs, below).
                 if store.tabsMode, shift, !opt, event.keyCode == 33 { store.cycleTab(-1); focusContent(store); return nil }
                 if store.tabsMode, shift, !opt, event.keyCode == 30 { store.cycleTab(1); focusContent(store); return nil }
                 // ⌘W closes the current context (focused sidebar row or open session) through the
@@ -776,7 +777,7 @@ struct RootView: View {
                 default: break
                 }
             }
-            // Tabs (experimental): ⌃⇥ / ⌃⇧⇥ cycle the branch's tabs. Placed before the surface
+            // Tabs: ⌃⇥ / ⌃⇧⇥ cycle the branch's tabs. Placed before the surface
             // passthrough so it works even while a terminal/browser holds focus (a global nav
             // chord, like ⌘⇧[ / ⌘⇧]). Guarded by tabsMode.
             if store.tabsMode, event.keyCode == 48,

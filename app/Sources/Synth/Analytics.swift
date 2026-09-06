@@ -10,7 +10,7 @@ import PostHog
 /// Three things keep the numbers honest and the default safe:
 ///   • the dev channel never reports, so the author's own runs don't skew usage;
 ///   • an unset `projectKey` makes every call a no-op, so CI and forked checkouts stay silent;
-///   • the opt-out toggle (Settings → Privacy) is honoured from the very first event.
+///   • the opt-out toggle (Settings → About) is honoured from the very first event.
 ///
 /// Caught errors go through `error(_:)`. Native crashes (signals, `fatalError`, the vendored
 /// C/C++ engines) are NOT captured here — that needs a dedicated crash handler, a follow-up.

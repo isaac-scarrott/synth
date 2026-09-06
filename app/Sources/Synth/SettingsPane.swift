@@ -42,7 +42,7 @@ struct SettingsPane: View {
             Text("Settings")
                 .font(.sans(13, 600))
                 .foregroundStyle(Theme.ink)
-            tabStrip.padding(.leading, 8)
+            tabStrip.padding(.leading, 18)
             Spacer(minLength: 0)
         }
         .padding(.leading, store.sidebarCollapsed ? Theme.trafficLightsClearance : 18)
@@ -51,14 +51,27 @@ struct SettingsPane: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 0.5) }
     }
 
+    /// Every project gets a tab, not just the one you happened to be standing in. A project's
+    /// settings are a place you go to compare and to fix, and reaching one used to mean leaving
+    /// Settings, opening a branch of that project, and coming back.
+    ///
+    /// "General", not "Synth": the app scope sat directly beside a project named synth, and two
+    /// tabs differing only in a capital letter is a collision every user with a project named
+    /// after their app would hit. It carries no mark either — the head's title is already a gear,
+    /// and a second one beside it read as a stutter.
     private var tabStrip: some View {
-        HStack(spacing: 2) {
-            SetTab(label: "Synth", on: tab == .app || project == nil) { store.settingsTab = .app }
-            if let ws = project {
-                SetTab(label: ws.name, workspace: ws, on: tab == .project) { store.settingsTab = .project }
+        HStack(spacing: 3) {
+            // With no projects there is no project tab to be on, so General is lit whatever the
+            // stored tab says — the pane is already showing it (working.html normalises the same
+            // case by pushing setTab back to 'app').
+            SetTab(label: "General", on: tab == .app || project == nil) { store.settingsTab = .app }
+            ForEach(store.workspaces) { ws in
+                SetTab(label: ws.name, workspace: ws, on: tab == .project && project?.id == ws.id) {
+                    store.settingsProjectID = ws.id
+                    store.settingsTab = .project
+                }
             }
         }
-        .frame(height: Theme.titlebarHeight, alignment: .bottom)
     }
 
     // MARK: App tab — app settings + the shared defaults every project layers on
@@ -67,11 +80,13 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 28) {
             SetSection(label: "Appearance") {
                 SetToggleRow(label: "Theme", desc: "Follows macOS unless you pin it.") { ThemeSeg() }
-            }
-            SetSection(label: "Markdown") {
-                SetToggleRow(label: "Open .md in",
-                             desc: "Clicking a markdown link, and the `synth` command.") {
-                    MarkdownOpenSeg()
+                SetDivider()
+                // Sessions are somewhere in both modes, so this is a choice of where and never an
+                // on/off: "Tabs, off" asks you to know what is lost, where "Sidebar / Tabs" names
+                // both answers.
+                SetToggleRow(label: "Show sessions in",
+                             desc: "Under their branch in the sidebar, or in a tab strip above the panes.") {
+                    SetSeg(options: [(false, "Sidebar"), (true, "Tabs")], selection: bind(\.tabsMode))
                 }
             }
             SetSection(label: "Notification sounds") {
@@ -81,16 +96,24 @@ struct SettingsPane: View {
                 SetDivider()
                 switchRow("Command failed", "A terminal command exited non-zero.", bind(\.soundError))
             }
-            SetSection(label: "MCP servers") {
+            SetSection(label: "Integrations") {
                 // No tool counts in these lines: the browser row claimed 13 for months while the
                 // server grew past 20, and a number nobody can see is wrong is worse than none.
                 switchRow("Browser", "Lets an agent drive and inspect browser sessions.",
                           bind(\.mcpBrowserEnabled))
                 SetDivider()
-                switchRow("Simulator", "Lets an agent drive simulator sessions — tap, type, screenshot.",
-                          bind(\.mcpSimulatorEnabled))
+                // Named for what the agent gets, not for the server that carries it: "Synth app"
+                // described the plumbing and left you to guess what it let anything do.
+                switchRow("Worktrees", "Lets an agent create worktrees and hand work off to them.",
+                          bind(\.mcpAppEnabled))
                 SetDivider()
-                switchRow("Synth app", "Lets an agent create worktrees.", bind(\.mcpAppEnabled))
+                // One switch, not two. The second used to say whether an agent could drive the
+                // sessions the first one allowed — a distinction nobody was drawing, and one that
+                // put two rows called Simulator next to each other, the lower of them inert
+                // whenever the upper was off.
+                switchRow("Simulator sessions",
+                          "Run an iOS simulator as a session: its live screen in a pane, tappable, and drivable by Claude. Needs a full Xcode.",
+                          bind(\.simulatorSessionsEnabled))
             }
             SetSection(label: "New worktree defaults") {
                 SetEditorRow(label: "Setup script", desc: "Runs once in each new worktree, after it's created.") {
@@ -114,16 +137,17 @@ struct SettingsPane: View {
             // with it. The row itself stays, at the same height — the switch that brings the
             // agent back has to be somewhere you can find it, and a collapsing row would shove
             // everything below it.
-            // A built-in row leads with its binary, because the binary is the whole identity. The
-            // user's own agents follow, each stating the three things a built-in never has to:
-            // what it is called, what Synth runs, and whose machinery reads it.
+            // A built-in row is titled the way the agent is named everywhere else in the app, and
+            // says nothing more — a dark field under an agent, holding flags, on a row with a
+            // switch, was never going to be read as anything else. The user's own agents follow,
+            // each stating the three things a built-in never has to: what it is called, what
+            // Synth runs, and whose machinery reads it.
             SetSection(label: "Agents") {
                 let builtIns = AgentRegistry.installed.filter { !$0.isCustom }
                 ForEach(Array(builtIns.enumerated()), id: \.element.id) { i, agent in
                     if i > 0 { SetDivider() }
                     let on = store.isAgentEnabled(agent.id)
-                    SetEditorRow(label: agent.binaryName,
-                                 desc: "Flags added to every \(agent.binaryName) launch.",
+                    SetEditorRow(label: agent.displayName,
                                  dimmed: !on,
                                  // A switch has no text baseline, so the row's firstTextBaseline
                                  // HStack would fall back to its bottom edge and sit it low —
@@ -148,14 +172,11 @@ struct SettingsPane: View {
                     AddAgentButton()
                 }
             }
-            SetSection(label: "Privacy") {
-                SetToggleRow(label: "Anonymous analytics", desc: "Usage counts only. No code, prompts or paths.") {
-                    switchControl(bind(\.analyticsEnabled))
-                }
-            }
             // Only the switch carries a description, and only the half of it you can't read off
             // the controls: that the sweep touches nothing unrecoverable. Each picker states its
-            // own rule — a sentence under "Never · 7 · 14 · 30 days" would say it again, slower.
+            // own rule — a sentence under "Never · 1 · 7 · 14 · 30 days" would say it again,
+            // slower. All three share one width: stacked pickers starting at different x read as
+            // a misalignment, not as three controls each sized to its own contents.
             //
             // Every row after the switch folds away when it's off: what remains has nothing to
             // configure, and unlike the agent rows there's no field here whose absence would hide
@@ -167,8 +188,8 @@ struct SettingsPane: View {
                 if store.archiveSweepEnabled {
                     SetDivider()
                     SetToggleRow(label: "Wait before cleaning up") {
-                        SetSeg(options: [(0, "Never"), (7, "7 days"), (14, "14 days"), (30, "30 days")],
-                               selection: bind(\.archiveGraceDays), width: SegWidth.four)
+                        SetSeg(options: [(0, "Never"), (1, "1 day"), (7, "7 days"), (14, "14 days"), (30, "30 days")],
+                               selection: bind(\.archiveGraceDays), width: SegWidth.five)
                     }
                     SetDivider()
                     // A budget can only bring an unblocked folder's turn forward — it never lets
@@ -177,22 +198,22 @@ struct SettingsPane: View {
                     // a caption nobody reads twice.
                     SetToggleRow(label: "Most worktrees archived") {
                         SetSeg(options: [(10, "10"), (25, "25"), (50, "50"), (0, "No cap")],
-                               selection: bind(\.archiveMaxCount), width: SegWidth.four)
+                               selection: bind(\.archiveMaxCount), width: SegWidth.five)
                     }
                     SetDivider()
                     SetToggleRow(label: "Most disk archived") {
                         SetSeg(options: [(20, "20 GB"), (50, "50 GB"), (100, "100 GB"), (0, "No cap")],
-                               selection: bind(\.archiveMaxGB), width: SegWidth.four)
+                               selection: bind(\.archiveMaxGB), width: SegWidth.five)
                     }
                 }
             }
-            SetSection(label: "Experimental") {
-                switchRow("Tabs", "Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview.", bind(\.tabsMode))
-                switchRow("Simulator sessions",
-                          "Run an iOS simulator as a session: its live screen in a pane, tappable, and drivable by Claude. Needs a full Xcode. Uses Apple's private simulator frameworks, so a future Xcode can degrade it — it will say so rather than fail quietly.",
-                          bind(\.simulatorSessionsEnabled))
+            SetSection(label: "About") {
+                SetToggleRow(label: "Anonymous analytics", desc: "Usage counts only. No code, prompts or paths.") {
+                    switchControl(bind(\.analyticsEnabled))
+                }
+                SetDivider()
+                aboutRow
             }
-            SetSection(label: "About") { aboutRow }
             if store.workspaces.isEmpty { emptyProject }
         }
     }
@@ -208,13 +229,13 @@ struct SettingsPane: View {
 
     @ViewBuilder private func projectTab(_ ws: Workspace) -> some View {
         VStack(alignment: .leading, spacing: 28) {
-            SetSection(label: "New worktree") {
+            SetSection(label: "New worktree defaults") {
                 SetEditorRow(label: "Setup script",
                              desc: skipScript(ws) ? "Runs instead of the shared setup." : "Runs after the shared setup.",
                              trailing: { if hasScriptDelta(ws) { ClearButton { clearScript(ws) } } }) {
                     VStack(spacing: 0) {
                         SharedSetupStrip(base: store.globalScript, skip: skipBinding(ws), projectName: ws.name,
-                                         editInSynth: { store.settingsTab = .app })
+                                         editInGeneral: { store.settingsTab = .app })
                         ProjectScriptEditor(text: scriptBinding(ws), projectName: ws.name)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -234,8 +255,8 @@ struct SettingsPane: View {
                     ForEach(Array(agents.enumerated()), id: \.element.id) { i, agent in
                         if i > 0 { SetDivider() }
                         let shared = (store.globalAgentFlags[agent.id] ?? "").trimmingCharacters(in: .whitespaces)
-                        SetEditorRow(label: agent.binaryName,
-                                     desc: shared.isEmpty ? "Flags for \(agent.binaryName) launches." : "Added after the shared \(agent.binaryName) flags.",
+                        SetEditorRow(label: agent.displayName,
+                                     desc: shared.isEmpty ? "Flags for this project." : "Added after the shared flags.",
                                      trailing: { if hasFlagsDelta(ws, agent) { ClearButton { clearFlags(ws, agent) } } }) {
                             FlagLineField(binary: agent.binaryName, shared: shared,
                                           tail: wsFlagsBinding(ws, agent), placeholder: agent.exampleFlags)
@@ -244,7 +265,7 @@ struct SettingsPane: View {
                 }
             }
             SetSection(label: "Browser") { BrowsingData(workspace: ws) }
-            SetSection(label: "Archived") { ArchivedWorktrees(workspace: ws) }
+            SetSection(label: "Archived worktrees") { ArchivedWorktrees(workspace: ws) }
         }
     }
 
@@ -318,8 +339,12 @@ struct SettingsPane: View {
     private func clearFlags(_ ws: Workspace, _ agent: AgentDescriptor) { store.wsAgentFlags[ws.id]?[agent.id] = nil }
 }
 
-// MARK: - Tab strip (working.html .set-tab)
+// MARK: - Tab strip (working.html .set-tabs)
 
+/// One scope on the Settings strip. Everything about how it looks is `tabShell` — the same chip
+/// the branch's session strip paints — so a scope you switch between looks like a scope you
+/// switch between wherever you are in the app. Only the strip's own concerns are here: a smaller
+/// project chip, and no close button to give an edge back to.
 private struct SetTab: View {
     let label: String
     var workspace: Workspace? = nil
@@ -329,19 +354,15 @@ private struct SetTab: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
-                if let workspace { WsChip(workspace: workspace, size: 15) }
-                Text(label)
-                    .font(.sans(13, 550))
-                    .foregroundStyle(on ? Theme.ink : (hovering ? Theme.ink2 : Theme.ink4))
-                    .lineLimit(1)
+            HStack(spacing: 6) {
+                if let workspace { WsChip(workspace: workspace, size: 14) }
+                Text(label).lineLimit(1).truncationMode(.tail)
             }
-            .padding(.horizontal, 10).frame(height: Theme.titlebarHeight)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Theme.accent).frame(height: 2)
-                    .padding(.horizontal, 10).opacity(on ? 1 : 0)
-            }
-            .contentShape(Rectangle())
+            .tabShell(isActive: on, hovering: hovering)
+            // The same bounds a session tab keeps: a project named at length would otherwise
+            // push the rest of the strip out of the head rather than ellipsising.
+            .frame(minWidth: 34, maxWidth: 200)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -548,7 +569,7 @@ private struct SharedSetupStrip: View {
     let base: String
     @Binding var skip: Bool
     let projectName: String
-    let editInSynth: () -> Void
+    let editInGeneral: () -> Void
     @State private var open = false
     @State private var hovering = false
 
@@ -562,11 +583,11 @@ private struct SharedSetupStrip: View {
             HStack(spacing: 7) {
                 Phos(path: Phosphor.caret, size: 12).foregroundStyle(Theme.inkFaint)
                     .rotationEffect(.degrees(open ? 90 : 0))
-                Text("Shared Synth setup · \(lineCount) lines")
+                Text("Shared setup · \(lineCount) lines")
                     .font(.sans(12, 500)).foregroundStyle(Theme.ink4)
                 Spacer(minLength: 8)
-                Button(action: editInSynth) {
-                    Text("Edit in Synth").font(.sans(12, 500)).foregroundStyle(Theme.input)
+                Button(action: editInGeneral) {
+                    Text("Edit in General").font(.sans(12, 500)).foregroundStyle(Theme.input)
                 }.buttonStyle(.plain)
             }
             .padding(.horizontal, 11).padding(.vertical, 8)
@@ -932,13 +953,7 @@ private struct CustomAgentRow: View {
         if agent.binary.isEmpty { return "Type a command" }
         guard let probe else { return "Checking…" }
         switch probe.state {
-        // An alias Synth followed and still couldn't run stands apart from a name that is simply
-        // absent: the command IS there, in the shell, and what's wrong is that it stands for a
-        // shell line rather than a program — which no amount of PATH would fix.
-        case .missing:
-            return ShellEnvironment.loginAliases?[agent.binary] != nil
-                ? "That alias runs a shell command, not a program"
-                : "Not on your PATH"
+        case .missing: return "Not on your PATH"
         // A command that answers but isn't a known agent says nothing: the picker still reads
         // "Choose…", which is the only thing left to do about it.
         case .unrecognised: return ""
@@ -1009,7 +1024,7 @@ private struct LayeredSessions: View {
     }
 }
 
-/// A locked shared session row on a project scope — greyed, no grip/×, tagged "Synth".
+/// A locked shared session row on a project scope — greyed, no grip/×, tagged "General".
 private struct SharedSessionRow: View {
     @Environment(AppStore.self) private var store
     let entry: SessionTemplateEntry
@@ -1023,15 +1038,13 @@ private struct SharedSessionRow: View {
             TplIndex(i: index)
             TplKindIcon(kind: entry.kind, off: off)
             Text(entry.name)
-                .font(.sans(13, 500))
-                .foregroundStyle(off ? Theme.inkFaint : Theme.inkMuted)
+                .font(.sans(13, opens ? 600 : 500))
+                .foregroundStyle(off ? Theme.inkFaint : (opens ? Theme.inkOpen : Theme.inkMuted))
                 .strikethrough(off, color: Theme.inkFaint)
                 .lineLimit(1).padding(.horizontal, 5)
-            if opens { TplOpensTag() }
-            if off { TplOffPill() }
+            if off { TplOffPill(missing: entry.kind.isMissingAgent) }
             Spacer(minLength: 4)
-            TplKindPill(kind: entry.kind)
-            Text("Synth")
+            Text("General")
                 .font(.sans(10, 600)).kerning(0.3)
                 .foregroundStyle(Theme.inkFaint)
                 .padding(.horizontal, 7).padding(.vertical, 2)
@@ -1039,28 +1052,50 @@ private struct SharedSessionRow: View {
         }
         .padding(.horizontal, 9)
         .frame(height: TplMetrics.rowHeight)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Theme.rowHover)
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border.opacity(0.6), lineWidth: 0.5)))
+        // No shadow: an inherited row is not lifted off the card the way an editable one is
+        // (working.html `.tpl-list--ro .tpl-row`), and the shared shell defaults to one.
+        .background(TplRowShell(opens: opens, fill: Theme.rowHover,
+                                stroke: Theme.border.opacity(0.6), shadow: 0))
     }
 }
 
-private struct TplOpensTag: View {
+/// The row's own surface — and, on the one entry that opens the worktree, the accent fill and
+/// ring that say so. That fill is the whole signal: a tag beside it named a fact the row was
+/// already painting.
+private struct TplRowShell: View {
+    let opens: Bool
+    var fill: Color = Theme.raised
+    var stroke: Color = Theme.border
+    var shadow: Double = 0.04
+    var shadowRadius: CGFloat = 0.75
+
     var body: some View {
-        Text("OPENS")
-            .font(.sans(10, 700)).kerning(0.6)
-            .foregroundStyle(Theme.accent)
+        RoundedRectangle(cornerRadius: 9).fill(opens ? Theme.accent.opacity(0.10) : fill)
+            .overlay(RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(opens ? Theme.accent.opacity(0.26) : stroke, lineWidth: opens ? 1 : 0.5))
+            .shadow(color: .black.opacity(shadow), radius: shadowRadius, y: 1)
     }
 }
 
-/// The "Off" pill on a template entry whose agent is switched off (working.html `.tpl-off`).
-/// The entry is skipped, not deleted — flipping the agent back on restores it as it was.
+/// The pill on a template entry that will be skipped (working.html `.tpl-off`). "Off" is your
+/// choice and comes back the moment you flip the switch; "Missing" is the machine's — the agent
+/// isn't on this one, and the entry is waiting for a machine where it is.
 private struct TplOffPill: View {
+    let missing: Bool
     var body: some View {
-        Text("Off")
+        Text(missing ? "Missing" : "Off")
             .font(.sans(10, 600)).kerning(0.3)
             .foregroundStyle(Theme.inkFaint)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Capsule().fill(Theme.rowHover))
+    }
+}
+
+private extension SessionKind {
+    /// Switched off because there is nothing here to switch on.
+    @MainActor var isMissingAgent: Bool {
+        guard let id = agentID else { return false }
+        return !AgentRegistry.isInstalled(id)
     }
 }
 
@@ -1146,19 +1181,15 @@ private struct TplRow: View {
             grip
             TplIndex(i: displayIndex)
             TplKindIcon(kind: entry.kind, off: off)
-            TplNameField(text: nameBinding, off: off)
-            if opens { TplOpensTag() }
-            if off { TplOffPill() }
-            TplKindPill(kind: entry.kind)
+            TplNameField(text: nameBinding, off: off, opens: opens)
+            if off { TplOffPill(missing: entry.kind.isMissingAgent) }
             removeButton
         }
         .padding(.horizontal, 9)
         .frame(height: TplMetrics.rowHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 9).fill(opens ? Theme.accent.opacity(0.10) : Theme.raised)
-                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(opens ? Theme.accent.opacity(0.26) : Theme.border, lineWidth: opens ? 1 : 0.5))
-                .shadow(color: .black.opacity(dragging ? 0.12 : 0.04), radius: dragging ? 4 : 0.75, y: 1)
-        )
+        .background(TplRowShell(opens: opens,
+                                shadow: dragging ? 0.12 : 0.04,
+                                shadowRadius: dragging ? 4 : 0.75))
         .offset(y: dragOffset)
         .zIndex(dragging ? 1 : 0)
     }
@@ -1224,24 +1255,19 @@ private struct TplKindIcon: View {
     }
 }
 
-private struct TplKindPill: View {
-    let kind: SessionKind
-    var body: some View {
-        Text(kind.tplLabel).font(.sans(11, 550)).foregroundStyle(Theme.inkMuted)
-            .padding(.horizontal, 8).padding(.vertical, 2).background(Capsule().fill(Theme.rowSelected))
-    }
-}
-
 private struct TplNameField: View {
     @Binding var text: String
     /// A skipped entry stays editable — the template is a wish list you keep between flips.
     var off: Bool = false
+    /// The entry that opens the worktree. With the tag gone, the row's fill and this weight are
+    /// the whole of what says so (working.html `.tpl-row--first .tpl-name`).
+    var opens: Bool = false
     @State private var hovering = false
     @FocusState private var focused: Bool
     var body: some View {
         TextField("", text: $text)
-            .textFieldStyle(.plain).font(.sans(13, 500))
-            .foregroundStyle(off ? Theme.inkFaint : Theme.ink)
+            .textFieldStyle(.plain).font(.sans(13, opens ? 600 : 500))
+            .foregroundStyle(off ? Theme.inkFaint : (opens ? Theme.inkOpen : Theme.ink))
             .frame(maxWidth: .infinity)
             .focused($focused)
             .padding(.horizontal, 5).padding(.vertical, 2)
@@ -1263,13 +1289,20 @@ private struct TplNameField: View {
     }
 }
 
+/// One way in, not one per kind. A button per session kind put the whole roster on screen at all
+/// times — five today, more as agents are added — to be read in full every time you wanted one
+/// more session. You add a session; the kind is the question the menu asks.
+///
+/// It is the list's next row, not a control beside it: same height, same radius, same left edge,
+/// with the plus where a session's icon goes — so pressing it reads as writing the row it is
+/// standing in rather than as operating something on the list. Dashed until the pointer is on it,
+/// like `TplEmpty`: the slot is offered rather than filled.
 private struct TplAddBar: View {
     @Environment(AppStore.self) private var store
     @Binding var entries: [SessionTemplateEntry]
+    @State private var hovering = false
+
     var body: some View {
-        // A template that spawns a simulator row is only offerable while the experiment is on and
-        // there is an Xcode to run it; otherwise every new worktree would come up with a row that
-        // cannot attach to anything.
         // `availableAgents`, not every installed one: a switched-off agent is not offerable. Plus
         // the simulator only while the experiment is on and there is an Xcode — otherwise a new
         // worktree would come up with a row that cannot attach to anything.
@@ -1278,30 +1311,35 @@ private struct TplAddBar: View {
         let kinds = store.availableAgents.map { SessionKind.agent($0.id) }
             + [.terminal, .browser] + (store.simulatorsAvailable ? [.simulator] : [])
             + (MarkdownSession.isAvailable ? [SessionKind.markdown] : [])
-        HStack(spacing: 6) {
+        Menu {
             ForEach(kinds, id: \.self) { kind in
-                TplHover { hovering in
-                    Button {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            entries.append(SessionTemplateEntry(kind: kind, name: kind.tplStart))
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Phos(path: Phosphor.plus, size: 12).foregroundStyle(Theme.inkFaint)
-                            // The bar is one fixed-height line: a long name (a user's own agent)
-                            // overflows sideways rather than wrapping and growing every button.
-                            Text(kind.tplLabel).font(.sans(12, 550)).foregroundStyle(hovering ? Theme.ink : Theme.ink3)
-                                .lineLimit(1).fixedSize()
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.rowHover : Theme.raised)
-                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(hovering ? Theme.borderStrong : Theme.line, lineWidth: 0.5)))
-                        .contentShape(Rectangle())
+                Button(kind.tplLabel) {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        entries.append(SessionTemplateEntry(kind: kind, name: kind.tplStart))
                     }
-                    .buttonStyle(.plain)
                 }
             }
+        } label: {
+            HStack(spacing: 8) {
+                Phos(path: Phosphor.plus, size: 16)
+                    .foregroundStyle(hovering ? Theme.accent : Theme.inkFaint).frame(width: 16)
+                Text("Add session").font(.sans(13, 500))
+                    .foregroundStyle(hovering ? Theme.ink : Theme.inkMuted)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: TplMetrics.rowHeight)
+            .background(RoundedRectangle(cornerRadius: 9).fill(hovering ? Theme.raised : Color.clear)
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(
+                    hovering ? Theme.borderStrong : Theme.line,
+                    style: StrokeStyle(lineWidth: 0.5, dash: hovering ? [] : [3, 3]))))
+            .contentShape(RoundedRectangle(cornerRadius: 9))
         }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .frame(maxWidth: .infinity)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -1603,8 +1641,7 @@ private struct ArcPolicy: View {
 /// tags — a second implementation would drift on the raised state within a release.
 private enum SegWidth {
     static let three: CGFloat = 216
-    /// Four options in the width built for three wraps every label onto two lines.
-    static let four: CGFloat = 272
+    static let five: CGFloat = 330
 }
 
 private struct SetSeg<Value: Hashable>: View {
@@ -1632,80 +1669,6 @@ private struct SetSeg<Value: Hashable>: View {
         }
         .padding(2).background(RoundedRectangle(cornerRadius: 8).fill(Theme.rowSelected))
         .frame(width: width)
-    }
-}
-
-/// Settings → Markdown. Three choices, because there are only three answers: read it here, read
-/// it in your editor, or send it out of Synth entirely.
-///
-/// The editor choice carries WHICH editor rather than adding a fourth control for it. A machine
-/// with one editor installed therefore has nothing extra to decide, and a machine with several
-/// gets the menu only when it clicks that segment. Nothing is offered that is not installed, so
-/// the middle segment is simply absent on a machine with no terminal editor at all.
-private struct MarkdownOpenSeg: View {
-    @Environment(AppStore.self) private var store
-    @State private var editors: [TerminalEditor] = []
-
-    private var chosenEditor: TerminalEditor? {
-        if case let .editor(binary) = store.markdownOpen {
-            return editors.first { $0.binary == binary }
-        }
-        return editors.first
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            SetSeg(options: options, selection: Binding(
-                get: { mode },
-                set: { apply($0) }
-            ), width: editors.isEmpty ? SegWidth.three : SegWidth.four)
-
-            // Only when there is a genuine choice to make.
-            if mode == .editor, editors.count > 1 {
-                Menu {
-                    ForEach(editors) { editor in
-                        Button(editor.name) { store.markdownOpen = .editor(editor.binary) }
-                    }
-                } label: {
-                    Text(chosenEditor?.name ?? "Editor").font(.sans(12, 500))
-                        .foregroundStyle(Theme.inkMuted)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-        }
-        // Detection reads the login shell's PATH, which is probed off the main thread and may
-        // not have resolved when Settings first draws.
-        .task { editors = MarkdownOpener.installed() }
-    }
-
-    private enum Mode: Hashable { case synth, editor, defaultApp }
-
-    private var mode: Mode {
-        switch store.markdownOpen {
-        case .synth: return .synth
-        case .editor: return .editor
-        case .defaultApp: return .defaultApp
-        }
-    }
-
-    private var options: [(Mode, String)] {
-        var out: [(Mode, String)] = [(.synth, "Synth")]
-        if !editors.isEmpty {
-            out.append((.editor, editors.count == 1 ? editors[0].name : "Editor"))
-        }
-        out.append((.defaultApp, "Default app"))
-        return out
-    }
-
-    private func apply(_ next: Mode) {
-        switch next {
-        case .synth: store.markdownOpen = .synth
-        case .defaultApp: store.markdownOpen = .defaultApp
-        case .editor:
-            guard let editor = chosenEditor else { return }
-            store.markdownOpen = .editor(editor.binary)
-        }
     }
 }
 

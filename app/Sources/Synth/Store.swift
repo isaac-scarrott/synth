@@ -356,12 +356,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     var pulseTokens: [UUID: Int] = [:]
 
     /// Per-type Notification-Center sound toggles (working.html's per-type sound setting).
-    /// Persisted to UserDefaults like `themePref`; defaults needs-input ON, error ON, done OFF.
+    /// Persisted to UserDefaults like `themePref`; all three ship OFF, so a machine running a
+    /// dozen sessions is silent until the user asks a type to speak up.
     /// In-app toasts are always silent — this only gates the unfocused NC path.
-    var soundNeedsInput = AppStore.loadBoolPref(AppStore.soundInputKey, default: true) {
+    var soundNeedsInput = AppStore.loadBoolPref(AppStore.soundInputKey, default: false) {
         didSet { UserDefaults.standard.set(soundNeedsInput, forKey: AppStore.soundInputKey) }
     }
-    var soundError = AppStore.loadBoolPref(AppStore.soundErrorKey, default: true) {
+    var soundError = AppStore.loadBoolPref(AppStore.soundErrorKey, default: false) {
         didSet { UserDefaults.standard.set(soundError, forKey: AppStore.soundErrorKey) }
     }
     var soundDone = AppStore.loadBoolPref(AppStore.soundDoneKey, default: false) {
@@ -389,13 +390,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         else { UserDefaults.standard.removeObject(forKey: settingsProjectKey) }
     }
 
-    /// Per-machine MCP server toggles (Settings → MCP servers): which bundled servers are
-    /// registered in every managed worktree's agent config. All three ship on — the app-control
+    /// Per-machine MCP server toggles (Settings → Integrations): which bundled servers are
+    /// registered in every managed worktree's agent config. Both ship on — the app-control
     /// server's one mutating verb is approval-gated behind a native prompt, so an agent
-    /// holding the tool still can't create a worktree the user didn't click Create on, and the
-    /// simulator server can only reach devices the user's own machine already has. A flip
+    /// holding the tool still can't create a worktree the user didn't click Create on. A flip
     /// re-syncs every worktree's config immediately — disabled means the entry is REMOVED,
-    /// so agents don't even see the tools.
+    /// so agents don't even see the tools. The simulator server has no switch of its own: it
+    /// rides `simulatorSessionsEnabled`, because a simulator session nothing can drive was a
+    /// distinction nobody was making.
     var mcpBrowserEnabled = AppStore.loadBoolPref(AppStore.mcpBrowserKey, default: true) {
         didSet {
             UserDefaults.standard.set(mcpBrowserEnabled, forKey: AppStore.mcpBrowserKey)
@@ -408,17 +410,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             syncAgentBridge()
         }
     }
-    var mcpSimulatorEnabled = AppStore.loadBoolPref(AppStore.mcpSimulatorKey, default: true) {
-        didSet {
-            UserDefaults.standard.set(mcpSimulatorEnabled, forKey: AppStore.mcpSimulatorKey)
-            syncAgentBridge()
-        }
-    }
     static let mcpBrowserKey = "synth-mcp-browser"
     static let mcpAppKey = "synth-mcp-app"
-    static let mcpSimulatorKey = "synth-mcp-simulator"
 
-    /// Anonymous usage analytics (Settings → Privacy). On by default, opt-out: flipping it off
+    /// Anonymous usage analytics (Settings → About). On by default, opt-out: flipping it off
     /// tells PostHog to stop sending straight away and stays off across launches. Read at launch
     /// by `Analytics.bootstrap` too, so the very first event already respects the choice.
     var analyticsEnabled = AppStore.loadBoolPref(AppStore.analyticsKey, default: true) {
@@ -429,29 +424,31 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
     static let analyticsKey = "synth-analytics-enabled"
 
-    /// Experimental "Tabs" view mode (working.html `data-tabs`). Presentation-only over the same
-    /// branch → pane-tree → session store: on, the sidebar drops to two deep (sessions leave the
-    /// tree) and the content surface gains one tab strip per branch. OFF by default, and every
-    /// tabs-gated behaviour keys off this, so a tabs-off build is byte-for-byte today's. `@Observable`
+    /// "Tabs" view mode (working.html `data-tabs`). Presentation-only over the same branch →
+    /// pane-tree → session store: on, the sidebar drops to two deep (sessions leave the tree) and
+    /// the content surface gains one tab strip per branch. ON by default — this is how Synth looks
+    /// out of the box; the switch stays for people who would rather keep their sessions in the
+    /// sidebar tree. Every tabs-gated behaviour still keys off this one flag, so turning it off
+    /// yields the whole sidebar design rather than a hollowed-out tabs one. `@Observable`
     /// re-renders the sidebar and content the instant it flips — the lossless toggle, no migration.
-    var tabsMode = AppStore.loadBoolPref(AppStore.tabsModeKey, default: false) {
+    var tabsMode = AppStore.loadBoolPref(AppStore.tabsModeKey, default: true) {
         didSet { UserDefaults.standard.set(tabsMode, forKey: AppStore.tabsModeKey) }
     }
     static let tabsModeKey = "synth-tabs"
 
-    /// Experimental simulator sessions (ADR-0015). OFF by default, and deliberately so: the feature
-    /// reads the device framebuffer and injects input through Apple's *private* simulator
-    /// frameworks, resolved by name at runtime. It has been proven on the Xcode it was built
-    /// against, and it degrades by design when a symbol moves — but "degrades by design" is a claim
-    /// about Xcode versions nobody has run it on yet, and this is the app hosting the user's
-    /// terminals and agent sessions.
+    /// Simulator sessions (ADR-0015). ON by default: running a device as a session — and handing
+    /// agents that same device — is part of what Synth offers rather than something to opt into.
+    /// The default costs nothing on a machine that can't use it: `simulatorsAvailable` ANDs this
+    /// with `SimulatorDeviceCatalog.isXcodeAvailable`, so without a full Xcode the feature is inert
+    /// whatever the switch says, and the switch is what someone with Xcode reaches for to keep the
+    /// private-framework path out of their app entirely.
     ///
     /// The gate covers what a user can start and what an agent is offered: with it off, no create
     /// route offers a simulator and the `synth-simulator` MCP server is not registered into any
     /// worktree. Rows that already exist keep working, because silently breaking a session someone
     /// is using is not what a toggle should do.
     var simulatorSessionsEnabled = AppStore.loadBoolPref(
-        AppStore.simulatorSessionsKey, default: false) {
+        AppStore.simulatorSessionsKey, default: true) {
         didSet {
             UserDefaults.standard.set(simulatorSessionsEnabled, forKey: AppStore.simulatorSessionsKey)
             syncAgentBridge()
@@ -459,7 +456,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
     static let simulatorSessionsKey = "synth-simulator-sessions"
 
-    /// Whether simulator sessions can be offered at all: the experiment is on, and there is a full
+    /// Whether simulator sessions can be offered at all: the toggle is on, and there is a full
     /// Xcode to run them with. Every create route and the MCP registration ask this, so there is one
     /// answer rather than four.
     var simulatorsAvailable: Bool {
@@ -817,19 +814,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// globalTpl). Order is creation order — the first entry is the session that opens.
     var globalSessionTemplate: [SessionTemplateEntry] = []
 
-    /// What a clicked `.md` opens in (Settings → Markdown). App-wide rather than per-workspace:
-    /// it is a statement about how you read markdown, not about a project.
-    var markdownOpen: MarkdownOpen = .synth {
-        didSet {
-            // The surface builds its own launch line and has no store reference, so the
-            // choice is mirrored somewhere it can reach. Persistence rides the autosave
-            // cadence, like every other setting here.
-            MarkdownSession.preference = markdownOpen
-            // The `synth` shim bakes the chosen opener in, so it has to be rewritten — a
-            // terminal already open picks it up on its next invocation.
-            MarkdownSession.installCLI(into: HookEnvironment.shimDir)
-        }
-    }
     var wsSessionTemplates: [UUID: [SessionTemplateEntry]] = [:]
 
     /// The effective template for a project — the shared base sessions with the project's
@@ -942,9 +926,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         MCPInstaller.updateLaunchConfig(worktrees: live, servers: [
             "synth-browser": mcpBrowserEnabled,
             "synth-app": mcpAppEnabled,
-            // Gated on the experiment AND a real Xcode: registering a server whose every tool
-            // errors is worse than not registering it, and it would cost each agent context.
-            "synth-simulator": mcpSimulatorEnabled && simulatorsAvailable,
+            // The simulator has one switch, not two: turning the sessions on is what hands an
+            // agent the tools for them. Still gated on a real Xcode, because registering a server
+            // whose every tool errors is worse than not registering it, and it costs each agent
+            // context to carry.
+            "synth-simulator": simulatorsAvailable,
         ])
     }
 
@@ -1146,7 +1132,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // generic handoff below, and only for a real file — a directory named `notes.md` is
         // still Finder's. Agents write plans, TODOs and reports as markdown constantly; those
         // are the documents this app is for, so following one should not leave it.
-        if isMarkdown(path), markdownOpen != .defaultApp,
+        if isMarkdown(path),
            (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
             let source = sourceID.flatMap(session) ?? openSessionID.flatMap(session)
             if newMarkdown(in: source.flatMap { branch(of: $0) }, path: path) != nil { return }
@@ -1643,6 +1629,25 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     func retargetSettings(toWorkspace id: UUID) {
         guard settingsProjectID != id else { return }
         settingsProjectID = id
+    }
+
+    /// Walk the Settings strip by one, wrapping: General, then every project in tree order
+    /// (working.html `stepSettingsTab`). Selecting a project sets the scope as well as the tab,
+    /// exactly as clicking its tab does — the two must not be able to disagree.
+    func stepSettingsTab(_ direction: Int) {
+        guard !workspaces.isEmpty else { settingsTab = .app; return }
+        let current = settingsTab == .app
+            ? 0
+            : (settingsProject.flatMap { ws in workspaces.firstIndex(where: { $0.id == ws.id }) }
+                .map { $0 + 1 } ?? 0)
+        let count = workspaces.count + 1
+        let next = (current + direction + count) % count
+        if next == 0 {
+            settingsTab = .app
+        } else {
+            settingsProjectID = workspaces[next - 1].id
+            settingsTab = .project
+        }
     }
 
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
@@ -3577,7 +3582,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                   respond: @escaping ([String: Any]) -> Void) -> AgentPromptStart {
         guard mcpAppEnabled else {
             return .immediate(["ok": false, "error":
-                "the Synth app MCP server is turned off — enable it in Synth Settings → MCP servers"])
+                "the Worktrees MCP server is turned off — enable it in Synth Settings → Integrations"])
         }
         guard let worktreePath = request["worktreePath"] as? String,
               let callerBranch = branch(forWorktreePath: worktreePath),
@@ -3854,7 +3859,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             globalScript: globalScript,
             globalAgentFlags: globalAgentFlags.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
             globalSessionTemplate: globalSessionTemplate,
-            markdownOpen: markdownOpen.rawValue,
             customAgents: customAgents.isEmpty ? nil : customAgents
         )
     }
@@ -3933,10 +3937,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // The registry learns about them here (customAgents' didSet), which is what puts a user's
         // own command on PATH as a shim and into every "New …" for the rest of the run.
         if let ca = state.customAgents { customAgents = ca }
-        // An unrecognised value (a snapshot from a build that offered an editor this machine
-        // no longer has) falls back to Synth's own surface rather than failing the load.
-        markdownOpen = state.markdownOpen.flatMap(MarkdownOpen.init(rawValue:)) ?? .synth
-        MarkdownSession.preference = markdownOpen
         let liveIDs = Set(restored.flatMap { ws in
             [ws.id] + ws.branches.flatMap { [$0.id] + $0.sessions.map(\.id) }
         })

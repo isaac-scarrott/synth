@@ -20,12 +20,12 @@ enum SimulatorControl {
     static func handles(_ verb: String) -> Bool { verb.hasPrefix("simulator.") }
 
     static func handle(_ request: [String: Any], store: AppStore?) -> [String: Any] {
-        // The Experimental toggle, enforced and not merely advertised. It used to gate only what a
+        // The Settings toggle, enforced and not merely advertised. It used to gate only what a
         // user could start and which MCP servers were *registered*, which is discoverability: this
         // socket is reachable by any local process, and an agent session that was already running
         // when the toggle flipped keeps the tool list it was given. So `simulator.create` booted a
-        // device with the experiment off. Refusing here, by name, is also the answer that lets such
-        // an agent find out rather than silently succeeding at something the user disabled.
+        // device after the user had turned it off. Refusing here, by name, is also the answer that
+        // lets such an agent find out rather than silently succeeding at something they disabled.
         if let refusal = gateRefusal(store) { return fail(refusal) }
         let verb = request["verb"] as? String ?? ""
         switch verb {
@@ -47,9 +47,9 @@ enum SimulatorControl {
             guard let store else { return "store gone" }
             guard !store.simulatorsAvailable else { return nil }
             guard store.simulatorSessionsEnabled else {
-                return "simulator sessions are off: they are behind Synth's Experimental toggle "
-                    + "(Settings → Experimental → Simulator sessions), which is off by default. Ask "
-                    + "the user to turn it on — your tool list may predate them turning it off. "
+                return "simulator sessions are off: they're gated behind a toggle "
+                    + "(Settings → Integrations → Simulator sessions) that this user has turned "
+                    + "off — your tool list predates that. Ask them to turn it back on. "
                     + "Nothing was started."
             }
             return "no full Xcode is installed (or xcode-select / DEVELOPER_DIR points at the "

@@ -1,10 +1,11 @@
 import Foundation
 import SwiftUI
 
-// Conditions (working.html `.browser__condbar`): the three axes a worst case is made of —
-// the screen the live page is rendered at (inside a hardware frame, when the screen is one
-// you hold), the network and the CPU. This file carries the fleet catalog, the two machine
-// axes and the CDP emulation seam; the bar and frame are drawn by BrowserPane.
+// Conditions (working.html `.browser__condbar`): the axes a worst case is made of — the
+// screen the live page is rendered at (inside a hardware frame, when the screen is one you
+// hold), the network, the CPU, and what colour scheme the page is handed. This file carries
+// the fleet catalog, the three non-screen axes and the CDP emulation seam; the bar and frame
+// are drawn by BrowserPane.
 //
 // The device model here serves two surfaces, not one (ADR-0015): the browser's device mode, whose
 // viewport it emulates over CDP, and the simulator pane, which draws the same hardware around a
@@ -413,6 +414,34 @@ enum CPUThrottle: Int, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - The fourth axis: what colour scheme the page is handed
+
+/// working.html THEMES: unlike screen/network/cpu, Normal is a real value rather than "off" —
+/// a page always sees *some* `prefers-color-scheme`, and `.app` says it should be Synth's own
+/// rather than the raw OS one (System still means the OS decides, because that's what System
+/// already means). `.light`/`.dark` force it either way, isolated to this one browser.
+enum PageTheme: String, CaseIterable, Identifiable {
+    case app, light, dark
+
+    var id: String { rawValue }
+
+    var name: String {
+        switch self {
+        case .app:   return "Normal"
+        case .light: return "Light"
+        case .dark:  return "Dark"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .app:   return "follows Synth’s theme"
+        case .light: return "forced light, any theme"
+        case .dark:  return "forced dark, any theme"
+        }
+    }
+}
+
 /// True viewport emulation over CDP — Chrome DevTools' own device toolbar, driven from
 /// the controller. The engine view is laid out at (w·s)×(h·s) points inside the frame's
 /// screen; the override's `scale: s` renders the full w×h viewport into it, so
@@ -475,7 +504,45 @@ enum CPUThrottle: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Everything back to this Mac's own, and the socket closed — the bar has been shut.
+    /// `nil` clears the override — CEF's own `prefers-color-scheme`, i.e. the raw OS one,
+    /// shows through, which is what Synth's System theme means. Otherwise forces the page
+    /// to that scheme regardless of what the OS or Synth would otherwise hand it. Unlike the
+    /// other three axes this is never "off": PageTheme.app still resolves to a value (Synth's
+    /// own theme, or nil only when Synth itself is System) and is applied from the moment a
+    /// page first loads, independent of whether Conditions has ever been opened.
+    func applyTheme(_ scheme: ColorScheme?, urlHint: URL?) {
+        enqueue { [weak self] in
+            guard let client = await self?.connect(urlHint: urlHint) else { return }
+            let features: [[String: String]] = scheme.map {
+                [["name": "prefers-color-scheme", "value": $0 == .dark ? "dark" : "light"]]
+            } ?? []
+            _ = try? await client.send("Emulation.setEmulatedMedia", ["features": features])
+        }
+    }
+
+    /// A style-only change like `applyTheme`'s schedules a repaint on CEF's own compositor
+    /// clock rather than forcing one, and can sit unpainted — measured on CEF 144, reproduced
+    /// after Conditions closes and its own layout pass runs, and not simply a matter of
+    /// waiting: still unpainted seconds later with nothing else touching the page. A metrics
+    /// override, by contrast, is a real viewport transition Chromium always lays out and
+    /// paints for — so a meaningless one, set and immediately cleared, drags the pending
+    /// repaint forward as a side effect. The controller calls this only when no real screen
+    /// override is meant to be active; when one is, it re-asserts that instead (see
+    /// BrowserSessionController.applyPageTheme).
+    func nudgeRepaint(urlHint: URL?) {
+        enqueue { [weak self] in
+            guard let client = await self?.connect(urlHint: urlHint) else { return }
+            _ = try? await client.send("Emulation.setDeviceMetricsOverride",
+                                       ["width": 1, "height": 1, "deviceScaleFactor": 0, "mobile": false])
+            _ = try? await client.send("Emulation.clearDeviceMetricsOverride", [:])
+        }
+    }
+
+    /// Screen/network/cpu back to this Mac's own — the bar has been shut. The socket itself
+    /// stays open: theme's Normal still has to reach the page even with Conditions closed,
+    /// and closing here only to have applyTheme's own connect() race it straight back open
+    /// was exactly the bug (a send lost to that race is silent — try? swallows it — and
+    /// leaves the page on a stale override with nothing to say so).
     func clear() {
         enqueue { [weak self] in
             guard let self, let client = self.client else { return }
@@ -485,12 +552,12 @@ enum CPUThrottle: Int, CaseIterable, Identifiable {
                 "offline": false, "latency": 0,
                 "downloadThroughput": -1, "uploadThroughput": -1,
             ], timeout: 5)
-            client.close()
-            self.client = nil
         }
     }
 
-    /// One socket serves all three axes; the first of them to be set opens it.
+    /// One socket serves every axis; the first of them to be set opens it, and it lives for
+    /// as long as the session does (teardown() is the only close) — Normal still has to
+    /// reach the page even with Conditions shut.
     private func connect(urlHint: URL?) async -> CDPClient? {
         if client == nil {
             client = try? await CDPClient.attach(port: cdpPort,

@@ -9,6 +9,7 @@ struct AgentID: Hashable, Sendable, Codable, RawRepresentable {
 
     static let claudeCode = AgentID("claudeCode")
     static let opencode = AgentID("opencode")
+    static let opencode2 = AgentID("opencode2")
     static let antigravity = AgentID("antigravity")
 
     /// A user-defined agent's id is minted, not declared. It is persisted (in a `SessionKind`, in
@@ -198,6 +199,7 @@ struct AgentDescriptor: Sendable {
         switch hostID {
         case .claudeCode: return "--dangerously-skip-permissions --model opus"
         case .opencode: return "--model anthropic/claude-opus-4-5 --agent build"
+        case .opencode2: return "--auto"
         case .antigravity: return "--model gemini-3.6-flash-high --mode accept-edits"
         default: return "--help"
         }
@@ -230,6 +232,17 @@ extension AgentDescriptor: Identifiable {}
                        "/usr/local/bin", "~/.npm-global/bin"]
     )
 
+    static let opencode2 = AgentDescriptor(
+        id: .opencode2,
+        displayName: "OpenCode 2",
+        shortName: "OpenCode 2",
+        binaryName: "opencode2",
+        mark: .openCode,
+        versionMarkers: ["opencode2"],
+        installHints: ["~/.opencode/bin", "~/.local/bin", "/opt/homebrew/bin",
+                       "/usr/local/bin", "~/.npm-global/bin"]
+    )
+
     static let antigravity = AgentDescriptor(
         id: .antigravity,
         displayName: "Antigravity",
@@ -241,8 +254,8 @@ extension AgentDescriptor: Identifiable {}
         rejectedPathFragments: [".app/"]
     )
 
-    /// The three Synth ships with, each one a descriptor AND a supervisor.
-    static let builtIn: [AgentDescriptor] = [claudeCode, opencode, antigravity]
+    /// The four Synth ships with, each one a descriptor AND a supervisor.
+    static let builtIn: [AgentDescriptor] = [claudeCode, opencode, opencode2, antigravity]
 
     /// Every agent this machine may host: the built-ins, then the user's own in the order they
     /// were added. A list rather than a constant, which is the whole of what custom agents change
@@ -348,6 +361,7 @@ extension AgentDescriptor: Identifiable {}
         supervisors = [
             .claudeCode: ClaudeCodeSupervisor(bus: bus),
             .opencode: OpencodeSupervisor(bus: bus),
+            .opencode2: Opencode2Supervisor(bus: bus),
             .antigravity: AntigravitySupervisor(bus: bus),
         ]
     }

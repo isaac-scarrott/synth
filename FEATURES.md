@@ -2450,3 +2450,10 @@ disclosure to dive deeper.
   "opens" tag and the kind pill go: the row above says the first one opens, and the icon already
   says what kind it is. Agent rows are titled Claude Code / OpenCode / Antigravity rather than by
   binary, and "Flags added to every claude launch" goes with them.
+- **Settings is ported to the app, and its defaults change** — `TabShell` is extracted from
+  `TabChip` so Settings' scopes and the branch's sessions are one tab component with two strips;
+  `[`/`]` walk the whole strip, which an audit caught had left projects two onwards mouse-only.
+  Out of the box Synth now shows sessions as tabs, ships all three notification sounds silent, and
+  offers simulator sessions (inert without a full Xcode). Each flipped default's doc comment was
+  rewritten rather than left arguing the opposite. `markdownOpen` is deleted end to end —
+  `MarkdownOpener.swift` with it — and markdown opens in Synth.

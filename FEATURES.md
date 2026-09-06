@@ -2367,3 +2367,18 @@ disclosure to dive deeper.
   (page, five WebP figures, two Geist faces + licence, two marks); the rig, the dev server and the
   5MB of source PNGs stay behind. The hero's requirements line is gone, and below 1024px its whole
   CTA row hides in favour of the sticky header download.
+- **One design file** — `big-picture-design.html` is deleted and `working.html` is the design; the
+  working ⊆ big-picture subset invariant goes with it. The second file held nothing but a `<title>`
+  and two demo session rows, and its price was every change landing twice under a `diff` guardrail.
+  `Store.isSynthRepo` now marks Synth's own checkout by `working.html`. The append-only ledger and
+  the closed wayfinder tickets keep their references — they record what was true when written.
+- **The page holds one rhythm, measured rather than eyeballed** — a spacing audit at thirteen widths,
+  run twice and independently the second time. `--band` was not the one rhythm it claimed: the hero
+  and close band used different fluid curves, so their emphasis existed only on desktop, and the
+  hero contributed nothing to its own boundary. The headline got *smaller* as the viewport grew
+  (44px at 880, 30.5px at 881) because one breakpoint answered two questions; the wrap and the
+  alignment now break at 1255 and 880 with the size continuous across both. Nine rules removed for
+  matching nothing or firing never.
+- **The figures follow the reader's theme** — each is a `<picture>` with the dark capture under
+  `prefers-color-scheme` and the light one on the `<img>`, which holds intrinsic dimensions correct
+  for both since every pair matches exactly. A viewer downloads one variant: 529KB against 523KB.

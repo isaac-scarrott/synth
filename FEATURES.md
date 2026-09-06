@@ -2367,15 +2367,39 @@ disclosure to dive deeper.
   (page, five WebP figures, two Geist faces + licence, two marks); the rig, the dev server and the
   5MB of source PNGs stay behind. The hero's requirements line is gone, and below 1024px its whole
   CTA row hides in favour of the sticky header download.
+- **One design file** — `big-picture-design.html` is deleted and `working.html` is the design; the
+  working ⊆ big-picture subset invariant goes with it. The second file held nothing but a `<title>`
+  and two demo session rows, and its price was every change landing twice under a `diff` guardrail.
+  `Store.isSynthRepo` now marks Synth's own checkout by `working.html`. The append-only ledger and
+  the closed wayfinder tickets keep their references — they record what was true when written.
+- **The page holds one rhythm, measured rather than eyeballed** — a spacing audit at thirteen widths,
+  run twice and independently the second time. `--band` was not the one rhythm it claimed: the hero
+  and close band used different fluid curves, so their emphasis existed only on desktop, and the
+  hero contributed nothing to its own boundary. The headline got *smaller* as the viewport grew
+  (44px at 880, 30.5px at 881) because one breakpoint answered two questions; the wrap and the
+  alignment now break at 1255 and 880 with the size continuous across both. Nine rules removed for
+  matching nothing or firing never.
+- **The figures follow the reader's theme** — each is a `<picture>` with the dark capture under
+  `prefers-color-scheme` and the light one on the `<img>`, which holds intrinsic dimensions correct
+  for both since every pair matches exactly. A viewer downloads one variant: 529KB against 523KB.
 
 ## [2026-09-06](docs/features/2026-09-06.md)
 
 - **Settings loses its "Experimental" drawer** — Tabs and Simulator sessions weren't experimental,
   just off by default, so the section that grouped them by maturity is gone and each row moves to
-  where you'd look for it. Appearance absorbs Markdown's "Open .md in" and Tabs; "MCP servers"
-  renames to Integrations and takes the simulator gate; Privacy's analytics switch folds into About.
-  Nine App-tab sections become seven. The simulator's second switch goes with the reorg —
+  where you'd look for it. Appearance takes the sessions view mode as a Sidebar/Tabs choice and
+  loses "Open .md in" (markdown opens in Synth, full stop); "MCP servers" becomes Integrations,
+  takes the simulator gate and renames "Synth app" to "Worktrees"; Privacy's analytics folds into
+  About. Nine App-tab sections become seven. The simulator's second switch goes with the reorg —
   `mcpSimulatorEnabled` is deleted and turning the sessions on is what registers `synth-simulator`,
-  since "a simulator no agent may drive" is not a distinction anybody was drawing. Tabs drops its
-  "work-in-progress preview" caption and Simulator sessions its private-frameworks paragraph, the
-  pane's only two-line description.
+  since "a simulator no agent may drive" is not a distinction anybody was drawing.
+- **Settings has scopes, and they are tabs like any other** — the app scope is "General" (it sat
+  beside a project named synth, and two tabs differing by one capital letter is a collision anyone
+  naming a project after their app would hit), and every project gets a tab rather than only the one
+  the sidebar last had open. The strip is the session strip's own `.tab`, so the close button's
+  tighter right padding moves onto the tabs that carry one and the two can't drift apart.
+- **The session template is a list you add a row to** — "Add session" is the list's next row, dashed
+  and plus-led, picking the kind from a menu, in place of a bar carrying one button per kind. The
+  "opens" tag and the kind pill go: the row above says the first one opens, and the icon already
+  says what kind it is. Agent rows are titled Claude Code / OpenCode / Antigravity rather than by
+  binary, and "Flags added to every claude launch" goes with them.

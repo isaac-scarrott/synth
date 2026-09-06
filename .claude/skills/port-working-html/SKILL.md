@@ -8,10 +8,7 @@ description: Port a change that has landed in working.html into the native Swift
 `working.html` is the source of truth for the design; the native app under `app/` mirrors it.
 This skill takes a change that is already in `working.html` and lands it in the app, verified.
 
-**Invariant (CLAUDE.md):** `working.html` must be a strict subset of `big-picture-design.html`
-(`diff working.html big-picture-design.html` shows only the `<title>` + big-picture's extra session
-rows). This skill only *reads* the HTML — never edit it here. If the change is missing from
-`big-picture-design.html`, stop and tell the user; the design isn't consistent yet.
+This skill only *reads* the HTML — never edit it here.
 
 ## Concurrency model (the safety rule)
 

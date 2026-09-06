@@ -3,8 +3,8 @@
 ## Destination
 
 A nailed-down, **mouse-only** interactive design of live session-layout / pane-splitting living in
-`working.html` (subset invariant with `big-picture-design.html` held), **then** a keybinding scheme
-layered on top, packaged as a **handoff task** for another agent to implement in the native app.
+`working.html`, **then** a keybinding scheme layered on top, packaged as a **handoff task** for
+another agent to implement in the native app.
 Reaching the end = that design + bindings are settled and the handoff brief is written; the native
 implementation itself is the next effort, not this one.
 
@@ -35,10 +35,8 @@ into a splittable **layout** of several sessions at once.
 Mouse-only design comes first; keybindings are designed **only after** the mouse design is nailed.
 
 **Execution is in-map** (deliberate override of wayfinder's plan-don't-do default): prototype/build
-tickets actually implement in `working.html`. Every shell / style / interaction change MUST land in
-**both** `working.html` and `big-picture-design.html`, so `diff working.html big-picture-design.html`
-only ever shows the `<title>` + the extra demo session rows (the subset invariant is the guardrail).
-The terminal deliverable is a **handoff brief**, not the native implementation.
+tickets actually implement in `working.html`. The terminal deliverable is a **handoff brief**, not
+the native implementation.
 
 ## Decisions so far
 

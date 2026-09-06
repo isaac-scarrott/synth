@@ -2320,3 +2320,50 @@ disclosure to dive deeper.
   validates on its own); appcast newest 0.40.0 at 663, `edSignature` on all 18 enclosures, deltas
   from 637–654 at ~1 MB against a 164 MB full download. No `synth-site` push; landing unchanged
   since 0.37.0.
+- **The site is rebuilt in `site/`, and it argues one thing** — `landing/`'s five-beat feature tour
+  is replaced by a from-scratch page making one claim: Synth spends your attention carefully and
+  gives every piece of work its own place. Four beats (worktrees + handoff + auto-archive; the
+  attention grammar, promoted from fifth to second; browser and simulator merged into one; speed
+  reframed as what makes glancing free), with ⌘K demoted to evidence and handoff added — it was
+  absent from the old page. Design follows zeroleaks.ai's lattice (near-black ground, hairline rules
+  bounding the column, eyebrow pills, bordered cells, corner ticks) in Synth's own palette: canvas
+  `#0d0f13` off the icon's gradient, champagne `#eee0cd` as the only accent, and the app's status
+  hues used to mean what they mean in the app. Figures are drawn in HTML from the shared tokens
+  rather than screenshotted, so they cannot go stale. Zero horizontal overflow verified at 1440 and
+  390; requirements checked against `Package.swift` (`.macOS(.v14)`) and `dist.sh` (arm64 only).
+  `landing/` is left serving `synth-site` for now.
+
+- **The site argues agent-agnosticism, not attention** — the page's top claim becomes running as many
+  coding agents as you like, of any kind, at once, with no lock-in to a model or a harness; attention
+  drops to the third of five beats, where it explains why running many is survivable rather than
+  being the reason to download. Agent names leave the hero prose for the marks row, the eyebrow chips
+  go from every section, and "workstream" is retired in favour of "branch" — the coinage existed only
+  to dodge a word the app itself uses, and cost the lede a two-sentence glossary. A headline that must
+  never wrap gets its own measure (`--hcol`, to 1440px) at a divisor measured rather than guessed,
+  and section headings drop to `clamp(1.5rem, 2.6vw, 2.125rem)` so the h1 can outrank them; below
+  880px the hero wraps and goes left together. The approval figure now matches `Palette.swift`'s real
+  title rather than wording the app never used. `landing/` still serves `synth-site`.
+- **The site is edited in the page, not in the file** — `site/devserver.py` injects `dev-edit.js` at
+  serve time, so `index.html` carries no markup for the tool and it runs only on localhost. Saves are
+  exact string swaps anchored between the element's own tags, refused unless they match once, re-wrapped
+  to 100 columns at the original indent, with contenteditable's `&nbsp;` stripped. An SSE watcher
+  reloads the page on disk changes and restores scroll, absorbs the mtime of its own writes, and defers
+  a reload that would land on unsaved text.
+- **The champagne loses its yellow** — the mark moves `#eee0cd` → `#f1ddd7`, OKLCH hue 75.7 → 37.4 at
+  chroma 0.024, lightness held so every contrast pair survives. Derived champagnes (the update wash,
+  the landing gradient, the halo's shader tint) take the same hue −38.3 / chroma ×0.80 transform
+  rather than being re-picked. `--error` at hue 26.1 and the blush boundary near hue 34 are the two
+  floors that stop it going further. Light's copper and bronze stay put, and are now 11° and 40° off
+  the mark.
+- **The figures are photographs of the product** — the five drawn HTML mocks become captures of the
+  running app, recorded by `site/capture/` from a seeded `$SYNTH_STATE_DIR` state file with statuses
+  staged over the hook socket and every invented word in `scenes.py`. Capture is on-screen
+  (`SYNTH_AUTOMATION_VISIBLE` + `screencapture -l`) because a CEF page and a simulator's video layer
+  are not in the app's own view hierarchy. Agent rows are live Claude Code, so a scene asserts the
+  state its figure depends on and re-takes when the agent does something else. Deleting the drawings
+  removed 92 CSS rules and the copper duplication the hero's own agent had just found.
+- **The deploy has one source again** — `site/` is published and `landing/` is deleted; two
+  hand-synced sources to one Pages repo is how the page drifted last time. Eleven files go out
+  (page, five WebP figures, two Geist faces + licence, two marks); the rig, the dev server and the
+  5MB of source PNGs stay behind. The hero's requirements line is gone, and below 1024px its whole
+  CTA row hides in favour of the sticky header download.

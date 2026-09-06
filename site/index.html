@@ -69,11 +69,15 @@
     --tap: 150ms;
     --enter: 1050ms;
 
-    /* a strict 4px grid — every margin, pad and gap on the page is one of these */
+    /* A 4px grid. Every margin, pad and gap on the page is one of these, with one stated
+       exception: the segmented control below is built from 3px of inner padding and 2px
+       between segments, because a control that small has no room for a 4px step. */
     --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px;
     --s6: 32px; --s7: 40px; --s8: 56px; --s9: 80px;
 
-    /* the app's three radii, and only these */
+    /* The app's three radii. The one other value on the page is derived rather than chosen:
+       a segment inside the 10px control sits on 7px, which is the enclosing radius minus
+       its own 3px padding — the arithmetic that keeps two nested curves concentric. */
     --r-surface: 14px; --r-control: 10px; --r-key: 6px;
 
     --gutter: clamp(20px, 5vw, 56px);
@@ -226,7 +230,10 @@
           border: 1px solid var(--line); background: var(--panel);
           box-shadow: 0 2px 4px rgba(0,0,0,0.3), 0 40px 90px rgba(0,0,0,0.62); }
   .shot img { display: block; width: 100%; height: auto; }
-  @media (min-width: 1000px) { .shot--panel { max-width: 760px; margin-inline: auto; } }
+  /* The approval capture is 607 CSS px wide at 2x, so the column would upscale it nearly
+     twofold. The cap engages only once the column passes it, which means the inset grows
+     from zero rather than snapping when a breakpoint is crossed. */
+  .shot--panel { max-width: 760px; margin-inline: auto; }
 
   .glow { position: relative; }
   .glow::before {
@@ -423,12 +430,9 @@
 
     <div class="hero__stage rev" data-d="3">
       <figure class="shot">
-        <picture>
-          <source srcset="img/hero-dark@2x.webp" media="(prefers-color-scheme: dark)">
-          <img src="img/hero@2x.webp" width="2360" height="1320" alt="Synth with three projects in the
-               sidebar and a Claude Code session open, stopped on a question about the page's accent colour."
-               fetchpriority="high" decoding="async">
-        </picture>
+        <img src="img/hero-dark@2x.webp" width="2360" height="1320" alt="Synth with three projects in the
+             sidebar and a Claude Code session open, stopped on a question about the page's accent colour."
+             fetchpriority="high" decoding="async">
       </figure>
     </div>
   </section>
@@ -535,11 +539,8 @@
           </div>
         </div>
         <figure class="shot rev" data-d="1">
-          <picture>
-          <source srcset="img/attention-deck-dark@2x.webp" media="(prefers-color-scheme: dark)">
-          <img src="img/attention-deck@2x.webp" width="900" height="1016" loading="lazy" decoding="async"
-          alt="Synth's sidebar: three projects, each branch carrying the state of what is inside it, and a notification card for the session that has stopped to ask something.">
-          </picture>
+          <img src="img/attention-deck-dark@2x.webp" width="900" height="1016" loading="lazy" decoding="async"
+               alt="Synth's sidebar: three projects, each branch carrying the state of what is inside it, and a notification card for the session that has stopped to ask something.">
         </figure>
       </div>
     </div>
@@ -591,11 +592,8 @@
         <div class="tabs__panels">
           <div class="tabs__panel" id="panel-browser" role="tabpanel" aria-labelledby="tab-browser" data-on>
             <figure class="shot rev">
-              <picture>
-              <source srcset="img/browser-dark@2x.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/browser@2x.webp" width="2360" height="1560" loading="lazy" decoding="async"
-              alt="Synth's browser pane showing this landing page, with two comments pinned on it and the send bar ready to hand them to an agent.">
-              </picture>
+              <img src="img/browser-dark@2x.webp" width="2360" height="1560" loading="lazy" decoding="async"
+                   alt="Synth's browser pane showing this landing page, with two comments pinned on it and the send bar ready to hand them to an agent.">
             </figure>
             <div class="say">
               <h3>A real browser you can both use</h3>
@@ -614,11 +612,8 @@
 
           <div class="tabs__panel" id="panel-sim" role="tabpanel" aria-labelledby="tab-sim" inert>
             <figure class="shot rev">
-              <picture>
-              <source srcset="img/simulator-dark@2x.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/simulator@2x.webp" width="2360" height="1520" loading="lazy" decoding="async"
-              alt="Synth's simulator pane showing this landing page's mobile layout on a booted iPhone 16 Pro.">
-              </picture>
+              <img src="img/simulator-dark@2x.webp" width="2360" height="1520" loading="lazy" decoding="async"
+                   alt="Synth's simulator pane showing this landing page's mobile layout on a booted iPhone 16 Pro.">
             </figure>
             <div class="say">
               <h3>A real iPhone, not a preview</h3>
@@ -637,11 +632,8 @@
 
           <div class="tabs__panel" id="panel-handoff" role="tabpanel" aria-labelledby="tab-handoff" inert>
             <figure class="shot shot--panel rev">
-              <picture>
-              <source srcset="img/approval-dark@2x.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/approval@2x.webp" width="1215" height="353" loading="lazy" decoding="async"
-              alt="Synth's command menu asking whether to create the branch an agent has requested.">
-              </picture>
+              <img src="img/approval-dark@2x.webp" width="1215" height="353" loading="lazy" decoding="async"
+                   alt="Synth's command menu asking whether to create the branch an agent has requested.">
             </figure>
             <div class="say">
               <h3>You approve it. You don't brief it.</h3>

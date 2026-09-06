@@ -86,7 +86,7 @@ struct ClaudeUsageSource: UsageSource {
         let limit = amount(spend["limit"])
         return [UsageMetric(id: "claude.spend", label: "Usage credits", value: used,
                             percent: number(spend["percent"]),
-                            detail: .text(limit.map { "of \($0)" } ?? ""))]
+                            detail: .text(limit.map { "of \($0) this month" } ?? ""))]
     }
 
     /// The same rule for the separate extra-usage pool: shown only where the account reports it

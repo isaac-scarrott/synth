@@ -74,9 +74,14 @@ protocol UsageSource: Sendable {
 /// stop another's local read from landing, so sections are merged in as they arrive rather than
 /// gathered into one all-or-nothing snapshot.
 @MainActor @Observable final class UsageBoard {
+    /// One board for the app, not one per visit. Its readings cost a keychain read, a network
+    /// round trip and a database scan, and an agent that has to ask its own servers takes seconds
+    /// — so stepping out to a session and back shows what was already known rather than starting
+    /// every reader again from cold.
+    static let shared = UsageBoard()
+
     private(set) var sections: [UsageSection] = []
     private(set) var refreshing = false
-    private(set) var lastRefresh: Date?
 
     /// A remote window doesn't move fast enough to be worth asking about more often than this, and
     /// the endpoints are rate-limited like everything else on the account.
@@ -91,10 +96,14 @@ protocol UsageSource: Sendable {
     func configure(agents: [AgentDescriptor], sources: [UsageSource]) {
         self.sources = sources
         let known = Set(sources.map(\.agent))
+        let existing = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
         sections = agents.map { agent in
-            UsageSection(id: agent.id,
-                         title: agent.displayName,
-                         status: known.contains(agent.id) ? .loading : .unavailable("no usage data"))
+            // A band already carrying numbers keeps them: reopening the pane should show the last
+            // reading and let the poll replace it, not blank every agent back to "checking…".
+            if let held = existing[agent.id], case .ready = held.status { return held }
+            return UsageSection(id: agent.id,
+                                title: agent.displayName,
+                                status: known.contains(agent.id) ? .loading : .unavailable("no usage data"))
         }
     }
 
@@ -128,7 +137,6 @@ protocol UsageSource: Sendable {
                 merge(section)
             }
         }
-        lastRefresh = Date()
     }
 
     /// Replace one band in place. Order is fixed by `configure`, so a slow source landing last

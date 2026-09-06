@@ -9,13 +9,16 @@ import SwiftUI
 /// importance would rank the agents rather than describe their data.
 struct UsagePane: View {
     @Environment(AppStore.self) private var store
-    @State private var board = UsageBoard()
+    /// Shared, so stepping out to a session and back shows the last reading instead of asking
+    /// every agent again — one of which takes seconds to answer.
+    @State private var board = UsageBoard.shared
     @State private var now = Date()
-    @State private var appeared = false
 
     /// One clock for the whole pane. A timer per counting tile would let them drift apart, and a
     /// board of a dozen windows would wake the app a dozen times a second to say the same thing.
-    private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    /// Held in state because a stored publisher is rebuilt every time the parent's body runs, and
+    /// a countdown that restarts its second on every unrelated store change never finishes one.
+    @State private var clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,7 +36,6 @@ struct UsagePane: View {
             let agents = store.availableAgents
             board.configure(agents: agents, sources: UsageSources.all(for: agents))
             board.start()
-            appeared = true
         }
         .onDisappear { board.stop() }
     }
@@ -64,9 +66,11 @@ struct UsagePane: View {
                 ForEach(band.rows) { row in
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(row.tiles) { tile in
-                            UsageTile(metric: tile.metric, index: tile.index, now: now, appeared: appeared)
+                            UsageTile(metric: tile.metric, index: tile.index, now: now)
+                                .frame(maxHeight: .infinity)
                         }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -85,7 +89,7 @@ struct UsagePane: View {
         }
         .padding(.top, band.first ? 2 : 16)
         .padding(.leading, 2)
-        .usageEntrance(index: band.index, appeared: appeared)
+        .usageEntrance(index: band.index)
     }
 
     /// The pane laid out in reading order, with the running index that drives the entrance sweep:
@@ -158,7 +162,6 @@ private struct UsageTile: View {
     let metric: UsageMetric
     let index: Int
     let now: Date
-    let appeared: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -174,7 +177,7 @@ private struct UsageTile: View {
             Spacer(minLength: 14)
             VStack(alignment: .leading, spacing: 8) {
                 if let percent = metric.percent {
-                    UsageMeter(percent: percent, tileIndex: index, appeared: appeared)
+                    UsageMeter(percent: percent, tileIndex: index)
                 }
                 // A window the server reports with no reset time (a per-model cap nothing has been
                 // spent against yet) has nothing to say down here, and an empty line would leave
@@ -203,7 +206,7 @@ private struct UsageTile: View {
                 .allowsHitTesting(false)
         }
         .shadow(color: .black.opacity(0.04), radius: 1.5, y: 1)
-        .usageEntrance(index: index, appeared: appeared)
+        .usageEntrance(index: index)
     }
 
     private var detail: String {
@@ -230,24 +233,31 @@ private struct UsageTile: View {
 }
 
 /// Bands and tiles arrive on a stagger — the data landing, not a flourish.
+///
+/// Each view drives its own arrival rather than reading a flag the pane sets once. The board fills
+/// in as its readers answer — a local database in milliseconds, an agent that has to ask its own
+/// servers in seconds — so tiles are inserted over and over as sections land. A pane-wide flag is
+/// true long before most of them exist, and an inserted view whose state was already settled just
+/// appears: the sweep would play on the placeholders and never on the numbers.
 private struct UsageEntrance: ViewModifier {
     let index: Int
-    let appeared: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
 
     func body(content: Content) -> some View {
         content
-            .opacity(appeared || reduceMotion ? 1 : 0)
-            .offset(y: appeared || reduceMotion ? 0 : 7)
+            .opacity(shown || reduceMotion ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 7)
             .animation(reduceMotion ? nil
                                     : .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
                                         .delay(Double(index) * 0.045),
-                       value: appeared)
+                       value: shown)
+            .onAppear { shown = true }
     }
 }
 
 private extension View {
-    func usageEntrance(index: Int, appeared: Bool) -> some View {
-        modifier(UsageEntrance(index: index, appeared: appeared))
+    func usageEntrance(index: Int) -> some View {
+        modifier(UsageEntrance(index: index))
     }
 }

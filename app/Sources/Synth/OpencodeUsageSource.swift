@@ -17,6 +17,10 @@ struct OpencodeUsageSource: UsageSource {
     let generation: Generation
     var agent: AgentID { descriptor.id }
 
+    /// How long the aggregate may run before it is abandoned. Comfortably above what the scan
+    /// measures today on a multi-gigabyte history, and well inside the poll that started it.
+    private static let scanBudget: TimeInterval = 20
+
     /// Both generations share this one file — v2 kept the name and added tables beside v1's.
     /// (`opencode-local.db` next to it is a dead stub and is deliberately not read.)
     private static var databasePath: String {
@@ -91,7 +95,22 @@ struct OpencodeUsageSource: UsageSource {
             return nil
         }
         defer { sqlite3_close(db) }
+        // Bounds waiting for a lock. It does nothing about how long the scan itself runs, which is
+        // the risk here: this is a full `json_extract` pass over gigabytes of message JSON.
         sqlite3_busy_timeout(db, 5000)
+
+        // So the scan carries its own deadline. Without one a database that has grown past what
+        // this query can walk in reasonable time would leave the band on "checking…" and, because
+        // a refresh only starts once the last has finished, keep every other agent's number stale
+        // behind it.
+        let deadline = Date().addingTimeInterval(scanBudget)
+        let expiry = UnsafeMutablePointer<Date>.allocate(capacity: 1)
+        expiry.initialize(to: deadline)
+        defer { expiry.deinitialize(count: 1); expiry.deallocate() }
+        sqlite3_progress_handler(db, 20_000, { context in
+            guard let context else { return 0 }
+            return Date() >= context.assumingMemoryBound(to: Date.self).pointee ? 1 : 0
+        }, UnsafeMutableRawPointer(expiry))
 
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return nil }

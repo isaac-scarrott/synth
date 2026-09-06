@@ -64,7 +64,7 @@ import AppKit
             generation += 1
             return nil
         }
-        let ctrl = BrowserSessionController(session: session, engine: engine, bus: bus)
+        let ctrl = BrowserSessionController(session: session, engine: engine, bus: bus, store: store)
         controllers[session.id] = ctrl
         generation += 1
         return ctrl
@@ -161,6 +161,9 @@ import AppKit
     let sessionID: UUID
     let engine: BrowserEngine
     @ObservationIgnored weak var bus: EventBus?
+    /// Read for exactly one thing: Synth's own theme, so PageTheme.app can defer to it
+    /// instead of the raw OS appearance. Set by BrowserManager, which already holds one.
+    @ObservationIgnored weak var store: AppStore?
 
     /// The address the chrome shows — nil is the fresh "go to" home surface. Set
     /// optimistically on our own navigations so the chrome swaps instantly, and by the
@@ -185,9 +188,10 @@ import AppKit
         return pendingFocusAddress
     }
 
-    init(session: Session, engine: BrowserEngine, bus: EventBus?) {
+    init(session: Session, engine: BrowserEngine, bus: EventBus?, store: AppStore?) {
         self.sessionID = session.id
         self.bus = bus
+        self.store = store
         self.engine = engine
         engine.delegate = self
         // A restored (or popup-born) session reopens its page in the fresh engine.
@@ -225,6 +229,10 @@ import AppKit
     private(set) var deviceLandscape = false
     private(set) var network: NetworkCondition = .normal
     private(set) var cpu: CPUThrottle = .normal
+    /// What colour scheme this page is handed (the fourth axis) — unlike the three above,
+    /// Normal is a real value rather than "off", so it lives outside `conditionsOn` and is
+    /// applied from the moment the page first loads, whether or not Conditions is open.
+    private(set) var pageTheme: PageTheme = .app
     /// The stage's fit scale, reported by the pane — folded into the CDP override so
     /// the w×h viewport renders exactly into the (w·s)×(h·s) engine view.
     @ObservationIgnored private var deviceFitScale: Double = 1
@@ -252,6 +260,12 @@ import AppKit
         network = .normal
         cpu = .normal
         deviceEmulator?.clear()
+        // Theme rides outside the "three axes, three switches" reset above: it has no off
+        // state, only Normal, so closing the bar means going back to Normal rather than
+        // clearing anything — and unlike screen/network/cpu that still means sending
+        // something (Synth's own theme may not be what CEF would otherwise pick).
+        if pageTheme != .app { pageTheme = .app }
+        applyPageTheme()
     }
 
     func setScreen(_ d: HardwareDevice?) {
@@ -271,6 +285,43 @@ import AppKit
         guard conditionsOn, c != cpu else { return }
         cpu = c
         applyMachine()
+    }
+
+    func setPageTheme(_ t: PageTheme) {
+        guard conditionsOn, t != pageTheme else { return }
+        pageTheme = t
+        applyPageTheme()
+    }
+
+    /// Recomputes the forced `prefers-color-scheme` from this browser's own override and
+    /// Synth's current theme, and sends it over CDP. Called on every real navigation (a
+    /// fresh target may not remember an override made on the last one — see the zoom
+    /// re-apply below), whenever this browser's own override changes, whenever Conditions
+    /// closes, and whenever Synth's own theme changes while this browser defers to it
+    /// (BrowserPane's onChange(of: store.themePref)).
+    func applyPageTheme() {
+        guard !isHome else { return }
+        let scheme: ColorScheme?
+        switch pageTheme {
+        case .light: scheme = .light
+        case .dark:  scheme = .dark
+        case .app:   scheme = store?.colorSchemeOverride
+        }
+        emulator().applyTheme(scheme, urlHint: address)
+        // A colour-scheme-only change can sit unpainted until something else forces a real
+        // layout pass (DeviceEmulator.nudgeRepaint). Re-assert the real screen override when
+        // one is active — a bare re-send forces the same repaint metrics changes already
+        // need to; clearing it first and setting it again is the one order that doesn't
+        // (measured on CEF 144, only once Network has been enabled — clearDeviceMetricsOverride
+        // immediately followed by a fresh setDeviceMetricsOverride reverts the page to the
+        // frame from just before the colour change, even though clearing and stopping there,
+        // or setting without clearing first, both paint correctly). With no screen override
+        // meant to be active, send the harmless nudge instead.
+        if conditionsOn, device != nil {
+            applyScreenEmulation()
+        } else {
+            emulator().nudgeRepaint(urlHint: address)
+        }
     }
 
     func rotateDevice() {
@@ -451,6 +502,10 @@ extension BrowserSessionController: BrowserEngineDelegate {
         // Zoom rides navigation (the mock re-applies after every paint). CEF stores zoom
         // per-origin, so a cross-origin hop would otherwise snap back to 100%.
         if zoom != 1 { engine.setZoom(zoom) }
+        // Theme rides navigation too, and unconditionally: it isn't "off" at Normal the way
+        // zoom is at 100%, so a page's very first load needs it just as much as a cross-
+        // origin hop does.
+        applyPageTheme()
         bus?.post(.browserNavigated(sessionID, url))
     }
     func engine(_ engine: BrowserEngine, titleDidChange title: String) {
@@ -661,6 +716,10 @@ struct BrowserPane: View {
         .onChange(of: ctrl.pendingFocusAddress) { _, pending in
             if pending, ctrl.consumeFocusAddress() { pressOmnibox(ctrl) }
         }
+        // A browser deferring to Synth's own theme (PageTheme.app) has to hear about it
+        // changing — the controller can't observe the store itself, so the view that already
+        // holds one relays it.
+        .onChange(of: store.themePref) { _, _ in ctrl.applyPageTheme() }
         .onAppear {
             if ctrl.consumeFocusAddress() { pressOmnibox(ctrl) }
         }
@@ -695,19 +754,20 @@ private struct EngineHost: NSViewRepresentable {
 
 // MARK: - Device mode
 
-/// The three things a worst case is made of. Each opens its own menu and answers for one
+/// The four things a worst case is made of. Each opens its own menu and answers for one
 /// axis only: what the page thinks it is being shown on, how fast the wire is, how fast the
-/// processor is.
+/// processor is, what colour scheme it's handed.
 enum ConditionAxis: String, Identifiable {
-    case screen, network, cpu
+    case screen, network, cpu, theme
     var id: String { rawValue }
-    /// Named on the button, because at rest all three read Normal and the value alone
+    /// Named on the button, because at rest all four read Normal and the value alone
     /// would leave you guessing which menu you were about to open.
     var label: String {
         switch self {
         case .screen:  return "Screen"
         case .network: return "Network"
         case .cpu:     return "CPU"
+        case .theme:   return "Theme"
         }
     }
 }
@@ -739,6 +799,9 @@ private struct ConditionsBar: View {
             ConditionPicker(axis: .cpu, value: ctrl.cpu.name,
                             offBaseline: ctrl.cpu != .normal, open: $open,
                             help: "CPU: \(ctrl.cpu.name) — \(ctrl.cpu.detail)")
+            ConditionPicker(axis: .theme, value: ctrl.pageTheme.name,
+                            offBaseline: ctrl.pageTheme != .app, open: $open,
+                            help: "Theme: \(ctrl.pageTheme.name) — \(ctrl.pageTheme.detail)")
             Spacer(minLength: 8)
             if let d = ctrl.device {
                 // The screen, which is the number the menu row you picked showed — one
@@ -853,6 +916,12 @@ private struct ConditionMenu: View {
             case .cpu:
                 ForEach(CPUThrottle.allCases) { c in
                     row(name: c.name, detail: c.detail, on: ctrl.cpu == c) { ctrl.setCPU(c) }
+                }
+            case .theme:
+                ForEach(PageTheme.allCases) { t in
+                    row(name: t.name, detail: t.detail, on: ctrl.pageTheme == t) {
+                        ctrl.setPageTheme(t)
+                    }
                 }
             }
         }

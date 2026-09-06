@@ -3041,6 +3041,24 @@
     background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05));
     background-size: 200% 100%;
   }
+  /* The conditions bar's Theme axis forces the page's own colour scheme and surface regardless
+     of Synth's — scoped to this one browser via [data-page-theme] on its pane rather than :root,
+     so it can win or lose against both the app theme and the "a device stays lit" rule above
+     without touching either. */
+  :root [data-page-theme="light"] .pane-view, :root [data-page-theme="light"] .devui__page {
+    background: #ffffff; color: #1c1e23;
+  }
+  :root [data-page-theme="dark"] .pane-view, :root [data-page-theme="dark"] .devui__page {
+    background: #282b30; color: #e6e8ed;
+  }
+  :root [data-page-theme="light"] .skel {
+    background: linear-gradient(90deg, rgba(0,0,0,0.05), rgba(0,0,0,0.08), rgba(0,0,0,0.05));
+    background-size: 200% 100%;
+  }
+  :root [data-page-theme="dark"] .skel, :root [data-page-theme="dark"] .dev__screen .skel {
+    background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.09), rgba(255,255,255,0.05));
+    background-size: 200% 100%;
+  }
   /* ⌘K palette: the active-row label + status meta were tuned for a white panel —
      lift them to bright, legible values on the dark frosted glass */
   :root[data-theme="dark"] .cmdk__item.is-active .cmdk__label { color: var(--accent); }
@@ -4884,14 +4902,16 @@
       dpr: 1, note: 'The worst screen worth designing for: hold together here and about 95% of desktop visitors are covered.',
       bz: [0, 0, 0, 0],      frameR: 6,  screenR: 6,  sb: 0,  sbTop: 0, sbPad: [0, 0],   home: 0 },
   ];
-  // The other two axes, in the numbers Chromium throttles by, so what the bar claims is what the
-  // engine does. Nothing here is bundled into a device: picking a small screen doesn't secretly
-  // slow the machine down, because the two are separate questions and only one is usually wrong.
+  // The other three axes, in the numbers Chromium throttles by, so what the bar claims is what
+  // the engine does. Nothing here is bundled into a device: picking a small screen doesn't
+  // secretly slow the machine down, because these are separate questions and only one is usually
+  // wrong.
   //
-  // Every axis rests at Normal, and Normal is the same word in all three menus: nothing is being
-  // emulated on this one. It is not Wi-Fi and not full speed — we don't know what the wire is or
-  // how fast the Mac is, only that we have left it alone. What normal means for each axis is the
-  // caption's job, not the name's.
+  // Every axis rests at Normal, and Normal is the same word in all four menus: nothing is being
+  // emulated on this one. It is not Wi-Fi and not full speed and not a colour scheme we've
+  // decided for the page — we don't know what the wire is or how fast the Mac is or what the
+  // page should look like, only that we have left it alone. What normal means for each axis is
+  // the caption's job, not the name's.
   const NETS = [
     { id: 'normal', name: 'Normal',  cap: 'no throttle' },
     { id: 'fast4g', name: 'Fast 4G', cap: '9 Mb/s · 165 ms' },
@@ -4907,8 +4927,19 @@
     { id: 4, name: '4× slower', cap: 'mid-tier' },
     { id: 6, name: '6× slower', cap: 'low-end' },
   ];
+  // What colour scheme the page is handed. Normal defers to Synth's own theme — dark app, dark
+  // page, following the *app's* setting rather than the raw OS one, so a Synth pinned to Light
+  // on a dark Mac still hands pages a light `prefers-color-scheme` — and Light/Dark force the
+  // page one way regardless, isolated to this browser: forcing one tab dark doesn't touch Synth
+  // or any other browser's pages.
+  const THEMES = [
+    { id: 'app',   name: 'Normal', cap: 'follows Synth’s theme' },
+    { id: 'light', name: 'Light',  cap: 'forced light, any theme' },
+    { id: 'dark',  name: 'Dark',   cap: 'forced dark, any theme' },
+  ];
   const netOf = (id) => NETS.find((n) => n.id === id);
   const cpuOf = (id) => CPUS.find((c) => c.id === id);
+  const themeOf = (id) => THEMES.find((t) => t.id === id);
   // Rotating counter-clockwise walks every edge one place round, bezels included — which is why
   // an iPhone SE's tall forehead ends up on the left, not still on top.
   const devBezel = (d, land) => (land ? [d.bz[1], d.bz[2], d.bz[3], d.bz[0]] : d.bz);
@@ -5009,11 +5040,11 @@
   }
   const listMenuHTML = (key, list, cur) => `<div class="cond-menu" data-menu="${key}"><div class="pane-rec">` +
     list.map((x) => condRow(x.id, x.name, x.cap, x.id === cur)).join('') + `</div></div>`;
-  // Three menus and the dims. The dims are the fact no menu label carries — the viewport the
+  // Four menus and the dims. The dims are the fact no menu label carries — the viewport the
   // page is actually being handed, pixel ratio included.
-  function condbarHTML(deviceId, landscape, net, cpu) {
+  function condbarHTML(deviceId, landscape, net, cpu, theme) {
     const d = deviceId ? DEVICES.find((x) => x.id === deviceId) : null;
-    const n = netOf(net), c = cpuOf(cpu);
+    const n = netOf(net), c = cpuOf(cpu), t = themeOf(theme);
     const w = d && landscape ? d.h : d && d.w, h = d && landscape ? d.w : d && d.h;
     const pick = (key, axis, label, off, title) =>
       `<div class="condbar__wrap"><button class="condbar__pick${off ? ' is-off-baseline' : ''}" data-open="${key}" title="${esc(title)}">` +
@@ -5022,6 +5053,7 @@
       ${pick('screen', 'Screen', d ? d.name : 'Normal', !!d, d ? d.note : 'Normal — the pane’s own viewport, at whatever size the pane is')}
       ${pick('net', 'Network', n.name, n.id !== 'normal', `Network: ${n.name} — ${n.cap}`)}
       ${pick('cpu', 'CPU', c.id === 1 ? 'Normal' : `${c.id}× slower`, c.id !== 1, `CPU: ${c.name} — ${c.cap}`)}
+      ${pick('theme', 'Theme', t.name, t.id !== 'app', `Theme: ${t.name} — ${t.cap}`)}
       <span class="condbar__dims">${d ? `${w} × ${h} @${d.dpr}×` : ''}</span>
       ${d && d.kind !== 'screen' ? `<button class="pane-btn${landscape ? '' : ' pane-btn--turned'}" data-rotate aria-label="Rotate device">${ICON_DEVICE}</button>` : ''}
     </div>`;
@@ -5624,7 +5656,7 @@
     const nameEl = openEl && openEl.querySelector('.session__name');
     const hist = []; let idx = -1;
     let deviceOn = false, deviceId = null, deviceLand = false, deviceRO = null;
-    let condNet = 'normal', condCpu = 1;   // the two axes that are nothing to do with the screen
+    let condNet = 'normal', condCpu = 1, condTheme = 'app';   // the three axes nothing to do with the screen
     const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
     let zoom = 100;
 
@@ -5730,17 +5762,26 @@
       scale: () => zoom / 100,                   // ⌘+/⌘− zooms the view under the overlay
       spawn: () => spawnOwnerClaude(openEl),     // unowned → this browser gets its own Claude
     });
-    // The conditions bar: a screen to reflow into, and the two machine axes that have nothing to
-    // do with it. Survives navigation, exactly like comment mode. It opens at Normal on all three
-    // and closing puts all three back, so the bar is either on screen saying what it is doing or
-    // doing nothing at all — a throttle nobody can see is a bug report waiting to be written.
+    // The conditions bar: a screen to reflow into, and the three machine-and-page axes that have
+    // nothing to do with it. Survives navigation, exactly like comment mode. It opens at Normal
+    // on all four and closing puts all four back, so the bar is either on screen saying what it
+    // is doing or doing nothing at all — a throttle nobody can see is a bug report waiting to be
+    // written.
     function toggleDevice() {
       if (idx < 0) return;                       // the "go to" home has nothing to render
       deviceOn = !deviceOn;
-      if (!deviceOn) { deviceId = null; condNet = 'normal'; condCpu = 1; }
+      if (!deviceOn) { deviceId = null; condNet = 'normal'; condCpu = 1; condTheme = 'app'; }
       updateDeviceUI();
     }
+    // Theme rides on the host itself rather than the stage, so it reaches the page whether it's
+    // sitting in a device frame or shown plain — and it's this browser's own attribute, so
+    // forcing one tab dark never touches Synth's theme or any other browser's pages.
+    function applyPageTheme() {
+      if (condTheme === 'app') host.removeAttribute('data-page-theme');
+      else host.setAttribute('data-page-theme', condTheme);
+    }
     function updateDeviceUI() {
+      applyPageTheme();
       const dev = deviceOn && deviceId ? DEVICES.find((x) => x.id === deviceId) : null;
       host.classList.toggle('browser--device', !!dev);
       const btn = host.querySelector('[data-nav="device"]');
@@ -5754,7 +5795,7 @@
         return;
       }
       const land = dev && dev.kind !== 'screen' ? deviceLand : false;   // a monitor doesn't turn
-      const strip = condbarHTML(deviceId, land, condNet, condCpu);
+      const strip = condbarHTML(deviceId, land, condNet, condCpu, condTheme);
       if (bar) bar.outerHTML = strip; else view.insertAdjacentHTML('beforebegin', strip);
       // a device runs its own browser, so it shows the page's address in its own address bar;
       // with no device the pane simply keeps the page it already had, at its own size
@@ -5772,7 +5813,8 @@
       }
     }
     // Each menu hangs under the button that opened it and answers for one axis only: what the
-    // page thinks it is being shown on, how fast the wire is, how fast the processor is.
+    // page thinks it is being shown on, how fast the wire is, how fast the processor is, what
+    // colour scheme it's handed.
     function openCondMenu(btn) {
       const wrap = btn.parentElement;
       if (wrap.querySelector('.cond-menu')) return;
@@ -5780,7 +5822,8 @@
       wrap.insertAdjacentHTML('beforeend',
         key === 'screen' ? screenMenuHTML(deviceId)
         : key === 'net' ? listMenuHTML('net', NETS, condNet)
-        : listMenuHTML('cpu', CPUS, condCpu));
+        : key === 'cpu' ? listMenuHTML('cpu', CPUS, condCpu)
+        : listMenuHTML('theme', THEMES, condTheme));
       const menu = wrap.querySelector('.cond-menu');
       btn.classList.add('is-open');
       function close() { document.removeEventListener('mousedown', onDoc); menu.remove(); btn.classList.remove('is-open'); }
@@ -5789,7 +5832,8 @@
         const v = row.dataset.pick;
         if (key === 'screen') deviceId = v === 'none' ? null : v;
         else if (key === 'net') condNet = v;
-        else condCpu = Number(v);
+        else if (key === 'cpu') condCpu = Number(v);
+        else condTheme = v;
         close();
         updateDeviceUI();
       });

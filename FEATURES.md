@@ -2313,3 +2313,14 @@ disclosure to dive deeper.
   cascade + reorder, one-per-browser col-split, shim → Swift Inspect routing, and all chrome/verbs
   ported per the designs; audit-driven hardening included. Known limitation: a mid-run page-target
   swap can't re-resolve the frontend until the inspect is reopened.
+
+## [2026-09-06](docs/features/2026-09-06.md)
+
+- **The conditions bar gains Theme, a fourth axis for what colour scheme the page sees** — Normal
+  now means the page follows *Synth's* theme setting (System still means the raw OS decides), and
+  Light/Dark force it either way, isolated to that one browser via `data-page-theme` on its own
+  pane. Sits right after CPU, at Normal by default like the other three.
+- **Theme's native port** — `PageTheme` + `Emulation.setEmulatedMedia` (app), `browser.deviceMode`
+  gains `theme`. A colour-scheme-only CDP change doesn't force CEF 144 to repaint on its own, so
+  `applyPageTheme()` piggybacks on a device-metrics re-send (a real viewport change always paints)
+  or a throwaway metrics nudge when no screen override is active.

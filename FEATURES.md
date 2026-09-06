@@ -2323,4 +2323,5 @@ disclosure to dive deeper.
 - **Theme's native port** — `PageTheme` + `Emulation.setEmulatedMedia` (app), `browser.deviceMode`
   gains `theme`. A colour-scheme-only CDP change doesn't force CEF 144 to repaint on its own, so
   `applyPageTheme()` piggybacks on a device-metrics re-send (a real viewport change always paints)
-  or a throwaway metrics nudge when no screen override is active.
+  or a throwaway metrics nudge when no screen override is active — and retries up to four times
+  over ~1.8s (`kickPageTheme`), since measured a single nudge wasn't reliable either.

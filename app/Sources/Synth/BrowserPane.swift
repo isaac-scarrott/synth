@@ -233,6 +233,9 @@ import AppKit
     /// Normal is a real value rather than "off", so it lives outside `conditionsOn` and is
     /// applied from the moment the page first loads, whether or not Conditions is open.
     private(set) var pageTheme: PageTheme = .app
+    /// Bumped on every applyPageTheme() call so a stale retry (see kickPageTheme) can tell
+    /// it's been superseded by a newer one and quietly stop, rather than fighting it.
+    @ObservationIgnored private var themeApplyNonce = 0
     /// The stage's fit scale, reported by the pane — folded into the CDP override so
     /// the w×h viewport renders exactly into the (w·s)×(h·s) engine view.
     @ObservationIgnored private var deviceFitScale: Double = 1
@@ -301,6 +304,20 @@ import AppKit
     /// (BrowserPane's onChange(of: store.themePref)).
     func applyPageTheme() {
         guard !isHome else { return }
+        themeApplyNonce += 1
+        kickPageTheme(nonce: themeApplyNonce, attempt: 0)
+    }
+
+    /// A colour-scheme-only CDP change can sit unpainted until something else forces a real
+    /// layout pass (DeviceEmulator.nudgeRepaint) — and measured on CEF 144, one nudge isn't
+    /// even reliably enough: a page has been seen to sit on the old colour for seconds after
+    /// a single attempt, then repaint correctly the moment a second, independent one landed.
+    /// So this fires a few times over about a second rather than once, each re-reading
+    /// pageTheme/store fresh (not a value captured at the first attempt) so it settles on
+    /// whatever's current even if something changed mid-flight — and bails the moment a
+    /// newer applyPageTheme() call bumps the nonce, rather than fighting it.
+    private func kickPageTheme(nonce: Int, attempt: Int) {
+        guard nonce == themeApplyNonce else { return }
         let scheme: ColorScheme?
         switch pageTheme {
         case .light: scheme = .light
@@ -308,19 +325,23 @@ import AppKit
         case .app:   scheme = store?.colorSchemeOverride
         }
         emulator().applyTheme(scheme, urlHint: address)
-        // A colour-scheme-only change can sit unpainted until something else forces a real
-        // layout pass (DeviceEmulator.nudgeRepaint). Re-assert the real screen override when
-        // one is active — a bare re-send forces the same repaint metrics changes already
-        // need to; clearing it first and setting it again is the one order that doesn't
-        // (measured on CEF 144, only once Network has been enabled — clearDeviceMetricsOverride
-        // immediately followed by a fresh setDeviceMetricsOverride reverts the page to the
-        // frame from just before the colour change, even though clearing and stopping there,
-        // or setting without clearing first, both paint correctly). With no screen override
-        // meant to be active, send the harmless nudge instead.
+        // Re-assert the real screen override when one is active — a bare re-send forces the
+        // same repaint metrics changes already need to; clearing it first and setting it
+        // again is the one order that doesn't (measured on CEF 144, only once Network has
+        // been enabled — clearDeviceMetricsOverride immediately followed by a fresh
+        // setDeviceMetricsOverride reverts the page to the frame from just before the colour
+        // change, even though clearing and stopping there, or setting without clearing
+        // first, both paint correctly). With no screen override meant to be active, send the
+        // harmless nudge instead.
         if conditionsOn, device != nil {
             applyScreenEmulation()
         } else {
             emulator().nudgeRepaint(urlHint: address)
+        }
+        guard attempt < 3 else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300 * (attempt + 1)))
+            self?.kickPageTheme(nonce: nonce, attempt: attempt + 1)
         }
     }
 

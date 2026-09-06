@@ -47,8 +47,8 @@ enum SimulatorControl {
             guard let store else { return "store gone" }
             guard !store.simulatorsAvailable else { return nil }
             guard store.simulatorSessionsEnabled else {
-                return "simulator sessions are off: they are behind Synth's Experimental toggle "
-                    + "(Settings → Experimental → Simulator sessions), which is off by default. Ask "
+                return "simulator sessions are off: they're gated behind a toggle "
+                    + "(Settings → Integrations → Simulator sessions), which is off by default. Ask "
                     + "the user to turn it on — your tool list may predate them turning it off. "
                     + "Nothing was started."
             }

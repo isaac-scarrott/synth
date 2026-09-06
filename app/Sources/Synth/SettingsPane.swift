@@ -67,12 +67,13 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 28) {
             SetSection(label: "Appearance") {
                 SetToggleRow(label: "Theme", desc: "Follows macOS unless you pin it.") { ThemeSeg() }
-            }
-            SetSection(label: "Markdown") {
+                SetDivider()
                 SetToggleRow(label: "Open .md in",
                              desc: "Clicking a markdown link, and the `synth` command.") {
                     MarkdownOpenSeg()
                 }
+                SetDivider()
+                switchRow("Tabs", "Two-level sidebar with a tab strip of the branch's sessions.", bind(\.tabsMode))
             }
             SetSection(label: "Notification sounds") {
                 switchRow("Session finished", "A background agent stopped working.", bind(\.soundDone))
@@ -81,16 +82,21 @@ struct SettingsPane: View {
                 SetDivider()
                 switchRow("Command failed", "A terminal command exited non-zero.", bind(\.soundError))
             }
-            SetSection(label: "MCP servers") {
+            SetSection(label: "Integrations") {
                 // No tool counts in these lines: the browser row claimed 13 for months while the
                 // server grew past 20, and a number nobody can see is wrong is worse than none.
                 switchRow("Browser", "Lets an agent drive and inspect browser sessions.",
                           bind(\.mcpBrowserEnabled))
                 SetDivider()
-                switchRow("Simulator", "Lets an agent drive simulator sessions — tap, type, screenshot.",
-                          bind(\.mcpSimulatorEnabled))
-                SetDivider()
                 switchRow("Synth app", "Lets an agent create worktrees.", bind(\.mcpAppEnabled))
+                SetDivider()
+                // One switch, not two. The second used to say whether an agent could drive the
+                // sessions the first one allowed — a distinction nobody was drawing, and one that
+                // put two rows called Simulator next to each other, the lower of them inert
+                // whenever the upper was off.
+                switchRow("Simulator sessions",
+                          "Run an iOS simulator as a session: its live screen in a pane, tappable, and drivable by Claude. Needs a full Xcode.",
+                          bind(\.simulatorSessionsEnabled))
             }
             SetSection(label: "New worktree defaults") {
                 SetEditorRow(label: "Setup script", desc: "Runs once in each new worktree, after it's created.") {
@@ -148,11 +154,6 @@ struct SettingsPane: View {
                     AddAgentButton()
                 }
             }
-            SetSection(label: "Privacy") {
-                SetToggleRow(label: "Anonymous analytics", desc: "Usage counts only. No code, prompts or paths.") {
-                    switchControl(bind(\.analyticsEnabled))
-                }
-            }
             // Only the switch carries a description, and only the half of it you can't read off
             // the controls: that the sweep touches nothing unrecoverable. Each picker states its
             // own rule — a sentence under "Never · 7 · 14 · 30 days" would say it again, slower.
@@ -186,13 +187,13 @@ struct SettingsPane: View {
                     }
                 }
             }
-            SetSection(label: "Experimental") {
-                switchRow("Tabs", "Two-level sidebar with a tab strip of the branch's sessions. A work-in-progress preview.", bind(\.tabsMode))
-                switchRow("Simulator sessions",
-                          "Run an iOS simulator as a session: its live screen in a pane, tappable, and drivable by Claude. Needs a full Xcode. Uses Apple's private simulator frameworks, so a future Xcode can degrade it — it will say so rather than fail quietly.",
-                          bind(\.simulatorSessionsEnabled))
+            SetSection(label: "About") {
+                SetToggleRow(label: "Anonymous analytics", desc: "Usage counts only. No code, prompts or paths.") {
+                    switchControl(bind(\.analyticsEnabled))
+                }
+                SetDivider()
+                aboutRow
             }
-            SetSection(label: "About") { aboutRow }
             if store.workspaces.isEmpty { emptyProject }
         }
     }

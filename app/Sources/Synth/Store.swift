@@ -389,13 +389,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         else { UserDefaults.standard.removeObject(forKey: settingsProjectKey) }
     }
 
-    /// Per-machine MCP server toggles (Settings → MCP servers): which bundled servers are
-    /// registered in every managed worktree's agent config. All three ship on — the app-control
+    /// Per-machine MCP server toggles (Settings → Integrations): which bundled servers are
+    /// registered in every managed worktree's agent config. Both ship on — the app-control
     /// server's one mutating verb is approval-gated behind a native prompt, so an agent
-    /// holding the tool still can't create a worktree the user didn't click Create on, and the
-    /// simulator server can only reach devices the user's own machine already has. A flip
+    /// holding the tool still can't create a worktree the user didn't click Create on. A flip
     /// re-syncs every worktree's config immediately — disabled means the entry is REMOVED,
-    /// so agents don't even see the tools.
+    /// so agents don't even see the tools. The simulator server has no switch of its own: it
+    /// rides `simulatorSessionsEnabled`, because a simulator session nothing can drive was a
+    /// distinction nobody was making.
     var mcpBrowserEnabled = AppStore.loadBoolPref(AppStore.mcpBrowserKey, default: true) {
         didSet {
             UserDefaults.standard.set(mcpBrowserEnabled, forKey: AppStore.mcpBrowserKey)
@@ -408,17 +409,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             syncAgentBridge()
         }
     }
-    var mcpSimulatorEnabled = AppStore.loadBoolPref(AppStore.mcpSimulatorKey, default: true) {
-        didSet {
-            UserDefaults.standard.set(mcpSimulatorEnabled, forKey: AppStore.mcpSimulatorKey)
-            syncAgentBridge()
-        }
-    }
     static let mcpBrowserKey = "synth-mcp-browser"
     static let mcpAppKey = "synth-mcp-app"
-    static let mcpSimulatorKey = "synth-mcp-simulator"
 
-    /// Anonymous usage analytics (Settings → Privacy). On by default, opt-out: flipping it off
+    /// Anonymous usage analytics (Settings → About). On by default, opt-out: flipping it off
     /// tells PostHog to stop sending straight away and stays off across launches. Read at launch
     /// by `Analytics.bootstrap` too, so the very first event already respects the choice.
     var analyticsEnabled = AppStore.loadBoolPref(AppStore.analyticsKey, default: true) {
@@ -936,9 +930,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         MCPInstaller.updateLaunchConfig(worktrees: live, servers: [
             "synth-browser": mcpBrowserEnabled,
             "synth-app": mcpAppEnabled,
-            // Gated on the experiment AND a real Xcode: registering a server whose every tool
-            // errors is worse than not registering it, and it would cost each agent context.
-            "synth-simulator": mcpSimulatorEnabled && simulatorsAvailable,
+            // The simulator has one switch, not two: turning the sessions on is what hands an
+            // agent the tools for them. Still gated on a real Xcode, because registering a server
+            // whose every tool errors is worse than not registering it, and it costs each agent
+            // context to carry.
+            "synth-simulator": simulatorsAvailable,
         ])
     }
 
@@ -3502,7 +3498,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                   respond: @escaping ([String: Any]) -> Void) -> AgentPromptStart {
         guard mcpAppEnabled else {
             return .immediate(["ok": false, "error":
-                "the Synth app MCP server is turned off — enable it in Synth Settings → MCP servers"])
+                "the Synth app MCP server is turned off — enable it in Synth Settings → Integrations"])
         }
         guard let worktreePath = request["worktreePath"] as? String,
               let callerBranch = branch(forWorktreePath: worktreePath),

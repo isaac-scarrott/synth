@@ -2367,3 +2367,15 @@ disclosure to dive deeper.
   (page, five WebP figures, two Geist faces + licence, two marks); the rig, the dev server and the
   5MB of source PNGs stay behind. The hero's requirements line is gone, and below 1024px its whole
   CTA row hides in favour of the sticky header download.
+
+## [2026-09-06](docs/features/2026-09-06.md)
+
+- **Settings loses its "Experimental" drawer** — Tabs and Simulator sessions weren't experimental,
+  just off by default, so the section that grouped them by maturity is gone and each row moves to
+  where you'd look for it. Appearance absorbs Markdown's "Open .md in" and Tabs; "MCP servers"
+  renames to Integrations and takes the simulator gate; Privacy's analytics switch folds into About.
+  Nine App-tab sections become seven. The simulator's second switch goes with the reorg —
+  `mcpSimulatorEnabled` is deleted and turning the sessions on is what registers `synth-simulator`,
+  since "a simulator no agent may drive" is not a distinction anybody was drawing. Tabs drops its
+  "work-in-progress preview" caption and Simulator sessions its private-frameworks paragraph, the
+  pane's only two-line description.

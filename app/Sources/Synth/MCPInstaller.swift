@@ -14,7 +14,7 @@ import os.log
 /// churn every config, so it stays.)
 ///
 /// Registration: nothing is written into the worktree. The ENABLED servers (the
-/// Settings → MCP servers toggles) are handed to each agent's launch as environment
+/// Settings → Integrations toggles) are handed to each agent's launch as environment
 /// (`launchEnv`), and `synth-hook` turns them into that agent's own registration —
 /// `claude --mcp-config`, opencode's `OPENCODE_CONFIG_CONTENT`, and an
 /// `.agents/mcp_config.json` inside the Synth-owned dir agy is handed via `--add-dir`.

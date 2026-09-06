@@ -20,12 +20,12 @@ enum SimulatorControl {
     static func handles(_ verb: String) -> Bool { verb.hasPrefix("simulator.") }
 
     static func handle(_ request: [String: Any], store: AppStore?) -> [String: Any] {
-        // The Experimental toggle, enforced and not merely advertised. It used to gate only what a
+        // The Settings toggle, enforced and not merely advertised. It used to gate only what a
         // user could start and which MCP servers were *registered*, which is discoverability: this
         // socket is reachable by any local process, and an agent session that was already running
         // when the toggle flipped keeps the tool list it was given. So `simulator.create` booted a
-        // device with the experiment off. Refusing here, by name, is also the answer that lets such
-        // an agent find out rather than silently succeeding at something the user disabled.
+        // device after the user had turned it off. Refusing here, by name, is also the answer that
+        // lets such an agent find out rather than silently succeeding at something they disabled.
         if let refusal = gateRefusal(store) { return fail(refusal) }
         let verb = request["verb"] as? String ?? ""
         switch verb {

@@ -808,19 +808,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// globalTpl). Order is creation order — the first entry is the session that opens.
     var globalSessionTemplate: [SessionTemplateEntry] = []
 
-    /// What a clicked `.md` opens in (Settings → Markdown). App-wide rather than per-workspace:
-    /// it is a statement about how you read markdown, not about a project.
-    var markdownOpen: MarkdownOpen = .synth {
-        didSet {
-            // The surface builds its own launch line and has no store reference, so the
-            // choice is mirrored somewhere it can reach. Persistence rides the autosave
-            // cadence, like every other setting here.
-            MarkdownSession.preference = markdownOpen
-            // The `synth` shim bakes the chosen opener in, so it has to be rewritten — a
-            // terminal already open picks it up on its next invocation.
-            MarkdownSession.installCLI(into: HookEnvironment.shimDir)
-        }
-    }
     var wsSessionTemplates: [UUID: [SessionTemplateEntry]] = [:]
 
     /// The effective template for a project — the shared base sessions with the project's
@@ -1139,7 +1126,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // generic handoff below, and only for a real file — a directory named `notes.md` is
         // still Finder's. Agents write plans, TODOs and reports as markdown constantly; those
         // are the documents this app is for, so following one should not leave it.
-        if isMarkdown(path), markdownOpen != .defaultApp,
+        if isMarkdown(path),
            (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
             let source = sourceID.flatMap(session) ?? openSessionID.flatMap(session)
             if newMarkdown(in: source.flatMap { branch(of: $0) }, path: path) != nil { return }
@@ -3778,7 +3765,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             globalScript: globalScript,
             globalAgentFlags: globalAgentFlags.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
             globalSessionTemplate: globalSessionTemplate,
-            markdownOpen: markdownOpen.rawValue,
             customAgents: customAgents.isEmpty ? nil : customAgents
         )
     }
@@ -3857,10 +3843,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // The registry learns about them here (customAgents' didSet), which is what puts a user's
         // own command on PATH as a shim and into every "New …" for the rest of the run.
         if let ca = state.customAgents { customAgents = ca }
-        // An unrecognised value (a snapshot from a build that offered an editor this machine
-        // no longer has) falls back to Synth's own surface rather than failing the load.
-        markdownOpen = state.markdownOpen.flatMap(MarkdownOpen.init(rawValue:)) ?? .synth
-        MarkdownSession.preference = markdownOpen
         let liveIDs = Set(restored.flatMap { ws in
             [ws.id] + ws.branches.flatMap { [$0.id] + $0.sessions.map(\.id) }
         })

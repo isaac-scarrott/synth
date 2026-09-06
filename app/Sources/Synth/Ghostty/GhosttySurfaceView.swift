@@ -172,7 +172,12 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// while hidden, and an idle shell produces no damage to trigger a redraw.
     private func updateOcclusion() {
         guard let surface, let window else { return }
-        let visible = window.occlusionState.contains(.visible)
+        // A driven window is parked at alphaValue 0, and AppKit reports a fully transparent
+        // window as occluded — so the renderer stops, the layer never gets content, and every
+        // capture of a terminal comes back empty. `Automation.park`'s whole contract is
+        // "unseeable but still laid out and rendering", so under automation the renderer is
+        // told what park means rather than what the window server sees.
+        let visible = window.occlusionState.contains(.visible) || Automation.isDriven
         ghostty_surface_set_occlusion(surface, visible)
         if visible { ghostty_surface_refresh(surface) }
     }

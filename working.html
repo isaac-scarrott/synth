@@ -2445,6 +2445,13 @@
   }
   .foot-btn__meta { margin-left: auto; font-size: 11px; font-weight: 500; font-family: var(--mono); }
 
+  /* ---- Sidebar: Usage entry (fixed above the Project tree, not folded into Settings — "how
+     close am I to a limit" is a question you want answered at a glance, on every screen, not
+     one you go looking for). Same foot-btn chrome as Settings below it; the trailing meta slot
+     carries the single most-constrained window across every hosted agent, so the number is
+     already visible before the pane is ever opened. */
+  .sidebar__usage { flex-shrink: 0; padding: 8px 10px 2px; }
+
   /* ---- The waiting build, as a control ------------------------------------------------------
      The update already speaks in the notification deck and in Settings → About, but both are
      transient or buried: dismiss the card and the only standing trace of a downloaded build is
@@ -2497,6 +2504,7 @@
      meant and there is no list of project names in here to misread as navigation. ---- */
   .set-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px 44px; }
   .set-body__inner { max-width: 660px; }
+  .set-body__inner.usage-body__inner { max-width: 760px; }
 
   /* tab strip, in .pane__head after the title */
   .set-tabs { display: flex; align-self: stretch; gap: 2px; margin-left: 18px; }
@@ -2576,6 +2584,97 @@
   .set-row--off .set-row__label { color: var(--ink-4); }
   .set-row--off .set-row__desc { color: var(--text-faint); }
   .set-row--off .set-code--flags { color: var(--set-inherit); caret-color: transparent; cursor: default; }
+
+  /* ---- Usage: a read-only board, so unlike Settings it holds no .set-row for the keyboard
+     cursor to land on. Every agent is drawn by one code path and one tile: a hosted agent that
+     can report a real rolling-window percentage (Claude Code's private usage endpoint, agy's
+     own /statusline quota payload) and one that can only offer local token/cost totals get the
+     SAME frame and the same type scale — what differs is the number inside, never the treatment,
+     because tile size reading as importance would rank the agents rather than describe their
+     data.
+
+     Hierarchy inside a tile is typographic, in four fixed steps: eyebrow (what this measures,
+     quiet), value (the answer, loud), bar (the answer again, spatially), meta (when it resets,
+     quiet). State colour lives ONLY in the bar — the value stays --ink at every percentage, so
+     a board of agents reads as one surface instead of a traffic-light panel. */
+  .usage-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+  /* Band head: the agent, in the same uppercase meta voice .set-grp__label uses in Settings,
+     so a section header means the same thing on both panes. */
+  .usage-band { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; padding: 2px 2px 0; }
+  .usage-band:not(:first-child) { margin-top: 14px; }
+  .usage-band .session__icon { width: 15px; height: 15px; flex-shrink: 0; }
+  .usage-band__name {
+    flex: 1; min-width: 0;
+    font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-meta);
+  }
+  /* One tile, every agent. space-between + a floor height keeps the meta line of a tile with no
+     bar (a token total) sitting on the same baseline as one with a bar beside it. */
+  .usage-tile {
+    display: flex; flex-direction: column; justify-content: space-between;
+    gap: 14px; min-height: 146px; padding: 16px; min-width: 0;
+    background: var(--raised);
+    border: 0.5px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 1px 1.5px rgba(0,0,0,0.04);
+  }
+  .usage-tile--full { grid-column: 1 / -1; }
+  .usage-tile__eyebrow { font-size: 11px; font-weight: 550; color: var(--ink-4); }
+  .usage-tile__value {
+    margin-top: 6px;
+    font-size: 30px; font-weight: 600; font-family: var(--mono);
+    letter-spacing: -0.01em; line-height: 1; color: var(--ink);
+  }
+  .usage-tile__meta { margin-top: 8px; font-size: 11px; font-family: var(--mono); color: var(--ink-meta); }
+
+  /* The meter, as the instrument the app is named after: segments falling left to right, lit as
+     far as the quota you've spent. A filling bar says "progress"; a level running down a fader
+     says "headroom left", which is the actual question being asked here. Pill caps and a wider
+     gap so it reads as a volume ladder rather than a waveform. */
+  .usage-meter { display: flex; align-items: flex-end; gap: 3px; height: 32px; }
+  .usage-meter i {
+    flex: 1; min-width: 0;
+    border-radius: 99px;
+    background: var(--hover);
+    transform-origin: bottom;
+    animation: usage-seg-in 320ms var(--ease-out) backwards;
+    animation-delay: calc((var(--i, 0) * 45ms) + (var(--b, 0) * 12ms) + 90ms);
+  }
+  @keyframes usage-seg-in { from { transform: scaleY(0.06); opacity: 0; } to { transform: none; opacity: 1; } }
+  .usage-meter i.is-lit { background: var(--accent); }
+  .usage-meter--warn i.is-lit { background: var(--work); }
+  .usage-meter--crit i.is-lit { background: var(--error); }
+
+  /* Rolling digits (after kitlangton/rolling-number): each digit is its own reel, the reel
+     travels to the new face on a spring settle, and a left-to-right stagger sweeps the change
+     across the number. A digit that changes mid-flight is not restarted — the reel is already
+     a transform, so it retargets from wherever it is. Static glyphs (%, $, the separators) never
+     move, so the number keeps its place while its digits turn. */
+  .roll { display: inline-flex; align-items: flex-start; }
+  .roll__c { display: inline-block; height: 1em; overflow: hidden; line-height: 1; }
+  .roll__reel {
+    display: block;
+    transition: transform 560ms cubic-bezier(0.34, 1.28, 0.52, 1);
+    transition-delay: calc(var(--c, 0) * 26ms);
+    will-change: transform;
+  }
+  .roll__reel span { display: block; height: 1em; line-height: 1; }
+
+
+  /* Life, where the data actually has some. A board of static numbers reads as a screenshot of
+     an answer rather than the answer, so three things move, and each one moves because something
+     real is happening: tiles arrive on a stagger and their meters sweep up segment by segment
+     (the data landing, not a flourish), the countdown ticks in real time because time is what it
+     measures, and every digit that changes rolls to its new face rather than being swapped out
+     under you. Nothing loops, and nothing moves that isn't reporting a change. */
+  @keyframes usage-tile-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  .usage-tile, .usage-band {
+    animation: usage-tile-in 300ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+  /* A lit top edge rather than a drop shadow: the tile catches light, it doesn't float. */
+  .usage-tile { box-shadow: 0 1px 1.5px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7); }
 
   /* caption above a field: real casing, plus the constraint text that used to be a footnote */
   .set-cap { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 6px; }
@@ -2928,6 +3027,8 @@
     .kebab:active { transform: none; }
     .ind, .beat i, .ind--input svg, .term__cursor, .tui__spin, .chat__composer.awaiting, .skel, .pane { animation: none; }
     .session--pulse, .notif--input .notif__glyph svg { animation: none; }
+    .usage-tile, .usage-band, .usage-meter i { animation: none; }
+    .roll__reel { transition: none; }
     .beat i { opacity: 0.85; transform: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
     /* the card keeps its fade — only the slide-in and the row-to-row glide go */
@@ -3051,6 +3152,7 @@
   :root[data-theme="dark"] .cmdk__meta--error { color: var(--error); }
   /* same amber, same reason: the light value was tuned for a white card */
   :root[data-theme="dark"] .set-agent__probe--warn { color: var(--work); }
+  :root[data-theme="dark"] .usage-tile { box-shadow: 0 1px 1.5px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.055); }
 
   /* ================================================================================
      Scratch terminal (⌘⇧T). A throwaway shell over a dimmed app. No chrome beyond the
@@ -3193,6 +3295,13 @@
       <div class="sidebar__top">
         <button class="icon-btn" id="collapseBtn" aria-label="Collapse sidebar">
           <svg viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"/></svg>
+        </button>
+      </div>
+
+      <div class="sidebar__usage">
+        <button class="foot-btn" id="openUsage" aria-label="Usage">
+          <svg viewBox="0 0 256 256" fill="currentColor"><rect x="32" y="144" width="48" height="80" rx="8"/><rect x="104" y="96" width="48" height="128" rx="8"/><rect x="176" y="48" width="48" height="176" rx="8"/></svg>
+          <span>Usage</span>
         </button>
       </div>
 
@@ -3868,7 +3977,7 @@
     try { localStorage.setItem(LS_TABS, tabsMode ? 'on' : 'off'); } catch (e) {}
     document.documentElement.dataset.tabs = tabsMode ? 'on' : 'off';
     rollUpGroups();                 // the 2-deep sidebar leans on the branch roll-up
-    if (!app.classList.contains('settings') && layout) renderLayout();   // (re)draw / drop the strips
+    if (!app.classList.contains('settings') && !app.classList.contains('usage') && layout) renderLayout();   // (re)draw / drop the strips
   }
 
   // ===== Per-branch layout ownership, persistence & sticky nav (014 / 005) =====
@@ -6529,13 +6638,16 @@
   // every nav keybinding works identically on both screens.
   function activeRows() {
     if (app.classList.contains('settings')) return [...content.querySelectorAll('.set-row')];
-    const foot = [...document.querySelectorAll('.sidebar__foot .foot-btn:not([hidden])')];
+    // Usage is read-only — no rows of its own to walk, so the cursor just holds the button.
+    if (app.classList.contains('usage')) return [document.getElementById('openUsage')];
+    const foot = [...document.querySelectorAll('.sidebar__foot .foot-btn:not([hidden]), .sidebar__usage .foot-btn')];
     return [...treeRows(), ...foot];
   }
   // Where the cursor rests when nothing is explicitly selected: the open session
   // in the tree, or the expanded setting.
   function currentRow(rows) {
     if (app.classList.contains('settings')) return content.querySelector('.set-item--open > .set-row') || rows[0];
+    if (app.classList.contains('usage')) return document.getElementById('openUsage');
     return openEl && rows.includes(openEl) ? openEl : null;
   }
   // rows that own the create/rename/delete verbs — the tree only (you can't
@@ -6581,6 +6693,7 @@
   function activateRow(row) {
     if (!row) return;
     if (row.id === 'openSettings') { enterSettings(); return; }
+    if (row.id === 'openUsage') { enterUsage(); return; }
     if (row === updateBtn) { restartForUpdate(); return; }
     if (row.matches('.set-row')) { activateSetting(row); return; }
     if (canDisclose(row)) { toggle(row.closest('[data-repo]')); return; }
@@ -6683,6 +6796,8 @@
       exitSettings();
       return;
     }
+    // Esc leaves Usage — nothing inside it can hold focus, so it's always the one layer
+    if (k === 'Escape' && app.classList.contains('usage')) { e.preventDefault(); exitUsage(); return; }
     // Cmd/Ctrl+B toggles the sidebar
     if ((e.metaKey || e.ctrlKey) && (k === 'b' || k === 'B')) {
       e.preventDefault();
@@ -6695,7 +6810,7 @@
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && k >= '1' && k <= '9') { e.preventDefault(); focusPane(+k); return; }
     // ===== Split layer (007): pure ⌘-chords over the mouse split model. Placed before the browser
     // page-verbs so ⌘⌥L (focus-right alias) beats ⌘L (address), while a bare ⌘L still reaches it. =====
-    if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !document.querySelector('.backdrop')) {
+    if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !app.classList.contains('usage') && !document.querySelector('.backdrop')) {
       // Tabs chords (tabsMode only, so tabs-off is untouched):
       //  • ⌃⇥ / ⌃⇧⇥ cycle the active pane's tabs.
       //  • ⌘W closes the active tab (its specific tab, not just the open session) — the same
@@ -6736,14 +6851,14 @@
       if (k === '`' && !e.shiftKey && !e.altKey) { e.preventDefault(); cyclePane(1); return; }
     }
     // Cmd/Ctrl+T spawns a terminal in the branch you're on (matches the native app)
-    if ((e.metaKey || e.ctrlKey) && (k === 't' || k === 'T') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
+    if ((e.metaKey || e.ctrlKey) && (k === 't' || k === 'T') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage')) {
       const br = contextBranch();
       if (br) { e.preventDefault(); addTerminal(br); }
       return;
     }
     // Cmd/Ctrl+N opens the new-session picker (terminal / agents / browser) for the branch
     // you're in — the same choice `a` offers on a sidebar row, context-resolved like ⌘T.
-    if ((e.metaKey || e.ctrlKey) && (k === 'n' || k === 'N') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
+    if ((e.metaKey || e.ctrlKey) && (k === 'n' || k === 'N') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage')) {
       const br = contextBranch();
       if (br) { e.preventDefault(); openPaletteAt(newSessionFrame(br)); }
       return;
@@ -6751,7 +6866,7 @@
     // Cmd/Ctrl+W closes the current context — the focused sidebar row when its ring is
     // showing, else the open session — through the same flow as `d` on a sidebar row.
     // (In tabs mode the earlier ⌘W branch already closed the active tab and returned.)
-    if ((e.metaKey || e.ctrlKey) && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey && !app.classList.contains('settings')) {
+    if ((e.metaKey || e.ctrlKey) && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage')) {
       const row = contextRow();
       if (row) { e.preventDefault(); if (!e.repeat) requestDelete(row); }
       return;
@@ -7001,6 +7116,7 @@
   // up rather than resting. The 180-square it ships in does not centre the curve, so the
   // viewBox crops to the curve's own bounds. Brand black/white, not the agent accent.
   const ICON_ANTIGRAVITY = '<svg viewBox="22.5 28.125 134.335 123.75" fill="none"><path d="M144.248 149.062c7.5 5.626 18.75 1.876 8.437-8.437-30.937-30-24.375-112.5-62.812-112.5-38.438 0-31.875 82.5-62.813 112.5-11.25 11.25.938 14.063 8.438 8.437 29.062-19.687 27.187-54.375 54.375-54.375 27.187 0 25.312 34.688 54.375 54.375Z" fill="var(--ag-mark)"/></svg>';
+  const ICON_USAGE = '<svg viewBox="0 0 256 256" fill="currentColor"><rect x="32" y="144" width="48" height="80" rx="8"/><rect x="104" y="96" width="48" height="128" rx="8"/><rect x="176" y="48" width="48" height="176" rx="8"/></svg>';
   const ICON_BROWSER = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg>';
   const ICON_CARET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
 
@@ -7705,7 +7821,7 @@
     function computeDrop(x, y) {
       const cr = content.getBoundingClientRect();
       const dragged = start.row;
-      if (!layout || app.classList.contains('settings')) {
+      if (!layout || app.classList.contains('settings') || app.classList.contains('usage')) {
         return { kind: 'split', open: true, refuse: false, rect: { left: cr.left, top: cr.top, w: cr.width, h: cr.height } };
       }
       // A session from another branch / worktree never joins this surface (003) — refuse every zone
@@ -8958,6 +9074,7 @@
     try { localStorage.setItem('synth-theme', pref); } catch (e) {}
     applyTheme();
     if (app.classList.contains('settings')) renderSettings();
+    if (app.classList.contains('usage')) renderUsage();
   }
   themeMql.addEventListener('change', () => { if (themePref === 'system') applyTheme(); });
   applyTheme();
@@ -9643,6 +9760,211 @@
       </div></div></section>`;
   }
 
+  // ===== Usage ==========================================================================
+  // What each agent's own account can tell us, not what Synth invents. Claude Code and (only
+  // once opencode's Anthropic provider is signed in with Claude, not an API key) opencode can
+  // report Anthropic's real rolling-window percentages; every other case falls back to the
+  // token/cost totals the agent already keeps in its own local history. Fixture data below
+  // stands in for a live per-agent fetch (Agents.swift AgentSupervisor.usage(), polled on an
+  // interval per agent) once this ships in Swift.
+  // Rolling digits, after kitlangton/rolling-number: a digit is a reel of 0–9 translated to its
+  // face, so a change is one transform and an interrupted change retargets rather than restarts.
+  // Everything that isn't a digit is drawn once and left alone.
+  function rollingHTML(text) {
+    return [...String(text)].map((ch, c) => {
+      if (ch < '0' || ch > '9') return `<span class="roll__s">${esc(ch)}</span>`;
+      const faces = '0123456789'.split('').map((d) => `<span>${d}</span>`).join('');
+      return `<span class="roll__c"><span class="roll__reel" style="--c:${c};transform:translateY(${-ch}em)">${faces}</span></span>`;
+    }).join('');
+  }
+  const rollShape = (text) => [...String(text)].map((ch) => (ch >= '0' && ch <= '9' ? '#' : ch)).join('');
+  // Same shape (same digits in the same places) → roll the reels. Different shape (a digit gained
+  // or a separator moved) → redraw, because the reels no longer line up with the glyphs.
+  function setRolling(el, text) {
+    if (el.dataset.shape !== rollShape(text)) {
+      el.dataset.shape = rollShape(text);
+      el.innerHTML = rollingHTML(text);
+      return;
+    }
+    const reels = el.querySelectorAll('.roll__reel');
+    let n = 0;
+    [...String(text)].forEach((ch) => {
+      if (ch < '0' || ch > '9') return;
+      const reel = reels[n++];
+      if (reel) reel.style.transform = `translateY(${-ch}em)`;
+    });
+  }
+  function rollingSpan(cls, text, attrs = '') {
+    return `<span class="${cls} roll" data-shape="${esc(rollShape(text))}"${attrs}>${rollingHTML(text)}</span>`;
+  }
+
+  // Every metric here maps to a field one of these agents actually reports. What a metric is
+  // NOT is a model name we chose: Claude Code's per-model weekly rows arrive in a server-sent
+  // `limits[]` array (kind "weekly_scoped", the label in scope.model.display_name — Fable is one
+  // today, filtered server-side), and Antigravity's buckets carry server-supplied displayNames
+  // too. Both are variable in count, so both are rendered as lists, never as fixed bars.
+  // `pct` is what's been USED — Antigravity reports remaining_fraction, so its supervisor
+  // inverts on the way in rather than leaving two conventions loose in the UI. `active` means a
+  // session of that agent is running, so its windows climb while the pane is open.
+  const USAGE_DATA = {
+    claude: {
+      // a session of this agent is running right now, so its windows are moving as you watch
+      active: true,
+      metrics: [
+        { label: 'Current session', pct: 62, resetsInMs: 2 * 3600e3 + 18 * 60e3 },
+        { label: 'Current week · all models', pct: 34, resetsInMs: 4 * 86400e3 + 6 * 3600e3 },
+        { label: 'Current week · Sonnet', pct: 28, resetsInMs: 4 * 86400e3 + 6 * 3600e3 },
+        { label: 'Current week · Fable', pct: 47, resetsInMs: 4 * 86400e3 + 6 * 3600e3 },
+        { label: 'Usage credits', value: '$12.40', pct: 25, meta: 'of $50.00 this month' },
+        { label: 'Cowork credit', value: '$8.00', meta: 'one-time · expires 12 Oct' },
+      ],
+    },
+    opencode: {
+      metrics: [
+        { label: 'Tokens', value: '1.6M', meta: 'last 30 days' },
+        { label: 'Est. cost', value: '$18.42', meta: 'last 30 days' },
+      ],
+    },
+    antigravity: {
+      metrics: [
+        { label: 'Gemini · 5-hour', pct: 28, resetsInMs: 42 * 60e3 + 18e3 },
+        { label: 'Gemini · weekly', pct: 15, resetsInMs: 5 * 86400e3 + 2 * 3600e3 },
+        { label: 'Claude & GPT · 5-hour', pct: 71, resetsInMs: 3 * 3600e3 + 5 * 60e3 },
+        { label: 'Claude & GPT · weekly', pct: 46, resetsInMs: 5 * 86400e3 + 2 * 3600e3 },
+        { label: 'AI credits', value: '0', meta: 'Google One' },
+      ],
+    },
+  };
+  // Deadlines are fixed once, not per render: a window that reset itself every time you reopened
+  // the pane would be a clock that runs backwards.
+  Object.values(USAGE_DATA).forEach((d) => d.metrics.forEach((m) => {
+    if (m.resetsInMs) m.resetsAt = Date.now() + m.resetsInMs;
+  }));
+  let usageTimer = null;
+
+  // Seconds appear only inside the last hour, where they're the part that's actually changing;
+  // above that they'd be noise on a number that moves once a minute.
+  function fmtCountdown(ms) {
+    if (ms <= 0) return 'resetting…';
+    const days = Math.floor(ms / 86400e3);
+    const hours = Math.floor((ms % 86400e3) / 3600e3);
+    const mins = Math.floor((ms % 3600e3) / 60e3);
+    const secs = Math.floor((ms % 60e3) / 1000);
+    if (days > 0) return `resets in ${days}d ${hours}h`;
+    if (hours > 0) return `resets in ${hours}h ${mins}m`;
+    if (mins > 0) return `resets in ${mins}m ${String(secs).padStart(2, '0')}s`;
+    return `resets in ${secs}s`;
+  }
+  // Segments descend left to right, and light up as far as the quota spent. Fewer, fatter
+  // segments than a waveform would use — this is a volume ladder, read at a glance.
+  const USAGE_SEGMENTS = 24;
+  function usageMeterClass(percent) {
+    return percent >= 95 ? ' usage-meter--crit' : percent >= 80 ? ' usage-meter--warn' : '';
+  }
+  function usageMeter(percent) {
+    const lit = Math.round((percent / 100) * USAGE_SEGMENTS);
+    let segs = '';
+    for (let b = 0; b < USAGE_SEGMENTS; b++) {
+      const h = 100 - (b / (USAGE_SEGMENTS - 1)) * 70;
+      segs += `<i class="${b < lit ? 'is-lit' : ''}" style="--b:${b};height:${h.toFixed(1)}%"></i>`;
+    }
+    return `<div class="usage-meter${usageMeterClass(percent)}">${segs}</div>`;
+  }
+  // The one tile every metric is drawn with. A metric with no percentage behind it (a token
+  // total, a credit balance) drops the meter and keeps every other step — the tile that can't
+  // report a level says so by having none to show, not by restyling itself.
+  function usageTile(i, id, m, full) {
+    const value = m.value !== undefined ? m.value : `${m.pct}%`;
+    const meta = m.meta !== undefined ? m.meta : fmtCountdown(m.resetsAt - Date.now());
+    const meter = m.pct === undefined ? '' : usageMeter(m.pct);
+    const live = m.resetsAt && m.meta === undefined;
+    return `<div class="usage-tile${full ? ' usage-tile--full' : ''}" style="--i:${i}" data-metric="${id}">
+      <div>
+        <div class="usage-tile__eyebrow">${esc(m.label)}</div>
+        ${rollingSpan('usage-tile__value', value)}
+      </div>
+      <div>${meter}${rollingSpan('usage-tile__meta', meta, live ? ` data-reset="${m.resetsAt}"` : '')}</div>
+    </div>`;
+  }
+  function usageAgentSection(key, seq) {
+    const d = USAGE_DATA[key], meta = TPL_KINDS[key];
+    if (!d || !meta) return '';
+    let html = `<div class="usage-band" style="--i:${seq.i++}">${meta.icon}<span class="usage-band__name">${esc(meta.label)}</span></div>`;
+    // an odd metric out would leave a hole in a two-up grid, so it takes the whole row instead
+    const odd = d.metrics.length % 2 === 1;
+    d.metrics.forEach((m, n) => {
+      html += usageTile(seq.i++, `${key}:${n}`, m, odd && n === d.metrics.length - 1);
+    });
+    return html;
+  }
+  function tickUsage() {
+    content.querySelectorAll('.usage-tile__meta[data-reset]').forEach((el) => {
+      setRolling(el, fmtCountdown(+el.dataset.reset - Date.now()));
+    });
+    // The running agent is spending its window while you watch it, so that one number climbs —
+    // which is the only reason anything on this pane changes on its own.
+    driftTick = (driftTick + 1) % 4;
+    if (driftTick === 0) driftUsage();
+  }
+  let driftTick = 0;
+  function driftUsage() {
+    Object.keys(USAGE_DATA).forEach((key) => {
+      const d = USAGE_DATA[key];
+      if (!d.active) return;
+      d.metrics.forEach((m, n) => {
+        if (m.pct === undefined || m.pct >= 99) return;
+        m.pct += 1;
+        const tile = content.querySelector(`[data-metric="${key}:${n}"]`);
+        if (!tile) return;
+        if (m.value === undefined) setRolling(tile.querySelector('.usage-tile__value'), `${m.pct}%`);
+        const meter = tile.querySelector('.usage-meter');
+        if (!meter) return;
+        meter.className = `usage-meter${usageMeterClass(m.pct)}`;
+        const lit = Math.round((m.pct / 100) * USAGE_SEGMENTS);
+        [...meter.children].forEach((seg, b) => seg.classList.toggle('is-lit', b < lit));
+      });
+    });
+  }
+  function stopUsageTicker() { if (usageTimer) { clearInterval(usageTimer); usageTimer = null; } }
+  function renderUsage() {
+    stopUsageTicker();
+    const seq = { i: 0 };
+    content.innerHTML = `<div class="pane">
+      <div class="pane__head">
+        <div class="pane__title"><span class="session__icon">${ICON_USAGE}</span><span>Usage</span></div>
+        <div class="pane__spacer"></div>
+      </div>
+      <div class="set-body"><div class="set-body__inner usage-body__inner">
+        <div class="usage-grid">${BUILTIN.map((k) => usageAgentSection(k, seq)).join('')}</div>
+      </div></div>
+    </div>`;
+    usageTimer = setInterval(tickUsage, 1000);
+  }
+  function enterUsage() {
+    closeMenu();
+    if (paletteOpen) closePalette();
+    if (shortcutsEl) closeShortcuts();
+    if (app.classList.contains('settings')) leaveSettingsMode();
+    setupEl = null;
+    app.classList.add('usage');
+    document.getElementById('openUsage').classList.add('is-on');
+    renderUsage();
+  }
+  function leaveUsageMode() {
+    stopUsageTicker();
+    app.classList.remove('usage');
+    document.getElementById('openUsage').classList.remove('is-on');
+  }
+  function exitUsage() {
+    if (!app.classList.contains('usage')) return;
+    leaveUsageMode();
+    renderLayout();
+    select(openEl && treeRows().includes(openEl) ? openEl : document.getElementById('openUsage'));
+  }
+  document.getElementById('openUsage').addEventListener('click', () => {
+    if (app.classList.contains('usage')) exitUsage(); else enterUsage();
+  });
+
   // ---- Render ------------------------------------------------------------------------
   function renderSettings() {
     stopStream();
@@ -9988,6 +10310,7 @@
     closeMenu();
     if (paletteOpen) closePalette();
     if (shortcutsEl) closeShortcuts();
+    if (app.classList.contains('usage')) leaveUsageMode();
     setupEl = null;   // leaving for settings revokes any armed setup-resolve
     if (scope) { setProject = scope; setTab = 'project'; try { localStorage.setItem(PROJ_KEY, wsName(scope)); } catch (e) {} }
     app.classList.add('settings');

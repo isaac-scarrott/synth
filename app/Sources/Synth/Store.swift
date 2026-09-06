@@ -3123,7 +3123,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// of its worktrees (both carry the full tree).
     private static func isSynthRepo(_ repo: URL) -> Bool {
         let fm = FileManager.default
-        return fm.fileExists(atPath: repo.appendingPathComponent("big-picture-design.html").path)
+        return fm.fileExists(atPath: repo.appendingPathComponent("working.html").path)
             && fm.fileExists(atPath: repo.appendingPathComponent("app/Sources/Synth/SynthApp.swift").path)
     }
 

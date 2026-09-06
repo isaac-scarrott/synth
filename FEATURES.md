@@ -2313,3 +2313,20 @@ disclosure to dive deeper.
   cascade + reorder, one-per-browser col-split, shim → Swift Inspect routing, and all chrome/verbs
   ported per the designs; audit-driven hardening included. Known limitation: a mid-run page-target
   swap can't re-resolve the frontend until the inspect is reopened.
+
+## [2026-09-06](docs/features/2026-09-06.md)
+
+- **PR state talks to GitHub directly — no `gh` binary dependency** — `PRService` now makes
+  one GraphQL call per branch to `api.github.com` instead of shelling out to the `gh` CLI;
+  auth comes from `git credential fill` (whatever git itself already has on file), `GH_TOKEN`/
+  `GITHUB_TOKEN`, or — last resort, closing a real SSH-only-auth gap found in testing —
+  `gh auth token` if `gh` happens to be present. Every read is scoped to one branch via
+  GraphQL's `headRefName` filter — asked by what `git worktree list` says is actually checked
+  out on disk, not the model's stored name — generalising the sweeper's anti-truncation fix to
+  every caller. Testing against real GitHub data caught and fixed a real bug before it shipped:
+  a REST-based first draft filtered by the wrong repo owner for cross-fork PRs; GraphQL's
+  `headRefName` filter doesn't have that problem. Also fixed: a `/tmp`-vs-`/private/tmp`
+  symlink bug in the new "what's actually checked out" lookup, and a thread-explosion risk in
+  the batch refresh (now bounded, 6 branches at a time). 28/28 checks green in a standalone
+  harness against real merged/open/draft/closed/cross-fork PRs. Known regression: only
+  `github.com` is recognised, not GitHub Enterprise.

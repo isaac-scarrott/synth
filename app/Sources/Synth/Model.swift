@@ -268,7 +268,7 @@ extension URL {
     /// Never persisted — a quit mid-create must not restore a half-made row.
     var isPending: Bool
     /// This branch's GitHub pull request, if any (PRService). Derived like session status,
-    /// not persisted: nil until the first `gh` read fills it, refreshed on activation.
+    /// not persisted: nil until the first read fills it, refreshed on activation.
     var pr: PRInfo?
     /// This branch's remembered pane layout (ADR-0014): the durable split it owns, restored on
     /// relaunch. nil = a single pane (no split to remember). Kept in step with the on-screen tree

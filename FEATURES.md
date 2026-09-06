@@ -2472,3 +2472,20 @@ disclosure to dive deeper.
   offers simulator sessions (inert without a full Xcode). Each flipped default's doc comment was
   rewritten rather than left arguing the opposite. `markdownOpen` is deleted end to end —
   `MarkdownOpener.swift` with it — and markdown opens in Synth.
+
+## [2026-09-07](docs/features/2026-09-07.md)
+
+- **0.41.0 ships — Usage, OpenCode 2, and Settings reorganised** — release carrying the eighteen
+  entries above: a Usage board over every agent's limits, OpenCode 2 as a fourth agent you can start
+  a session with, Settings without its "Experimental" drawer and with every project scope as a tab,
+  the browser's new Theme condition, PR badges that no longer need the `gh` binary, and the
+  de-yellowed champagne. The site entries are ledgered but not in the changelog — they change the
+  page, not the app. `CFBundleVersion` 708, tag `v0.41.0`; dmg + zip notarized separately, stapled,
+  verified credential-less with quarantine set (the app inside the image assesses on its own);
+  appcast newest 0.41.0 at 708, `edSignature` on all 18 enclosures, deltas from 641–663 at 1.4–1.6 MB
+  against a 164 MB full download. No `synth-site` push — the deployed page already matched `site/`.
+  Apple's notary service timed out at connect twice before this run; the guards held and nothing
+  shipped, and reaching the endpoint by hand (401 in 0.3s, `notarytool history` healthy) is what
+  proved it was Apple rather than our credentials. Backgrounding `release.sh` makes the harness
+  report the trailing `echo`'s exit status, so the script's own `RELEASE_EXIT` must be printed or a
+  failed release reads as a successful one.

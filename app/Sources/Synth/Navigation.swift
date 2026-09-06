@@ -25,6 +25,8 @@ enum NavID {
     static let settingsFoot = UUID(uuidString: "00000000-0000-0000-0000-0000000F0071")!
     /// `Restart to update`, which only exists while a build is waiting.
     static let updateFoot   = UUID(uuidString: "00000000-0000-0000-0000-0000000F0072")!
+    /// Usage sits above the tree rather than in the foot, but it is the same kind of target.
+    static let usageFoot    = UUID(uuidString: "00000000-0000-0000-0000-0000000F0073")!
 }
 
 extension AppStore {
@@ -75,10 +77,13 @@ extension AppStore {
     /// off the last leaf flows straight into them. The tree stays live in Settings too, so the
     /// same list drives both screens (working.html `activeRows`). `Restart to update` joins only
     /// while a build is waiting — the foot draws exactly the rows this walks.
+    /// Usage rides at the end with the foot buttons even though it is drawn above the tree:
+    /// putting it first would make it `rows.first`, and ⌘0 with nothing open would land the
+    /// cursor on a pane switch instead of on the project you came to navigate.
     var activeRows: [UUID] {
         visibleRows.map(\.id)
             + (stagedUpdate != nil ? [NavID.updateFoot] : [])
-            + [NavID.settingsFoot]
+            + [NavID.settingsFoot, NavID.usageFoot]
     }
 
     /// The waiting build stopped waiting while the cursor was on its button. Settings is the
@@ -277,6 +282,7 @@ extension AppStore {
         keyboardActive = true
         // The lit foot button toggles Settings; the tree is live on both screens.
         if navCursor == NavID.settingsFoot { toggleSettings(); return }
+        if navCursor == NavID.usageFoot { toggleUsage(); return }
         if navCursor == NavID.updateFoot { restartForUpdate(); return }
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
@@ -437,12 +443,12 @@ extension AppStore {
 
     /// ⌘W — close the current context through the same flow as `d` on a sidebar row:
     /// the focused sidebar row when the keyboard owns the sidebar, else the open session
-    /// (working.html contextRow → requestDelete). Inert in Settings, where an idle open
-    /// session would otherwise close invisibly behind the settings surface. Returns whether
+    /// (working.html contextRow → requestDelete). Inert in Settings and Usage, where an idle
+    /// open session would otherwise close invisibly behind a full-pane surface. Returns whether
     /// it closed anything, so ⌘W can fall through to the stock window-close when there isn't.
     @discardableResult
     func closeContext() -> Bool {
-        guard !settingsOpen else { return false }
+        guard !settingsOpen, !usageOpen else { return false }
         if keyboardActive, let ref = cursorRef { requestDelete(ref); return true }
         if let s = openSession { requestDelete(.session(s)); return true }
         return false

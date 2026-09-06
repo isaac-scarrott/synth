@@ -678,6 +678,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         didSet { AppStore.saveSettingsProject(settingsProjectID) }
     }
 
+    /// The Usage board — a second full-pane mode over the same shell, mutually exclusive with
+    /// Settings. Read-only and always a glance at *now*, so there is nothing worth restoring
+    /// across a launch.
+    var usageOpen = false
+
     /// A project's setup script is its DELTA — the extra lines that run AFTER the shared
     /// base (globalScript). Empty = pure inheritance. `wsSkipScript` is the rare opt-out:
     /// run only the project's lines, not the shared base. Design surface only, no runner yet.
@@ -1549,6 +1554,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     func open(_ session: Session) {
         settingsOpen = false   // jumping to a session leaves settings mode
+        usageOpen = false
         // …but it still remembers the project you jumped into, for the next Settings visit.
         if let br = branch(of: session), let ws = workspace(of: br) { retargetSettings(toWorkspace: ws.id) }
         // Take-me-to-it (002), branch-aware and sticky (014). A branch switch stashes the layout you
@@ -1587,6 +1593,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// checkout then lands as a quiet unread row instead (applySessionTemplate).
     func openWorktreeSetup(_ branch: Branch) {
         settingsOpen = false
+        usageOpen = false
         // The setup skeleton is a transient, branchless single pane — stash the branch we leave so
         // its remembered layout survives, and don't let the skeleton clobber any branch's entry (014).
         currentBranch?.layout = durableLayout
@@ -1616,6 +1623,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         sidebarCollapsed = false
         openSetupBranchID = nil   // leaving for settings revokes any armed setup-resolve
         if let project { settingsProjectID = project.id; settingsTab = .project }
+        usageOpen = false
         settingsOpen = true
         // The tree stays live; the keyboard cursor rests on the lit Settings foot button.
         navCursor = NavID.settingsFoot
@@ -1638,6 +1646,25 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
+
+    func enterUsage() {
+        activeMenu = nil
+        closePalette()
+        shortcutsOpen = false
+        sidebarCollapsed = false
+        openSetupBranchID = nil
+        settingsOpen = false
+        usageOpen = true
+        navCursor = NavID.usageFoot
+    }
+
+    func exitUsage() {
+        usageOpen = false
+        let visible = visibleRows.map(\.id)
+        navCursor = openSessionID.flatMap { visible.contains($0) ? $0 : nil } ?? NavID.usageFoot
+    }
+
+    func toggleUsage() { usageOpen ? exitUsage() : enterUsage() }
 
     /// Open the in-app changelog, clearing any surface that would sit under it (mirrors how
     /// the shortcuts sheet is raised).

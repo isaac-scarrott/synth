@@ -69,15 +69,18 @@
     --tap: 150ms;
     --enter: 1050ms;
 
-    /* A 4px grid. Every margin, pad and gap on the page is one of these, with one stated
-       exception: the segmented control below is built from 3px of inner padding and 2px
-       between segments, because a control that small has no room for a 4px step. */
+    /* A 4px grid: every margin, pad and gap is one of these, apart from two kinds of thing
+       it cannot describe. Hairlines and optical nudges are sub-pixel judgements, not spacing —
+       the 1px rule between chords, the 1px under a kbd, the -1px lift on the Apple glyph. And
+       the segmented control is built from 3px of inner padding and 2px between segments,
+       because a control that small has no room for a 4px step. */
     --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px;
     --s6: 32px; --s7: 40px; --s8: 56px; --s9: 80px;
 
-    /* The app's three radii. The one other value on the page is derived rather than chosen:
-       a segment inside the 10px control sits on 7px, which is the enclosing radius minus
-       its own 3px padding — the arithmetic that keeps two nested curves concentric. */
+    /* The app's three radii, plus one derived value used twice. 7px is the 10px control
+       minus its own 3px of padding, which is the arithmetic that keeps two nested curves
+       concentric; that is why a segment inside the tab control wears it. The brand mark wears
+       the same 7px at 24px, matching the app icon rather than deriving from anything here. */
     --r-surface: 14px; --r-control: 10px; --r-key: 6px;
 
     --gutter: clamp(20px, 5vw, 56px);

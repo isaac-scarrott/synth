@@ -568,13 +568,14 @@ struct RootView: View {
                 store.exitSettings(); return nil
             }
 
-            // [ / ] walk the Settings tabs (Synth ⇄ current project), matching working.html —
-            // a no-op when there's no project tab to switch to.
+            // [ / ] walk the Settings tabs, matching working.html's stepSettingsTab: General and
+            // then every project, wrapping. It steps the whole strip rather than flipping between
+            // two, because the strip stopped being two the moment every project got a tab of its
+            // own — a keyboard that could only reach the first project would leave the rest of
+            // them mouse-only.
             if store.settingsOpen, event.keyCode == 33 || event.keyCode == 30,
                event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
-                if store.settingsProject != nil {
-                    store.settingsTab = store.settingsTab == .app ? .project : .app
-                }
+                store.stepSettingsTab(event.keyCode == 30 ? 1 : -1)
                 return nil
             }
 

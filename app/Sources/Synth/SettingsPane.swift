@@ -61,7 +61,10 @@ struct SettingsPane: View {
     /// and a second one beside it read as a stutter.
     private var tabStrip: some View {
         HStack(spacing: 3) {
-            SetTab(label: "General", on: tab == .app) { store.settingsTab = .app }
+            // With no projects there is no project tab to be on, so General is lit whatever the
+            // stored tab says — the pane is already showing it (working.html normalises the same
+            // case by pushing setTab back to 'app').
+            SetTab(label: "General", on: tab == .app || project == nil) { store.settingsTab = .app }
             ForEach(store.workspaces) { ws in
                 SetTab(label: ws.name, workspace: ws, on: tab == .project && project?.id == ws.id) {
                     store.settingsProjectID = ws.id
@@ -353,9 +356,12 @@ private struct SetTab: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let workspace { WsChip(workspace: workspace, size: 14) }
-                Text(label).lineLimit(1)
+                Text(label).lineLimit(1).truncationMode(.tail)
             }
             .tabShell(isActive: on, hovering: hovering)
+            // The same bounds a session tab keeps: a project named at length would otherwise
+            // push the rest of the strip out of the head rather than ellipsising.
+            .frame(minWidth: 34, maxWidth: 200)
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -1032,8 +1038,8 @@ private struct SharedSessionRow: View {
             TplIndex(i: index)
             TplKindIcon(kind: entry.kind, off: off)
             Text(entry.name)
-                .font(.sans(13, 500))
-                .foregroundStyle(off ? Theme.inkFaint : Theme.inkMuted)
+                .font(.sans(13, opens ? 600 : 500))
+                .foregroundStyle(off ? Theme.inkFaint : (opens ? Theme.inkOpen : Theme.inkMuted))
                 .strikethrough(off, color: Theme.inkFaint)
                 .lineLimit(1).padding(.horizontal, 5)
             if off { TplOffPill(missing: entry.kind.isMissingAgent) }
@@ -1046,7 +1052,10 @@ private struct SharedSessionRow: View {
         }
         .padding(.horizontal, 9)
         .frame(height: TplMetrics.rowHeight)
-        .background(TplRowShell(opens: opens, fill: Theme.rowHover, stroke: Theme.border.opacity(0.6)))
+        // No shadow: an inherited row is not lifted off the card the way an editable one is
+        // (working.html `.tpl-list--ro .tpl-row`), and the shared shell defaults to one.
+        .background(TplRowShell(opens: opens, fill: Theme.rowHover,
+                                stroke: Theme.border.opacity(0.6), shadow: 0))
     }
 }
 
@@ -1172,7 +1181,7 @@ private struct TplRow: View {
             grip
             TplIndex(i: displayIndex)
             TplKindIcon(kind: entry.kind, off: off)
-            TplNameField(text: nameBinding, off: off)
+            TplNameField(text: nameBinding, off: off, opens: opens)
             if off { TplOffPill(missing: entry.kind.isMissingAgent) }
             removeButton
         }
@@ -1250,12 +1259,15 @@ private struct TplNameField: View {
     @Binding var text: String
     /// A skipped entry stays editable — the template is a wish list you keep between flips.
     var off: Bool = false
+    /// The entry that opens the worktree. With the tag gone, the row's fill and this weight are
+    /// the whole of what says so (working.html `.tpl-row--first .tpl-name`).
+    var opens: Bool = false
     @State private var hovering = false
     @FocusState private var focused: Bool
     var body: some View {
         TextField("", text: $text)
-            .textFieldStyle(.plain).font(.sans(13, 500))
-            .foregroundStyle(off ? Theme.inkFaint : Theme.ink)
+            .textFieldStyle(.plain).font(.sans(13, opens ? 600 : 500))
+            .foregroundStyle(off ? Theme.inkFaint : (opens ? Theme.inkOpen : Theme.ink))
             .frame(maxWidth: .infinity)
             .focused($focused)
             .padding(.horizontal, 5).padding(.vertical, 2)
@@ -1629,8 +1641,6 @@ private struct ArcPolicy: View {
 /// tags — a second implementation would drift on the raised state within a release.
 private enum SegWidth {
     static let three: CGFloat = 216
-    /// Four options in the width built for three wraps every label onto two lines.
-    static let four: CGFloat = 272
     static let five: CGFloat = 330
 }
 

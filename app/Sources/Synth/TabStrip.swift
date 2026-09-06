@@ -228,7 +228,9 @@ private struct TabChip: View {
         .frame(minWidth: 34, maxWidth: 200)
         .frame(height: 28)
         // Copper ring + wash when a dragged tab is about to pair into a split with this one (012).
-        .overlay {
+        // Behind the content, where it was when it lived in the chip's own shell: as an overlay
+        // the wash paints over the icon and title it is meant to sit under.
+        .background {
             if store.pairTargetID == session.id {
                 let shape = RoundedRectangle(cornerRadius: 8)
                 shape.fill(Theme.accent.opacity(0.12))

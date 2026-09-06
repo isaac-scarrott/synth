@@ -1623,6 +1623,25 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         settingsProjectID = id
     }
 
+    /// Walk the Settings strip by one, wrapping: General, then every project in tree order
+    /// (working.html `stepSettingsTab`). Selecting a project sets the scope as well as the tab,
+    /// exactly as clicking its tab does — the two must not be able to disagree.
+    func stepSettingsTab(_ direction: Int) {
+        guard !workspaces.isEmpty else { settingsTab = .app; return }
+        let current = settingsTab == .app
+            ? 0
+            : (settingsProject.flatMap { ws in workspaces.firstIndex(where: { $0.id == ws.id }) }
+                .map { $0 + 1 } ?? 0)
+        let count = workspaces.count + 1
+        let next = (current + direction + count) % count
+        if next == 0 {
+            settingsTab = .app
+        } else {
+            settingsProjectID = workspaces[next - 1].id
+            settingsTab = .project
+        }
+    }
+
     func toggleSettings() { settingsOpen ? exitSettings() : enterSettings() }
 
     /// Open the in-app changelog, clearing any surface that would sit under it (mirrors how
@@ -3536,7 +3555,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                   respond: @escaping ([String: Any]) -> Void) -> AgentPromptStart {
         guard mcpAppEnabled else {
             return .immediate(["ok": false, "error":
-                "the Synth app MCP server is turned off — enable it in Synth Settings → Integrations"])
+                "the Worktrees MCP server is turned off — enable it in Synth Settings → Integrations"])
         }
         guard let worktreePath = request["worktreePath"] as? String,
               let callerBranch = branch(forWorktreePath: worktreePath),

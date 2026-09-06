@@ -179,7 +179,7 @@
   @media (max-width: 900px) { .nav .wrap { justify-content: space-between; } }
 
   /* ───────────────────────── hero ───────────────────────── */
-  .hero { padding-top: calc(var(--band) + var(--s4)); text-align: center; }
+  .hero { padding-top: calc(var(--band) + var(--s4)); padding-bottom: var(--band); text-align: center; }
   .hero h1 {
     width: var(--hcol);
     margin: var(--s5) calc((var(--col) - var(--hcol)) / 2) 0;
@@ -199,14 +199,23 @@
      headline wrap and set the hero left, where a ragged edge belongs. Declared after the rules
      it overrides — a media query adds no specificity, so an earlier block loses on source order,
      which is how the sub kept its auto margins and sat centred under a flush-left headline. */
-  @media (max-width: 880px) {
-    .hero { text-align: left; }
+  /* Two separate questions, and they were being answered at one breakpoint. Whether the line
+     can be held is arithmetic: at 44px it needs a 1144px measure, so below 1256px the divisor
+     drives the headline under its own h2 — at 881px it computed to 30.5px, smaller than it is
+     on a phone, because at the breakpoint --hcol and --col are the same and the wider measure
+     buys nothing. Whether the hero goes left is a judgement about ragged edges, and that one
+     belongs at 880. Wrapped, the headline holds 44px, which is exactly what the one-line rule
+     reaches at 1256 — so the size is continuous across both breakpoints. */
+  @media (max-width: 1255px) {
     .hero h1 {
       width: auto; margin-inline: 0;
       font-size: clamp(2.25rem, 7.4vw, 2.75rem);
     }
     .hero h1 span { display: inline; white-space: normal; }
     .hero h1 .dim::before { content: " "; }
+  }
+  @media (max-width: 880px) {
+    .hero { text-align: left; }
     .hero__sub { margin-inline: 0; }
   }
 
@@ -217,7 +226,7 @@
           border: 1px solid var(--line); background: var(--panel);
           box-shadow: 0 2px 4px rgba(0,0,0,0.3), 0 40px 90px rgba(0,0,0,0.62); }
   .shot img { display: block; width: 100%; height: auto; }
-  .shot--panel { max-width: 760px; margin-inline: auto; }
+  @media (min-width: 1000px) { .shot--panel { max-width: 760px; margin-inline: auto; } }
 
   .glow { position: relative; }
   .glow::before {
@@ -225,9 +234,6 @@
     background: radial-gradient(58% 62% at 50% 0%, rgba(var(--accent-rgb), 0.075), transparent 72%);
   }
   .glow > * { position: relative; z-index: 1; }
-  .app .badge--err { background: rgba(192,57,43,0.11); color: #a2241a; box-shadow: 0 0 0 1px rgba(192,57,43,0.26); }
-  .app .dot--idle { background: #a6a8b0; }
-  .app .sphere { box-shadow: 0 0 7px rgba(76,29,149,0.4); }
 
   /* the indicator grammar: two glyphs demand a person, everything else is a quiet dot */
   .dot { width: 6px; height: 6px; border-radius: 50%; }
@@ -237,7 +243,6 @@
   .badge { width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font: 600 10px var(--font); letter-spacing: 0; }
   .badge--ask { background: rgba(var(--input-rgb), 0.2); color: var(--input); box-shadow: 0 0 0 1px rgba(var(--input-rgb), 0.34); }
   .badge--err { background: rgba(255,138,128,0.16); color: var(--error); box-shadow: 0 0 0 1px rgba(255,138,128,0.3); }
-  @keyframes blink { 50% { opacity: 0; } }
 
   /* ───────────────────────── agent marks ───────────────────────── */
   .marks { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--hair); border-radius: var(--r-control); overflow: hidden; }
@@ -255,14 +260,13 @@
   /* ───────────────────────── section heads ───────────────────────── */
   .head { text-align: center; margin-inline: auto; max-width: 46ch; }
   /* the marks are evidence for the lede above them, not a block of their own */
-  .stack:has(> .marks) { margin-top: var(--s7); }
-  .head .lede { margin-top: var(--s4); max-width: 58ch; margin-inline: auto; }
+  .stack:has(> .marks) { margin-top: calc(var(--band) - var(--s5)); }
+  .head .lede { margin-top: var(--s4); }
   /* The intros go left with the hero. A centred six-line paragraph on a 350px column is ragged
      on both edges, and it sits directly above cells that are already left-aligned. Declared
      after the rules it overrides, for the source-order reason given at the hero. */
   @media (max-width: 880px) {
     .head { text-align: left; margin-inline: 0; }
-    .head .lede { margin-inline: 0; }
   }
 
   /* A capture wants the whole column: at half width the app's own 14px type falls under
@@ -270,21 +274,19 @@
      evidence first, then what it is evidence of, in two columns so the block stays short. */
   .say { margin-top: var(--s6); display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3) var(--s8); }
   .say h3 { grid-column: 1 / -1; }
-  .say .lede + .lede { margin-top: 0; }
   @media (max-width: 880px) { .say { grid-template-columns: 1fr; gap: var(--s4); } }
 
   .split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s9) var(--s8); align-items: center; }
-  .split--rev .split__fig { order: -1; }
-  .split h3 + .lede { margin-top: var(--s3); }
   .split h2 + .lede { margin-top: var(--s4); }
   .split .lede + .lede { margin-top: var(--s4); }
-  @media (max-width: 880px) { .split { grid-template-columns: 1fr; gap: var(--s7); } .split--rev .split__fig { order: 0; } }
+  @media (max-width: 880px) { .split { grid-template-columns: 1fr; gap: var(--s7); } }
 
   /* ───────────────────────── tabs ─────────────────────────
      Every panel sits in the same grid cell, so the block is as tall as the tallest of
      them and switching never moves the page under you. Inactive panels stay in the flow
      (that is what holds the height) and are taken out of the tab order with `inert`. */
   .tabs__bar { display: flex; justify-content: center; }
+  @media (max-width: 880px) { .tabs__bar { justify-content: flex-start; } }
   .tabs__list {
     display: inline-flex; gap: 2px; padding: 3px;
     border: 1px solid var(--hair-2); border-radius: var(--r-control);
@@ -308,7 +310,6 @@
   }
   .tabs__panel[data-on] { opacity: 1; visibility: visible; transform: none; }
   @media (prefers-reduced-motion: reduce) { .tabs__panel { transition: none; } }
-  @keyframes tap { 0%, 62% { transform: scale(0.35); opacity: 0; } 72% { opacity: 0.9; } 100% { transform: scale(1.25); opacity: 0; } }
 
   /* bordered cells, in the lattice's own hairline */
   .cells { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--hair); }
@@ -343,8 +344,6 @@
   .foot__links a { transition: color var(--tap) var(--ease); }
   .foot__links a:hover { color: var(--ink-2); }
 
-  .colhead { margin-top: var(--s4); }
-  .card__ind--dot .dot { background: var(--ink-faint); }
   .brand--foot { font-size: 14px; color: var(--ink-3); }
   .brand--foot img { width: 20px; height: 20px; }
 
@@ -424,9 +423,12 @@
 
     <div class="hero__stage rev" data-d="3">
       <figure class="shot">
-        <img src="img/hero@2x.webp" width="2360" height="1320" alt="Synth with three projects in the
-             sidebar and a Claude Code session open, stopped on a question about the page's accent colour."
-             fetchpriority="high" decoding="async">
+        <picture>
+          <source srcset="img/hero-dark@2x.webp" media="(prefers-color-scheme: dark)">
+          <img src="img/hero@2x.webp" width="2360" height="1320" alt="Synth with three projects in the
+               sidebar and a Claude Code session open, stopped on a question about the page's accent colour."
+               fetchpriority="high" decoding="async">
+        </picture>
       </figure>
     </div>
   </section>
@@ -533,8 +535,11 @@
           </div>
         </div>
         <figure class="shot rev" data-d="1">
+          <picture>
+          <source srcset="img/attention-deck-dark@2x.webp" media="(prefers-color-scheme: dark)">
           <img src="img/attention-deck@2x.webp" width="900" height="1016" loading="lazy" decoding="async"
-               alt="Synth's sidebar: three projects, each branch carrying the state of what is inside it, and a notification card for the session that has stopped to ask something.">
+          alt="Synth's sidebar: three projects, each branch carrying the state of what is inside it, and a notification card for the session that has stopped to ask something.">
+          </picture>
         </figure>
       </div>
     </div>
@@ -586,8 +591,11 @@
         <div class="tabs__panels">
           <div class="tabs__panel" id="panel-browser" role="tabpanel" aria-labelledby="tab-browser" data-on>
             <figure class="shot rev">
-              <img src="img/browser-dark@2x.webp" width="2360" height="1560" loading="lazy" decoding="async"
-                   alt="Synth's browser pane showing this landing page, with two comments pinned on it and the send bar ready to hand them to an agent.">
+              <picture>
+              <source srcset="img/browser-dark@2x.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/browser@2x.webp" width="2360" height="1560" loading="lazy" decoding="async"
+              alt="Synth's browser pane showing this landing page, with two comments pinned on it and the send bar ready to hand them to an agent.">
+              </picture>
             </figure>
             <div class="say">
               <h3>A real browser you can both use</h3>
@@ -606,8 +614,11 @@
 
           <div class="tabs__panel" id="panel-sim" role="tabpanel" aria-labelledby="tab-sim" inert>
             <figure class="shot rev">
-              <img src="img/simulator-dark@2x.webp" width="2360" height="1520" loading="lazy" decoding="async"
-                   alt="Synth's simulator pane showing this landing page's mobile layout on a booted iPhone 16 Pro.">
+              <picture>
+              <source srcset="img/simulator-dark@2x.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/simulator@2x.webp" width="2360" height="1520" loading="lazy" decoding="async"
+              alt="Synth's simulator pane showing this landing page's mobile layout on a booted iPhone 16 Pro.">
+              </picture>
             </figure>
             <div class="say">
               <h3>A real iPhone, not a preview</h3>
@@ -626,8 +637,11 @@
 
           <div class="tabs__panel" id="panel-handoff" role="tabpanel" aria-labelledby="tab-handoff" inert>
             <figure class="shot shot--panel rev">
-              <img src="img/approval-dark@2x.webp" width="1215" height="353" loading="lazy" decoding="async"
-                   alt="Synth's command menu asking whether to create the branch an agent has requested.">
+              <picture>
+              <source srcset="img/approval-dark@2x.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/approval@2x.webp" width="1215" height="353" loading="lazy" decoding="async"
+              alt="Synth's command menu asking whether to create the branch an agent has requested.">
+              </picture>
             </figure>
             <div class="say">
               <h3>You approve it. You don't brief it.</h3>
@@ -652,7 +666,7 @@
     <div class="wrap">
       <div class="split">
         <div>
-          <h2 class="rev colhead">Looking should cost nothing.</h2>
+          <h2 class="rev">Looking should cost nothing.</h2>
           <p class="lede rev" data-d="1">
             The terminal is libghostty, drawn on the GPU. The application is Swift, not Electron.
             <kbd>⌘K</kbd>, then <kbd>⌘T</kbd>, then <kbd>⌘1</kbd>, one after another, and it keeps up.

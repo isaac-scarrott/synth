@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.41.0",
+    "date": "2026-09-06",
+    "changes": [
+      "Usage is a board above the project tree: one band per hosted agent, one tile per number that agent's own account genuinely reports. Tile size never ranks the agents — real rolling-window percentages and plain token totals get the same frame — and a metric with no ceiling simply has no meter. The meter falls rather than fills, because what you want to know is the headroom left.",
+      "OpenCode 2 joins as Synth's fourth hosted agent, alongside Claude Code, OpenCode and Antigravity. Its preview CLI splits the server out of the TUI and puts every route behind auth, so Synth runs both halves as one session and registers its MCP servers directly.",
+      "Settings is reorganised. The \"Experimental\" drawer is gone — Tabs and Simulator sessions weren't experimental, just off by default — so every row moves to where you'd look for it, nine App sections become seven, and \"MCP servers\" becomes Integrations. Each scope is a tab like any other, so every project has one, not only the one the sidebar last had open, and the session template is a list you add a row to.",
+      "New defaults out of the box: sessions show as tabs, all three notification sounds ship silent, and simulator sessions are offered. Markdown opens in Synth, full stop — the setting that asked is gone.",
+      "The browser's conditions bar gains Theme, a fourth axis. Normal means the page follows Synth's own theme (System still means the raw OS decides), and Light/Dark force it either way, isolated to that one browser.",
+      "PR badges no longer need the gh CLI installed. Synth asks GitHub directly, using whatever credentials git itself already has on file.",
+      "The champagne accent loses its yellow, and everything derived from it — the update wash, the halo's tint — follows the same shift rather than being re-picked."
+    ]
+  },
+  {
     "version": "0.40.0",
     "date": "2026-09-04",
     "changes": [

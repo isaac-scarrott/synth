@@ -748,6 +748,74 @@ enum GitService {
         return status == 0 && !email.isEmpty ? email : nil
     }
 
+    /// A remote's URL, or nil when it isn't configured. Any worktree of a repo can answer
+    /// this — remotes live in the shared repo config, not per-checkout.
+    static func remoteURL(_ name: String = "origin", at url: URL) -> String? {
+        let (status, out) = runChecked(["-C", url.path, "remote", "get-url", name])
+        let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return status == 0 && !trimmed.isEmpty ? trimmed : nil
+    }
+
+    /// The branch actually checked out at `worktree` right now, straight from `worktree
+    /// list` — not whatever the model last recorded, so a `git checkout` run by hand inside
+    /// the folder doesn't leave callers (PRService) reading a stale branch name. Nil when
+    /// detached, or when `worktree` isn't a registered checkout of its repo.
+    static func checkedOutBranch(at worktree: URL) -> String? {
+        // Resolved, not just `.standardized`: git registers a worktree's canonical path (it
+        // resolves symlinks the same way `--show-toplevel` does for `repositoryRoot`), and a
+        // caller's path is very often not canonical yet — `/tmp` is `/private/tmp`, and a
+        // user's home can sit behind an iCloud or network-mount symlink. `.standardized` alone
+        // cleans up `.`/`..` and redundant slashes but never resolves a symlink, so an exact
+        // string compare against it silently finds nothing and every caller reads "detached".
+        let path = worktree.resolvingSymlinksInPath().path
+        return worktrees(at: worktree).first { $0.path.resolvingSymlinksInPath().path == path }?.branch
+    }
+
+    /// Whatever git itself would hand `push`/`fetch` for `host` — the same credential
+    /// store (Keychain via osxkeychain, Git Credential Manager, `gh`'s own credential
+    /// helper if that's what's configured, or a plaintext store), asked the same way any
+    /// other git-aware tool would ask. Terminal prompts are disabled and the process is
+    /// killed after a few seconds: a host with nothing cached must fail quiet, never block
+    /// waiting on stdin that nothing will ever write.
+    static func credential(protocol proto: String, host: String) -> (username: String, password: String)? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["credential", "fill"]
+        process.environment = ProcessInfo.processInfo.environment.merging(
+            ["GIT_TERMINAL_PROMPT": "0"]) { _, new in new }
+        let stdin = Pipe()
+        let stdout = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            stdin.fileHandleForWriting.write(Data("protocol=\(proto)\nhost=\(host)\n\n".utf8))
+            try? stdin.fileHandleForWriting.close()
+            let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: killer)
+            let data = stdout.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            killer.cancel()
+            guard process.terminationStatus == 0, let text = String(data: data, encoding: .utf8)
+            else { return nil }
+            var username: String?
+            var password: String?
+            for line in text.split(separator: "\n") {
+                guard let eq = line.firstIndex(of: "=") else { continue }
+                switch line[line.startIndex..<eq] {
+                case "username": username = String(line[line.index(after: eq)...])
+                case "password": password = String(line[line.index(after: eq)...])
+                default: break
+                }
+            }
+            guard let u = username, let p = password else { return nil }
+            return (u, p)
+        } catch {
+            return nil
+        }
+    }
+
     /// `timeout` nil means wait forever, which is right for the interactive paths — a
     /// checkout the user is watching should finish, not get cut off. The sweeper always
     /// passes one: it runs unattended on a repeating tick, and `readDataToEndOfFile` blocks

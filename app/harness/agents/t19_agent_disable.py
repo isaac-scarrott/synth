@@ -96,7 +96,7 @@ def rows(frame):
     return frame.get("items", []), f"{frame.get('crumb') or 'root'}: {frame.get('items')}"
 
 
-AGENT_ROWS = ("New Claude Code", "New OpenCode", "New Antigravity")
+AGENT_ROWS = ("New Claude Code", "New OpenCode", "New OpenCode 2", "New Antigravity")
 
 # --- Part 1: the offer ------------------------------------------------------------------------
 kill_all()
@@ -122,7 +122,7 @@ check("3. the branch frame's session creates drop it too",
 p.terminate(); time.sleep(1)
 
 p, sock = launch(sd, f"{H}/t19c.log",
-                 extra_args=agents_off("claudeCode", "opencode", "antigravity"))
+                 extra_args=agents_off("claudeCode", "opencode", "opencode2", "antigravity"))
 ctl = Ctl(sock, repo)
 items, why = rows(palette(ctl))
 check("4. every agent off is allowed: no agent rows, terminal and browser stay",

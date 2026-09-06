@@ -149,7 +149,7 @@ enum MarkdownSession {
                 "fg": "#E6E8ED",        // Theme.ink
                 "muted": "#8D9099",     // Theme.inkMuted
                 "faint": "#666A72",     // Theme.inkFaint
-                "accent": "#EEE0CD",    // Theme.accent — the icon's champagne mark
+                "accent": "#F1DDD7",    // Theme.accent — the icon's champagne mark
                 "heading": "#F2F4F8",
                 "link": "#8AB4F8",
                 "code": "#D8DEE9",

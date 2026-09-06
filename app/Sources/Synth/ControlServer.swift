@@ -989,6 +989,50 @@ final class ControlServer: @unchecked Sendable {
                     "activeIndex": pal.activeIndex,
                     "menuOpen": store.activeMenu != nil]
 
+        // Pin the window to a chosen size. `Automation.park` clears `frameAutosaveName` so a
+        // driven window comes up at whatever SwiftUI's natural size happens to be — which no
+        // caller can predict and every caller inherits. A gate reading JSON never notices; the
+        // landing page's screenshots do, because a figure's frame is a design decision and a
+        // capture cannot be cropped back into one after the fact.
+        case "automation.windowSize" where automation:
+            guard let w = request["w"] as? Double, let h = request["h"] as? Double else {
+                return ["ok": false, "error": "need w + h"]
+            }
+            // The app's own window, never a floating panel — the same distinction
+            // `automation.screenshot` draws below, and for the same reason.
+            guard let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) else {
+                return ["ok": false, "error": "no visible main window"]
+            }
+            window.setContentSize(NSSize(width: w, height: h))
+            let size = window.contentView?.bounds.size ?? .zero
+            // The window server addresses a window by number, and a caller that photographs this
+            // one through `screencapture -l` needs it. It comes back from here rather than from a
+            // verb of its own because the window a capture wants is the window it just sized.
+            return ["ok": true, "w": Double(size.width), "h": Double(size.height),
+                    "windowNumber": window.windowNumber]
+
+        // Every window the app has on screen, each with the window server's id for it. A real
+        // screen capture addresses a window by number, and `automation.windowSize` can only
+        // answer for the window it sized — so the ⌘K palette, which floats in a panel of its
+        // own above that window, would otherwise be the one frame nothing can photograph.
+        case "automation.windows" where automation:
+            return ["ok": true, "windows": NSApp.windows.filter(\.isVisible).map { w in
+                ["windowNumber": w.windowNumber, "panel": w is NSPanel,
+                 "w": Double(w.frame.width), "h": Double(w.frame.height)]
+            }]
+
+        // Bring the app forward. Only a visible run has any use for this — the window server
+        // composites what is on a display, and a window sitting behind another may hand a
+        // capture a stale frame or none at all. A parked run must never take focus from whoever
+        // is at the keyboard, so this refuses unless the run was launched to be seen.
+        case "automation.front" where automation:
+            guard Automation.isVisible else {
+                return ["ok": false, "error": "this run is parked — it may not take the screen"]
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first { $0.isVisible && !($0 is NSPanel) }?.makeKeyAndOrderFront(nil)
+            return ["ok": true, "active": NSApp.isActive]
+
         // A window-server-free screenshot: the app caches its own key window's content
         // view into a PNG at `path` — the visual evidence path where TCC denies
         // screencapture window access entirely.

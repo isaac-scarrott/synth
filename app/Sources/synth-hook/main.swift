@@ -68,6 +68,9 @@ case AgentIDRaw.claudeCode, "claude":
 case AgentIDRaw.opencode:
     runOpencodeLaunch(binary: invokedName, agentID: hosted?.id ?? AgentIDRaw.opencode,
                       userArgs: Array(CommandLine.arguments.dropFirst()))
+case AgentIDRaw.opencode2:
+    runOpencode2Launch(binary: invokedName, agentID: hosted?.id ?? AgentIDRaw.opencode2,
+                       userArgs: Array(CommandLine.arguments.dropFirst()))
 case AgentIDRaw.antigravity, "agy":
     runAgyLaunch(binary: invokedName, agentID: hosted?.id ?? AgentIDRaw.antigravity,
                  userArgs: Array(CommandLine.arguments.dropFirst()))
@@ -262,6 +265,153 @@ func mergeOpencodeMCPConfig() {
     setenv("OPENCODE_CONFIG_CONTENT", merged, 1)
 }
 
+/// opencode2 (OpenCode's v2 preview CLI) split its TUI from its server. There is no bare `--port`
+/// to hand the visible process the way v1 takes one — v2's server only listens where told under
+/// `serve`, and a client attaches to one over `--server <url>`. So the shim itself becomes a tiny
+/// two-process supervisor for the run of one row:
+///
+///   1. start `opencode2 serve --port <assigned> --hostname 127.0.0.1` in the background, with
+///      `OPENCODE_PASSWORD` pinned to the value `Opencode2Supervisor` minted (rather than letting
+///      the server generate and print its own — pinning it is what lets this shim skip racing a
+///      stdout read, confirmed to suppress the printed line entirely and still authenticate).
+///   2. block until it actually answers `/api/health` — verified empirically that `--server` does
+///      not retry a server that isn't listening yet; it dies immediately with "could not reach
+///      server", so starting the TUI before this returns true is a coin flip on every launch, not
+///      an occasional glitch.
+///   3. register Synth's bundled MCP servers into it over `PUT /api/mcp/<name>` — the one part of
+///      v1's approach that does NOT carry over as-is: `OPENCODE_CONFIG_CONTENT` is a real env var
+///      v2 does read, but its MCP subsystem initialises lazily, ~10-30s after `/api/health`
+///      already answers — too slow for a fresh row's first turn, which can start well inside that
+///      window. `PUT` to the same endpoint registers one immediately and deterministically instead.
+///   4. start the visible TUI as `opencode2 --server http://127.0.0.1:<port>`, and report its exit
+///      as the row's own (`spawnReportingExit`'s `cleanup` tears the server down alongside it) —
+///      so from the app's side this still looks like the one-process-per-row v1 is.
+func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> Never {
+    guard let real = resolveAgentBinary(binary) else {
+        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
+        exit(127)
+    }
+    let leading = aliasArgs(binary)
+
+    // Only the bare TUI is a session. Every real subcommand — including `serve` itself, in case
+    // someone types it directly inside a Synth terminal — passes through untouched. Every entry
+    // here (and `uninstall`'s deliberate absence) is checked against the installed binary itself,
+    // not copied from v1's own list: `attach` is real for v1 (`opencode attach <url>`) but not for
+    // v2 — carrying it over here was exactly the same unverified-copy mistake `uninstall` was.
+    let subcommands: Set<String> = ["run", "serve", "acp", "api", "debug", "console",
+                                    "auth", "mcp", "plugin", "models", "stats", "export", "import",
+                                    "mini", "service", "pair", "upgrade", "update"]
+    // Global flags that print something and don't open a row's own agent session — `--help`/`-h`
+    // included, since typing it would otherwise spawn `serve`, wait on its health, and PUT the MCP
+    // servers in just to print usage and quit. `--wizard` walks an interactive prompt to build a
+    // command line rather than being one itself (confirmed live: it can end by running the command
+    // it built, including the bare TUI) — kept out of instrumentation for the same reason as the
+    // others, a CLI-authoring flow, not this row's own conversation.
+    let isOneShot = hasFlag(userArgs, ["--version", "-v", "--help", "-h", "--completions", "--wizard"])
+    let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
+    let port = env["SYNTH_OPENCODE2_PORT"].flatMap { $0.isEmpty ? nil : $0 }
+    let password = env["SYNTH_OPENCODE2_PASSWORD"].flatMap { $0.isEmpty ? nil : $0 }
+    let instrument = env["SYNTH_SESSION_ID"] != nil && !isOneShot && !isSubcommand
+                      && port != nil && password != nil
+
+    guard instrument, let port, let password else { execReal(real, withLeading(leading, userArgs)) }
+
+    // A user's own `--server`/`--standalone` wins — they have already pointed the TUI somewhere
+    // themselves (or opted out of a shared server entirely), the same rule v1 applies to a
+    // user-supplied `--port`.
+    guard !hasFlag(userArgs, ["--server", "--standalone"])
+    else { execReal(real, withLeading(leading, userArgs)) }
+
+    // Ignored here, before `serve` exists, not just before the foreground TUI: `posix_spawn`
+    // without `POSIX_SPAWN_SETSIGDEF` has a child inherit the parent's *disposition*, so setting
+    // this first is what keeps a stray SIGINT/SIGQUIT reaching the row's whole process group (a
+    // ctrl-C the TUI's own raw-mode input loop doesn't absorb, say) from taking `serve` down
+    // under a session the user only meant to interrupt. `spawnReportingExit` sets the same pair
+    // again for the shim's own remaining lifetime — redundant, not conflicting.
+    signal(SIGINT, SIG_IGN)
+    signal(SIGQUIT, SIG_IGN)
+
+    setenv("OPENCODE_PASSWORD", password, 1)
+    guard let servePid = spawnDetached(real, ["serve", "--port", port, "--hostname", "127.0.0.1"])
+    else {
+        FileHandle.standardError.write(Data("synth: opencode2 serve failed to start\n".utf8))
+        exit(126)
+    }
+    guard waitForOpencode2Health(port: port, password: password, timeout: 10) else {
+        kill(servePid, SIGTERM)
+        FileHandle.standardError.write(Data("synth: opencode2 serve never became ready\n".utf8))
+        exit(126)
+    }
+    registerOpencode2MCPServers(port: port, password: password)
+
+    reportAgent("agent-start:\(agentID)")
+    let serverArgs = ["--server", "http://127.0.0.1:\(port)"] + withLeading(leading, userArgs)
+    spawnReportingExit(real, serverArgs, agent: agentID, cleanup: { kill(servePid, SIGTERM) })
+}
+
+/// Start a child without waiting for it — `serve` outlives the shim's own wait on the visible TUI,
+/// so it cannot go through `spawnReportingExit`, which blocks until its child exits.
+func spawnDetached(_ path: String, _ args: [String]) -> pid_t? {
+    let argv = ([path] + args).map { strdup($0) } + [nil]
+    var pid: pid_t = 0
+    let rc = posix_spawn(&pid, path, nil, nil, argv, environ)
+    return rc == 0 ? pid : nil
+}
+
+/// Block until opencode2's freshly-spawned `serve` actually answers `/api/health`, or `timeout`
+/// elapses. Shelling to `curl` rather than hand-rolling an HTTP client: this runs once per launch,
+/// not on a hot path, and every mac already carries `curl`.
+func waitForOpencode2Health(port: String, password: String, timeout: TimeInterval) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if curlSucceeds(["-sS", "-o", "/dev/null", "-m", "2", "-u", "opencode:\(password)",
+                         "http://127.0.0.1:\(port)/api/health"]) {
+            return true
+        }
+        usleep(150_000)
+    }
+    return false
+}
+
+/// Register Synth's bundled MCP servers into a freshly-started opencode2 server over its own
+/// dynamic-registration API. Reuses `SYNTH_MCP_OPENCODE`'s payload rather than adding a second env
+/// var: v1 and v2 want the same three fields for a local server (`type`, `command`, `environment`)
+/// — v2's schema just rejects the `enabled` key v1's shape carries (`additionalProperties: false`
+/// on `Mcp.LocalConfigEncoded`), and `MCPInstaller` only ever emits already-enabled servers, so
+/// dropping the key on the way through changes nothing.
+func registerOpencode2MCPServers(port: String, password: String) {
+    guard let raw = env["SYNTH_MCP_OPENCODE"], !raw.isEmpty,
+          let root = parseJSONObject(raw), let servers = root["mcp"] as? [String: Any] else { return }
+    for (name, entryAny) in servers {
+        guard let entry = entryAny as? [String: Any],
+              let type = entry["type"], let command = entry["command"], let environment = entry["environment"]
+        else { continue }
+        let config: [String: Any] = ["type": type, "command": command, "environment": environment]
+        guard let data = try? JSONSerialization.data(withJSONObject: ["config": config]),
+              let body = String(data: data, encoding: .utf8) else { continue }
+        _ = curlSucceeds(["-sS", "-o", "/dev/null", "-m", "3", "-u", "opencode:\(password)",
+                          "-X", "PUT", "-H", "Content-Type: application/json", "--data", body,
+                          "http://127.0.0.1:\(port)/api/mcp/\(name)"])
+    }
+}
+
+/// Run `curl` with `args`, true on a zero exit. No output is ever needed from these calls — only
+/// whether the server accepted the request.
+func curlSucceeds(_ args: [String]) -> Bool {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+    proc.arguments = args
+    proc.standardOutput = FileHandle.nullDevice
+    proc.standardError = FileHandle.nullDevice
+    do {
+        try proc.run()
+        proc.waitUntilExit()
+        return proc.terminationStatus == 0
+    } catch {
+        return false
+    }
+}
+
 /// agy (Antigravity CLI) is hook-driven like Claude Code, but it has no `--settings`: hooks are
 /// only ever read from `<workspace>/.agents/hooks.json`. Writing that into the user's repo would
 /// leave our instrumentation behind on disk, so the shim instead hands agy a Synth-owned dir
@@ -361,6 +511,7 @@ func hasFlag(_ args: [String], _ names: [String]) -> Bool {
 enum AgentIDRaw {
     static let claudeCode = "claudeCode"
     static let opencode = "opencode"
+    static let opencode2 = "opencode2"
     static let antigravity = "antigravity"
 }
 
@@ -369,7 +520,8 @@ enum AgentIDRaw {
 /// libghostty wraps every PTY child in macOS `login`, which exits 0 whatever its child's
 /// status was, so the socket is the only channel the code survives (features 2026-07-06).
 /// `agent` also announces the agent's departure once the child is gone.
-func spawnReportingExit(_ path: String, _ args: [String], agent: String? = nil) -> Never {
+func spawnReportingExit(_ path: String, _ args: [String], agent: String? = nil,
+                        cleanup: (() -> Void)? = nil) -> Never {
     // The shim must outlive the session's own signals to still be there to report:
     // ignore INT/QUIT here, hand the child the defaults back.
     var attr: posix_spawnattr_t?
@@ -394,6 +546,7 @@ func spawnReportingExit(_ path: String, _ args: [String], agent: String? = nil) 
     var status: Int32 = 0
     while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
     let code: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
+    cleanup?()
     if let agent { reportAgent("agent-end:\(agent)") }
     if let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"] {
         sendLines(socketPath: socketPath, jsonLine(["session": sessionID, "exitCode": String(code)]))

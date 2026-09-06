@@ -2313,9 +2313,116 @@ disclosure to dive deeper.
   cascade + reorder, one-per-browser col-split, shim → Swift Inspect routing, and all chrome/verbs
   ported per the designs; audit-driven hardening included. Known limitation: a mid-run page-target
   swap can't re-resolve the frontend until the inspect is reopened.
+## [2026-09-06](docs/features/2026-09-06.md)
+
+- **0.40.0 ships — Inspect is a session** — release carrying the two entries above: DevTools is a
+  row, a pane and a tab instead of a dock, one per browser, hosting the real Chromium inspector and
+  cascading closed with the browser it belongs to. `CFBundleVersion` 663, tag `v0.40.0`; dmg + zip
+  notarized, stapled, verified credential-less with quarantine set (the app inside the image
+  validates on its own); appcast newest 0.40.0 at 663, `edSignature` on all 18 enclosures, deltas
+  from 637–654 at ~1 MB against a 164 MB full download. No `synth-site` push; landing unchanged
+  since 0.37.0.
+- **The site is rebuilt in `site/`, and it argues one thing** — `landing/`'s five-beat feature tour
+  is replaced by a from-scratch page making one claim: Synth spends your attention carefully and
+  gives every piece of work its own place. Four beats (worktrees + handoff + auto-archive; the
+  attention grammar, promoted from fifth to second; browser and simulator merged into one; speed
+  reframed as what makes glancing free), with ⌘K demoted to evidence and handoff added — it was
+  absent from the old page. Design follows zeroleaks.ai's lattice (near-black ground, hairline rules
+  bounding the column, eyebrow pills, bordered cells, corner ticks) in Synth's own palette: canvas
+  `#0d0f13` off the icon's gradient, champagne `#eee0cd` as the only accent, and the app's status
+  hues used to mean what they mean in the app. Figures are drawn in HTML from the shared tokens
+  rather than screenshotted, so they cannot go stale. Zero horizontal overflow verified at 1440 and
+  390; requirements checked against `Package.swift` (`.macOS(.v14)`) and `dist.sh` (arm64 only).
+  `landing/` is left serving `synth-site` for now.
+
+- **The site argues agent-agnosticism, not attention** — the page's top claim becomes running as many
+  coding agents as you like, of any kind, at once, with no lock-in to a model or a harness; attention
+  drops to the third of five beats, where it explains why running many is survivable rather than
+  being the reason to download. Agent names leave the hero prose for the marks row, the eyebrow chips
+  go from every section, and "workstream" is retired in favour of "branch" — the coinage existed only
+  to dodge a word the app itself uses, and cost the lede a two-sentence glossary. A headline that must
+  never wrap gets its own measure (`--hcol`, to 1440px) at a divisor measured rather than guessed,
+  and section headings drop to `clamp(1.5rem, 2.6vw, 2.125rem)` so the h1 can outrank them; below
+  880px the hero wraps and goes left together. The approval figure now matches `Palette.swift`'s real
+  title rather than wording the app never used. `landing/` still serves `synth-site`.
+- **The site is edited in the page, not in the file** — `site/devserver.py` injects `dev-edit.js` at
+  serve time, so `index.html` carries no markup for the tool and it runs only on localhost. Saves are
+  exact string swaps anchored between the element's own tags, refused unless they match once, re-wrapped
+  to 100 columns at the original indent, with contenteditable's `&nbsp;` stripped. An SSE watcher
+  reloads the page on disk changes and restores scroll, absorbs the mtime of its own writes, and defers
+  a reload that would land on unsaved text.
+- **The champagne loses its yellow** — the mark moves `#eee0cd` → `#f1ddd7`, OKLCH hue 75.7 → 37.4 at
+  chroma 0.024, lightness held so every contrast pair survives. Derived champagnes (the update wash,
+  the landing gradient, the halo's shader tint) take the same hue −38.3 / chroma ×0.80 transform
+  rather than being re-picked. `--error` at hue 26.1 and the blush boundary near hue 34 are the two
+  floors that stop it going further. Light's copper and bronze stay put, and are now 11° and 40° off
+  the mark.
+- **The figures are photographs of the product** — the five drawn HTML mocks become captures of the
+  running app, recorded by `site/capture/` from a seeded `$SYNTH_STATE_DIR` state file with statuses
+  staged over the hook socket and every invented word in `scenes.py`. Capture is on-screen
+  (`SYNTH_AUTOMATION_VISIBLE` + `screencapture -l`) because a CEF page and a simulator's video layer
+  are not in the app's own view hierarchy. Agent rows are live Claude Code, so a scene asserts the
+  state its figure depends on and re-takes when the agent does something else. Deleting the drawings
+  removed 92 CSS rules and the copper duplication the hero's own agent had just found.
+- **The deploy has one source again** — `site/` is published and `landing/` is deleted; two
+  hand-synced sources to one Pages repo is how the page drifted last time. Eleven files go out
+  (page, five WebP figures, two Geist faces + licence, two marks); the rig, the dev server and the
+  5MB of source PNGs stay behind. The hero's requirements line is gone, and below 1024px its whole
+  CTA row hides in favour of the sticky header download.
+- **One design file** — `big-picture-design.html` is deleted and `working.html` is the design; the
+  working ⊆ big-picture subset invariant goes with it. The second file held nothing but a `<title>`
+  and two demo session rows, and its price was every change landing twice under a `diff` guardrail.
+  `Store.isSynthRepo` now marks Synth's own checkout by `working.html`. The append-only ledger and
+  the closed wayfinder tickets keep their references — they record what was true when written.
+- **The page holds one rhythm, measured rather than eyeballed** — a spacing audit at thirteen widths,
+  run twice and independently the second time. `--band` was not the one rhythm it claimed: the hero
+  and close band used different fluid curves, so their emphasis existed only on desktop, and the
+  hero contributed nothing to its own boundary. The headline got *smaller* as the viewport grew
+  (44px at 880, 30.5px at 881) because one breakpoint answered two questions; the wrap and the
+  alignment now break at 1255 and 880 with the size continuous across both. Nine rules removed for
+  matching nothing or firing never.
+- **The figures follow the reader's theme** — each is a `<picture>` with the dark capture under
+  `prefers-color-scheme` and the light one on the `<img>`, which holds intrinsic dimensions correct
+  for both since every pair matches exactly. A viewer downloads one variant: 529KB against 523KB.
 
 ## [2026-09-06](docs/features/2026-09-06.md)
 
+- **OpenCode 2 joins as Synth's fourth hosted agent** — `opencode2` (OpenCode's v2 preview CLI),
+  added as one `AgentDescriptor` plus one `AgentSupervisor` (`Opencode2Supervisor`), sharing
+  OpenCode's own mark. v2 splits its server out of the TUI process and gates every route behind
+  HTTP Basic auth, so the shim now runs `serve` and the visible TUI as two processes sharing one
+  pinned password and one process group (`serve --port <assigned>`, waited healthy, then the TUI
+  over `--server <url>`); v1's `/tui/append-prompt` has no v2 equivalent, so delivery falls back to
+  the same terminal paste Claude Code's supervisor uses; MCP registration moved from
+  `OPENCODE_CONFIG_CONTENT` (real in v2, but loads 10–30s after health — too slow to depend on) to
+  the immediate, deterministic `PUT /api/mcp/<name>`; v2's event vocabulary gained dedicated
+  `session.execution.*` outcomes and a Form system superseding `question.*`.
+  Fixed alongside it: `AgentProbe`'s custom-agent detection now picks the longest matching
+  version-marker rather than the first in registration order, since opencode2's own `--version`
+  answer contains v1's marker as a substring. An independent review then caught three more: a
+  resumed row could latch onto a subagent's conversation id before its own arrived (fixed via a new
+  `AgentSupervisor.seedResume`, default no-op for every other agent), the delivery retry loop could
+  keep pasting into a row that had already gone away, and the subcommand-recognition list had
+  gaps in both directions against the real binary (missing `update`/`--standalone`/`-h`/`--help`/
+  `--completions`/`--wizard`; wrongly carrying over `uninstall` and `attach` from v1's own list,
+  neither real for v2) — two further rounds settled it against the binary's own command table.
+  Known gap: the shared-config-dir light-theme correction (`OpencodeTheme`) does not carry over to
+  v2's TUI — verified empirically, left unaddressed rather than reverse-engineered against a
+  still-moving preview theme format.
+- **PR state talks to GitHub directly — no `gh` binary dependency** — `PRService` now makes
+  one GraphQL call per branch to `api.github.com` instead of shelling out to the `gh` CLI;
+  auth comes from `git credential fill` (whatever git itself already has on file), `GH_TOKEN`/
+  `GITHUB_TOKEN`, or — last resort, closing a real SSH-only-auth gap found in testing —
+  `gh auth token` if `gh` happens to be present. Every read is scoped to one branch via
+  GraphQL's `headRefName` filter — asked by what `git worktree list` says is actually checked
+  out on disk, not the model's stored name — generalising the sweeper's anti-truncation fix to
+  every caller. Testing against real GitHub data caught and fixed a real bug before it shipped:
+  a REST-based first draft filtered by the wrong repo owner for cross-fork PRs; GraphQL's
+  `headRefName` filter doesn't have that problem. Also fixed: a `/tmp`-vs-`/private/tmp`
+  symlink bug in the new "what's actually checked out" lookup, and a thread-explosion risk in
+  the batch refresh (now bounded, 6 branches at a time). 28/28 checks green in a standalone
+  harness against real merged/open/draft/closed/cross-fork PRs. Known regression: only
+  `github.com` is recognised, not GitHub Enterprise.
 - **The conditions bar gains Theme, a fourth axis for what colour scheme the page sees** — Normal
   now means the page follows *Synth's* theme setting (System still means the raw OS decides), and
   Light/Dark force it either way, isolated to that one browser via `data-page-theme` on its own

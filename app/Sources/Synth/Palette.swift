@@ -949,7 +949,7 @@ struct PaletteFrame {
         let who = prompt.requesterTitle ?? "A coding agent"
         let onto = prompt.base.map { "off \($0)" } ?? "off the default branch"
         let handoffNote = prompt.handoff != nil
-            ? " and hand the work off to a fresh Claude Code session there" : ""
+            ? " and to hand the work off to a fresh Claude Code session there" : ""
         let hint = "\(who) wants a new worktree \(onto)\(handoffNote)."
         return PaletteFrame(crumb: "Create \(prompt.branchName)?",
                             placeholder: "\(hint)  ↵ create · esc decline",

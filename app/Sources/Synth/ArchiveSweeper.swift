@@ -329,13 +329,13 @@ enum ArchiveSweeper {
     /// `ref` at `path` is what gets compared: a worktree's HEAD, or — for a row with no folder
     /// left — the branch itself at the repo.
     private static func relevance(_ c: Candidate, ref: String, at path: URL) -> Verdict {
-        // The offline path first: it needs no `gh`, no auth, and no GitHub remote, so a repo
-        // hosted anywhere else is not silently inert forever.
+        // The offline path first: it needs no PR lookup at all, so a repo hosted anywhere
+        // but GitHub is not silently inert forever.
         //
         // Resolve the default branch rather than naming `origin/HEAD` outright. That ref is
         // absent more often than you'd think — a bare remote whose own HEAD was never set, a
         // remote added by hand — and a missing ref makes `merge-base` exit 128, which reads as
-        // "couldn't tell" and drops every repo without it onto the `gh` path forever.
+        // "couldn't tell" and drops every repo without it onto the PR-lookup path forever.
         // `defaultBase` is the same resolution the create path uses: origin/HEAD, else ask the
         // remote once, else local main/master.
         let base = GitService.defaultBase(at: c.repo)
@@ -343,9 +343,10 @@ enum ArchiveSweeper {
             return .eligible(mergedPR: nil)
         }
 
-        // Per-candidate, never the bulk map: `gh pr list --limit 100` silently drops a branch's
-        // PR off the tail on a busy repo, and that reads exactly like "this branch has no PR".
-        guard let asked = PRService.pullRequest(head: c.name, at: c.repo) else {
+        // Per-candidate, never a bulk list: a repo-wide "all PRs" call silently drops a
+        // branch's PR off the tail on a busy repo, and that reads exactly like "this branch
+        // has no PR".
+        guard let asked = PRService.pullRequest(branch: c.name, at: c.repo) else {
             return .blocked(.prUnknown)   // couldn't ask ≠ nothing to find
         }
         guard let pr = asked else { return .blocked(.noPR) }

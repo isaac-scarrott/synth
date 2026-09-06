@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Synth - run every coding agent, commit to none of them</title>
+<meta name="description" content="A native macOS terminal for coding agents, tied to no model and no harness. Run Claude Code, OpenCode, Antigravity or your own, as many at once as you like." />
+<link rel="icon" href="img/mark.png" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Synth - run every coding agent, commit to none of them" />
+<meta property="og:description" content="A native macOS terminal for coding agents, tied to no model and no harness. Run Claude Code, OpenCode, Antigravity or your own, as many at once as you like." />
+<meta property="og:image" content="img/mark.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="theme-color" content="#0d0f13" />
+
+<style>
+  /* ───────────────────────── Geist, self-hosted (OFL) ───────────────────────── */
+  @font-face {
+    font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2");
+    font-weight: 100 900; font-display: swap;
+  }
+  @font-face {
+    font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+    font-weight: 100 900; font-display: swap;
+  }
+
+  /* ───────────────────────── tokens: the app's own palette ─────────────────────
+     Surfaces are the app icon's squircle gradient, read in the same direction.
+     Champagne is the mark and stays scarce. Every status hue below is the one the
+     app itself wears for that state — the page means the same thing the app means. */
+  :root {
+    --canvas: #0d0f13;
+    --panel: #191b1f;
+    --sidebar: #1d1f24;
+    --raised: #282b30;
+    --chrome: #22252b;
+    --term-bg: #121317;
+
+    --ink: #e6e8ed;
+    --ink-2: #c4c7cf;
+    --ink-3: #adb0b9;
+    --ink-meta: #8d9099;     /* body copy: the tonal drop under a white heading */
+    --ink-faint: #6b6e77;
+
+    --hair: rgba(255,255,255,0.06);
+    --tick: rgba(255,255,255,0.09);
+    --hair-2: rgba(255,255,255,0.09);
+    --line: rgba(255,255,255,0.13);
+    --hover: rgba(255,255,255,0.055);
+
+    --accent: #f1ddd7;          /* the champagne mark itself */
+    --accent-rgb: 241,221,215;
+    --on-accent: #191b1f;
+
+    --input: #7ea6dc;           /* needs you */
+    --input-rgb: 126,166,220;
+    --error: #ff8a80;
+    --run: #34c759;
+    --live-lift: #ede9fe;       /* the liveness sphere's near face */
+    --live-deep: #6d28d9;       /* and its rim */
+
+    --font: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    /* Synth's own curve, and its own frequency rule: a thing you meet often
+       moves fast. Micro-interactions at 150ms, entrances at 500ms, nothing above. */
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+    --linear: cubic-bezier(0.32, 0.72, 0, 1);   /* the arrive-and-settle curve */
+    --tap: 150ms;
+    --enter: 1050ms;
+
+    /* A 4px grid: every margin, pad and gap is one of these, apart from two kinds of thing
+       it cannot describe. Hairlines and optical nudges are sub-pixel judgements, not spacing —
+       the 1px rule between chords, the 1px under a kbd, the -1px lift on the Apple glyph. And
+       the segmented control is built from 3px of inner padding and 2px between segments,
+       because a control that small has no room for a 4px step. */
+    --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px;
+    --s6: 32px; --s7: 40px; --s8: 56px; --s9: 80px;
+
+    /* The app's three radii, plus one derived value used twice. 7px is the 10px control
+       minus its own 3px of padding, which is the arithmetic that keeps two nested curves
+       concentric; that is why a segment inside the tab control wears it. The brand mark wears
+       the same 7px at 24px, matching the app icon rather than deriving from anything here. */
+    --r-surface: 14px; --r-control: 10px; --r-key: 6px;
+
+    --gutter: clamp(20px, 5vw, 56px);
+    --col: min(1152px, 100vw - (2 * var(--gutter)));
+    /* the headline gets a wider measure than the content column, so a line that must not
+       wrap can still outrank every heading below it */
+    --hcol: min(1440px, 100vw - (2 * var(--gutter)));
+    /* The one vertical rhythm. The hero and the close band are the only deviations, and
+       both are stated as this plus a step off the scale, so the gap between a section
+       break and the page's opening is the same proportion on a phone as on a desktop. */
+    --band: clamp(56px, 7vw, 80px);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font: 400 16px/1.5 var(--font); letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    font-variant-numeric: tabular-nums;
+    overflow-x: hidden;
+  }
+  img { display: block; max-width: 100%; height: auto; }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: rgba(var(--accent-rgb), 0.24); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--r-key); }
+
+  /* ───────────────────────── the structural lattice ───────────────────────── */
+  .rails { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .rails span { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--hair); }
+  .rails span:first-child { left: calc(50% - (var(--col) / 2) - 1px); }
+  .rails span:last-child  { left: calc(50% + (var(--col) / 2)); }
+  @media (max-width: 720px) { .rails { display: none; } }
+
+  .wrap { width: var(--col); margin-inline: auto; position: relative; z-index: 1; }
+  .band { border-top: 1px solid var(--hair); position: relative; z-index: 1; }
+  .band--pad { padding-block: var(--band); }
+  .stack { margin-top: var(--band); }
+
+  /* ───────────────────────── type ─────────────────────────
+     One tracking value for headings (-0.024em) and one for prose (-0.01em),
+     rather than a different number per size. */
+  h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: -0.024em; line-height: 1.14; }
+  h1 { font-size: clamp(2.25rem, 4.6vw, 3.5rem); }
+  /* the first line of the hero must never wrap, so it is sized to fit its own measure */
+  .hero h1 { font-size: min(3.5rem, calc(var(--hcol) / 26)); }
+  h2 { font-size: clamp(1.5rem, 2.6vw, 2.125rem); line-height: 1.16; }
+  h3 { font-size: 1.0625rem; font-weight: 550; line-height: 1.4; letter-spacing: -0.016em; }
+  p { margin: 0; }
+  .lede { color: var(--ink-meta); font-size: 1rem; line-height: 1.6; }
+  strong { font-weight: 550; color: var(--ink-2); }
+
+  /* ───────────────────────── buttons ───────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--s2); white-space: nowrap;
+    height: 42px; padding: 0 var(--s4); border-radius: var(--r-control);
+    border: 1px solid transparent;
+    font: 500 14.5px var(--font); letter-spacing: -0.01em; cursor: pointer;
+    transition: transform var(--tap) var(--ease), background-color var(--tap) var(--ease),
+                border-color var(--tap) var(--ease), opacity var(--tap) var(--ease);
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn--primary { background: var(--accent); color: var(--on-accent); font-weight: 550; }
+  .btn--primary:hover { opacity: 0.88; }
+  .btn--ghost { border-color: var(--hair-2); color: var(--ink-2); background: rgba(255,255,255,0.02); }
+  .btn--ghost:hover { background: var(--hover); border-color: var(--line); color: var(--ink); }
+  .btn svg { width: 15px; height: 15px; opacity: 0.7; }
+  .btn__lead { width: 15px; height: 15px; opacity: 1; margin-top: -1px; }
+  .btn--icon { width: 42px; padding: 0; justify-content: center; }
+  .btn--icon svg { width: 17px; height: 17px; opacity: 0.8; }
+  .btn--icon:hover svg { opacity: 1; }
+
+  code, kbd { font-family: var(--mono); font-variant-ligatures: none; letter-spacing: 0; }
+  kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 22px; padding: 0 var(--s1) 1px;
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--r-key);
+    background: var(--raised); color: var(--ink-2);
+    font: 500 11.5px var(--mono);
+  }
+
+  /* ───────────────────────── nav ───────────────────────── */
+  /* Bare over the hero; the bar materialises once half a screen has gone by. */
+  .nav { position: sticky; top: 0; z-index: 20; }
+  .nav::before {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    background: color-mix(in srgb, var(--canvas) 90%, transparent);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border-bottom: 1px solid var(--hair);
+    opacity: 0;
+    transition: opacity 180ms ease-out;
+  }
+  .nav.is-stuck::before { opacity: 1; }
+  .nav .wrap { height: 64px; display: flex; align-items: center; gap: var(--s4); }
+  .nav__spacer { margin-left: auto; }
+  #navtrip { position: absolute; top: 0; left: 0; width: 1px; height: 50vh; pointer-events: none; }
+  .foot__gh { display: inline-flex; align-items: center; gap: var(--s2); }
+  .foot__gh svg { width: 14px; height: 14px; }
+  .brand { display: flex; align-items: center; gap: var(--s2); font-weight: 550; letter-spacing: -0.02em; font-size: 15px; }
+  .brand img { width: 24px; height: 24px; border-radius: 7px; }
+  .nav .btn { height: 36px; padding: 0 var(--s3); font-size: 14px; }
+  @media (max-width: 900px) { .nav .wrap { justify-content: space-between; } }
+
+  /* ───────────────────────── hero ───────────────────────── */
+  .hero { padding-top: calc(var(--band) + var(--s4)); padding-bottom: var(--band); text-align: center; }
+  .hero h1 {
+    width: var(--hcol);
+    margin: var(--s5) calc((var(--col) - var(--hcol)) / 2) 0;
+  }
+  .hero h1 span { display: block; white-space: nowrap; }
+  .hero h1 .dim { color: var(--ink-meta); }
+  .hero__sub { margin: var(--s4) auto 0; max-width: 60ch; }
+  .hero__cta { margin-top: var(--s6); display: flex; gap: var(--s2); justify-content: center; flex-wrap: wrap; }
+  /* the spark canvas bleeds 30px past its button; clip that at the page edge, keeping the
+     vertical bleed visible (overflow-x: clip does not force the other axis to auto) */
+  .nav .wrap, .hero__cta, .close { overflow-x: clip; }
+  /* Below a laptop the header's download is always on screen, sticky, a thumb's reach away.
+     A second copy of it in the hero is the same tap offered twice. */
+  @media (max-width: 1024px) { .hero__cta { display: none; } }
+  .hero__stage { margin-top: var(--band); }
+  /* Below this the one-line size drops under 30px, which is too small to lead with: let the
+     headline wrap and set the hero left, where a ragged edge belongs. Declared after the rules
+     it overrides — a media query adds no specificity, so an earlier block loses on source order,
+     which is how the sub kept its auto margins and sat centred under a flush-left headline. */
+  /* Two separate questions, and they were being answered at one breakpoint. Whether the line
+     can be held is arithmetic: at 44px it needs a 1144px measure, so below 1256px the divisor
+     drives the headline under its own h2 — at 881px it computed to 30.5px, smaller than it is
+     on a phone, because at the breakpoint --hcol and --col are the same and the wider measure
+     buys nothing. Whether the hero goes left is a judgement about ragged edges, and that one
+     belongs at 880. Wrapped, the headline holds 44px, which is exactly what the one-line rule
+     reaches at 1256 — so the size is continuous across both breakpoints. */
+  @media (max-width: 1255px) {
+    .hero h1 {
+      width: auto; margin-inline: 0;
+      font-size: clamp(2.25rem, 7.4vw, 2.75rem);
+    }
+    .hero h1 span { display: inline; white-space: normal; }
+    .hero h1 .dim::before { content: " "; }
+  }
+  @media (max-width: 880px) {
+    .hero { text-align: left; }
+    .hero__sub { margin-inline: 0; }
+  }
+
+  /* Captures, not drawings. `site/capture/` records these from the running app against a
+     seeded state file, so a figure cannot claim something the product does not do. Sized from
+     the intrinsic width/height on the img, so the row it sits in never reflows as it loads. */
+  .shot { margin: 0; border-radius: var(--r-surface); overflow: hidden;
+          border: 1px solid var(--line); background: var(--panel);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3), 0 40px 90px rgba(0,0,0,0.62); }
+  .shot img { display: block; width: 100%; height: auto; }
+  /* The approval capture is 607 CSS px wide at 2x, so the column would upscale it nearly
+     twofold. The cap engages only once the column passes it, which means the inset grows
+     from zero rather than snapping when a breakpoint is crossed. */
+  .shot--panel { max-width: 760px; margin-inline: auto; }
+
+  .glow { position: relative; }
+  .glow::before {
+    content: ""; position: absolute; inset: -14% 0 34%; z-index: 0; pointer-events: none;
+    background: radial-gradient(58% 62% at 50% 0%, rgba(var(--accent-rgb), 0.075), transparent 72%);
+  }
+  .glow > * { position: relative; z-index: 1; }
+
+  /* the indicator grammar: two glyphs demand a person, everything else is a quiet dot */
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot--run { background: var(--run); }
+  .dot--idle { background: #52555d; }
+  .sphere { width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, var(--live-lift), var(--live-deep) 76%); box-shadow: 0 0 7px rgba(109,40,217,0.55); }
+  .badge { width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font: 600 10px var(--font); letter-spacing: 0; }
+  .badge--ask { background: rgba(var(--input-rgb), 0.2); color: var(--input); box-shadow: 0 0 0 1px rgba(var(--input-rgb), 0.34); }
+  .badge--err { background: rgba(255,138,128,0.16); color: var(--error); box-shadow: 0 0 0 1px rgba(255,138,128,0.3); }
+
+  /* ───────────────────────── agent marks ───────────────────────── */
+  .marks { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--hair); border-radius: var(--r-control); overflow: hidden; }
+  .mark { display: flex; align-items: center; gap: var(--s3); padding: var(--s5); border-right: 1px solid var(--hair); font-size: 14.5px; font-weight: 500; color: var(--ink-2); }
+  .mark:last-child { border-right: 0; }
+  .mark--own { color: var(--ink-meta); }
+  .mark__g { width: var(--s5); height: var(--s5); flex: none; display: grid; place-items: center; color: var(--ink-3); }
+  .mark__g svg { width: 17px; height: 17px; }
+  .mark--own .mark__g { color: var(--ink-faint); }
+  @media (max-width: 880px) { .marks { grid-template-columns: repeat(2, 1fr); } .mark:nth-child(2) { border-right: 0; } .mark:nth-child(-n+2) { border-bottom: 1px solid var(--hair); } }
+  /* On the narrowest phones a two-up cell is narrower than its own contents, and `.marks` has
+     `overflow: hidden` — so the padding comes in rather than an agent's name being clipped. */
+  @media (max-width: 480px) { .mark { padding: var(--s4) var(--s3); gap: var(--s2); } }
+
+  /* ───────────────────────── section heads ───────────────────────── */
+  .head { text-align: center; margin-inline: auto; max-width: 46ch; }
+  /* the marks are evidence for the lede above them, not a block of their own */
+  .stack:has(> .marks) { margin-top: calc(var(--band) - var(--s5)); }
+  .head .lede { margin-top: var(--s4); }
+  /* The intros go left with the hero. A centred six-line paragraph on a 350px column is ragged
+     on both edges, and it sits directly above cells that are already left-aligned. Declared
+     after the rules it overrides, for the source-order reason given at the hero. */
+  @media (max-width: 880px) {
+    .head { text-align: left; margin-inline: 0; }
+  }
+
+  /* A capture wants the whole column: at half width the app's own 14px type falls under
+     7px and the figure stops being readable as an app at all. So the tab panels stack —
+     evidence first, then what it is evidence of, in two columns so the block stays short. */
+  .say { margin-top: var(--s6); display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3) var(--s8); }
+  .say h3 { grid-column: 1 / -1; }
+  @media (max-width: 880px) { .say { grid-template-columns: 1fr; gap: var(--s4); } }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s9) var(--s8); align-items: center; }
+  .split h2 + .lede { margin-top: var(--s4); }
+  .split .lede + .lede { margin-top: var(--s4); }
+  @media (max-width: 880px) { .split { grid-template-columns: 1fr; gap: var(--s7); } }
+
+  /* ───────────────────────── tabs ─────────────────────────
+     Every panel sits in the same grid cell, so the block is as tall as the tallest of
+     them and switching never moves the page under you. Inactive panels stay in the flow
+     (that is what holds the height) and are taken out of the tab order with `inert`. */
+  .tabs__bar { display: flex; justify-content: center; }
+  @media (max-width: 880px) { .tabs__bar { justify-content: flex-start; } }
+  .tabs__list {
+    display: inline-flex; gap: 2px; padding: 3px;
+    border: 1px solid var(--hair-2); border-radius: var(--r-control);
+    background: rgba(255,255,255,0.02);
+  }
+  .tabs__t {
+    appearance: none; border: 0; background: transparent; color: var(--ink-meta);
+    font: 500 13.5px var(--font); letter-spacing: -0.01em;
+    height: 32px; padding: 0 var(--s4); border-radius: 7px; cursor: pointer;
+    transition: color var(--tap) var(--ease), background var(--tap) var(--ease);
+  }
+  .tabs__t:hover { color: var(--ink-2); }
+  .tabs__t[aria-selected="true"] { background: var(--raised); color: var(--ink); }
+  .tabs__panels { display: grid; margin-top: var(--s7); }
+  .tabs__panel {
+    /* Every panel is as tall as the tallest, so a short one is centred rather than left
+       hanging under its own content — switching tabs moves the eye as little as possible. */
+    display: flex; flex-direction: column; justify-content: center;
+    grid-area: 1 / 1; opacity: 0; visibility: hidden; transform: translateY(8px);
+    transition: opacity 240ms var(--ease), transform 240ms var(--ease), visibility 240ms;
+  }
+  .tabs__panel[data-on] { opacity: 1; visibility: visible; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .tabs__panel { transition: none; } }
+
+  /* bordered cells, in the lattice's own hairline */
+  .cells { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--hair); }
+  .cell { padding: var(--s6) var(--s5) var(--s6); border-right: 1px solid var(--hair); }
+  .cell:last-child { border-right: 0; }
+  .cell h3 { margin-bottom: var(--s2); }
+  .cell p { color: var(--ink-meta); font-size: 14.5px; line-height: 1.6; }
+  .cell code { font-size: 13px; color: var(--ink-3); }
+  .cell__icon { width: var(--s6); height: var(--s6); margin-bottom: var(--s4); border: 1px solid var(--hair-2); border-radius: var(--r-control); display: grid; place-items: center; color: var(--ink-3); background: rgba(255,255,255,0.02); }
+  .cell__icon svg { width: 16px; height: 16px; }
+  @media (max-width: 880px) { .cells { grid-template-columns: 1fr; } .cell { border-right: 0; border-bottom: 1px solid var(--hair); padding-inline: 0; } .cell:last-child { border-bottom: 0; } }
+
+  .legend { display: grid; gap: var(--s3); }
+  .legend__r { display: flex; align-items: center; gap: var(--s3); font-size: 14.5px; color: var(--ink-meta); }
+  .legend__r b { color: var(--ink-2); font-weight: 550; }
+  .legend__ind { width: var(--s4); display: grid; place-items: center; flex: none; }
+
+  /* chords */
+  .chords { display: grid; gap: 1px; background: var(--hair); border: 1px solid var(--hair); border-radius: var(--r-control); overflow: hidden; }
+  .chord { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); background: var(--canvas); font-size: 14px; color: var(--ink-meta); }
+  .chord__k { display: flex; gap: var(--s1); flex: none; width: 84px; }
+  @media (max-width: 560px) { .chord { flex-direction: column; align-items: flex-start; gap: var(--s2); } }
+
+  /* ───────────────────────── close + footer ───────────────────────── */
+  .close { text-align: center; padding-block: calc(var(--band) + var(--s6)); }
+  .close h2 { max-width: 20ch; margin-inline: auto; }
+  .close .btn { margin-top: var(--s6); }
+  .close__req { margin-top: var(--s4); font-size: 13px; color: var(--ink-faint); }
+  footer { border-top: 1px solid var(--hair); padding-block: var(--s5); }
+  .foot { display: flex; align-items: center; gap: var(--s5); flex-wrap: wrap; font-size: 13px; color: var(--ink-faint); }
+  .foot__links { margin-left: auto; display: flex; gap: var(--s5); }
+  .foot__links a { transition: color var(--tap) var(--ease); }
+  .foot__links a:hover { color: var(--ink-2); }
+
+  .brand--foot { font-size: 14px; color: var(--ink-3); }
+  .brand--foot img { width: 20px; height: 20px; }
+
+  /* ───────────────────────── ambient dust ─────────────────────────
+     Perlin fBm with a domain warp, posterised to four levels and pushed through
+     an 8x8 Bayer matrix. Because the output is dithered blocks anyway, the
+     buffer is shaded at 1/3 scale and upscaled with image-rendering: pixelated —
+     a ninth of the fragment work, and it sharpens the grid rather than softening
+     it. The cursor presses the wave field down where it goes. */
+  .dust { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;
+          image-rendering: pixelated; }
+  /* the layer you can actually shove about, over the dithered ground */
+  .motes { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { .motes { display: none; } }
+  @media (prefers-reduced-motion: reduce) { .dust { display: none; } }
+
+  /* ───────────────────────── the button's sparks ─────────────────────────
+     Drawn, not built: ~900 of these as elements would be 1,800 nodes sitting
+     in the document doing nothing until a hover. The canvas costs one node,
+     runs only while the pointer is on the button, and can keep every particle
+     drifting and twinkling on its own clock for as long as you stay there. */
+  .halo { position: relative; display: inline-flex; }
+  .halo__c { position: absolute; pointer-events: none; opacity: 0; transition: opacity 160ms ease-out; }
+  .halo.lit .halo__c { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .halo__c { display: none; } }
+
+  /* ───────────────────────── motion ─────────────────────────
+     Entrances at 500ms with 8px of travel — enough to read as arriving,
+     not enough to make a scroll feel weighed down. Gone under reduced-motion. */
+  .rev {
+    opacity: 0; transform: translateY(20px); filter: blur(7px);
+    transition: opacity var(--enter) var(--linear), transform var(--enter) var(--linear),
+                filter var(--enter) var(--linear);
+  }
+  .rev.in { opacity: 1; transform: none; filter: blur(0); }
+  .rev[data-d="1"] { transition-delay: 135ms; } .rev[data-d="2"] { transition-delay: 270ms; }
+  .rev[data-d="3"] { transition-delay: 405ms; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .rev { opacity: 1; transform: none; transition: none; }
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+</head>
+
+<body>
+<div class="rails" aria-hidden="true"><span></span><span></span></div>
+<canvas class="dust" aria-hidden="true"></canvas>
+<canvas class="motes" aria-hidden="true"></canvas>
+<div id="top"></div>
+<div id="navtrip" aria-hidden="true"></div>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="img/mark-light.png" alt="" />Synth</a>
+    <span class="nav__spacer"></span>
+    <span class="halo"><canvas class="halo__c" aria-hidden="true"></canvas><a class="btn btn--primary" href="https://synth-releases.fly.storage.tigris.dev/Synth.dmg"><svg class="btn__lead" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>Download for Mac</a></span>
+  </div>
+</header>
+
+<main>
+  <!-- ══════════════════════════ hero ══════════════════════════ -->
+  <section class="wrap hero glow">
+    <h1 class="rev"><span>Whatever coding agents you run, however many of them,</span><span class="dim">all at once.</span></h1>
+    <p class="lede hero__sub rev" data-d="1">
+      Built around the terminal, and tied to no model or harness. The terminal, the browser and the
+      simulator are all made to be used by a human and driven by an agent. You get told when an agent
+      needs you, and left alone when none of them do.
+    </p>
+    <div class="hero__cta rev" data-d="2">
+      <span class="halo"><canvas class="halo__c" aria-hidden="true"></canvas><a class="btn btn--primary" href="https://synth-releases.fly.storage.tigris.dev/Synth.dmg">
+        <svg class="btn__lead" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+        Download for Mac
+      </a></span>
+      <a class="btn btn--ghost btn--icon" aria-label="Synth on GitHub" href="https://github.com/isaac-scarrott/synth"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
+    </div>
+
+    <div class="hero__stage rev" data-d="3">
+      <figure class="shot">
+        <img src="img/hero-dark@2x.webp" width="2360" height="1320" alt="Synth with three projects in the
+             sidebar and a Claude Code session open, stopped on a question about the page's accent colour."
+             fetchpriority="high" decoding="async">
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 1 · agents ══════════════════════════ -->
+  <section class="band band--pad" id="agents">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="rev">No agent to commit to.</h2>
+        <p class="lede rev" data-d="1">
+          Whichever agent is best this month is unlikely to be the one that's best next month. Synth
+          detects what you already have installed and integrates with them all, so a new model or
+          a new harness is something you adopt rather than something you migrate to.
+        </p>
+      </div>
+    </div>
+
+    <div class="wrap stack">
+      <div class="marks rev">
+        <div class="mark"><span class="mark__g"><svg viewBox="0 0 16 10" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true"><rect x="2" y="0" width="12" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="5" y="2" width="6" height="2"/><rect x="12" y="2" width="2" height="2"/><rect x="0" y="4" width="16" height="2"/><rect x="2" y="6" width="12" height="2"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/><rect x="12" y="8" width="1" height="2"/></svg></span>Claude Code</div>
+        <div class="mark"><span class="mark__g"><svg viewBox="128 96 256 320" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="currentColor"/><path d="M320 224V352H192V224H320Z" fill="currentColor" opacity="0.45"/></svg></span>OpenCode</div>
+        <div class="mark"><span class="mark__g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 21 19H3z"/></svg></span>Antigravity</div>
+        <div class="mark mark--own"><span class="mark__g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 7 4 5-4 5M11 17h9"/></svg></span>Your own</div>
+      </div>
+    </div>
+
+    <div class="wrap stack">
+      <div class="cells rev">
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v10m-4-4 4 4 4-4"/><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15"/></svg></div>
+          <h3>Install it and it just works</h3>
+          <p>You don't point Synth at anything or configure individual agents. What you have installed is what shows up, and it keeps up on its own when that changes.</p>
+        </div>
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="12.5" height="10" rx="1.8"/><path d="M2 8.2h12.5"/><rect x="16.5" y="8" width="5.5" height="12" rx="1.8"/><path d="M18.4 17.9h1.7"/></svg></div>
+          <h3>Your agent gets abilities it didn't have before</h3>
+          <p>Every agent gets the same tools, including a real browser and a booted iPhone it can drive. You don't wire that up, and you don't wire it up again for the next one.</p>
+        </div>
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4 4 8l4 4M4 8h16M16 12l4 4-4 4M20 16H4"/></svg></div>
+          <h3>Change agent, keep everything else</h3>
+          <p>Your keys, your layout and everything you have open are all the same afterwards. The only difference is which agent is running inside them. Next month you can change your mind again.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 1 · branches ════════════════════════════ -->
+  <section class="band band--pad" id="work">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="rev">Many things at once, orchestrated.</h2>
+        <p class="lede rev" data-d="1">
+          Work is organised by project and by branch, each with its own code and its own sessions
+          running inside it. Agents can hand off work to other branches, so however much is in
+          flight, it stays one list you can take in at a glance.
+        </p>
+      </div>
+    </div>
+
+    <div class="wrap stack">
+      <div class="cells rev">
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="12" r="2.4"/><path d="M6 8.4v7.2M8.4 6.8c4 .6 5.4 2.4 7.4 4.4M8.4 17.2c4-.6 5.4-2.4 7.4-4.4"/></svg></div>
+          <h3>Set up before you get there</h3>
+          <p>Your setup script runs in every new branch: copy the <code>.env</code> across, install dependencies, whatever the new copy needs. The sessions you always want are open by the time you look at it.</p>
+        </div>
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.4M3 4v5h5"/></svg></div>
+          <h3>You never put anything down</h3>
+          <p>The other branch is already on disk exactly as you left it, sessions and all, so you click it and carry on where you stopped. Nothing to stash and nothing to check out.</p>
+        </div>
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.6"/><path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4"/></svg></div>
+          <h3>The list only shows live work</h3>
+          <p>Once a branch is merged and clean, Synth archives it and reclaims the folder, so what you glance at is what is still going on. The row comes back from <kbd>⌘K</kbd> whenever you want it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 2 · attention ══════════════════════════ -->
+  <section class="band band--pad glow" id="attention">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="rev">You'll know which agent needs you.</h2>
+        <p class="lede rev" data-d="1">
+          Every session has a state, whether it's an agent mid-turn or a terminal running a build.
+          Synth notifies you when one needs you, a question or a failure. Everything else,
+          working or running or finished, you read at a glance.
+        </p>
+      </div>
+    </div>
+
+    <div class="wrap stack">
+      <div class="split">
+        <div>
+          <div class="legend">
+            <div class="legend__r rev"><span class="legend__ind"><span class="badge badge--ask">?</span></span><span><b>Waiting on you.</b> An agent has stopped and asked a question.</span></div>
+            <div class="legend__r rev" data-d="1"><span class="legend__ind"><span class="badge badge--err">!</span></span><span><b>Failed.</b> Something ended badly and nobody has looked.</span></div>
+            <div class="legend__r rev" data-d="2"><span class="legend__ind"><span class="sphere"></span></span><span><b>Alive.</b> An agent is working. It doesn't want anything.</span></div>
+            <div class="legend__r rev" data-d="3"><span class="legend__ind"><span class="dot dot--run"></span></span><span><b>Running.</b> A process is up. Also doesn't want anything.</span></div>
+            <div class="legend__r rev" data-d="3"><span class="legend__ind"><span class="dot dot--idle"></span></span><span><b>Finished.</b> A process ran to the end without a problem.</span></div>
+          </div>
+        </div>
+        <figure class="shot rev" data-d="1">
+          <img src="img/attention-deck-dark@2x.webp" width="900" height="1016" loading="lazy" decoding="async"
+               alt="Synth's sidebar: three projects, each branch carrying the state of what is inside it, and a notification card for the session that has stopped to ask something.">
+        </figure>
+      </div>
+    </div>
+
+    <div class="wrap stack">
+      <div class="cells rev">
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h3.5l2-5.5 3.5 11 2.5-5.5H21"/></svg></div>
+          <h3>Working or waiting, you can tell</h3>
+          <p>An agent thinking and an agent stuck waiting for you look identical in a terminal. In Synth the one waiting is marked in the sidebar, so you can see it without opening anything.</p>
+        </div>
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 5v6.5a3 3 0 0 1-3 3H4.5m0 0 4-4m-4 4 4 4"/></svg></div>
+          <h3>⌘↩ takes you straight to it</h3>
+          <p>Get to whatever agent or terminal needs you most with a single motion. Keeping you in flow state for longer and allowing you to unblock work quicker.</p>
+        </div>
+        <div class="cell">
+          <div class="cell__icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></div>
+          <h3>GitHub state, without opening GitHub</h3>
+          <p>Each branch shows its pull request beside it, whether that's open, merged, closed or in the merge queue.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 3 · hands ══════════════════════════ -->
+  <section class="band band--pad" id="hands">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="rev">Your agent can do more than write code.</h2>
+        <p class="lede rev" data-d="1">
+          It can open your app in a real browser, tap through it on a booted iPhone, and start a
+          new branch when work belongs elsewhere. You can watch any of it, and take over whenever
+          you like.
+        </p>
+      </div>
+    </div>
+
+    <div class="wrap stack">
+      <div class="tabs rev">
+        <div class="tabs__bar">
+          <div class="tabs__list" role="tablist" aria-label="What an agent can use">
+            <button class="tabs__t" role="tab" id="tab-browser" aria-controls="panel-browser" aria-selected="true" type="button">Browser</button>
+            <button class="tabs__t" role="tab" id="tab-sim" aria-controls="panel-sim" aria-selected="false" tabindex="-1" type="button">Simulator</button>
+            <button class="tabs__t" role="tab" id="tab-handoff" aria-controls="panel-handoff" aria-selected="false" tabindex="-1" type="button">Handoff</button>
+          </div>
+        </div>
+
+        <div class="tabs__panels">
+          <div class="tabs__panel" id="panel-browser" role="tabpanel" aria-labelledby="tab-browser" data-on>
+            <figure class="shot rev">
+              <img src="img/browser-dark@2x.webp" width="2360" height="1560" loading="lazy" decoding="async"
+                   alt="Synth's browser pane showing this landing page, with two comments pinned on it and the send bar ready to hand them to an agent.">
+            </figure>
+            <div class="say">
+              <h3>A real browser you can both use</h3>
+              <p class="lede">
+              The agent opens your app in a real browser window and clicks, types and scrolls
+              through it. You can use the same window, click any element to leave a note, and
+              send your comments over together.
+              </p>
+              <p class="lede">
+              From that window it can also read the console and the network, throttle the
+              connection to see the page on a slow one, and record the run as a video rather
+              than describing it afterwards.
+              </p>
+            </div>
+          </div>
+
+          <div class="tabs__panel" id="panel-sim" role="tabpanel" aria-labelledby="tab-sim" inert>
+            <figure class="shot rev">
+              <img src="img/simulator-dark@2x.webp" width="2360" height="1520" loading="lazy" decoding="async"
+                   alt="Synth's simulator pane showing this landing page's mobile layout on a booted iPhone 16 Pro.">
+            </figure>
+            <div class="say">
+              <h3>A real iPhone, not a preview</h3>
+              <p class="lede">
+              Boot one from the fleet you already have installed, then tap, type and swipe into
+              it. The agent uses the same screen you are looking at, and can install a build,
+              launch it, open a URL or turn the device on its side.
+              </p>
+              <p class="lede">
+              Synth reads the device's screen directly instead of opening Simulator.app, so the
+              session keeps working when that window would have been minimised, on another Space,
+              or closed by Xcode entirely.
+              </p>
+            </div>
+          </div>
+
+          <div class="tabs__panel" id="panel-handoff" role="tabpanel" aria-labelledby="tab-handoff" inert>
+            <figure class="shot shot--panel rev">
+              <img src="img/approval-dark@2x.webp" width="1215" height="353" loading="lazy" decoding="async"
+                   alt="Synth's command menu asking whether to create the branch an agent has requested.">
+            </figure>
+            <div class="say">
+              <h3>You approve it. You don't brief it.</h3>
+              <p class="lede">
+              When work belongs somewhere else, the agent writes the brief and asks for a branch
+              of its own. You see the project, the base and what it means to do; one click makes
+              it and starts an agent inside that <strong>already knows what it is there for</strong>.
+              </p>
+              <p class="lede">
+              The alternative is stopping what you're doing, making the branch yourself, and
+              typing the context out again.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 4 · speed ══════════════════════════ -->
+  <section class="band band--pad" id="speed">
+    <div class="wrap">
+      <div class="split">
+        <div>
+          <h2 class="rev">Looking should cost nothing.</h2>
+          <p class="lede rev" data-d="1">
+            The terminal is libghostty, drawn on the GPU. The application is Swift, not Electron.
+            <kbd>⌘K</kbd>, then <kbd>⌘T</kbd>, then <kbd>⌘1</kbd>, one after another, and it keeps up.
+          </p>
+          <p class="lede rev" data-d="3">
+            A tree you glance at only works if glancing is free. The moment checking costs you
+            something you stop doing it, and you're back to going and looking.
+          </p>
+        </div>
+        <div class="split__fig">
+          <div class="chords rev" data-d="1">
+            <div class="chord"><span class="chord__k"><kbd>⌘K</kbd></span><span>Everything, scoped to whatever you have focused</span></div>
+            <div class="chord"><span class="chord__k"><kbd>⌘T</kbd></span><span>New terminal, here</span></div>
+            <div class="chord"><span class="chord__k"><kbd>⌘⇧T</kbd></span><span>A scratch shell for the errand, gone when you dismiss it</span></div>
+            <div class="chord"><span class="chord__k"><kbd>⌘0</kbd><kbd>⌘1</kbd></span><span>Sidebar, session</span></div>
+            <div class="chord"><span class="chord__k"><kbd>⌘↩</kbd></span><span>Go to whatever is at the front of the deck</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ close ══════════════════════════ -->
+  <section class="band close glow">
+    <div class="wrap">
+      <h2 class="rev">Try it on your own repositories.</h2>
+      <div class="rev" data-d="1">
+        <span class="halo"><canvas class="halo__c" aria-hidden="true"></canvas><a class="btn btn--primary" href="https://synth-releases.fly.storage.tigris.dev/Synth.dmg">
+          <svg class="btn__lead" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+          Download for Mac
+        </a></span>
+      </div>
+      <p class="close__req rev" data-d="2">Free · macOS 14 or later · Apple silicon · signed and notarised</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span class="brand brand--foot"><img src="img/mark-light.png" alt="" />Synth</span>
+    <nav class="foot__links">
+      <a href="https://github.com/isaac-scarrott/synth" class="foot__gh" aria-label="Synth on GitHub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
+      <a href="https://synth-releases.fly.storage.tigris.dev/Synth.dmg">Download</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  // sticky nav hairline
+  var nav = document.getElementById('nav');
+  new IntersectionObserver(function (e) {
+    nav.classList.toggle('is-stuck', !e[0].isIntersecting);
+  }, { rootMargin: '-1px 0px 0px 0px' }).observe(document.getElementById('navtrip'));
+
+  // reveal on scroll — skipped entirely when the user has asked for less motion
+  var revs = document.querySelectorAll('.rev');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    revs.forEach(function (el) { el.classList.add('in'); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        en.target.classList.add('in');
+        io.unobserve(en.target);
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    revs.forEach(function (el) { io.observe(el); });
+  }
+
+
+  // ── dithered wave field ──────────────────────────────────────────────
+  (function () {
+    var cv = document.querySelector('.dust');
+    if (!cv || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var gl = cv.getContext('webgl', { antialias: false, alpha: true, depth: false });
+    if (!gl) { cv.style.display = 'none'; return; }
+
+    var PX = 3;                       // shaded block size, in CSS pixels
+    var VERT = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+    var FRAG = [
+      'precision highp float;',
+      'uniform vec2 uRes; uniform float uTime; uniform vec2 uMouse; uniform float uMouseOn;',
+      'uniform sampler2D uBayer;',
+      'const float SPEED=0.05, FREQ=3.0, AMP=0.3, LEVELS=4.0, MRAD=0.55;',
+      'const vec3 BG=vec3(0.051,0.059,0.075);',      // --canvas
+      'const vec3 TINT=vec3(0.945,0.867,0.843);',     // the champagne mark
+      'const float STRENGTH=0.085;',                  // ...at a level text can sit on top of
+      'vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}',
+      'vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}',
+      'vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}',
+      'vec2 fade(vec2 t){return t*t*t*(t*(t*6.0-15.0)+10.0);}',
+      'float cnoise(vec2 P){',
+      ' vec4 Pi=floor(P.xyxy)+vec4(0.0,0.0,1.0,1.0); vec4 Pf=fract(P.xyxy)-vec4(0.0,0.0,1.0,1.0);',
+      ' Pi=mod289(Pi); vec4 ix=Pi.xzxz, iy=Pi.yyww, fx=Pf.xzxz, fy=Pf.yyww;',
+      ' vec4 i=permute(permute(ix)+iy);',
+      ' vec4 gx=fract(i*(1.0/41.0))*2.0-1.0; vec4 gy=abs(gx)-0.5; vec4 tx=floor(gx+0.5); gx=gx-tx;',
+      ' vec2 g00=vec2(gx.x,gy.x),g10=vec2(gx.y,gy.y),g01=vec2(gx.z,gy.z),g11=vec2(gx.w,gy.w);',
+      ' vec4 norm=taylorInvSqrt(vec4(dot(g00,g00),dot(g01,g01),dot(g10,g10),dot(g11,g11)));',
+      ' g00*=norm.x; g01*=norm.y; g10*=norm.z; g11*=norm.w;',
+      ' float n00=dot(g00,vec2(fx.x,fy.x)),n10=dot(g10,vec2(fx.y,fy.y));',
+      ' float n01=dot(g01,vec2(fx.z,fy.z)),n11=dot(g11,vec2(fx.w,fy.w));',
+      ' vec2 fxy=fade(Pf.xy); vec2 nx=mix(vec2(n00,n01),vec2(n10,n11),fxy.x);',
+      ' return 2.3*mix(nx.x,nx.y,fxy.y);}',
+      'float fbm(vec2 p){float v=0.0,a=1.0;for(int i=0;i<4;i++){v+=a*abs(cnoise(p));p*=FREQ;a*=AMP;}return v;}',
+      'float pattern(vec2 p){return fbm(p+fbm(p-uTime*SPEED));}',
+      'void main(){',
+      ' vec2 uv=gl_FragCoord.xy/uRes; uv-=0.5; uv.x*=uRes.x/uRes.y;',
+      ' float f=pattern(uv);',
+      ' if(uMouseOn>0.5){',
+      '  vec2 m=uMouse/uRes-0.5; m.x*=uRes.x/uRes.y;',
+      '  f-=0.5*(1.0-smoothstep(0.0,MRAD,length(uv-m)));',
+      ' }',
+      // dither ONE channel, then tint. Posterising r, g and b independently
+      // makes them quantise at different points, which shows up as colour
+      // fringing on a tinted palette — the original gets away with it because
+      // its wave is neutral grey.
+      ' float v=clamp(f,0.0,1.0);',
+      ' float thr=texture2D(uBayer,gl_FragCoord.xy/8.0).r-0.5;',
+      ' float st=1.0/(LEVELS-1.0);',
+      ' v=floor((v+thr*st)*(LEVELS-1.0)+0.5)*st;',
+      ' gl_FragColor=vec4(BG+TINT*v*STRENGTH,1.0);}'
+    ].join('\n');
+
+    function sh(t, src) {
+      var o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o);
+      if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) { console.warn(gl.getShaderInfoLog(o)); return null; }
+      return o;
+    }
+    var vs = sh(gl.VERTEX_SHADER, VERT), fs = sh(gl.FRAGMENT_SHADER, FRAG);
+    if (!vs || !fs) { cv.style.display = 'none'; return; }
+    var pr = gl.createProgram();
+    gl.attachShader(pr, vs); gl.attachShader(pr, fs); gl.linkProgram(pr); gl.useProgram(pr);
+
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(pr, 'p');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    // the 8x8 Bayer threshold map, as a repeating texture — GLSL ES 1.0 has no
+    // array constructor, and a texture lookup is cheaper than unrolling it
+    var B = [0,48,12,60,3,51,15,63, 32,16,44,28,35,19,47,31, 8,56,4,52,11,59,7,55,
+             40,24,36,20,43,27,39,23, 2,50,14,62,1,49,13,61, 34,18,46,30,33,17,45,29,
+             10,58,6,54,9,57,5,53, 42,26,38,22,41,25,37,21];
+    var px = new Uint8Array(64 * 4);
+    for (var k = 0; k < 64; k++) { var v = Math.round(B[k] / 64 * 255); px[k*4]=px[k*4+1]=px[k*4+2]=v; px[k*4+3]=255; }
+    var tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 8, 8, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.uniform1i(gl.getUniformLocation(pr, 'uBayer'), 0);
+
+    var uRes = gl.getUniformLocation(pr, 'uRes'), uTime = gl.getUniformLocation(pr, 'uTime');
+    var uMouse = gl.getUniformLocation(pr, 'uMouse'), uMouseOn = gl.getUniformLocation(pr, 'uMouseOn');
+    var W = 0, H = 0, raf = 0, t0 = performance.now(), mx = 0, my = 0, on = 0;
+
+    function resize() {
+      W = Math.ceil(window.innerWidth / PX); H = Math.ceil(window.innerHeight / PX);
+      cv.width = W; cv.height = H;
+      gl.viewport(0, 0, W, H);
+      gl.uniform2f(uRes, W, H);
+    }
+    function frame() {
+      gl.uniform1f(uTime, (performance.now() - t0) / 1000);
+      gl.uniform2f(uMouse, mx, my); gl.uniform1f(uMouseOn, on);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      raf = requestAnimationFrame(frame);
+    }
+    function start() { if (!raf) raf = requestAnimationFrame(frame); }
+    function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+
+    addEventListener('pointermove', function (e) {
+      mx = e.clientX / PX; my = H - e.clientY / PX; on = 1;   // gl_FragCoord counts up
+    }, { passive: true });
+    addEventListener('pointerleave', function () { on = 0; }, { passive: true });
+    var rt; addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(resize, 150); });
+    document.addEventListener('visibilitychange', function () { document.hidden ? stop() : start(); });
+    resize(); start();
+  })();
+
+  // ── motes you can push: each one springs back to a home it drifts around ──
+  (function () {
+    var cv = document.querySelector('.motes');
+    if (!cv || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var ctx = cv.getContext('2d');
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = 0, h = 0, P = [], raf = 0;
+    var mx = -1e4, my = -1e4, pmx = -1e4, pmy = -1e4;
+
+    var R = 130,        // how far the cursor reaches
+        PUSH = 2.2,     // how hard it shoves
+        K = 0.0055,     // spring back to home
+        DAMP = 0.93;    // ...without oscillating
+
+    var sp = document.createElement('canvas'), S = 24;
+    sp.width = sp.height = S;
+    var g2 = sp.getContext('2d');
+    var g = g2.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
+    g.addColorStop(0, 'rgba(241,221,215,1)');
+    g.addColorStop(0.4, 'rgba(241,221,215,0.42)');
+    g.addColorStop(1, 'rgba(241,221,215,0)');
+    g2.fillStyle = g; g2.fillRect(0, 0, S, S);
+
+    function mk() {
+      var x = Math.random() * w, y = Math.random() * h;
+      return { hx: x, hy: y, x: x, y: y, vx: 0, vy: 0,
+               r: 0.6 + Math.random() * 1.5, a: 0.10 + Math.random() * 0.26,
+               ph: Math.random() * 6.28, sp: 0.15 + Math.random() * 0.35,
+               ax: 8 + Math.random() * 22, ay: 6 + Math.random() * 18 };
+    }
+    function resize() {
+      w = innerWidth; h = innerHeight;
+      cv.width = w * dpr; cv.height = h * dpr;
+      cv.style.width = w + 'px'; cv.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var n = Math.max(60, Math.min(240, Math.round((w * h) / 8200)));
+      P = []; for (var i = 0; i < n; i++) P.push(mk());
+    }
+    var t = 0;
+    function frame() {
+      t += 0.016;
+      ctx.clearRect(0, 0, w, h);
+      // a fast pointer should sweep, not teleport: sample along last→now
+      var sdx = mx - pmx, sdy = my - pmy;
+      var steps = Math.min(4, 1 + Math.floor(Math.hypot(sdx, sdy) / 40));
+      for (var i = 0; i < P.length; i++) {
+        var p = P[i];
+        for (var k = 0; k < steps; k++) {
+          var f = (k + 1) / steps;
+          var cxp = pmx + sdx * f, cyp = pmy + sdy * f;
+          var dx = p.x - cxp, dy = p.y - cyp, d2 = dx * dx + dy * dy;
+          if (d2 < R * R) {
+            var d = Math.sqrt(d2) || 1, s2 = 1 - d / R;
+            p.vx += (dx / d) * s2 * s2 * PUSH / steps;
+            p.vy += (dy / d) * s2 * s2 * PUSH / steps;
+          }
+        }
+        // home wanders slowly, so the field is never actually still
+        var hx = p.hx + Math.sin(t * p.sp + p.ph) * p.ax;
+        var hy = p.hy + Math.cos(t * p.sp * 0.8 + p.ph) * p.ay;
+        p.vx += (hx - p.x) * K; p.vy += (hy - p.y) * K;
+        p.vx *= DAMP; p.vy *= DAMP;
+        p.x += p.vx; p.y += p.vy;
+
+        var speed = Math.min(1, Math.hypot(p.vx, p.vy) / 3.2);
+        ctx.globalAlpha = Math.min(1, p.a + speed * 0.5);
+        var sz = p.r * 5.5 * (1 + speed * 0.7);
+        ctx.drawImage(sp, p.x - sz / 2, p.y - sz / 2, sz, sz);
+      }
+      pmx = mx; pmy = my;
+      raf = requestAnimationFrame(frame);
+    }
+    function start() { if (!raf) raf = requestAnimationFrame(frame); }
+    function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+
+    addEventListener('pointermove', function (e) {
+      if (pmx < -1000) { pmx = e.clientX; pmy = e.clientY; }
+      mx = e.clientX; my = e.clientY;
+    }, { passive: true });
+    addEventListener('pointerleave', function () { mx = my = pmx = pmy = -1e4; }, { passive: true });
+    var rt; addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(resize, 150); });
+    document.addEventListener('visibilitychange', function () { document.hidden ? stop() : start(); });
+    resize(); start();
+  })();
+
+  // ── button sparks: an emitter, not a fixed set ───────────────────────
+  //  The previous version held ~1,500 grains that wobbled in place forever,
+  //  which reads as jitter rather than as particles. Grains now have a life:
+  //  born on the outline, thrown outward, decelerating, fading, dead, reused.
+  //  Emission is biased toward the point on the outline nearest your cursor,
+  //  so the fringe leans toward the pointer as it crosses the button.
+  (function () {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var PAD = 30, POOL = 2600, RATE = 1500;   // grains born per second at full tilt
+
+    function outline(w, h, r) {
+      var segs = [], L = 0;
+      function straight(x0, y0, x1, y1, nx, ny) {
+        var len = Math.hypot(x1 - x0, y1 - y0);
+        segs.push({ len: len, at: function (u) { return [x0 + (x1 - x0) * u, y0 + (y1 - y0) * u, nx, ny]; } });
+        L += len;
+      }
+      function arc(cx, cy, a0, a1) {
+        var len = Math.abs(a1 - a0) * r;
+        segs.push({ len: len, at: function (u) {
+          var a = a0 + (a1 - a0) * u;
+          return [cx + Math.cos(a) * r, cy + Math.sin(a) * r, Math.cos(a), Math.sin(a)]; } });
+        L += len;
+      }
+      straight(r, 0, w - r, 0, 0, -1);   arc(w - r, r, -Math.PI/2, 0);
+      straight(w, r, w, h - r, 1, 0);     arc(w - r, h - r, 0, Math.PI/2);
+      straight(w - r, h, r, h, 0, 1);     arc(r, h - r, Math.PI/2, Math.PI);
+      straight(0, h - r, 0, r, -1, 0);    arc(r, r, Math.PI, Math.PI*1.5);
+      return { total: L, at: function (d) {
+        d = ((d % L) + L) % L;
+        for (var i = 0; i < segs.length; i++) {
+          if (d <= segs[i].len) return segs[i].at(d / segs[i].len);
+          d -= segs[i].len;
+        }
+        return segs[0].at(0);
+      } };
+    }
+
+    document.querySelectorAll('.halo').forEach(function (halo) {
+      var cv = halo.querySelector('.halo__c'), btn = halo.querySelector('.btn');
+      if (!cv || !btn) return;
+      var ctx = cv.getContext('2d');
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var P = [], path = null, W = 0, H = 0, raf = 0, last = 0, owe = 0;
+      var gate = 0, mouseD = -1, lut = [];
+
+      for (var i = 0; i < POOL; i++) P.push({ life: 0 });
+
+      function build() {
+        var r = btn.getBoundingClientRect();
+        W = r.width + PAD * 2; H = r.height + PAD * 2;
+        cv.width = W * dpr; cv.height = H * dpr;
+        cv.style.width = W + 'px'; cv.style.height = H + 'px';
+        cv.style.left = -PAD + 'px'; cv.style.top = -PAD + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = 'rgb(241,221,215)';
+        path = outline(r.width, r.height, 10);
+        lut = [];                                  // coarse map for nearest-point
+        for (var k = 0; k < 96; k++) {
+          var d = (k / 96) * path.total, q = path.at(d);
+          lut.push([PAD + q[0], PAD + q[1], d]);
+        }
+      }
+
+      function spawn(p) {
+        var d;
+        if (mouseD >= 0 && Math.random() < 0.62) {
+          // lean toward the pointer, but never abandon the rest of the outline
+          d = mouseD + (Math.random() - 0.5) * path.total * 0.34;
+        } else {
+          d = Math.random() * path.total;
+        }
+        var q = path.at(d);
+        var jitter = 0.6 + Math.random() * 1.6;
+        p.x = PAD + q[0] + q[2] * jitter;
+        p.y = PAD + q[1] + q[3] * jitter;
+        var sp = 5 + Math.pow(Math.random(), 1.7) * 22;      // most barely leave
+        var tan = (Math.random() - 0.5) * 9;
+        p.vx = q[2] * sp - q[3] * tan;
+        p.vy = q[3] * sp + q[2] * tan;
+        p.life = 0.45 + Math.random() * 0.85;
+        p.age = 0;
+        p.r = 0.9 + Math.random() * 0.9;
+        p.a = 0.68 + Math.random() * 0.32;
+      }
+
+      function frame(now) {
+        var dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
+        var want = halo.matches(':hover, :focus-within');
+        gate = Math.max(0, Math.min(1, gate + (want ? dt * 6 : -dt * 5)));
+
+        owe += RATE * gate * dt;
+        var births = Math.floor(owe); owe -= births;
+        for (var i = 0; i < P.length && births > 0; i++) {
+          if (P[i].life <= 0) { spawn(P[i]); births--; }
+        }
+
+        ctx.clearRect(0, 0, W, H);
+        var live = 0;
+        for (i = 0; i < P.length; i++) {
+          var p = P[i];
+          if (p.life <= 0) continue;
+          p.age += dt;
+          if (p.age >= p.life) { p.life = 0; continue; }
+          live++;
+          var u = p.age / p.life;
+          p.vx *= 0.955; p.vy *= 0.955;            // thrown, then it gives up
+          p.x += p.vx * dt; p.y += p.vy * dt;
+          // ramp in, hold, then go: a pure decay curve leaves almost every
+          // grain mid-fade, which is why the fringe read dim rather than crisp
+          var fade = Math.min(1, u / 0.08) * Math.min(1, (1 - u) / 0.40);
+          ctx.globalAlpha = p.a * fade;
+          var sz = p.r * (1 - 0.35 * u);
+          var x0 = Math.round((p.x - sz / 2) * dpr) / dpr;
+          var y0 = Math.round((p.y - sz / 2) * dpr) / dpr;
+          var s0 = Math.max(1 / dpr, Math.round(sz * dpr) / dpr);
+          ctx.fillRect(x0, y0, s0, s0);
+        }
+
+        if (!want && gate <= 0 && live === 0) {
+          ctx.clearRect(0, 0, W, H); halo.classList.remove('lit'); raf = 0; return;
+        }
+        raf = requestAnimationFrame(frame);
+      }
+
+      function wake(e) {
+        halo.classList.add('lit');
+        if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+      }
+      halo.addEventListener('pointerenter', wake);
+      halo.addEventListener('focusin', wake);
+      halo.addEventListener('pointermove', function (e) {
+        var r = cv.getBoundingClientRect();
+        var mx = e.clientX - r.left, my = e.clientY - r.top, best = 1e9;
+        for (var k = 0; k < lut.length; k++) {
+          var dx = lut[k][0] - mx, dy = lut[k][1] - my, d2 = dx * dx + dy * dy;
+          if (d2 < best) { best = d2; mouseD = lut[k][2]; }
+        }
+      });
+      halo.addEventListener('pointerleave', function () { mouseD = -1; });
+
+      build();
+      var rt; addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(build, 200); });
+    });
+  })();
+
+  /* ── tabs ──────────────────────────────────────────────────────────────────
+     Inactive panels keep their place in the grid (that is what stops the block
+     changing height between tabs), so they are hidden from assistive tech and the
+     tab order with `inert` rather than `hidden`. */
+  (function () {
+    document.querySelectorAll('.tabs').forEach(function (tabs) {
+      var buttons = [].slice.call(tabs.querySelectorAll('[role="tab"]'));
+      if (!buttons.length) return;
+
+      function select(btn, focus) {
+        buttons.forEach(function (b) {
+          var on = b === btn;
+          b.setAttribute('aria-selected', String(on));
+          b.tabIndex = on ? 0 : -1;
+          var panel = document.getElementById(b.getAttribute('aria-controls'));
+          if (!panel) return;
+          if (on) { panel.setAttribute('data-on', ''); panel.removeAttribute('inert'); }
+          else { panel.removeAttribute('data-on'); panel.setAttribute('inert', ''); }
+        });
+        if (focus) btn.focus();
+      }
+
+      tabs.addEventListener('click', function (e) {
+        var btn = e.target.closest('[role="tab"]');
+        if (btn) select(btn, false);
+      });
+
+      tabs.addEventListener('keydown', function (e) {
+        var i = buttons.indexOf(document.activeElement);
+        if (i < 0) return;
+        var next = e.key === 'ArrowRight' ? i + 1
+                 : e.key === 'ArrowLeft'  ? i - 1
+                 : e.key === 'Home'       ? 0
+                 : e.key === 'End'        ? buttons.length - 1 : null;
+        if (next === null) return;
+        e.preventDefault();
+        select(buttons[(next + buttons.length) % buttons.length], true);
+      });
+    });
+  })();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# Scratch pages served only in development: the swatch sheets and contact sheets used to
+# compare candidates. They live here so the dev server can serve them, and go nowhere else.
+_*.html
+__pycache__/

@@ -297,7 +297,8 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
     // someone types it directly inside a Synth terminal — passes through untouched.
     let subcommands: Set<String> = ["run", "serve", "attach", "acp", "api", "debug", "console",
                                     "auth", "mcp", "plugin", "models", "stats", "export", "import",
-                                    "mini", "service", "pair", "--version", "-v"]
+                                    "mini", "service", "pair", "upgrade", "uninstall",
+                                    "--version", "-v"]
     let isSubcommand = userArgs.first.map { subcommands.contains($0) } ?? false
     let port = env["SYNTH_OPENCODE2_PORT"].flatMap { $0.isEmpty ? nil : $0 }
     let password = env["SYNTH_OPENCODE2_PASSWORD"].flatMap { $0.isEmpty ? nil : $0 }
@@ -305,9 +306,11 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
 
     guard instrument, let port, let password else { execReal(real, withLeading(leading, userArgs)) }
 
-    // A user's own `--server` wins — they have already pointed the TUI somewhere themselves, the
-    // same rule v1 applies to a user-supplied `--port`.
-    guard !userArgs.contains("--server") else { execReal(real, withLeading(leading, userArgs)) }
+    // A user's own `--server`/`--standalone` wins — they have already pointed the TUI somewhere
+    // themselves (or opted out of a shared server entirely), the same rule v1 applies to a
+    // user-supplied `--port`.
+    guard !hasFlag(userArgs, ["--server", "--standalone"])
+    else { execReal(real, withLeading(leading, userArgs)) }
 
     // Ignored here, before `serve` exists, not just before the foreground TUI: `posix_spawn`
     // without `POSIX_SPAWN_SETSIGDEF` has a child inherit the parent's *disposition*, so setting

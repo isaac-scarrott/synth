@@ -69,6 +69,15 @@ import OSLog
 
     // MARK: Supervision
 
+    /// A resumed row's `session.created` never fires for its own conversation — only for a
+    /// subagent's, if any turn ever starts one — so `isRowSession` would otherwise wait forever
+    /// to learn which id is "its own" and treat everything as its own meanwhile (`:200`'s `nil`
+    /// fallback). Seeding it here, before `attach` starts the stream, means the very first event
+    /// is already correctly filtered instead of racing a subagent for the slot.
+    func seedResume(session: UUID, resumeID: String) {
+        agentSessionIDs[session] = resumeID
+    }
+
     func attach(session: UUID) {
         guard streams[session] == nil, let port = ports[session], let password = passwords[session]
         else { return }
@@ -112,6 +121,7 @@ import OSLog
 
     private func deliverConfirmed(_ text: String, session: UUID) async {
         for _ in 0..<12 {                       // ~12s of TUI boot, then give up
+            guard streams[session] != nil else { return }   // the row went away mid-wait
             let before = turnTicks[session] ?? 0
             _ = TerminalManager.shared.submit(text, to: session)
             for _ in 0..<10 {                   // ~2s for the turn to show on the event stream

@@ -2323,10 +2323,15 @@ disclosure to dive deeper.
   pinned password and one process group (`serve --port <assigned>`, waited healthy, then the TUI
   over `--server <url>`); v1's `/tui/append-prompt` has no v2 equivalent, so delivery falls back to
   the same terminal paste Claude Code's supervisor uses; MCP registration moved from
-  `OPENCODE_CONFIG_CONTENT` (silently ignored by v2) to `PUT /api/mcp/<name>`; v2's event vocabulary
-  gained dedicated `session.execution.*` outcomes and a Form system superseding `question.*`.
+  `OPENCODE_CONFIG_CONTENT` (real in v2, but loads 10–30s after health — too slow to depend on) to
+  the immediate, deterministic `PUT /api/mcp/<name>`; v2's event vocabulary gained dedicated
+  `session.execution.*` outcomes and a Form system superseding `question.*`.
   Fixed alongside it: `AgentProbe`'s custom-agent detection now picks the longest matching
   version-marker rather than the first in registration order, since opencode2's own `--version`
-  answer contains v1's marker as a substring. Known gap: the shared-config-dir light-theme
+  answer contains v1's marker as a substring. An independent review then caught three more: a
+  resumed row could latch onto a subagent's conversation id before its own arrived (fixed via a new
+  `AgentSupervisor.seedResume`, default no-op for every other agent), the delivery retry loop could
+  keep pasting into a row that had already gone away, and `upgrade`/`uninstall`/`--standalone`
+  weren't recognised as real opencode2 invocations. Known gap: the shared-config-dir light-theme
   correction (`OpencodeTheme`) does not carry over to v2's TUI — verified empirically, left
   unaddressed rather than reverse-engineered against a still-moving preview theme format.

@@ -402,6 +402,17 @@ extension AgentDescriptor: Identifiable {}
     /// conversation. `binary` is the command to run — the built-in's, or the user's own command
     /// this supervisor is hosting.
     func launchCommand(binary: String, resume: String?, flags: String) -> String
+
+    /// Told, ahead of `attach`, which conversation a resuming row is about to reopen. Most
+    /// supervisors never need this — they learn a row's conversation id for free, from the first
+    /// session-scoped event they see over their own transport, which on a resume is already that
+    /// conversation's. Default no-op; a supervisor overrides it only if that assumption can fail
+    /// (a resumed row's first observed event isn't guaranteed to be its own).
+    func seedResume(session: UUID, resumeID: String)
+}
+
+extension AgentSupervisor {
+    func seedResume(session: UUID, resumeID: String) {}
 }
 
 /// Shell-quote a string for the single-quoted context the launch command types into a shell.

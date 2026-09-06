@@ -2313,6 +2313,8 @@ disclosure to dive deeper.
   cascade + reorder, one-per-browser col-split, shim → Swift Inspect routing, and all chrome/verbs
   ported per the designs; audit-driven hardening included. Known limitation: a mid-run page-target
   swap can't re-resolve the frontend until the inspect is reopened.
+## [2026-09-06](docs/features/2026-09-06.md)
+
 - **0.40.0 ships — Inspect is a session** — release carrying the two entries above: DevTools is a
   row, a pane and a tab instead of a dock, one per browser, hosting the real Chromium inspector and
   cascading closed with the browser it belongs to. `CFBundleVersion` 663, tag `v0.40.0`; dmg + zip
@@ -2421,6 +2423,15 @@ disclosure to dive deeper.
   the batch refresh (now bounded, 6 branches at a time). 28/28 checks green in a standalone
   harness against real merged/open/draft/closed/cross-fork PRs. Known regression: only
   `github.com` is recognised, not GitHub Enterprise.
+- **The conditions bar gains Theme, a fourth axis for what colour scheme the page sees** — Normal
+  now means the page follows *Synth's* theme setting (System still means the raw OS decides), and
+  Light/Dark force it either way, isolated to that one browser via `data-page-theme` on its own
+  pane. Sits right after CPU, at Normal by default like the other three.
+- **Theme's native port** — `PageTheme` + `Emulation.setEmulatedMedia` (app), `browser.deviceMode`
+  gains `theme`. A colour-scheme-only CDP change doesn't force CEF 144 to repaint on its own, so
+  `applyPageTheme()` piggybacks on a device-metrics re-send (a real viewport change always paints)
+  or a throwaway metrics nudge when no screen override is active — and retries up to four times
+  over ~1.8s (`kickPageTheme`), since measured a single nudge wasn't reliable either.
 - **Settings loses its "Experimental" drawer** — Tabs and Simulator sessions weren't experimental,
   just off by default, so the section that grouped them by maturity is gone and each row moves to
   where you'd look for it. Appearance takes the sessions view mode as a Sidebar/Tabs choice and

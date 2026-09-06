@@ -2385,6 +2385,42 @@ disclosure to dive deeper.
 
 ## [2026-09-06](docs/features/2026-09-06.md)
 
+- **OpenCode 2 joins as Synth's fourth hosted agent** — `opencode2` (OpenCode's v2 preview CLI),
+  added as one `AgentDescriptor` plus one `AgentSupervisor` (`Opencode2Supervisor`), sharing
+  OpenCode's own mark. v2 splits its server out of the TUI process and gates every route behind
+  HTTP Basic auth, so the shim now runs `serve` and the visible TUI as two processes sharing one
+  pinned password and one process group (`serve --port <assigned>`, waited healthy, then the TUI
+  over `--server <url>`); v1's `/tui/append-prompt` has no v2 equivalent, so delivery falls back to
+  the same terminal paste Claude Code's supervisor uses; MCP registration moved from
+  `OPENCODE_CONFIG_CONTENT` (real in v2, but loads 10–30s after health — too slow to depend on) to
+  the immediate, deterministic `PUT /api/mcp/<name>`; v2's event vocabulary gained dedicated
+  `session.execution.*` outcomes and a Form system superseding `question.*`.
+  Fixed alongside it: `AgentProbe`'s custom-agent detection now picks the longest matching
+  version-marker rather than the first in registration order, since opencode2's own `--version`
+  answer contains v1's marker as a substring. An independent review then caught three more: a
+  resumed row could latch onto a subagent's conversation id before its own arrived (fixed via a new
+  `AgentSupervisor.seedResume`, default no-op for every other agent), the delivery retry loop could
+  keep pasting into a row that had already gone away, and the subcommand-recognition list had
+  gaps in both directions against the real binary (missing `update`/`--standalone`/`-h`/`--help`/
+  `--completions`/`--wizard`; wrongly carrying over `uninstall` and `attach` from v1's own list,
+  neither real for v2) — two further rounds settled it against the binary's own command table.
+  Known gap: the shared-config-dir light-theme correction (`OpencodeTheme`) does not carry over to
+  v2's TUI — verified empirically, left unaddressed rather than reverse-engineered against a
+  still-moving preview theme format.
+- **PR state talks to GitHub directly — no `gh` binary dependency** — `PRService` now makes
+  one GraphQL call per branch to `api.github.com` instead of shelling out to the `gh` CLI;
+  auth comes from `git credential fill` (whatever git itself already has on file), `GH_TOKEN`/
+  `GITHUB_TOKEN`, or — last resort, closing a real SSH-only-auth gap found in testing —
+  `gh auth token` if `gh` happens to be present. Every read is scoped to one branch via
+  GraphQL's `headRefName` filter — asked by what `git worktree list` says is actually checked
+  out on disk, not the model's stored name — generalising the sweeper's anti-truncation fix to
+  every caller. Testing against real GitHub data caught and fixed a real bug before it shipped:
+  a REST-based first draft filtered by the wrong repo owner for cross-fork PRs; GraphQL's
+  `headRefName` filter doesn't have that problem. Also fixed: a `/tmp`-vs-`/private/tmp`
+  symlink bug in the new "what's actually checked out" lookup, and a thread-explosion risk in
+  the batch refresh (now bounded, 6 branches at a time). 28/28 checks green in a standalone
+  harness against real merged/open/draft/closed/cross-fork PRs. Known regression: only
+  `github.com` is recognised, not GitHub Enterprise.
 - **Settings loses its "Experimental" drawer** — Tabs and Simulator sessions weren't experimental,
   just off by default, so the section that grouped them by maturity is gone and each row moves to
   where you'd look for it. Appearance takes the sessions view mode as a Sidebar/Tabs choice and

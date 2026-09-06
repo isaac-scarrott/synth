@@ -117,9 +117,18 @@ enum AgentProbe {
             // the half of the answer that decides whether the row can be launched at all.
             return AgentProbeResult(state: .unrecognised, version: nil, via: via)
         }
+        // Longest matching marker wins, not first-in-list: opencode2's own answer ("opencode2
+        // v0.0.0-…") contains opencode's marker ("opencode") as a substring, so first-match-wins
+        // would recognise a custom opencode2 wrapper as opencode (v1) whenever its signature is
+        // scanned first. A marker only ever prefixes another this way when one product versions
+        // itself as another's successor, which is exactly this pair — so "most specific substring
+        // found" is the general fix, not an opencode2 special case.
         let hay = answer.lowercased()
-        if let match = signatures.first(where: { s in s.markers.contains { hay.contains($0) } }) {
-            return AgentProbeResult(state: .recognised(match.id), version: answer, via: via)
+        let best = signatures.lazy
+            .compactMap { s in s.markers.first(where: hay.contains).map { (s.id, $0) } }
+            .max { $0.1.count < $1.1.count }
+        if let best {
+            return AgentProbeResult(state: .recognised(best.0), version: answer, via: via)
         }
         return AgentProbeResult(state: .unrecognised, version: answer, via: via)
     }

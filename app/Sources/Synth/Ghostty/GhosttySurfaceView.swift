@@ -211,9 +211,13 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         // The binary comes from the descriptor, not the supervisor: a user's own command is run by
         // a built-in's supervisor, and `exec`ing the built-in would be the wrong program.
         if let agent = kind.agentID.flatMap({ AgentRegistry.descriptor($0) }),
-           let launch = AgentRegistry.supervisor(agent.id)?
-               .launchCommand(binary: agent.binaryName, resume: resumeAgentID, flags: agentFlags) {
+           let supervisor = AgentRegistry.supervisor(agent.id) {
+            let launch = supervisor.launchCommand(binary: agent.binaryName, resume: resumeAgentID,
+                                                   flags: agentFlags)
             env["SYNTH_LAUNCH_COMMAND"] = launch
+            // Ahead of `attach`, in case the row's first observed event isn't guaranteed to be
+            // its own conversation's (Opencode2Supervisor; see `seedResume`'s doc).
+            if let resumeAgentID { supervisor.seedResume(session: sessionID, resumeID: resumeAgentID) }
         }
         // Every session carries the synth-md palette and control socket, not just markdown
         // rows: `synth notes.md` typed in an ordinary terminal runs the same TUI, and it has

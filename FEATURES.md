@@ -2331,7 +2331,10 @@ disclosure to dive deeper.
   answer contains v1's marker as a substring. An independent review then caught three more: a
   resumed row could latch onto a subagent's conversation id before its own arrived (fixed via a new
   `AgentSupervisor.seedResume`, default no-op for every other agent), the delivery retry loop could
-  keep pasting into a row that had already gone away, and `upgrade`/`uninstall`/`--standalone`
-  weren't recognised as real opencode2 invocations. Known gap: the shared-config-dir light-theme
-  correction (`OpencodeTheme`) does not carry over to v2's TUI — verified empirically, left
-  unaddressed rather than reverse-engineered against a still-moving preview theme format.
+  keep pasting into a row that had already gone away, and the subcommand-recognition list had
+  gaps in both directions against the real binary (missing `update`/`--standalone`/`-h`/`--help`/
+  `--completions`/`--wizard`; wrongly carrying over `uninstall` and `attach` from v1's own list,
+  neither real for v2) — two further rounds settled it against the binary's own command table.
+  Known gap: the shared-config-dir light-theme correction (`OpencodeTheme`) does not carry over to
+  v2's TUI — verified empirically, left unaddressed rather than reverse-engineered against a
+  still-moving preview theme format.

@@ -104,6 +104,75 @@ private enum StripItem: Identifiable {
     }
 }
 
+// MARK: - The tab chip itself
+
+/// `.tab` is one component with two strips: the branch's sessions (`TabStrip`) and Settings' own
+/// scopes (`SettingsPane`'s strip). Same height, radius, type, hover and the same raised card for
+/// the open one, so the two can never drift into looking like different ideas. What differs
+/// between them — spacing, what a tab holds, whether it stretches — belongs to the strip, never
+/// here.
+struct TabShell: ViewModifier {
+    let isActive: Bool
+    let hovering: Bool
+    /// A tab carrying a close button gives back the space the button occupies. Charging that
+    /// tighter edge to every tab left the ones without one (Settings' scopes) 9pt off one side
+    /// and 5pt off the other (working.html `.tab:has(.tab__close)`).
+    let hasClose: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The open tab holds its raised fill under the pointer rather than washing back down to the
+    /// hover tint.
+    private var fill: Color { isActive ? Theme.raised : (hovering ? Theme.rowHover : .clear) }
+
+    func body(content: Content) -> some View {
+        content
+            .font(.sans(12, 500))
+            .foregroundStyle(isActive ? Theme.ink : Theme.inkMuted)
+            .padding(.leading, 9).padding(.trailing, hasClose ? 5 : 9)
+            .frame(height: 28)
+            .background(shell)
+    }
+
+    /// The chip. Elevation is the only thing that says "open" here — a hairline plus a contact
+    /// shadow, and no fill at all when the tab is closed. Dark can't lean on a black drop shadow
+    /// the way light does — it reads as nothing against an already-dark rail — so dark trades the
+    /// wasted ambient blur for a hairline top highlight instead (light catching the tab's edge,
+    /// the standard dark-UI substitute for shadow).
+    private var shell: some View {
+        let shape = RoundedRectangle(cornerRadius: 8)
+        return shape.fill(fill)
+            .overlay {
+                if isActive { shape.strokeBorder(Theme.borderStrong, lineWidth: 0.5) }
+            }
+            .overlay {
+                if isActive && colorScheme == .dark {
+                    Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .clipShape(shape)
+                }
+            }
+            .shadow(color: contactShadow, radius: colorScheme == .dark ? 1 : 0.5, y: 1)
+            .shadow(color: ambientShadow, radius: 5, y: 4)
+    }
+
+    /// The tight, always-present grounding shadow (working.html `.tab--active`'s first layer).
+    private var contactShadow: Color {
+        guard isActive else { return .clear }
+        return colorScheme == .dark ? .black.opacity(0.3) : .black.opacity(0.05)
+    }
+    /// The soft ambient lift — light only; in dark it never had enough contrast to show.
+    private var ambientShadow: Color {
+        guard isActive, colorScheme == .light else { return .clear }
+        return .black.opacity(0.08)
+    }
+}
+
+extension View {
+    func tabShell(isActive: Bool, hovering: Bool, hasClose: Bool = false) -> some View {
+        modifier(TabShell(isActive: isActive, hovering: hovering, hasClose: hasClose))
+    }
+}
+
 // MARK: - Lone tab
 
 /// A tab — the session's handle: icon (+ unread dot), name, its live/needs-input signal, and a
@@ -112,7 +181,6 @@ private enum StripItem: Identifiable {
 /// (working.html `.tab` / `.tab--active`).
 private struct TabChip: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.colorScheme) private var colorScheme
     let session: Session
     /// This tab's pane as a fraction rect of the split it belongs to — the map it wears. Nil on a
     /// lone tab, which has no split to map.
@@ -120,9 +188,6 @@ private struct TabChip: View {
     @State private var hovering = false
 
     private var isActive: Bool { store.openSessionID == session.id }
-    /// The chip's own fill — the open tab holds its raised fill under the pointer rather than washing
-    /// back down to the hover tint.
-    private var fill: Color { isActive ? Theme.raised : (hovering ? Theme.rowHover : .clear) }
     // Double-clicking the tab renames it in place, reusing the sidebar row's inline-rename machinery
     // keyed by session id (working.html `startTabRename`) — the field swaps in for the name label.
     private var renaming: Bool { store.renamingRowID == session.id }
@@ -141,24 +206,18 @@ private struct TabChip: View {
                     RenameField(font: .sans(12, 500))
                     Spacer(minLength: 4)
                 }
-                .padding(.leading, 9).padding(.trailing, 5)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(shell)
+                .tabShell(isActive: isActive, hovering: hovering, hasClose: true)
             } else {
                 Button { store.open(session); focusContent(store) } label: {
                     HStack(spacing: contentSpacing) {
                         TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
                         Text(session.title)
-                            .font(.sans(12, 500))
-                            .foregroundStyle(isActive ? Theme.ink : Theme.inkMuted)
                             .lineLimit(1).truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         indicator
                         Color.clear.frame(width: 16)   // reserve the close slot (overlaid below)
                     }
-                    .padding(.leading, 9).padding(.trailing, 5)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(shell)
+                    .tabShell(isActive: isActive, hovering: hovering, hasClose: true)
                     .contentShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
@@ -168,51 +227,21 @@ private struct TabChip: View {
         }
         .frame(minWidth: 34, maxWidth: 200)
         .frame(height: 28)
+        // Copper ring + wash when a dragged tab is about to pair into a split with this one (012).
+        .overlay {
+            if store.pairTargetID == session.id {
+                let shape = RoundedRectangle(cornerRadius: 8)
+                shape.fill(Theme.accent.opacity(0.12))
+                    .overlay { shape.strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1.5) }
+                    .allowsHitTesting(false)
+            }
+        }
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.11), value: hovering)
         .tabDrag(session)
         // Right-click opens the same ⌘K frame the sidebar row's ⋯ / right-click opens (openRowActions).
         .onSecondaryClick { store.openRowActions(.session(session)) }
         .help(session.title)
-    }
-
-    /// The chip itself. Elevation is the only thing that says "open" here — a hairline plus a
-    /// contact shadow, and no fill at all when the tab is closed. Dark can't lean on a black drop
-    /// shadow the way light does — it reads as nothing against an already-dark rail — so dark trades
-    /// the wasted ambient blur for a hairline top highlight instead (light catching the tab's edge,
-    /// the standard dark-UI substitute for shadow).
-    @ViewBuilder private var shell: some View {
-        let shape = RoundedRectangle(cornerRadius: 8)
-        shape.fill(fill)
-            .overlay {
-                if isActive { shape.strokeBorder(Theme.borderStrong, lineWidth: 0.5) }
-            }
-            .overlay {
-                if isActive && colorScheme == .dark {
-                    Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
-                        .frame(maxHeight: .infinity, alignment: .top)
-                        .clipShape(shape)
-                }
-            }
-            .shadow(color: contactShadow, radius: colorScheme == .dark ? 1 : 0.5, y: 1)
-            .shadow(color: ambientShadow, radius: 5, y: 4)
-            // Copper ring + wash when a dragged tab is about to pair into a split with this one (012).
-            .overlay {
-                if store.pairTargetID == session.id {
-                    shape.fill(Theme.accent.opacity(0.12))
-                        .overlay { shape.strokeBorder(Theme.accent.opacity(0.7), lineWidth: 1.5) }
-                }
-            }
-    }
-    /// The tight, always-present grounding shadow (working.html `.tab--active`'s first layer).
-    private var contactShadow: Color {
-        guard isActive else { return .clear }
-        return colorScheme == .dark ? .black.opacity(0.3) : .black.opacity(0.05)
-    }
-    /// The soft ambient lift — light only; in dark it never had enough contrast to show.
-    private var ambientShadow: Color {
-        guard isActive, colorScheme == .light else { return .clear }
-        return .black.opacity(0.08)
     }
 
     // The same status/owner slot the sidebar row carries; a browser owned by an agent wears the

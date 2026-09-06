@@ -693,8 +693,8 @@ struct RootView: View {
                 if !opt, !shift, let n = Self.splitDigit(event.keyCode), n >= 2 {
                     store.focusPane(n); focusContent(store); return nil
                 }
-                // Tabs (experimental): ⌘⇧[ / ⌘⇧] step the branch's tabs. Guarded by tabsMode so a
-                // tabs-off build is untouched (bare ⌘[ / ⌘] stay the browser's history verbs, below).
+                // Tabs: ⌘⇧[ / ⌘⇧] step the branch's tabs. Guarded by tabsMode so sidebar mode keeps
+                // the chord free (bare ⌘[ / ⌘] stay the browser's history verbs, below).
                 if store.tabsMode, shift, !opt, event.keyCode == 33 { store.cycleTab(-1); focusContent(store); return nil }
                 if store.tabsMode, shift, !opt, event.keyCode == 30 { store.cycleTab(1); focusContent(store); return nil }
                 // ⌘W closes the current context (focused sidebar row or open session) through the
@@ -773,7 +773,7 @@ struct RootView: View {
                 default: break
                 }
             }
-            // Tabs (experimental): ⌃⇥ / ⌃⇧⇥ cycle the branch's tabs. Placed before the surface
+            // Tabs: ⌃⇥ / ⌃⇧⇥ cycle the branch's tabs. Placed before the surface
             // passthrough so it works even while a terminal/browser holds focus (a global nav
             // chord, like ⌘⇧[ / ⌘⇧]). Guarded by tabsMode.
             if store.tabsMode, event.keyCode == 48,

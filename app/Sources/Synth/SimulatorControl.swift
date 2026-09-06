@@ -48,8 +48,8 @@ enum SimulatorControl {
             guard !store.simulatorsAvailable else { return nil }
             guard store.simulatorSessionsEnabled else {
                 return "simulator sessions are off: they're gated behind a toggle "
-                    + "(Settings → Integrations → Simulator sessions), which is off by default. Ask "
-                    + "the user to turn it on — your tool list may predate them turning it off. "
+                    + "(Settings → Integrations → Simulator sessions) that this user has turned "
+                    + "off — your tool list predates that. Ask them to turn it back on. "
                     + "Nothing was started."
             }
             return "no full Xcode is installed (or xcode-select / DEVELOPER_DIR points at the "

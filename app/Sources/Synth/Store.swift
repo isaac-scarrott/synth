@@ -356,12 +356,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     var pulseTokens: [UUID: Int] = [:]
 
     /// Per-type Notification-Center sound toggles (working.html's per-type sound setting).
-    /// Persisted to UserDefaults like `themePref`; defaults needs-input ON, error ON, done OFF.
+    /// Persisted to UserDefaults like `themePref`; all three ship OFF, so a machine running a
+    /// dozen sessions is silent until the user asks a type to speak up.
     /// In-app toasts are always silent — this only gates the unfocused NC path.
-    var soundNeedsInput = AppStore.loadBoolPref(AppStore.soundInputKey, default: true) {
+    var soundNeedsInput = AppStore.loadBoolPref(AppStore.soundInputKey, default: false) {
         didSet { UserDefaults.standard.set(soundNeedsInput, forKey: AppStore.soundInputKey) }
     }
-    var soundError = AppStore.loadBoolPref(AppStore.soundErrorKey, default: true) {
+    var soundError = AppStore.loadBoolPref(AppStore.soundErrorKey, default: false) {
         didSet { UserDefaults.standard.set(soundError, forKey: AppStore.soundErrorKey) }
     }
     var soundDone = AppStore.loadBoolPref(AppStore.soundDoneKey, default: false) {
@@ -423,29 +424,31 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
     static let analyticsKey = "synth-analytics-enabled"
 
-    /// Experimental "Tabs" view mode (working.html `data-tabs`). Presentation-only over the same
-    /// branch → pane-tree → session store: on, the sidebar drops to two deep (sessions leave the
-    /// tree) and the content surface gains one tab strip per branch. OFF by default, and every
-    /// tabs-gated behaviour keys off this, so a tabs-off build is byte-for-byte today's. `@Observable`
+    /// "Tabs" view mode (working.html `data-tabs`). Presentation-only over the same branch →
+    /// pane-tree → session store: on, the sidebar drops to two deep (sessions leave the tree) and
+    /// the content surface gains one tab strip per branch. ON by default — this is how Synth looks
+    /// out of the box; the switch stays for people who would rather keep their sessions in the
+    /// sidebar tree. Every tabs-gated behaviour still keys off this one flag, so turning it off
+    /// yields the whole sidebar design rather than a hollowed-out tabs one. `@Observable`
     /// re-renders the sidebar and content the instant it flips — the lossless toggle, no migration.
-    var tabsMode = AppStore.loadBoolPref(AppStore.tabsModeKey, default: false) {
+    var tabsMode = AppStore.loadBoolPref(AppStore.tabsModeKey, default: true) {
         didSet { UserDefaults.standard.set(tabsMode, forKey: AppStore.tabsModeKey) }
     }
     static let tabsModeKey = "synth-tabs"
 
-    /// Experimental simulator sessions (ADR-0015). OFF by default, and deliberately so: the feature
-    /// reads the device framebuffer and injects input through Apple's *private* simulator
-    /// frameworks, resolved by name at runtime. It has been proven on the Xcode it was built
-    /// against, and it degrades by design when a symbol moves — but "degrades by design" is a claim
-    /// about Xcode versions nobody has run it on yet, and this is the app hosting the user's
-    /// terminals and agent sessions.
+    /// Simulator sessions (ADR-0015). ON by default: running a device as a session — and handing
+    /// agents that same device — is part of what Synth offers rather than something to opt into.
+    /// The default costs nothing on a machine that can't use it: `simulatorsAvailable` ANDs this
+    /// with `SimulatorDeviceCatalog.isXcodeAvailable`, so without a full Xcode the feature is inert
+    /// whatever the switch says, and the switch is what someone with Xcode reaches for to keep the
+    /// private-framework path out of their app entirely.
     ///
     /// The gate covers what a user can start and what an agent is offered: with it off, no create
     /// route offers a simulator and the `synth-simulator` MCP server is not registered into any
     /// worktree. Rows that already exist keep working, because silently breaking a session someone
     /// is using is not what a toggle should do.
     var simulatorSessionsEnabled = AppStore.loadBoolPref(
-        AppStore.simulatorSessionsKey, default: false) {
+        AppStore.simulatorSessionsKey, default: true) {
         didSet {
             UserDefaults.standard.set(simulatorSessionsEnabled, forKey: AppStore.simulatorSessionsKey)
             syncAgentBridge()
@@ -453,7 +456,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
     static let simulatorSessionsKey = "synth-simulator-sessions"
 
-    /// Whether simulator sessions can be offered at all: the experiment is on, and there is a full
+    /// Whether simulator sessions can be offered at all: the toggle is on, and there is a full
     /// Xcode to run them with. Every create route and the MCP registration ask this, so there is one
     /// answer rather than four.
     var simulatorsAvailable: Bool {

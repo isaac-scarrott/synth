@@ -176,8 +176,13 @@ private struct UsageTile: View {
                 if let percent = metric.percent {
                     UsageMeter(percent: percent, tileIndex: index, appeared: appeared)
                 }
-                RollingNumber(text: detail, font: .mono(11), face: 11)
-                    .foregroundStyle(Theme.inkMeta)
+                // A window the server reports with no reset time (a per-model cap nothing has been
+                // spent against yet) has nothing to say down here, and an empty line would leave
+                // the tile looking like it failed to load one.
+                if !detail.isEmpty {
+                    RollingNumber(text: detail, font: .mono(11), face: 11)
+                        .foregroundStyle(Theme.inkMeta)
+                }
             }
         }
         .padding(16)
@@ -187,6 +192,16 @@ private struct UsageTile: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Theme.border, lineWidth: 0.5)
         )
+        // A lit top edge rather than a heavier shadow: the tile catches light instead of floating,
+        // which is what keeps a grid of flat rectangles from reading as a spreadsheet. Inset by the
+        // corner radius so the line stops where the corner starts turning.
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Theme.dyn(0xFFFFFF, 0.7, 0xFFFFFF, 0.055))
+                .frame(height: 1)
+                .padding(.horizontal, 14)
+                .allowsHitTesting(false)
+        }
         .shadow(color: .black.opacity(0.04), radius: 1.5, y: 1)
         .usageEntrance(index: index, appeared: appeared)
     }

@@ -18,13 +18,17 @@ struct UsageMeter: View {
 
     private static let segments = 24
     private static let height: CGFloat = 32
+    /// What a segment measures in a half-width tile, which is where the ladder was drawn. Capping
+    /// it keeps the meter the same object in a tile that spans the whole row: left to widen freely
+    /// a segment there reaches nearly 30pt and the ladder reads as a row of lozenges instead.
+    private static let segmentWidth: CGFloat = 12
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 3) {
             ForEach(0..<Self.segments, id: \.self) { segment in
                 Capsule()
                     .fill(segment < lit ? litColour : Theme.mono(0.05, 0.07))
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: Self.segmentWidth)
                     .frame(height: Self.segmentHeight(segment))
                     .scaleEffect(y: grown ? 1 : 0.06, anchor: .bottom)
                     .opacity(grown ? 1 : 0)
@@ -34,6 +38,7 @@ struct UsageMeter: View {
                                value: appeared)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: Self.height, alignment: .bottom)
     }
 

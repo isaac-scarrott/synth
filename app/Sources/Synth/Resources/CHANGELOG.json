@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.42.0",
+    "date": "2026-09-07",
+    "changes": [
+      "Archiving a worktree reclaims the disk it was holding, and retires the branch with it. Three things had been blocking every folder permanently rather than temporarily — a generated .env with no parent copy to match, a SwiftPM checkout's own .git buried four levels down, and Synth's own deletion of config files the repo tracked — so the sweeper archived correctly and freed almost nothing. A reaped worktree also left its branch ref behind for good (443 of them in one repo, 200 already deleted on the remote); that ref is now retired once the remote has dropped it, with its own Settings switch, on by default.",
+      "ctrl+c in an OpenCode 2 row stops the turn instead of quitting the agent. It was bound to the app's own exit, so the gesture for interrupting work ended the session outright and exited zero, which reads as a clean finish. The row's ? also lights when the agent asks you something: v2 reports its questions in a shape nothing else it sends uses, so every one of them went unnoticed.",
+      "opencode's pane stops drawing its own edges. It painted every cell of its field white or near-black inside the terminal's padding, so the row showed a rectangle in a colour of its own and sat out the window's translucency. 93% of the row now comes back as the terminal's own surface, in both appearances.",
+      "Synth has documentation — ten pages at isaac-scarrott.github.io/synth-site/docs, covering sessions, branches, agents, attention, configuration and troubleshooting, plus a keyboard reference and an agent tool catalogue read straight out of the source so they cannot drift."
+    ]
+  },
+  {
     "version": "0.41.1",
     "date": "2026-09-07",
     "changes": [

@@ -2503,3 +2503,10 @@ disclosure to dive deeper.
   each blocked a folder permanently rather than temporarily. An ignored file now also clears if its
   bytes are a committed blob beside it, the nested-repo walk skips what git ignores, and the config
   migration never removes a tracked file. The bulk brake is left as it stands.
+- **The branch is the last thing to go** — the archive path ended one step short: a reaped worktree
+  left its branch ref behind for good and its row in the Archived list pointing at it (443 branches
+  in one repo, 200 merged and already deleted on the remote). `ArchiveSweeper.branchEnd` now retires
+  a ref the remote has dropped, drops the row with it (restore is re-cut *from* the ref, so a row
+  without one can never come back), and drops rows whose branch went by other means. `git branch -d`
+  only; own Settings switch, on by default; the cap counts rows looked at, so a settled archive
+  costs a tick nothing.

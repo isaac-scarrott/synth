@@ -45,6 +45,8 @@ EXPECTED = {
     "env-from-template": None,
     "env-original":   "local-only config inside",
     "never-merged":   "never merged",
+    "remote-gone":    None,
+    "ref-gone":       None,
 }
 
 
@@ -153,6 +155,15 @@ def build(sandbox_root: pathlib.Path, support_dir: pathlib.Path):
     # sits in the sidebar with nothing on disk behind it, and the finished-row pass archives it
     # on the branch's evidence alone.
     made["merged-gone"] = merged("merged-gone")
+
+    # Merged and pushed, then deleted on the remote — what a merged PR leaves behind. The suite
+    # removes its folder, so nothing is left of it but a ref no one can reach the work through.
+    made["remote-gone"] = merged("remote-gone")
+    git(repo, "push -q origin --delete remote-gone")
+
+    # Merged and pushed like the rest; the suite deletes its ref by hand once it is archived,
+    # standing in for a branch removed outside Synth. What is left is a row pointing at nothing.
+    made["ref-gone"] = merged("ref-gone")
 
     # Never merged — the parked-spike case the naive "no open PR" rule would have deleted.
     git(repo, "checkout -q -b never-merged main")

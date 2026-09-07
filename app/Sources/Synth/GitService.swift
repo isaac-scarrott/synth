@@ -594,6 +594,32 @@ enum GitService {
         return tree.split(separator: "\n").contains { $0.contains(sha) }
     }
 
+    /// Does any remote still carry this branch? A merged branch the remote has already dropped
+    /// is finished by everyone's account — that deletion is the other end of the PR being merged
+    /// — and it is the one signal that separates work that is over from a branch someone is
+    /// still keeping. `.unknown` when the remotes can't be read, which blocks rather than passes.
+    static func remoteHasBranch(_ name: String, at repo: URL) -> Probe<Bool> {
+        guard let names = remotes(at: repo).value else { return .unknown }
+        for remote in names {
+            let (status, _) = runChecked(["-C", repo.path, "rev-parse", "--verify", "--quiet",
+                                          "refs/remotes/\(remote)/\(name)"], timeout: probeTimeout)
+            if status == 0 { return .known(true) }
+        }
+        return .known(false)
+    }
+
+    static func branchExists(_ name: String, at repo: URL) -> Bool {
+        runChecked(["-C", repo.path, "show-ref", "--verify", "--quiet", "refs/heads/\(name)"],
+                   timeout: probeTimeout).status == 0
+    }
+
+    /// Delete a branch ref with `-d`, never `-D`. git's own merged-into-HEAD check is a free
+    /// second opinion on top of the caller's, and a branch it refuses is a branch worth keeping:
+    /// the whole point of retiring a ref is that nothing is lost by it.
+    static func deleteBranch(_ name: String, at repo: URL) -> Bool {
+        runChecked(["-C", repo.path, "branch", "-d", "--", name], timeout: probeTimeout).status == 0
+    }
+
     /// Does git track this path? Untracked is the whole licence to delete a file Synth wrote:
     /// removing a tracked one leaves a ` D` in `status` that no one asked for, and that the
     /// archive sweeper then reads — correctly — as work in progress.

@@ -370,6 +370,53 @@ enum ArchiveSweeper {
         return .eligible(mergedPR: pr.number)
     }
 
+    // MARK: Branch refs
+
+    /// At most this many branch refs retired per tick. Cheaper than a folder and cheaper to be
+    /// wrong about — the commits are in the default branch either way — but a pass that took two
+    /// hundred rows out of the Archived list in one go would still read as a fault.
+    static let retireCap = 20
+
+    /// How an archived row ends, once the folder half has finished with it.
+    ///
+    /// Deliberately a separate question from every gate above, and asked only of rows with
+    /// nothing left on disk. A held folder is one `mv` from being restored and a reaped one is
+    /// re-cut from the branch, so the ref is what keeps `restoreArchivedBranch` honest: when it
+    /// goes, the row goes with it rather than sitting in the Archived list as an entry that can
+    /// no longer be restored.
+    enum BranchEnd {
+        /// Still wanted, or not answerable — the row stays exactly as it is.
+        case keep
+        /// Merged, and the remote has already dropped it: delete the ref, drop the row.
+        case retire
+        /// The ref is already gone — deleted by hand, or by another tool. Nothing to delete;
+        /// the row is a pointer to nothing and is dropped on its own.
+        case orphaned
+    }
+
+    /// The gate that carries the weight is the remote one. A merged branch the remote still
+    /// lists is a branch somebody is keeping; a merged branch the remote has *dropped* was
+    /// cleaned up when its PR landed, and every commit on it is reachable from the default
+    /// branch. That is the whole claim, and it is why this needs no grace of its own — the
+    /// folder already served one, and there is nothing here left to change its mind about.
+    static func branchEnd(_ c: Candidate) -> BranchEnd {
+        guard !c.hasSessions else { return .keep }
+        // Nothing on disk, and nothing git thinks is on disk. A registration outliving its
+        // folder is normal between reap and prune, so the check is "does git name this branch
+        // in a worktree", not "is the path listed".
+        guard !FileManager.default.fileExists(atPath: c.worktree.standardized.path) else { return .keep }
+        guard !GitService.worktrees(at: c.repo).contains(where: { $0.branch == c.name }) else {
+            return .keep
+        }
+        guard GitService.branchExists(c.name, at: c.repo) else { return .orphaned }
+        let base = GitService.defaultBase(at: c.repo)
+        guard base != "HEAD", c.name != base,
+              case .known(true) = GitService.isAncestor(c.name, of: base, at: c.repo)
+        else { return .keep }
+        guard case .known(false) = GitService.remoteHasBranch(c.name, at: c.repo) else { return .keep }
+        return .retire
+    }
+
     /// True when this ignored file's bytes survive the folder — because the same bytes are
     /// either sitting in the parent checkout, or committed as a template beside it.
     ///

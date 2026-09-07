@@ -94,7 +94,7 @@ sessions become a tab strip above the pane. Per-session state lives in the strip
 
 | file | what it shows |
 | --- | --- |
-| `hero@2x.png` | the tab strip, the branch roll-ups, and a live Claude reading this site |
+| `hero@2x.png` | Claude Code on the left (55%), the live landing page on the right (45%) |
 | `browser@2x.png` | a browser session showing this landing page, two comments pinned on it |
 | `simulator@2x.png` | this page's mobile layout, in Safari on a booted iPhone |
 | `approval@2x.png` | the ⌘K frame an agent's worktree request stops on, cropped to the card |

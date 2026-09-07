@@ -106,7 +106,7 @@ def say(msg):
 # The tree on disk
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_tree():
+def build_tree(spec=None):
     """One git repo per project, one real worktree per branch, and the state.json to match."""
     for d in (REPOS, WORKTREES, STATE, LOGS, NOZDOT):
         shutil.rmtree(d, ignore_errors=True)
@@ -154,6 +154,15 @@ def build_tree():
                 "lastActivity": "now",
                 "sessions": [persisted(project, branch, s) for s in branch["sessions"]],
             })
+            if spec and spec.get("split"):
+                keys = {s["key"] for s in branch["sessions"]}
+                left, right = spec["open"], spec["split"]["right"]
+                if left in keys and right in keys:
+                    branches[-1]["layout"] = {"split": {
+                        "dir": "row", "split": spec["split"]["fraction"],
+                        "a": {"leaf": {"session": uid(project["name"], name, left)}},
+                        "b": {"leaf": {"session": uid(project["name"], name, right)}},
+                    }}
         workspaces.append({"id": ws_id, "name": project["name"],
                            "url": "file://" + urllib.parse.quote(str(repo)),
                            "colorIndex": project["chip"], "branches": branches})
@@ -595,9 +604,18 @@ def node_playwright():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def scene_hero(ctl, hook_path, spec):
-    """Nothing beyond the shared staging: the tree, the statuses and the open terminal are the
-    picture."""
-    return
+    """Wait for the live page and verify the restored split before pressing the shutter."""
+    _, sid, wt = find(spec["split"]["right"])
+    if not wait(lambda: SITE_ORIGIN in (
+            ctl("automation.state", worktree=wt, sessionId=sid).get("address") or ""), 60):
+        raise Skip("hero browser did not load the landing page")
+    layout = ctl("automation.layout")
+    tree = layout.get("tree", {})
+    if (layout.get("panes") != 2 or tree.get("dir") != "row"
+            or abs(tree.get("split", 0) - spec["split"]["fraction"]) > 0.01
+            or tree.get("a", {}).get("session", "").lower() != find(spec["open"])[1].lower()
+            or tree.get("b", {}).get("session", "").lower() != sid.lower()):
+        raise Skip(f"hero split did not restore: {layout}")
 
 
 def scene_browser(ctl, hook_path, spec):
@@ -766,7 +784,7 @@ def record(name, spec, visible=True, theme=None, suffix=""):
     # Every scene gets the tree fresh — new clones, new worktrees, new state. Synth autosaves
     # back into `$SYNTH_STATE_DIR`, so a scene would otherwise inherit the last one's app; and a
     # live agent has been editing in these worktrees, so the next scene deserves a clean one.
-    build_tree()
+    build_tree(spec)
     theme = theme or spec.get("theme", scenes.THEME)
     w, h = spec.get("window", scenes.WINDOW)
 

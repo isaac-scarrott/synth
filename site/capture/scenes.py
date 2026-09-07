@@ -97,42 +97,14 @@ PROJECTS = [
                 "expanded": True,
                 "sessions": [
                     {"key": "claude", "kind": "claudeCode", "title": "landing page",
-                     # One turn. Real reading, then a real question — an agent that stops to ask
-                     # is the only reliable way to reach needs-input rather than waiting for it to
-                     # happen (harness t3_notifs).
-                     #
-                     # This message is IN THE PICTURE: the pane echoes it above the answer. So it
-                     # has to be something a person would really have typed. An earlier version
-                     # said "use your question tool to ask me…", which is nobody's sentence — a
-                     # reader saw a script being followed rather than someone working, which is
-                     # the exact thing going to a real agent was meant to avoid.
-                     #
-                     # It asks to be consulted instead. The stop is still there, but it is there
-                     # because the person wants the decision, which is the truth of it.
-                     # Two jobs, and both are about the picture as much as the answer.
-                     #
-                     # "Three short options, one line each" keeps the question block small. With
-                     # four options and a paragraph under each it fills the pane on its own, and
-                     # the figure then argues only that an agent stopped to ask — no evidence
-                     # left that it did anything first.
-                     #
-                     # Asking two questions rather than one makes the turn long enough to fill
-                     # the pane from below. A short turn leaves Claude's startup banner on
-                     # screen, and that banner prints the absolute worktree path — a scratch
-                     # directory under /private/var, which is the one thing in these figures that
-                     # could only come from a rig.
-                     #
-                     # "I want to pick, not be told" is what actually holds it to the question
-                     # tool. Without it the turn sometimes ends with the options in prose, which
-                     # never reaches needs-input.
+                      # Arrow-key selection asks for an interactive question: prose options end
+                      # idle, losing the needs-input badge. Short options fit the narrower pane.
                      "prompt":
-                        "The product figures on this page are hand-drawn HTML and they "
-                        "keep drifting from the app. Before you change anything: tell me "
-                        "where --accent is actually used in site/index.html, and whether "
-                        "the drawn figures use it or keep their own copy of the colour. "
-                        "Then stop and ask me which way we should go — three short "
-                        "options, one line each. I want to pick, not be told — don't "
-                        "decide it for me."},
+                         "Read site/index.html and check how the hero adapts to a narrow "
+                         "browser pane. Summarise what you find in three short bullets. "
+                         "Before changing anything, give me a multiple-choice question "
+                         "with three layout options I can select using the arrow keys. "
+                         "Keep each option to one line and wait for my selection."},
                     {"key": "devserver", "kind": "terminal", "title": "dev server",
                      "signals": ["term-run"]},
                     {"key": "web", "kind": "browser", "title": "localhost:3000",
@@ -248,15 +220,16 @@ SIMULATOR = {"device": "iPhone 16 Pro", "page": PAGE}
 #
 #   what       one line, printed by the run and repeated in the README.
 #   open       the session key whose pane fills the window. None leaves the pane empty.
+#   split      right-hand session key and the left pane's fraction of the content width.
 #   window     overrides WINDOW for this scene.
 #   palette    True captures the floating ⌘K panel instead of the app window.
 #   dark_too   also record the scene in the dark theme, as `<scene>-dark@2x.png`.
 
 SCENES = {
     "hero": {
-        "what": "the whole window: the tab strip, the branch roll-ups, and a live Claude "
-                "reading this site",
+        "what": "the whole window: Claude Code beside the live landing page",
         "open": "claude",
+        "split": {"right": "web", "fraction": 0.55},
         # Taller than the rest. This figure has to show a whole turn — what the agent read, what
         # it found, and the question it stopped on — and the question alone fills the shared
         # height. The sidebar runs out before the pane does, which is the right way round here:

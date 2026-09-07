@@ -224,7 +224,13 @@ import os.log
         guard Set(root.keys).isSubset(of: allowedTopLevel) else { return false }
         // Every registered server must be one of ours. An unknown name is the user's.
         let servers = root[container] as? [String: Any] ?? [:]
-        return Set(servers.keys).isSubset(of: Set(serverScripts.keys))
+        guard Set(servers.keys).isSubset(of: Set(serverScripts.keys)) else { return false }
+        // Shape alone is not ownership. A project that committed its own `opencode.json` —
+        // registering the very servers Synth would have — owns a *tracked* file, and deleting
+        // it leaves a ` D` in `git status` that nobody asked for and nothing cleans up. The
+        // archive sweeper then reads that, correctly, as work in progress and keeps the folder
+        // forever: this migration was quietly making worktrees unreclaimable.
+        return !GitService.isTracked(relative, at: URL(fileURLWithPath: worktree))
     }
 
     private static func serverPath(_ name: String) -> String {

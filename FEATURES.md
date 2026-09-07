@@ -2497,3 +2497,9 @@ disclosure to dive deeper.
   names again and its column sits centred. `CFBundleVersion` 715, tag `v0.41.1`; both artifacts
   notarized separately, stapled, and verified credential-less with quarantine set; appcast newest
   0.41.1 at 715 with `edSignature` on all 18 enclosures.
+- **Three gates that kept every worktree forever** — the sweeper archived correctly and reclaimed
+  almost nothing, because a generated `.env` (no parent copy to match), a SwiftPM `.build/checkouts`
+  clone (a `.git` at depth four) and Synth's own deletion of *tracked* `.mcp.json`/`opencode.json`
+  each blocked a folder permanently rather than temporarily. An ignored file now also clears if its
+  bytes are a committed blob beside it, the nested-repo walk skips what git ignores, and the config
+  migration never removes a tracked file. The bulk brake is left as it stands.

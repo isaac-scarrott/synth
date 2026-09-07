@@ -4,7 +4,7 @@ and the hand-driven sandbox (app/sandbox.sh), so the two can never drift apart.
 Each entry is one hazard the sweeper has to get right. The happy path is one line; everything
 else exists to be REFUSED, and each refusal is a data-loss bug if it regresses.
 """
-import json, pathlib, subprocess, urllib.parse, uuid
+import json, pathlib, shutil, subprocess, urllib.parse, uuid
 
 
 def sh(cmd):
@@ -41,6 +41,9 @@ EXPECTED = {
     "mid-rebase":     "half-finished",
     "locked":         "locked",
     "has-nested":     "another worktree lives inside it",
+    "nested-ignored": None,
+    "env-from-template": None,
+    "env-original":   "local-only config inside",
     "never-merged":   "never merged",
 }
 
@@ -60,6 +63,10 @@ def build(sandbox_root: pathlib.Path, support_dir: pathlib.Path):
     sh(f"git clone -q '{origin}' '{repo}'")
     git(repo, f"config user.email you@example.com && git -C '{repo}' config user.name You")
     (repo / "README.md").write_text("# Demo project\n\nA sandbox for testing Archive.\n")
+    # Committed on main so every scenario worktree inherits both: the ignore rules the
+    # ignored-* scenarios need, and the template `.env.development.demo` is stamped out of.
+    (repo / ".gitignore").write_text("build/\n.env.development\n")
+    (repo / ".env.development.demo").write_text("# the demo origin\nORIGIN=demo.example.com\n")
     git(repo, "add -A")
     git(repo, "commit -qm 'initial commit'")
     git(repo, "branch -M main")
@@ -121,6 +128,25 @@ def build(sandbox_root: pathlib.Path, support_dir: pathlib.Path):
     inner = made["has-nested"] / "vendored"
     inner.mkdir()
     sh(f"git init -q '{inner}'")
+
+    # The same shape one directory over, inside something the repo ignores. A built SwiftPM
+    # package keeps its dependencies as real clones under `app/.build/checkouts/`, so a walk
+    # that counted those made every worktree ever built permanently unreclaimable.
+    made["nested-ignored"] = merged("nested-ignored")
+    fetched = made["nested-ignored"] / "build" / "checkouts" / "dep"
+    fetched.mkdir(parents=True)
+    sh(f"git init -q '{fetched}'")
+
+    # An ignored `.env` the project's setup stamps out of a committed template: the bytes are
+    # in the object store and on the remote, so the folder holds no original.
+    made["env-from-template"] = merged("env-from-template")
+    shutil.copyfile(made["env-from-template"] / ".env.development.demo",
+                    made["env-from-template"] / ".env.development")
+
+    # The same filename holding something that exists nowhere else. This is what the gate is
+    # for, and it must still refuse.
+    made["env-original"] = merged("env-original")
+    (made["env-original"] / ".env.development").write_text("SECRET=only-here\n")
 
     # Merged and pushed like merged-clean; the gate deletes its folder once Synth is up (restore
     # drops a row whose folder is already missing, so the state can't seed one). The row then

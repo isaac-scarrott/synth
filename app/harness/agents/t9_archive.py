@@ -128,7 +128,11 @@ def main():
         check("one clean reading archives nothing",
               all(name in tree_branches(ctl) for name in made), str(tree_branches(ctl)))
         ctl("automation.archiveSweep")
-        finished = {"merged-clean", "with-stash", "merged-gone"}
+        # Every shape the finished-row pass may take on the user's behalf. `nested-ignored`
+        # and `env-from-template` are merged and clean too — what used to keep them was a gate
+        # mistaking a fetched dependency and a generated `.env` for work.
+        finished = {"merged-clean", "with-stash", "merged-gone",
+                    "nested-ignored", "env-from-template"}
         auto = wait(lambda: finished <= set(status_map(ctl)), secs=20)
         check("merged + clean + pushed rows are archived for the user", bool(auto),
               str(sorted(status_map(ctl))))
@@ -183,9 +187,14 @@ def main():
               str({k: v["held"] for k, v in after_one.items() if v["held"] == "true"}))
 
         # --- the sweep itself -----------------------------------------------------------
-        ctl("automation.archiveSweep")
-        time.sleep(8)
-        rows = status_map(ctl)
+        # A tick holds at most `perTickCap` folders, so drive ticks until the reclaimable set
+        # is through rather than assuming one pass clears it.
+        reclaimable = {"merged-clean", "with-stash", "nested-ignored", "env-from-template"}
+        for _ in range(4):
+            ctl("automation.archiveSweep")
+            time.sleep(8)
+            rows = status_map(ctl)
+            if all(rows.get(n, {}).get("held") == "true" for n in reclaimable): break
 
         check("merged + clean + pushed worktree is reclaimed",
               rows.get("merged-clean", {}).get("held") == "true",
@@ -197,6 +206,17 @@ def main():
               rows.get("with-stash", {}).get("held") == "true",
               rows.get("with-stash", {}).get("status", "missing"))
 
+        # Both of these were permanent refusals until the gates learned to tell a fetched or
+        # generated file from an original — the shape that leaves a machine with a hundred
+        # worktrees none of which can ever be reclaimed.
+        check("a nested repo under an ignored path does not block the sweep",
+              rows.get("nested-ignored", {}).get("held") == "true",
+              rows.get("nested-ignored", {}).get("reason", "missing"))
+
+        check("an ignored file copied from a committed template does not block the sweep",
+              rows.get("env-from-template", {}).get("held") == "true",
+              rows.get("env-from-template", {}).get("reason", "missing"))
+
         # Everything below is a refusal. Each is a data-loss bug if it flips.
         expected_kept = {
             "has-untracked": "untracked",
@@ -205,6 +225,7 @@ def main():
             "mid-rebase":    "inProgress",
             "locked":        "locked",
             "has-nested":    "nested",
+            "env-original":  "precious",
             # Never merged: survives, and for the right reason — not "merged".
             "never-merged":  ("noPR", "prUnknown"),
         }

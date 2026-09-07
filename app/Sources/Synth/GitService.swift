@@ -546,21 +546,60 @@ enum GitService {
         return .known(nil)
     }
 
-    /// Ignored files whose loss would hurt and that no remote can restore — the `.env` class.
-    /// `--directory` collapses whole ignored trees (`node_modules/`) to one entry, which is
-    /// what keeps this cheap enough to run on a tick. Paths are worktree-relative; the caller
-    /// decides whether each one is reconstructible from the parent repo.
-    static func preciousIgnored(at wt: URL) -> Probe<[String]> {
+    /// Everything in the worktree git is ignoring. `--directory` collapses whole ignored trees
+    /// (`node_modules/`, `app/.build/`) to one entry with a trailing slash, which is what keeps
+    /// this cheap enough to run on a tick. Paths are worktree-relative.
+    ///
+    /// One call answers two of the sweeper's questions — which ignored files are precious, and
+    /// which directories a nested-repo walk has no business descending into — so it is the probe
+    /// and the two filters below are pure.
+    static func ignoredEntries(at wt: URL) -> Probe<[String]> {
         let (status, out) = runChecked(["-C", wt.path, "ls-files", "--others", "--ignored",
                                         "--exclude-standard", "--directory"], timeout: probeTimeout)
         guard status == 0 else { return .unknown }
-        let hits = out.split(separator: "\n").map(String.init).filter { path in
+        return .known(out.split(separator: "\n").map(String.init))
+    }
+
+    /// Ignored files whose loss would hurt and that no remote can restore — the `.env` class.
+    /// The caller decides whether each one is reconstructible anyway.
+    static func precious(in entries: [String]) -> [String] {
+        entries.filter { path in
             guard path.split(separator: "/").count <= 3 else { return false }
             let name = (path as NSString).lastPathComponent
             if name.hasPrefix(".env") { return true }
             return [".pem", ".key", ".db", ".sqlite", ".sqlite3"].contains { name.hasSuffix($0) }
         }
-        return .known(hits)
+    }
+
+    /// The ignored *directories*, without their trailing slash.
+    static func ignoredDirectories(in entries: [String]) -> Set<String> {
+        Set(entries.filter { $0.hasSuffix("/") }.map { String($0.dropLast()) })
+    }
+
+    /// Is this file's content already a committed blob, sitting next to it? A generated `.env`
+    /// that byte-matches the tracked `.env.development.demo` it was stamped out of is in the
+    /// repo's object store and on the remote with it — losing the folder loses nothing.
+    ///
+    /// Scoped to the file's own directory: templates sit beside what they seed, and an
+    /// unbounded object search on a monorepo is not a tick.
+    static func contentIsCommittedNearby(_ relative: String, at wt: URL) -> Bool {
+        let (hashStatus, hash) = runChecked(["-C", wt.path, "hash-object", "--", relative],
+                                            timeout: probeTimeout)
+        let sha = hash.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hashStatus == 0, !sha.isEmpty else { return false }
+        let dir = (relative as NSString).deletingLastPathComponent
+        let (treeStatus, tree) = runChecked(["-C", wt.path, "ls-tree", "HEAD", "--",
+                                             dir.isEmpty ? "." : dir + "/"], timeout: probeTimeout)
+        guard treeStatus == 0 else { return false }
+        return tree.split(separator: "\n").contains { $0.contains(sha) }
+    }
+
+    /// Does git track this path? Untracked is the whole licence to delete a file Synth wrote:
+    /// removing a tracked one leaves a ` D` in `status` that no one asked for, and that the
+    /// archive sweeper then reads — correctly — as work in progress.
+    static func isTracked(_ relative: String, at wt: URL) -> Bool {
+        runChecked(["-C", wt.path, "ls-files", "--error-unmatch", "--", relative],
+                   timeout: probeTimeout).status == 0
     }
 
     /// Stash entries whose subject names this branch. Stashes live in the repo, not the

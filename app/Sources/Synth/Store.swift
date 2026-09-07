@@ -799,15 +799,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     /// Why a command won't do: something already runs it. Nil when it is free to use.
     func customAgentClash(_ id: String, binary: String) -> String? {
-        let b = binary.trimmingCharacters(in: .whitespaces)
-        guard !b.isEmpty else { return nil }
-        if let builtIn = AgentRegistry.builtIn.first(where: { $0.binaryName == b }) {
-            return "\(builtIn.displayName) is already one of Synth’s agents"
+        switch AgentRegistry.clashOwner(id: id, binary: binary, among: customAgents) {
+        case .builtIn(let agent):
+            return "\(agent.displayName) is already one of Synth’s agents"
+        case .custom(let dupe, let command):
+            return "“\(dupe.name.isEmpty ? command : dupe.name)” already runs \(command)"
+        case nil:
+            return nil
         }
-        if let dupe = customAgents.first(where: { $0.id != id && $0.binary == b }) {
-            return "“\(dupe.name.isEmpty ? b : dupe.name)” already runs \(b)"
-        }
-        return nil
     }
 
     /// The ordered session set every new worktree starts with (working.html TPL_KINDS /

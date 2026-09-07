@@ -351,10 +351,22 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
 
 /// Start a child without waiting for it — `serve` outlives the shim's own wait on the visible TUI,
 /// so it cannot go through `spawnReportingExit`, which blocks until its child exits.
+///
+/// All three standard streams go to /dev/null rather than being inherited: the shim's own are the
+/// row's PTY, and `serve` shares neither end of it usefully. Its stdout carries a log line for
+/// every process its MCP subsystem spawns ("spawning process { command: node, … }"), which would
+/// otherwise paint over the TUI drawing on the same terminal; its stdin would take keystrokes the
+/// TUI is meant to read.
 func spawnDetached(_ path: String, _ args: [String]) -> pid_t? {
     let argv = ([path] + args).map { strdup($0) } + [nil]
+    var actions: posix_spawn_file_actions_t?
+    posix_spawn_file_actions_init(&actions)
+    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
+    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
     var pid: pid_t = 0
-    let rc = posix_spawn(&pid, path, nil, nil, argv, environ)
+    let rc = posix_spawn(&pid, path, &actions, nil, argv, environ)
+    posix_spawn_file_actions_destroy(&actions)
     return rc == 0 ? pid : nil
 }
 
@@ -379,9 +391,20 @@ func waitForOpencode2Health(port: String, password: String, timeout: TimeInterva
 /// — v2's schema just rejects the `enabled` key v1's shape carries (`additionalProperties: false`
 /// on `Mcp.LocalConfigEncoded`), and `MCPInstaller` only ever emits already-enabled servers, so
 /// dropping the key on the way through changes nothing.
+///
+/// Fired together rather than one after another, and not waited out: a `PUT` connects its own
+/// server within a fraction of a second (confirmed in opencode's log — three registrations connect
+/// ~0.2s apart, ~9s before any of the requests answer) but only *responds* once the whole MCP set
+/// has re-initialised, which is paced by the slowest server in the user's own opencode config. So
+/// the response is not what makes the tools available, and holding a row's TUI closed for someone
+/// else's unreachable remote buys nothing. What the grace window is for is the other kind of
+/// answer: a rejected registration comes back immediately, and `--fail` turns that HTTP status
+/// into a non-zero exit, so it can be said out loud instead of silently leaving an agent without
+/// its tools. Anything still in flight when the window closes is left to finish on its own.
 func registerOpencode2MCPServers(port: String, password: String) {
     guard let raw = env["SYNTH_MCP_OPENCODE"], !raw.isEmpty,
           let root = parseJSONObject(raw), let servers = root["mcp"] as? [String: Any] else { return }
+    var pending: [(name: String, curl: Process)] = []
     for (name, entryAny) in servers {
         guard let entry = entryAny as? [String: Any],
               let type = entry["type"], let command = entry["command"], let environment = entry["environment"]
@@ -389,27 +412,37 @@ func registerOpencode2MCPServers(port: String, password: String) {
         let config: [String: Any] = ["type": type, "command": command, "environment": environment]
         guard let data = try? JSONSerialization.data(withJSONObject: ["config": config]),
               let body = String(data: data, encoding: .utf8) else { continue }
-        _ = curlSucceeds(["-sS", "-o", "/dev/null", "-m", "3", "-u", "opencode:\(password)",
-                          "-X", "PUT", "-H", "Content-Type: application/json", "--data", body,
-                          "http://127.0.0.1:\(port)/api/mcp/\(name)"])
+        guard let curl = startCurl(["-sS", "--fail", "-o", "/dev/null", "-m", "20",
+                                    "-u", "opencode:\(password)", "-X", "PUT",
+                                    "-H", "Content-Type: application/json", "--data", body,
+                                    "http://127.0.0.1:\(port)/api/mcp/\(name)"])
+        else { continue }
+        pending.append((name, curl))
+    }
+    let deadline = Date().addingTimeInterval(3)
+    while Date() < deadline, pending.contains(where: { $0.curl.isRunning }) { usleep(100_000) }
+    for (name, curl) in pending where !curl.isRunning && curl.terminationStatus != 0 {
+        FileHandle.standardError.write(Data("synth: opencode2 rejected MCP server \(name)\n".utf8))
     }
 }
 
-/// Run `curl` with `args`, true on a zero exit. No output is ever needed from these calls — only
-/// whether the server accepted the request.
-func curlSucceeds(_ args: [String]) -> Bool {
+/// Start `curl` with `args`, or nil if it could not be launched at all. No output is ever needed
+/// from these calls — only whether the server accepted the request.
+func startCurl(_ args: [String]) -> Process? {
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
     proc.arguments = args
     proc.standardOutput = FileHandle.nullDevice
     proc.standardError = FileHandle.nullDevice
-    do {
-        try proc.run()
-        proc.waitUntilExit()
-        return proc.terminationStatus == 0
-    } catch {
-        return false
-    }
+    do { try proc.run() } catch { return nil }
+    return proc
+}
+
+/// Run `curl` with `args` to completion, true on a zero exit.
+func curlSucceeds(_ args: [String]) -> Bool {
+    guard let proc = startCurl(args) else { return false }
+    proc.waitUntilExit()
+    return proc.terminationStatus == 0
 }
 
 /// agy (Antigravity CLI) is hook-driven like Claude Code, but it has no `--settings`: hooks are

@@ -279,8 +279,12 @@ extension AgentDescriptor: Identifiable {}
         guard list != custom else { return }
         custom = list
         // A custom agent with no base has no supervisor to read it, so it is not something Synth
-        // can host yet — it stays in Settings and out of everything else.
-        customDescriptors = list.compactMap(descriptor(for:))
+        // can host yet — and one whose command another agent already spells for is that agent a
+        // second time, not a second agent. Both stay in Settings, where the row says which it is,
+        // and out of everything else.
+        customDescriptors = list
+            .filter { clashOwner(id: $0.id, binary: $0.binary, among: list) == nil }
+            .compactMap(descriptor(for:))
         invalidateInstalled()
     }
 
@@ -291,6 +295,26 @@ extension AgentDescriptor: Identifiable {}
         installedCache = nil
         HookEnvironment.setup()
         NotificationCenter.default.post(name: installedDidChange, object: nil)
+    }
+
+    /// Who already runs `binary`, if anyone. One rule behind two consequences: the Settings row
+    /// says so in words (`AppStore.customAgentClash` phrases this), and `all` leaves the clashing
+    /// agent out — two rows for one command would otherwise be two of every "New …" in ⌘K, both
+    /// starting the same thing. Takes the binary as typed rather than reading the stored agent, so
+    /// the row can warn on a command that is still being edited.
+    static func clashOwner(id: String, binary: String, among list: [CustomAgent]) -> ClashOwner? {
+        let b = binary.trimmingCharacters(in: .whitespaces)
+        guard !b.isEmpty else { return nil }
+        if let agent = builtIn.first(where: { $0.binaryName == b }) { return .builtIn(agent) }
+        if let dupe = list.first(where: { $0.id != id && $0.binary == b }) { return .custom(dupe, b) }
+        return nil
+    }
+
+    /// The agent that already runs a command, and — for a clash with another custom agent, whose
+    /// own name may still be empty — the command the two of them share.
+    enum ClashOwner {
+        case builtIn(AgentDescriptor)
+        case custom(CustomAgent, String)
     }
 
     /// The descriptor a custom agent stands for: its own name and command, everything else its

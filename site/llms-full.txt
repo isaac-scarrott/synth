@@ -1,0 +1,749 @@
+# Synth documentation
+
+Every page of the Synth documentation, in reading order, generated from the same source as the site.
+
+---
+
+# Start here
+
+Install Synth, point it at a repository, and get an agent working in its own branch. About five minutes, most of it the download.
+
+## Before you start
+
+Synth runs on macOS 14 or later, on Apple silicon. It is free, signed and notarised.
+
+Bring at least one coding agent. Synth hosts [Claude Code, OpenCode and Antigravity](agents.md), and any agent you name yourself. It does not install them and it does not replace them: whichever ones are already on your PATH are the ones you will be offered.
+
+> You do not need all three, or any particular one. If you have only Claude Code, Synth offers only Claude Code, and nothing about the rest of Synth changes.
+
+## Install
+
+Download the disk image, drag Synth to Applications, and open it.
+
+[Download for Mac](https://synth-releases.fly.storage.tigris.dev/Synth.dmg)
+
+Synth keeps itself up to date after that. When a new build is ready it downloads in the background and installs the next time you quit, so there is nothing to press. A **Restart to update** row appears at the foot of the sidebar while a downloaded build is waiting, and taking it only brings that install forward.
+
+## Add a project
+
+A **project** is one git repository. Press `⌘K` and choose **Add project**, or use the `+` on the sidebar header, and pick the repository's folder.
+
+The folder has to be a git repository with at least one branch. A folder that cannot host a branch cannot host any work, so Synth refuses it at the picker rather than adding a row that does nothing. Pick a subdirectory of a repository and Synth resolves it to the repository root, so you get the project you already have rather than a second copy of it.
+
+The project arrives with its default branch and nothing else. You add the branches you want one at a time.
+
+## Make a branch
+
+Press `⌘K` and choose **New branch**. Name it and press return.
+
+Synth cuts a real [git worktree](branches.md) for it: a second checkout of the same repository, in its own folder, on its own branch. The branch you were on is untouched, and so is everything running in it.
+
+## Start an agent
+
+With the branch selected, press `⌘N` and pick an agent. It opens in the content pane and runs in that branch's checkout, so everything it reads and writes is that branch's copy of the code.
+
+Ask it for something that takes a minute, then look at the sidebar rather than the pane. The row carries what the agent is doing, and you can leave the page entirely: Synth tells you when it stops and needs an answer. That is the part worth trying first, because it is the part a terminal cannot do.
+
+![Synth with three projects in the sidebar and a Claude Code session open, stopped on a question about the page's accent colour.](../img/hero-dark@2x.webp)
+
+*Three projects, several branches, and one agent that has stopped to ask something. The sidebar says which one without opening it.*
+
+## Where to go next
+
+- [How Synth is organised](concepts.md) is the one page to read if you read only one. Synth uses several words that your agent also uses, for different things.
+- [Branches and worktrees](branches.md) covers what a new branch gets, what it does not get, and why your dependencies are not in it.
+- [Knowing who needs you](attention.md) is the attention model, which is what makes running several agents at once survivable.
+
+---
+
+# How Synth is organised
+
+Synth organises work as a tree: a project, its branches, and the sessions running inside each branch. Three nouns, and each of them means something specific.
+
+Everything in the sidebar is one of three things.
+
+```
+Project        one git repository
+└─ Branch      a git branch, checked out in its own folder
+   └─ Session  a live thing running inside that branch
+```
+
+The tree is the whole model. There is nothing above a project and nothing below a session.
+
+## Project
+
+A project is exactly one git repository. Never more than one, and never a subfolder of one. Adding a project points Synth at a repository path.
+
+Projects do not nest and they do not span repositories. Work that crosses two repositories is two projects, and Synth will not pretend otherwise.
+
+## Branch
+
+A branch is a git branch in that repository, discovered automatically. Sessions run inside a branch.
+
+What makes a Synth branch different from a git branch is that it is *checked out*. Each one has its own folder on disk with its own copy of the files, so several branches can be open, and running, at the same time. That folder is a git worktree, and [Branches and worktrees](branches.md) is about what lives in it.
+
+There is no single branch you are "on". Synth does not surface git's HEAD, and any number of branches can have work running in them at once.
+
+## Session
+
+A session is one live thing inside a branch: an agent, a terminal, a browser, a simulator, or an inspect. Each carries a status, which is what the sidebar reads. [Sessions](sessions.md) covers the kinds.
+
+A session is not a tab. A tab is a way of showing a session, and Synth can show sessions as sidebar rows or as tabs. The session is the thing; the row and the tab are both handles on it.
+
+## Words your agent uses differently
+
+Synth hosts agents it did not write, and every one of them already uses these words. They do not all mean the same thing by them, and the differences are not small.
+
+| Word | In Synth | In the agent you are running |
+|---|---|---|
+| **Branch** | A git branch, checked out in its own folder. The parent of your sessions. | Claude Code says **worktree** for the folder and keeps "branch" for the git ref alone. Antigravity's `/branch` is an alias for `/fork`, which copies a conversation and touches no files at all. |
+| **Session** | Anything running in a pane: an agent, a terminal, a browser, a simulator, an inspect. | All three mean a conversation with the model. You can start and clear several of those inside one Synth session without the row changing. |
+| **Agent** | Which coding agent a session is running. Claude Code, OpenCode, Antigravity, or one you named yourself. | A configuration inside that program. OpenCode's agents are Build and Plan; Antigravity's are personas you switch with `/agents`; Claude Code uses the word for subagents and teammates as well. All of those live inside one Synth agent. |
+| **Project** | One git repository. | Claude Code scopes to whichever directory you launched in. Antigravity's `--project` groups its own chat history and has nothing to do with a repository. |
+
+**Synth's words describe what is on your disk and in your sidebar. Your agent's words describe what is in its conversation.** That resolves all four. Where a page here means the agent's sense of a word, it says so and names the agent.
+
+> One word is the same in both, deliberately. **Needs input** means a session has stopped and cannot go on until you answer it, which is exactly what Claude Code means by it. Synth reports the same state for every agent it hosts, whether or not that agent has a name for it.
+
+## What things are called when they end
+
+Four verbs, and they are not synonyms. Each one is about how much you lose.
+
+|  |  |
+|---|---|
+| **Close** | Ends a session. The row goes and the process dies. Nothing leaves the filesystem. |
+| **Archive** | Puts a branch row away. The folder is untouched and the row comes back from `⌘K` whenever you want it. |
+| **Remove** | Drops a project row from the sidebar. The repository stays cloned and the folders stay on disk. |
+| **Delete** | Destroys a worktree folder on disk. The git branch survives it. This is the only one that confirms. |
+
+Deleting names the folder precisely because the branch outlives it. Everything else is reversible, which is why nothing else asks you twice.
+
+---
+
+# Branches and worktrees
+
+Every branch row is a real checkout on disk. That is what lets several agents work at once, and it is also why a new branch does not have your dependencies in it.
+
+When a branch first gains a session, Synth cuts a git worktree for it: a second checkout of the same repository, in its own folder, on its own branch. Same history, same remote, different files.
+
+That is the whole reason several agents can work at once without fighting. Each one is editing a different copy.
+
+## What a new branch has, and what it does not
+
+A fresh worktree contains everything git tracks, at the commit you branched from. It does not contain anything git does not track, because there is nothing in the repository for git to copy it from.
+
+In practice that means the new branch is missing:
+
+- **Your dependencies.** `node_modules`, virtualenvs, build caches, anything in `.gitignore`. They are not there, and the first thing you run will say so.
+- **Your local configuration.** `.env`, local certificates, anything you were handed once and never committed.
+- **Build output.** Whatever the last build left behind is in the branch it was built in.
+
+This surprises people, and it is not a Synth behaviour: it is what a git worktree is. The fix is the setup script.
+
+## The setup script
+
+Settings has a setup script that runs in every new worktree, once the checkout has landed. Copy the `.env` across, install dependencies, link a cache, whatever this repository needs to be workable.
+
+```
+# runs in the new worktree, with the project root as $1
+cp "$1/.env" .
+pnpm install --prefer-offline
+```
+
+There are two scopes. **Settings ▸ Synth ▸ New worktree defaults** holds the script every project runs, and a project's own tab holds its delta, which runs after the shared one rather than replacing it. A project can also opt out of the shared script entirely.
+
+Beside the script is the session template: the list of sessions every new worktree opens with. The first one opens, and the rest wait until you go to them.
+
+> If your repository's `post-checkout` hook fails, the branch is still created. Synth treats the checkout as the contract and the repository's hooks as the repository's business, so a hook that cannot find `pnpm` on a GUI launch PATH leaves you with a working branch and a line in the log rather than no branch at all.
+
+## Two agents, one port
+
+Worktrees isolate files. They do not isolate anything else, and the thing people hit first is ports. Two branches both running `npm run dev` on 3000 is two branches fighting, and Synth does not arbitrate that for you.
+
+What works is making the port a function of the branch rather than a constant. The setup script knows which worktree it is in, so it can write one:
+
+```
+# a stable port per branch, rather than the same one everywhere
+PORT=$(( 3000 + $(basename "$PWD" | cksum | cut -d' ' -f1) % 100 ))
+echo "PORT=$PORT" >> .env
+```
+
+The same applies to anything else with one name on the machine: database names, container names, socket paths. If two branches can be live at once, and in Synth they can, then anything they share is something they can collide on.
+
+> Databases are the case to think about before you hit it. Two agents pointed at one development database are two agents writing to each other's data, and no amount of file isolation helps. Give each branch its own, or accept that they are sharing one.
+
+## One branch, one checkout
+
+Git allows a branch to be checked out in one worktree at a time. Try to open the same branch twice and git refuses, and so does Synth. This is a git rule rather than a Synth one, and there is no flag that changes it.
+
+If you want a second line of work, cut a second branch. That is what they are for.
+
+## Archiving
+
+Archiving puts a branch row away. The folder is untouched, the git branch is untouched, and the row is restorable from `⌘K` under **Archived** for as long as you like. It never asks you to confirm, because there is nothing to lose.
+
+Synth also archives finished branches on its own, so the list you glance at stays the list of what is still going on. A branch is only archived for you once the work is provably somewhere else: merged, clean, pushed, with nothing attached and nothing running inside it, read that way twice a day apart.
+
+Reclaiming the folder comes later and separately, after a grace period you set. Even then the last step is a rename with a hold on it rather than a delete, and the git branch is never touched. **Settings ▸ Archived** lists what is still on disk with the reason each folder is still there, like *PR still open* or *6 days left*.
+
+> Restoring an archived branch cuts its checkout again. The branch is the durable thing and the folder is a cache of it, so there is no state in which Synth can tell you a branch cannot come back.
+
+## Deleting a worktree
+
+Deleting is the one action that destroys something on disk, so it is the one action that confirms. It removes the checkout folder. The git branch survives, and everything you pushed survives.
+
+Delete through Synth rather than dragging the folder to the Trash. Git keeps its own record of where a worktree lives, and removing the folder behind git's back leaves that record pointing at nothing.
+
+---
+
+# Sessions
+
+A session is one live thing inside a branch. There are six kinds, they all run in that branch's checkout, and every one of them is something an agent can drive.
+
+Press `⌘N` in a branch to open one. Every kind gets a row, a status, and a pane, and every kind runs with its working directory set to that branch's checkout.
+
+## The kinds
+
+|  |  |
+|---|---|
+| **Agent** | A coding agent. See [Agents](agents.md). |
+| **Terminal** | A shell, on the GPU. `⌘T` opens one directly. |
+| **Browser** | A real Chromium page in the pane, which you and your agent can both use. |
+| **Inspect** | Chromium's DevTools for one browser session, as a pane of its own. |
+| **Simulator** | A booted iPhone from the fleet you already have installed. |
+| **Markdown** | A rendered document you can also edit, beside the agent that wrote it. |
+
+## The browser
+
+The browser is a real Chromium page, not a preview. It keeps a profile per project, so a login survives quitting Synth and survives cutting new branches, and it is the same page your agent drives through the [browser tools](tools.md).
+
+Useful things it does that a preview cannot: `⌘F` finds in the page, right-click works, popups open as real windows so sign-in flows complete, and self-signed certificates on a local dev server are answerable rather than fatal.
+
+### Comments
+
+Turn on comment mode and click an element to leave a note on it. Notes accumulate as numbered pins rather than interrupting anyone, and `⌘⌥⏎` sends the batch to the agent the browser belongs to, with a screenshot and enough context to find the element again.
+
+A comment names an element, not a coordinate, so a pin survives scrolling, resizing and the agent reloading the page underneath it. Leaving comment mode parks the batch rather than discarding it, and a batch is only cleared once it has actually been delivered.
+
+### Conditions
+
+`⌘⇧M` opens three menus that fail apart: the **screen** the page is emulated at, the **network**, and the **CPU**. Each rests at Normal, and closing the bar puts all three back. The numbers are Chromium's own presets.
+
+## Inspect
+
+`⌥⌘I`, the `</>` button, or right-click and choose Inspect. You get the real Chromium inspector as a session: a row, a pane you can move, and a split under the page it belongs to, which is the classic bottom dock except that it is a real pane. There is one per browser, and asking again returns to it.
+
+## Simulator
+
+A simulator session claims a device from the fleet you have installed, boots it, and streams its screen into the pane. You can tap, type, swipe and rotate it, and so can your agent.
+
+Synth reads the device's own framebuffer rather than launching Simulator.app, so the session keeps working when that window would have been minimised, on another Space, or closed by Xcode. A device Synth booted is a device Synth shuts down; a device that was already running is left alone.
+
+> Simulator sessions are behind **Settings ▸ Experimental** and are off by default.
+
+## Markdown
+
+Command-click any `.md` link, or run `synth <file>` in any Synth terminal, and the document opens as a session beside the agent that wrote it. Click a block to see its raw markdown with a cursor in it, click away and it renders again.
+
+It saves as you go and watches the file, so an agent rewriting the document underneath you does not cost you what you were typing.
+
+## The scratch terminal
+
+`⌘⇧T` summons a full terminal in the branch you are in, over everything else. It is for the errand you finish and leave: an `aws sso login`, a one-off script.
+
+It is deliberately *not* a session: it has no row in the sidebar and no status. Dismissing it kills it, and every summon is a fresh shell, which is what keeps the rule that nothing runs that the sidebar does not show. Escape closes it at an idle, empty prompt and otherwise reaches the shell, so vim and other full-screen programs work normally. Closing it while something is running confirms first, and names what it would end.
+
+## Sessions that belong to other sessions
+
+A browser an agent opened **belongs to** that agent. An inspect belongs to the browser it inspects. The owned session sits as a sibling row wearing its owner's mark, rather than indented underneath it, because the sidebar draws one level of nesting and this is a relation rather than a level.
+
+What ownership decides:
+
+- Comments made in a browser go to the agent that owns it. A browser you opened yourself belongs to nobody, and comments in it start an agent to receive them.
+- Closing an owner closes what belongs to it, all the way down.
+- An agent may drive any browser, and may close only the ones it opened.
+
+**Attach to** and **Detach** make and break the relation for a browser. An inspect is born attached and stays that way.
+
+## Splitting
+
+Sessions can share the pane. `⌘⇧` with an arrow splits toward that arrow, `⌘⌥` with an arrow moves between panes, and `⌘⇧⏎` zooms one to fill the surface and back again. The full set is in the [keyboard reference](keyboard.md).
+
+A split is owned by its branch and persists, so coming back to a branch gives you the layout you left. A split never crosses branches: everything on screen together is one branch's work.
+
+---
+
+# Agents
+
+Synth hosts coding agents it did not write. Whichever ones you have installed are the ones it offers, and changing which one you use changes nothing else.
+
+Synth ships with support for three agents and a way to name your own.
+
+|  |  |
+|---|---|
+| **Claude Code** | `claude` |
+| **OpenCode** | `opencode` |
+| **Antigravity** | `agy`, the command-line agent |
+| **Your own** | Any command you name |
+
+You do not point Synth at any of them. It looks at what your login shell can see, which means version managers and every install prefix are covered, and an agent that is not installed is simply not offered. Install a new one and it appears; remove one and it stops being offered.
+
+> Antigravity here means `agy`, the command-line agent, not the Antigravity IDE. The IDE installs a launcher of the same name; Synth resolves the symlink and rejects a candidate inside an application bundle, so it does not mistake one for the other.
+
+## Naming your own
+
+**Settings ▸ Synth ▸ Agents** takes a command, a name, and a base.
+
+The base is the built-in whose behaviour drives yours. Status, resume, paste and tool registration all differ per agent and cannot be typed into a field, so a custom agent borrows a built-in's handling. Synth runs your command with `--version` and recognises the base for you where it can.
+
+The command can be a shell alias. An alias is something only an interactive shell can see, so Synth asks your login shell for its aliases along with its PATH, follows chains, and keeps any flags you pinned as the leading arguments of the launch.
+
+An agent with no command, or no base, is not offered at all, exactly like one that is not installed. Switching an agent off in Settings drops it from every **New** surface and never touches a session already running it.
+
+## What Synth changes about your agent
+
+Synth runs your agent, so it is worth knowing exactly what it does and does not touch. The short version: it adds things at launch, and it does not rewrite your files.
+
+### Tools, at launch
+
+Synth's [bundled MCP servers](tools.md) are handed to each agent the way that agent expects to receive them, on the command that starts it. Nothing is written into your repository to do this. Older builds wrote an `.mcp.json`, an `opencode.json` or an `.agents/mcp_config.json` into every managed worktree; those are gone, and worktrees an older build wrote into are cleaned up on launch while the file is provably still Synth's.
+
+The cost of doing it at launch is that an agent you start some other way does not get the tools. A `claude -p` in a Synth terminal is not the same as an agent session.
+
+### Status
+
+Synth reads each agent the way that agent can be read: Claude Code and Antigravity through their hook systems, OpenCode by subscribing to its own event stream. Your own hooks are merged with Synth's rather than replaced.
+
+### Colours
+
+Synth installs a theme for Claude Code and for OpenCode so that a light Synth does not leave you reading a dark agent, and re-themes them when you change appearance. These are defaults, not locks: your own project-level theme still wins where the agent says it should. Antigravity has no theme setting Synth can reach, and its default scheme draws from the terminal palette Synth already tunes, so Synth writes nothing for it.
+
+### One keybinding
+
+OpenCode binds `⌃C` to quitting the whole program. Inside Synth it interrupts the turn instead, which is what the same key does in every other agent, and quitting stays on `⌃D`. This is done through an extra configuration file that is merged after yours, so a project's own keybindings still override it and no file of yours is edited.
+
+## Resuming
+
+Closing Synth does not end a conversation. Sessions come back dormant when you relaunch, and opening one resumes the conversation it was holding.
+
+If an agent exits on its own, the row leaves the tree and lands on a card offering **Reopen**, which puts it back where it stood and resumes it. That card never expires, because an agent quitting is not something you did and might happen while you are elsewhere.
+
+## Agents run on your machine
+
+An agent in Synth runs directly on your Mac, as you, with your files and your network. There is no sandbox and no container. It is the same access the agent has when you run it in a terminal yourself.
+
+What Synth adds is the worktree: an agent works in its branch's own checkout, so it is not editing the copy you are looking at. That is isolation between branches, and it is not isolation between the agent and the rest of your machine.
+
+Whatever permission model your agent has is still the one in force. Synth does not weaken it, does not answer its prompts for you, and does not add a second one. The only thing Synth itself gates is [an agent asking to create a branch](tools.md#synth-app), which always asks.
+
+> If you run your agent with its own approvals turned off, that is what runs inside Synth too. Synth reports what the agent is doing; it does not decide what it is allowed to do.
+
+## First run in a new branch
+
+Claude Code asks you to trust a folder the first time it runs in one, and every new worktree is a new folder. Until you answer, the session is not live, and a comment sent to it will not arrive. Antigravity has the same gate for a path it has not seen. Synth reads that record and never writes it, because pre-accepting trust on your behalf is not Synth's decision to make.
+
+---
+
+# Knowing who needs you
+
+Every session carries a status, and a collapsed row carries the most urgent status inside it. That is what makes running several agents at once readable.
+
+An agent thinking and an agent stuck waiting for you look identical in a terminal. Both are a cursor that is not moving. The only way to tell them apart is to go and look, and once you have four of them, going and looking is the whole job.
+
+So every session in Synth reports what it is doing, and the sidebar reads it.
+
+## The five states
+
+|  |  |
+|---|---|
+| **Needs input** | The session has stopped and cannot go on until you answer it. A question, a permission decision, a prompt. The only state that is a request rather than a report. |
+| **Error** | Something ended badly and nobody has looked at it yet. |
+| **Busy** | Something is happening: an agent mid-turn, or a process that is up. One state, whether it is thinking or serving, because the row's icon already says which kind of thing it is. |
+| **Unread** | It finished while you were elsewhere and you have not been back. |
+| **Idle** | Nothing is happening and you have seen it. |
+
+The indicators follow one grammar, so you can read a row you have never seen before:
+
+- **A glyph asks for a person.** Needs input and error wear one.
+- **A moving mark means live.** Busy is a sphere that beats.
+- **A flat dot is ambient.** It is telling you, not asking you.
+
+## What a collapsed row says
+
+A collapsed branch or project shows the most urgent thing inside it, by this order:
+
+```
+needs input  >  error  >  busy  >  unread  >  idle
+```
+
+So a closed branch with four sessions inside it, one of which has stopped to ask you something, shows that it has stopped to ask you something. You do not have to open a branch to find out whether opening it was worth it.
+
+A parent row could instead report only its own work, which would be honest and useless. The point of collapsing something is to stop looking at it, and a summary that can hide the one thing you needed is not doing the job.
+
+![Synth's sidebar: three projects, each branch carrying the state of what is inside it, and a notification card for the session that has stopped to ask something.](../img/attention-deck-dark@2x.webp)
+
+*Each branch carries the state of what is inside it, so the tree is readable collapsed.*
+
+## Notifications
+
+Reading the sidebar means looking at Synth. When a session in the background changes state, Synth comes to you instead: a card in the deck at the bottom of the window, and a macOS notification as well when Synth is not the app you are in.
+
+`⌘⏎` goes to whatever is at the front of the deck. That is the motion worth learning, because it means you never navigate to find the thing that wants you.
+
+### Three kinds of card
+
+|  |  |
+|---|---|
+| **Asking** | A question or a failure. Stays until you deal with it. |
+| **Undoable** | Something you just did that can be taken back. It drains a bar along its bottom edge, and commits when the bar empties. |
+| **Telling** | Something finished. It leaves on its own. |
+
+The deck orders by what it costs to miss a card rather than by how bad the card sounds, so a ten-second-old question sits above a five-minute-old error you have already read in your head. Every card has a real button with its shortcut printed in it, and a close control that is not the same click as acting on it.
+
+### Countdowns wait for you
+
+A draining card only drains while you could actually be reading it. Hovering the deck pauses it, Synth being in the background pauses it, and a card folded under a *+N* is not counting down at all. An undo window that expired while you were in another app was never a window.
+
+## Pull requests
+
+Each branch row carries the state of its pull request beside the name: open, merged, closed, or waiting in the merge queue. The open session's header carries the number, and clicking it opens the pull request in your normal browser.
+
+This is read with `gh`, so it needs the GitHub CLI to be installed and signed in. A repository that is not on GitHub, or a machine without `gh`, simply shows nothing.
+
+---
+
+# Configuration
+
+Settings, what a project can override, and the answer to the question that comes up most: is this a Synth setting or my agent's own configuration?
+
+`⌘,` opens Settings in the content pane, over the tree, so you can see what you are changing. There are two tabs: **Synth**, and the project you are in.
+
+## Which file is this?
+
+Synth runs your agent, your shell and your terminal, all of which have configuration of their own. That makes one question worth answering before any other.
+
+| If you want to change | It lives in |
+|---|---|
+| Which agents are offered, and the flags they launch with | Synth Settings |
+| What a new branch runs, and the sessions it opens with | Synth Settings |
+| Appearance, notification sounds, which bundled tools are on | Synth Settings |
+| How your agent behaves: its permissions, its instructions, its own subagents | Your agent's own configuration, unchanged |
+| What your shell does on startup | Your shell's own rc files, unchanged |
+
+The line is that **Synth configures Synth**. It does not have a second copy of your agent's settings, and it does not edit the ones you have.
+
+## What Synth writes, and where
+
+Nothing Synth writes goes in your repository. Everything it keeps is in its own Application Support folder, apart from three files it adds beside your agents' own:
+
+- A theme for Claude Code and a theme for OpenCode, so a light Synth does not leave you with a dark agent. Both are new files under the agent's own themes directory, and both are defaults that your own configuration still overrides.
+- An extra OpenCode keybinding file, merged after yours, which is what makes `⌃C` interrupt a turn rather than quit. A project's own keybindings still win.
+
+Synth's own tools are handed to each agent on the command line that launches it, so there is no configuration file in your worktree for them either. See [what Synth changes about your agent](agents.md#what-synth-changes-about-your-agent).
+
+## A project layers on the default
+
+Project settings are a delta, not a replacement. The shared setup script runs and then the project's runs; the shared agent flags and the project's are concatenated into one launch line, shown as you will actually get it. Leaving a project's field empty means pure inheritance, and **Clear** strips the delta and puts you back on the shared value.
+
+A project can decline the shared setup script outright, which is the case for a repository whose needs are nothing like the rest.
+
+## MCP servers
+
+**Settings ▸ Synth ▸ MCP servers** switches Synth's own [bundled servers](tools.md) on and off. The browser server and the Synth app server are on. The simulator server follows the Experimental toggle it belongs to.
+
+Switching one off removes it from every agent's launch. It does not affect any MCP server you have configured yourself, which Synth neither reads nor writes.
+
+## New worktree defaults
+
+The setup script and the session template both live here, and both are covered in [Branches and worktrees](branches.md#the-setup-script). Neither ships with a value: a default setup script would be a guess about someone else's repository, and default agent flags should be flags you typed.
+
+## Markdown
+
+What happens when you open a `.md` file: in Synth's own viewer, in a terminal editor of your choice, or in whatever the system would use. The middle option lists the editors actually on this machine, found the same way agents are.
+
+## Privacy
+
+Synth reports anonymous usage counts, on by default, and **Settings ▸ Privacy** turns them off immediately and permanently. There is no account and no identifier tying a report to you. It counts events like a session being created; it never carries file contents, paths, terminal output, environment or clipboard.
+
+The in-app feedback box on `⌘⇧F` attaches only your version and OS alongside what you typed.
+
+## Archived worktrees
+
+The clean-up switch, the grace period, the disk budgets, and a per-project list of what is still on disk with the reason each folder is still there. Covered in [Archiving](branches.md#archiving).
+
+## Experimental
+
+Two things live here, both off by default: **simulator sessions**, and **Tabs**, which shows a branch's sessions as a strip of tabs in the content surface rather than as rows in the sidebar. Tabs is presentation only. It is the same tree underneath, so turning it on and off loses nothing.
+
+---
+
+# Keyboard reference
+
+Every binding in Synth, generated from the source the app itself reads, so this page cannot fall behind the build.
+
+All of Synth is reachable from the keyboard, and chaining shortcuts is meant to feel instant. Nothing here waits on anything else finishing.
+
+Three of these carry most of the day. `⌘K` is everything, scoped to whatever you have focused. `⌘⏎` takes you to whatever needs you. `⌘0` and `⌘1` move between the sidebar and the session, which is the move you make most and the one worth making without thinking.
+
+57 bindings in 8 groups, read from `Shortcuts.swift` when this page was built. The same list is in the app under `⌘?`.
+
+## General
+
+|  |  |
+|---|---|
+| `⌘K` | Command menu |
+| `⌘N` | New session |
+| `⌘T` | New terminal |
+| `⌘⇧T` | Scratch terminal |
+| `⌘W` | Close session |
+| `⌘B` | Toggle sidebar |
+| `⌘⏎` | Jump to notification |
+| `⌘,` | Settings |
+| `⌘?` | Keyboard shortcuts |
+| `⌘⇧F` | Send feedback |
+
+## Command menu
+
+|  |  |
+|---|---|
+| `↑` `↓` or `⌃J⌃K` | Move |
+| `↵` | Open |
+| `⌫` | Back |
+| `⌘K` or `esc` | Close |
+
+## Sidebar
+
+|  |  |
+|---|---|
+| `↑` `↓` or `J` `K` | Move selection |
+| `→` `←` or `L` `H` | Expand · collapse |
+| `⇥` | Toggle group |
+| `↵` or `Space` | Open · toggle |
+| `A` | Add session |
+| `R` | Rename |
+| `D` | Close · archive |
+| `⇧J⇧K` | Reorder |
+| `esc` | Focus content |
+
+## Split layout
+
+|  |  |
+|---|---|
+| `⌘⇧→` or `⌘\|` | Split toward arrow |
+| `⌘⇧—` | Split stacked |
+| `⌘⌥→` or `⌘⌥L` | Focus pane |
+| `⌘1` or `⌘9` | Focus pane N |
+| `⌘0` | Focus sidebar |
+| `` ⌘` `` or `` ⌘⇧` `` | Cycle panes |
+| `⌘⌥⇧→` | Resize pane |
+| `⌘⇧⏎` | Zoom pane |
+| `⌘⇧U` | Unsplit |
+
+## Browser
+
+|  |  |
+|---|---|
+| `⌘L` | Go to address |
+| `⌘R` | Reload |
+| `⌘[` | Back |
+| `⌘]` | Forward |
+| `⌘+` or `⌘=` | Zoom in |
+| `⌘−` | Zoom out |
+| `⌘F` | Find in page |
+| `⌥⌘I` | Inspect |
+| `⌘⇧M` | Conditions |
+
+## Simulator
+
+|  |  |
+|---|---|
+| `⌘L` | Open app or URL |
+| `⌘R` | Relaunch app |
+| `⌘⇧H` | Home |
+| `⌘⇧R` | Rotate |
+| `⏎` | Send the comment you are writing |
+| `esc` | Exit comment mode, or cancel a comment |
+
+## Comments
+
+|  |  |
+|---|---|
+| `⏎` | Add comment to the browser's batch |
+| `⌥↑` | Widen comment target |
+| `⌘⌥⏎` | Send all comments |
+| `esc` | Exit comment mode |
+
+## Tabs
+
+|  |  |
+|---|---|
+| `⌘⇧]` or `⌃⇥` | Next tab |
+| `⌘⇧[` or `⌃⇧⇥` | Previous tab |
+| `⌘W` | Close tab |
+| `⌘⇧→` | Send tab to pane · split |
+| `drag` | Reorder tab |
+| `⌘⇧U` | Merge pane |
+
+## In Tabs mode
+
+With Tabs switched on in **Settings ▸ Experimental**, the split-layout group changes rather than growing. `⌘⇧` with an arrow sends a tab to a neighbouring pane instead of splitting, `⌘⇧U` merges a pane instead of unsplitting it, and `⌘1` to `⌘9` select a tab as well as focusing a pane. Everything else is unchanged.
+
+> This page is built from `Shortcuts.swift`, the same source the in-app `⌘?` sheet renders. A binding that changed in the app changed here, or the build failed.
+
+---
+
+# Agent tools
+
+Every agent Synth hosts gets a real browser, a booted iPhone, and a way to hand work to a new branch. You do not wire any of it up, and you do not wire it up again for the next agent.
+
+Synth bundles three MCP servers and hands them to each agent on the command that launches it. You do not install or register them, and nothing for them is written into your repository. Change agent and the same tools are there.
+
+These pages are for knowing what your agent can reach. You do not call these yourself: you ask the agent, and it does.
+
+42 tools across 3 servers, read from the servers themselves when this page was built. Every one of them ships with Synth: there is nothing to install and nothing to register.
+
+## synth-browser
+
+|  |  |
+|---|---|
+| `browser_list` | List this worktree's Synth browser sessions (sessionId, title, url, branch; owned sessions carry an owner field — the Synth session UUID of the owning claude). |
+| `browser_create`(url?) | Create a new Synth browser session in this worktree's branch (visible in the sidebar, selected), optionally pre-navigated to a URL. |
+| `browser_close`(sessionId) | Close a browser session you created, removing its row from the sidebar. |
+| `browser_navigate`(url, sessionId, waitUntil?, timeout?) | Navigate a browser session to a URL. |
+| `browser_back`(sessionId) | Go back in the session's history. |
+| `browser_forward`(sessionId) | Go forward in the session's history. |
+| `browser_reload`(sessionId, waitUntil?, timeout?) | Reload the session's page. |
+| `browser_device_mode`(sessionId, on?, device?, landscape?, network?, cpu?) | Read or set the session's conditions — the three things that make a machine worse than this one, each independent of the others and each resting at normal: the SCREEN the page is emulated at (Chrome device-toolbar emulation: true innerWidth/innerHeight, devicePixelRatio, and mobile layout on the handhelds), the NETWORK and the CPU. |
+| `browser_viewport`(sessionId, width?, height?, deviceScaleFactor?, mobile?, reset?) | Read or set the size the page lays out at, in CSS pixels — the agent's own viewport control, free of the device fleet. |
+| `browser_click`(sessionId, ref?, selector?, x?, y?, button?, clickCount?) | Click in the session's page: a snapshot ref, a CSS selector, or viewport coordinates. |
+| `browser_type`(text, sessionId, ref?, selector?, submit?) | Type text into the session's page — into a ref or selector (replacing its value) or the currently focused element; optionally press Enter after. |
+| `browser_hover`(sessionId, ref?, selector?) | Hover the pointer over an element — the only way to reach a menu, tooltip or control that appears on hover. |
+| `browser_press_key`(key, sessionId, ref?, selector?, repeat?) | Press a key in the session's page — Escape to dismiss, Tab to move focus, ArrowDown to walk a listbox, Enter to confirm. |
+| `browser_select_option`(sessionId, ref?, selector?, values?, labels?, indexes?) | Choose in a native <select>. |
+| `browser_scroll`(sessionId, ref?, selector?, to?, dy?, dx?) | Scroll the page, or bring one element into view — how a lazy list loads its next page and how anything below the fold becomes clickable. |
+| `browser_wait_for`(sessionId, text?, textGone?, ref?, selector?, state?, expression?, timeout?) | Wait for the page to reach a condition instead of guessing at a delay: text to appear or go, an element to become visible or leave, or a JS expression to turn truthy. |
+| `browser_screenshot`(sessionId, path?, inline?, fullPage?, ref?, selector?) | Screenshot the session's page to a PNG file and return its path — the viewport by default, or the whole scrollable page (fullPage), or one element (ref or selector). |
+| `browser_network`(sessionId, request?, filter?, type?, failedOnly?, limit?, path?) | The session's network traffic. |
+| `browser_record_start`(sessionId) | Start recording the session's page as video. |
+| `browser_record_stop`(sessionId, path?) | Stop recording and encode the video: mp4 (H.264) when a full ffmpeg is installed, else webm (VP8) via Playwright's bundled ffmpeg. |
+| `browser_snapshot`(sessionId, selector?, maxDepth?) | Accessibility-tree snapshot (aria) of the session's page — the fast, text-sized way to read page structure. |
+| `browser_cookies`(sessionId, set?, urls?) | Read or set the session's cookies. |
+| `browser_health`(reconnect?) | State of Synth's browser engine when the tools misbehave: how many CDP targets it hosts across ALL worktrees and agents (attach cost scales with that number, so it explains slow or timing-out calls that have nothing to do with your own pages), and which of this worktree's sessions still answer. |
+| `browser_console`(sessionId) | Recent console messages (including errors) from the session's page. |
+| `browser_evaluate`(expression, sessionId) | Evaluate a JavaScript expression in the session's page; returns the JSON-serialized result. |
+
+## synth-simulator
+
+|  |  |
+|---|---|
+| `simulator_list` | List this worktree's Synth simulator sessions: sessionId, title, branch, the device UDID and name, whether that device is booted, and whether Synth is attached to its framebuffer (`booting` while a device is still coming up — attaching retries every second). |
+| `simulator_devices` | List the simulator devices installed on this machine (udid, name, runtime, whether booted). |
+| `simulator_create`(device?) | Create a Synth simulator session in this worktree's branch — a row in the sidebar showing one device's live screen, which you and the user both act on. |
+| `simulator_close`(sessionId) | Close a simulator session, removing its row from the sidebar. |
+| `simulator_tap`(x, y, sessionId) | Tap the device's screen. |
+| `simulator_swipe`(fromX, fromY, toX, toY, sessionId, durationMs?) | Swipe or drag across the device's screen — scrolling a list, a page in a pager, a sheet dismissal. |
+| `simulator_type`(text, sessionId) | Type text into whatever the device has focused — tap the field first. |
+| `simulator_press_button`(button, sessionId) | Press a hardware button: home, lock, sideButton, siri, applePay. |
+| `simulator_rotate`(orientation, sessionId) | Turn the device to a given orientation — how you check a landscape layout, or a rotation your app handles badly. |
+| `simulator_shake`(sessionId) | Shake the device. |
+| `simulator_describe`(sessionId, x?, y?) | Read what is on the device's screen as text: the accessibility tree of the frontmost app. |
+| `simulator_screenshot`(sessionId) | Screenshot the device's screen (PNG, at the device's own pixel size). |
+| `simulator_launch`(bundleId, sessionId, args?) | Launch an installed app on the device by bundle identifier, foregrounding it. |
+| `simulator_terminate`(bundleId, sessionId) | Stop a running app on the device. |
+| `simulator_open_url`(url, sessionId) | Open a URL on the device — an https link in Safari, or your app's own scheme or universal link, which is how you reach a deep link without navigating to it by hand. |
+| `simulator_install`(path, sessionId) | Install a built .app bundle on the device. |
+
+## synth-app
+
+|  |  |
+|---|---|
+| `worktree_create`(branch, base?, handoff?) | Create a new git worktree in this repo through Synth, so a separate line of work gets its own branch, checkout and sessions instead of piling onto the current one. |
+
+## What an agent may and may not do
+
+**An agent may drive anything, and close only what it opened.** Any agent can act on any browser or simulator, because the surface is shared with you and with every other session. Closing is different, because it takes something away: a browser you opened yourself is yours, and so is one you detached or attached elsewhere.
+
+**Every tool names its session.** One server process serves an agent and all of its subagents, so there is no ambient "current" session to inherit: an agent that wants to act on a page passes that page's `sessionId`. This is why two agents working at once cannot drive each other's windows by accident.
+
+A device is different again. Simulators are shared machine state, so a device Synth booted is released by reference count, and an agent cannot shut down a device you are looking at.
+
+## Creating a branch always asks
+
+`worktree_create` is the one tool that stops and waits for a person. When an agent decides work belongs somewhere else, it writes a brief and asks for a branch of its own. You see the project, the base branch, and what it means to do.
+
+Return creates it and starts an agent inside that already knows what it is there for. Escape declines, and tells the agent to carry on where it is. Dismissing the prompt any other way is a decline as well, because a prompt you closed is not a prompt you agreed to.
+
+This is the only gate Synth adds. Everything else an agent does, it does with whatever permissions [the agent itself asks you for](agents.md#agents-run-on-your-machine).
+
+## Screenshots and video
+
+A screenshot goes to a file by default and is only returned inline when asked for. Images are the largest thing an agent can put in its own context, and most of the time it needs to have looked rather than to keep looking.
+
+Video is the other way round: `browser_record_stop` returns a path, never frames. A recording is for you to watch, not for the model to read.
+
+> This page is built from the servers themselves. The tool list, the arguments and the summary lines are read out of the same files Synth ships to your agent, so a tool that changed there changed here.
+
+---
+
+# Troubleshooting
+
+The things that actually go wrong, what causes each one, and what to do about it.
+
+## My agent is not in the list
+
+Synth offers what your login shell can see. Check, in this order:
+
+- It is switched on in **Settings ▸ Synth ▸ Agents**. An agent switched off is not offered, exactly like one that is not installed.
+- Its command runs in a fresh login shell. Synth asks your login shell, not the environment it was launched from, so a PATH set inside a running terminal is not what it sees.
+- If the command is an alias, it is one your login shell defines. Synth follows aliases and keeps any flags you pinned to them.
+
+For a custom agent, a missing base is the same as a missing command: both mean the agent is not offered.
+
+## A new branch is missing node_modules, or my .env
+
+Expected. A git worktree contains what git tracks, and nothing it does not. Put the copying and installing in the setup script, which runs in every new worktree. See [the setup script](branches.md#the-setup-script).
+
+## Two branches are fighting over a port
+
+Worktrees isolate files. They do not isolate ports, databases, container names, or anything else with one name on the machine. Derive the port from the branch in your setup script rather than hard-coding one. See [two agents, one port](branches.md#two-agents-one-port).
+
+## The agent is running but nothing I send arrives
+
+Almost always the trust prompt. Claude Code asks you to trust a folder the first time it runs in one, and every new branch is a new folder. Until that is answered the session is not live, so a browser comment or a handed-off brief has nowhere to land. Open the session and answer it.
+
+Antigravity has the same gate for a path it has not seen before.
+
+## I cannot open a branch that already exists
+
+Git allows a branch to be checked out in one place at a time, and it will refuse a second. Either go to the branch row you already have, or cut a new branch for the new line of work.
+
+## No pull request state on any branch
+
+That column is read with the GitHub CLI. It needs `gh` installed and signed in, and the repository needs to be on GitHub. When any of that is not true, the column shows nothing rather than an error.
+
+## I am not getting macOS notifications
+
+Notification Center needs a one-time permission grant, which macOS asks for once. If it was declined, it has to be re-granted in System Settings under Notifications. Cards inside Synth are unaffected either way, and Focus and Do Not Disturb are respected.
+
+## An agent closed by itself
+
+It exited. The row leaves the tree and lands on a card offering **Reopen**, which puts it back where it was and resumes the conversation. That card does not expire.
+
+If it happens repeatedly to the same agent, run its command in a terminal session and watch what it says on the way out.
+
+## I archived something and want it back
+
+`⌘K`, then **Archived**, scoped to the project you are in. Restoring cuts the checkout again if the folder has already been reclaimed. The git branch is never deleted by archiving or by the clean-up behind it, so there is no state a branch cannot come back from.
+
+## Simulator sessions are not offered
+
+They are behind **Settings ▸ Experimental** and off by default. Switch them on there. A device also has to be installed on the machine for there to be a fleet to pick from.
+
+## A downloaded update has not installed
+
+It installs the next time you quit Synth. Nothing is waiting on you, and there is nothing to press. The **Restart to update** row in the sidebar foot only brings that install forward.
+
+## Something is wrong that is not here
+
+`⌘⇧F` opens one box. Type what happened and send it. It carries your version and OS and nothing else: no file contents, no paths, no terminal output.
+

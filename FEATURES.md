@@ -2399,6 +2399,24 @@ disclosure to dive deeper.
   never to the generated page. Not measured in a browser (Synth wasn't running), no `llms.txt`
   yet, nothing deployed.
 
+- **The docs get measured, and four defects fall out** — a live Synth made the browser drivable, so
+  the pages were read with `getComputedStyle` at six widths instead of eyeballed. Both reported
+  problems were real and neither was what it looked like: the callouts' coloured left edge borrowed
+  status hues that mean something else in the app, and the sidebar's selected row was clipped
+  because `overflow-y` forces `overflow-x` to `auto`, so the container clipped the 8px its fill was
+  pulled past it. Two more went unreported: the reading measure got *wider* below 860 (535px to
+  774px) because the mobile rule dropped the cap, and the vocabulary table shrank to 69px columns
+  instead of scrolling. Then the deploy question found the worst: an inlined `@font-face` resolves
+  `url()` against the document, so every page asked for `/docs/fonts/` and had been rendering in the
+  system fallback since the first build.
+- **The docs are legible to an agent as well as to a person** — `llms.txt`, `llms-full.txt` and a
+  `.md` twin of every page, converted from the same fragments as the HTML rather than written again,
+  plus `.nojekyll` so Pages serves the markdown instead of rendering it. Eleven of nineteen
+  comparable sites serve a real `llms.txt`, so this is the floor rather than a flourish. The
+  conversion had to learn that a chord is one code span and two alternative keys are two, that
+  `` ⌘` `` closes its own span and needs a longer fence, and that the tool table's argument line is
+  a block element that ran into the name beside it.
+
 ## [2026-09-06](docs/features/2026-09-06.md)
 
 - **Usage: one board for every agent's limits** — a Usage entry above the project tree opens a

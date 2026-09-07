@@ -515,10 +515,11 @@ def build_page(slug, css):
             raise BuildError("%s must contain %s" % (path, marker))
         body = body.replace(marker, GENERATORS[slug](), 1)
 
+    summary_text = re.sub(r"\s+", " ", summary.group(1))
     body = add_ids(body)
-    return SHELL.format(
+    page = SHELL.format(
         title=html.escape(TITLES[slug]),
-        summary=html.escape(re.sub(r"\s+", " ", summary.group(1))),
+        summary=html.escape(summary_text),
         slug=slug,
         css=css,
         dmg=DMG,
@@ -527,6 +528,199 @@ def build_page(slug, css):
         walk=walk(slug),
         body=body,
     )
+    return {
+        "html": page,
+        "markdown": markdown_page(slug, TITLES[slug], summary_text, body),
+        "summary": summary_text,
+    }
+
+
+# ─────────────────────────── the same pages, as markdown ───────────────────────────
+# Synth hosts coding agents, so its own documentation should be legible to one. These are
+# built from the same fragments as the HTML rather than written again, which is the only
+# version of this that stays true.
+
+from html.parser import HTMLParser
+
+VOID = {"img", "br", "hr", "meta", "input"}
+
+
+class Node:
+    def __init__(self, tag, attrs=None):
+        self.tag, self.attrs, self.kids = tag, dict(attrs or []), []
+
+    def text(self):
+        return "".join(k if isinstance(k, str) else k.text() for k in self.kids)
+
+
+class Tree(HTMLParser):
+    """A small DOM for a closed, well-formed tag set. Not a general parser, and it does not
+    need to be: the only input is this repository's own fragments."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = Node("#root")
+        self.stack = [self.root]
+
+    def handle_starttag(self, tag, attrs):
+        node = Node(tag, attrs)
+        self.stack[-1].kids.append(node)
+        if tag not in VOID:
+            self.stack.append(node)
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, 0, -1):
+            if self.stack[i].tag == tag:
+                del self.stack[i:]
+                return
+
+    def handle_data(self, data):
+        self.stack[-1].kids.append(data)
+
+
+def code_span(text):
+    """A code span that survives its own content.
+
+    Two of Synth's bindings are `⌘\\`` and `⌘⇧\\``, where the key IS a backtick, so a single
+    delimiter closes the span in the middle of the key. Markdown's answer is a longer fence,
+    padded so a leading or trailing backtick is not read as part of it.
+    """
+    runs = re.findall(r"`+", text)
+    fence = "`" * ((max(len(r) for r in runs) + 1) if runs else 1)
+    pad = " " if text.startswith("`") or text.endswith("`") else ""
+    return "%s%s%s%s%s" % (fence, pad, text, pad, fence)
+
+
+def inline(node):
+    """Inline runs, with the marks that survive a plain-text reading."""
+    out, keys = [], []
+    prev_kbd = False
+    for k in node.kids:
+        if isinstance(k, str):
+            out.append(re.sub(r"\s+", " ", k))
+            prev_kbd = prev_kbd and not k.strip()
+            continue
+        inner = inline(k)
+        is_kbd = k.tag == "kbd"
+        if is_kbd and prev_kbd and keys:
+            # Caps sit side by side in the HTML whether they are a chord (⌘ then K, pressed
+            # together) or alternatives (J or K, either one). On screen the gap between caps
+            # carries that; in plain text nothing does. A chord always opens with a modifier,
+            # so that is the test: a chord becomes one span, alternatives stay separate spans
+            # with a space, and `JK` stops reading as a key that does not exist.
+            if keys[-1][0] in "⌘⌥⌃⇧":
+                keys[-1] += inner.strip()
+                out[-1] = code_span(keys[-1])
+            else:
+                keys.append(inner.strip())
+                out.append(" " + code_span(inner.strip()))
+            continue
+        prev_kbd = is_kbd
+        if is_kbd:
+            keys.append(inner.strip())
+        if k.tag in ("strong", "b"):
+            out.append("**%s**" % inner.strip())
+        elif k.tag in ("em", "i"):
+            out.append("*%s*" % inner.strip())
+        elif k.tag in ("code", "kbd"):
+            out.append(code_span(inner.strip()))
+        elif k.tag == "div" and "ref__args" in k.attrs.get("class", ""):
+            # the generated tool table's argument line, which belongs to the name beside it
+            out.append("(%s)" % inner.strip())
+        elif k.tag == "span" and "ref__or" in k.attrs.get("class", ""):
+            # the alternate-binding separator, whose spacing is margin in the HTML
+            out.append(" %s " % inner.strip())
+        elif k.tag == "a":
+            href = k.attrs.get("href", "")
+            # a sibling page is its markdown twin, so a reader following links stays in markdown
+            href = re.sub(r"^([a-z-]+)\.html(#.*)?$", lambda m: m.group(1) + ".md" + (m.group(2) or ""), href)
+            if href == "./":
+                href = "index.md"
+            out.append("[%s](%s)" % (inner.strip(), href))
+        elif k.tag == "img":
+            out.append("![%s](%s)" % (re.sub(r"\s+", " ", k.attrs.get("alt", "")).strip(),
+                                      k.attrs.get("src", "")))
+        elif k.tag == "br":
+            out.append("\n")
+        else:
+            out.append(inner)
+    return "".join(out)
+
+
+def cells(row):
+    return [inline(c).strip().replace("|", "\\|") for c in row.kids
+            if not isinstance(c, str) and c.tag in ("td", "th")]
+
+
+def block(node, depth=0):
+    """One markdown block per element, in document order."""
+    out = []
+    for k in node.kids:
+        if isinstance(k, str):
+            if k.strip():
+                out.append(re.sub(r"\s+", " ", k).strip())
+            continue
+        t, cls = k.tag, k.attrs.get("class", "")
+        if t in ("h2", "h3"):
+            out.append("%s %s" % ("#" * (int(t[1]) ), inline(k).strip()))
+        elif t == "p":
+            out.append(inline(k).strip())
+        elif t in ("ul", "ol"):
+            items = [x for x in k.kids if not isinstance(x, str) and x.tag == "li"]
+            out.append("\n".join(
+                "%s %s" % ("-" if t == "ul" else "%d." % (i + 1), inline(x).strip())
+                for i, x in enumerate(items)))
+        elif t == "pre":
+            out.append("```\n%s\n```" % k.text().strip("\n").rstrip())
+        elif t == "table":
+            rows = []
+            for section in k.kids:
+                if isinstance(section, str):
+                    continue
+                src = [section] if section.tag == "tr" else [
+                    r for r in section.kids if not isinstance(r, str) and r.tag == "tr"]
+                rows.extend(src)
+            grid = [cells(r) for r in rows if cells(r)]
+            if not grid:
+                continue
+            width = max(len(r) for r in grid)
+            grid = [r + [""] * (width - len(r)) for r in grid]
+            # Most of these tables define terms and carry no header row. Markdown needs one,
+            # so an empty header is synthesised rather than promoting the first definition
+            # into a heading it was never written as.
+            has_head = any(not isinstance(c, str) and c.tag == "thead" for c in k.kids)
+            head, body = (grid[0], grid[1:]) if has_head else ([""] * width, grid)
+            out.append("\n".join(
+                ["| " + " | ".join(head) + " |", "|" + "---|" * width]
+                + ["| " + " | ".join(r) + " |" for r in body]))
+        elif t == "figure":
+            img = next((x for x in k.kids if not isinstance(x, str) and x.tag == "img"), None)
+            cap = next((x for x in k.kids if not isinstance(x, str) and x.tag == "figcaption"), None)
+            if img:
+                out.append("![%s](%s)" % (re.sub(r"\s+", " ", img.attrs.get("alt", "")).strip(),
+                                          img.attrs.get("src", "")))
+            if cap:
+                out.append("*%s*" % inline(cap).strip())
+        elif t == "div" and cls in ("note", "warn"):
+            inner = block(k, depth + 1)
+            out.append("\n".join("> " + line if line else ">" for line in inner.split("\n")))
+        else:
+            nested = block(k, depth + 1)
+            if nested:
+                out.append(nested)
+    return "\n\n".join(x for x in out if x)
+
+
+def to_markdown(slug, body):
+    tree = Tree()
+    tree.feed(body)
+    md = block(tree.root)
+    md = re.sub(r"\n{3,}", "\n\n", md)
+    return md.strip() + "\n"
+
+
+def markdown_page(slug, title, summary, body):
+    return "# %s\n\n%s\n\n%s" % (title, summary, to_markdown(slug, body))
 
 
 def check_balance(page, slug):
@@ -538,48 +732,101 @@ def check_balance(page, slug):
             raise BuildError("%s: %d <%s> against %d </%s>" % (slug, opens, tag, closes, tag))
 
 
+SITE = "https://isaac-scarrott.github.io/synth-site"
+
+
+def llms_index(built):
+    """The root index an agent reads first: what this site is, and every page with one line.
+
+    Kept to links and summaries rather than prose, because its job is to say what exists and
+    where the full text is, not to be the full text.
+    """
+    lines = [
+        "# Synth",
+        "",
+        "> A Mac-native development environment for coding agents. It hosts the agents you "
+        "already have (Claude Code, OpenCode, Antigravity, or your own command), runs each "
+        "branch in its own git worktree, and tells you which session needs you.",
+        "",
+        "Every page below is also served as markdown: replace `.html` with `.md`, or read "
+        "[llms-full.txt](%s/llms-full.txt) for all of them in one file." % SITE,
+        "",
+    ]
+    for group, pages in NAV:
+        lines.append("## %s" % group)
+        lines.append("")
+        for slug, title in pages:
+            lines.append("- [%s](%s/docs/%s.md): %s" % (title, SITE, slug, built[slug]["summary"]))
+        lines.append("")
+    lines += ["## Elsewhere", "",
+              "- [Landing page](%s/): what Synth is, in five claims." % SITE,
+              "- [Download](%s): the signed disk image. macOS 14 or later, Apple silicon." % DMG,
+              ""]
+    return "\n".join(lines)
+
+
+def llms_full(built):
+    parts = ["# Synth documentation", "",
+             "Every page of the Synth documentation, in reading order, generated from the "
+             "same source as the site.", ""]
+    for slug in PAGES:
+        parts += ["---", "", built[slug]["markdown"].rstrip(), ""]
+    return "\n".join(parts) + "\n"
+
+
 def build():
+    """Every file this build owns, keyed by its path relative to site/."""
     css = landing_css()
     with open(DOCS_CSS, encoding="utf-8") as f:
         css = css + "\n\n" + f.read().strip("\n")
-    pages = {}
+
+    built = {}
     for slug in PAGES:
-        page = build_page(slug, css)
-        check_balance(page, slug)
-        pages["%s.html" % slug] = page
-    return pages
+        built[slug] = build_page(slug, css)
+        check_balance(built[slug]["html"], slug)
+
+    files = {}
+    for slug in PAGES:
+        files["docs/%s.html" % slug] = built[slug]["html"]
+        files["docs/%s.md" % slug] = built[slug]["markdown"]
+    files["llms.txt"] = llms_index(built)
+    files["llms-full.txt"] = llms_full(built)
+    # GitHub Pages runs Jekyll by default, which would take the .md twins and render them
+    # into HTML rather than serving the markdown an agent asked for.
+    files[".nojekyll"] = ""
+    return files
 
 
 def main():
     check = "--check" in sys.argv
-    pages = build()
+    files = build()
     os.makedirs(OUT, exist_ok=True)
     stale = []
-    for name, page in pages.items():
-        path = os.path.join(OUT, name)
+    for name, content in files.items():
+        path = os.path.join(ROOT, name)
         old = None
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 old = f.read()
-        if old == page:
+        if old == content:
             continue
         stale.append(name)
         if not check:
             with open(path, "w", encoding="utf-8") as f:
-                f.write(page)
+                f.write(content)
 
-    known = set(pages)
+    known = {n.split("/", 1)[1] for n in files if n.startswith("docs/")}
     for name in sorted(os.listdir(OUT)) if os.path.isdir(OUT) else []:
-        if name.endswith(".html") and name not in known:
+        if name.endswith((".html", ".md")) and name not in known:
             raise BuildError("%s is in docs/ but not in NAV; delete it or add it" % name)
 
     if check:
         if stale:
             print("out of date: %s" % ", ".join(stale), file=sys.stderr)
             return 1
-        print("docs/ matches docs-src/ (%d pages)" % len(pages))
+        print("site/ matches docs-src/ (%d files)" % len(files))
         return 0
-    print("built %d pages%s" % (len(pages), (" (%s)" % ", ".join(stale)) if stale else ", no change"))
+    print("built %d files%s" % (len(files), (" (%s)" % ", ".join(stale)) if stale else ", no change"))
     return 0
 
 

@@ -26,7 +26,9 @@ struct UsagePane: View {
             ScrollView {
                 grid
                     .frame(maxWidth: 760, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Centred, like Settings' column: a fixed measure held to one edge of a pane
+                    // as wide as the window pools every spare pixel on the other side.
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 44)
             }
         }

@@ -2516,7 +2516,11 @@
      sidebar tree retargets the project tab, so the tree keeps meaning exactly what it always
      meant and there is no list of project names in here to misread as navigation. ---- */
   .set-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px 44px; }
-  .set-body__inner { max-width: 660px; }
+  /* Centred, not left-aligned: the column is a fixed measure in a pane that is as wide as the
+     window, so hugging one edge pools every spare pixel on the other side and reads as the
+     settings having drifted rather than as a column. Usage takes the same treatment at its own
+     wider measure. */
+  .set-body__inner { max-width: 660px; margin: 0 auto; }
   .set-body__inner.usage-body__inner { max-width: 760px; }
 
   /* The settings strip, in .pane__head after the title. Its tabs are .tab — the same component

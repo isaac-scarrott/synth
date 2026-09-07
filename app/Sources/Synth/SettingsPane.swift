@@ -17,7 +17,7 @@ struct SettingsPane: View {
             head
             ScrollView {
                 Group {
-                    // No project tab without a project — fall through to the Synth tab, which
+                    // No project tab without a project — fall through to the General tab, which
                     // itself carries the "add a project" prompt when there are none.
                     if tab == .project, let ws = project {
                         projectTab(ws)
@@ -26,7 +26,10 @@ struct SettingsPane: View {
                     }
                 }
                 .frame(maxWidth: 660, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Centred in the pane (working.html `.set-body__inner { margin: 0 auto }`): the
+                // column is a fixed measure and the pane is as wide as the window, so holding it
+                // to one edge pools every spare pixel on the other.
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 44)
             }
         }
@@ -356,12 +359,12 @@ private struct SetTab: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let workspace { WsChip(workspace: workspace, size: 14) }
-                Text(label).lineLimit(1).truncationMode(.tail)
+                // Sized to the name, never given room to spread: `.frame(maxWidth:)` is a greedy
+                // bound in SwiftUI, not CSS's cap, so asking for the session tab's 200pt ceiling
+                // here spaced the scopes out across the whole head. A long name truncates instead.
+                Text(label).lineLimit(1).truncationMode(.tail).layoutPriority(1)
             }
             .tabShell(isActive: on, hovering: hovering)
-            // The same bounds a session tab keeps: a project named at length would otherwise
-            // push the rest of the strip out of the head rather than ellipsising.
-            .frame(minWidth: 34, maxWidth: 200)
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)

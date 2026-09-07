@@ -2582,3 +2582,13 @@ disclosure to dive deeper.
   48px, and back to 16px below 560. The first measurement was wrong in an instructive way: an
   iframe written with `document.write` inherits the parent's base URL, so it reproduced the
   morning's font 404 and reported a 0.75px phantom.
+
+- **0.42.0 ships — the archive reclaims and retires, and the docs are public** — archiving a
+  worktree now frees the disk it held (three gates each blocked a folder permanently: a generated
+  `.env`, a SwiftPM checkout's own `.git`, Synth deleting config files the repo tracked) and retires
+  the branch once the remote has dropped it. OpenCode 2's `ctrl+c` stops a turn instead of quitting
+  the agent, its questions light the `?`, and opencode's pane stops painting its own field.
+  `CFBundleVersion` 730, tag `v0.42.0`; both artifacts notarized separately, stapled, and verified
+  credential-less with quarantine set; appcast newest 0.42.0 at 730 with `edSignature` on all 18
+  enclosures, deltas 0.93–1.46 MB. No `synth-site` push — the deployed site was already
+  byte-identical across all 38 files and answers 200 for the docs, the `.md` twins and `llms.txt`.

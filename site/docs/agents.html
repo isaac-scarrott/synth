@@ -645,12 +645,13 @@
     <article class="dbody">
       <h1>Agents</h1>
       <p class="lede dsum">Synth hosts coding agents it did not write. Whichever ones you have installed are the ones it offers, and changing which one you use changes nothing else.</p>
-<p>Synth ships with support for three agents and a way to name your own.</p>
+<p>Synth ships with support for four agents and a way to name your own.</p>
 
 <table>
   <tbody>
     <tr><td><strong>Claude Code</strong></td><td><code>claude</code></td></tr>
     <tr><td><strong>OpenCode</strong></td><td><code>opencode</code></td></tr>
+    <tr><td><strong>OpenCode 2</strong></td><td><code>opencode2</code></td></tr>
     <tr><td><strong>Antigravity</strong></td><td><code>agy</code>, the command-line agent</td></tr>
     <tr><td><strong>Your own</strong></td><td>Any command you name</td></tr>
   </tbody>
@@ -708,19 +709,18 @@ with Synth's rather than replaced.</p>
 
 <h3 id="colours">Colours</h3>
 
-<p>Synth installs a theme for Claude Code and for OpenCode so that a light Synth does not leave
-you reading a dark agent, and re-themes them when you change appearance. These are defaults, not
-locks: your own project-level theme still wins where the agent says it should. Antigravity has no
-theme setting Synth can reach, and its default scheme draws from the terminal palette Synth
-already tunes, so Synth writes nothing for it.</p>
+<p>Synth installs a theme for Claude Code and for both OpenCode versions so that a light Synth
+does not leave you reading a dark agent, and re-themes them when you change appearance. These are
+defaults, not locks: your own project-level theme still wins where the agent says it should.
+Antigravity has no theme setting Synth can reach, and its default scheme draws from the terminal
+palette Synth already tunes, so Synth writes nothing for it.</p>
 
 <h3 id="one-keybinding">One keybinding</h3>
 
-<p>OpenCode binds <kbd>⌃</kbd><kbd>C</kbd> to quitting the whole program. Inside Synth it
-interrupts the turn instead, which is what the same key does in every other agent, and quitting
-stays on <kbd>⌃</kbd><kbd>D</kbd>. This is done through an extra configuration file that is
-merged after yours, so a project's own keybindings still override it and no file of yours is
-edited.</p>
+<p>Both OpenCode versions bind <kbd>⌃</kbd><kbd>C</kbd> to quitting the whole program. Inside
+Synth it interrupts the turn instead, which is what the same key does in every other agent, and
+quitting stays on <kbd>⌃</kbd><kbd>D</kbd>. Synth only claims that binding where it is still the
+agent's own default, so a key you have rebound yourself is left alone.</p>
 
 <h2 id="resuming">Resuming</h2>
 

@@ -29,7 +29,7 @@ A comment names an element, not a coordinate, so a pin survives scrolling, resiz
 
 ### Conditions
 
-`⌘⇧M` opens three menus that fail apart: the **screen** the page is emulated at, the **network**, and the **CPU**. Each rests at Normal, and closing the bar puts all three back. The numbers are Chromium's own presets.
+`⌘⇧M` opens four menus that fail apart: the **screen** the page is emulated at, the **network**, the **CPU**, and the **theme** the page is told to prefer. Each rests at Normal, and closing the bar puts them all back. The numbers are Chromium's own presets.
 
 ## Inspect
 
@@ -41,7 +41,7 @@ A simulator session claims a device from the fleet you have installed, boots it,
 
 Synth reads the device's own framebuffer rather than launching Simulator.app, so the session keeps working when that window would have been minimised, on another Space, or closed by Xcode. A device Synth booted is a device Synth shuts down; a device that was already running is left alone.
 
-> Simulator sessions are behind **Settings ▸ Experimental** and are off by default.
+> Simulator sessions need a full Xcode installed, and can be switched off in **Settings ▸ Synth ▸ Integrations**.
 
 ## Markdown
 

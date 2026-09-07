@@ -688,9 +688,10 @@ Either go to the branch row you already have, or cut a new branch for the new li
 
 <h2 id="no-pull-request-state-on-any-branch">No pull request state on any branch</h2>
 
-<p>That column is read with the GitHub CLI. It needs <code>gh</code> installed and signed in, and
-the repository needs to be on GitHub. When any of that is not true, the column shows nothing
-rather than an error.</p>
+<p>Synth asks GitHub's API directly, so this is a credential rather than a missing tool. It uses a
+GitHub token from your environment, or one the GitHub CLI has already stored if you signed in with
+it. Without either, and for a repository that is not on GitHub, the column shows nothing rather
+than an error.</p>
 
 <h2 id="i-am-not-getting-macos-notifications">I am not getting macOS notifications</h2>
 
@@ -709,14 +710,19 @@ what it says on the way out.</p>
 <h2 id="i-archived-something-and-want-it-back">I archived something and want it back</h2>
 
 <p><kbd>⌘</kbd><kbd>K</kbd>, then <strong>Archived</strong>, scoped to the project you are in.
-Restoring cuts the checkout again if the folder has already been reclaimed. The git branch is
-never deleted by archiving or by the clean-up behind it, so there is no state a branch cannot
-come back from.</p>
+Restoring cuts the checkout again if the folder has already been reclaimed, so a reclaimed folder
+costs you nothing.</p>
+
+<p>A row you cannot find has had its branch retired, which happens only after the work was merged
+and your remote dropped the branch too. Nothing unmerged is ever retired: the clean-up uses
+<code>git branch -d</code>, which refuses. The work is on your default branch and on your
+remote.</p>
 
 <h2 id="simulator-sessions-are-not-offered">Simulator sessions are not offered</h2>
 
-<p>They are behind <strong>Settings ▸ Experimental</strong> and off by default. Switch them on
-there. A device also has to be installed on the machine for there to be a fleet to pick from.</p>
+<p>They need a full Xcode, not just the command line tools, and a device installed for there to be
+a fleet to pick from. They can also be switched off in
+<strong>Settings ▸ Synth ▸ Integrations</strong>.</p>
 
 <h2 id="a-downloaded-update-has-not-installed">A downloaded update has not installed</h2>
 

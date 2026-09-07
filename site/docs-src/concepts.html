@@ -66,8 +66,8 @@ not all mean the same thing by them, and the differences are not small.</p>
     </tr>
     <tr>
       <td><strong>Agent</strong></td>
-      <td>Which coding agent a session is running. Claude Code, OpenCode, Antigravity, or one
-      you named yourself.</td>
+      <td>Which coding agent a session is running. Claude Code, OpenCode, OpenCode 2,
+      Antigravity, or one you named yourself.</td>
       <td>A configuration inside that program. OpenCode's agents are Build and Plan; Antigravity's
       are personas you switch with <code>/agents</code>; Claude Code uses the word for subagents
       and teammates as well. All of those live inside one Synth agent.</td>
@@ -102,8 +102,8 @@ agent's sense of a word, it says so and names the agent.</p>
   <tbody>
     <tr><td><strong>Close</strong></td><td>Ends a session. The row goes and the process dies.
     Nothing leaves the filesystem.</td></tr>
-    <tr><td><strong>Archive</strong></td><td>Puts a branch row away. The folder is untouched and
-    the row comes back from <kbd>⌘</kbd><kbd>K</kbd> whenever you want it.</td></tr>
+    <tr><td><strong>Archive</strong></td><td>Puts a branch row away. The folder is untouched
+    and the row comes back from <kbd>⌘</kbd><kbd>K</kbd>, for as long as the branch exists.</td></tr>
     <tr><td><strong>Remove</strong></td><td>Drops a project row from the sidebar. The repository
     stays cloned and the folders stay on disk.</td></tr>
     <tr><td><strong>Delete</strong></td><td>Destroys a worktree folder on disk. The git branch

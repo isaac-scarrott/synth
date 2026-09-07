@@ -98,7 +98,7 @@ Synth hosts agents it did not write, and every one of them already uses these wo
 |---|---|---|
 | **Branch** | A git branch, checked out in its own folder. The parent of your sessions. | Claude Code says **worktree** for the folder and keeps "branch" for the git ref alone. Antigravity's `/branch` is an alias for `/fork`, which copies a conversation and touches no files at all. |
 | **Session** | Anything running in a pane: an agent, a terminal, a browser, a simulator, an inspect. | All three mean a conversation with the model. You can start and clear several of those inside one Synth session without the row changing. |
-| **Agent** | Which coding agent a session is running. Claude Code, OpenCode, Antigravity, or one you named yourself. | A configuration inside that program. OpenCode's agents are Build and Plan; Antigravity's are personas you switch with `/agents`; Claude Code uses the word for subagents and teammates as well. All of those live inside one Synth agent. |
+| **Agent** | Which coding agent a session is running. Claude Code, OpenCode, OpenCode 2, Antigravity, or one you named yourself. | A configuration inside that program. OpenCode's agents are Build and Plan; Antigravity's are personas you switch with `/agents`; Claude Code uses the word for subagents and teammates as well. All of those live inside one Synth agent. |
 | **Project** | One git repository. | Claude Code scopes to whichever directory you launched in. Antigravity's `--project` groups its own chat history and has nothing to do with a repository. |
 
 **Synth's words describe what is on your disk and in your sidebar. Your agent's words describe what is in its conversation.** That resolves all four. Where a page here means the agent's sense of a word, it says so and names the agent.
@@ -112,7 +112,7 @@ Four verbs, and they are not synonyms. Each one is about how much you lose.
 |  |  |
 |---|---|
 | **Close** | Ends a session. The row goes and the process dies. Nothing leaves the filesystem. |
-| **Archive** | Puts a branch row away. The folder is untouched and the row comes back from `⌘K` whenever you want it. |
+| **Archive** | Puts a branch row away. The folder is untouched and the row comes back from `⌘K`, for as long as the branch exists. |
 | **Remove** | Drops a project row from the sidebar. The repository stays cloned and the folders stay on disk. |
 | **Delete** | Destroys a worktree folder on disk. The git branch survives it. This is the only one that confirms. |
 
@@ -180,13 +180,15 @@ If you want a second line of work, cut a second branch. That is what they are fo
 
 ## Archiving
 
-Archiving puts a branch row away. The folder is untouched, the git branch is untouched, and the row is restorable from `⌘K` under **Archived** for as long as you like. It never asks you to confirm, because there is nothing to lose.
+Archiving puts a branch row away. The folder is untouched, the git branch is untouched, and the row is restorable from `⌘K` under **Archived**. It never asks you to confirm, because at that moment there is nothing to lose.
 
 Synth also archives finished branches on its own, so the list you glance at stays the list of what is still going on. A branch is only archived for you once the work is provably somewhere else: merged, clean, pushed, with nothing attached and nothing running inside it, read that way twice a day apart.
 
-Reclaiming the folder comes later and separately, after a grace period you set. Even then the last step is a rename with a hold on it rather than a delete, and the git branch is never touched. **Settings ▸ Archived** lists what is still on disk with the reason each folder is still there, like *PR still open* or *6 days left*.
+Reclaiming the folder comes later and separately, after a grace period you set. Even then the last step is a rename with a hold on it rather than a delete. **Settings ▸ Archived worktrees** lists what is still on disk with the reason each folder is still there, like *PR still open* or *6 days left*.
 
-> Restoring an archived branch cuts its checkout again. The branch is the durable thing and the folder is a cache of it, so there is no state in which Synth can tell you a branch cannot come back.
+Once the folder has gone, the branch is the last thing to go, and only under conditions that mean it holds nothing you could lose: nothing running in it, the folder already reclaimed, the work merged into the default branch, and the branch itself no longer on your remote. Then the ref is retired and the row leaves the Archived list with it. This is a `git branch -d`, which refuses to delete a branch that is not merged, and it has its own switch in Settings.
+
+> Restoring an archived branch cuts its checkout again from the branch itself, so a reclaimed folder costs you nothing. What you cannot restore is a row whose branch has been retired, which is why retiring one waits until the work is merged and your remote has dropped it.
 
 ## Deleting a worktree
 
@@ -227,7 +229,7 @@ A comment names an element, not a coordinate, so a pin survives scrolling, resiz
 
 ### Conditions
 
-`⌘⇧M` opens three menus that fail apart: the **screen** the page is emulated at, the **network**, and the **CPU**. Each rests at Normal, and closing the bar puts all three back. The numbers are Chromium's own presets.
+`⌘⇧M` opens four menus that fail apart: the **screen** the page is emulated at, the **network**, the **CPU**, and the **theme** the page is told to prefer. Each rests at Normal, and closing the bar puts them all back. The numbers are Chromium's own presets.
 
 ## Inspect
 
@@ -239,7 +241,7 @@ A simulator session claims a device from the fleet you have installed, boots it,
 
 Synth reads the device's own framebuffer rather than launching Simulator.app, so the session keeps working when that window would have been minimised, on another Space, or closed by Xcode. A device Synth booted is a device Synth shuts down; a device that was already running is left alone.
 
-> Simulator sessions are behind **Settings ▸ Experimental** and are off by default.
+> Simulator sessions need a full Xcode installed, and can be switched off in **Settings ▸ Synth ▸ Integrations**.
 
 ## Markdown
 
@@ -277,12 +279,13 @@ A split is owned by its branch and persists, so coming back to a branch gives yo
 
 Synth hosts coding agents it did not write. Whichever ones you have installed are the ones it offers, and changing which one you use changes nothing else.
 
-Synth ships with support for three agents and a way to name your own.
+Synth ships with support for four agents and a way to name your own.
 
 |  |  |
 |---|---|
 | **Claude Code** | `claude` |
 | **OpenCode** | `opencode` |
+| **OpenCode 2** | `opencode2` |
 | **Antigravity** | `agy`, the command-line agent |
 | **Your own** | Any command you name |
 
@@ -316,11 +319,11 @@ Synth reads each agent the way that agent can be read: Claude Code and Antigravi
 
 ### Colours
 
-Synth installs a theme for Claude Code and for OpenCode so that a light Synth does not leave you reading a dark agent, and re-themes them when you change appearance. These are defaults, not locks: your own project-level theme still wins where the agent says it should. Antigravity has no theme setting Synth can reach, and its default scheme draws from the terminal palette Synth already tunes, so Synth writes nothing for it.
+Synth installs a theme for Claude Code and for both OpenCode versions so that a light Synth does not leave you reading a dark agent, and re-themes them when you change appearance. These are defaults, not locks: your own project-level theme still wins where the agent says it should. Antigravity has no theme setting Synth can reach, and its default scheme draws from the terminal palette Synth already tunes, so Synth writes nothing for it.
 
 ### One keybinding
 
-OpenCode binds `⌃C` to quitting the whole program. Inside Synth it interrupts the turn instead, which is what the same key does in every other agent, and quitting stays on `⌃D`. This is done through an extra configuration file that is merged after yours, so a project's own keybindings still override it and no file of yours is edited.
+Both OpenCode versions bind `⌃C` to quitting the whole program. Inside Synth it interrupts the turn instead, which is what the same key does in every other agent, and quitting stays on `⌃D`. Synth only claims that binding where it is still the agent's own default, so a key you have rebound yourself is left alone.
 
 ## Resuming
 
@@ -404,11 +407,17 @@ The deck orders by what it costs to miss a card rather than by how bad the card 
 
 A draining card only drains while you could actually be reading it. Hovering the deck pauses it, Synth being in the background pauses it, and a card folded under a *+N* is not counting down at all. An undo window that expired while you were in another app was never a window.
 
+## Usage
+
+**Usage** at the foot of the sidebar opens a board of what every agent you run has left: the limits each one reports, and how much of each window is gone. It reads each agent's own figures rather than estimating from what Synth has seen.
+
+It is a mode over the whole surface rather than a session, so it takes the pane and gives it back. Nothing is running while you look at it.
+
 ## Pull requests
 
 Each branch row carries the state of its pull request beside the name: open, merged, closed, or waiting in the merge queue. The open session's header carries the number, and clicking it opens the pull request in your normal browser.
 
-This is read with `gh`, so it needs the GitHub CLI to be installed and signed in. A repository that is not on GitHub, or a machine without `gh`, simply shows nothing.
+Synth asks GitHub's API directly, so there is no CLI to install. It needs a credential it can find: a GitHub token in your environment, or one already stored by the GitHub CLI if you have signed in with it. A repository that is not on GitHub, or one Synth has no credential for, shows nothing rather than an error.
 
 ---
 
@@ -416,7 +425,9 @@ This is read with `gh`, so it needs the GitHub CLI to be installed and signed in
 
 Settings, what a project can override, and the answer to the question that comes up most: is this a Synth setting or my agent's own configuration?
 
-`⌘,` opens Settings in the content pane, over the tree, so you can see what you are changing. There are two tabs: **Synth**, and the project you are in.
+`⌘,` opens Settings in the content pane, over the tree, so you can see what you are changing. There is a tab for **Synth** and a tab for each project.
+
+**Appearance** is the first section: light or dark, and whether sessions show under their branch in the sidebar or as a tab strip above the panes. That second one is a choice of where, never an on or off.
 
 ## Which file is this?
 
@@ -436,8 +447,8 @@ The line is that **Synth configures Synth**. It does not have a second copy of y
 
 Nothing Synth writes goes in your repository. Everything it keeps is in its own Application Support folder, apart from three files it adds beside your agents' own:
 
-- A theme for Claude Code and a theme for OpenCode, so a light Synth does not leave you with a dark agent. Both are new files under the agent's own themes directory, and both are defaults that your own configuration still overrides.
-- An extra OpenCode keybinding file, merged after yours, which is what makes `⌃C` interrupt a turn rather than quit. A project's own keybindings still win.
+- A theme for Claude Code and one for OpenCode, so a light Synth does not leave you with a dark agent. Both are new files under the agent's own themes directory, and both are defaults that your own configuration still overrides.
+- One OpenCode keybinding, which is what makes `⌃C` interrupt a turn rather than quit the agent. Synth only claims it where it is still OpenCode's own default, so a key you have rebound is left alone.
 
 Synth's own tools are handed to each agent on the command line that launches it, so there is no configuration file in your worktree for them either. See [what Synth changes about your agent](agents.md#what-synth-changes-about-your-agent).
 
@@ -447,9 +458,15 @@ Project settings are a delta, not a replacement. The shared setup script runs an
 
 A project can decline the shared setup script outright, which is the case for a repository whose needs are nothing like the rest.
 
-## MCP servers
+## Integrations
 
-**Settings ▸ Synth ▸ MCP servers** switches Synth's own [bundled servers](tools.md) on and off. The browser server and the Synth app server are on. The simulator server follows the Experimental toggle it belongs to.
+**Settings ▸ Synth ▸ Integrations** is what your agents are allowed to reach through Synth, named for what the agent gets rather than for the machinery that carries it.
+
+|  |  |
+|---|---|
+| **Browser** | Lets an agent drive and inspect browser sessions. |
+| **Worktrees** | Lets an agent create worktrees and hand work off to them. This is the one that always asks you first. |
+| **Simulator sessions** | Runs an iOS simulator as a session, its live screen in a pane, tappable by you and drivable by an agent. Needs a full Xcode. |
 
 Switching one off removes it from every agent's launch. It does not affect any MCP server you have configured yourself, which Synth neither reads nor writes.
 
@@ -457,23 +474,15 @@ Switching one off removes it from every agent's launch. It does not affect any M
 
 The setup script and the session template both live here, and both are covered in [Branches and worktrees](branches.md#the-setup-script). Neither ships with a value: a default setup script would be a guess about someone else's repository, and default agent flags should be flags you typed.
 
-## Markdown
-
-What happens when you open a `.md` file: in Synth's own viewer, in a terminal editor of your choice, or in whatever the system would use. The middle option lists the editors actually on this machine, found the same way agents are.
-
-## Privacy
-
-Synth reports anonymous usage counts, on by default, and **Settings ▸ Privacy** turns them off immediately and permanently. There is no account and no identifier tying a report to you. It counts events like a session being created; it never carries file contents, paths, terminal output, environment or clipboard.
-
-The in-app feedback box on `⌘⇧F` attaches only your version and OS alongside what you typed.
-
 ## Archived worktrees
 
 The clean-up switch, the grace period, the disk budgets, and a per-project list of what is still on disk with the reason each folder is still there. Covered in [Archiving](branches.md#archiving).
 
-## Experimental
+## About
 
-Two things live here, both off by default: **simulator sessions**, and **Tabs**, which shows a branch's sessions as a strip of tabs in the content surface rather than as rows in the sidebar. Tabs is presentation only. It is the same tree underneath, so turning it on and off loses nothing.
+The version you are on, whether a build is waiting, and one switch for anonymous analytics.
+
+Analytics are on by default and turning them off takes effect immediately. There is no account and no identifier tying a report to you. It counts events like a session being created; it never carries file contents, prompts, paths, terminal output, environment or clipboard. The in-app feedback box on `⌘⇧F` attaches only your version and OS alongside what you typed.
 
 ---
 
@@ -586,7 +595,9 @@ Three of these carry most of the day. `⌘K` is everything, scoped to whatever y
 
 ## In Tabs mode
 
-With Tabs switched on in **Settings ▸ Experimental**, the split-layout group changes rather than growing. `⌘⇧` with an arrow sends a tab to a neighbouring pane instead of splitting, `⌘⇧U` merges a pane instead of unsplitting it, and `⌘1` to `⌘9` select a tab as well as focusing a pane. Everything else is unchanged.
+Sessions show either under their branch in the sidebar or as a tab strip above the panes, set by **Show sessions in** under **Settings ▸ Synth ▸ Appearance**. It is a choice of where, never an on or off: the sessions are in both.
+
+With Tabs, the split-layout group changes rather than grows. `⌘⇧` with an arrow sends a tab to a neighbouring pane instead of splitting, `⌘⇧U` merges a pane instead of unsplitting it, and `⌘1` to `⌘9` select a tab as well as focusing a pane. Everything else is unchanged.
 
 > This page is built from `Shortcuts.swift`, the same source the in-app `⌘?` sheet renders. A binding that changed in the app changed here, or the build failed.
 
@@ -719,7 +730,7 @@ Git allows a branch to be checked out in one place at a time, and it will refuse
 
 ## No pull request state on any branch
 
-That column is read with the GitHub CLI. It needs `gh` installed and signed in, and the repository needs to be on GitHub. When any of that is not true, the column shows nothing rather than an error.
+Synth asks GitHub's API directly, so this is a credential rather than a missing tool. It uses a GitHub token from your environment, or one the GitHub CLI has already stored if you signed in with it. Without either, and for a repository that is not on GitHub, the column shows nothing rather than an error.
 
 ## I am not getting macOS notifications
 
@@ -733,11 +744,13 @@ If it happens repeatedly to the same agent, run its command in a terminal sessio
 
 ## I archived something and want it back
 
-`⌘K`, then **Archived**, scoped to the project you are in. Restoring cuts the checkout again if the folder has already been reclaimed. The git branch is never deleted by archiving or by the clean-up behind it, so there is no state a branch cannot come back from.
+`⌘K`, then **Archived**, scoped to the project you are in. Restoring cuts the checkout again if the folder has already been reclaimed, so a reclaimed folder costs you nothing.
+
+A row you cannot find has had its branch retired, which happens only after the work was merged and your remote dropped the branch too. Nothing unmerged is ever retired: the clean-up uses `git branch -d`, which refuses. The work is on your default branch and on your remote.
 
 ## Simulator sessions are not offered
 
-They are behind **Settings ▸ Experimental** and off by default. Switch them on there. A device also has to be installed on the machine for there to be a fleet to pick from.
+They need a full Xcode, not just the command line tools, and a device installed for there to be a fleet to pick from. They can also be switched off in **Settings ▸ Synth ▸ Integrations**.
 
 ## A downloaded update has not installed
 

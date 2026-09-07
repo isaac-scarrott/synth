@@ -107,6 +107,8 @@ Three of these carry most of the day. `⌘K` is everything, scoped to whatever y
 
 ## In Tabs mode
 
-With Tabs switched on in **Settings ▸ Experimental**, the split-layout group changes rather than growing. `⌘⇧` with an arrow sends a tab to a neighbouring pane instead of splitting, `⌘⇧U` merges a pane instead of unsplitting it, and `⌘1` to `⌘9` select a tab as well as focusing a pane. Everything else is unchanged.
+Sessions show either under their branch in the sidebar or as a tab strip above the panes, set by **Show sessions in** under **Settings ▸ Synth ▸ Appearance**. It is a choice of where, never an on or off: the sessions are in both.
+
+With Tabs, the split-layout group changes rather than grows. `⌘⇧` with an arrow sends a tab to a neighbouring pane instead of splitting, `⌘⇧U` merges a pane instead of unsplitting it, and `⌘1` to `⌘9` select a tab as well as focusing a pane. Everything else is unchanged.
 
 > This page is built from `Shortcuts.swift`, the same source the in-app `⌘?` sheet renders. A binding that changed in the app changed here, or the build failed.

@@ -1,8 +1,12 @@
 <!-- summary: Settings, what a project can override, and the answer to the question that comes up
      most: is this a Synth setting or my agent's own configuration? -->
 
-<p><kbd>⌘</kbd><kbd>,</kbd> opens Settings in the content pane, over the tree, so you can see what
-you are changing. There are two tabs: <strong>Synth</strong>, and the project you are in.</p>
+<p><kbd>⌘</kbd><kbd>,</kbd> opens Settings in the content pane, over the tree, so you can see
+what you are changing. There is a tab for <strong>Synth</strong> and a tab for each project.</p>
+
+<p><strong>Appearance</strong> is the first section: light or dark, and whether sessions show
+under their branch in the sidebar or as a tab strip above the panes. That second one is a choice
+of where, never an on or off.</p>
 
 <h2>Which file is this?</h2>
 
@@ -34,12 +38,12 @@ your agent's settings, and it does not edit the ones you have.</p>
 Support folder, apart from three files it adds beside your agents' own:</p>
 
 <ul>
-  <li>A theme for Claude Code and a theme for OpenCode, so a light Synth does not leave you with
-  a dark agent. Both are new files under the agent's own themes directory, and both are defaults
+  <li>A theme for Claude Code and one for OpenCode, so a light Synth does not leave you with a
+  dark agent. Both are new files under the agent's own themes directory, and both are defaults
   that your own configuration still overrides.</li>
-  <li>An extra OpenCode keybinding file, merged after yours, which is what makes
-  <kbd>⌃</kbd><kbd>C</kbd> interrupt a turn rather than quit. A project's own keybindings still
-  win.</li>
+  <li>One OpenCode keybinding, which is what makes <kbd>⌃</kbd><kbd>C</kbd> interrupt a turn
+  rather than quit the agent. Synth only claims it where it is still OpenCode's own default, so a
+  key you have rebound is left alone.</li>
 </ul>
 
 <p>Synth's own tools are handed to each agent on the command line that launches it, so there is
@@ -57,11 +61,21 @@ shown as you will actually get it. Leaving a project's field empty means pure in
 <p>A project can decline the shared setup script outright, which is the case for a repository
 whose needs are nothing like the rest.</p>
 
-<h2>MCP servers</h2>
+<h2>Integrations</h2>
 
-<p><strong>Settings ▸ Synth ▸ MCP servers</strong> switches Synth's own <a href="tools.html">bundled
-servers</a> on and off. The browser server and the Synth app server are on. The simulator server
-follows the Experimental toggle it belongs to.</p>
+<p><strong>Settings ▸ Synth ▸ Integrations</strong> is what your agents are allowed to reach
+through Synth, named for what the agent gets rather than for the machinery that carries it.</p>
+
+<table>
+  <tbody>
+    <tr><td><strong>Browser</strong></td><td>Lets an agent drive and inspect browser
+    sessions.</td></tr>
+    <tr><td><strong>Worktrees</strong></td><td>Lets an agent create worktrees and hand work off to
+    them. This is the one that always asks you first.</td></tr>
+    <tr><td><strong>Simulator sessions</strong></td><td>Runs an iOS simulator as a session, its
+    live screen in a pane, tappable by you and drivable by an agent. Needs a full Xcode.</td></tr>
+  </tbody>
+</table>
 
 <p>Switching one off removes it from every agent's launch. It does not affect any MCP server you
 have configured yourself, which Synth neither reads nor writes.</p>
@@ -73,31 +87,18 @@ have configured yourself, which Synth neither reads nor writes.</p>
 a default setup script would be a guess about someone else's repository, and default agent flags
 should be flags you typed.</p>
 
-<h2>Markdown</h2>
-
-<p>What happens when you open a <code>.md</code> file: in Synth's own viewer, in a terminal editor
-of your choice, or in whatever the system would use. The middle option lists the editors actually
-on this machine, found the same way agents are.</p>
-
-<h2>Privacy</h2>
-
-<p>Synth reports anonymous usage counts, on by default, and <strong>Settings ▸ Privacy</strong>
-turns them off immediately and permanently. There is no account and no identifier tying a report
-to you. It counts events like a session being created; it never carries file contents, paths,
-terminal output, environment or clipboard.</p>
-
-<p>The in-app feedback box on <kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> attaches only your version and
-OS alongside what you typed.</p>
-
 <h2>Archived worktrees</h2>
 
 <p>The clean-up switch, the grace period, the disk budgets, and a per-project list of what is
 still on disk with the reason each folder is still there. Covered in
 <a href="branches.html#archiving">Archiving</a>.</p>
 
-<h2>Experimental</h2>
+<h2>About</h2>
 
-<p>Two things live here, both off by default: <strong>simulator sessions</strong>, and
-<strong>Tabs</strong>, which shows a branch's sessions as a strip of tabs in the content surface
-rather than as rows in the sidebar. Tabs is presentation only. It is the same tree underneath, so
-turning it on and off loses nothing.</p>
+<p>The version you are on, whether a build is waiting, and one switch for anonymous analytics.</p>
+
+<p>Analytics are on by default and turning them off takes effect immediately. There is no account
+and no identifier tying a report to you. It counts events like a session being created; it never
+carries file contents, prompts, paths, terminal output, environment or clipboard. The in-app
+feedback box on <kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> attaches only your version and OS alongside
+what you typed.</p>

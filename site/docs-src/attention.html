@@ -89,12 +89,22 @@ it, Synth being in the background pauses it, and a card folded under a <em>+N</e
 counting down at all. An undo window that expired while you were in another app was never a
 window.</p>
 
+<h2>Usage</h2>
+
+<p><strong>Usage</strong> at the foot of the sidebar opens a board of what every agent you run has
+left: the limits each one reports, and how much of each window is gone. It reads each agent's own
+figures rather than estimating from what Synth has seen.</p>
+
+<p>It is a mode over the whole surface rather than a session, so it takes the pane and gives it
+back. Nothing is running while you look at it.</p>
+
 <h2>Pull requests</h2>
 
 <p>Each branch row carries the state of its pull request beside the name: open, merged, closed, or
 waiting in the merge queue. The open session's header carries the number, and clicking it opens
 the pull request in your normal browser.</p>
 
-<p>This is read with <code>gh</code>, so it needs the GitHub CLI to be installed and signed in.
-A repository that is not on GitHub, or a machine without <code>gh</code>, simply shows
-nothing.</p>
+<p>Synth asks GitHub's API directly, so there is no CLI to install. It needs a credential it
+can find: a GitHub token in your environment, or one already stored by the GitHub CLI if you have
+signed in with it. A repository that is not on GitHub, or one Synth has no credential for, shows
+nothing rather than an error.</p>

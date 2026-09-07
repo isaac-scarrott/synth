@@ -2,12 +2,13 @@
 
 Synth hosts coding agents it did not write. Whichever ones you have installed are the ones it offers, and changing which one you use changes nothing else.
 
-Synth ships with support for three agents and a way to name your own.
+Synth ships with support for four agents and a way to name your own.
 
 |  |  |
 |---|---|
 | **Claude Code** | `claude` |
 | **OpenCode** | `opencode` |
+| **OpenCode 2** | `opencode2` |
 | **Antigravity** | `agy`, the command-line agent |
 | **Your own** | Any command you name |
 
@@ -41,11 +42,11 @@ Synth reads each agent the way that agent can be read: Claude Code and Antigravi
 
 ### Colours
 
-Synth installs a theme for Claude Code and for OpenCode so that a light Synth does not leave you reading a dark agent, and re-themes them when you change appearance. These are defaults, not locks: your own project-level theme still wins where the agent says it should. Antigravity has no theme setting Synth can reach, and its default scheme draws from the terminal palette Synth already tunes, so Synth writes nothing for it.
+Synth installs a theme for Claude Code and for both OpenCode versions so that a light Synth does not leave you reading a dark agent, and re-themes them when you change appearance. These are defaults, not locks: your own project-level theme still wins where the agent says it should. Antigravity has no theme setting Synth can reach, and its default scheme draws from the terminal palette Synth already tunes, so Synth writes nothing for it.
 
 ### One keybinding
 
-OpenCode binds `⌃C` to quitting the whole program. Inside Synth it interrupts the turn instead, which is what the same key does in every other agent, and quitting stays on `⌃D`. This is done through an extra configuration file that is merged after yours, so a project's own keybindings still override it and no file of yours is edited.
+Both OpenCode versions bind `⌃C` to quitting the whole program. Inside Synth it interrupts the turn instead, which is what the same key does in every other agent, and quitting stays on `⌃D`. Synth only claims that binding where it is still the agent's own default, so a key you have rebound yourself is left alone.
 
 ## Resuming
 

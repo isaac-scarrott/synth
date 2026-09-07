@@ -2385,38 +2385,6 @@ disclosure to dive deeper.
   `prefers-color-scheme` and the light one on the `<img>`, which holds intrinsic dimensions correct
   for both since every pair matches exactly. A viewer downloads one variant: 529KB against 523KB.
 
-## [2026-09-07](docs/features/2026-09-07.md)
-
-- **The site gains documentation, and two of its pages are read out of the source** — ten pages
-  under `site/docs/`, built from `site/docs-src/` by `site/build_docs.py`, which inlines
-  `index.html`'s own `<style>` block so the landing page stays the only place tokens live. Eight
-  written pages plus a keyboard reference read from `Shortcuts.swift` (57 bindings) and an agent
-  tool catalogue read from the three MCP servers (42 tools); `--check` is the pre-deploy guard.
-  The concepts page carries the vocabulary table the three hosted agents make necessary, since
-  all of them use branch, session, agent and project to mean something else. Writing the parsers
-  reproduced the ledger's own recurring bug: `[^\]]*` over `["⌘", "]"]` silently dropped the
-  Forward binding. The in-page editor now routes a docs save to the source fragment and rebuilds,
-  never to the generated page. Not measured in a browser (Synth wasn't running), no `llms.txt`
-  yet, nothing deployed.
-
-- **The docs get measured, and four defects fall out** — a live Synth made the browser drivable, so
-  the pages were read with `getComputedStyle` at six widths instead of eyeballed. Both reported
-  problems were real and neither was what it looked like: the callouts' coloured left edge borrowed
-  status hues that mean something else in the app, and the sidebar's selected row was clipped
-  because `overflow-y` forces `overflow-x` to `auto`, so the container clipped the 8px its fill was
-  pulled past it. Two more went unreported: the reading measure got *wider* below 860 (535px to
-  774px) because the mobile rule dropped the cap, and the vocabulary table shrank to 69px columns
-  instead of scrolling. Then the deploy question found the worst: an inlined `@font-face` resolves
-  `url()` against the document, so every page asked for `/docs/fonts/` and had been rendering in the
-  system fallback since the first build.
-- **The docs are legible to an agent as well as to a person** — `llms.txt`, `llms-full.txt` and a
-  `.md` twin of every page, converted from the same fragments as the HTML rather than written again,
-  plus `.nojekyll` so Pages serves the markdown instead of rendering it. Eleven of nineteen
-  comparable sites serve a real `llms.txt`, so this is the floor rather than a flourish. The
-  conversion had to learn that a chord is one code span and two alternative keys are two, that
-  `` ⌘` `` closes its own span and needs a longer fence, and that the tool table's argument line is
-  a block element that ran into the name beside it.
-
 ## [2026-09-06](docs/features/2026-09-06.md)
 
 - **Usage: one board for every agent's limits** — a Usage entry above the project tree opens a
@@ -2565,3 +2533,42 @@ disclosure to dive deeper.
   embedded agent. The agent gate now holds a machine lock: two runs share one "Synth Dev" sandbox
   and reap each other's agents through path-independent patterns, which is what made a full run
   read as ten regressions that an unmodified tree reproduces exactly.
+
+- **The site gains documentation, and two of its pages are read out of the source** — ten pages
+  under `site/docs/`, built from `site/docs-src/` by `site/build_docs.py`, which inlines
+  `index.html`'s own `<style>` block so the landing page stays the only place tokens live. Eight
+  written pages plus a keyboard reference read from `Shortcuts.swift` (57 bindings) and an agent
+  tool catalogue read from the three MCP servers (42 tools); `--check` is the pre-deploy guard.
+  The concepts page carries the vocabulary table the three hosted agents make necessary, since
+  all of them use branch, session, agent and project to mean something else. Writing the parsers
+  reproduced the ledger's own recurring bug: `[^\]]*` over `["⌘", "]"]` silently dropped the
+  Forward binding. The in-page editor now routes a docs save to the source fragment and rebuilds,
+  never to the generated page. Not measured in a browser (Synth wasn't running), no `llms.txt`
+  yet, nothing deployed.
+
+- **The docs get measured, and four defects fall out** — a live Synth made the browser drivable, so
+  the pages were read with `getComputedStyle` at six widths instead of eyeballed. Both reported
+  problems were real and neither was what it looked like: the callouts' coloured left edge borrowed
+  status hues that mean something else in the app, and the sidebar's selected row was clipped
+  because `overflow-y` forces `overflow-x` to `auto`, so the container clipped the 8px its fill was
+  pulled past it. Two more went unreported: the reading measure got *wider* below 860 (535px to
+  774px) because the mobile rule dropped the cap, and the vocabulary table shrank to 69px columns
+  instead of scrolling. Then the deploy question found the worst: an inlined `@font-face` resolves
+  `url()` against the document, so every page asked for `/docs/fonts/` and had been rendering in the
+  system fallback since the first build.
+- **The docs are legible to an agent as well as to a person** — `llms.txt`, `llms-full.txt` and a
+  `.md` twin of every page, converted from the same fragments as the HTML rather than written again,
+  plus `.nojekyll` so Pages serves the markdown instead of rendering it. Eleven of nineteen
+  comparable sites serve a real `llms.txt`, so this is the floor rather than a flourish. The
+  conversion had to learn that a chord is one code span and two alternative keys are two, that
+  `` ⌘` `` closes its own span and needs a longer fence, and that the tool table's argument line is
+  a block element that ran into the name beside it.
+
+- **The docs were written against a tree 48 commits old** — caught at the deploy: the branch cut at
+  `c95d0d5` while main went through 0.41.0 and 0.41.1. Six assertions had gone false, the worst a
+  safety claim that a branch can always come back, which **The branch is the last thing to go**
+  ended. Also corrected: PR state comes from GitHub's API rather than the `gh` binary, OpenCode 2 is
+  a fourth hosted agent, the conditions bar has four menus, Settings lost Experimental and Markdown
+  and gained Integrations, and Tabs is one half of "Show sessions in" rather than an experiment. The
+  Usage board is named on the attention page. The two generated pages needed no edit across all 48
+  commits, which is the argument for generating a reference stated as a measurement.

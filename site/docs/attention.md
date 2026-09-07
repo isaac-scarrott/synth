@@ -58,8 +58,14 @@ The deck orders by what it costs to miss a card rather than by how bad the card 
 
 A draining card only drains while you could actually be reading it. Hovering the deck pauses it, Synth being in the background pauses it, and a card folded under a *+N* is not counting down at all. An undo window that expired while you were in another app was never a window.
 
+## Usage
+
+**Usage** at the foot of the sidebar opens a board of what every agent you run has left: the limits each one reports, and how much of each window is gone. It reads each agent's own figures rather than estimating from what Synth has seen.
+
+It is a mode over the whole surface rather than a session, so it takes the pane and gives it back. Nothing is running while you look at it.
+
 ## Pull requests
 
 Each branch row carries the state of its pull request beside the name: open, merged, closed, or waiting in the merge queue. The open session's header carries the number, and clicking it opens the pull request in your normal browser.
 
-This is read with `gh`, so it needs the GitHub CLI to be installed and signed in. A repository that is not on GitHub, or a machine without `gh`, simply shows nothing.
+Synth asks GitHub's API directly, so there is no CLI to install. It needs a credential it can find: a GitHub token in your environment, or one already stored by the GitHub CLI if you have signed in with it. A repository that is not on GitHub, or one Synth has no credential for, shows nothing rather than an error.

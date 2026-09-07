@@ -32,7 +32,7 @@ Git allows a branch to be checked out in one place at a time, and it will refuse
 
 ## No pull request state on any branch
 
-That column is read with the GitHub CLI. It needs `gh` installed and signed in, and the repository needs to be on GitHub. When any of that is not true, the column shows nothing rather than an error.
+Synth asks GitHub's API directly, so this is a credential rather than a missing tool. It uses a GitHub token from your environment, or one the GitHub CLI has already stored if you signed in with it. Without either, and for a repository that is not on GitHub, the column shows nothing rather than an error.
 
 ## I am not getting macOS notifications
 
@@ -46,11 +46,13 @@ If it happens repeatedly to the same agent, run its command in a terminal sessio
 
 ## I archived something and want it back
 
-`⌘K`, then **Archived**, scoped to the project you are in. Restoring cuts the checkout again if the folder has already been reclaimed. The git branch is never deleted by archiving or by the clean-up behind it, so there is no state a branch cannot come back from.
+`⌘K`, then **Archived**, scoped to the project you are in. Restoring cuts the checkout again if the folder has already been reclaimed, so a reclaimed folder costs you nothing.
+
+A row you cannot find has had its branch retired, which happens only after the work was merged and your remote dropped the branch too. Nothing unmerged is ever retired: the clean-up uses `git branch -d`, which refuses. The work is on your default branch and on your remote.
 
 ## Simulator sessions are not offered
 
-They are behind **Settings ▸ Experimental** and off by default. Switch them on there. A device also has to be installed on the machine for there to be a fleet to pick from.
+They need a full Xcode, not just the command line tools, and a device installed for there to be a fleet to pick from. They can also be switched off in **Settings ▸ Synth ▸ Integrations**.
 
 ## A downloaded update has not installed
 

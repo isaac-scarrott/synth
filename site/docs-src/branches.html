@@ -87,8 +87,8 @@ is no flag that changes it.</p>
 <h2>Archiving</h2>
 
 <p>Archiving puts a branch row away. The folder is untouched, the git branch is untouched, and
-the row is restorable from <kbd>⌘</kbd><kbd>K</kbd> under <strong>Archived</strong> for as long
-as you like. It never asks you to confirm, because there is nothing to lose.</p>
+the row is restorable from <kbd>⌘</kbd><kbd>K</kbd> under <strong>Archived</strong>. It never
+asks you to confirm, because at that moment there is nothing to lose.</p>
 
 <p>Synth also archives finished branches on its own, so the list you glance at stays the list of
 what is still going on. A branch is only archived for you once the work is provably somewhere
@@ -96,14 +96,20 @@ else: merged, clean, pushed, with nothing attached and nothing running inside it
 twice a day apart.</p>
 
 <p>Reclaiming the folder comes later and separately, after a grace period you set. Even then the
-last step is a rename with a hold on it rather than a delete, and the git branch is never
-touched. <strong>Settings ▸ Archived</strong> lists what is still on disk with the reason each
+last step is a rename with a hold on it rather than a delete.
+<strong>Settings ▸ Archived worktrees</strong> lists what is still on disk with the reason each
 folder is still there, like <em>PR still open</em> or <em>6 days left</em>.</p>
 
+<p>Once the folder has gone, the branch is the last thing to go, and only under conditions that
+mean it holds nothing you could lose: nothing running in it, the folder already reclaimed, the
+work merged into the default branch, and the branch itself no longer on your remote. Then the
+ref is retired and the row leaves the Archived list with it. This is a <code>git branch -d</code>,
+which refuses to delete a branch that is not merged, and it has its own switch in Settings.</p>
+
 <div class="note">
-  <p>Restoring an archived branch cuts its checkout again. The branch is the durable thing and
-  the folder is a cache of it, so there is no state in which Synth can tell you a branch cannot
-  come back.</p>
+  <p>Restoring an archived branch cuts its checkout again from the branch itself, so a reclaimed
+  folder costs you nothing. What you cannot restore is a row whose branch has been retired, which
+  is why retiring one waits until the work is merged and your remote has dropped it.</p>
 </div>
 
 <h2>Deleting a worktree</h2>

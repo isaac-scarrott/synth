@@ -2,7 +2,9 @@
 
 Settings, what a project can override, and the answer to the question that comes up most: is this a Synth setting or my agent's own configuration?
 
-`⌘,` opens Settings in the content pane, over the tree, so you can see what you are changing. There are two tabs: **Synth**, and the project you are in.
+`⌘,` opens Settings in the content pane, over the tree, so you can see what you are changing. There is a tab for **Synth** and a tab for each project.
+
+**Appearance** is the first section: light or dark, and whether sessions show under their branch in the sidebar or as a tab strip above the panes. That second one is a choice of where, never an on or off.
 
 ## Which file is this?
 
@@ -22,8 +24,8 @@ The line is that **Synth configures Synth**. It does not have a second copy of y
 
 Nothing Synth writes goes in your repository. Everything it keeps is in its own Application Support folder, apart from three files it adds beside your agents' own:
 
-- A theme for Claude Code and a theme for OpenCode, so a light Synth does not leave you with a dark agent. Both are new files under the agent's own themes directory, and both are defaults that your own configuration still overrides.
-- An extra OpenCode keybinding file, merged after yours, which is what makes `⌃C` interrupt a turn rather than quit. A project's own keybindings still win.
+- A theme for Claude Code and one for OpenCode, so a light Synth does not leave you with a dark agent. Both are new files under the agent's own themes directory, and both are defaults that your own configuration still overrides.
+- One OpenCode keybinding, which is what makes `⌃C` interrupt a turn rather than quit the agent. Synth only claims it where it is still OpenCode's own default, so a key you have rebound is left alone.
 
 Synth's own tools are handed to each agent on the command line that launches it, so there is no configuration file in your worktree for them either. See [what Synth changes about your agent](agents.md#what-synth-changes-about-your-agent).
 
@@ -33,9 +35,15 @@ Project settings are a delta, not a replacement. The shared setup script runs an
 
 A project can decline the shared setup script outright, which is the case for a repository whose needs are nothing like the rest.
 
-## MCP servers
+## Integrations
 
-**Settings ▸ Synth ▸ MCP servers** switches Synth's own [bundled servers](tools.md) on and off. The browser server and the Synth app server are on. The simulator server follows the Experimental toggle it belongs to.
+**Settings ▸ Synth ▸ Integrations** is what your agents are allowed to reach through Synth, named for what the agent gets rather than for the machinery that carries it.
+
+|  |  |
+|---|---|
+| **Browser** | Lets an agent drive and inspect browser sessions. |
+| **Worktrees** | Lets an agent create worktrees and hand work off to them. This is the one that always asks you first. |
+| **Simulator sessions** | Runs an iOS simulator as a session, its live screen in a pane, tappable by you and drivable by an agent. Needs a full Xcode. |
 
 Switching one off removes it from every agent's launch. It does not affect any MCP server you have configured yourself, which Synth neither reads nor writes.
 
@@ -43,20 +51,12 @@ Switching one off removes it from every agent's launch. It does not affect any M
 
 The setup script and the session template both live here, and both are covered in [Branches and worktrees](branches.md#the-setup-script). Neither ships with a value: a default setup script would be a guess about someone else's repository, and default agent flags should be flags you typed.
 
-## Markdown
-
-What happens when you open a `.md` file: in Synth's own viewer, in a terminal editor of your choice, or in whatever the system would use. The middle option lists the editors actually on this machine, found the same way agents are.
-
-## Privacy
-
-Synth reports anonymous usage counts, on by default, and **Settings ▸ Privacy** turns them off immediately and permanently. There is no account and no identifier tying a report to you. It counts events like a session being created; it never carries file contents, paths, terminal output, environment or clipboard.
-
-The in-app feedback box on `⌘⇧F` attaches only your version and OS alongside what you typed.
-
 ## Archived worktrees
 
 The clean-up switch, the grace period, the disk budgets, and a per-project list of what is still on disk with the reason each folder is still there. Covered in [Archiving](branches.md#archiving).
 
-## Experimental
+## About
 
-Two things live here, both off by default: **simulator sessions**, and **Tabs**, which shows a branch's sessions as a strip of tabs in the content surface rather than as rows in the sidebar. Tabs is presentation only. It is the same tree underneath, so turning it on and off loses nothing.
+The version you are on, whether a build is waiting, and one switch for anonymous analytics.
+
+Analytics are on by default and turning them off takes effect immediately. There is no account and no identifier tying a report to you. It counts events like a session being created; it never carries file contents, prompts, paths, terminal output, environment or clipboard. The in-app feedback box on `⌘⇧F` attaches only your version and OS alongside what you typed.

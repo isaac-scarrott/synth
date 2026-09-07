@@ -259,7 +259,8 @@ import OSLog
             guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             else { return }
             config = parsed
-        } else if migrationPending(home: home) {
+        } else if !OpencodeTheme.mayCreateCLIConfig(dir: url.deletingLastPathComponent(),
+                                                    home: home) {
             return
         }
         var keybinds: [String: Any] = [:]
@@ -287,20 +288,6 @@ import OSLog
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
-    /// opencode2 folds v1's `tui.json` — and its `kv.json` — into `cli.json` exactly once, and
-    /// only while `cli.json` does not yet exist. Creating that file first cancels the migration
-    /// silently, so a v1 user's very first v2 row would come up having lost their theme and every
-    /// preference with it. Where the migration is still owed, this waits: opencode2 writes the
-    /// file itself on that launch, and the next one claims the binding inside it.
-    private static func migrationPending(home: URL) -> Bool {
-        let fm = FileManager.default
-        let state = ProcessInfo.processInfo.environment["XDG_STATE_HOME"]
-            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
-            ?? home.appendingPathComponent(".local/state")
-        return fm.fileExists(atPath: OpencodeTheme.configDir(home: home)
-                                .appendingPathComponent("tui.json").path)
-            || fm.fileExists(atPath: state.appendingPathComponent("opencode/kv.json").path)
-    }
 
     // MARK: Paths
 

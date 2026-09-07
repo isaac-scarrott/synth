@@ -186,9 +186,17 @@ struct SettingsPane: View {
             // the way back.
             SetSection(label: "Archived worktrees") {
                 switchRow("Clean up finished worktrees",
-                          "Merged branches are archived for you. A folder goes only once the work is safely on a remote, and the git branch is never deleted.",
+                          "Merged branches are archived for you, and a folder goes only once the work is safely on a remote.",
                           bind(\.archiveSweepEnabled))
                 if store.archiveSweepEnabled {
+                    SetDivider()
+                    // Its own switch because it ends a different thing. A folder is reversible
+                    // twice over — held aside for two weeks, then re-cut from the branch — and
+                    // this is the step that takes the branch, so the row has to be able to say
+                    // what makes that safe rather than hide inside the sentence above.
+                    switchRow("Delete the branch too",
+                              "Once the folder is gone for good, so is the branch — but only a branch that is merged and that the remote has already deleted.",
+                              bind(\.archiveRetireBranches))
                     SetDivider()
                     SetToggleRow(label: "Wait before cleaning up") {
                         SetSeg(options: [(0, "Never"), (1, "1 day"), (7, "7 days"), (14, "14 days"), (30, "30 days")],

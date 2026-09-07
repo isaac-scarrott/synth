@@ -35,6 +35,22 @@ def seed(repo, made):
     return sd
 
 
+def sweep_until(ctl, done, ticks=8, secs=10):
+    """Drive forced sweeps until `done`.
+
+    One `archiveSweep` is a request, not a tick: `sweepInFlight` coalesces a second away while
+    the first is still running, and with every clock compressed the suite asks far faster than a
+    real one ever would. Asserting on a fixed number of calls made these checks depend on how
+    long a tick happened to take.
+    """
+    for _ in range(ticks):
+        ctl("automation.archiveSweep")
+        for _ in range(secs):
+            time.sleep(1)
+            if done(): return True
+    return done()
+
+
 def status_map(ctl):
     rows = ctl("automation.archiveStatus").get("archived", [])
     return {r["branch"]: r for r in rows}
@@ -122,22 +138,77 @@ def main():
         # live with nothing behind it until the next launch drops it. (At launch, restore
         # already leaves such a row out, which is why this is done here and not in the fixture.)
         sh(f"rm -rf '{made['merged-gone']}'")
+        sh(f"rm -rf '{made['remote-gone']}'")
         git(repo, "worktree prune")
         ctl("automation.archiveSweep")
         time.sleep(6)
         check("one clean reading archives nothing",
               all(name in tree_branches(ctl) for name in made), str(tree_branches(ctl)))
-        ctl("automation.archiveSweep")
-        finished = {"merged-clean", "with-stash", "merged-gone"}
-        auto = wait(lambda: finished <= set(status_map(ctl)), secs=20)
+        # Every shape the finished-row pass may take on the user's behalf. `nested-ignored`
+        # and `env-from-template` are merged and clean too — what used to keep them was a gate
+        # mistaking a fetched dependency and a generated `.env` for work.
+        finished = {"merged-clean", "with-stash", "merged-gone",
+                    "nested-ignored", "env-from-template", "ref-gone"}
+        # Rows that end during this suite: their branch goes, so they go. Every later count of
+        # the Archived list has to leave room for them.
+        retired = {"remote-gone", "ref-gone"}
+        auto = sweep_until(ctl, lambda: finished <= set(status_map(ctl)))
         check("merged + clean + pushed rows are archived for the user", bool(auto),
               str(sorted(status_map(ctl))))
+        # The tick evaluates archived rows BEFORE it archives finished ones, so a row archived
+        # on this tick meets the gate chain on the next one — it cannot be archived and held in
+        # the same breath, which is what gives the user a tick's worth of Archived list to
+        # object to before any folder moves.
+        held_now = {n: status_map(ctl).get(n, {}).get("held") for n in ("merged-clean", "with-stash")}
+        check("a row archived this tick is not held on the same tick",
+              set(held_now.values()) == {"false"}, str(held_now))
+
         check("the folder-less merged row is archived on the branch's evidence alone",
               "merged-gone" in status_map(ctl), str(sorted(status_map(ctl))))
         check("archived-for-you rows leave the tree",
               not finished & set(tree_branches(ctl)), str(tree_branches(ctl)))
-        kept_live = [n for n in made if n not in finished and n not in tree_branches(ctl)]
+        kept_live = [n for n in made
+                     if n not in finished | retired and n not in tree_branches(ctl)]
         check("every row with something to lose stays in the tree", not kept_live, str(kept_live))
+
+        # --- retiring the ref -----------------------------------------------------------
+        # The far end of the archive path, and what it was missing: a row archived, held and
+        # reaped used to leave its branch behind for good, so a machine that had run Synth for a
+        # season carried hundreds of merged refs and an Archived list of rows with nothing behind
+        # them. The ref goes only when the remote has already dropped it — and because a row
+        # whose branch has gone can no longer be restored, the row goes with it.
+        gone = sweep_until(ctl, lambda: "remote-gone" not in status_map(ctl)
+                           and "remote-gone" not in tree_branches(ctl))
+        check("a merged branch the remote has dropped is retired", bool(gone),
+              f"archived={'remote-gone' in status_map(ctl)} tree={'remote-gone' in tree_branches(ctl)}")
+        check("and its ref is really deleted",
+              not git(repo, "branch --list remote-gone").strip(),
+              git(repo, "branch --list remote-gone"))
+
+        # The negative, and the reason the remote is the gate rather than "merged" alone: same
+        # shape in every other respect, but origin still lists it.
+        check("a merged branch the remote still lists keeps its ref",
+              git(repo, "branch --list merged-gone").strip().endswith("merged-gone"),
+              git(repo, "branch --list merged-gone"))
+        check("and keeps its row in the Archived list",
+              "merged-gone" in status_map(ctl), str(sorted(status_map(ctl))))
+
+        # The other ending: a branch removed outside Synth entirely. There is no ref to delete,
+        # and a row that can no longer be restored is not a row — it is the Archived list
+        # remembering something that stopped existing.
+        check("the orphan-to-be starts archived", "ref-gone" in status_map(ctl))
+        # Reading the archived list forces ticks, so by now the sweep may already have held this
+        # folder aside under its `.archived-…` name. Take both, as the reaper eventually would.
+        sh(f"rm -rf '{made['ref-gone']}'")
+        for held in made["ref-gone"].parent.glob(".archived-ref-gone-*"):
+            sh(f"rm -rf '{held}'")
+        git(repo, "worktree prune")
+        git(repo, "branch -D ref-gone")
+        check("the branch really went", not git(repo, "branch --list ref-gone").strip(),
+              git(repo, "branch --list ref-gone"))
+        dropped = sweep_until(ctl, lambda: "ref-gone" not in status_map(ctl))
+        check("a row whose branch is already gone is dropped", bool(dropped),
+              str(sorted(status_map(ctl))))
 
         # --- undo semantics -------------------------------------------------------------
         # archivedAt is stamped on COMMIT, not on the gesture: the 8s window must change
@@ -164,28 +235,39 @@ def main():
               "has-untracked" not in tree_branches(ctl), str(tree_branches(ctl)))
 
         for name in made:
-            if name not in finished | {"has-untracked"}:
+            if name not in finished | retired | {"has-untracked"}:
                 ctl("automation.archiveBranch", branch=name)
                 ctl("automation.notifDrain")
-        wait(lambda: len(status_map(ctl)) == len(made), secs=25)
+        want = len(made) - len(retired)
+        wait(lambda: len(status_map(ctl)) == want, secs=25)
         rows = status_map(ctl)
-        check("every archived row is listed", len(rows) == len(made),
-              f"{len(rows)}/{len(made)}: {sorted(rows)}")
+        check("every archived row is listed", len(rows) == want,
+              f"{len(rows)}/{want}: {sorted(rows)}")
         left = [b for b in tree_branches(ctl) if b in made]
         check("archiving every row empties the tree", not left, f"still drawn: {left}")
 
         # --- the two-evaluation rule ----------------------------------------------------
+        # Scoped to the rows the batch above just archived. The reclaimable ones are long past
+        # this point — the retire checks drove ticks of their own — and the rule they are
+        # subject to is asserted where they meet it, one section up.
+        batch = set(made) - finished - retired
         ctl("automation.archiveSweep")
         time.sleep(6)
         after_one = status_map(ctl)
         check("first sweep holds nothing (needs a second opinion)",
-              all(r["held"] == "false" for r in after_one.values()),
-              str({k: v["held"] for k, v in after_one.items() if v["held"] == "true"}))
+              all(after_one[n]["held"] == "false" for n in batch if n in after_one),
+              str({n: after_one[n]["held"] for n in batch
+                   if n in after_one and after_one[n]["held"] == "true"}))
 
         # --- the sweep itself -----------------------------------------------------------
-        ctl("automation.archiveSweep")
-        time.sleep(8)
-        rows = status_map(ctl)
+        # A tick holds at most `perTickCap` folders, so drive ticks until the reclaimable set
+        # is through rather than assuming one pass clears it.
+        reclaimable = {"merged-clean", "with-stash", "nested-ignored", "env-from-template"}
+        for _ in range(4):
+            ctl("automation.archiveSweep")
+            time.sleep(8)
+            rows = status_map(ctl)
+            if all(rows.get(n, {}).get("held") == "true" for n in reclaimable): break
 
         check("merged + clean + pushed worktree is reclaimed",
               rows.get("merged-clean", {}).get("held") == "true",
@@ -197,6 +279,17 @@ def main():
               rows.get("with-stash", {}).get("held") == "true",
               rows.get("with-stash", {}).get("status", "missing"))
 
+        # Both of these were permanent refusals until the gates learned to tell a fetched or
+        # generated file from an original — the shape that leaves a machine with a hundred
+        # worktrees none of which can ever be reclaimed.
+        check("a nested repo under an ignored path does not block the sweep",
+              rows.get("nested-ignored", {}).get("held") == "true",
+              rows.get("nested-ignored", {}).get("reason", "missing"))
+
+        check("an ignored file copied from a committed template does not block the sweep",
+              rows.get("env-from-template", {}).get("held") == "true",
+              rows.get("env-from-template", {}).get("reason", "missing"))
+
         # Everything below is a refusal. Each is a data-loss bug if it flips.
         expected_kept = {
             "has-untracked": "untracked",
@@ -205,6 +298,7 @@ def main():
             "mid-rebase":    "inProgress",
             "locked":        "locked",
             "has-nested":    "nested",
+            "env-original":  "precious",
             # Never merged: survives, and for the right reason — not "merged".
             "never-merged":  ("noPR", "prUnknown"),
         }

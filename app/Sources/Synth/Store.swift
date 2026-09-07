@@ -509,6 +509,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
     static let archiveSweepKey = "synth-archive-sweep"
 
+    /// Retire the branch ref once its folder is gone for good. Kept apart from the sweep it
+    /// rides on because it ends a different thing: a folder can be put back, and a row whose
+    /// branch has gone is a row with no way back, so it is dropped rather than left in the
+    /// Archived list unrestorable. Only ever asked of a merged branch the remote has already
+    /// dropped, so what it deletes is a name, never a commit.
+    var archiveRetireBranches = AppStore.loadBoolPref(AppStore.archiveRetireKey, default: true) {
+        didSet { UserDefaults.standard.set(archiveRetireBranches, forKey: AppStore.archiveRetireKey) }
+    }
+    static let archiveRetireKey = "synth-archive-retire-branches"
+
     /// Days an archived worktree sits untouched before the sweeper will consider it. 0 means
     /// never — the sweeper is off but Archive still works, which is the point of keeping the
     /// two settings apart. Offered as Never / 7 / 14 / 30.
@@ -2718,6 +2728,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let finished = await autoArchiveFinishedRows(cwdPaths: cwdPaths, foreign: foreign)
         if !finished.isEmpty { raiseFinishedDigest(finished) }
 
+        // Before the eligible check below, not after: most ticks have no folder to hold, and a
+        // pass that only ran on the ticks that did would never reach the rows whose folders are
+        // long gone — which is every row this one is for.
+        let ended = await retireFinishedBranches()
+        if !ended.retired.isEmpty || ended.orphaned > 0 {
+            raiseRetiredDigest(ended.retired, orphaned: ended.orphaned)
+        }
+
         logTick(eligible: eligible.count)
         guard !eligible.isEmpty else { return }
 
@@ -2820,6 +2838,82 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let homes = archiveDetach(branch)
         archiveReattach(branch, to: homes, archived: true)
         Analytics.capture("worktree_archived", ["trigger": "merged"])
+    }
+
+    /// End the archived rows whose folder is gone for good: delete the branch ref where there
+    /// is still one to delete, and drop the row either way (`ArchiveSweeper.branchEnd`).
+    ///
+    /// This is what the archive path was missing at its far end. A row archived, held and
+    /// reaped left its branch behind forever, so a machine that had run Synth for a season
+    /// carried hundreds of merged refs and an Archived list of rows with nothing behind them —
+    /// 443 branches in one repo, 200 of them merged, checkout-less and gone from the remote.
+    ///
+    /// Returns the names it retired and the count it dropped as orphans, for the digest.
+    private func retireFinishedBranches() async -> (retired: [String], orphaned: Int) {
+        guard archiveRetireBranches else { return ([], 0) }
+        var retired: [String] = []
+        var orphaned = 0
+        var examined = 0
+        for ws in workspaces {
+            for branch in archivedBranches(in: ws) {
+                // The cap counts rows *looked at*, not rows ended. Every archived row that still
+                // has a folder is the overwhelming majority and is rejected by a stat below with
+                // no git at all, so a settled archive costs this pass nothing; a backlog drains a
+                // capped number of git chains per tick instead of running hundreds every time.
+                guard examined < ArchiveSweeper.retireCap else { break }
+                // A held folder reads as absent — the hold is a rename — so ask the store, which
+                // is the only thing that can tell "reaped" from "sitting aside under a new name".
+                guard branch.sessions.isEmpty, heldFolder(for: branch) == nil,
+                      !FileManager.default.fileExists(atPath: branch.worktreeURL.standardized.path)
+                else { continue }
+                examined += 1
+                let candidate = ArchiveSweeper.Candidate(
+                    branchID: branch.id, name: branch.name, repo: ws.url,
+                    worktree: branch.worktreeURL, archivedAt: branch.archivedAt ?? Date(),
+                    lastCleanEval: nil, hasSessions: !branch.sessions.isEmpty,
+                    foreignInstancePaths: [])
+                let end = await runGit(repo: ws.url, { ArchiveSweeper.branchEnd(candidate) })
+                guard end != .keep else { continue }
+                guard !archiveDryRun else {
+                    ArchiveSweeper.log.info("dry-run: would end \(branch.name, privacy: .public)")
+                    continue
+                }
+                // The row may have been restored while git answered.
+                guard let live = workspaces.first(where: { $0.id == ws.id })?
+                        .branches.first(where: { $0.id == candidate.branchID }), live.isArchived
+                else { continue }
+                let name = live.name
+                if end == .retire {
+                    guard await runGit(repo: ws.url, { GitService.deleteBranch(name, at: ws.url) })
+                    else { continue }
+                    retired.append(name)
+                    Analytics.capture("branch_retired", ["trigger": "remote-gone"])
+                } else {
+                    orphaned += 1
+                    Analytics.capture("branch_retired", ["trigger": "orphaned"])
+                }
+                archiveDetach(live)          // detached and never reattached: the row is over
+                sweepVerdicts[live.id] = nil
+                ArchiveSweeper.log.info("ended \(name, privacy: .public) (\(String(describing: end), privacy: .public))")
+            }
+        }
+        return (retired, orphaned)
+    }
+
+    /// One line for both endings. An orphaned row had no ref left to delete, so saying "deleted"
+    /// of it would be a claim about the user's repo that isn't true.
+    private func raiseRetiredDigest(_ retired: [String], orphaned: Int) {
+        var message: String
+        if retired.count == 1, orphaned == 0 {
+            message = "Deleted branch \(retired[0]) — merged and gone from the remote"
+        } else if retired.isEmpty {
+            message = orphaned == 1 ? "Removed 1 archived row whose branch was already gone"
+                                    : "Removed \(orphaned) archived rows whose branches were already gone"
+        } else {
+            message = "Deleted \(retired.count) merged branches"
+            if orphaned > 0 { message += ", removed \(orphaned) rows with no branch left" }
+        }
+        raiseArchiveNotif(message, tier: .ambient, drains: true)
     }
 
     private func raiseFinishedDigest(_ rows: [(Workspace, Branch)]) {

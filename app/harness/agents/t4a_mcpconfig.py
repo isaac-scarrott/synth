@@ -9,6 +9,16 @@ stranded = pathlib.Path(repo) / ".mcp.json"
 stranded.write_text(json.dumps({"mcpServers": {"synth-browser": {"command": "node", "args": ["/stale/server.mjs"]}}}))
 theirs = pathlib.Path(repo) / "opencode.json"
 theirs.write_text(json.dumps({"mcp": {"my-own-server": {"type": "local", "command": ["node", "x.mjs"]}}}))
+# A third: Synth's own shape, but COMMITTED. Shape is not ownership — a project that checked
+# one of these in owns it, and removing a tracked file leaves a ` D` in `git status` that
+# nothing cleans up and that the archive sweeper then reads, correctly, as work in progress.
+# That is how this migration was quietly making worktrees unreclaimable.
+committed = pathlib.Path(repo) / ".agents/mcp_config.json"
+committed.parent.mkdir(parents=True, exist_ok=True)
+committed_text = json.dumps({"mcpServers": {"synth-browser": {"command": "node", "args": ["/stale/server.mjs"]}}})
+committed.write_text(committed_text)
+subprocess.run(["git", "add", ".agents/mcp_config.json"], cwd=str(repo), check=True)
+subprocess.run(["git", "commit", "-qm", "our own agent config"], cwd=str(repo), check=True)
 
 p, sock = launch(sd, f"{H}/t4a.log"); ctl = Ctl(sock, repo)
 time.sleep(3)  # the launch config syncs on the autosave cadence
@@ -18,8 +28,9 @@ check("2. no opencode.json written into the worktree",
       json.loads(theirs.read_text()).get("mcp", {}).get("synth-browser") is None)
 check("3. a config that became the user's is left alone",
       "my-own-server" in json.loads(theirs.read_text()).get("mcp", {}))
-check("4. no .agents/mcp_config.json written into the worktree",
-      not (pathlib.Path(repo) / ".agents/mcp_config.json").exists())
+check("4. a tracked config is neither rewritten nor deleted",
+      committed.exists() and committed.read_text() == committed_text,
+      committed.read_text() if committed.exists() else "deleted")
 # The whole point: a user repo ignores none of these names, so anything Synth leaves here is
 # untracked noise in the user's own `git status` forever. The one file left is the one this
 # suite planted as the user's, which is exactly what should survive.

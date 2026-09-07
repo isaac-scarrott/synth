@@ -223,6 +223,12 @@ enum ArchiveSweeper {
             return .blocked(.processCwd)
         }
 
+        // What git ignores, asked once: the nested-repo walk skips these directories, and B10
+        // reads its candidates out of the same answer.
+        guard let ignored = GitService.ignoredEntries(at: c.worktree).value else {
+            return .blocked(.probeFailed)
+        }
+
         // B8/B7/B9 — one `worktree list` answers locked, detached, and nesting.
         let all = GitService.worktrees(at: c.repo)
         guard let mine = all.first(where: {
@@ -233,7 +239,9 @@ enum ArchiveSweeper {
         let nestedWorktree = all.contains {
             $0.path.standardized.path.hasPrefix(resolved.path + "/")
         }
-        guard !nestedWorktree, !hasNestedRepo(under: resolved) else { return .blocked(.nested) }
+        guard !nestedWorktree,
+              !hasNestedRepo(under: resolved, ignoring: GitService.ignoredDirectories(in: ignored))
+        else { return .blocked(.nested) }
 
         // B5 — no remote means nothing is recoverable, so B4 would block everything anyway.
         // Say it as its own answer rather than as a confusing "not pushed".
@@ -256,14 +264,13 @@ enum ArchiveSweeper {
         }
         guard !dirtySubs else { return .blocked(.submodules) }
 
-        // B10 — precious ignored files, but only the ones that aren't reconstructible. This
-        // repo's own worktree-create copies gitignored `.env` files in from the parent; a copy
-        // that still byte-matches its source *is* reconstructible, and blocking on it would
-        // make the sweeper permanently inert on every project that has a `.env`.
-        guard let precious = GitService.preciousIgnored(at: c.worktree).value else {
-            return .blocked(.probeFailed)
-        }
-        if precious.contains(where: { !matchesParent($0, worktree: c.worktree, repo: c.repo) }) {
+        // B10 — precious ignored files, but only the ones that aren't reconstructible. A
+        // gitignored `.env` is usually not an original: worktree-create either copies the
+        // parent's or stamps one out of a committed template, and blocking on either would make
+        // the sweeper permanently inert on every project that has a `.env`.
+        if GitService.precious(in: ignored).contains(where: {
+            !isReconstructible($0, worktree: c.worktree, repo: c.repo)
+        }) {
             return .blocked(.precious)
         }
 
@@ -363,36 +370,96 @@ enum ArchiveSweeper {
         return .eligible(mergedPR: pr.number)
     }
 
-    /// True when the worktree's copy of an ignored file is identical to the parent repo's — a
-    /// copy, not an original, and so reconstructible.
-    private static func matchesParent(_ relative: String, worktree: URL, repo: URL) -> Bool {
-        let mine = worktree.appendingPathComponent(relative)
-        let theirs = repo.appendingPathComponent(relative)
-        guard let a = try? Data(contentsOf: mine), let b = try? Data(contentsOf: theirs) else {
-            return false
+    // MARK: Branch refs
+
+    /// At most this many branch refs retired per tick. Cheaper than a folder and cheaper to be
+    /// wrong about — the commits are in the default branch either way — but a pass that took two
+    /// hundred rows out of the Archived list in one go would still read as a fault.
+    static let retireCap = 20
+
+    /// How an archived row ends, once the folder half has finished with it.
+    ///
+    /// Deliberately a separate question from every gate above, and asked only of rows with
+    /// nothing left on disk. A held folder is one `mv` from being restored and a reaped one is
+    /// re-cut from the branch, so the ref is what keeps `restoreArchivedBranch` honest: when it
+    /// goes, the row goes with it rather than sitting in the Archived list as an entry that can
+    /// no longer be restored.
+    enum BranchEnd {
+        /// Still wanted, or not answerable — the row stays exactly as it is.
+        case keep
+        /// Merged, and the remote has already dropped it: delete the ref, drop the row.
+        case retire
+        /// The ref is already gone — deleted by hand, or by another tool. Nothing to delete;
+        /// the row is a pointer to nothing and is dropped on its own.
+        case orphaned
+    }
+
+    /// The gate that carries the weight is the remote one. A merged branch the remote still
+    /// lists is a branch somebody is keeping; a merged branch the remote has *dropped* was
+    /// cleaned up when its PR landed, and every commit on it is reachable from the default
+    /// branch. That is the whole claim, and it is why this needs no grace of its own — the
+    /// folder already served one, and there is nothing here left to change its mind about.
+    static func branchEnd(_ c: Candidate) -> BranchEnd {
+        guard !c.hasSessions else { return .keep }
+        // Nothing on disk, and nothing git thinks is on disk. A registration outliving its
+        // folder is normal between reap and prune, so the check is "does git name this branch
+        // in a worktree", not "is the path listed".
+        guard !FileManager.default.fileExists(atPath: c.worktree.standardized.path) else { return .keep }
+        guard !GitService.worktrees(at: c.repo).contains(where: { $0.branch == c.name }) else {
+            return .keep
         }
-        return a == b
+        guard GitService.branchExists(c.name, at: c.repo) else { return .orphaned }
+        let base = GitService.defaultBase(at: c.repo)
+        guard base != "HEAD", c.name != base,
+              case .known(true) = GitService.isAncestor(c.name, of: base, at: c.repo)
+        else { return .keep }
+        guard case .known(false) = GitService.remoteHasBranch(c.name, at: c.repo) else { return .keep }
+        return .retire
+    }
+
+    /// True when this ignored file's bytes survive the folder — because the same bytes are
+    /// either sitting in the parent checkout, or committed as a template beside it.
+    ///
+    /// The second arm is not a nicety. A repo whose setup script *generates* `.env.development`
+    /// from a tracked `.env.development.demo` produces a file that matches no parent copy and
+    /// never will, so a parent-only rule blocks every one of that project's worktrees for good
+    /// — which is exactly what it did.
+    private static func isReconstructible(_ relative: String, worktree: URL, repo: URL) -> Bool {
+        let mine = worktree.appendingPathComponent(relative)
+        if let a = try? Data(contentsOf: mine),
+           let b = try? Data(contentsOf: repo.appendingPathComponent(relative)), a == b {
+            return true
+        }
+        return GitService.contentIsCommittedNearby(relative, at: worktree)
     }
 
     /// A `.git` anywhere shallowly inside the folder — a nested clone or worktree whose commits
     /// an `rm -rf` of the parent would take with it.
-    private static func hasNestedRepo(under root: URL) -> Bool {
+    ///
+    /// `ignoring` is the ignored-directory set, and skipping those is the difference between
+    /// this gate meaning something and meaning nothing: a built SwiftPM package keeps its
+    /// dependencies as real clones under `app/.build/checkouts/`, which is a `.git` at exactly
+    /// depth 4, so every worktree that had ever been built was `nested` forever. Anything git
+    /// is told to ignore is build output or scratch by the repo's own declaration — a `.git`
+    /// down there is a fetched artefact, not work.
+    private static func hasNestedRepo(under root: URL, ignoring: Set<String>) -> Bool {
         let fm = FileManager.default
-        func scan(_ dir: URL, depth: Int) -> Bool {
+        func scan(_ dir: URL, depth: Int, prefix: String) -> Bool {
             guard depth <= 4,
                   let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey])
             else { return false }
             for entry in entries {
                 let name = entry.lastPathComponent
                 if depth > 0, name == ".git" { return true }
-                guard name != ".git", name != "node_modules",
+                let relative = prefix.isEmpty ? name : prefix + "/" + name
+                guard name != ".git", name != "node_modules", !ignoring.contains(relative),
                       (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
                 else { continue }
-                if scan(entry, depth: depth + 1) { return true }
+                if scan(entry, depth: depth + 1, prefix: relative) { return true }
             }
             return false
         }
-        return scan(root, depth: 0)
+        return scan(root, depth: 0, prefix: "")
     }
 
     /// The cheap, fast-moving gates, re-read immediately before the rename inside the same

@@ -39,12 +39,46 @@ def instance_json(pid):
     p = support_dir() / "instances" / f"{pid}.json"
     return json.loads(p.read_text()) if p.exists() else {}
 
+GATE_LOCK = "/tmp/synth-agent-gate.lock"
+# run.sh exports its own pid so every suite in one run shares an owner; a suite run by hand owns
+# itself.
+GATE_OWNER = os.environ.get("SYNTH_GATE_RUN") or str(os.getpid())
+
+
+def claim_machine():
+    """Refuse to start while another harness run holds the machine — from any checkout.
+
+    Two runs cannot share one: they share a single "Synth Dev" Application Support sandbox, and the
+    agent patterns below are path-independent of necessity (a row's `opencode2 serve --port <port>`
+    carries nothing that says whose row it is). So each run reaps the other's agents mid-test, and
+    both report failures neither build caused — an hour of red that looks like a regression and
+    isn't. Cheaper to stop here and say so.
+    """
+    try:
+        owner, app = open(GATE_LOCK).read().split("\n", 1)
+    except (OSError, ValueError):
+        owner, app = "", ""
+    if owner and owner != GATE_OWNER:
+        try:
+            os.kill(int(owner), 0)
+        except (OSError, ValueError):
+            pass                       # its process is gone; the lock is ours to take
+        else:
+            print(f"SKIP: another harness run holds this machine (pid {owner}, {app.strip()})",
+                  flush=True)
+            sys.exit(0)
+    with open(GATE_LOCK, "w") as f:
+        f.write(f"{GATE_OWNER}\n{APP}")
+
+
 def kill_all():
     """Tear down only THIS harness's app and its children.
 
     Never match on a bare `Synth.app/...` pattern: the developer's own Synth is built to the same
-    relative path in their checkout, and a broad pkill takes their running app down with it.
+    relative path in their checkout, and a broad pkill takes their running app down with it. The
+    agent patterns cannot be narrowed the same way, which is what `claim_machine` is for.
     """
+    claim_machine()
     exe = f"{APP}/Contents/MacOS/Synth"
     sh(f"pkill -f '{exe}'")
     sh(f"pkill -f '{APP}/Contents/Frameworks'")   # our CEF helpers, which hold the CDP port

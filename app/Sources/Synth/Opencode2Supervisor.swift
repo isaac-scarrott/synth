@@ -59,6 +59,15 @@ import OSLog
         agent.exportRealCommand(into: &env)
         env["SYNTH_OPENCODE2_PORT"] = String(port)
         env["SYNTH_OPENCODE2_PASSWORD"] = password
+        // A relaunch of the same row reuses the path, so the previous server's log goes with it —
+        // what is wanted there is why *this* one died, not why the last one did.
+        env["SYNTH_OPENCODE2_LOG"] = Self.logPath(sessionID)
+        try? FileManager.default.createDirectory(atPath: Self.root, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(atPath: Self.logPath(sessionID))
+        // An embedded agent must not self-update mid-session — the same rule `OpencodeSupervisor`
+        // and `AntigravitySupervisor` both apply, and v2 reads the same variable v1 does.
+        env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
+        Self.adoptKeybinds()
     }
 
     func launchCommand(binary: String, resume: String?, flags: String) -> String {
@@ -188,12 +197,23 @@ import OSLog
             bus.post(.statusChanged(session, .error))
             bus.post(.markUnread(session))
 
+        case "permission.asked":
+            guard isRowSession(data, session) else { return }
+            bus.post(.statusChanged(session, .needsInput))
+
         // `question.*` has no successor by that name in v2 (`OPENCODE_ENABLE_QUESTION_TOOL` is
         // gone from the binary); the Form system generalises it, and opencode2's own UI classifies
         // `form.created`/`form.replied`/`form.cancelled` as the same "question" surface permission
-        // events are — verified by reading that classification straight out of the binary.
-        case "permission.asked", "form.created":
-            guard isRowSession(data, session) else { return }
+        // events are.
+        //
+        // `form.created` is the one event in v2 that wraps its payload — `{form: {sessionID, …}}`
+        // where every other session-scoped event puts `sessionID` at the top of `data`. Matched on
+        // the flat shape it finds no id at all, so `isRowSession` rejects it and every question
+        // opencode2 asks goes unreported. Its own reply/cancel events are flat, which is what made
+        // the difference invisible to read: only the ask is nested.
+        case "form.created":
+            guard let form = data["form"] as? [String: Any], isRowSession(form, session)
+            else { return }
             bus.post(.statusChanged(session, .needsInput))
 
         case "permission.replied", "form.replied", "form.cancelled":
@@ -211,6 +231,89 @@ import OSLog
         guard let known = agentSessionIDs[session] else { return true }
         return known == ocID
     }
+
+    // MARK: Keybinds
+
+    /// opencode2 keeps v1's most destructive default: `app.exit` is bound to `ctrl+c` (alongside
+    /// `ctrl+d` and `<leader>q`), and `session.interrupt` only to `escape`. So the one gesture
+    /// every agent user reaches for mid-turn quits the agent — verified live, idle and mid-turn
+    /// alike, exiting 0 in under a second with no confirmation, which reads to Synth as a clean
+    /// quit and parks the row on a Reopen card. Claude Code interrupts on that key, and two
+    /// agents in one app must not disagree about a stop gesture.
+    ///
+    /// v1's supervisor fixes this without touching the user's own file, via `OPENCODE_TUI_CONFIG`
+    /// — an overlay merged after their config. v2 removed that variable and shipped no
+    /// replacement: `OPENCODE_CONFIG_DIR` moves the whole directory, and a shadowed copy of it
+    /// would swallow the TUI's own writes to this very file, which opencode2 rewrites on every
+    /// preference toggle. So the binding is claimed in `cli.json` itself, the way `OpencodeTheme`
+    /// already claims `theme` in it: only where the binding is still opencode2's own default (or
+    /// already ours), preserving every other key, and refusing outright on a file — or a
+    /// `keybinds` block — it cannot parse. A binding the user chose is one they meant.
+    private static func adoptKeybinds(home: URL = AgentTheme.defaultHome()) {
+        // key: what Synth wants it to be, what opencode2 ships it as.
+        let claims = [("app.exit", "ctrl+d,<leader>q", "ctrl+c,ctrl+d,<leader>q"),
+                      ("session.interrupt", "escape,ctrl+c", "escape")]
+        let url = OpencodeTheme.configDir(home: home).appendingPathComponent("cli.json")
+        var config: [String: Any] = ["$schema": "https://opencode.ai/v2/cli.json"]
+        if let data = try? Data(contentsOf: url) {
+            guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            else { return }
+            config = parsed
+        } else if migrationPending(home: home) {
+            return
+        }
+        var keybinds: [String: Any] = [:]
+        if let existing = config["keybinds"] {
+            guard let block = existing as? [String: Any] else { return }
+            keybinds = block
+        }
+        for (key, ours, theirs) in claims {
+            guard let current = keybinds[key] else { continue }
+            guard let bound = current as? String, bound == ours || bound == theirs else { return }
+        }
+        guard claims.contains(where: { keybinds[$0.0] as? String != $0.1 }) else { return }
+        for (key, ours, _) in claims { keybinds[key] = ours }
+        config["keybinds"] = keybinds
+        // `withoutEscapingSlashes` because this file is the user's to read: the `$schema` URL comes
+        // back out as `https:\/\/opencode.ai/...` without it, which is valid JSON and looks broken.
+        guard let out = try? JSONSerialization.data(
+            withJSONObject: config,
+            options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
+        else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        guard (try? out.write(to: url, options: .atomic)) != nil else { return }
+        // opencode2 writes this file 0600; an atomic replace would otherwise widen it to 0644.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    /// opencode2 folds v1's `tui.json` — and its `kv.json` — into `cli.json` exactly once, and
+    /// only while `cli.json` does not yet exist. Creating that file first cancels the migration
+    /// silently, so a v1 user's very first v2 row would come up having lost their theme and every
+    /// preference with it. Where the migration is still owed, this waits: opencode2 writes the
+    /// file itself on that launch, and the next one claims the binding inside it.
+    private static func migrationPending(home: URL) -> Bool {
+        let fm = FileManager.default
+        let state = ProcessInfo.processInfo.environment["XDG_STATE_HOME"]
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? home.appendingPathComponent(".local/state")
+        return fm.fileExists(atPath: OpencodeTheme.configDir(home: home)
+                                .appendingPathComponent("tui.json").path)
+            || fm.fileExists(atPath: state.appendingPathComponent("opencode/kv.json").path)
+    }
+
+    // MARK: Paths
+
+    /// Where the shim points `serve`'s stdout and stderr. One dir per Synth process (reaped by
+    /// `HookEnvironment` once the pid is gone), one file per row.
+    ///
+    /// The row's PTY is the one place this must never go — that was 0.41.1's bug, and /dev/null
+    /// was its fix. But /dev/null also means a server that dies takes the reason with it, and the
+    /// TUI dies moments later with nothing to say beyond "could not reach server". A file keeps
+    /// the terminal clean and the crash readable.
+    static let root = "/tmp/synth-oc2-\(getpid())"
+
+    static func logPath(_ session: UUID) -> String { root + "/" + session.uuidString + ".log" }
 
     /// Ask the kernel for a free loopback port, exactly as `OpencodeSupervisor` does — the shim
     /// binds it a moment later, and a collision just retries.

@@ -294,6 +294,7 @@ final class HookServer: @unchecked Sendable {
                 if name.hasPrefix("synth-shims-")        { pid = String(name.dropFirst("synth-shims-".count)) }
                 else if name.hasPrefix("synth-zdotdir-") { pid = String(name.dropFirst("synth-zdotdir-".count)) }
                 else if name.hasPrefix("synth-agy-")     { pid = String(name.dropFirst("synth-agy-".count)) }
+                else if name.hasPrefix("synth-oc2-")     { pid = String(name.dropFirst("synth-oc2-".count)) }
                 else if name.hasPrefix("synth-hook-"), name.hasSuffix(".sock") {
                     pid = String(name.dropFirst("synth-hook-".count).dropLast(".sock".count))
                 } else if name.hasPrefix("synth-ctl-"), name.hasSuffix(".sock") {

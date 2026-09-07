@@ -5,6 +5,11 @@ listening on …" at startup, then a "spawning process { command: … }" line ev
 subsystem starts a local server. Inherited, those land on the row's PTY — on top of the TUI drawing
 on the same terminal, mid-frame, unreadable and unexplainable to anyone looking at it.
 
+Off the terminal is not the same as nowhere, though. /dev/null was the first fix and it meant a
+`serve` that died took the reason with it, leaving a hung row and an empty log — so the streams go
+to the per-row file `SYNTH_OPENCODE2_LOG` names, and this gate holds both halves at once: nothing
+on the terminal, everything in the file.
+
 Driven from the shim rather than from a Synth row: what is under test is which file descriptors
 `serve` was handed, and a row's own PTY content is not something the control socket can hand back.
 The MCP payload is a process that does nothing but exist for 20s — the log line is about spawning
@@ -46,6 +51,7 @@ env.update({
     "SYNTH_OPENCODE2_PASSWORD": secrets.token_hex(8),
     "SYNTH_MCP_OPENCODE": '{"mcp":{"t36-probe":{"type":"local","enabled":true,"environment":{},'
                           '"command":["node","-e","setTimeout(()=>{},20000)"]}}}',
+    "SYNTH_OPENCODE2_LOG": str(run_dir / "serve.log"),
 })
 
 out = run_dir / "row.out"
@@ -65,5 +71,7 @@ check("1. the TUI takes the terminal", tui_up is not None)
 check("2. no MCP process-spawn log lands on it", b"spawning process" not in text,
       text.count(b"spawning process"))
 check("3. nor the server's own startup line", b"server listening" not in text)
+served = (run_dir / "serve.log").read_bytes() if (run_dir / "serve.log").exists() else b""
+check("4. the server's own log is kept, not discarded", b"server listening" in served, len(served))
 
 sys.exit(result())

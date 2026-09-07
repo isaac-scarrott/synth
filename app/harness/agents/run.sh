@@ -20,6 +20,10 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
+# One run per machine: every suite in this one shares this pid as the lock's owner, so they take
+# it over from each other and only a *foreign* run is turned away (lib.py's `claim_machine`).
+export SYNTH_GATE_RUN=$$
+
 # The browser suites need a CEF-enabled build. SwiftPM caches the manifest, so a build made while
 # vendor/cef was absent silently yields a binary with no CEF (and no CDP) — the browser tests then
 # fail for a reason that has nothing to do with the code under test. Fail fast and say so.
@@ -38,7 +42,7 @@ SUITES="t1_template t2_resume t3_notifs t4a_mcpconfig t4b_agent_browser t4c_agen
         t26_agycontrast t27_comment_parked t28_alias_agent t29_claude_argv
         t28_browser_profile t29_browser_asks t30_browser_popups t31_agent_tools
         t32_simulator_tools t33_login_script t34_opencode2
-        t35_agent_clash t36_opencode2_quiet"
+        t35_agent_clash t36_opencode2_quiet t37_opencode2_stop"
 
 P=0; F=0; S=0
 for t in ${*:-$SUITES}; do

@@ -332,7 +332,9 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
     signal(SIGQUIT, SIG_IGN)
 
     setenv("OPENCODE_PASSWORD", password, 1)
-    guard let servePid = spawnDetached(real, ["serve", "--port", port, "--hostname", "127.0.0.1"])
+    let serveLog = env["SYNTH_OPENCODE2_LOG"].flatMap { $0.isEmpty ? nil : $0 }
+    guard let servePid = spawnDetached(real, ["serve", "--port", port, "--hostname", "127.0.0.1"],
+                                       log: serveLog)
     else {
         FileHandle.standardError.write(Data("synth: opencode2 serve failed to start\n".utf8))
         exit(126)
@@ -352,18 +354,23 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
 /// Start a child without waiting for it — `serve` outlives the shim's own wait on the visible TUI,
 /// so it cannot go through `spawnReportingExit`, which blocks until its child exits.
 ///
-/// All three standard streams go to /dev/null rather than being inherited: the shim's own are the
-/// row's PTY, and `serve` shares neither end of it usefully. Its stdout carries a log line for
-/// every process its MCP subsystem spawns ("spawning process { command: node, … }"), which would
-/// otherwise paint over the TUI drawing on the same terminal; its stdin would take keystrokes the
-/// TUI is meant to read.
-func spawnDetached(_ path: String, _ args: [String]) -> pid_t? {
+/// None of the three standard streams is inherited: the shim's own are the row's PTY, and `serve`
+/// shares neither end of it usefully. Its stdout carries a log line for every process its MCP
+/// subsystem spawns ("spawning process { command: node, … }"), which would otherwise paint over
+/// the TUI drawing on the same terminal; its stdin would take keystrokes the TUI is meant to read.
+///
+/// stdout and stderr go to `log` rather than /dev/null, because a `serve` that dies takes the row
+/// down with it — the TUI it is backing exits the moment its server stops answering — and a
+/// discarded stream leaves nothing to say why. /dev/null only when there is no path to write to.
+func spawnDetached(_ path: String, _ args: [String], log: String?) -> pid_t? {
     let argv = ([path] + args).map { strdup($0) } + [nil]
     var actions: posix_spawn_file_actions_t?
     posix_spawn_file_actions_init(&actions)
     posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
-    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
-    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
+    let out = log ?? "/dev/null"
+    let flags = log == nil ? O_WRONLY : O_WRONLY | O_CREAT | O_APPEND
+    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, out, flags, 0o644)
+    posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO)
     var pid: pid_t = 0
     let rc = posix_spawn(&pid, path, &actions, nil, argv, environ)
     posix_spawn_file_actions_destroy(&actions)

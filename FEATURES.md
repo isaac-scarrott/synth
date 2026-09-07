@@ -2497,3 +2497,14 @@ disclosure to dive deeper.
   names again and its column sits centred. `CFBundleVersion` 715, tag `v0.41.1`; both artifacts
   notarized separately, stapled, and verified credential-less with quarantine set; appcast newest
   0.41.1 at 715 with `edSignature` on all 18 enclosures.
+- **An OpenCode 2 row can be stopped without being lost, and says when it is asking** — ctrl+c was
+  bound to `app.exit`, so the gesture for stopping a turn quit the agent outright and exited 0,
+  which reads as a clean finish; the binding is now claimed in the user's own `cli.json` (v2 dropped
+  `OPENCODE_TUI_CONFIG`), only where it is still opencode2's default. `form.created` — v2's question
+  surface — nests `sessionID` under `data.form` where every sibling event puts it at the top of
+  `data`, so every question the agent asked went unreported and the `?` never lit. `serve`'s streams
+  go to a per-row log instead of /dev/null (a dead server hangs the row rather than ending it, so
+  the reason has to survive), and `OPENCODE_DISABLE_AUTOUPDATE` is set as it is for every other
+  embedded agent. The agent gate now holds a machine lock: two runs share one "Synth Dev" sandbox
+  and reap each other's agents through path-independent patterns, which is what made a full run
+  read as ten regressions that an unmodified tree reproduces exactly.

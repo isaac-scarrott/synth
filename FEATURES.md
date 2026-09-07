@@ -2497,6 +2497,18 @@ disclosure to dive deeper.
   names again and its column sits centred. `CFBundleVersion` 715, tag `v0.41.1`; both artifacts
   notarized separately, stapled, and verified credential-less with quarantine set; appcast newest
   0.41.1 at 715 with `edSignature` on all 18 enclosures.
+- **opencode's pane stops drawing its own edges** — opencode painted every cell of its own field
+  (`#ffffff` light, `#0a0a0a` dark) inside ghostty's padding band, so a row showed a rectangle in a
+  colour of its own and sat out the window's translucency; the theme now hands `background` back as
+  `TerminalTheme`'s surface at zero alpha (`#f7f8fa00` / `#12131700`) rather than opencode's
+  documented `"none"`, because opencode *derives* surfaces from that value and a zero-alpha black
+  turned the splash mark's shadow near-black in light. 92.8% of the screen comes back as the
+  terminal's default in both appearances, the rest being opencode's own prompt box. Synth also
+  claims `theme.name` in v2's `cli.json`, closing 2026-09-06's known gap: v2 does read the shared
+  `themes/synth.json`, it just never reads `tui.json` — it names its theme in `cli.json`, which it
+  migrates `tui.json` into exactly once, only when absent, so Synth claims it there and never
+  creates it. `t25` gates the field for both versions and fails if the theme's
+  surface pair drifts from `TerminalTheme`'s.
 - **Three gates that kept every worktree forever** — the sweeper archived correctly and reclaimed
   almost nothing, because a generated `.env` (no parent copy to match), a SwiftPM `.build/checkouts`
   clone (a `.git` at depth four) and Synth's own deletion of *tracked* `.mcp.json`/`opencode.json`

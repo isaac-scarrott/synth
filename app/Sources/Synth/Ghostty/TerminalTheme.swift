@@ -15,6 +15,11 @@ import GhosttyKit
 /// entitled to: the sixteen themeable slots, and how strongly faint renders. The scheme itself is
 /// announced to the TUI by ghostty (DEC 2031), so anything that themes itself — Claude Code,
 /// opencode — has already switched by the time these apply.
+///
+/// The two `background` values are quoted a second time, at zero alpha, in
+/// `Resources/opencode-theme.json`: opencode paints its own field and needs to be told what it is
+/// sitting on to derive surfaces from (see `OpencodeTheme`). `t25_opencodecontrast` reads both and
+/// fails if they drift apart, which is the only thing keeping the copy honest.
 enum TerminalTheme {
     /// Colours for one appearance. Backgrounds/foreground plus a full 16-colour ANSI palette
     /// (0–7 normal, 8–15 bright), kept in step with the HTML design tokens.

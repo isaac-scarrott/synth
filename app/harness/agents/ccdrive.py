@@ -75,6 +75,14 @@ def opencode_binary():
     return agent_binary("opencode", extra_dirs=["~/.npm-global/bin"])
 
 
+def opencode2_binary():
+    """opencode's v2 preview CLI, which installs alongside v1 rather than over it."""
+    native = os.path.expanduser("~/.opencode/bin/opencode2")
+    if os.path.isfile(native) and os.access(native, os.X_OK):
+        return os.path.realpath(native)
+    return agent_binary("opencode2", extra_dirs=["~/.opencode/bin", "~/.npm-global/bin"])
+
+
 # ---------------------------------------------------------------------------- transcript fixture
 
 def _row(**kw):

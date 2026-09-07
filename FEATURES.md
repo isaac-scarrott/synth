@@ -2489,3 +2489,11 @@ disclosure to dive deeper.
   proved it was Apple rather than our credentials. Backgrounding `release.sh` makes the harness
   report the trailing `echo`'s exit status, so the script's own `RELEASE_EXIT` must be printed or a
   failed release reads as a successful one.
+- **0.41.1 ships — an OpenCode 2 row opens quiet, quick, and once** — its server no longer prints
+  its own log lines across the row's terminal (it never shared that terminal usefully, and was
+  holding the keyboard's other end too), the row stops waiting on MCP registrations whose answer was
+  never what made the tools available (3.7s to a visible TUI, from 6.7s), and an agent you add whose
+  command Synth already runs is offered once rather than twice. Settings' scope tabs size to their
+  names again and its column sits centred. `CFBundleVersion` 715, tag `v0.41.1`; both artifacts
+  notarized separately, stapled, and verified credential-less with quarantine set; appcast newest
+  0.41.1 at 715 with `edSignature` on all 18 enclosures.

@@ -82,6 +82,37 @@ def relocate_urls(css, prefix="../"):
     return URL_RE.sub(lambda m: 'url("%s%s")' % (prefix, m.group(2).strip()), css)
 
 
+def landing_nav():
+    """index.html's own header, so the bar is one component rather than two that resemble
+    each other.
+
+    Borrowed the same way the stylesheet is, and for the same reason: a nav written twice is a
+    nav that drifts, and the docs copy had already drifted into a different shape with a
+    different link in it. Only the relative URLs move, because a docs page sits one directory
+    down; `#top` becomes the landing page itself, since from here that anchor is a page.
+    """
+    with open(LANDING, encoding="utf-8") as f:
+        src = f.read()
+    opens = src.count("<header")
+    if opens != 1 or src.count("</header>") != 1:
+        raise BuildError("index.html has %d <header>; this build assumes exactly one" % opens)
+    nav = src[src.index("<header"):src.index("</header>") + len("</header>")]
+
+    def relocate(m):
+        attr, ref = m.group(1), m.group(2)
+        if ref.startswith(("http", "mailto", "data:", "/")):
+            return m.group(0)
+        if ref == "#top":
+            ref = "../"
+        elif ref == "docs/":
+            ref = "./"
+        else:
+            ref = "../" + ref
+        return '%s="%s"' % (attr, ref)
+
+    return re.sub(r'\b(href|src)="([^"]*)"', relocate, nav)
+
+
 def landing_css():
     """The whole of index.html's style block, so docs inherits tokens and components.
 
@@ -456,14 +487,7 @@ SHELL = """<!DOCTYPE html>
 </head>
 
 <body class="docs">
-<header class="nav is-stuck" id="nav">
-  <div class="wrap dwrap">
-    <a class="brand" href="../"><img src="../img/mark-light.png" alt="" />Synth</a>
-    <a class="brand__docs" href="./">Docs</a>
-    <span class="nav__spacer"></span>
-    <a class="btn btn--primary" href="{dmg}">Download for Mac</a>
-  </div>
-</header>
+{nav}
 
 <div class="wrap dwrap dshell">
   {sidebar}
@@ -523,6 +547,7 @@ def build_page(slug, css):
         slug=slug,
         css=css,
         dmg=DMG,
+        nav=landing_nav(),
         sidebar=sidebar(slug),
         contents=contents(headings(body)),
         walk=walk(slug),

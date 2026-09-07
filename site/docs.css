@@ -12,17 +12,23 @@
    in the docs shell markup; these rules keep them gone if either is ever pasted in. */
 .docs .rails, .docs .dust, .docs .motes { display: none; }
 
-/* Docs is wider than the argument the landing page makes: three columns have to fit, and
-   --col was measured for one. The reading measure is set on .dbody, not here. */
-.dwrap { width: min(1320px, 100vw - (2 * var(--gutter))); }
+/* Docs sits in the same column as the landing page. It was briefly wider, on the reasoning
+   that three columns need more room than one argument does, and that cost the thing the extra
+   room was worth less than: the bar jumped 84px sideways and 8px down as you crossed from the
+   page into the docs, because the nav was measuring itself against a different column and a
+   different height on each side. One column, one bar, no shift. The content column that falls
+   out is 644px, which reads better than the 685px it replaces. */
+.dwrap { width: var(--col); }
 
-.docs .nav .wrap { height: 56px; }
-.brand__docs {
-  font: 500 15px var(--font); letter-spacing: -0.02em; color: var(--ink-meta);
-  padding-left: var(--s3); margin-left: var(--s1);
-  border-left: 1px solid var(--hair-2);
-}
-.brand__docs:hover { color: var(--ink-2); }
+/* The header is index.html's own element, borrowed at build time so the bar is one component
+   rather than two that resemble each other. It needs two things here and nowhere else.
+
+   The landing bar is bare over its hero and materialises on scroll. Docs has no hero to be
+   bare over: content begins under the bar, so the bar is solid from the first pixel. */
+.docs .nav::before { opacity: 1; }
+/* The download's spark canvas is drawn by a script the docs pages do not load. Hiding it
+   costs nothing and is honest about what is running. */
+.docs .halo__c { display: none; }
 
 /* ───────────────────────── the three columns ───────────────────────── */
 .dshell {
@@ -33,15 +39,15 @@
   padding-block: var(--s7) var(--s9);
 }
 
-/* Both rails stick under the header. 56px of nav plus a step off the scale, so a heading
+/* Both rails stick under the header. 64px of nav plus a step off the scale, so a heading
    scrolled to by an anchor does not land under the bar. */
-.dnav, .dtoc { position: sticky; top: calc(56px + var(--s5)); }
+.dnav, .dtoc { position: sticky; top: calc(64px + var(--s5)); }
 /* The scroll box has to be wider than the text column it holds. A selected row's fill bleeds
    one step left of its own text, and `overflow-y` forces `overflow-x` to `auto` rather than
    leaving it visible, so without this padding the container clips that bleed and the row's
    rounded left corner is cut off. The negative margin puts the box back where the grid put it. */
 .dnav {
-  max-height: calc(100vh - 56px - var(--s7)); overflow-y: auto;
+  max-height: calc(100vh - 64px - var(--s7)); overflow-y: auto;
   margin-left: calc(-1 * var(--s2)); padding-left: var(--s2);
 }
 

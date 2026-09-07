@@ -2572,3 +2572,13 @@ disclosure to dive deeper.
   and gained Integrations, and Tabs is one half of "Show sessions in" rather than an experiment. The
   Usage board is named on the attention page. The two generated pages needed no edit across all 48
   commits, which is the argument for generating a reference stated as a measurement.
+
+- **One nav, one column, and the shift that came from having two** — the bar was written twice, so
+  it differed in three measurable ways; `build_docs.py` now borrows `index.html`'s `<header>` the
+  way it borrows the `<style>` block. The 84px sideways and 8px vertical shift between the root and
+  `/docs` came from overrides the docs stylesheet held for no good reason (a 56px bar against 64px,
+  a 1320px wrap against `--col`), and deleting them drops the content column to **644px at 68
+  characters**, closing the open measure note as a side effect. The Docs/download gap goes 16px to
+  48px, and back to 16px below 560. The first measurement was wrong in an instructive way: an
+  iframe written with `document.write` inherits the parent's base URL, so it reproduced the
+  morning's font 404 and reported a 0.75px phantom.

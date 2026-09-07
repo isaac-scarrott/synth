@@ -184,10 +184,17 @@
   .brand img { width: 24px; height: 24px; border-radius: 7px; }
   .nav .btn { height: 36px; padding: 0 var(--s3); font-size: 14px; }
   /* The one link in the bar. It sits before the download because reading comes before
-     installing for anyone who is still deciding. */
+     installing for anyone who is still deciding, and it stands well clear of it: the row's
+     own --s4 gap put a text link close enough to a filled button to read as one control in
+     two halves. The margin is a second scale step on top of that gap, taking the pair from
+     16px to 48px, which is the separation a link and a call to action want. */
   .nav__link { font: 500 14px var(--font); letter-spacing: -0.01em; color: var(--ink-meta);
+               margin-right: var(--s6);
                transition: color var(--tap) var(--ease); }
   .nav__link:hover { color: var(--ink); }
+  /* On a phone the bar is already justified apart and every pixel is measure, so the pair
+     goes back to the row's own gap. */
+  @media (max-width: 560px) { .nav__link { margin-right: 0; } }
   @media (max-width: 900px) { .nav .wrap { justify-content: space-between; } }
 
   /* ───────────────────────── hero ───────────────────────── */

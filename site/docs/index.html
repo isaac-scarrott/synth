@@ -435,7 +435,14 @@
 /* Both rails stick under the header. 56px of nav plus a step off the scale, so a heading
    scrolled to by an anchor does not land under the bar. */
 .dnav, .dtoc { position: sticky; top: calc(56px + var(--s5)); }
-.dnav { max-height: calc(100vh - 56px - var(--s7)); overflow-y: auto; }
+/* The scroll box has to be wider than the text column it holds. A selected row's fill bleeds
+   one step left of its own text, and `overflow-y` forces `overflow-x` to `auto` rather than
+   leaving it visible, so without this padding the container clips that bleed and the row's
+   rounded left corner is cut off. The negative margin puts the box back where the grid put it. */
+.dnav {
+  max-height: calc(100vh - 56px - var(--s7)); overflow-y: auto;
+  margin-left: calc(-1 * var(--s2)); padding-left: var(--s2);
+}
 
 .dnav__g {
   font: 600 10px var(--font); letter-spacing: 0.05em; text-transform: uppercase;
@@ -488,15 +495,16 @@
 .dbody pre .p { color: var(--ink-faint); user-select: none; }
 
 /* ───────────────────────── callouts ─────────────────────────
-   Two, and no more. A note is worth knowing; a warning costs you something if you miss it.
-   Both take their colour from the status hue the app already uses for that meaning. */
+   One style, in the lattice's own hairline. An earlier version wore a coloured left edge per
+   kind, taken from the app's status hues. That was wrong twice over: those hues mean something
+   specific in the app (blue is "needs you"), and an aside in a docs page is not asking for
+   anything, so the colour claimed an urgency the content did not have. The box is the signal
+   now, and the sentence inside it carries the weight. */
 .note, .warn {
   margin-top: var(--s5); padding: var(--s4) var(--s5);
-  border: 1px solid var(--hair-2); border-left-width: 2px; border-radius: var(--r-control);
+  border: 1px solid var(--hair-2); border-radius: var(--r-control);
   background: rgba(255,255,255,0.02);
 }
-.note { border-left-color: rgba(var(--input-rgb), 0.55); }
-.warn { border-left-color: rgba(255,138,128,0.5); }
 .note p, .warn p { font-size: 14.5px; }
 .note p:first-child, .warn p:first-child { margin-top: 0; }
 
@@ -511,9 +519,12 @@
   color: var(--ink-faint); padding-bottom: var(--s2);
 }
 .dbody td:last-child, .dbody th:last-child { padding-right: 0; }
-/* A table wider than the measure scrolls inside itself. The page never scrolls sideways. */
+/* A table wider than the measure scrolls inside itself. The page never scrolls sideways.
+   The floor is what makes it scroll at all: without one the table shrinks to fit instead,
+   and at 390px the three-column vocabulary table came out at 69px columns and rows fourteen
+   lines deep, which is narrower than the words in it. */
 .scroller { overflow-x: auto; margin-top: var(--s5); }
-.scroller > table { margin-top: 0; }
+.scroller > table { margin-top: 0; min-width: 34rem; }
 
 /* Generated reference. The key column is fixed so every binding lines up down the page,
    which is the whole reason to read a table rather than a list. */
@@ -583,11 +594,15 @@
     position: static; max-height: none; display: flex; gap: var(--s2); align-items: center;
     overflow-x: auto; margin-bottom: var(--s6); padding-bottom: var(--s3);
     border-bottom: 1px solid var(--hair);
+    /* The strip runs the full column: the sticky rail's left bleed has nothing to bleed past. */
+    margin-left: 0; padding-left: 0;
   }
   .dnav__g { display: none; }
   .dnav ul { display: flex; gap: var(--s2); }
   .dnav li a { white-space: nowrap; padding: 5px var(--s3); margin-left: 0; }
-  .dbody { max-width: none; }
+  /* The measure cap stays. Dropping it here made the line LONGER as the window got narrower:
+     535px at 861 against 774px at 860, because the single column is wider than the content
+     column the two-column layout leaves. Below about 780px the cap stops binding on its own. */
   .dwalk { flex-direction: column; }
   .dwalk__n { text-align: left; }
 }

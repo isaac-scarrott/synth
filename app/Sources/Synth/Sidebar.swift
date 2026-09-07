@@ -8,6 +8,7 @@ struct Sidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topStrip
+            usageRow
             // Settings never touches the sidebar — the tree stays live so a project row still
             // opens that project. The foot Settings button just lights up (working.html: the
             // scope list is gone; scope lives in the pane head as a tab).
@@ -67,6 +68,16 @@ struct Sidebar: View {
         .padding(.horizontal, 10)
         // Tabs mode: the band drops to strip height so the toggle rides the tabs' centre line.
         .frame(height: store.tabsMode ? Theme.tabStripHeight : Theme.titlebarHeight)
+    }
+
+    /// working.html `.sidebar__usage` — above the tree rather than folded into the foot with
+    /// Settings: "how close am I to a limit" is a glance you want on every screen, not a place
+    /// you go looking for. Same `foot-btn` chrome, and deliberately no trailing meta.
+    private var usageRow: some View {
+        FootButton(icon: Phosphor.usage, title: "Usage",
+                   selected: store.keyboardActive && store.navCursor == NavID.usageFoot,
+                   active: store.usageOpen) { store.toggleUsage() }
+            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 2)
     }
 
     private var header: some View {

@@ -194,10 +194,10 @@ struct RootView: View {
     ///
     /// `settingsOpen` is here for the same reason the notification deck is hidden in Settings: the
     /// sidebar stays hoverable behind the pane, and a card floating over the settings screen is
-    /// answering a question nobody asked.
+    /// answering a question nobody asked. Usage is the same kind of full-pane takeover.
     private var hoverCardBlocked: Bool {
         !store.tabsMode || store.draggingRowID != nil || store.renamingRowID != nil
-            || store.activeMenu != nil || store.settingsOpen
+            || store.activeMenu != nil || store.settingsOpen || store.usageOpen
     }
 
     var body: some View {
@@ -222,9 +222,9 @@ struct RootView: View {
             .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: store.sidebarCollapsed)
 
             // When collapsed with no header to host the toggle (the empty "No session" state),
-            // float it at the top-left on the traffic-light axis. The session/settings
+            // float it at the top-left on the traffic-light axis. The session/settings/usage
             // headers carry their own inline toggle.
-            if store.sidebarCollapsed, store.openSession == nil, !store.settingsOpen {
+            if store.sidebarCollapsed, store.openSession == nil, !store.settingsOpen, !store.usageOpen {
                 SidebarToggle()
                     .padding(.top, (Theme.titlebarHeight - SidebarToggle.box) / 2)
                     .padding(.leading, Theme.trafficLightsClearance)
@@ -236,7 +236,7 @@ struct RootView: View {
         // settings (working.html `.notifs { left: 22px; bottom: 22px; z-index: 60 }` under the
         // drag ghost's 300, `.app.settings .notifs { display: none }`).
         .overlay(alignment: .bottomLeading) {
-            if !store.settingsOpen { NotificationDeck() }
+            if !store.settingsOpen, !store.usageOpen { NotificationDeck() }
         }
         // Tabs mode's branch hover card, mounted here so it clears the sidebar's clip: above the
         // deck, below every modal (working.html z-index 90, between 60 and 149).
@@ -566,6 +566,9 @@ struct RootView: View {
             // so AppKit fires it — Esc still leaves Settings from anywhere, incl. a focused editor.
             if event.keyCode == 53, store.settingsOpen {   // Esc leaves settings
                 store.exitSettings(); return nil
+            }
+            if event.keyCode == 53, store.usageOpen {      // …and usage
+                store.exitUsage(); return nil
             }
 
             // [ / ] walk the Settings tabs, matching working.html's stepSettingsTab: General and

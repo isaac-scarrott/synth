@@ -77,6 +77,10 @@ enum Phosphor {
     /// the plain `file` outline: the ruling is what reads as *prose* at 16pt beside a terminal
     /// and a globe, and a bare page silhouette does not.
     static let fileText = "M216,88V216a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V40A16,16,0,0,1,56,24h96ZM152,88h48L152,40Zm8,56H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Zm0,32H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Z"
+    /// The Usage foot button — three ascending bars, filled rather than outlined so the glyph
+    /// reads as *quantity* beside the gear. working.html draws it as three `<rect rx="8">`;
+    /// the same shapes traced as one path, so it goes through the ordinary `Phos(path:)`.
+    static let usage = "M40,144H72a8,8,0,0,1,8,8v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V152A8,8,0,0,1,40,144Zm72-48h32a8,8,0,0,1,8,8V216a8,8,0,0,1-8,8H112a8,8,0,0,1-8-8V104A8,8,0,0,1,112,96Zm72-48h32a8,8,0,0,1,8,8V216a8,8,0,0,1-8,8H184a8,8,0,0,1-8-8V56A8,8,0,0,1,184,48Z"
 }
 
 /// Renders a Phosphor path as a tintable template image.

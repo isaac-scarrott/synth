@@ -2387,6 +2387,21 @@ disclosure to dive deeper.
 
 ## [2026-09-06](docs/features/2026-09-06.md)
 
+- **Usage: one board for every agent's limits** — a Usage entry above the project tree opens a
+  read-only board in the content pane, one band per hosted agent, one tile per number that agent's
+  own account genuinely reports. Tile size never ranks the agents: an agent reporting real
+  rolling-window percentages and one that can only offer local token totals get the same frame and
+  the same four-step type scale, and a metric with no ceiling simply has no meter. The meter is a
+  falling level rather than a filling bar (headroom left, not progress made), state colour lives
+  only in it, and numbers roll digit-by-digit so a change reads as the same number moving. Claude
+  Code's windows come from the server's own `limits[]` array — so a per-model row like Fable
+  appears because the server sent it, not because it was hardcoded — with the OAuth token read via
+  `/usr/bin/security`, since the keychain ACL would otherwise prompt on every poll; Antigravity's
+  buckets come from `agy -p /quota` and are inverted from remaining to used; OpenCode and OpenCode
+  2 have no rate limits at all (verified at source) and report totals only, split so v2's imported
+  copy of v1's history isn't counted twice. The board walks the agent registry, so OpenCode 2 and
+  custom agents appear without being named.
+
 - **OpenCode 2 joins as Synth's fourth hosted agent** — `opencode2` (OpenCode's v2 preview CLI),
   added as one `AgentDescriptor` plus one `AgentSupervisor` (`Opencode2Supervisor`), sharing
   OpenCode's own mark. v2 splits its server out of the TUI process and gates every route behind

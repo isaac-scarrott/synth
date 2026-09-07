@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.41.1",
+    "date": "2026-09-07",
+    "changes": [
+      "An OpenCode 2 row opens clean and quicker. Its server was printing its own log lines onto the row's terminal, over the TUI drawing there; it no longer shares that terminal at all, and the row stops waiting on work that was never what made its tools available.",
+      "An agent you add whose command Synth already runs is offered once. Settings always said so on the row, but ⌘K still listed it twice — both rows starting the same thing.",
+      "Settings' scope tabs size to their names again instead of spreading across the head, and the settings column sits centred in the pane rather than pinned to its left edge."
+    ]
+  },
+  {
     "version": "0.41.0",
     "date": "2026-09-06",
     "changes": [

@@ -17,7 +17,7 @@ struct SettingsPane: View {
             head
             ScrollView {
                 Group {
-                    // No project tab without a project — fall through to the Synth tab, which
+                    // No project tab without a project — fall through to the General tab, which
                     // itself carries the "add a project" prompt when there are none.
                     if tab == .project, let ws = project {
                         projectTab(ws)
@@ -26,7 +26,10 @@ struct SettingsPane: View {
                     }
                 }
                 .frame(maxWidth: 660, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Centred in the pane (working.html `.set-body__inner { margin: 0 auto }`): the
+                // column is a fixed measure and the pane is as wide as the window, so holding it
+                // to one edge pools every spare pixel on the other.
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 44)
             }
         }

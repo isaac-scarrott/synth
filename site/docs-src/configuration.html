@@ -1,0 +1,103 @@
+<!-- summary: Settings, what a project can override, and the answer to the question that comes up
+     most: is this a Synth setting or my agent's own configuration? -->
+
+<p><kbd>⌘</kbd><kbd>,</kbd> opens Settings in the content pane, over the tree, so you can see what
+you are changing. There are two tabs: <strong>Synth</strong>, and the project you are in.</p>
+
+<h2>Which file is this?</h2>
+
+<p>Synth runs your agent, your shell and your terminal, all of which have configuration of their
+own. That makes one question worth answering before any other.</p>
+
+<div class="scroller">
+<table>
+  <thead>
+    <tr><th>If you want to change</th><th>It lives in</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Which agents are offered, and the flags they launch with</td><td>Synth Settings</td></tr>
+    <tr><td>What a new branch runs, and the sessions it opens with</td><td>Synth Settings</td></tr>
+    <tr><td>Appearance, notification sounds, which bundled tools are on</td><td>Synth Settings</td></tr>
+    <tr><td>How your agent behaves: its permissions, its instructions, its own subagents</td>
+        <td>Your agent's own configuration, unchanged</td></tr>
+    <tr><td>What your shell does on startup</td><td>Your shell's own rc files, unchanged</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The line is that <strong>Synth configures Synth</strong>. It does not have a second copy of
+your agent's settings, and it does not edit the ones you have.</p>
+
+<h2>What Synth writes, and where</h2>
+
+<p>Nothing Synth writes goes in your repository. Everything it keeps is in its own Application
+Support folder, apart from three files it adds beside your agents' own:</p>
+
+<ul>
+  <li>A theme for Claude Code and a theme for OpenCode, so a light Synth does not leave you with
+  a dark agent. Both are new files under the agent's own themes directory, and both are defaults
+  that your own configuration still overrides.</li>
+  <li>An extra OpenCode keybinding file, merged after yours, which is what makes
+  <kbd>⌃</kbd><kbd>C</kbd> interrupt a turn rather than quit. A project's own keybindings still
+  win.</li>
+</ul>
+
+<p>Synth's own tools are handed to each agent on the command line that launches it, so there is
+no configuration file in your worktree for them either. See
+<a href="agents.html#what-synth-changes-about-your-agent">what Synth changes about your
+agent</a>.</p>
+
+<h2>A project layers on the default</h2>
+
+<p>Project settings are a delta, not a replacement. The shared setup script runs and then the
+project's runs; the shared agent flags and the project's are concatenated into one launch line,
+shown as you will actually get it. Leaving a project's field empty means pure inheritance, and
+<strong>Clear</strong> strips the delta and puts you back on the shared value.</p>
+
+<p>A project can decline the shared setup script outright, which is the case for a repository
+whose needs are nothing like the rest.</p>
+
+<h2>MCP servers</h2>
+
+<p><strong>Settings ▸ Synth ▸ MCP servers</strong> switches Synth's own <a href="tools.html">bundled
+servers</a> on and off. The browser server and the Synth app server are on. The simulator server
+follows the Experimental toggle it belongs to.</p>
+
+<p>Switching one off removes it from every agent's launch. It does not affect any MCP server you
+have configured yourself, which Synth neither reads nor writes.</p>
+
+<h2>New worktree defaults</h2>
+
+<p>The setup script and the session template both live here, and both are covered in
+<a href="branches.html#the-setup-script">Branches and worktrees</a>. Neither ships with a value:
+a default setup script would be a guess about someone else's repository, and default agent flags
+should be flags you typed.</p>
+
+<h2>Markdown</h2>
+
+<p>What happens when you open a <code>.md</code> file: in Synth's own viewer, in a terminal editor
+of your choice, or in whatever the system would use. The middle option lists the editors actually
+on this machine, found the same way agents are.</p>
+
+<h2>Privacy</h2>
+
+<p>Synth reports anonymous usage counts, on by default, and <strong>Settings ▸ Privacy</strong>
+turns them off immediately and permanently. There is no account and no identifier tying a report
+to you. It counts events like a session being created; it never carries file contents, paths,
+terminal output, environment or clipboard.</p>
+
+<p>The in-app feedback box on <kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> attaches only your version and
+OS alongside what you typed.</p>
+
+<h2>Archived worktrees</h2>
+
+<p>The clean-up switch, the grace period, the disk budgets, and a per-project list of what is
+still on disk with the reason each folder is still there. Covered in
+<a href="branches.html#archiving">Archiving</a>.</p>
+
+<h2>Experimental</h2>
+
+<p>Two things live here, both off by default: <strong>simulator sessions</strong>, and
+<strong>Tabs</strong>, which shows a branch's sessions as a strip of tabs in the content surface
+rather than as rows in the sidebar. Tabs is presentation only. It is the same tree underneath, so
+turning it on and off loses nothing.</p>

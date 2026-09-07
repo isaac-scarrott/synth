@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Keyboard reference - Synth docs</title>
+<meta name="description" content="Every binding in Synth, generated from the source the app itself reads, so this page cannot fall behind the build." />
+<link rel="icon" href="../img/mark.png" />
+<meta name="theme-color" content="#0d0f13" />
+<!-- Built by site/build_docs.py. Edit site/docs-src/keyboard.html, not this file. -->
+<style>
+  /* ───────────────────────── Geist, self-hosted (OFL) ───────────────────────── */
+  @font-face {
+    font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2");
+    font-weight: 100 900; font-display: swap;
+  }
+  @font-face {
+    font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+    font-weight: 100 900; font-display: swap;
+  }
+
+  /* ───────────────────────── tokens: the app's own palette ─────────────────────
+     Surfaces are the app icon's squircle gradient, read in the same direction.
+     Champagne is the mark and stays scarce. Every status hue below is the one the
+     app itself wears for that state — the page means the same thing the app means. */
+  :root {
+    --canvas: #0d0f13;
+    --panel: #191b1f;
+    --sidebar: #1d1f24;
+    --raised: #282b30;
+    --chrome: #22252b;
+    --term-bg: #121317;
+
+    --ink: #e6e8ed;
+    --ink-2: #c4c7cf;
+    --ink-3: #adb0b9;
+    --ink-meta: #8d9099;     /* body copy: the tonal drop under a white heading */
+    --ink-faint: #6b6e77;
+
+    --hair: rgba(255,255,255,0.06);
+    --tick: rgba(255,255,255,0.09);
+    --hair-2: rgba(255,255,255,0.09);
+    --line: rgba(255,255,255,0.13);
+    --hover: rgba(255,255,255,0.055);
+
+    --accent: #f1ddd7;          /* the champagne mark itself */
+    --accent-rgb: 241,221,215;
+    --on-accent: #191b1f;
+
+    --input: #7ea6dc;           /* needs you */
+    --input-rgb: 126,166,220;
+    --error: #ff8a80;
+    --run: #34c759;
+    --live-lift: #ede9fe;       /* the liveness sphere's near face */
+    --live-deep: #6d28d9;       /* and its rim */
+
+    --font: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    /* Synth's own curve, and its own frequency rule: a thing you meet often
+       moves fast. Micro-interactions at 150ms, entrances at 500ms, nothing above. */
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+    --linear: cubic-bezier(0.32, 0.72, 0, 1);   /* the arrive-and-settle curve */
+    --tap: 150ms;
+    --enter: 1050ms;
+
+    /* A 4px grid: every margin, pad and gap is one of these, apart from two kinds of thing
+       it cannot describe. Hairlines and optical nudges are sub-pixel judgements, not spacing —
+       the 1px rule between chords, the 1px under a kbd, the -1px lift on the Apple glyph. And
+       the segmented control is built from 3px of inner padding and 2px between segments,
+       because a control that small has no room for a 4px step. */
+    --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px;
+    --s6: 32px; --s7: 40px; --s8: 56px; --s9: 80px;
+
+    /* The app's three radii, plus one derived value used twice. 7px is the 10px control
+       minus its own 3px of padding, which is the arithmetic that keeps two nested curves
+       concentric; that is why a segment inside the tab control wears it. The brand mark wears
+       the same 7px at 24px, matching the app icon rather than deriving from anything here. */
+    --r-surface: 14px; --r-control: 10px; --r-key: 6px;
+
+    --gutter: clamp(20px, 5vw, 56px);
+    --col: min(1152px, 100vw - (2 * var(--gutter)));
+    /* the headline gets a wider measure than the content column, so a line that must not
+       wrap can still outrank every heading below it */
+    --hcol: min(1440px, 100vw - (2 * var(--gutter)));
+    /* The one vertical rhythm. The hero and the close band are the only deviations, and
+       both are stated as this plus a step off the scale, so the gap between a section
+       break and the page's opening is the same proportion on a phone as on a desktop. */
+    --band: clamp(56px, 7vw, 80px);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font: 400 16px/1.5 var(--font); letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    font-variant-numeric: tabular-nums;
+    overflow-x: hidden;
+  }
+  img { display: block; max-width: 100%; height: auto; }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: rgba(var(--accent-rgb), 0.24); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--r-key); }
+
+  /* ───────────────────────── the structural lattice ───────────────────────── */
+  .rails { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .rails span { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--hair); }
+  .rails span:first-child { left: calc(50% - (var(--col) / 2) - 1px); }
+  .rails span:last-child  { left: calc(50% + (var(--col) / 2)); }
+  @media (max-width: 720px) { .rails { display: none; } }
+
+  .wrap { width: var(--col); margin-inline: auto; position: relative; z-index: 1; }
+  .band { border-top: 1px solid var(--hair); position: relative; z-index: 1; }
+  .band--pad { padding-block: var(--band); }
+  .stack { margin-top: var(--band); }
+
+  /* ───────────────────────── type ─────────────────────────
+     One tracking value for headings (-0.024em) and one for prose (-0.01em),
+     rather than a different number per size. */
+  h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: -0.024em; line-height: 1.14; }
+  h1 { font-size: clamp(2.25rem, 4.6vw, 3.5rem); }
+  /* the first line of the hero must never wrap, so it is sized to fit its own measure */
+  .hero h1 { font-size: min(3.5rem, calc(var(--hcol) / 26)); }
+  h2 { font-size: clamp(1.5rem, 2.6vw, 2.125rem); line-height: 1.16; }
+  h3 { font-size: 1.0625rem; font-weight: 550; line-height: 1.4; letter-spacing: -0.016em; }
+  p { margin: 0; }
+  .lede { color: var(--ink-meta); font-size: 1rem; line-height: 1.6; }
+  strong { font-weight: 550; color: var(--ink-2); }
+
+  /* ───────────────────────── buttons ───────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--s2); white-space: nowrap;
+    height: 42px; padding: 0 var(--s4); border-radius: var(--r-control);
+    border: 1px solid transparent;
+    font: 500 14.5px var(--font); letter-spacing: -0.01em; cursor: pointer;
+    transition: transform var(--tap) var(--ease), background-color var(--tap) var(--ease),
+                border-color var(--tap) var(--ease), opacity var(--tap) var(--ease);
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn--primary { background: var(--accent); color: var(--on-accent); font-weight: 550; }
+  .btn--primary:hover { opacity: 0.88; }
+  .btn--ghost { border-color: var(--hair-2); color: var(--ink-2); background: rgba(255,255,255,0.02); }
+  .btn--ghost:hover { background: var(--hover); border-color: var(--line); color: var(--ink); }
+  .btn svg { width: 15px; height: 15px; opacity: 0.7; }
+  .btn__lead { width: 15px; height: 15px; opacity: 1; margin-top: -1px; }
+  .btn--icon { width: 42px; padding: 0; justify-content: center; }
+  .btn--icon svg { width: 17px; height: 17px; opacity: 0.8; }
+  .btn--icon:hover svg { opacity: 1; }
+
+  code, kbd { font-family: var(--mono); font-variant-ligatures: none; letter-spacing: 0; }
+  kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 22px; padding: 0 var(--s1) 1px;
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--r-key);
+    background: var(--raised); color: var(--ink-2);
+    font: 500 11.5px var(--mono);
+  }
+
+  /* ───────────────────────── nav ───────────────────────── */
+  /* Bare over the hero; the bar materialises once half a screen has gone by. */
+  .nav { position: sticky; top: 0; z-index: 20; }
+  .nav::before {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    background: color-mix(in srgb, var(--canvas) 90%, transparent);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border-bottom: 1px solid var(--hair);
+    opacity: 0;
+    transition: opacity 180ms ease-out;
+  }
+  .nav.is-stuck::before { opacity: 1; }
+  .nav .wrap { height: 64px; display: flex; align-items: center; gap: var(--s4); }
+  .nav__spacer { margin-left: auto; }
+  #navtrip { position: absolute; top: 0; left: 0; width: 1px; height: 50vh; pointer-events: none; }
+  .foot__gh { display: inline-flex; align-items: center; gap: var(--s2); }
+  .foot__gh svg { width: 14px; height: 14px; }
+  .brand { display: flex; align-items: center; gap: var(--s2); font-weight: 550; letter-spacing: -0.02em; font-size: 15px; }
+  .brand img { width: 24px; height: 24px; border-radius: 7px; }
+  .nav .btn { height: 36px; padding: 0 var(--s3); font-size: 14px; }
+  /* The one link in the bar. It sits before the download because reading comes before
+     installing for anyone who is still deciding. */
+  .nav__link { font: 500 14px var(--font); letter-spacing: -0.01em; color: var(--ink-meta);
+               transition: color var(--tap) var(--ease); }
+  .nav__link:hover { color: var(--ink); }
+  @media (max-width: 900px) { .nav .wrap { justify-content: space-between; } }
+
+  /* ───────────────────────── hero ───────────────────────── */
+  .hero { padding-top: calc(var(--band) + var(--s4)); padding-bottom: var(--band); text-align: center; }
+  .hero h1 {
+    width: var(--hcol);
+    margin: var(--s5) calc((var(--col) - var(--hcol)) / 2) 0;
+  }
+  .hero h1 span { display: block; white-space: nowrap; }
+  .hero h1 .dim { color: var(--ink-meta); }
+  .hero__sub { margin: var(--s4) auto 0; max-width: 60ch; }
+  .hero__cta { margin-top: var(--s6); display: flex; gap: var(--s2); justify-content: center; flex-wrap: wrap; }
+  /* the spark canvas bleeds 30px past its button; clip that at the page edge, keeping the
+     vertical bleed visible (overflow-x: clip does not force the other axis to auto) */
+  .nav .wrap, .hero__cta, .close { overflow-x: clip; }
+  /* Below a laptop the header's download is always on screen, sticky, a thumb's reach away.
+     A second copy of it in the hero is the same tap offered twice. */
+  @media (max-width: 1024px) { .hero__cta { display: none; } }
+  .hero__stage { margin-top: var(--band); }
+  /* Below this the one-line size drops under 30px, which is too small to lead with: let the
+     headline wrap and set the hero left, where a ragged edge belongs. Declared after the rules
+     it overrides — a media query adds no specificity, so an earlier block loses on source order,
+     which is how the sub kept its auto margins and sat centred under a flush-left headline. */
+  /* Two separate questions, and they were being answered at one breakpoint. Whether the line
+     can be held is arithmetic: at 44px it needs a 1144px measure, so below 1256px the divisor
+     drives the headline under its own h2 — at 881px it computed to 30.5px, smaller than it is
+     on a phone, because at the breakpoint --hcol and --col are the same and the wider measure
+     buys nothing. Whether the hero goes left is a judgement about ragged edges, and that one
+     belongs at 880. Wrapped, the headline holds 44px, which is exactly what the one-line rule
+     reaches at 1256 — so the size is continuous across both breakpoints. */
+  @media (max-width: 1255px) {
+    .hero h1 {
+      width: auto; margin-inline: 0;
+      font-size: clamp(2.25rem, 7.4vw, 2.75rem);
+    }
+    .hero h1 span { display: inline; white-space: normal; }
+    .hero h1 .dim::before { content: " "; }
+  }
+  @media (max-width: 880px) {
+    .hero { text-align: left; }
+    .hero__sub { margin-inline: 0; }
+  }
+
+  /* Captures, not drawings. `site/capture/` records these from the running app against a
+     seeded state file, so a figure cannot claim something the product does not do. Sized from
+     the intrinsic width/height on the img, so the row it sits in never reflows as it loads. */
+  .shot { margin: 0; border-radius: var(--r-surface); overflow: hidden;
+          border: 1px solid var(--line); background: var(--panel);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3), 0 40px 90px rgba(0,0,0,0.62); }
+  .shot img { display: block; width: 100%; height: auto; }
+  /* The approval capture is 607 CSS px wide at 2x, so the column would upscale it nearly
+     twofold. The cap engages only once the column passes it, which means the inset grows
+     from zero rather than snapping when a breakpoint is crossed. */
+  .shot--panel { max-width: 760px; margin-inline: auto; }
+
+  .glow { position: relative; }
+  .glow::before {
+    content: ""; position: absolute; inset: -14% 0 34%; z-index: 0; pointer-events: none;
+    background: radial-gradient(58% 62% at 50% 0%, rgba(var(--accent-rgb), 0.075), transparent 72%);
+  }
+  .glow > * { position: relative; z-index: 1; }
+
+  /* the indicator grammar: two glyphs demand a person, everything else is a quiet dot */
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot--run { background: var(--run); }
+  .dot--idle { background: #52555d; }
+  .sphere { width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, var(--live-lift), var(--live-deep) 76%); box-shadow: 0 0 7px rgba(109,40,217,0.55); }
+  .badge { width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font: 600 10px var(--font); letter-spacing: 0; }
+  .badge--ask { background: rgba(var(--input-rgb), 0.2); color: var(--input); box-shadow: 0 0 0 1px rgba(var(--input-rgb), 0.34); }
+  .badge--err { background: rgba(255,138,128,0.16); color: var(--error); box-shadow: 0 0 0 1px rgba(255,138,128,0.3); }
+
+  /* ───────────────────────── agent marks ───────────────────────── */
+  .marks { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--hair); border-radius: var(--r-control); overflow: hidden; }
+  .mark { display: flex; align-items: center; gap: var(--s3); padding: var(--s5); border-right: 1px solid var(--hair); font-size: 14.5px; font-weight: 500; color: var(--ink-2); }
+  .mark:last-child { border-right: 0; }
+  .mark--own { color: var(--ink-meta); }
+  .mark__g { width: var(--s5); height: var(--s5); flex: none; display: grid; place-items: center; color: var(--ink-3); }
+  .mark__g svg { width: 17px; height: 17px; }
+  .mark--own .mark__g { color: var(--ink-faint); }
+  @media (max-width: 880px) { .marks { grid-template-columns: repeat(2, 1fr); } .mark:nth-child(2) { border-right: 0; } .mark:nth-child(-n+2) { border-bottom: 1px solid var(--hair); } }
+  /* On the narrowest phones a two-up cell is narrower than its own contents, and `.marks` has
+     `overflow: hidden` — so the padding comes in rather than an agent's name being clipped. */
+  @media (max-width: 480px) { .mark { padding: var(--s4) var(--s3); gap: var(--s2); } }
+
+  /* ───────────────────────── section heads ───────────────────────── */
+  .head { text-align: center; margin-inline: auto; max-width: 46ch; }
+  /* the marks are evidence for the lede above them, not a block of their own */
+  .stack:has(> .marks) { margin-top: calc(var(--band) - var(--s5)); }
+  .head .lede { margin-top: var(--s4); }
+  /* The intros go left with the hero. A centred six-line paragraph on a 350px column is ragged
+     on both edges, and it sits directly above cells that are already left-aligned. Declared
+     after the rules it overrides, for the source-order reason given at the hero. */
+  @media (max-width: 880px) {
+    .head { text-align: left; margin-inline: 0; }
+  }
+
+  /* A capture wants the whole column: at half width the app's own 14px type falls under
+     7px and the figure stops being readable as an app at all. So the tab panels stack —
+     evidence first, then what it is evidence of, in two columns so the block stays short. */
+  .say { margin-top: var(--s6); display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3) var(--s8); }
+  .say h3 { grid-column: 1 / -1; }
+  @media (max-width: 880px) { .say { grid-template-columns: 1fr; gap: var(--s4); } }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s9) var(--s8); align-items: center; }
+  .split h2 + .lede { margin-top: var(--s4); }
+  .split .lede + .lede { margin-top: var(--s4); }
+  @media (max-width: 880px) { .split { grid-template-columns: 1fr; gap: var(--s7); } }
+
+  /* ───────────────────────── tabs ─────────────────────────
+     Every panel sits in the same grid cell, so the block is as tall as the tallest of
+     them and switching never moves the page under you. Inactive panels stay in the flow
+     (that is what holds the height) and are taken out of the tab order with `inert`. */
+  .tabs__bar { display: flex; justify-content: center; }
+  @media (max-width: 880px) { .tabs__bar { justify-content: flex-start; } }
+  .tabs__list {
+    display: inline-flex; gap: 2px; padding: 3px;
+    border: 1px solid var(--hair-2); border-radius: var(--r-control);
+    background: rgba(255,255,255,0.02);
+  }
+  .tabs__t {
+    appearance: none; border: 0; background: transparent; color: var(--ink-meta);
+    font: 500 13.5px var(--font); letter-spacing: -0.01em;
+    height: 32px; padding: 0 var(--s4); border-radius: 7px; cursor: pointer;
+    transition: color var(--tap) var(--ease), background var(--tap) var(--ease);
+  }
+  .tabs__t:hover { color: var(--ink-2); }
+  .tabs__t[aria-selected="true"] { background: var(--raised); color: var(--ink); }
+  .tabs__panels { display: grid; margin-top: var(--s7); }
+  .tabs__panel {
+    /* Every panel is as tall as the tallest, so a short one is centred rather than left
+       hanging under its own content — switching tabs moves the eye as little as possible. */
+    display: flex; flex-direction: column; justify-content: center;
+    grid-area: 1 / 1; opacity: 0; visibility: hidden; transform: translateY(8px);
+    transition: opacity 240ms var(--ease), transform 240ms var(--ease), visibility 240ms;
+  }
+  .tabs__panel[data-on] { opacity: 1; visibility: visible; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .tabs__panel { transition: none; } }
+
+  /* bordered cells, in the lattice's own hairline */
+  .cells { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--hair); }
+  .cell { padding: var(--s6) var(--s5) var(--s6); border-right: 1px solid var(--hair); }
+  .cell:last-child { border-right: 0; }
+  .cell h3 { margin-bottom: var(--s2); }
+  .cell p { color: var(--ink-meta); font-size: 14.5px; line-height: 1.6; }
+  .cell code { font-size: 13px; color: var(--ink-3); }
+  .cell__icon { width: var(--s6); height: var(--s6); margin-bottom: var(--s4); border: 1px solid var(--hair-2); border-radius: var(--r-control); display: grid; place-items: center; color: var(--ink-3); background: rgba(255,255,255,0.02); }
+  .cell__icon svg { width: 16px; height: 16px; }
+  @media (max-width: 880px) { .cells { grid-template-columns: 1fr; } .cell { border-right: 0; border-bottom: 1px solid var(--hair); padding-inline: 0; } .cell:last-child { border-bottom: 0; } }
+
+  .legend { display: grid; gap: var(--s3); }
+  .legend__r { display: flex; align-items: center; gap: var(--s3); font-size: 14.5px; color: var(--ink-meta); }
+  .legend__r b { color: var(--ink-2); font-weight: 550; }
+  .legend__ind { width: var(--s4); display: grid; place-items: center; flex: none; }
+
+  /* chords */
+  .chords { display: grid; gap: 1px; background: var(--hair); border: 1px solid var(--hair); border-radius: var(--r-control); overflow: hidden; }
+  .chord { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); background: var(--canvas); font-size: 14px; color: var(--ink-meta); }
+  .chord__k { display: flex; gap: var(--s1); flex: none; width: 84px; }
+  @media (max-width: 560px) { .chord { flex-direction: column; align-items: flex-start; gap: var(--s2); } }
+
+  /* ───────────────────────── close + footer ───────────────────────── */
+  .close { text-align: center; padding-block: calc(var(--band) + var(--s6)); }
+  .close h2 { max-width: 20ch; margin-inline: auto; }
+  .close .btn { margin-top: var(--s6); }
+  .close__req { margin-top: var(--s4); font-size: 13px; color: var(--ink-faint); }
+  footer { border-top: 1px solid var(--hair); padding-block: var(--s5); }
+  .foot { display: flex; align-items: center; gap: var(--s5); flex-wrap: wrap; font-size: 13px; color: var(--ink-faint); }
+  .foot__links { margin-left: auto; display: flex; gap: var(--s5); }
+  .foot__links a { transition: color var(--tap) var(--ease); }
+  .foot__links a:hover { color: var(--ink-2); }
+
+  .brand--foot { font-size: 14px; color: var(--ink-3); }
+  .brand--foot img { width: 20px; height: 20px; }
+
+  /* ───────────────────────── ambient dust ─────────────────────────
+     Perlin fBm with a domain warp, posterised to four levels and pushed through
+     an 8x8 Bayer matrix. Because the output is dithered blocks anyway, the
+     buffer is shaded at 1/3 scale and upscaled with image-rendering: pixelated —
+     a ninth of the fragment work, and it sharpens the grid rather than softening
+     it. The cursor presses the wave field down where it goes. */
+  .dust { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;
+          image-rendering: pixelated; }
+  /* the layer you can actually shove about, over the dithered ground */
+  .motes { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { .motes { display: none; } }
+  @media (prefers-reduced-motion: reduce) { .dust { display: none; } }
+
+  /* ───────────────────────── the button's sparks ─────────────────────────
+     Drawn, not built: ~900 of these as elements would be 1,800 nodes sitting
+     in the document doing nothing until a hover. The canvas costs one node,
+     runs only while the pointer is on the button, and can keep every particle
+     drifting and twinkling on its own clock for as long as you stay there. */
+  .halo { position: relative; display: inline-flex; }
+  .halo__c { position: absolute; pointer-events: none; opacity: 0; transition: opacity 160ms ease-out; }
+  .halo.lit .halo__c { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .halo__c { display: none; } }
+
+  /* ───────────────────────── motion ─────────────────────────
+     Entrances at 500ms with 8px of travel — enough to read as arriving,
+     not enough to make a scroll feel weighed down. Gone under reduced-motion. */
+  .rev {
+    opacity: 0; transform: translateY(20px); filter: blur(7px);
+    transition: opacity var(--enter) var(--linear), transform var(--enter) var(--linear),
+                filter var(--enter) var(--linear);
+  }
+  .rev.in { opacity: 1; transform: none; filter: blur(0); }
+  .rev[data-d="1"] { transition-delay: 135ms; } .rev[data-d="2"] { transition-delay: 270ms; }
+  .rev[data-d="3"] { transition-delay: 405ms; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .rev { opacity: 1; transform: none; transition: none; }
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+/* ═════════════════════════ docs ═════════════════════════
+   Appended to index.html's own style block at build time, so every token, button, kbd cap
+   and footer rule here is the landing page's. This file adds only what a page you read
+   needs and a page you scroll past does not.
+
+   Same ground, quieter room: the landing page spends contrast on one headline, docs spends
+   it on a paragraph you stay inside for a minute. So body copy comes up off --ink-meta to
+   --ink-2, and the accent stays where the landing page keeps it — scarce, and never on
+   running text. */
+
+/* The lattice rails and the wave field belong to a page you scroll through once. Neither is
+   in the docs shell markup; these rules keep them gone if either is ever pasted in. */
+.docs .rails, .docs .dust, .docs .motes { display: none; }
+
+/* Docs is wider than the argument the landing page makes: three columns have to fit, and
+   --col was measured for one. The reading measure is set on .dbody, not here. */
+.dwrap { width: min(1320px, 100vw - (2 * var(--gutter))); }
+
+.docs .nav .wrap { height: 56px; }
+.brand__docs {
+  font: 500 15px var(--font); letter-spacing: -0.02em; color: var(--ink-meta);
+  padding-left: var(--s3); margin-left: var(--s1);
+  border-left: 1px solid var(--hair-2);
+}
+.brand__docs:hover { color: var(--ink-2); }
+
+/* ───────────────────────── the three columns ───────────────────────── */
+.dshell {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 180px;
+  gap: 0 var(--s8);
+  align-items: start;
+  padding-block: var(--s7) var(--s9);
+}
+
+/* Both rails stick under the header. 56px of nav plus a step off the scale, so a heading
+   scrolled to by an anchor does not land under the bar. */
+.dnav, .dtoc { position: sticky; top: calc(56px + var(--s5)); }
+.dnav { max-height: calc(100vh - 56px - var(--s7)); overflow-y: auto; }
+
+.dnav__g {
+  font: 600 10px var(--font); letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint); margin: var(--s5) 0 var(--s2);
+}
+.dnav__g:first-child { margin-top: 0; }
+.dnav ul { list-style: none; margin: 0; padding: 0; }
+.dnav li a {
+  display: block; padding: 5px var(--s2); margin-left: calc(-1 * var(--s2));
+  border-radius: var(--r-key);
+  font-size: 14px; color: var(--ink-meta); line-height: 1.45;
+  transition: color var(--tap) var(--ease), background var(--tap) var(--ease);
+}
+.dnav li a:hover { color: var(--ink); background: var(--hover); }
+/* The page you are on is stated by ink and a fill, not by the accent. The accent means
+   "act on this" everywhere else on the site, and a nav row is not an action. */
+.dnav li a[aria-current="page"] { color: var(--ink); background: var(--raised); }
+
+/* ───────────────────────── the page itself ───────────────────────── */
+.dbody { max-width: 68ch; }
+.dbody h1 { font-size: 2rem; line-height: 1.15; }
+.dbody h2 {
+  font-size: 1.375rem; margin-top: var(--s8); padding-top: var(--s5);
+  border-top: 1px solid var(--hair);
+}
+.dbody h3 { margin-top: var(--s6); }
+.dbody h2 + h3 { margin-top: var(--s5); }
+.dsum { margin-top: var(--s4); font-size: 1.0625rem; }
+.dbody p, .dbody ul, .dbody ol { margin-top: var(--s4); }
+.dbody p, .dbody li { color: var(--ink-2); font-size: 15px; line-height: 1.65; }
+.dbody ul, .dbody ol { padding-left: var(--s5); }
+.dbody li + li { margin-top: var(--s2); }
+.dbody li::marker { color: var(--ink-faint); }
+.dbody a:not(.btn) { color: var(--accent); text-underline-offset: 3px; text-decoration: underline;
+                     text-decoration-color: rgba(var(--accent-rgb), 0.35); }
+.dbody a:not(.btn):hover { text-decoration-color: var(--accent); }
+.dbody code { font-size: 0.9em; color: var(--ink); background: var(--raised);
+              padding: 1px 5px; border-radius: var(--r-key); }
+.dbody kbd { vertical-align: baseline; }
+.dbody kbd + kbd { margin-left: 2px; }
+
+/* A block of shell or config. It is a terminal, so it wears the terminal's own surface
+   token rather than a colour invented for the page. */
+.dbody pre {
+  margin-top: var(--s4); padding: var(--s4); overflow-x: auto;
+  background: var(--term-bg); border: 1px solid var(--hair-2); border-radius: var(--r-control);
+  font: 400 13px/1.7 var(--mono); color: var(--ink-2); letter-spacing: 0;
+}
+.dbody pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+.dbody pre .p { color: var(--ink-faint); user-select: none; }
+
+/* ───────────────────────── callouts ─────────────────────────
+   Two, and no more. A note is worth knowing; a warning costs you something if you miss it.
+   Both take their colour from the status hue the app already uses for that meaning. */
+.note, .warn {
+  margin-top: var(--s5); padding: var(--s4) var(--s5);
+  border: 1px solid var(--hair-2); border-left-width: 2px; border-radius: var(--r-control);
+  background: rgba(255,255,255,0.02);
+}
+.note { border-left-color: rgba(var(--input-rgb), 0.55); }
+.warn { border-left-color: rgba(255,138,128,0.5); }
+.note p, .warn p { font-size: 14.5px; }
+.note p:first-child, .warn p:first-child { margin-top: 0; }
+
+/* ───────────────────────── tables ───────────────────────── */
+.dbody table { width: 100%; margin-top: var(--s5); border-collapse: collapse; font-size: 14.5px; }
+.dbody th, .dbody td {
+  text-align: left; vertical-align: top; padding: var(--s3) var(--s4) var(--s3) 0;
+  border-bottom: 1px solid var(--hair); color: var(--ink-2);
+}
+.dbody th {
+  font: 600 10px var(--font); letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint); padding-bottom: var(--s2);
+}
+.dbody td:last-child, .dbody th:last-child { padding-right: 0; }
+/* A table wider than the measure scrolls inside itself. The page never scrolls sideways. */
+.scroller { overflow-x: auto; margin-top: var(--s5); }
+.scroller > table { margin-top: 0; }
+
+/* Generated reference. The key column is fixed so every binding lines up down the page,
+   which is the whole reason to read a table rather than a list. */
+.ref__k { white-space: nowrap; width: 168px; }
+.ref__or { color: var(--ink-faint); font-size: 12px; margin: 0 var(--s2); }
+.ref--tools .ref__t { width: 208px; }
+.ref__t code { background: none; padding: 0; color: var(--ink); font-weight: 500; }
+.ref__args { margin-top: 3px; font: 400 11.5px var(--mono); color: var(--ink-faint);
+             letter-spacing: 0; white-space: normal; }
+.gen { margin-top: var(--s4); font-size: 13.5px; color: var(--ink-faint); }
+
+/* ───────────────────────── figures ─────────────────────────
+   Captures of the running app, from the same rig the landing page uses. A figure earns its
+   place on a page that describes a surface; the reference pages have none, because a picture
+   of a table is a worse table. */
+.dbody figure { margin: var(--s6) 0 0; }
+.dbody figure img {
+  width: 100%; border: 1px solid var(--line); border-radius: var(--r-control);
+  background: var(--panel);
+}
+.dbody figcaption { margin-top: var(--s3); font-size: 13px; color: var(--ink-faint); line-height: 1.6; }
+
+/* ───────────────────────── contents rail ───────────────────────── */
+.dtoc__t {
+  font: 600 10px var(--font); letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint); margin-bottom: var(--s3);
+}
+.dtoc ul { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--hair); }
+.dtoc li a {
+  display: block; padding: 4px 0 4px var(--s3); margin-left: -1px;
+  border-left: 1px solid transparent;
+  font-size: 13px; line-height: 1.5; color: var(--ink-faint);
+  transition: color var(--tap) var(--ease), border-color var(--tap) var(--ease);
+}
+.dtoc li a:hover { color: var(--ink-2); border-left-color: var(--line); }
+.dtoc--3 a { padding-left: var(--s5); }
+
+/* ───────────────────────── prev / next ───────────────────────── */
+.dwalk {
+  display: flex; gap: var(--s4); margin-top: var(--s9);
+  padding-top: var(--s5); border-top: 1px solid var(--hair);
+}
+.dwalk a {
+  flex: 1; padding: var(--s4); border: 1px solid var(--hair-2); border-radius: var(--r-control);
+  font-size: 14.5px; font-weight: 500; color: var(--ink-2);
+  transition: border-color var(--tap) var(--ease), color var(--tap) var(--ease);
+}
+.dwalk a:hover { border-color: var(--line); color: var(--ink); }
+.dwalk a span { display: block; margin-bottom: 3px; font-size: 12px; font-weight: 400; color: var(--ink-faint); }
+.dwalk__n { text-align: right; }
+
+.docs footer { margin-top: 0; }
+
+/* ───────────────────────── narrower ─────────────────────────
+   Each rail leaves at the width where keeping it would start eating the measure, and both
+   are declared after the rules they override — a media query adds no specificity, so an
+   earlier block loses on source order however specific it looks. */
+@media (max-width: 1180px) {
+  .dshell { grid-template-columns: 200px minmax(0, 1fr); gap: 0 var(--s7); }
+  .dtoc { display: none; }
+}
+@media (max-width: 860px) {
+  .dshell { grid-template-columns: minmax(0, 1fr); padding-block: var(--s5) var(--s8); }
+  /* The sidebar becomes the page's own header: a scrollable strip of the whole set, so the
+     rest of the docs is still one tap away without a disclosure to open first. */
+  .dnav {
+    position: static; max-height: none; display: flex; gap: var(--s2); align-items: center;
+    overflow-x: auto; margin-bottom: var(--s6); padding-bottom: var(--s3);
+    border-bottom: 1px solid var(--hair);
+  }
+  .dnav__g { display: none; }
+  .dnav ul { display: flex; gap: var(--s2); }
+  .dnav li a { white-space: nowrap; padding: 5px var(--s3); margin-left: 0; }
+  .dbody { max-width: none; }
+  .dwalk { flex-direction: column; }
+  .dwalk__n { text-align: left; }
+}
+</style>
+</head>
+
+<body class="docs">
+<header class="nav is-stuck" id="nav">
+  <div class="wrap dwrap">
+    <a class="brand" href="../"><img src="../img/mark-light.png" alt="" />Synth</a>
+    <a class="brand__docs" href="./">Docs</a>
+    <span class="nav__spacer"></span>
+    <a class="btn btn--primary" href="https://synth-releases.fly.storage.tigris.dev/Synth.dmg">Download for Mac</a>
+  </div>
+</header>
+
+<div class="wrap dwrap dshell">
+  <nav class="dnav" aria-label="Documentation">
+<div class="dnav__g">Start</div>
+<ul>
+<li><a href="./">Start here</a></li>
+<li><a href="concepts.html">How Synth is organised</a></li>
+</ul>
+<div class="dnav__g">Working in Synth</div>
+<ul>
+<li><a href="branches.html">Branches and worktrees</a></li>
+<li><a href="sessions.html">Sessions</a></li>
+<li><a href="agents.html">Agents</a></li>
+<li><a href="attention.html">Knowing who needs you</a></li>
+<li><a href="configuration.html">Configuration</a></li>
+</ul>
+<div class="dnav__g">Reference</div>
+<ul>
+<li><a href="keyboard.html" aria-current="page">Keyboard reference</a></li>
+<li><a href="tools.html">Agent tools</a></li>
+<li><a href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+</nav>
+  <main class="dmain">
+    <article class="dbody">
+      <h1>Keyboard reference</h1>
+      <p class="lede dsum">Every binding in Synth, generated from the source the app itself reads, so this page cannot fall behind the build.</p>
+<p>Speed is the point of Synth, and the whole of it is reachable from the keyboard. Chaining
+shortcuts is meant to feel instant, so nothing here waits on anything.</p>
+
+<p>Three of these carry most of the day. <kbd>⌘</kbd><kbd>K</kbd> is everything, scoped to
+whatever you have focused. <kbd>⌘</kbd><kbd>⏎</kbd> takes you to whatever needs you. <kbd>⌘</kbd><kbd>0</kbd>
+and <kbd>⌘</kbd><kbd>1</kbd> move between the sidebar and the session, which is the move you make
+most and the one worth making without thinking.</p>
+
+<p class="gen">57 bindings in 8 groups, read from <code>Shortcuts.swift</code> when this page was built. The same list is in the app under <kbd>⌘</kbd><kbd>?</kbd>.</p>
+<h2 id="general">General</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>K</kbd></td><td>Command menu</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>N</kbd></td><td>New session</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>T</kbd></td><td>New terminal</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>T</kbd></td><td>Scratch terminal</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>W</kbd></td><td>Close session</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>B</kbd></td><td>Toggle sidebar</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⏎</kbd></td><td>Jump to notification</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>,</kbd></td><td>Settings</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>?</kbd></td><td>Keyboard shortcuts</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd></td><td>Send feedback</td></tr>
+</tbody></table>
+<h2 id="command-menu">Command menu</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>↑</kbd><kbd>↓</kbd><span class="ref__or">or</span><kbd>⌃J</kbd><kbd>⌃K</kbd></td><td>Move</td></tr>
+<tr><td class="ref__k"><kbd>↵</kbd></td><td>Open</td></tr>
+<tr><td class="ref__k"><kbd>⌫</kbd></td><td>Back</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>K</kbd><span class="ref__or">or</span><kbd>esc</kbd></td><td>Close</td></tr>
+</tbody></table>
+<h2 id="sidebar">Sidebar</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>↑</kbd><kbd>↓</kbd><span class="ref__or">or</span><kbd>J</kbd><kbd>K</kbd></td><td>Move selection</td></tr>
+<tr><td class="ref__k"><kbd>→</kbd><kbd>←</kbd><span class="ref__or">or</span><kbd>L</kbd><kbd>H</kbd></td><td>Expand · collapse</td></tr>
+<tr><td class="ref__k"><kbd>⇥</kbd></td><td>Toggle group</td></tr>
+<tr><td class="ref__k"><kbd>↵</kbd><span class="ref__or">or</span><kbd>Space</kbd></td><td>Open · toggle</td></tr>
+<tr><td class="ref__k"><kbd>A</kbd></td><td>Add session</td></tr>
+<tr><td class="ref__k"><kbd>R</kbd></td><td>Rename</td></tr>
+<tr><td class="ref__k"><kbd>D</kbd></td><td>Close · archive</td></tr>
+<tr><td class="ref__k"><kbd>⇧J</kbd><kbd>⇧K</kbd></td><td>Reorder</td></tr>
+<tr><td class="ref__k"><kbd>esc</kbd></td><td>Focus content</td></tr>
+</tbody></table>
+<h2 id="split-layout">Split layout</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>→</kbd><span class="ref__or">or</span><kbd>⌘</kbd><kbd>|</kbd></td><td>Split toward arrow</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>—</kbd></td><td>Split stacked</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⌥</kbd><kbd>→</kbd><span class="ref__or">or</span><kbd>⌘</kbd><kbd>⌥</kbd><kbd>L</kbd></td><td>Focus pane</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>1</kbd><span class="ref__or">or</span><kbd>⌘</kbd><kbd>9</kbd></td><td>Focus pane N</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>0</kbd></td><td>Focus sidebar</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>`</kbd><span class="ref__or">or</span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>`</kbd></td><td>Cycle panes</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>→</kbd></td><td>Resize pane</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>⏎</kbd></td><td>Zoom pane</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>U</kbd></td><td>Unsplit</td></tr>
+</tbody></table>
+<h2 id="browser">Browser</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>L</kbd></td><td>Go to address</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>R</kbd></td><td>Reload</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>[</kbd></td><td>Back</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>]</kbd></td><td>Forward</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>+</kbd><span class="ref__or">or</span><kbd>⌘</kbd><kbd>=</kbd></td><td>Zoom in</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>−</kbd></td><td>Zoom out</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>F</kbd></td><td>Find in page</td></tr>
+<tr><td class="ref__k"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>I</kbd></td><td>Inspect</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd></td><td>Conditions</td></tr>
+</tbody></table>
+<h2 id="simulator">Simulator</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>L</kbd></td><td>Open app or URL</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>R</kbd></td><td>Relaunch app</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></td><td>Home</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd></td><td>Rotate</td></tr>
+<tr><td class="ref__k"><kbd>⏎</kbd></td><td>Send the comment you are writing</td></tr>
+<tr><td class="ref__k"><kbd>esc</kbd></td><td>Exit comment mode, or cancel a comment</td></tr>
+</tbody></table>
+<h2 id="comments">Comments</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>⏎</kbd></td><td>Add comment to the browser&#x27;s batch</td></tr>
+<tr><td class="ref__k"><kbd>⌥</kbd><kbd>↑</kbd></td><td>Widen comment target</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⌥</kbd><kbd>⏎</kbd></td><td>Send all comments</td></tr>
+<tr><td class="ref__k"><kbd>esc</kbd></td><td>Exit comment mode</td></tr>
+</tbody></table>
+<h2 id="tabs">Tabs</h2>
+<table class="ref"><tbody>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>]</kbd><span class="ref__or">or</span><kbd>⌃</kbd><kbd>⇥</kbd></td><td>Next tab</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>[</kbd><span class="ref__or">or</span><kbd>⌃</kbd><kbd>⇧</kbd><kbd>⇥</kbd></td><td>Previous tab</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>W</kbd></td><td>Close tab</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>→</kbd></td><td>Send tab to pane · split</td></tr>
+<tr><td class="ref__k"><kbd>drag</kbd></td><td>Reorder tab</td></tr>
+<tr><td class="ref__k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>U</kbd></td><td>Merge pane</td></tr>
+</tbody></table>
+
+<h2 id="in-tabs-mode">In Tabs mode</h2>
+
+<p>With Tabs switched on in <strong>Settings ▸ Experimental</strong>, the split-layout group
+changes rather than growing. <kbd>⌘</kbd><kbd>⇧</kbd> with an arrow sends a tab to a neighbouring
+pane instead of splitting, <kbd>⌘</kbd><kbd>⇧</kbd><kbd>U</kbd> merges a pane instead of
+unsplitting it, and <kbd>⌘</kbd><kbd>1</kbd> to <kbd>⌘</kbd><kbd>9</kbd> select a tab as well as
+focusing a pane. Everything else is unchanged.</p>
+
+<div class="note">
+  <p>This page is built from <code>Shortcuts.swift</code>, the same source the in-app
+  <kbd>⌘</kbd><kbd>?</kbd> sheet renders. A binding that changed in the app changed here, or the
+  build failed.</p>
+</div>
+    </article>
+    <nav class="dwalk">
+<a class="dwalk__p" href="configuration.html"><span>Previous</span>Configuration</a>
+<a class="dwalk__n" href="tools.html"><span>Next</span>Agent tools</a>
+</nav>
+  </main>
+  <nav class="dtoc" aria-label="On this page"><div class="dtoc__t">On this page</div><ul>
+<li class="dtoc--2"><a href="#general">General</a></li>
+<li class="dtoc--2"><a href="#command-menu">Command menu</a></li>
+<li class="dtoc--2"><a href="#sidebar">Sidebar</a></li>
+<li class="dtoc--2"><a href="#split-layout">Split layout</a></li>
+<li class="dtoc--2"><a href="#browser">Browser</a></li>
+<li class="dtoc--2"><a href="#simulator">Simulator</a></li>
+<li class="dtoc--2"><a href="#comments">Comments</a></li>
+<li class="dtoc--2"><a href="#tabs">Tabs</a></li>
+<li class="dtoc--2"><a href="#in-tabs-mode">In Tabs mode</a></li>
+</ul></nav>
+</div>
+
+<footer>
+  <div class="wrap dwrap foot">
+    <span class="brand brand--foot"><img src="../img/mark-light.png" alt="" />Synth</span>
+    <nav class="foot__links">
+      <a href="../">Home</a>
+      <a href="https://github.com/isaac-scarrott/synth">GitHub</a>
+      <a href="https://synth-releases.fly.storage.tigris.dev/Synth.dmg">Download</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

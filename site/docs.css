@@ -1,0 +1,194 @@
+/* ═════════════════════════ docs ═════════════════════════
+   Appended to index.html's own style block at build time, so every token, button, kbd cap
+   and footer rule here is the landing page's. This file adds only what a page you read
+   needs and a page you scroll past does not.
+
+   Same ground, quieter room: the landing page spends contrast on one headline, docs spends
+   it on a paragraph you stay inside for a minute. So body copy comes up off --ink-meta to
+   --ink-2, and the accent stays where the landing page keeps it — scarce, and never on
+   running text. */
+
+/* The lattice rails and the wave field belong to a page you scroll through once. Neither is
+   in the docs shell markup; these rules keep them gone if either is ever pasted in. */
+.docs .rails, .docs .dust, .docs .motes { display: none; }
+
+/* Docs is wider than the argument the landing page makes: three columns have to fit, and
+   --col was measured for one. The reading measure is set on .dbody, not here. */
+.dwrap { width: min(1320px, 100vw - (2 * var(--gutter))); }
+
+.docs .nav .wrap { height: 56px; }
+.brand__docs {
+  font: 500 15px var(--font); letter-spacing: -0.02em; color: var(--ink-meta);
+  padding-left: var(--s3); margin-left: var(--s1);
+  border-left: 1px solid var(--hair-2);
+}
+.brand__docs:hover { color: var(--ink-2); }
+
+/* ───────────────────────── the three columns ───────────────────────── */
+.dshell {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 180px;
+  gap: 0 var(--s8);
+  align-items: start;
+  padding-block: var(--s7) var(--s9);
+}
+
+/* Both rails stick under the header. 56px of nav plus a step off the scale, so a heading
+   scrolled to by an anchor does not land under the bar. */
+.dnav, .dtoc { position: sticky; top: calc(56px + var(--s5)); }
+.dnav { max-height: calc(100vh - 56px - var(--s7)); overflow-y: auto; }
+
+.dnav__g {
+  font: 600 10px var(--font); letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint); margin: var(--s5) 0 var(--s2);
+}
+.dnav__g:first-child { margin-top: 0; }
+.dnav ul { list-style: none; margin: 0; padding: 0; }
+.dnav li a {
+  display: block; padding: 5px var(--s2); margin-left: calc(-1 * var(--s2));
+  border-radius: var(--r-key);
+  font-size: 14px; color: var(--ink-meta); line-height: 1.45;
+  transition: color var(--tap) var(--ease), background var(--tap) var(--ease);
+}
+.dnav li a:hover { color: var(--ink); background: var(--hover); }
+/* The page you are on is stated by ink and a fill, not by the accent. The accent means
+   "act on this" everywhere else on the site, and a nav row is not an action. */
+.dnav li a[aria-current="page"] { color: var(--ink); background: var(--raised); }
+
+/* ───────────────────────── the page itself ───────────────────────── */
+.dbody { max-width: 68ch; }
+.dbody h1 { font-size: 2rem; line-height: 1.15; }
+.dbody h2 {
+  font-size: 1.375rem; margin-top: var(--s8); padding-top: var(--s5);
+  border-top: 1px solid var(--hair);
+}
+.dbody h3 { margin-top: var(--s6); }
+.dbody h2 + h3 { margin-top: var(--s5); }
+.dsum { margin-top: var(--s4); font-size: 1.0625rem; }
+.dbody p, .dbody ul, .dbody ol { margin-top: var(--s4); }
+.dbody p, .dbody li { color: var(--ink-2); font-size: 15px; line-height: 1.65; }
+.dbody ul, .dbody ol { padding-left: var(--s5); }
+.dbody li + li { margin-top: var(--s2); }
+.dbody li::marker { color: var(--ink-faint); }
+.dbody a:not(.btn) { color: var(--accent); text-underline-offset: 3px; text-decoration: underline;
+                     text-decoration-color: rgba(var(--accent-rgb), 0.35); }
+.dbody a:not(.btn):hover { text-decoration-color: var(--accent); }
+.dbody code { font-size: 0.9em; color: var(--ink); background: var(--raised);
+              padding: 1px 5px; border-radius: var(--r-key); }
+.dbody kbd { vertical-align: baseline; }
+.dbody kbd + kbd { margin-left: 2px; }
+
+/* A block of shell or config. It is a terminal, so it wears the terminal's own surface
+   token rather than a colour invented for the page. */
+.dbody pre {
+  margin-top: var(--s4); padding: var(--s4); overflow-x: auto;
+  background: var(--term-bg); border: 1px solid var(--hair-2); border-radius: var(--r-control);
+  font: 400 13px/1.7 var(--mono); color: var(--ink-2); letter-spacing: 0;
+}
+.dbody pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+.dbody pre .p { color: var(--ink-faint); user-select: none; }
+
+/* ───────────────────────── callouts ─────────────────────────
+   Two, and no more. A note is worth knowing; a warning costs you something if you miss it.
+   Both take their colour from the status hue the app already uses for that meaning. */
+.note, .warn {
+  margin-top: var(--s5); padding: var(--s4) var(--s5);
+  border: 1px solid var(--hair-2); border-left-width: 2px; border-radius: var(--r-control);
+  background: rgba(255,255,255,0.02);
+}
+.note { border-left-color: rgba(var(--input-rgb), 0.55); }
+.warn { border-left-color: rgba(255,138,128,0.5); }
+.note p, .warn p { font-size: 14.5px; }
+.note p:first-child, .warn p:first-child { margin-top: 0; }
+
+/* ───────────────────────── tables ───────────────────────── */
+.dbody table { width: 100%; margin-top: var(--s5); border-collapse: collapse; font-size: 14.5px; }
+.dbody th, .dbody td {
+  text-align: left; vertical-align: top; padding: var(--s3) var(--s4) var(--s3) 0;
+  border-bottom: 1px solid var(--hair); color: var(--ink-2);
+}
+.dbody th {
+  font: 600 10px var(--font); letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint); padding-bottom: var(--s2);
+}
+.dbody td:last-child, .dbody th:last-child { padding-right: 0; }
+/* A table wider than the measure scrolls inside itself. The page never scrolls sideways. */
+.scroller { overflow-x: auto; margin-top: var(--s5); }
+.scroller > table { margin-top: 0; }
+
+/* Generated reference. The key column is fixed so every binding lines up down the page,
+   which is the whole reason to read a table rather than a list. */
+.ref__k { white-space: nowrap; width: 168px; }
+.ref__or { color: var(--ink-faint); font-size: 12px; margin: 0 var(--s2); }
+.ref--tools .ref__t { width: 208px; }
+.ref__t code { background: none; padding: 0; color: var(--ink); font-weight: 500; }
+.ref__args { margin-top: 3px; font: 400 11.5px var(--mono); color: var(--ink-faint);
+             letter-spacing: 0; white-space: normal; }
+.gen { margin-top: var(--s4); font-size: 13.5px; color: var(--ink-faint); }
+
+/* ───────────────────────── figures ─────────────────────────
+   Captures of the running app, from the same rig the landing page uses. A figure earns its
+   place on a page that describes a surface; the reference pages have none, because a picture
+   of a table is a worse table. */
+.dbody figure { margin: var(--s6) 0 0; }
+.dbody figure img {
+  width: 100%; border: 1px solid var(--line); border-radius: var(--r-control);
+  background: var(--panel);
+}
+.dbody figcaption { margin-top: var(--s3); font-size: 13px; color: var(--ink-faint); line-height: 1.6; }
+
+/* ───────────────────────── contents rail ───────────────────────── */
+.dtoc__t {
+  font: 600 10px var(--font); letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint); margin-bottom: var(--s3);
+}
+.dtoc ul { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--hair); }
+.dtoc li a {
+  display: block; padding: 4px 0 4px var(--s3); margin-left: -1px;
+  border-left: 1px solid transparent;
+  font-size: 13px; line-height: 1.5; color: var(--ink-faint);
+  transition: color var(--tap) var(--ease), border-color var(--tap) var(--ease);
+}
+.dtoc li a:hover { color: var(--ink-2); border-left-color: var(--line); }
+.dtoc--3 a { padding-left: var(--s5); }
+
+/* ───────────────────────── prev / next ───────────────────────── */
+.dwalk {
+  display: flex; gap: var(--s4); margin-top: var(--s9);
+  padding-top: var(--s5); border-top: 1px solid var(--hair);
+}
+.dwalk a {
+  flex: 1; padding: var(--s4); border: 1px solid var(--hair-2); border-radius: var(--r-control);
+  font-size: 14.5px; font-weight: 500; color: var(--ink-2);
+  transition: border-color var(--tap) var(--ease), color var(--tap) var(--ease);
+}
+.dwalk a:hover { border-color: var(--line); color: var(--ink); }
+.dwalk a span { display: block; margin-bottom: 3px; font-size: 12px; font-weight: 400; color: var(--ink-faint); }
+.dwalk__n { text-align: right; }
+
+.docs footer { margin-top: 0; }
+
+/* ───────────────────────── narrower ─────────────────────────
+   Each rail leaves at the width where keeping it would start eating the measure, and both
+   are declared after the rules they override — a media query adds no specificity, so an
+   earlier block loses on source order however specific it looks. */
+@media (max-width: 1180px) {
+  .dshell { grid-template-columns: 200px minmax(0, 1fr); gap: 0 var(--s7); }
+  .dtoc { display: none; }
+}
+@media (max-width: 860px) {
+  .dshell { grid-template-columns: minmax(0, 1fr); padding-block: var(--s5) var(--s8); }
+  /* The sidebar becomes the page's own header: a scrollable strip of the whole set, so the
+     rest of the docs is still one tap away without a disclosure to open first. */
+  .dnav {
+    position: static; max-height: none; display: flex; gap: var(--s2); align-items: center;
+    overflow-x: auto; margin-bottom: var(--s6); padding-bottom: var(--s3);
+    border-bottom: 1px solid var(--hair);
+  }
+  .dnav__g { display: none; }
+  .dnav ul { display: flex; gap: var(--s2); }
+  .dnav li a { white-space: nowrap; padding: 5px var(--s3); margin-left: 0; }
+  .dbody { max-width: none; }
+  .dwalk { flex-direction: column; }
+  .dwalk__n { text-align: left; }
+}

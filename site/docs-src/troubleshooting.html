@@ -1,0 +1,85 @@
+<!-- summary: The things that actually go wrong, what causes each one, and what to do about it. -->
+
+<h2>My agent is not in the list</h2>
+
+<p>Synth offers what your login shell can see. Check, in this order:</p>
+
+<ul>
+  <li>It is switched on in <strong>Settings ▸ Synth ▸ Agents</strong>. An agent switched off is
+  not offered, exactly like one that is not installed.</li>
+  <li>Its command runs in a fresh login shell. Synth asks your login shell, not the environment
+  it was launched from, so a PATH set inside a running terminal is not what it sees.</li>
+  <li>If the command is an alias, it is one your login shell defines. Synth follows aliases and
+  keeps any flags you pinned to them.</li>
+</ul>
+
+<p>For a custom agent, a missing base is the same as a missing command: both mean the agent is
+not offered.</p>
+
+<h2>A new branch is missing node_modules, or my .env</h2>
+
+<p>Expected. A git worktree contains what git tracks, and nothing it does not. Put the copying and
+installing in the setup script, which runs in every new worktree.
+See <a href="branches.html#the-setup-script">the setup script</a>.</p>
+
+<h2>Two branches are fighting over a port</h2>
+
+<p>Worktrees isolate files. They do not isolate ports, databases, container names, or anything
+else with one name on the machine. Derive the port from the branch in your setup script rather
+than hard-coding one. See <a href="branches.html#two-agents-one-port">two agents, one port</a>.</p>
+
+<h2>The agent is running but nothing I send arrives</h2>
+
+<p>Almost always the trust prompt. Claude Code asks you to trust a folder the first time it runs
+in one, and every new branch is a new folder. Until that is answered the session is not live, so
+a browser comment or a handed-off brief has nowhere to land. Open the session and answer it.</p>
+
+<p>Antigravity has the same gate for a path it has not seen before.</p>
+
+<h2>I cannot open a branch that already exists</h2>
+
+<p>Git allows a branch to be checked out in one place at a time, and it will refuse a second.
+Either go to the branch row you already have, or cut a new branch for the new line of work.</p>
+
+<h2>No pull request state on any branch</h2>
+
+<p>That column is read with the GitHub CLI. It needs <code>gh</code> installed and signed in, and
+the repository needs to be on GitHub. When any of that is not true, the column shows nothing
+rather than an error.</p>
+
+<h2>I am not getting macOS notifications</h2>
+
+<p>Notification Center needs a one-time permission grant, which macOS asks for once. If it was
+declined, it has to be re-granted in System Settings under Notifications. Cards inside Synth are
+unaffected either way, and Focus and Do Not Disturb are respected.</p>
+
+<h2>An agent closed by itself</h2>
+
+<p>It exited. The row leaves the tree and lands on a card offering <strong>Reopen</strong>, which
+puts it back where it was and resumes the conversation. That card does not expire.</p>
+
+<p>If it happens repeatedly to the same agent, run its command in a terminal session and watch
+what it says on the way out.</p>
+
+<h2>I archived something and want it back</h2>
+
+<p><kbd>⌘</kbd><kbd>K</kbd>, then <strong>Archived</strong>, scoped to the project you are in.
+Restoring cuts the checkout again if the folder has already been reclaimed. The git branch is
+never deleted by archiving or by the clean-up behind it, so there is no state a branch cannot
+come back from.</p>
+
+<h2>Simulator sessions are not offered</h2>
+
+<p>They are behind <strong>Settings ▸ Experimental</strong> and off by default. Switch them on
+there. A device also has to be installed on the machine for there to be a fleet to pick from.</p>
+
+<h2>A downloaded update has not installed</h2>
+
+<p>It installs the next time you quit Synth. Nothing is waiting on you, and there is nothing to
+press. The <strong>Restart to update</strong> row in the sidebar foot only brings that install
+forward.</p>
+
+<h2>Something is wrong that is not here</h2>
+
+<p><kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> opens one box. Type what happened and send it. It carries
+your version and OS and nothing else: no file contents, no paths, no terminal output.</p>

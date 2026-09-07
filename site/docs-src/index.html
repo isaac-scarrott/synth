@@ -1,0 +1,80 @@
+<!-- summary: Install Synth, point it at a repository, and get an agent working in its own
+     branch. About five minutes, most of it the download. -->
+
+<h2>Before you start</h2>
+
+<p>Synth runs on macOS 14 or later, on Apple silicon. It is free, signed and notarised.</p>
+
+<p>Bring at least one coding agent. Synth hosts <a href="agents.html">Claude Code, OpenCode and
+Antigravity</a>, and any agent you name yourself. It does not install them and it does not
+replace them: whichever ones are already on your PATH are the ones you will be offered.</p>
+
+<div class="note">
+  <p>You do not need all three, or any particular one. If you have only Claude Code, Synth
+  offers only Claude Code, and nothing about the rest of Synth changes.</p>
+</div>
+
+<h2>Install</h2>
+
+<p>Download the disk image, drag Synth to Applications, and open it.</p>
+
+<p><a class="btn btn--primary" href="https://synth-releases.fly.storage.tigris.dev/Synth.dmg">Download
+for Mac</a></p>
+
+<p>Synth keeps itself up to date after that. When a new build is ready it downloads in the
+background and installs the next time you quit, so there is nothing to press. A
+<strong>Restart to update</strong> row appears at the foot of the sidebar while a downloaded
+build is waiting, and taking it only brings that install forward.</p>
+
+<h2>Add a project</h2>
+
+<p>A <strong>project</strong> is one git repository. Press <kbd>⌘</kbd><kbd>K</kbd> and choose
+<strong>Add project</strong>, or use the <kbd>+</kbd> on the sidebar header, and pick the
+repository's folder.</p>
+
+<p>The folder has to be a git repository with at least one branch. A folder that cannot host a
+branch cannot host any work, so Synth refuses it at the picker rather than adding a row that
+does nothing. Pick a subdirectory of a repository and Synth resolves it to the repository root,
+so you get the project you already have rather than a second copy of it.</p>
+
+<p>The project arrives with its default branch and nothing else. You add the branches you want
+one at a time.</p>
+
+<h2>Make a branch</h2>
+
+<p>Press <kbd>⌘</kbd><kbd>K</kbd> and choose <strong>New branch</strong>. Name it and press
+return.</p>
+
+<p>Synth cuts a real <a href="branches.html">git worktree</a> for it: a second checkout of the
+same repository, in its own folder, on its own branch. The branch you were on is untouched, and
+so is everything running in it.</p>
+
+<h2>Start an agent</h2>
+
+<p>With the branch selected, press <kbd>⌘</kbd><kbd>N</kbd> and pick an agent. It opens in the
+content pane and runs in that branch's checkout, so everything it reads and writes is that
+branch's copy of the code.</p>
+
+<p>Ask it for something that takes a minute, then look at the sidebar rather than the pane. The
+row carries what the agent is doing, and you can leave the page entirely: Synth tells you when
+it stops and needs an answer. That is the part worth trying first, because it is the part a
+terminal cannot do.</p>
+
+<figure>
+  <img src="../img/hero-dark@2x.webp" width="2360" height="1320" loading="lazy" decoding="async"
+       alt="Synth with three projects in the sidebar and a Claude Code session open, stopped on a
+            question about the page's accent colour.">
+  <figcaption>Three projects, several branches, and one agent that has stopped to ask
+  something. The sidebar says which one without opening it.</figcaption>
+</figure>
+
+<h2>Where to go next</h2>
+
+<ul>
+  <li><a href="concepts.html">How Synth is organised</a> is the one page to read if you read
+  only one. Synth uses several words that your agent also uses, for different things.</li>
+  <li><a href="branches.html">Branches and worktrees</a> covers what a new branch gets, what it
+  does not get, and why your dependencies are not in it.</li>
+  <li><a href="attention.html">Knowing who needs you</a> is the attention model, which is what
+  makes running several agents at once survivable.</li>
+</ul>

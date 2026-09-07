@@ -1,0 +1,100 @@
+<!-- summary: Every session carries a status, and a collapsed row carries the most urgent status
+     inside it. That is what makes running several agents at once readable. -->
+
+<p>An agent thinking and an agent stuck waiting for you look identical in a terminal. Both are a
+cursor that is not moving. The only way to tell them apart is to go and look, and once you have
+four of them, going and looking is the whole job.</p>
+
+<p>So every session in Synth reports what it is doing, and the sidebar reads it.</p>
+
+<h2>The five states</h2>
+
+<table>
+  <tbody>
+    <tr><td><strong>Needs input</strong></td><td>The session has stopped and cannot go on until
+    you answer it. A question, a permission decision, a prompt. The only state that is a request
+    rather than a report.</td></tr>
+    <tr><td><strong>Error</strong></td><td>Something ended badly and nobody has looked at it
+    yet.</td></tr>
+    <tr><td><strong>Busy</strong></td><td>Something is happening: an agent mid-turn, or a process
+    that is up. One state, whether it is thinking or serving, because the row's icon already says
+    which kind of thing it is.</td></tr>
+    <tr><td><strong>Unread</strong></td><td>It finished while you were elsewhere and you have not
+    been back.</td></tr>
+    <tr><td><strong>Idle</strong></td><td>Nothing is happening and you have seen it.</td></tr>
+  </tbody>
+</table>
+
+<p>The indicators follow one grammar, so you can read a row you have never seen before:</p>
+
+<ul>
+  <li><strong>A glyph asks for a person.</strong> Needs input and error wear one.</li>
+  <li><strong>A moving mark means live.</strong> Busy is a sphere that beats.</li>
+  <li><strong>A flat dot is ambient.</strong> It is telling you, not asking you.</li>
+</ul>
+
+<h2>What a collapsed row says</h2>
+
+<p>A collapsed branch or project shows the most urgent thing inside it, by this order:</p>
+
+<pre><code>needs input  &gt;  error  &gt;  busy  &gt;  unread  &gt;  idle</code></pre>
+
+<p>So a closed branch with four sessions inside it, one of which has stopped to ask you
+something, shows that it has stopped to ask you something. You do not have to open a branch to
+find out whether opening it was worth it.</p>
+
+<p>This is the design decision the rest of the model rests on. A parent that reported only its own
+work would be honest and useless: the whole point of collapsing something is to stop looking at
+it, and a summary that can hide the one thing you needed is not a summary.</p>
+
+<figure>
+  <img src="../img/attention-deck-dark@2x.webp" width="900" height="1016" loading="lazy"
+       decoding="async"
+       alt="Synth's sidebar: three projects, each branch carrying the state of what is inside it,
+            and a notification card for the session that has stopped to ask something.">
+  <figcaption>Each branch carries the state of what is inside it, so the tree is readable
+  collapsed.</figcaption>
+</figure>
+
+<h2>Notifications</h2>
+
+<p>Reading the sidebar means looking at Synth. When a session in the background changes state,
+Synth comes to you instead: a card in the deck at the bottom of the window, and a macOS
+notification as well when Synth is not the app you are in.</p>
+
+<p><kbd>⌘</kbd><kbd>⏎</kbd> goes to whatever is at the front of the deck. That is the motion worth
+learning, because it means you never navigate to find the thing that wants you.</p>
+
+<h3>Three kinds of card</h3>
+
+<table>
+  <tbody>
+    <tr><td><strong>Asking</strong></td><td>A question or a failure. Stays until you deal with
+    it.</td></tr>
+    <tr><td><strong>Undoable</strong></td><td>Something you just did that can be taken back. It
+    drains a bar along its bottom edge, and commits when the bar empties.</td></tr>
+    <tr><td><strong>Telling</strong></td><td>Something finished. It leaves on its own.</td></tr>
+  </tbody>
+</table>
+
+<p>The deck orders by what it costs to miss a card rather than by how bad the card sounds, so a
+ten-second-old question sits above a five-minute-old error you have already read in your head.
+Every card has a real button with its shortcut printed in it, and a close control that is not the
+same click as acting on it.</p>
+
+<h3>Countdowns wait for you</h3>
+
+<p>A draining card only drains while you could actually be reading it. Hovering the deck pauses
+it, Synth being in the background pauses it, and a card folded under a <em>+N</em> is not
+counting down at all. An undo window that expired while you were in another app was never a
+window.</p>
+
+<h2>Pull requests</h2>
+
+<p>Each branch row carries the state of its pull request beside the name: open, merged, closed, or
+waiting in the merge queue. The open session's header carries the number, and clicking it opens
+the pull request in your normal browser.</p>
+
+<p>This is read with <code>gh</code>, so it needs the GitHub CLI to be installed and signed in.
+A repository that is not on GitHub, or a machine without <code>gh</code>, simply shows
+nothing.</p>

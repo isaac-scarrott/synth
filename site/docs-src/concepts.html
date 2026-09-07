@@ -1,0 +1,115 @@
+<!-- summary: Synth organises work as a tree: a project, its branches, and the sessions running
+     inside each branch. Three nouns, and each of them means something specific. -->
+
+<p>Everything in the sidebar is one of three things.</p>
+
+<pre><code>Project        one git repository
+└─ Branch      a git branch, checked out in its own folder
+   └─ Session  a live thing running inside that branch</code></pre>
+
+<p>The tree is the whole model. There is nothing above a project and nothing below a session.</p>
+
+<h2>Project</h2>
+
+<p>A project is exactly one git repository. Never more than one, and never a subfolder of one.
+Adding a project points Synth at a repository path.</p>
+
+<p>Projects do not nest and they do not span repositories. Work that crosses two repositories is
+two projects, and Synth will not pretend otherwise.</p>
+
+<h2>Branch</h2>
+
+<p>A branch is a git branch in that repository, discovered automatically. Sessions run inside a
+branch.</p>
+
+<p>What makes a Synth branch different from a git branch is that it is <em>checked out</em>. Each
+one has its own folder on disk with its own copy of the files, so several branches can be open,
+and running, at the same time. That folder is a git worktree, and <a href="branches.html">Branches
+and worktrees</a> is about what lives in it.</p>
+
+<p>There is no single branch you are "on". Synth does not surface git's HEAD, and any number of
+branches can have work running in them at once.</p>
+
+<h2>Session</h2>
+
+<p>A session is one live thing inside a branch: an agent, a terminal, a browser, a simulator, or
+an inspect. Each carries a status, which is what the sidebar reads. <a href="sessions.html">Sessions</a>
+covers the kinds.</p>
+
+<p>A session is not a tab. A tab is a way of showing a session, and Synth can show sessions as
+sidebar rows or as tabs. The session is the thing; the row and the tab are both handles on it.</p>
+
+<h2>Words your agent uses differently</h2>
+
+<p>This is the part worth reading slowly. Synth hosts agents it did not write, and every one of
+them already uses these words. They do not all mean the same thing by them.</p>
+
+<div class="scroller">
+<table>
+  <thead>
+    <tr><th>Word</th><th>In Synth</th><th>In the agent you are running</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Branch</strong></td>
+      <td>A git branch, checked out in its own folder. The parent of your sessions.</td>
+      <td>Claude Code says <strong>worktree</strong> for the folder and keeps "branch" for the
+      git ref alone. Antigravity's <code>/branch</code> is an alias for <code>/fork</code>, which
+      copies a conversation and touches no files at all.</td>
+    </tr>
+    <tr>
+      <td><strong>Session</strong></td>
+      <td>Anything running in a pane: an agent, a terminal, a browser, a simulator, an
+      inspect.</td>
+      <td>All three mean a conversation with the model. You can start and clear several of
+      those inside one Synth session without the row changing.</td>
+    </tr>
+    <tr>
+      <td><strong>Agent</strong></td>
+      <td>Which coding agent a session is running. Claude Code, OpenCode, Antigravity, or one
+      you named yourself.</td>
+      <td>A configuration inside that program. OpenCode's agents are Build and Plan; Antigravity's
+      are personas you switch with <code>/agents</code>; Claude Code uses the word for subagents
+      and teammates as well. All of those live inside one Synth agent.</td>
+    </tr>
+    <tr>
+      <td><strong>Project</strong></td>
+      <td>One git repository.</td>
+      <td>Claude Code scopes to whichever directory you launched in. Antigravity's
+      <code>--project</code> groups its own chat history and has nothing to do with a
+      repository.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>The rule that resolves all four: <strong>Synth's words describe what is on your disk and in
+your sidebar. Your agent's words describe what is in its conversation.</strong> When a page here
+means the agent's sense, it says so and names the agent.</p>
+
+<div class="note">
+  <p>One word is the same in both, deliberately. <strong>Needs input</strong> means a session has
+  stopped and cannot go on until you answer it, which is exactly what Claude Code means by it.
+  Synth reports the same state for every agent it hosts, whether or not that agent has a name
+  for it.</p>
+</div>
+
+<h2>What things are called when they end</h2>
+
+<p>Four verbs, and they are not synonyms. Each one is about how much you lose.</p>
+
+<table>
+  <tbody>
+    <tr><td><strong>Close</strong></td><td>Ends a session. The row goes and the process dies.
+    Nothing leaves the filesystem.</td></tr>
+    <tr><td><strong>Archive</strong></td><td>Puts a branch row away. The folder is untouched and
+    the row comes back from <kbd>⌘</kbd><kbd>K</kbd> whenever you want it.</td></tr>
+    <tr><td><strong>Remove</strong></td><td>Drops a project row from the sidebar. The repository
+    stays cloned and the folders stay on disk.</td></tr>
+    <tr><td><strong>Delete</strong></td><td>Destroys a worktree folder on disk. The git branch
+    survives it. This is the only one that confirms.</td></tr>
+  </tbody>
+</table>
+
+<p>Deleting names the folder precisely because the branch outlives it. Everything else is
+reversible, which is why nothing else asks you twice.</p>

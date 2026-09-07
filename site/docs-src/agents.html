@@ -1,0 +1,116 @@
+<!-- summary: Synth hosts coding agents it did not write. Whichever ones you have installed are
+     the ones it offers, and changing which one you use changes nothing else. -->
+
+<p>Synth ships with support for three agents and a way to name your own.</p>
+
+<table>
+  <tbody>
+    <tr><td><strong>Claude Code</strong></td><td><code>claude</code></td></tr>
+    <tr><td><strong>OpenCode</strong></td><td><code>opencode</code></td></tr>
+    <tr><td><strong>Antigravity</strong></td><td><code>agy</code>, the command-line agent</td></tr>
+    <tr><td><strong>Your own</strong></td><td>Any command you name</td></tr>
+  </tbody>
+</table>
+
+<p>You do not point Synth at any of them. It looks at what your login shell can see, which means
+version managers and every install prefix are covered, and an agent that is not installed is
+simply not offered. Install a new one and it appears; remove one and it stops being offered.</p>
+
+<div class="note">
+  <p>Antigravity here means <code>agy</code>, the command-line agent, not the Antigravity IDE.
+  The IDE installs a launcher of the same name; Synth resolves the symlink and rejects a
+  candidate inside an application bundle, so it does not mistake one for the other.</p>
+</div>
+
+<h2>Naming your own</h2>
+
+<p><strong>Settings ▸ Synth ▸ Agents</strong> takes a command, a name, and a base.</p>
+
+<p>The base is the built-in whose behaviour drives yours. Status, resume, paste and tool
+registration all differ per agent and cannot be typed into a field, so a custom agent borrows a
+built-in's handling. Synth runs your command with <code>--version</code> and recognises the base
+for you where it can.</p>
+
+<p>The command can be a shell alias. An alias is something only an interactive shell can see, so
+Synth asks your login shell for its aliases along with its PATH, follows chains, and keeps any
+flags you pinned as the leading arguments of the launch.</p>
+
+<p>An agent with no command, or no base, is not offered at all, exactly like one that is not
+installed. Switching an agent off in Settings drops it from every <strong>New</strong> surface
+and never touches a session already running it.</p>
+
+<h2>What Synth changes about your agent</h2>
+
+<p>Synth runs your agent, so it is worth knowing exactly what it does and does not touch. The
+short version: it adds things at launch, and it does not rewrite your files.</p>
+
+<h3>Tools, at launch</h3>
+
+<p>Synth's <a href="tools.html">bundled MCP servers</a> are handed to each agent the way that
+agent expects to receive them, on the command that starts it. Nothing is written into your
+repository to do this. Older builds wrote an <code>.mcp.json</code>, an
+<code>opencode.json</code> or an <code>.agents/mcp_config.json</code> into every managed
+worktree; those are gone, and worktrees an older build wrote into are cleaned up on launch while
+the file is provably still Synth's.</p>
+
+<p>The cost of doing it at launch is that an agent you start some other way does not get the
+tools. A <code>claude -p</code> in a Synth terminal is not the same as an agent session.</p>
+
+<h3>Status</h3>
+
+<p>Synth reads each agent the way that agent can be read: Claude Code and Antigravity through
+their hook systems, OpenCode by subscribing to its own event stream. Your own hooks are merged
+with Synth's rather than replaced.</p>
+
+<h3>Colours</h3>
+
+<p>Synth installs a theme for Claude Code and for OpenCode so that a light Synth does not leave
+you reading a dark agent, and re-themes them when you change appearance. These are defaults, not
+locks: your own project-level theme still wins where the agent says it should. Antigravity has no
+theme setting Synth can reach, and its default scheme draws from the terminal palette Synth
+already tunes, so Synth writes nothing for it.</p>
+
+<h3>One keybinding</h3>
+
+<p>OpenCode binds <kbd>⌃</kbd><kbd>C</kbd> to quitting the whole program. Inside Synth it
+interrupts the turn instead, which is what the same key does in every other agent, and quitting
+stays on <kbd>⌃</kbd><kbd>D</kbd>. This is done through an extra configuration file that is
+merged after yours, so a project's own keybindings still override it and no file of yours is
+edited.</p>
+
+<h2>Resuming</h2>
+
+<p>Closing Synth does not end a conversation. Sessions come back dormant when you relaunch, and
+opening one resumes the conversation it was holding.</p>
+
+<p>If an agent exits on its own, the row leaves the tree and lands on a card offering
+<strong>Reopen</strong>, which puts it back where it stood and resumes it. That card never
+expires, because an agent quitting is not something you did and might happen while you are
+elsewhere.</p>
+
+<h2>Agents run on your machine</h2>
+
+<p>An agent in Synth runs directly on your Mac, as you, with your files and your network. There
+is no sandbox and no container. It is the same access the agent has when you run it in a
+terminal yourself.</p>
+
+<p>What Synth adds is the worktree: an agent works in its branch's own checkout, so it is not
+editing the copy you are looking at. That is isolation between branches, and it is not isolation
+between the agent and the rest of your machine.</p>
+
+<p>Whatever permission model your agent has is still the one in force. Synth does not weaken it,
+does not answer its prompts for you, and does not add a second one. The only thing Synth itself
+gates is <a href="tools.html#synth-app">an agent asking to create a branch</a>, which always
+asks.</p>
+
+<div class="warn">
+  <p>If you run your agent with its own approvals turned off, that is what runs inside Synth
+  too. Synth reports what the agent is doing; it does not decide what it is allowed to do.</p>
+</div>
+
+<h2>First run in a new branch</h2>
+
+<p>Claude Code asks you to trust a folder the first time it runs in one, and every new worktree
+is a new folder. Until you answer, the session is not live, and a comment sent to it will not
+arrive. Antigravity has the same gate for a path it has not seen. Synth reads that record and
+never writes it, because pre-accepting trust on your behalf is not Synth's decision to make.</p>

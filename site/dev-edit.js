@@ -75,7 +75,11 @@
     return fetch('/__save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ original: before, updated: after, tag: el.tagName.toLowerCase() })
+      // `page` is what tells the server which file this text came from. A docs page is
+      // generated, so the write has to land in its source fragment or the next build eats it.
+      body: JSON.stringify({
+        page: location.pathname, original: before, updated: after, tag: el.tagName.toLowerCase(),
+      })
     })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (res) {

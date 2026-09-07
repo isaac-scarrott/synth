@@ -2385,6 +2385,20 @@ disclosure to dive deeper.
   `prefers-color-scheme` and the light one on the `<img>`, which holds intrinsic dimensions correct
   for both since every pair matches exactly. A viewer downloads one variant: 529KB against 523KB.
 
+## [2026-09-07](docs/features/2026-09-07.md)
+
+- **The site gains documentation, and two of its pages are read out of the source** — ten pages
+  under `site/docs/`, built from `site/docs-src/` by `site/build_docs.py`, which inlines
+  `index.html`'s own `<style>` block so the landing page stays the only place tokens live. Eight
+  written pages plus a keyboard reference read from `Shortcuts.swift` (57 bindings) and an agent
+  tool catalogue read from the three MCP servers (42 tools); `--check` is the pre-deploy guard.
+  The concepts page carries the vocabulary table the three hosted agents make necessary, since
+  all of them use branch, session, agent and project to mean something else. Writing the parsers
+  reproduced the ledger's own recurring bug: `[^\]]*` over `["⌘", "]"]` silently dropped the
+  Forward binding. The in-page editor now routes a docs save to the source fragment and rebuilds,
+  never to the generated page. Not measured in a browser (Synth wasn't running), no `llms.txt`
+  yet, nothing deployed.
+
 ## [2026-09-06](docs/features/2026-09-06.md)
 
 - **Usage: one board for every agent's limits** — a Usage entry above the project tree opens a

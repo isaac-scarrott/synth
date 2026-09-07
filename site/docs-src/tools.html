@@ -1,0 +1,57 @@
+<!-- summary: Every agent Synth hosts gets a real browser, a booted iPhone, and a way to hand work
+     to a new branch. You do not wire any of it up, and you do not wire it up again for the next
+     agent. -->
+
+<p>Synth bundles three MCP servers and hands them to each agent on the command that launches it.
+There is nothing to install, nothing to register, and no configuration file in your repository.
+Change agent and the same tools are there.</p>
+
+<p>These pages are for knowing what your agent can reach. You do not call these yourself: you ask
+the agent, and it does.</p>
+
+<!-- generated -->
+
+<h2>What an agent may and may not do</h2>
+
+<p>Two rules cover the whole surface.</p>
+
+<p><strong>Driving is not destroying.</strong> Any agent may drive any browser or simulator,
+because the surface is shared with you and with every other session. But an agent may only close
+what it opened. A browser you opened yourself is yours, and so is one you detached or attached
+elsewhere.</p>
+
+<p><strong>Every tool names its session.</strong> One server process serves an agent and all of
+its subagents, so there is no ambient "current" session to inherit: an agent that wants to act on
+a page passes that page's <code>sessionId</code>. This is why two agents working at once cannot
+drive each other's windows by accident.</p>
+
+<p>A device is different again. Simulators are shared machine state, so a device Synth booted is
+released by reference count, and an agent cannot shut down a device you are looking at.</p>
+
+<h2>Creating a branch always asks</h2>
+
+<p><code>worktree_create</code> is the one tool that stops and waits for a person. When an agent
+decides work belongs somewhere else, it writes a brief and asks for a branch of its own. You see
+the project, the base branch, and what it means to do.</p>
+
+<p>Return creates it and starts an agent inside that already knows what it is there for. Escape
+declines, and tells the agent to carry on where it is. Dismissing the prompt any other way is a
+decline as well, because a prompt you closed is not a prompt you agreed to.</p>
+
+<p>This is the only gate Synth adds. Everything else an agent does, it does with whatever
+permissions <a href="agents.html#agents-run-on-your-machine">the agent itself asks you for</a>.</p>
+
+<h2>Two things worth knowing about screenshots</h2>
+
+<p>A screenshot goes to a file by default and is only returned inline when asked for. Images are
+the largest thing an agent can put in its own context, and most of the time it needs to have
+looked rather than to keep looking.</p>
+
+<p>Video is the other way round: <code>browser_record_stop</code> returns a path, never frames.
+A recording is for you to watch, not for the model to read.</p>
+
+<div class="note">
+  <p>This page is built from the servers themselves. The tool list, the arguments and the summary
+  lines are read out of the same files Synth ships to your agent, so a tool that changed there
+  changed here.</p>
+</div>

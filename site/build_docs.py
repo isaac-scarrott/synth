@@ -67,6 +67,21 @@ class BuildError(Exception):
 
 # ─────────────────────────── the landing page's own CSS ───────────────────────────
 
+URL_RE = re.compile(r"""url\(\s*(['"]?)(?!(?:https?:|data:|//|/|\#))([^'")]+)\1\s*\)""")
+
+
+def relocate_urls(css, prefix="../"):
+    """Point the borrowed stylesheet's relative URLs back at the directory it came from.
+
+    An inlined `@font-face` resolves its `url()` against the *document*, not against the file
+    the CSS was written in, so `url("fonts/Geist-Variable.woff2")` asks for
+    `/docs/fonts/...` and 404s. Every docs page rendered in the system fallback instead of
+    Geist until this existed, and nothing on the page said so: a missing font is invisible
+    unless you go looking for it.
+    """
+    return URL_RE.sub(lambda m: 'url("%s%s")' % (prefix, m.group(2).strip()), css)
+
+
 def landing_css():
     """The whole of index.html's style block, so docs inherits tokens and components.
 
@@ -81,7 +96,15 @@ def landing_css():
             "index.html has %d <style> and %d </style>; this build assumes exactly one of each"
             % (opens, closes))
     start = src.index("<style>") + len("<style>")
-    return src[start:src.index("</style>")].strip("\n")
+    css = src[start:src.index("</style>")].strip("\n")
+
+    # Every asset the borrowed CSS names has to exist one level up, or the page silently
+    # degrades. Checked here so a renamed font is a failed build rather than a flat page.
+    css = relocate_urls(css)
+    for ref in re.findall(r'url\("\.\./([^"]+)"\)', css):
+        if not os.path.exists(os.path.join(ROOT, ref)):
+            raise BuildError("index.html's CSS references %s, which is not in site/" % ref)
+    return css
 
 
 # ─────────────────────────── generated: keyboard reference ───────────────────────────

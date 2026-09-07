@@ -3,7 +3,7 @@
      agent. -->
 
 <p>Synth bundles three MCP servers and hands them to each agent on the command that launches it.
-There is nothing to install, nothing to register, and no configuration file in your repository.
+You do not install or register them, and nothing for them is written into your repository.
 Change agent and the same tools are there.</p>
 
 <p>These pages are for knowing what your agent can reach. You do not call these yourself: you ask
@@ -13,12 +13,10 @@ the agent, and it does.</p>
 
 <h2>What an agent may and may not do</h2>
 
-<p>Two rules cover the whole surface.</p>
-
-<p><strong>Driving is not destroying.</strong> Any agent may drive any browser or simulator,
-because the surface is shared with you and with every other session. But an agent may only close
-what it opened. A browser you opened yourself is yours, and so is one you detached or attached
-elsewhere.</p>
+<p><strong>An agent may drive anything, and close only what it opened.</strong> Any agent can act
+on any browser or simulator, because the surface is shared with you and with every other session.
+Closing is different, because it takes something away: a browser you opened yourself is yours, and
+so is one you detached or attached elsewhere.</p>
 
 <p><strong>Every tool names its session.</strong> One server process serves an agent and all of
 its subagents, so there is no ambient "current" session to inherit: an agent that wants to act on
@@ -41,7 +39,7 @@ decline as well, because a prompt you closed is not a prompt you agreed to.</p>
 <p>This is the only gate Synth adds. Everything else an agent does, it does with whatever
 permissions <a href="agents.html#agents-run-on-your-machine">the agent itself asks you for</a>.</p>
 
-<h2>Two things worth knowing about screenshots</h2>
+<h2>Screenshots and video</h2>
 
 <p>A screenshot goes to a file by default and is only returned inline when asked for. Images are
 the largest thing an agent can put in its own context, and most of the time it needs to have

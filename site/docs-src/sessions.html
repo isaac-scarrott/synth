@@ -86,7 +86,7 @@ does not cost you what you were typing.</p>
 everything else. It is for the errand you finish and leave: an <code>aws sso login</code>, a
 one-off script.</p>
 
-<p>It is deliberately <em>not</em> a session. No row, no status, no place in the tree. Dismissing
+<p>It is deliberately <em>not</em> a session: it has no row in the sidebar and no status. Dismissing
 it kills it, and every summon is a fresh shell, which is what keeps the rule that nothing runs
 that the sidebar does not show. Escape closes it at an idle, empty prompt and otherwise reaches
 the shell, so vim and other full-screen programs work normally. Closing it while something is
@@ -105,8 +105,7 @@ relation rather than a level.</p>
   <li>Comments made in a browser go to the agent that owns it. A browser you opened yourself
   belongs to nobody, and comments in it start an agent to receive them.</li>
   <li>Closing an owner closes what belongs to it, all the way down.</li>
-  <li>An agent may drive any browser, but may only close the ones it opened. Driving is not
-  destroying.</li>
+  <li>An agent may drive any browser, and may close only the ones it opened.</li>
 </ul>
 
 <p><strong>Attach to</strong> and <strong>Detach</strong> make and break the relation for a

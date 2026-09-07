@@ -1,6 +1,7 @@
 import Foundation
 
-/// Installs Synth's opencode theme, which exists for one reason: opencode's light half is too pale.
+/// Installs Synth's opencode theme, which exists for two reasons: opencode's light half is too pale,
+/// and opencode paints its own background where Claude Code lets the terminal's show through.
 ///
 /// The contrast with `AgentTheme` is the whole story, and it is worth writing down because the two
 /// agents look like the same problem and are not. opencode's theme *machinery* works. It asks the
@@ -13,27 +14,34 @@ import Foundation
 /// What it needs is better light values. On the surfaces opencode paints for itself, its own light
 /// half leaves `textMuted` at **3.17:1**, `accent` and `warning` at **2.52:1**, and seven more ink
 /// colours under 4.5:1 — placeholder text, headings, keywords, diff context. Eleven values are
-/// deepened, hue kept; the dark half is copied through untouched, byte for byte.
+/// deepened, hue kept; the dark half is copied through untouched but for `background`, below.
 ///
-/// Two consequences of opencode's design that shaped this:
+/// **The background is handed back to the terminal.** opencode painted every cell of its own field
+/// — `#ffffff` in light, `#0a0a0a` in dark — while ghostty fills the `window-padding` band around it
+/// with `TerminalTheme`'s surface, so a pane drew a rectangle inset 23pt from its own edge and sat
+/// out the window's translucency besides. opencode's answer to this is `"none"`, which it documents
+/// as blending with the terminal, and which does work — except that it also anchors the neutral ramp
+/// opencode *derives* surfaces from, and a zero-alpha black anchor turns the splash mark's shadow
+/// into two near-black slabs on a light screen (measured: `#dbdbdb` → `#1c1c1c`). So `background` is
+/// `TerminalTheme`'s own surface written at zero alpha — `#f7f8fa00` / `#12131700` — which paints
+/// nothing and still says what is behind it. Every cell then comes back as the terminal's default,
+/// and the derived shadow lands on `#d5d6d7` rather than in the dark. `t25_opencodecontrast` gates
+/// both halves of that: the field is unpainted, and the pair matches `TerminalTheme`.
+///
+/// One consequence of opencode's design shaped the rest:
 ///
 /// **The theme has to be complete.** A partial file crashes opencode on startup —
 /// `undefined is not an object (evaluating 'a.background.a')` — so this is necessarily a fork of
 /// opencode's default rather than a patch over it, and it will drift when opencode changes its own.
 /// `t25_opencodecontrast` is the answer to that: it renders a real opencode against this file, so a
 /// missing or stale key fails as a crash-to-no-runs rather than passing quietly.
-///
-/// **opencode paints its own background.** It does not let the terminal's show through, which is why
-/// the ratios above are measured against `backgroundElement` (`#f5f5f5`) rather than
-/// `TerminalTheme`'s surface. It also means an opencode pane is opaque and sits out the window's
-/// translucency — noted, not fixed; that is a theme file's `background`, and overriding it to match
-/// would be a guess at a colour the terminal composites rather than owns.
 enum OpencodeTheme {
     private static let slug = "synth"
 
     /// opencode reads its config from `$XDG_CONFIG_HOME/opencode`, falling back to `~/.config`.
     /// Honoured here because opencode honours it — a session inherits the login shell's environment
-    /// (`ShellEnvironment`), so someone who sets it really does move the directory.
+    /// (`ShellEnvironment`), so someone who sets it really does move the directory. v2 shares the
+    /// directory with v1, including its `themes/`, and differs only in which file names the theme.
     static func configDir(home: URL = AgentTheme.defaultHome()) -> URL {
         if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
             return URL(fileURLWithPath: xdg).appendingPathComponent("opencode")
@@ -48,7 +56,7 @@ enum OpencodeTheme {
     /// on purpose, and is left exactly alone.
     private static let adoptable: Set<String> = ["system", "opencode", slug]
 
-    /// Copy the theme into place and point `tui.json` at it.
+    /// Copy the theme into place and point opencode at it.
     ///
     /// Appearance-independent — the file holds both halves — so this takes no `dark:`. It is still
     /// called from the appearance path, which costs nothing (both writes are conditional on content
@@ -56,10 +64,11 @@ enum OpencodeTheme {
     static func sync(home: URL = AgentTheme.defaultHome()) {
         guard let theme = bundledTheme() else { return }
         let dir = configDir(home: home)
-        // Unlike Claude Code's config, `tui.json` is opencode's to create *or not* — a fresh install
-        // has no such file and no theme setting, and that is the case this most needs to work. So an
-        // absent file is written rather than treated as a refusal.
-        guard adopt(dir: dir) else { return }
+        // Both, and neither short-circuited: v1 and v2 name the theme in different files, and a
+        // machine can be running either or both.
+        let v1 = adoptTUI(dir: dir)
+        let v2 = adoptCLI(dir: dir)
+        guard v1 || v2 else { return }
         let dest = dir.appendingPathComponent("themes/\(slug).json")
         if let existing = try? Data(contentsOf: dest), existing == theme { return }
         try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(),
@@ -67,8 +76,8 @@ enum OpencodeTheme {
         try? theme.write(to: dest, options: .atomic)
     }
 
-    /// Claim `theme` in `tui.json`, preserving every other key in it.
-    private static func adopt(dir: URL) -> Bool {
+    /// Claim `theme` in v1's `tui.json`, preserving every other key in it.
+    private static func adoptTUI(dir: URL) -> Bool {
         let url = dir.appendingPathComponent("tui.json")
         var config: [String: Any] = ["$schema": "https://opencode.ai/tui.json"]
         if let data = try? Data(contentsOf: url) {
@@ -80,14 +89,53 @@ enum OpencodeTheme {
                 guard current != slug else { return true }
             }
         }
+        // Unlike v2's, `tui.json` is opencode's to create *or not* — a fresh install has no such
+        // file and no theme setting, and that is the case this most needs to work. So an absent file
+        // is written rather than treated as a refusal.
         config["theme"] = slug
-        // `withoutEscapingSlashes` because this file is the user's to read: the `$schema` URL comes
-        // back out as `https:\/\/opencode.ai/...` without it, which is valid JSON and looks broken.
+        return write(config, to: url)
+    }
+
+    /// Claim `theme.name` in v2's `cli.json`, preserving every other key in it — `theme.mode`
+    /// included, which is v2's own light/dark following and none of Synth's business.
+    ///
+    /// **An absent file is left absent**, which is the one place this differs from `tui.json` and
+    /// the reason is not symmetry: v2 writes `cli.json` itself, once, by migrating `tui.json` and
+    /// its key-value state into it, and it performs that migration only if the file does not already
+    /// exist. Creating it here would skip the migration and silently drop every v1 TUI preference
+    /// the user had. Nothing is lost by waiting — the migration carries `tui.json`'s `theme` across
+    /// as `theme.name`, so a v2 that has never run still arrives on Synth's theme.
+    private static func adoptCLI(dir: URL) -> Bool {
+        let url = dir.appendingPathComponent("cli.json")
+        guard let data = try? Data(contentsOf: url),
+              var config = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return false }
+        var theme: [String: Any] = [:]
+        if let existing = config["theme"] {
+            // A `theme` that is not v2's object is a hand-edit we have no reading of, and replacing
+            // it would throw away whatever it meant.
+            guard let object = existing as? [String: Any] else { return false }
+            theme = object
+            if let current = theme["name"] as? String {
+                guard adoptable.contains(current) else { return false }
+                guard current != slug else { return true }
+            }
+        }
+        theme["name"] = slug
+        config["theme"] = theme
+        return write(config, to: url)
+    }
+
+    private static func write(_ config: [String: Any], to url: URL) -> Bool {
+        // `withoutEscapingSlashes` because these files are the user's to read: the `$schema` URL
+        // comes back out as `https:\/\/opencode.ai/...` without it, which is valid JSON and looks
+        // broken.
         guard let out = try? JSONSerialization.data(
             withJSONObject: config,
             options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
         else { return false }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
         do {
             try out.write(to: url, options: .atomic)
         } catch {

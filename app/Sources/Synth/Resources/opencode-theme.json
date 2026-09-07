@@ -20,6 +20,7 @@
     "darkGreen": "#7fd88f",
     "darkCyan": "#56b6c2",
     "darkYellow": "#e5c07b",
+    "darkTerminal": "#12131700",
     "lightStep1": "#ffffff",
     "lightStep2": "#fafafa",
     "lightStep3": "#f5f5f5",
@@ -38,7 +39,8 @@
     "lightOrange": "#98641c",
     "lightGreen": "#327d47",
     "lightCyan": "#2c7986",
-    "lightYellow": "#8c6919"
+    "lightYellow": "#8c6919",
+    "lightTerminal": "#f7f8fa00"
   },
   "theme": {
     "primary": {
@@ -78,8 +80,8 @@
       "light": "lightStep11"
     },
     "background": {
-      "dark": "darkStep1",
-      "light": "lightStep1"
+      "dark": "darkTerminal",
+      "light": "lightTerminal"
     },
     "backgroundPanel": {
       "dark": "darkStep2",

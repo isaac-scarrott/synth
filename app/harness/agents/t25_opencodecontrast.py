@@ -15,11 +15,22 @@ nothing. That is the same artefact recorded for Claude Code on 2026-07-27, and i
 to conclude the opposite of the truth here. `ccdrive.Session(surface=…)` is what answers, and the
 count is asserted rather than assumed.
 
+The other half of what Synth's theme does is not a contrast question at all: opencode paints its own
+field where Claude Code lets the terminal's through, so a pane drew its own rectangle inside ghostty's
+padding band. The theme hands `background` back by writing `TerminalTheme`'s surface at **zero alpha**
+— painting nothing, while still telling opencode what it is sitting on, which it needs because it
+derives the splash mark's shadow from that anchor. Two things have to hold for that to keep working
+and neither is visible in the file alone: the pair must still match `TerminalTheme`, and a real
+opencode must actually leave its cells unpainted. Both are asserted here, against v1 and v2 — they
+share the theme file and differ only in which config names it.
+
 Asserted:
   • the shipped `Resources/opencode-theme.json` parses, is complete, and every light ink value in it
     clears its floor on opencode's own least forgiving light surface
-  • its **dark** half is identical to opencode's own, extracted from the binary — Synth corrected
-    light and nothing else, and this is what proves it rather than claims it
+  • its `background` is `TerminalTheme`'s own surface at zero alpha, in both halves
+  • the rest of its **dark** half is identical to opencode's own, extracted from the binary — Synth
+    corrected light and handed back the background, and this is what proves it rather than claims it
+  • a real opencode — v1 and v2 — leaves the field to the terminal, in both appearances
   • a real opencode rendered on a light surface has no failing text or chrome run
   • the same on a dark surface is no worse than opencode ships
 
@@ -40,10 +51,19 @@ import ttygrid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 THEME = os.path.normpath(os.path.join(HERE, "../../Sources/Synth/Resources/opencode-theme.json"))
+TERMINAL_THEME = os.path.normpath(os.path.join(HERE, "../../Sources/Synth/Ghostty/TerminalTheme.swift"))
 
-# opencode paints its own surfaces and never lets the terminal's show through, so its ink is judged
-# against `backgroundElement` — the darkest of its three light surfaces, and so the least forgiving.
+# opencode still paints `backgroundElement` — the prompt box — so its ink is judged against that
+# rather than against the terminal surface the rest of the field is now left to. It is the darker of
+# the two in light, and so the least forgiving.
 REFERENCE_DEF = "lightStep3"
+
+# The `background` value is not opencode's to choose any more, so it is not compared against theirs.
+HANDED_BACK = {"background"}
+
+# How much of the screen a rendered opencode must leave to the terminal. The remainder is its own
+# prompt box, which it is entitled to paint: measured at 6.7% of an 100x44 splash.
+FIELD_FLOOR = 0.85
 
 # Which light defs carry ink a reader parses, and which one indicates focus. Named rather than
 # derived: "is this value used as ink or as a fill" is not something the file says.
@@ -97,14 +117,39 @@ def opencode_default_theme(binary):
         return None
 
 
+def terminal_surfaces():
+    """`TerminalTheme`'s two background colours, read out of the Swift.
+
+    Parsed rather than duplicated because a copy is exactly what this check exists to catch: the
+    theme file quotes these values, and nothing but this would notice if the terminal's moved and
+    opencode's did not. Returns None if the Swift has changed shape, which skips the comparison
+    rather than failing it — "we can no longer read TerminalTheme" is not "the pair has drifted".
+    """
+    try:
+        src = open(TERMINAL_THEME).read()
+    except OSError:
+        return None
+    light = re.search(r'bg:\s*"([0-9a-fA-F]{6})"', src)
+    dark = re.search(r'background = ([0-9a-fA-F]{6})', src)
+    if not light or not dark:
+        return None
+    return {"light": light.group(1).lower(), "dark": dark.group(1).lower()}
+
+
 def seed(root, theme_bytes):
     """An XDG config dir holding Synth's theme, so nothing touches the developer's own opencode."""
     import shutil
     shutil.rmtree(root, ignore_errors=True)
     os.makedirs(f"{root}/opencode/themes", exist_ok=True)
     open(f"{root}/opencode/themes/synth.json", "wb").write(theme_bytes)
+    # Both files: v1 reads `tui.json` and v2 reads `cli.json`, in the same directory and off the
+    # same `themes/`. Writing v2's rather than letting it migrate v1's keeps the run deterministic
+    # and puts the shape `OpencodeTheme.adoptCLI` writes under the same test.
     with open(f"{root}/opencode/tui.json", "w") as fh:
         json.dump({"$schema": "https://opencode.ai/tui.json", "theme": "synth"}, fh)
+    with open(f"{root}/opencode/cli.json", "w") as fh:
+        json.dump({"$schema": "https://opencode.ai/v2/cli.json",
+                   "theme": {"name": "synth", "mode": "system"}}, fh)
     return root
 
 
@@ -120,7 +165,14 @@ def render(binary, theme_bytes, dark, tag):
     return em, s, surface
 
 
-print("=== T25: opencode contrast — the light half Synth installs ===")
+def field(em):
+    """The share of the screen opencode left to the terminal — cells it painted no background on."""
+    cells = list(em.cells())
+    unpainted = sum(1 for _y, _x, c in cells if c.bg is None)
+    return unpainted / len(cells) if cells else 0.0
+
+
+print("=== T25: opencode — the light half Synth installs, and the field it hands back ===")
 
 binary = ccdrive.opencode_binary()
 if not binary:
@@ -155,6 +207,17 @@ check(f"every light ink value clears its floor on {theme['defs'][REFERENCE_DEF]}
       worst is not None and worst[0] >= 0,
       f"tightest {worst[1]} {worst[2]} = {worst[3]:.2f}:1 (needs {worst[4]})" if worst else "none")
 
+surfaces = terminal_surfaces()
+if surfaces is None:
+    print("  NOTE  TerminalTheme.swift could not be read — the surface pair was not compared",
+          flush=True)
+else:
+    installed = {half: theme["defs"].get(theme["theme"]["background"][half], "").lower()
+                 for half in ("light", "dark")}
+    check("`background` is TerminalTheme's surface at zero alpha, in both halves",
+          all(installed[h] == f"#{surfaces[h]}00" for h in ("light", "dark")),
+          f"theme {installed} vs terminal {surfaces}")
+
 # Synth corrected light. This is what proves it did not touch anything else.
 default = opencode_default_theme(binary)
 if default is None:
@@ -164,8 +227,9 @@ else:
     dark_defs = [k for k in default["defs"] if k.startswith("dark")]
     same_defs = [k for k in dark_defs if theme["defs"].get(k) != default["defs"][k]]
     same_keys = [k for k, v in default["theme"].items()
-                 if isinstance(v, dict) and theme["theme"].get(k, {}).get("dark") != v.get("dark")]
-    check("the dark half is opencode's own, untouched",
+                 if k not in HANDED_BACK
+                 and isinstance(v, dict) and theme["theme"].get(k, {}).get("dark") != v.get("dark")]
+    check(f"the dark half is opencode's own, untouched but for {sorted(HANDED_BACK)}",
           not same_defs and not same_keys,
           f"differs: defs={same_defs[:4]} keys={same_keys[:4]}")
     # Equality, not containment. Synth's theme is a fork of this one, so its shape should match
@@ -193,6 +257,9 @@ for dark, label, floors in ((False, "light", {"text": ccontrast.TEXT_FLOOR,
           answered["bg"] >= 1, f"answered {answered}")
     check(f"[{label}] opencode rendered — runs were found to measure",
           len(runs) >= 30, f"{len(runs)} runs")
+    share = field(em)
+    check(f"[{label}] the field is the terminal's — opencode painted no background on it",
+          share >= FIELD_FLOOR, f"{share:.1%} unpainted (needs {FIELD_FLOOR:.0%})")
 
     for kind, floor in floors.items():
         pool = [r for r in runs if r.kind == kind]
@@ -207,6 +274,29 @@ for dark, label, floors in ((False, "light", {"text": ccontrast.TEXT_FLOOR,
         print(f"  NOTE  [{label}] block-element fills, surfaces rather than controls, not gated: "
               + ", ".join(f"{ccontrast.hexof(r.fg)} on {ccontrast.hexof(r.bg)} {r.ratio:.2f}:1"
                           for r in fills.values()), flush=True)
+
+# v2 reads the same theme out of the same directory, named by `cli.json` instead of `tui.json`, and
+# renders it through a different TUI. Contrast is not re-measured here — the values are the same file
+# and v1 already answered for them — but the seam is, because "renders the theme" and "leaves the
+# field alone" are separate claims and only one of them is in the file.
+print("\n--- opencode2 ---", flush=True)
+binary2 = ccdrive.opencode2_binary()
+if not binary2:
+    print("  NOTE  no `opencode2` CLI installed — v2's field was not measured, not passed",
+          flush=True)
+else:
+    for dark, label in ((False, "light"), (True, "dark")):
+        em, s, surface = render(binary2, theme_bytes, dark, f"v2-{label}")
+        runs = ccontrast.runs(em, surface)
+        answered = dict(s.answered)
+        s.close()
+        check(f"[v2 {label}] the surface colour was actually asked for and answered",
+              answered["bg"] >= 1, f"answered {answered}")
+        check(f"[v2 {label}] opencode2 rendered — runs were found to measure",
+              len(runs) >= 30, f"{len(runs)} runs")
+        share = field(em)
+        check(f"[v2 {label}] the field is the terminal's — opencode2 painted no background on it",
+              share >= FIELD_FLOOR, f"{share:.1%} unpainted (needs {FIELD_FLOOR:.0%})")
 
 # Why Synth installs the file and then leaves it alone: opencode does the following itself.
 print("\n--- recorded, not gated ---", flush=True)

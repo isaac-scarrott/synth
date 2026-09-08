@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.43.0",
+    "date": "2026-09-08",
+    "changes": [
+      "A terminal that dies now tells you why instead of disappearing. Rows were vanishing silently — a missing exit code counted as a clean quit and deleted the row, a wrapper script whose write failed launched anyway, and every hook launch failure exited above the code that reports it. Failures now travel to the boundary they entered through and land in the pane: the session keeps its row, wears an error, and offers a Retry with the actual reason. Things that can be down and brought back — a socket left by a dead process, a device that went away — retry themselves quietly and only speak up once they have given up.",
+      "The open tab and the session card beneath it are one material. The tab chip was a brighter white with a heavier shadow than the card it belongs to, despite being a twentieth of the size; fill, edge and lift now come from one place, with the shadow scaled to the chip rather than repeated at full strength. The strip had also been clipping that shadow off at the chip's own edges, so the lift never painted at all."
+    ]
+  },
+  {
     "version": "0.42.1",
     "date": "2026-09-08",
     "changes": [

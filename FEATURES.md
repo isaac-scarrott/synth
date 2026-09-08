@@ -2649,3 +2649,10 @@ disclosure to dive deeper.
   after dedup, including a `PersistenceStore.load()` failure that let autosave overwrite a corrupt
   snapshot with an empty tree). The remaining 41 highs are recorded in `docs/research/silent-failure-audit-2026-09-07.md` and deliberately unscheduled, with the
   conversion rule and the `surfaced=false` backlog in `CLAUDE.md`.
+
+- **0.43.0 ships — failures get a spine** — the first release carrying the door model end to end,
+  with a two-line changelog: a dying terminal keeps its row and says why, and the open tab is the
+  same material as the card beneath it. `CFBundleVersion` 743, tag `v0.43.0`; both artifacts
+  notarized separately, stapled, and verified credential-less with quarantine set; appcast newest
+  0.43.0 at 743 with `edSignature` on all 18 enclosures, five deltas 1.47–1.74 MB. No `synth-site`
+  push — the deployed site was already byte-identical. [Details](docs/features/2026-09-08.md)

@@ -6,6 +6,18 @@
 <title>Knowing who needs you - Synth docs</title>
 <meta name="description" content="Every session carries a status, and a collapsed row carries the most urgent status inside it. That is what makes running several agents at once readable." />
 <link rel="icon" href="../img/mark.png" />
+<link rel="icon" href="../img/mark-light.png" media="(prefers-color-scheme: dark)" />
+<script>
+  // The charcoal mark reads on light browser chrome, the cream one on dark. Safari ignores
+  // `media` on an icon link, so drive the swap here too; the links above cover the rest.
+  (function () {
+    var dark = matchMedia('(prefers-color-scheme: dark)');
+    var icon = document.querySelector('link[rel=icon]:not([media])');
+    var paint = function () { icon.href = '../img/' + (dark.matches ? 'mark-light.png' : 'mark.png'); };
+    dark.addEventListener('change', paint);
+    paint();
+  })();
+</script>
 <meta name="theme-color" content="#0d0f13" />
 <!-- Built by site/build_docs.py. Edit site/docs-src/attention.html, not this file. -->
 <style>
@@ -74,8 +86,7 @@
 
     /* The app's three radii, plus one derived value used twice. 7px is the 10px control
        minus its own 3px of padding, which is the arithmetic that keeps two nested curves
-       concentric; that is why a segment inside the tab control wears it. The brand mark wears
-       the same 7px at 24px, matching the app icon rather than deriving from anything here. */
+       concentric; that is why a segment inside the tab control wears it. */
     --r-surface: 14px; --r-control: 10px; --r-key: 6px;
 
     --gutter: clamp(20px, 5vw, 56px);
@@ -176,7 +187,7 @@
   .foot__gh { display: inline-flex; align-items: center; gap: var(--s2); }
   .foot__gh svg { width: 14px; height: 14px; }
   .brand { display: flex; align-items: center; gap: var(--s2); font-weight: 550; letter-spacing: -0.02em; font-size: 15px; }
-  .brand img { width: 24px; height: 24px; border-radius: 7px; }
+  .brand img { width: 24px; height: 24px; }
   .nav .btn { height: 36px; padding: 0 var(--s3); font-size: 14px; }
   /* The one link in the bar. It sits before the download because reading comes before
      installing for anyone who is still deciding, and it stands well clear of it: the row's

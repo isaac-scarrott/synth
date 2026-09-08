@@ -7,12 +7,14 @@ import UniformTypeIdentifiers
 // Rebuild the icon cleanly: key the champagne mark out of the source, then composite it at a
 // chosen scale onto a freshly-drawn charcoal squircle (transparent corners, NO rim). Lets us
 // dial mark size and recolour for the dev variant.
-// usage: mockicon <source.png> <out.png> <size> <markFraction> <markHex|orig>
+// usage: mockicon <source.png> <out.png> <size> <markFraction> <markHex|orig> [squircleHex]
+// squircleHex fills the squircle flat with that colour instead of the charcoal gradient.
 let a = CommandLine.arguments
-guard a.count == 6,
+guard a.count == 6 || a.count == 7,
       let srcCG = NSImage(contentsOfFile: a[1])?.cgImage(forProposedRect: nil, context: nil, hints: nil)
-else { fputs("usage: mockicon src out size frac markHex|orig\n", stderr); exit(1) }
+else { fputs("usage: mockicon src out size frac markHex|orig [squircleHex]\n", stderr); exit(1) }
 let outPath = a[2], size = Int(a[3])!, frac = Double(a[4])!, markArg = a[5].lowercased()
+let squircleArg = a.count == 7 ? a[6].lowercased() : nil
 
 let W = srcCG.width, H = srcCG.height
 var src = [UInt8](repeating: 0, count: W * H * 4)
@@ -69,12 +71,18 @@ ctx.clear(CGRect(x: 0, y: 0, width: s, height: s))
 let radius = s * 0.2237
 ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: s, height: s), cornerWidth: radius, cornerHeight: radius, transform: nil))
 ctx.clip()
-// charcoal with a whisper of top sheen
+// charcoal with a whisper of top sheen, or a flat fill when one is asked for
 let cs = CGColorSpaceCreateDeviceRGB()
-let grad = CGGradient(colorsSpace: cs, colors: [
-    CGColor(red: 0x30/255, green: 0x30/255, blue: 0x36/255, alpha: 1),
-    CGColor(red: 0x18/255, green: 0x18/255, blue: 0x1c/255, alpha: 1)] as CFArray, locations: [0, 1])!
-ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])
+if let hex = squircleArg, let v = UInt32(hex, radix: 16) {
+    ctx.setFillColor(CGColor(red: Double((v>>16)&255)/255, green: Double((v>>8)&255)/255,
+                             blue: Double(v&255)/255, alpha: 1))
+    ctx.fill(CGRect(x: 0, y: 0, width: s, height: s))
+} else {
+    let grad = CGGradient(colorsSpace: cs, colors: [
+        CGColor(red: 0x30/255, green: 0x30/255, blue: 0x36/255, alpha: 1),
+        CGColor(red: 0x18/255, green: 0x18/255, blue: 0x1c/255, alpha: 1)] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])
+}
 // mark, scaled to `frac` of the icon by its longer side, centered
 let scale = (s * CGFloat(frac)) / CGFloat(max(mW, mH))
 let dw = CGFloat(mW) * scale, dh = CGFloat(mH) * scale

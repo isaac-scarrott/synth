@@ -479,6 +479,18 @@ SHELL = """<!DOCTYPE html>
 <title>{title} - Synth docs</title>
 <meta name="description" content="{summary}" />
 <link rel="icon" href="../img/mark.png" />
+<link rel="icon" href="../img/mark-light.png" media="(prefers-color-scheme: dark)" />
+<script>
+  // The charcoal mark reads on light browser chrome, the cream one on dark. Safari ignores
+  // `media` on an icon link, so drive the swap here too; the links above cover the rest.
+  (function () {{
+    var dark = matchMedia('(prefers-color-scheme: dark)');
+    var icon = document.querySelector('link[rel=icon]:not([media])');
+    var paint = function () {{ icon.href = '../img/' + (dark.matches ? 'mark-light.png' : 'mark.png'); }};
+    dark.addEventListener('change', paint);
+    paint();
+  }})();
+</script>
 <meta name="theme-color" content="#0d0f13" />
 <!-- Built by site/build_docs.py. Edit site/docs-src/{slug}.html, not this file. -->
 <style>

@@ -2607,3 +2607,5 @@ disclosure to dive deeper.
   credential-less with quarantine set; appcast newest 0.42.1 at 735 with `edSignature` on all 18
   enclosures, deltas 0.70–1.45 MB. No `synth-site` push — the deployed site was already
   byte-identical. [Details](docs/features/2026-09-08.md)
+
+- **Site mark: no frame, follows the browser's theme** — favicon and brand lockups now come off the app icon generator with transparent corners, and the favicon picks charcoal or cream by `prefers-color-scheme`. [Details](docs/features/2026-09-08.md)

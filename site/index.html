@@ -5,9 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Synth - run every coding agent, commit to none of them</title>
 <meta name="description" content="A native macOS terminal for coding agents, tied to no model and no harness. Run Claude Code, OpenCode, Antigravity or your own, as many at once as you like." />
+<link rel="canonical" href="https://trysynth.dev/" />
 <link rel="icon" href="img/mark.png" />
 <link rel="icon" href="img/mark-light.png" media="(prefers-color-scheme: dark)" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<!-- The two files an agent reads instead of the pages: the index, and every doc in one. -->
+<link rel="alternate" type="text/plain" href="https://trysynth.dev/llms.txt" title="llms.txt" />
 <script>
+  // Set before the stylesheet is parsed, so nothing is ever painted in the state this unlocks:
+  // the entrances hide their own content, and everything that hides content is gated on this.
+  document.documentElement.className += ' js';
+
   // The charcoal mark reads on light browser chrome, the cream one on dark. Safari ignores
   // `media` on an icon link, so drive the swap here too; the links above cover the rest.
   (function () {
@@ -18,12 +26,55 @@
     paint();
   })();
 </script>
+<!-- Absolute, every one of them. A scraper reads these out of a document it fetched from
+     somewhere else; a relative og:image is a card with no picture on half the surfaces that
+     render it, which is what this page shipped with. -->
 <meta property="og:type" content="website" />
+<meta property="og:site_name" content="Synth" />
+<meta property="og:locale" content="en_GB" />
+<meta property="og:url" content="https://trysynth.dev/" />
 <meta property="og:title" content="Synth - run every coding agent, commit to none of them" />
 <meta property="og:description" content="A native macOS terminal for coding agents, tied to no model and no harness. Run Claude Code, OpenCode, Antigravity or your own, as many at once as you like." />
-<meta property="og:image" content="img/og.png" />
+<meta property="og:image" content="https://trysynth.dev/img/share-card.png" />
+<!-- Given the dimensions, Slack and Facebook lay the card out before the image has arrived.
+     Without them the first share of a link renders as the small card. -->
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Synth - run every coding agent, commit to none of them" />
 <meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://trysynth.dev/img/share-card.png" />
 <meta name="theme-color" content="#0d0f13" />
+<!-- The page is dark and never says so, so the browser paints its light default first: a white
+     flash before first paint, and light scrollbars and form controls after it. -->
+<meta name="color-scheme" content="dark" />
+
+<!-- Both faces are self-hosted and reached only once the inline stylesheet below has been
+     parsed, so the h1 is painted in the fallback face and swapped. Preloading them starts both
+     downloads with the document. -->
+<link rel="preload" as="font" type="font/woff2" href="fonts/Geist-Variable.woff2" crossorigin />
+<link rel="preload" as="font" type="font/woff2" href="fonts/GeistMono-Variable.woff2" crossorigin />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Synth",
+  "url": "https://trysynth.dev/",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS 14 or later, Apple silicon",
+  "downloadUrl": "https://synth-releases.fly.storage.tigris.dev/Synth.dmg",
+  "screenshot": "https://trysynth.dev/img/hero-dark@2x.png",
+  "image": "https://trysynth.dev/img/share-card.png",
+  "description": "A native macOS terminal for coding agents, tied to no model and no harness. Run Claude Code, OpenCode, Antigravity or your own, as many at once as you like.",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "GBP" },
+  "author": {
+    "@type": "Person",
+    "name": "Isaac Scarrott",
+    "url": "https://github.com/isaac-scarrott"
+  },
+  "sameAs": ["https://github.com/isaac-scarrott/synth"]
+}
+</script>
 
 <style>
   /* ───────────────────────── Geist, self-hosted (OFL) ───────────────────────── */
@@ -52,7 +103,11 @@
     --ink-2: #c4c7cf;
     --ink-3: #adb0b9;
     --ink-meta: #8d9099;     /* body copy: the tonal drop under a white heading */
-    --ink-faint: #6b6e77;
+    /* 4.53:1 at its worst against the surfaces it is used on, which is the least a body size
+       may be. It was #6b6e77 — 3.76:1 on the canvas — and the line it set was the one naming
+       the price and the hardware, the least readable text on the page. The step down from
+       --ink-meta is smaller for it; a tone nobody can read is not a tier of a hierarchy. */
+    --ink-faint: #83868f;
 
     --hair: rgba(255,255,255,0.06);
     --tick: rgba(255,255,255,0.09);
@@ -187,6 +242,15 @@
   }
   .nav.is-stuck::before { opacity: 1; }
   .nav .wrap { height: 64px; display: flex; align-items: center; gap: var(--s4); }
+  /* Off-screen rather than display:none, which would take it out of the tab order and leave
+     it as decoration nobody can reach. */
+  .skip {
+    position: absolute; left: var(--s4); top: -100px; z-index: 30;
+    padding: var(--s2) var(--s4); border-radius: var(--r-control);
+    background: var(--raised); color: var(--ink); font: 500 14px var(--font);
+    transition: top var(--tap) var(--ease);
+  }
+  .skip:focus-visible { top: var(--s3); }
   .nav__spacer { margin-left: auto; }
   #navtrip { position: absolute; top: 0; left: 0; width: 1px; height: 50vh; pointer-events: none; }
   .foot__gh { display: inline-flex; align-items: center; gap: var(--s2); }
@@ -405,18 +469,25 @@
 
   /* ───────────────────────── motion ─────────────────────────
      Entrances at 500ms with 8px of travel — enough to read as arriving,
-     not enough to make a scroll feel weighed down. Gone under reduced-motion. */
-  .rev {
+     not enough to make a scroll feel weighed down. Gone under reduced-motion.
+
+     An entrance is the one effect that hides its own content until a script un-hides it, so it
+     is gated on the script having run: `.js` is set on the root element in the head, and
+     without it every .rev is simply visible.
+     The page is the headline, the lede, the CTAs and every section body
+     — all of them .rev — so an entrance that starts hidden and is never released is not a
+     missing animation, it is a blank page. */
+  .js .rev {
     opacity: 0; transform: translateY(20px); filter: blur(7px);
     transition: opacity var(--enter) var(--linear), transform var(--enter) var(--linear),
                 filter var(--enter) var(--linear);
   }
-  .rev.in { opacity: 1; transform: none; filter: blur(0); }
+  .js .rev.in { opacity: 1; transform: none; filter: blur(0); }
   .rev[data-d="1"] { transition-delay: 135ms; } .rev[data-d="2"] { transition-delay: 270ms; }
   .rev[data-d="3"] { transition-delay: 405ms; }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
-    .rev { opacity: 1; transform: none; transition: none; }
+    .js .rev { opacity: 1; transform: none; filter: none; transition: none; }
     * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
   }
 </style>
@@ -430,6 +501,10 @@
 <div id="navtrip" aria-hidden="true"></div>
 
 <header class="nav" id="nav">
+  <!-- Inside the nav because build_docs.py borrows the nav wholesale, so the docs get this
+       too — and they are where it earns its keep: ten sidebar links stand between the top of
+       every docs page and its prose. -->
+  <a class="skip" href="#main">Skip to content</a>
   <div class="wrap">
     <a class="brand" href="#top"><img src="img/mark-light.png" alt="" />Synth</a>
     <span class="nav__spacer"></span>
@@ -438,7 +513,7 @@
   </div>
 </header>
 
-<main>
+<main id="main">
   <!-- ══════════════════════════ hero ══════════════════════════ -->
   <section class="wrap hero glow">
     <h1 class="rev"><span>Whatever coding agents you run, however many of them,</span><span class="dim">all at once.</span></h1>

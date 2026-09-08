@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Not here - Synth</title>
+<meta name="robots" content="noindex" />
+<!-- GitHub Pages serves this file for any address it cannot resolve, at whatever depth that
+     address had, so every reference on this page is absolute. A relative one resolves against
+     the URL that missed — /docs/typo/ asks for /docs/typo/img/mark-light.png — and the page
+     that says something went wrong loads with its own pictures broken. -->
+<link rel="icon" href="/img/mark.png" />
+<link rel="icon" href="/img/mark-light.png" media="(prefers-color-scheme: dark)" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<meta name="theme-color" content="#0d0f13" />
+<meta name="color-scheme" content="dark" />
+<style>
+  @font-face {
+    font-family: "Geist"; src: url("/fonts/Geist-Variable.woff2") format("woff2");
+    font-weight: 100 900; font-display: swap;
+  }
+  /* Standalone rather than built from index.html's stylesheet: this page is a mark, a
+     sentence and two links, and it has to render correctly when everything else has failed. */
+  :root {
+    --canvas: #0d0f13;
+    --raised: #282b30;
+    --ink: #e6e8ed;
+    --ink-meta: #8d9099;
+    --accent: #f1ddd7;
+    --on-accent: #191b1f;
+    --line: rgba(255,255,255,0.13);
+    --font: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    min-height: 100vh; padding: 32px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 24px; text-align: center;
+    background: var(--canvas); color: var(--ink);
+    font: 400 16px/1.5 var(--font); letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { width: 56px; height: 56px; }
+  h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); font-weight: 500; letter-spacing: -0.024em; }
+  p { color: var(--ink-meta); max-width: 44ch; }
+  nav { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  a {
+    padding: 10px 18px; border-radius: 10px; border: 1px solid var(--line);
+    font-weight: 500; color: inherit; text-decoration: none;
+  }
+  a.go { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  a:hover { border-color: var(--ink-meta); }
+  a.go:hover { border-color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+</style>
+</head>
+<body>
+  <img src="/img/mark-light.png" alt="" />
+  <h1>There is nothing at this address.</h1>
+  <p>The page has moved or never existed. The documentation is the likeliest place you were headed.</p>
+  <nav>
+    <a class="go" href="/">Synth</a>
+    <a href="/docs/">Docs</a>
+    <a href="https://github.com/isaac-scarrott/synth">GitHub</a>
+  </nav>
+</body>
+</html>

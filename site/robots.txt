@@ -1,0 +1,10 @@
+# Everything here is meant to be read, by people and by agents alike.
+User-agent: *
+Allow: /
+
+# The documentation, written for an agent rather than rendered for a browser. Nothing links
+# to these from the pages, so this is the only place they are announced.
+# https://trysynth.dev/llms.txt
+# https://trysynth.dev/llms-full.txt
+
+Sitemap: https://trysynth.dev/sitemap.xml

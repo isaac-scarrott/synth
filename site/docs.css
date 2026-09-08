@@ -213,3 +213,22 @@
   .dwalk { flex-direction: column; }
   .dwalk__n { text-align: left; }
 }
+
+/* ───────────────────────── print ─────────────────────────
+   The keyboard reference and the troubleshooting page are the two things anyone prints, and
+   on a dark canvas both come out as a black page. Print is the one surface where the palette
+   has to invert: ink on paper, and none of the furniture that only exists to navigate. */
+@media print {
+  .nav, .dnav, .dtoc, .dwalk, footer, .rails, .dust, .motes, .skip { display: none !important; }
+  :root { --ink: #000; --ink-2: #222; --ink-3: #333; --ink-meta: #444; --ink-faint: #555; }
+  body { background: #fff !important; color: #000; }
+  .dshell { display: block; padding: 0; }
+  .dbody { max-width: none; }
+  .dbody pre, .dbody table, .dbody blockquote, .callout {
+    background: #fff; border: 1px solid #bbb; color: #000;
+  }
+  .dbody pre, .dbody figure, .dbody table { break-inside: avoid; }
+  .dbody h2, .dbody h3 { break-after: avoid; }
+  /* A printed page carries no addresses, so a link is a word with no destination. */
+  .dbody a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.85em; color: #555; }
+}

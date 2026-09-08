@@ -18,6 +18,7 @@ Three things this exists to guarantee, none of which a hand-written set of pages
 pre-deploy guard wants.
 """
 import html
+import json
 import os
 import re
 import sys
@@ -103,7 +104,10 @@ def landing_nav():
         if ref.startswith(("http", "mailto", "data:", "/")):
             return m.group(0)
         if ref == "#top":
+            # The one anchor that is a page from here, not a place on this one.
             ref = "../"
+        elif ref.startswith("#"):
+            return m.group(0)
         elif ref == "docs/":
             ref = "./"
         else:
@@ -478,8 +482,11 @@ SHELL = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{title} - Synth docs</title>
 <meta name="description" content="{summary}" />
+<link rel="canonical" href="{canonical}" />
 <link rel="icon" href="../img/mark.png" />
 <link rel="icon" href="../img/mark-light.png" media="(prefers-color-scheme: dark)" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+{social}
 <script>
   // The charcoal mark reads on light browser chrome, the cream one on dark. Safari ignores
   // `media` on an icon link, so drive the swap here too; the links above cover the rest.
@@ -492,6 +499,9 @@ SHELL = """<!DOCTYPE html>
   }})();
 </script>
 <meta name="theme-color" content="#0d0f13" />
+<meta name="color-scheme" content="dark" />
+<link rel="preload" as="font" type="font/woff2" href="../fonts/Geist-Variable.woff2" crossorigin />
+<link rel="preload" as="font" type="font/woff2" href="../fonts/GeistMono-Variable.woff2" crossorigin />
 <!-- Built by site/build_docs.py. Edit site/docs-src/{slug}.html, not this file. -->
 <style>
 {css}
@@ -503,7 +513,7 @@ SHELL = """<!DOCTYPE html>
 
 <div class="wrap dwrap dshell">
   {sidebar}
-  <main class="dmain">
+  <main class="dmain" id="main">
     <article class="dbody">
       <h1>{title}</h1>
       <p class="lede dsum">{summary}</p>
@@ -557,6 +567,8 @@ def build_page(slug, css):
         title=html.escape(TITLES[slug]),
         summary=html.escape(summary_text),
         slug=slug,
+        canonical=canonical(slug),
+        social=social(slug, TITLES[slug], summary_text),
         css=css,
         dmg=DMG,
         nav=landing_nav(),
@@ -770,6 +782,56 @@ def check_balance(page, slug):
 
 
 SITE = "https://trysynth.dev"
+CARD = SITE + "/img/share-card.png"
+
+
+def canonical(slug):
+    """The one address for a page. There are four ways to reach each of these — `/docs/`
+    against `/docs/index.html`, and the `.md` twin against the `.html` — and a crawler that
+    finds two of them has found two pages unless the page says which one it is."""
+    return "%s/docs/" % SITE if slug == "index" else "%s/docs/%s.html" % (SITE, slug)
+
+
+def social(slug, title, summary):
+    """The share card and the breadcrumb for one docs page.
+
+    Docs URLs are the ones people paste to each other; every one of them used to unfurl as a
+    bare grey link, because this shell emitted a title and a description and stopped. The
+    picture is the landing page's — one card for the site, rather than a rendering job per
+    page — and the title and description are the page's own, which is what the reader of the
+    unfurl is actually choosing between.
+    """
+    url = canonical(slug)
+    full = "%s - Synth docs" % title
+    crumbs = [("Synth", SITE + "/"), ("Docs", SITE + "/docs/")]
+    if slug != "index":
+        crumbs.append((title, url))
+    trail = json.dumps({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": i, "name": name, "item": at}
+            for i, (name, at) in enumerate(crumbs, 1)
+        ],
+    }, indent=2)
+    tags = [
+        ("property", "og:type", "article"),
+        ("property", "og:site_name", "Synth"),
+        ("property", "og:locale", "en_GB"),
+        ("property", "og:url", url),
+        ("property", "og:title", full),
+        ("property", "og:description", summary),
+        ("property", "og:image", CARD),
+        ("property", "og:image:width", "1200"),
+        ("property", "og:image:height", "630"),
+        ("property", "og:image:alt", "Synth - run every coding agent, commit to none of them"),
+        ("name", "twitter:card", "summary_large_image"),
+        ("name", "twitter:image", CARD),
+    ]
+    lines = ['<meta %s="%s" content="%s" />' % (kind, key, html.escape(value, quote=True))
+             for kind, key, value in tags]
+    lines.append('<script type="application/ld+json">\n%s\n</script>' % trail)
+    return "\n".join(lines)
 
 
 def llms_index(built):
@@ -811,6 +873,31 @@ def llms_full(built):
     return "\n".join(parts) + "\n"
 
 
+def sitemap():
+    """Every address on this site, generated from NAV so a page added there is a page a
+    crawler is told about. Only the canonical form of each is listed — the `.md` twins are
+    the same documents for a different reader, and offering both invites a crawler to treat
+    the site as twice its size with every page duplicated."""
+    urls = [SITE + "/"] + [canonical(slug) for slug in PAGES]
+    body = "\n".join("  <url><loc>%s</loc></url>" % u for u in urls)
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            '%s\n</urlset>\n' % body)
+
+
+ROBOTS = """# Everything here is meant to be read, by people and by agents alike.
+User-agent: *
+Allow: /
+
+# The documentation, written for an agent rather than rendered for a browser. Nothing links
+# to these from the pages, so this is the only place they are announced.
+# %(site)s/llms.txt
+# %(site)s/llms-full.txt
+
+Sitemap: %(site)s/sitemap.xml
+"""
+
+
 def build():
     """Every file this build owns, keyed by its path relative to site/."""
     css = landing_css()
@@ -828,6 +915,8 @@ def build():
         files["docs/%s.md" % slug] = built[slug]["markdown"]
     files["llms.txt"] = llms_index(built)
     files["llms-full.txt"] = llms_full(built)
+    files["sitemap.xml"] = sitemap()
+    files["robots.txt"] = ROBOTS % {"site": SITE}
     # GitHub Pages runs Jekyll by default, which would take the .md twins and render them
     # into HTML rather than serving the markdown an agent asked for.
     files[".nojekyll"] = ""

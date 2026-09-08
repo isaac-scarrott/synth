@@ -2629,6 +2629,22 @@ disclosure to dive deeper.
   alone, and the kill now prints which pids it took and which it left.
   [Details](docs/features/2026-09-08.md)
 
+- **The site gets a share card, and the metadata a shared link needs** — the Open Graph image was the
+  app icon on charcoal, referenced by a relative URL, so a share was a grey link with no picture. It
+  is now `site/img/share-card.png`: the wordmark, the title sentence, the four agents and the domain,
+  drawn in `site/og/card.html` and rendered headless by `site/og/render.js`, which fails outright if
+  Geist never loaded. Around it: absolute og/twitter tags with the image's dimensions and alt, per-page
+  canonicals and social tags on all ten docs pages, `SoftwareApplication` and `BreadcrumbList`,
+  `robots.txt` and `sitemap.xml` generated from `NAV`, a branded 404, `/favicon.ico` and
+  `/apple-touch-icon.png`. [Details](docs/features/2026-09-08.md)
+
+- **The landing page rendered blank without JavaScript** — every `.rev` entrance set `opacity: 0` and
+  waited for an observer, and the headline, lede, CTAs and every section body are `.rev`. It is gated
+  on `.js` now, set on the root element before the stylesheet is parsed. With it: the reduced-motion
+  branch left a 7px blur it never reset, `--ink-faint` went from 3.76:1 to 4.53:1 (it set the line
+  naming the price and the hardware), a skip link landed in the shared nav, and the docs print as ink
+  on paper rather than a black sheet. [Details](docs/features/2026-09-08.md)
+
 - **Failures get a spine — Synth stops losing terminals quietly** — terminals were dying silently and
   nothing tracked it: `Analytics.error` had **zero call sites**, and the only failure event in the
   product was `app_crashed`. A twelve-agent sweep, adversarially verified, confirmed 151 silent

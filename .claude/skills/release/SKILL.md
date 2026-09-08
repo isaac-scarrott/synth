@@ -121,15 +121,28 @@ copies will reject the update.
 
 ## Publish the site, if its links changed
 
-`landing/index.html` is the source of the marketing site; the deployed copy is a **separate public
-repo**, `isaac-scarrott/synth-site`, served by GitHub Pages from `index.html` at its root. Nothing
-automates the hop, so a change here is invisible to the world until it is copied over:
+`site/` is the source of the marketing site; the deployed copy is a **separate public repo**,
+`isaac-scarrott/synth-site`, served by GitHub Pages from `index.html` at its root. Nothing
+automates the hop, so a change here is invisible to the world until it is copied over.
+
+**Copy the whole tree, not a list of files.** Half of what the site needs now lives at its root
+rather than in `index.html` — `robots.txt`, `sitemap.xml`, `404.html`, `favicon.ico`,
+`apple-touch-icon.png`, `llms.txt`, `llms-full.txt`, `.nojekyll` — and a named-file copy is how
+one of them ends up existing here and 404ing there. `build_docs.py` and the generated tree must
+agree before it goes, and the sources of the pictures do not ship.
 
 ```bash
+python3 site/build_docs.py --check          # the tree on disk is the tree the sources build
 gh repo clone isaac-scarrott/synth-site /tmp/synth-site
-cp landing/index.html landing/img/* /tmp/synth-site/…   # index.html sits at the repo root
-cd /tmp/synth-site && git commit -am "…" && git push
+rsync -a --delete \
+  --exclude '.git' \
+  --exclude 'build_docs.py' --exclude 'devserver.py' --exclude 'dev-edit.js' \
+  --exclude 'docs-src/' --exclude 'capture/' --exclude 'og/' --exclude '_*.html' \
+  site/ /tmp/synth-site/
+cd /tmp/synth-site && git add -A && git commit -m "…" && git push
 ```
+
+`.git` is excluded because `--delete` would otherwise take the destination's history with it.
 
 Order matters: the buttons point at bucket objects, so **publish the release first**. Pointing the
 site at an artifact the bucket does not have yet is a 404 on the one link that matters.

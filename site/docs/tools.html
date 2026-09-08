@@ -5,8 +5,48 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Agent tools - Synth docs</title>
 <meta name="description" content="Every agent Synth hosts gets a real browser, a booted iPhone, and a way to hand work to a new branch. You do not wire any of it up, and you do not wire it up again for the next agent." />
+<link rel="canonical" href="https://trysynth.dev/docs/tools.html" />
 <link rel="icon" href="../img/mark.png" />
 <link rel="icon" href="../img/mark-light.png" media="(prefers-color-scheme: dark)" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="Synth" />
+<meta property="og:locale" content="en_GB" />
+<meta property="og:url" content="https://trysynth.dev/docs/tools.html" />
+<meta property="og:title" content="Agent tools - Synth docs" />
+<meta property="og:description" content="Every agent Synth hosts gets a real browser, a booted iPhone, and a way to hand work to a new branch. You do not wire any of it up, and you do not wire it up again for the next agent." />
+<meta property="og:image" content="https://trysynth.dev/img/share-card.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Synth - run every coding agent, commit to none of them" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://trysynth.dev/img/share-card.png" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Synth",
+      "item": "https://trysynth.dev/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Docs",
+      "item": "https://trysynth.dev/docs/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "Agent tools",
+      "item": "https://trysynth.dev/docs/tools.html"
+    }
+  ]
+}
+</script>
 <script>
   // The charcoal mark reads on light browser chrome, the cream one on dark. Safari ignores
   // `media` on an icon link, so drive the swap here too; the links above cover the rest.
@@ -19,6 +59,9 @@
   })();
 </script>
 <meta name="theme-color" content="#0d0f13" />
+<meta name="color-scheme" content="dark" />
+<link rel="preload" as="font" type="font/woff2" href="../fonts/Geist-Variable.woff2" crossorigin />
+<link rel="preload" as="font" type="font/woff2" href="../fonts/GeistMono-Variable.woff2" crossorigin />
 <!-- Built by site/build_docs.py. Edit site/docs-src/tools.html, not this file. -->
 <style>
   /* ───────────────────────── Geist, self-hosted (OFL) ───────────────────────── */
@@ -47,7 +90,11 @@
     --ink-2: #c4c7cf;
     --ink-3: #adb0b9;
     --ink-meta: #8d9099;     /* body copy: the tonal drop under a white heading */
-    --ink-faint: #6b6e77;
+    /* 4.53:1 at its worst against the surfaces it is used on, which is the least a body size
+       may be. It was #6b6e77 — 3.76:1 on the canvas — and the line it set was the one naming
+       the price and the hardware, the least readable text on the page. The step down from
+       --ink-meta is smaller for it; a tone nobody can read is not a tier of a hierarchy. */
+    --ink-faint: #83868f;
 
     --hair: rgba(255,255,255,0.06);
     --tick: rgba(255,255,255,0.09);
@@ -182,6 +229,15 @@
   }
   .nav.is-stuck::before { opacity: 1; }
   .nav .wrap { height: 64px; display: flex; align-items: center; gap: var(--s4); }
+  /* Off-screen rather than display:none, which would take it out of the tab order and leave
+     it as decoration nobody can reach. */
+  .skip {
+    position: absolute; left: var(--s4); top: -100px; z-index: 30;
+    padding: var(--s2) var(--s4); border-radius: var(--r-control);
+    background: var(--raised); color: var(--ink); font: 500 14px var(--font);
+    transition: top var(--tap) var(--ease);
+  }
+  .skip:focus-visible { top: var(--s3); }
   .nav__spacer { margin-left: auto; }
   #navtrip { position: absolute; top: 0; left: 0; width: 1px; height: 50vh; pointer-events: none; }
   .foot__gh { display: inline-flex; align-items: center; gap: var(--s2); }
@@ -400,18 +456,25 @@
 
   /* ───────────────────────── motion ─────────────────────────
      Entrances at 500ms with 8px of travel — enough to read as arriving,
-     not enough to make a scroll feel weighed down. Gone under reduced-motion. */
-  .rev {
+     not enough to make a scroll feel weighed down. Gone under reduced-motion.
+
+     An entrance is the one effect that hides its own content until a script un-hides it, so it
+     is gated on the script having run: `.js` is set on the root element in the head, and
+     without it every .rev is simply visible.
+     The page is the headline, the lede, the CTAs and every section body
+     — all of them .rev — so an entrance that starts hidden and is never released is not a
+     missing animation, it is a blank page. */
+  .js .rev {
     opacity: 0; transform: translateY(20px); filter: blur(7px);
     transition: opacity var(--enter) var(--linear), transform var(--enter) var(--linear),
                 filter var(--enter) var(--linear);
   }
-  .rev.in { opacity: 1; transform: none; filter: blur(0); }
+  .js .rev.in { opacity: 1; transform: none; filter: blur(0); }
   .rev[data-d="1"] { transition-delay: 135ms; } .rev[data-d="2"] { transition-delay: 270ms; }
   .rev[data-d="3"] { transition-delay: 405ms; }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
-    .rev { opacity: 1; transform: none; transition: none; }
+    .js .rev { opacity: 1; transform: none; filter: none; transition: none; }
     * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
   }
 
@@ -630,11 +693,34 @@
   .dwalk { flex-direction: column; }
   .dwalk__n { text-align: left; }
 }
+
+/* ───────────────────────── print ─────────────────────────
+   The keyboard reference and the troubleshooting page are the two things anyone prints, and
+   on a dark canvas both come out as a black page. Print is the one surface where the palette
+   has to invert: ink on paper, and none of the furniture that only exists to navigate. */
+@media print {
+  .nav, .dnav, .dtoc, .dwalk, footer, .rails, .dust, .motes, .skip { display: none !important; }
+  :root { --ink: #000; --ink-2: #222; --ink-3: #333; --ink-meta: #444; --ink-faint: #555; }
+  body { background: #fff !important; color: #000; }
+  .dshell { display: block; padding: 0; }
+  .dbody { max-width: none; }
+  .dbody pre, .dbody table, .dbody blockquote, .callout {
+    background: #fff; border: 1px solid #bbb; color: #000;
+  }
+  .dbody pre, .dbody figure, .dbody table { break-inside: avoid; }
+  .dbody h2, .dbody h3 { break-after: avoid; }
+  /* A printed page carries no addresses, so a link is a word with no destination. */
+  .dbody a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.85em; color: #555; }
+}
 </style>
 </head>
 
 <body class="docs">
 <header class="nav" id="nav">
+  <!-- Inside the nav because build_docs.py borrows the nav wholesale, so the docs get this
+       too — and they are where it earns its keep: ten sidebar links stand between the top of
+       every docs page and its prose. -->
+  <a class="skip" href="#main">Skip to content</a>
   <div class="wrap">
     <a class="brand" href="../"><img src="../img/mark-light.png" alt="" />Synth</a>
     <span class="nav__spacer"></span>
@@ -665,7 +751,7 @@
 <li><a href="troubleshooting.html">Troubleshooting</a></li>
 </ul>
 </nav>
-  <main class="dmain">
+  <main class="dmain" id="main">
     <article class="dbody">
       <h1>Agent tools</h1>
       <p class="lede dsum">Every agent Synth hosts gets a real browser, a booted iPhone, and a way to hand work to a new branch. You do not wire any of it up, and you do not wire it up again for the next agent.</p>

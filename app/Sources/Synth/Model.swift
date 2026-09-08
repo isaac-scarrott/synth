@@ -228,12 +228,26 @@ extension URL {
         return url
     }
 
-    /// working.html's `browserHost`, tightened to host+path: what browser sessions are named
-    /// by and what the omnibox pill / recents show ("localhost:8733/palette", no scheme).
+    /// `browserAddress` tightened to host+path: the short *name* form
+    /// ("localhost:8733/palette"), for session titles and the device frame's own address pill.
     var browserHostPath: String {
         var s = (host ?? "") + (port.map { ":\($0)" } ?? "") + path
         while s.hasSuffix("/") { s.removeLast() }
         return s.isEmpty ? absoluteString : s
+    }
+
+    /// working.html's `browserHost`: the address as the omnibox shows it and as editing
+    /// seeds it — everything but the scheme, so the query and fragment that say *which*
+    /// page state you are on stay visible and survive a re-navigation.
+    var browserAddress: String {
+        var s = absoluteString
+        for scheme in ["https://", "http://"] where s.hasPrefix(scheme) {
+            s.removeFirst(scheme.count)
+        }
+        if query == nil, fragment == nil {
+            while s.hasSuffix("/") { s.removeLast() }
+        }
+        return s
     }
 
     /// A dev server on this machine — the one web target that belongs in Synth's own browser

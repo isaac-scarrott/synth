@@ -493,7 +493,7 @@ import Observation
                                     elementPaths: [String?]) -> String {
         let comments = payload["comments"] as? [[String: Any]] ?? []
         let urlString = payload["url"] as? String ?? ""
-        let place = URL(string: urlString)?.browserHostPath ?? urlString
+        let place = URL(string: urlString)?.browserAddress ?? urlString
         let n = comments.count
         var lines = ["[Synth] \(n) browser comment\(n == 1 ? "" : "s") on \(place)"]
         lines.append("Viewport screenshot: \(viewportPath)")
@@ -504,7 +504,7 @@ import Observation
             // A pin from another page is only locatable if the message says which page.
             if comment["onCurrentPage"] as? Bool != true {
                 let url = comment["url"] as? String ?? ""
-                lines.append("   Page: \(URL(string: url)?.browserHostPath ?? url)")
+                lines.append("   Page: \(URL(string: url)?.browserAddress ?? url)")
             }
             lines.append("   Element: \(comment["selector"] as? String ?? "?")")
             let rect = comment["rect"] as? [String: Any] ?? [:]

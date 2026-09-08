@@ -1408,7 +1408,7 @@ private struct OmniPill: View {
             HStack(spacing: 7) {
                 if let url = ctrl.address {
                     Phos(path: Phosphor.lock, size: 12).foregroundStyle(Theme.inkFaint)
-                    Text(url.browserHostPath)
+                    Text(url.browserAddress)
                         .font(.mono(12))
                         .foregroundStyle(Theme.inkMuted)
                         .lineLimit(1).truncationMode(.tail)
@@ -1438,6 +1438,8 @@ private struct OmniPill: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        // The pill truncates; hovering gives the whole address, scheme included.
+        .help(ctrl.address?.absoluteString ?? "")
     }
 }
 
@@ -1492,7 +1494,7 @@ private struct OmniDrop: View {
     var body: some View {
         PaneDrop {
             GoToField(placeholder: "Search or enter address",
-                      seed: ctrl.address?.browserHostPath,
+                      seed: ctrl.address?.browserAddress,
                       onSubmit: { text in if ctrl.go(text) { close() } },
                       onCancel: close)
             if !recents.isEmpty {
@@ -1516,7 +1518,7 @@ private struct RecentsList: View {
         VStack(spacing: 1) {
             ForEach(recents, id: \.url) { r in
                 PaneRecRow(icon: Phosphor.globe,
-                           key: URL(string: r.url)?.browserHostPath ?? r.url,
+                           key: URL(string: r.url)?.browserAddress ?? r.url,
                            name: r.title) { open(r) }
             }
         }

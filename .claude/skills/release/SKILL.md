@@ -137,6 +137,7 @@ gh repo clone isaac-scarrott/synth-site /tmp/synth-site
 rsync -a --delete --dry-run -i \                   # read this before running it for real
   --exclude '.git' --exclude '.gitignore' --exclude '__pycache__/' \
   --exclude 'build_docs.py' --exclude 'devserver.py' --exclude 'dev-edit.js' \
+  --exclude 'docs.css' \
   --exclude 'docs-src/' --exclude 'capture/' --exclude 'og/' --exclude '_*.html' \
   --exclude '*@2x.png' \
   site/ /tmp/synth-site/
@@ -144,9 +145,11 @@ cd /tmp/synth-site && git add -A && git commit -m "…" && git push
 ```
 
 `.git` is excluded because `--delete` would otherwise take the destination's history with it.
-`*@2x.png` are the capture masters: the pages ask for the `.webp` twins, and the masters are 5.7 MB
-of files nothing ever requests. Anything that does want to name one — a `schema.org` `screenshot`,
-say — names the `.webp`, because that is the file the site actually serves.
+`*@2x.png` are the capture masters: every page asks for the `.webp` twin, so the masters are 5.7 MB
+of files nothing requests — and anything that wants to name a screenshot, a `schema.org`
+`screenshot` included, names the `.webp`, because that is the file the site actually serves.
+`docs.css` is a build input like `docs-src/`: each docs page carries it inlined, so nothing fetches
+it either.
 
 **Run the dry run first and read it.** It is the only thing standing between a stray build artifact
 and the public site, and it has already caught `__pycache__` on its way out the door.

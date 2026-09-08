@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.42.1",
+    "date": "2026-09-08",
+    "changes": [
+      "Flipping between tabs no longer blinks the pane. A pane's entrance was replaying on every switch, blanking it for a frame and fading it back over 220ms — worst on a browser, where the page is the pane. The entrance now belongs to a session's first appearance; returning to one already open is instant."
+    ]
+  },
+  {
     "version": "0.42.0",
     "date": "2026-09-07",
     "changes": [

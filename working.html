@@ -451,6 +451,10 @@
     container-type: inline-size;   /* each pane queries its own width, not the viewport's (015) */
   }
   @keyframes pane-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  /* The entrance is for a pane appearing. A tab you flip back to is already there, and every
+     render rebuilds the element — so replaying it blinks the live surface out and fades it up
+     again on each click of the strip, worst on a browser where the page IS the pane. */
+  .pane--noenter { animation: none; }
 
   /* ---- Pane tree (spine — 009) ---- */
   /* Nested split containers lay the tree out in .content; a static 1px seam divides
@@ -6442,9 +6446,15 @@
     return strip;
   }
 
+  // Sessions whose pane has already been on screen, so the entrance runs once per session
+  // rather than on every re-render (see .pane--noenter).
+  const paneShown = new WeakSet();
+
   function renderPane(leaf) {
     const pane = document.createElement('div');
-    pane.className = 'pane' + (leaf === activePane ? ' pane--active' : '');
+    const first = !leaf.session || !paneShown.has(leaf.session);
+    if (leaf.session) paneShown.add(leaf.session);
+    pane.className = 'pane' + (leaf === activePane ? ' pane--active' : '') + (first ? '' : ' pane--noenter');
     pane._node = leaf;
     leaf.el = pane;
     pane.innerHTML = leaf.setup ? setupPaneHTML(leaf.setup) : sessionPaneHTML(leaf.session);

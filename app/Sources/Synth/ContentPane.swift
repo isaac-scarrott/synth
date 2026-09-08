@@ -295,8 +295,23 @@ private struct LeafPane: View {
     }
 }
 
+/// Sessions whose pane has already been on screen. The entrance below belongs to a pane
+/// *appearing* — a session opening, a split taking one on. Switching tabs rebuilds the pane
+/// view from scratch (the leaf is keyed by session id), so without this every flip back to a
+/// session replays the entrance over a surface that never went anywhere: the terminal or page
+/// blinks out and fades up again on each click of the strip. Worst on a browser, where the
+/// whole page is the thing blinking.
+///
+/// Ids are never reused, so remembering them is safe; the set is one UUID per session the
+/// window has shown, and closing a session leaves an entry that nothing can match again.
+@MainActor private enum PaneEntrance {
+    private static var shown: Set<UUID> = []
+    /// True the first time this session's pane is presented, false every time after.
+    static func isFirst(_ id: UUID) -> Bool { shown.insert(id).inserted }
+}
+
 /// working.html `.pane`: head (title · crumb · spacer) over the session body,
-/// entering with the 220ms fade + 4px rise.
+/// entering with the 220ms fade + 4px rise — the first time it appears, not on every tab flip.
 private struct SessionPane: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -317,7 +332,7 @@ private struct SessionPane: View {
         .opacity(shown ? 1 : 0)
         .offset(y: shown ? 0 : 4)
         .onAppear {
-            if reduceMotion { shown = true }
+            if reduceMotion || !PaneEntrance.isFirst(session.id) { shown = true }
             else { withAnimation(.easeOut(duration: 0.22)) { shown = true } }
         }
     }

@@ -2592,3 +2592,9 @@ disclosure to dive deeper.
   credential-less with quarantine set; appcast newest 0.42.0 at 730 with `edSignature` on all 18
   enclosures, deltas 0.93–1.46 MB. No `synth-site` push — the deployed site was already
   byte-identical across all 38 files and answers 200 for the docs, the `.md` twins and `llms.txt`.
+
+- **The pane entrance runs once per session, not on every tab flip** — clicking the tab strip
+  replayed working.html's `pane-in` over a pane that had just been rebuilt from nothing, so each
+  switch blanked the whole pane for a frame and faded it back over 220ms. Worst on a browser, where
+  the page is the pane. The entrance now belongs to a session's first appearance; flipping back to
+  one already open is instant. Mirrored in `working.html` as `.pane--noenter`.

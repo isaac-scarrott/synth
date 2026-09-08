@@ -12,22 +12,42 @@ import Foundation
 /// happened and which signal, not a symbolicated stack. It also restores the default disposition
 /// and re-raises, so the OS still writes its own `.crash` report for the deep dives.
 enum CrashReporter {
-    private static let markerURL = AppSupport.dir("crash").appendingPathComponent("last-crash")
+    /// Pid-scoped. A single shared path meant two Synth instances overwrote each other's
+    /// evidence, and the survivor reported one crash for two.
+    private static let markerDir = AppSupport.dir("crash")
+    private static let markerURL = markerDir.appendingPathComponent("last-crash-\(getpid())")
 
     /// Report-and-clear any marker the previous run left behind. Call at launch AFTER
     /// `Analytics.bootstrap` so the event has somewhere to land (a no-op when analytics is off).
     @MainActor static func reportPending() {
-        let path = markerURL.path
-        guard let data = try? Data(contentsOf: markerURL),
-              let signalName = String(data: data, encoding: .utf8)?
-                  .trimmingCharacters(in: .whitespacesAndNewlines),
-              !signalName.isEmpty else { return }
-        var props: [String: Any] = ["signal": signalName]
-        if let mtime = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date {
-            props["crashed_at"] = ISO8601DateFormatter().string(from: mtime)
+        // Every marker, not just this pid's: the crash we are reporting belongs to a process
+        // that is gone, and its pid is not ours.
+        let markers = (try? FileManager.default.contentsOfDirectory(at: markerDir,
+                                                                    includingPropertiesForKeys: [.contentModificationDateKey]))?
+            .filter { $0.lastPathComponent.hasPrefix("last-crash-") } ?? []
+        // The trail belongs to the run that crashed, so it is read before the fresh run
+        // overwrites it — which `Fault`'s own trail file does at first touch.
+        let trail = Fault.previousRunTrail()
+        for marker in markers {
+            guard let data = try? Data(contentsOf: marker),
+                  let payload = String(data: data, encoding: .utf8)?
+                      .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !payload.isEmpty else { continue }
+            // "<signal>|<version>" — the version is pre-rendered at install so a crash on N,
+            // reported after Sparkle staged N+1, stops being blamed on the build that fixed it.
+            let parts = payload.split(separator: "|", maxSplits: 1).map(String.init)
+            var props: [String: Any] = ["signal": parts[0]]
+            if parts.count > 1 { props["crashed_version"] = parts[1] }
+            if let mtime = (try? FileManager.default
+                .attributesOfItem(atPath: marker.path)[.modificationDate]) as? Date {
+                props["crashed_at"] = ISO8601DateFormatter().string(from: mtime)
+            }
+            // What the run was doing on its way down. Closed vocabulary, so it is wire-safe
+            // by the same rule as every other fault property.
+            if !trail.isEmpty { props["trail"] = trail.joined(separator: ",") }
+            Analytics.capture("app_crashed", props)
+            try? FileManager.default.removeItem(at: marker)
         }
-        Analytics.capture("app_crashed", props)
-        try? FileManager.default.removeItem(at: markerURL)
     }
 
     /// Install the signal + uncaught-exception handlers. Call once at launch. The marker buffers
@@ -81,13 +101,21 @@ enum CrashReporter {
         }
     }
 
-    private static let mSIGABRT = Array("SIGABRT".utf8)
-    private static let mSIGSEGV = Array("SIGSEGV".utf8)
-    private static let mSIGBUS  = Array("SIGBUS".utf8)
-    private static let mSIGILL  = Array("SIGILL".utf8)
-    private static let mSIGFPE  = Array("SIGFPE".utf8)
-    private static let mSIGTRAP = Array("SIGTRAP".utf8)
-    private static let mSIGSYS  = Array("SIGSYS".utf8)
-    private static let mNSException = Array("NSException".utf8)
-    private static let mUnknown = Array("unknown".utf8)
+    /// Pre-rendered here, not at crash time: a crashing thread may not allocate, and the
+    /// version is exactly the thing the next launch can no longer be trusted to know.
+    private static let versionSuffix: [UInt8] = {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        return Array("|\(v)".utf8)
+    }()
+    private static func marker(_ name: String) -> [UInt8] { Array(name.utf8) + versionSuffix }
+
+    private static let mSIGABRT = marker("SIGABRT")
+    private static let mSIGSEGV = marker("SIGSEGV")
+    private static let mSIGBUS  = marker("SIGBUS")
+    private static let mSIGILL  = marker("SIGILL")
+    private static let mSIGFPE  = marker("SIGFPE")
+    private static let mSIGTRAP = marker("SIGTRAP")
+    private static let mSIGSYS  = marker("SIGSYS")
+    private static let mNSException = marker("NSException")
+    private static let mUnknown = marker("unknown")
 }

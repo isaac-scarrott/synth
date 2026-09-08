@@ -20,4 +20,26 @@ enum AppSupport {
     static func dir(_ subpath: String) -> URL {
         root.appendingPathComponent(subpath, isDirectory: true)
     }
+
+    /// Prove once, at launch, that the sandbox can be written. Nothing here ever created or
+    /// tested `root` — every consumer did its own `try? createDirectory` and carried on — so a
+    /// read-only or full Application Support folder made persistence, crash markers, the MCP
+    /// install, the hook shims and the simulator claims each fail separately and silently, and
+    /// the app looked fine until the user relaunched into an empty tree. One probe collapses
+    /// all of that into a single sentence, said once.
+    @discardableResult static func probeWritable() -> Bool {
+        let probe = root.appendingPathComponent(".writable")
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try Data().write(to: probe)
+            try FileManager.default.removeItem(at: probe)
+            return true
+        } catch {
+            Fault.surface(.persistence, .supportDirUnwritable, severity: .blocked,
+                          say: .init(title: "Synth can't save anything this run"),
+                          details: [.posixErrno(errno), .stage(.write)],
+                          evidence: "Application Support isn't writable.")
+            return false
+        }
+    }
 }

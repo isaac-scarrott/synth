@@ -12,8 +12,10 @@ import PostHog
 ///   • an unset `projectKey` makes every call a no-op, so CI and forked checkouts stay silent;
 ///   • the opt-out toggle (Settings → About) is honoured from the very first event.
 ///
-/// Caught errors go through `error(_:)`. Native crashes (signals, `fatalError`, the vendored
-/// C/C++ engines) are NOT captured here — that needs a dedicated crash handler, a follow-up.
+/// Caught failures do not come here directly — they go through `Fault`, which decides what the
+/// user is told and then calls `fault(_:repeats:surfaced:)` below. Native crashes (signals,
+/// `fatalError`, the vendored C/C++ engines) unwind before any send can finish, so they are
+/// caught by `CrashReporter`'s marker and reported on the next launch.
 @MainActor
 enum Analytics {
     /// PostHog *project* API key — a publishable client token, not a secret (safe in source and
@@ -57,21 +59,90 @@ enum Analytics {
             "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
         ])
         live = true
+        // The store was built before this ran, so anything it faulted on the way up is
+        // waiting. Flush it now that the gates above have been applied.
+        Fault.telemetryDidGoLive()
     }
 
     /// Record a product event. Properties must stay non-PII — counts, kinds, durations, never
     /// paths, titles, or user text.
     static func capture(_ event: String, _ properties: [String: Any]? = nil) {
-        guard live else { return }
+        guard live else { return buffer(.event(event, properties)) }
         PostHogSDK.shared.capture(event, properties: properties)
     }
 
-    /// A caught, non-fatal error. `domain` is a stable slug ("worktree", "browser", …); `detail`
-    /// is a short, non-PII descriptor — never raw messages that might carry paths or content.
-    static func error(_ domain: String, detail: String? = nil) {
-        var props: [String: Any] = ["domain": domain]
-        if let detail { props["detail"] = detail }
-        capture("error", props)
+    /// A caught failure, as `Fault` decided it. Sent as a PostHog `$exception` — `Fault.Record`
+    /// is an `Error` whose `CustomNSError` conformance fingerprints the issue on our own
+    /// `domain/code` slugs rather than on whatever `localizedDescription` happened to hold, so
+    /// these group into Error Tracking issues instead of piling up as anonymous event rows.
+    ///
+    /// `surfaced` is the property the whole audit turns on: `surfaced=false` IS the
+    /// silent-failure backlog, ranked by how often it actually happens to real people rather
+    /// than by how alarming it looked in a code review.
+    static func fault(_ r: Fault.Record, repeats: Int, surfaced: Bool) {
+        var props = r.errorUserInfo
+        props["surfaced"] = surfaced
+        if repeats > 0 { props["repeats"] = repeats }
+        let trail = Fault.recentTrail()
+        if !trail.isEmpty { props["trail"] = trail.joined(separator: ",") }
+        guard live else { return buffer(.fault(r, props)) }
+        PostHogSDK.shared.addExceptionStep("\(r.domain.rawValue)/\(r.code.rawValue)")
+        PostHogSDK.shared.captureException(r, properties: props)
+    }
+
+    /// Whether this launch can report a native crash at all. PostHog's crash integration
+    /// installs only from the *cached* remote config, so a fresh install has no crash capture
+    /// on its first run and a debugger suppresses it entirely — without this event, "no
+    /// crashes" and "no coverage" are the same observation.
+    static func reportCrashCaptureState() {
+        capture("crash_capture_state", [
+            "opted_out": PostHogSDK.shared.isOptOut(),
+            "debugger_attached": isDebuggerAttached(),
+        ])
+    }
+
+    private static func isDebuggerAttached() -> Bool {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return false }
+        return (info.kp_proc.p_flag & P_TRACED) != 0
+    }
+
+    // MARK: Pre-bootstrap buffer
+
+    /// Everything minted before `live` — which is the ENTIRE `AppStore` construction, since
+    /// SwiftUI builds the store before `applicationDidFinishLaunching` runs — is held here and
+    /// flushed once the dev-channel and opt-out gates have been applied. It is why the spine
+    /// does not depend on launch ordering, and why `bootstrap` did not have to move ahead of
+    /// `GhosttyApp.start()` (SynthApp documents that order as load-bearing).
+    ///
+    /// Capped: a spine must not become a leak on a machine where everything is failing.
+    private enum Pending {
+        case event(String, [String: Any]?)
+        case fault(Fault.Record, [String: Any])
+    }
+    private static var pending: [Pending] = []
+    private static func buffer(_ p: Pending) {
+        guard pending.count < 100 else { return }
+        pending.append(p)
+    }
+
+    /// Drain the buffer. Called by `Fault.telemetryDidGoLive()` at the end of `bootstrap` —
+    /// and only there, so a build that never brings analytics up simply never sends.
+    static func flushBuffered() {
+        guard live else { return }
+        let held = pending
+        pending = []
+        for p in held {
+            switch p {
+            case let .event(name, props):
+                PostHogSDK.shared.capture(name, properties: props)
+            case let .fault(r, props):
+                PostHogSDK.shared.addExceptionStep("\(r.domain.rawValue)/\(r.code.rawValue)")
+                PostHogSDK.shared.captureException(r, properties: props)
+            }
+        }
     }
 
     /// Flip the opt-out at runtime (Settings toggle). PostHog stops/starts sending immediately and

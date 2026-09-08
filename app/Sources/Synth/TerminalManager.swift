@@ -19,22 +19,59 @@ enum TerminalLauncher {
     /// anything untouched for three days while the app is still running, and a Synth left up
     /// over a long weekend lost the wrapper under itself — every new row then exec'd a path
     /// that no longer existed, died on the spot, and was reported as the agent quitting.
-    static var command: String {
+    /// Fallible because the failure mode is the reported bug. This used to `try?` the write,
+    /// ignore `chmod`, and hand back the path either way — so a failed write meant every
+    /// terminal opened afterwards exec'd a file that wasn't there and died on the spot, which
+    /// `login` then reported as exit 0 and the app read as a clean quit. The row vanished.
+    /// A path this function has no reason to believe in is not a path it may return.
+    static func command() -> Fallible<String> {
         let path = NSTemporaryDirectory() + "synth-login-\(getpid()).sh"
-        guard !FileManager.default.isExecutableFile(atPath: path) else { return path }
+        if FileManager.default.isExecutableFile(atPath: path) { return .success(path) }
         let script = """
         #!/bin/sh
         strip() { printf '%s' "$1" | sed -e 's#[^:]*[Gg]hostty[^:]*:##g' -e 's#:[^:]*[Gg]hostty[^:]*##g'; }
         PATH="$(strip "$PATH")"; MANPATH="$(strip "$MANPATH")"; XDG_DATA_DIRS="$(strip "$XDG_DATA_DIRS")"
         export PATH MANPATH XDG_DATA_DIRS
         unset GHOSTTY_RESOURCES_DIR GHOSTTY_BIN_DIR GHOSTTY_SHELL_FEATURES GHOSTTY_SURFACE_ID CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION __CFBundleIdentifier TERMINFO
+        # $SHELL reaches a GUI app from Directory Services, so it names whatever the user last
+        # chsh'd to — including a homebrew fish or nushell they have since uninstalled. exec'ing
+        # it then fails, `login` reports 0 anyway, and no rc file ever runs to say otherwise:
+        # a plain terminal that dies here leaves no trace at all. Say so over the socket while
+        # there is still a process to say it with.
+        sh="${SHELL:-/bin/zsh}"
+        if [ ! -x "$sh" ]; then
+          [ -n "$SYNTH_HOOK_BIN" ] && "$SYNTH_HOOK_BIN" report --exit 127 --fault shell_not_executable
+          printf 'synth: your login shell (%s) is not executable\\n' "$sh" >&2
+          exit 127
+        fi
         launch="$SYNTH_LAUNCH_COMMAND"; unset SYNTH_LAUNCH_COMMAND
-        [ -n "$launch" ] && exec "${SHELL:-/bin/zsh}" -l -i -c "$launch"
-        exec "${SHELL:-/bin/zsh}" -l -i
+        [ -n "$launch" ] && exec "$sh" -l -i -c "$launch"
+        exec "$sh" -l -i
         """
-        try? script.write(toFile: path, atomically: true, encoding: .utf8)
-        chmod(path, 0o755)
-        return path
+        do {
+            try script.write(toFile: path, atomically: true, encoding: .utf8)
+        } catch {
+            return .failure(fault(path, stage: .write, evidence: error.localizedDescription))
+        }
+        guard chmod(path, 0o755) == 0 else {
+            return .failure(fault(path, stage: .write, evidence: String(cString: strerror(errno))))
+        }
+        // Re-ask rather than trust the two calls above: atomic writes go through a temp file
+        // and a rename, and the thing that matters is whether the final path is runnable.
+        guard FileManager.default.isExecutableFile(atPath: path) else {
+            return .failure(fault(path, stage: .resolve, evidence: "The wrapper isn't executable."))
+        }
+        return .success(path)
+    }
+
+    private static func fault(_ path: String, stage: Fault.Detail.Stage,
+                              evidence: String) -> Fault.Record {
+        Fault.Record(domain: .terminalSpawn, code: .launcherScriptUnwritable,
+                     severity: .blocked, session: nil,
+                     details: [.stage(stage), .posixErrno(errno)],
+                     evidence: evidence,
+                     copy: .init(title: "Synth can't start terminals", retry: .restartSynth),
+                     site: "TerminalManager.swift")
     }
 }
 
@@ -50,11 +87,49 @@ enum TerminalLauncher {
     var hookSocketPath = ""
     private var views: [UUID: GhosttySurfaceView] = [:]
 
-    func view(for session: Session, cwd: URL, agentFlags: String = "") -> GhosttySurfaceView {
-        if let existing = views[session.id] { return existing }
+    /// When the user asked for this terminal — armed on *intent*, not on a surface existing,
+    /// which is the whole point: the worst failures are the ones where no surface, no PTY and
+    /// no exit event ever appear, so a detector that waits for one of those sees nothing.
+    private var intentAt: [UUID: Date] = [:]
+    private var watchdogs: [UUID: [Task<Void, Never>]] = [:]
+    /// Sessions whose death the watchdog has already spoken for, so the exit event that may
+    /// follow doesn't say it twice.
+    private var claimed: Set<UUID> = []
+    /// Sessions that have shown any sign of life since spawning — a hook line, a status
+    /// change, a title. Proof the shell got far enough to run something.
+    private var aliveSignals: Set<UUID> = []
+    /// Whether a row's failure to speak within twelve seconds means anything. A plain shell
+    /// where the user typed nothing looks identical to a hung one; an agent row that hasn't
+    /// reached its own start hook by then has not started.
+    private var expectsPrompt: [UUID: Bool] = [:]
+
+    func view(for session: Session, cwd: URL, agentFlags: String = "") -> Fallible<GhosttySurfaceView> {
+        if let existing = views[session.id] { return .success(existing) }
 
         GhosttyApp.shared.bus = bus
-        GhosttyApp.shared.start()
+        // If the engine is down this kicks off a heal and returns; the pane shows its refusal
+        // and the Retry that follows a successful heal simply works. Nothing here waits.
+        Capabilities.ensure(GhosttyApp.shared)
+        guard GhosttyApp.shared.isReady else {
+            return .failure(Fault.Record(
+                domain: .terminalEngine, code: .engineUnavailable, severity: .failed,
+                session: session.id, details: [.sessionKind(session.kind), .stage(.spawn)],
+                evidence: "The terminal engine isn't running.",
+                copy: .init(title: "This terminal couldn't start", retry: .restartSynth),
+                site: "TerminalManager.swift"))
+        }
+        guard let command = TerminalLauncher.command().mapError({ r in
+            Fault.Record(domain: r.domain, code: r.code, severity: r.severity,
+                         session: session.id, details: r.details, evidence: r.evidence,
+                         copy: r.copy, site: r.site)
+        }).reported() else {
+            return .failure(Fault.Record(
+                domain: .terminalSpawn, code: .launcherScriptUnwritable, severity: .failed,
+                session: session.id, details: [.sessionKind(session.kind), .stage(.write)],
+                evidence: "Synth couldn't write the shell it launches terminals through.",
+                copy: .init(title: "This terminal couldn't start", retry: .respawnSession(session.id)),
+                site: "TerminalManager.swift"))
+        }
 
         var base = ProcessInfo.processInfo.environment
         // libghostty sets its own TERM to match `term` in the inline config.
@@ -66,9 +141,103 @@ enum TerminalLauncher {
                                            cwd: cwd.path)
 
         let view = GhosttySurfaceView(session: session, cwd: cwd, env: env,
-                                      command: TerminalLauncher.command, agentFlags: agentFlags, bus: bus)
+                                      command: command, agentFlags: agentFlags, bus: bus)
         views[session.id] = view
-        return view
+        arm(session)
+        return .success(view)
+    }
+
+    // MARK: The watchdog
+
+    /// Two checks, armed the moment a terminal is asked for and disarmed by any evidence of
+    /// life. It fires on *absence*, which is what makes it cause-independent: a missing
+    /// wrapper script, an unexecutable `$SHELL`, a Bun killed by the hardened runtime, an rc
+    /// file that exits, a `login` refused by policy, a jetsam kill and an engine that never
+    /// came up all land here with the same signal — none of them delivers an error anyone
+    /// could have caught. It is the one detector that would have caught the report that
+    /// prompted all of this without anyone knowing the cause.
+    private func arm(_ session: Session) {
+        intentAt[session.id] = Date()
+        expectsPrompt[session.id] = session.spawnedKind.isAgent || session.kind == .markdown
+        let id = session.id
+        let kind = session.spawnedKind
+        watchdogs[id] = [
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                self?.checkDeath(id, kind: kind)
+            },
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(12))
+                guard !Task.isCancelled else { return }
+                self?.checkSilence(id, kind: kind)
+            },
+        ]
+    }
+
+    /// Two seconds in, is the child already gone? `ghostty_surface_process_exited` is a direct
+    /// answer that owes nothing to `login`'s zeroed status, to the hook socket, or to an exit
+    /// event being delivered at all.
+    private func checkDeath(_ id: UUID, kind: SessionKind) {
+        guard let view = views[id], claimed.insert(id).inserted else { return }
+        // A surface that failed outright has already said so, at the point of failure.
+        guard view.startFailure == nil else { return }
+        // On screen with no surface: nothing was ever spawned, so no exit event is coming.
+        // This is the pane that just sits there, and it is invisible to every other detector
+        // in the app precisely because nothing happened.
+        if view.isBlank {
+            Fault.surface(.terminalSpawn, .engineUnavailable, session: id,
+                          say: .init(title: "This terminal never started",
+                                     retry: .respawnSession(id)),
+                          details: [.sessionKind(kind), .stage(.spawn)],
+                          evidence: "Nothing was running behind the pane.")
+            bus?.post(.spawnFailed(id, .engineUnavailable))
+            return
+        }
+        guard view.childHasExited == true else {
+            claimed.remove(id)   // alive — leave the exit path free to speak for it later
+            return
+        }
+        let ms = lifetimeMS(id) ?? 0
+        Analytics.capture("terminal_exited", ["classified": "instant_death", "detector": "watchdog",
+                                              "ms_alive": ms, "code_source": "none",
+                                              "session_kind": kind.analyticsSlug])
+        Fault.surface(.terminalExit, .instantDeath, session: id,
+                      say: .init(title: "This terminal closed the moment it opened",
+                                 retry: .respawnSession(id)),
+                      details: [.msAlive(ms), .sessionKind(kind), .codeSource(.none)],
+                      evidence: "It ended before the shell could report why.")
+    }
+
+    /// Twelve seconds in, a row that should have said something hasn't. This is the only
+    /// detector here that sees a hang — an rc file blocking on `read`, a wedged working
+    /// directory, an agent stuck behind a trust prompt — none of which ever exits.
+    private func checkSilence(_ id: UUID, kind: SessionKind) {
+        guard expectsPrompt[id] == true, !claimed.contains(id), !aliveSignals.contains(id),
+              let view = views[id], view.startFailure == nil, view.childHasExited == false
+        else { return }
+        Fault.report(.terminalSpawn, .noPrompt, severity: .degraded, session: id,
+                     details: [.msAlive(lifetimeMS(id) ?? 0), .sessionKind(kind), .stage(.ready)],
+                     evidence: "Started, but nothing has run in it.")
+    }
+
+    /// Any derived fact about a session is proof its shell got somewhere.
+    func noteAlive(_ id: UUID) { aliveSignals.insert(id) }
+
+    /// How long this terminal has been up, in milliseconds — nil once it has been reaped.
+    func lifetimeMS(_ id: UUID) -> Int? {
+        intentAt[id].map { Int(Date().timeIntervalSince($0) * 1000) }
+    }
+
+    /// True the first time anyone speaks for this session's death — so the watchdog and the
+    /// exit event, which race by design, cannot both raise a card for the same terminal.
+    func claimDeath(_ id: UUID) -> Bool { claimed.insert(id).inserted }
+
+    func disarm(_ id: UUID) {
+        watchdogs.removeValue(forKey: id)?.forEach { $0.cancel() }
+        intentAt[id] = nil
+        expectsPrompt[id] = nil
+        aliveSignals.remove(id)
     }
 
     /// The live view for a session, if one has already been created — never spins up a
@@ -97,6 +266,8 @@ enum TerminalLauncher {
     }
 
     func terminate(_ id: UUID) {
+        disarm(id)
+        claimed.remove(id)
         views[id]?.close()
         views[id] = nil
     }
@@ -107,7 +278,9 @@ enum TerminalLauncher {
     /// session's whole process tree is orphaned to launchd when Synth exits. Mirror of
     /// BrowserManager.shutdownAll; both are driven off the willTerminate observer.
     func shutdownAll() {
+        for id in views.keys { disarm(id) }
         for view in views.values { view.close() }
         views.removeAll()
+        claimed.removeAll()
     }
 }

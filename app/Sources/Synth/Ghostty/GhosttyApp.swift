@@ -8,6 +8,22 @@ import GhosttyKit
 ///
 /// Config is loaded from an inline string only — never the user's ~/.config/ghostty — so
 /// behaviour is deterministic and parallel Synth instances can't perturb each other.
+/// The terminal engine as a supervised capability. `ghostty_app_new` failing is usually the
+/// GPU device going away underneath us — a display change, a GPU reset, waking with a different
+/// adapter — and that genuinely comes back, which is why retrying it is a fix rather than a
+/// hope. `ghostty_init` failing is not retried at all: it happens once per process by contract.
+extension GhosttyApp: Capability {
+    static var id: String { "terminal-engine" }
+    static var domain: Fault.Domain { .terminalEngine }
+    static var copy: Fault.Copy? {
+        .init(title: "The terminal engine isn't running", retry: .restartSynth)
+    }
+    var isUp: Bool { app != nil }
+    func heal() throws { try start() }
+
+    enum EngineError: Error { case initFailed, appNewFailed }
+}
+
 @MainActor final class GhosttyApp {
     static let shared = GhosttyApp()
 
@@ -21,14 +37,34 @@ import GhosttyKit
     nonisolated private let tickLock = NSLock()
     nonisolated(unsafe) private var tickScheduled = false
 
+    /// `ghostty_init` may be called only once per process — it is not re-entrant and it
+    /// installs a statically linked Breakpad Mach handler. So the engine's heal is bounded by
+    /// something stronger than a policy: after a successful init, healing may only rebuild the
+    /// app object, never re-init the library.
+    private var didInit = false
+
+    /// True once the engine is up. The terminal spawn path asks before promising a surface.
+    var isReady: Bool { app != nil }
+
     private init() {}
 
-    func start() {
+    /// Bring the engine up, or say why it can't. Throws rather than reporting: the caller is a
+    /// door (`Capabilities.ensure`), and a capability that describes its own failure twice —
+    /// once as a throw and once as a fault — is where duplicate cards come from.
+    func start() throws {
         guard app == nil else { return }
 
-        guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else {
-            NSLog("Synth: ghostty_init failed")
-            return
+        if !didInit {
+            // Breakpad again: `ghostty_init` claims the Mach exception ports, and left claimed
+            // it swallows every crash (layered under PostHog's handler it deadlocks the forward
+            // and a crash becomes a hang). SynthApp holds this window around the launch call;
+            // a heal has to hold it too, or recovering the terminal would silently cost us
+            // crash reporting for the rest of the run.
+            let ports = MachExceptionPorts.capture()
+            let rc = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
+            if let ports { MachExceptionPorts.restore(ports) }
+            guard rc == GHOSTTY_SUCCESS else { throw EngineError.initFailed }
+            didInit = true
         }
 
         let dark = TerminalTheme.isDark(NSApp.effectiveAppearance)
@@ -66,7 +102,7 @@ import GhosttyKit
         app = ghostty_app_new(&runtime, config)
         ghostty_config_free(config)
 
-        guard let app else { NSLog("Synth: ghostty_app_new failed"); return }
+        guard let app else { throw EngineError.appNewFailed }
         ghostty_app_set_focus(app, true)
 
         NotificationCenter.default.addObserver(

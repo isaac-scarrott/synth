@@ -348,10 +348,24 @@ private struct SessionPane: View {
             InspectPane(session: session)
         } else if session.kind == .simulator {
             SimulatorPane(session: session)
+        } else if let record = store.sessionFaults[session.id] {
+            // A terminal that died *after* it started shows its reason here, not in a toast:
+            // the deck deliberately suppresses a card for the session you are looking at
+            // (`notifOrder`), which is right for a row you can see — but only if the thing you
+            // can see says something. Before this, the pane held a frozen dead surface.
+            TerminalFailure(record: record, session: session)
         } else if let cwd = store.cwd(for: session) {
             let workspace = store.branch(of: session).flatMap { store.workspace(of: $0) }
             let flags = session.spawnedKind.agentID.map { store.agentFlags($0, for: workspace) } ?? ""
-            TermSurface(terminal: TerminalManager.shared.view(for: session, cwd: cwd, agentFlags: flags))
+            switch TerminalManager.shared.view(for: session, cwd: cwd, agentFlags: flags) {
+            case .success(let terminal):
+                TermSurface(terminal: terminal)
+            case .failure(let record):
+                // A blank rounded rectangle is no longer a state this app can be in. A pane
+                // that has no terminal says which part refused and offers the one gesture
+                // that could change the answer.
+                TerminalFailure(record: record, session: session)
+            }
         } else {
             Placeholder(title: session.title, subtitle: "No working directory for this session.")
         }
@@ -659,6 +673,38 @@ private struct DropZoneOverlay: View {
         case .rim:     return (Theme.input.opacity(0.09), Theme.inkMuted, true)
         case .refuse:  return (Color.gray.opacity(0.13), Theme.inkFaint, false)
         }
+    }
+}
+
+/// What a pane shows instead of a terminal that couldn't start. The failure that produced
+/// it was already counted and, if it earned one, already said in the deck — this is the
+/// surface for the person looking straight at the empty pane, who is owed the reason there
+/// rather than in a toast that has since drained.
+private struct TerminalFailure: View {
+    @Environment(AppStore.self) private var store
+    let record: Fault.Record
+    let session: Session
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.sans(30, 300))
+                .foregroundStyle(Theme.danger)
+            Text(record.copy?.title ?? record.domain.headline)
+                .font(.sans(13, 500)).foregroundStyle(Theme.ink)
+            if let evidence = record.evidence {
+                Text(evidence)
+                    .font(.sans(11)).foregroundStyle(Theme.inkFaint)
+                    .multilineTextAlignment(.center)
+            }
+            Button("Try again") { store.respawnTerminal(session.id) }
+                .buttonStyle(.plain)
+                .font(.sans(11, 500))
+                .foregroundStyle(Theme.copper)
+                .padding(.top, 2)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

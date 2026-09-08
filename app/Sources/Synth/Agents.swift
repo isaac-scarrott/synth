@@ -184,7 +184,17 @@ struct AgentDescriptor: Sendable {
     /// `decorate` goes through here: the pair has to be set together or the shim runs the right
     /// program without the flags its name promised.
     func exportRealCommand(into env: inout [String: String]) {
-        guard let command = resolvedCommand else { return }
+        guard let command = resolvedCommand else {
+            // Nothing is exported, so the shim finds no `SYNTH_REAL_*`, resolves nothing on PATH
+            // and exits 127 — which it now reports over the hook socket, so the user does get
+            // "its command isn't on your PATH" rather than a row that vanishes. This is the
+            // earlier, more precise half: we knew before spawning that the binary was gone.
+            // `.degraded` because the shim owns the sentence; this owns the count.
+            Fault.report(.agentLaunch, .agentBinaryMissing, severity: .degraded,
+                         details: [.stage(.resolve)],
+                         evidence: "\(binaryName) no longer resolves to a runnable command.")
+            return
+        }
         env[realBinaryEnvKey] = command.path
         if !command.args.isEmpty { env[realArgsEnvKey] = command.args.joined(separator: "\u{01}") }
     }

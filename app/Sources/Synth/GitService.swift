@@ -906,9 +906,38 @@ enum GitService {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             killer?.cancel()
-            return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+            let output = String(data: data, encoding: .utf8) ?? ""
+            reportIfFailed(args, process.terminationStatus, output)
+            return (process.terminationStatus, output)
         } catch {
+            Fault.report(.worktree, .gitSpawnFailed, details: [.stage(.spawn)],
+                         evidence: error.localizedDescription)
             return (-1, "\(error.localizedDescription)")
         }
+    }
+
+    /// Every git call in the app funnels through `runChecked`, and `run` is
+    /// `runChecked(args).output` — so until this existed, a failing git command was
+    /// indistinguishable from one that succeeded and printed nothing, roughly forty call sites
+    /// over. Instrumenting the runner once covers all of them and costs the call sites nothing,
+    /// which is the whole argument for putting capture at the seams rather than at the sites.
+    ///
+    /// The exception list is not a fudge: for these subcommands a non-zero exit **is** the
+    /// answer git was asked for, not a failure. `rev-parse --verify` on a branch that isn't
+    /// there, `diff --quiet` on a clean tree and `merge-base --is-ancestor` all exit 1 while
+    /// working perfectly, and reporting them would bury the real failures under the app's own
+    /// routine questions.
+    private static func reportIfFailed(_ args: [String], _ status: Int32, _ output: String) {
+        guard status != 0, status != -1 else { return }   // -1 already reported at the spawn
+        let subcommand = args.first { !$0.hasPrefix("-") } ?? ""
+        let asksAQuestion = ["rev-parse", "merge-base", "check-ignore", "show-ref",
+                             "cat-file", "check-ref-format"].contains(subcommand)
+            || args.contains("--quiet") || args.contains("--exit-code")
+        guard !asksAQuestion else { return }
+        // The subcommand is a closed vocabulary — git's own — so it is safe to send; the
+        // arguments are not (branch names, paths) and stay in the local evidence line.
+        Fault.report(.worktree, .gitCommandFailed,
+                     details: [.exitCode(status), .count("argc", args.count)],
+                     evidence: "git \(subcommand) exited \(status): \(output.prefix(400))")
     }
 }

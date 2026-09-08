@@ -199,6 +199,16 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true]
         }
 
+        // Every fault this run raised, in order — so a gate can assert that opening a terminal
+        // with an unwritable launcher produced `terminal.exit/instant_death`, which is the
+        // shape of the bug that prompted the error spine. Answered before the worktree gate
+        // because the failures worth asserting hardest — the engine never starting, the
+        // sandbox being unwritable — happen at launch, when no branch exists to name.
+        if verb == "automation.faults", Automation.isDriven {
+            return ["ok": true,
+                    "faults": Fault.captured.map { ["domain": $0.domain, "code": $0.code, "site": $0.site] }]
+        }
+
         guard let worktreePath = request["worktreePath"] as? String,
               let branch = store.branch(forWorktreePath: worktreePath) else {
             return ["ok": false,

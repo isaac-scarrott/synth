@@ -57,15 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Kill the per-focus password-autofill key-view walk before any field can focus — it stalls
         // every native text field by 250–400ms on a loaded tree (see AutoFillSuppression).
         AutoFillSuppression.install()
-        // Start the terminal engine before analytics, and hand the Mach exception ports back the
-        // moment it has claimed them. libghostty's `ghostty_init` brings up a statically linked
-        // sentry-native/Breakpad handler, and Mach exceptions preempt POSIX signals — so left in
-        // place it swallows every crash, and layered under PostHog's handler it deadlocks the
-        // forward and turns every crash into a hang (MachExceptionPorts). Restoring leaves
-        // PLCrashReporter (below) as the one Mach handler, with the OS behind it.
-        let ports = MachExceptionPorts.capture()
-        GhosttyApp.shared.start()
-        if let ports { MachExceptionPorts.restore(ports) }
+        // Start the terminal engine before analytics. The Mach-ports capture/restore that has
+        // to bracket `ghostty_init` now lives inside `start()` itself, so a later heal gets the
+        // same protection as the launch — leaving it here would have made recovery quietly cost
+        // us crash reporting for the rest of the run.
+        Capabilities.ensure(GhosttyApp.shared)
         // Anonymous usage analytics — off on the dev channel and honouring the saved opt-out
         // (read straight from defaults so it doesn't wait on the store). No-ops until a key is set.
         Analytics.bootstrap(optedOut: !AppStore.loadBoolPref(AppStore.analyticsKey, default: true))
@@ -73,6 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (after bootstrap, so an `app_crashed` event has somewhere to go).
         CrashReporter.install()
         CrashReporter.reportPending()
+        // PostHog's crash integration installs only from a *cached* remote config, so a fresh
+        // install has none on its first run and an attached debugger suppresses it outright.
+        // Without this event, "no crashes" and "no crash capture" are the same observation.
+        Analytics.reportCrashCaptureState()
+        AppSupport.probeWritable()
         #if DEBUG
         // SYNTH_DEBUG_CRASH=<seconds> faults the main thread after that delay: the way to prove
         // the handler chain ends in a dead process and an .ips, not a suspended one.

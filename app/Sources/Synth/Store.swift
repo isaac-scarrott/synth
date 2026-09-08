@@ -13,6 +13,18 @@ enum SessionEvent: Sendable {
     /// generated. Resume/compact keep their title, so they never emit this.
     case titleReset(UUID)
     case exited(UUID, Int32?)
+    /// The surface is up and a PTY exists behind it — posted from the success tail of
+    /// `createSurface`, not from the ask. Every "how often does this fail" question needs a
+    /// denominator and `session_created` isn't one: it counts intent, a beat before any
+    /// window, surface or shell exists.
+    case spawned(UUID)
+    /// A terminal that could not be opened at all — no PTY, so no exit event will ever come
+    /// to explain the blank pane. The row is held in `.error` rather than left looking idle.
+    case spawnFailed(UUID, Fault.Code)
+    /// The shim failed before it could exec the agent — reported over the hook socket,
+    /// because its stderr line dies with the PTY microseconds later. Turns "The agent quit"
+    /// into "`claude` isn't on your PATH".
+    case launchFailed(UUID, Fault.Code)
     /// The session's true exit status, reported over the hook socket (zshexit / the claude
     /// shim) just before the process dies. Needed because macOS `login` — libghostty's PTY
     /// wrapper — exits 0 whatever its child's status was, so `.exited`'s own code is
@@ -345,7 +357,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// Any raise or dismissal reshuffles the deck, which changes which cards are on screen and
     /// so which clocks may run — settling here means no raise site has to remember to.
     var notifs: [InAppNotif] = [] { didSet { settleDrains() } }
-    @ObservationIgnored private var notifSeq = 0
+    @ObservationIgnored var notifSeq = 0
     /// How many cards the deck actually shows before the rest fold under "+N"
     /// (NotificationDeck.peekOpacity has one entry per).
     static let notifDeckDepth = 3
@@ -843,6 +855,23 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// True exit statuses reported over the hook socket (`.exitCodeReported`), keyed by
     /// session, consumed by the `.exited` that follows moments later.
     @ObservationIgnored private var reportedExitCodes: [UUID: Int32] = [:]
+
+    /// Why a session's agent never started, as the shim reported it just before dying. Read
+    /// and cleared by `.exited`, which arrives moments later.
+    @ObservationIgnored private var launchFaults: [UUID: Fault.Code] = [:]
+
+    /// The sentence a failed launch earns. A cause the shim actually named beats the generic
+    /// line, which is the whole point of it having reported one.
+    static func launchCopy(_ code: Fault.Code?, _ s: Session) -> String {
+        let who = s.spawnedKind.agentID.flatMap { AgentRegistry.descriptor($0)?.shortName } ?? "The agent"
+        switch code {
+        case .agentBinaryMissing: return "\(who) couldn't start — its command isn't on your PATH"
+        case .agentExecFailed: return "\(who) couldn't start — the command wouldn't run"
+        case .agentServeNeverCameUp: return "\(who) started, but its server never came up"
+        case .shellNotExecutable: return "Your login shell isn't there any more"
+        default: return "This terminal closed the moment it opened"
+        }
+    }
     /// The in-app browser each terminal/Claude session sends its clicked loopback links to,
     /// so reclicking a dev-server URL reuses one row instead of spawning per click. Keyed by
     /// source session; the entry (and any pointing at a closed browser) is dropped on close.
@@ -883,12 +912,23 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         TerminalManager.shared.hookSocketPath = hookServer.socketPath
         AgentRegistry.startSupervisors(bus: bus)
         HookEnvironment.setup()
-        hookServer.start()
+        Capabilities.ensure(hookServer, policy: .once)
         Task { [weak self] in
             guard let self else { return }
             for await event in self.bus.stream { self.apply(event) }
         }
-        if let state = PersistenceStore.load() { restore(from: state) }
+        if let state = PersistenceStore.load() {
+            restore(from: state)
+        } else if PersistenceStore.loadRefused {
+            // The tree is empty because the read failed, not because there is nothing. Autosave
+            // is held off (`saveNow` checks the same flag) so the four-second tick cannot turn a
+            // recoverable read failure into permanent data loss — which is what it did before:
+            // it wrote `[]` over the file it had just failed to parse, and the rotation then put
+            // that empty file into the backup too.
+            Fault.surface(.persistence, .loadUnreadable, severity: .blocked,
+                          say: .init(title: "Synth couldn't open your saved workspaces"),
+                          evidence: "Nothing will be saved this run, so the file on disk is safe.")
+        }
         // ADR-0015: the real device fleet, replacing the unavailable default. Constructed before
         // restore-driven panes can ask for a device, and harmless without Xcode — the catalog
         // reports an empty fleet and every create route says so.
@@ -916,6 +956,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             }
         }
         AppStore.shared = self
+        // Last, so a fault raised anywhere above is buffered rather than presented into a
+        // half-built store — and so the spine has somewhere to put a card from here on.
+        Fault.attach(self)
     }
 
     /// Keep the instance file's worktreePaths and the MCP servers each new agent launch is
@@ -949,6 +992,17 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // The scratch terminal's session is never in the tree, so every event it raises would
         // fall through below as an unknown id. It gets first refusal.
         if applyScratch(event) { return }
+        // Any derived fact about a session is proof its shell got somewhere — which is what
+        // disarms the twelve-second silence check. Cheap, and it means the watchdog needs no
+        // knowledge of what liveness looks like for each kind of row.
+        TerminalManager.shared.noteAlive(eventSessionID(event))
+        Guarded.run { try self.applyThrowing(event) }
+    }
+
+    /// The bus door's other side. Everything reachable from here may simply `throw`; the door
+    /// above captures it with the file and line it came from. This is the shape the rest of the
+    /// app is moving to — no `try?`, no per-site catch, no decision to forget.
+    private func applyThrowing(_ event: SessionEvent) throws {
         switch event {
         case let .statusChanged(id, status):
             guard let s = session(id) else { break }
@@ -989,7 +1043,42 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             // reported over the hook socket just before dying. The user-interrupt statuses
             // (130 SIGINT, 143 SIGTERM) close clean, the same neutrality the per-command
             // reporter applies: a Ctrl-C'd claude mustn't die as an error row.
-            let real = reportedExitCodes.removeValue(forKey: id) ?? code ?? 0
+            // Where the code came from is as important as the code. `login` returns 0 for
+            // everything, so an unreported 0 is not evidence of a clean exit — it is the
+            // absence of evidence, and under two seconds it is evidence of the opposite.
+            let reported = reportedExitCodes.removeValue(forKey: id)
+            let source: Fault.Detail.CodeSource = reported != nil ? .hook : (code != nil ? .pty : .none)
+            let real = reported ?? code ?? 0
+            let ms = TerminalManager.shared.lifetimeMS(id)
+            let launch = launchFaults.removeValue(forKey: id)
+            let instant = launch == nil && source == .none && (ms ?? .max) < 2000
+            let classified = launch != nil ? "launch_failed"
+                           : instant ? "instant_death"
+                           : (real == 0 || real == 130 || real == 143) ? "clean" : "failed"
+            // Emitted for EVERY exit — clean, failed, agent, shell alike. Without the clean
+            // ones there is no denominator, and a rate you can't compute is a rate nobody looks at.
+            Analytics.capture("terminal_exited", [
+                "exit_code": Int(real), "code_source": source.rawValue,
+                "ms_alive": ms as Any, "classified": classified, "detector": "exit_event",
+                "session_kind": s.spawnedKind.analyticsSlug,
+            ])
+            TerminalManager.shared.disarm(id)
+
+            // A terminal that died on the way up is not a quit, and deleting its row is how
+            // this went unreported for so long: the user saw a pane vanish and Synth recorded
+            // a clean exit. Hold the row, say what happened, offer the retry.
+            if launch != nil || instant, TerminalManager.shared.claimDeath(id) {
+                Fault.surface(.terminalExit, launch ?? .instantDeath, session: id,
+                              say: .init(title: Self.launchCopy(launch, s),
+                                         retry: .respawnSession(id)),
+                              details: [.exitCode(real), .codeSource(source),
+                                        .msAlive(ms ?? 0), .sessionKind(s.spawnedKind)],
+                              evidence: launch == nil ? "It ended before the shell could report why."
+                                                      : "exit \(real)")
+                break
+            }
+            if launch != nil || instant { break }   // the watchdog already said it
+
             if real == 0 || real == 130 || real == 143 {
                 // A clean exit ends the session outright — `exit` in a shell, quitting a
                 // spawned claude (which execs, so this is its exit too). Notify first: both
@@ -1013,7 +1102,34 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 // not vanish with the process.
                 s.status = .error
                 routeTransition(id, prev: prev, next: .error, detail: "exit \(real)")
+                Fault.report(.terminalExit, .exitedNonZero, session: id,
+                             details: [.exitCode(real), .codeSource(source),
+                                       .msAlive(ms ?? 0), .sessionKind(s.spawnedKind)])
             }
+        case let .spawned(id):
+            guard let s = session(id) else { break }
+            Analytics.capture("terminal_spawned", [
+                "session_kind": s.spawnedKind.analyticsSlug,
+                "resumed": s.agentSessionID != nil,
+                "ms_to_surface": TerminalManager.shared.lifetimeMS(id) as Any,
+            ])
+        case let .spawnFailed(id, code):
+            // The fault was raised where it happened — this is the store's half: hold the row
+            // in a state the sidebar and the pane can both read, so a terminal that never
+            // opened stops being indistinguishable from an idle one.
+            guard let s = session(id) else { break }
+            _ = TerminalManager.shared.claimDeath(id)
+            TerminalManager.shared.disarm(id)
+            s.status = .error
+            Analytics.capture("terminal_exited", [
+                "classified": "spawn_failed", "detector": "spawn", "code_source": "none",
+                "exit_code": 0, "session_kind": s.spawnedKind.analyticsSlug,
+                "spawn_fault": code.rawValue,
+            ])
+        case let .launchFailed(id, code):
+            // Arrives over the hook socket a beat before the PTY dies; `.exited` reads it out
+            // of here and names the cause instead of calling it a quit.
+            if session(id) != nil { launchFaults[id] = code }
         case let .kindChanged(id, kind):
             guard let s = session(id) else { break }
             // A browser, simulator or inspect session never runs an agent, so an agent lifecycle
@@ -1246,7 +1362,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// Raise (or re-raise, bumping it to newest) a background session's toast. A done toast
     /// asks for nothing, so it dismisses itself; the seq check keeps the timer from killing
     /// a newer toast the same session raised in the meantime.
-    private func raiseInApp(_ id: UUID, _ kind: NotifKind, outlivesSession: Bool = false,
+    func raiseInApp(_ id: UUID, _ kind: NotifKind, outlivesSession: Bool = false,
                             sub: String? = nil) {
         guard let s = session(id) else { return }
         notifSeq += 1
@@ -1376,7 +1492,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     /// What a system card's button does. Session cards jump and undo cards undo, both derivable;
     /// these carry their own verb (Retry, Review, Open), so the closure rides alongside the card.
-    @ObservationIgnored private var notifActions: [UUID: @MainActor () -> Void] = [:]
+    @ObservationIgnored var notifActions: [UUID: @MainActor () -> Void] = [:]
+
+    /// The live failure behind each errored row — what `TerminalFailure` renders in the pane
+    /// and what Retry clears. A row can wear `.error` for reasons that predate the spine, so
+    /// an absent entry means "errored, but we have nothing more to say", not "not errored".
+    /// Observed, not ignored: landing one is what swaps the pane to its failure state.
+    var sessionFaults: [UUID: Fault.Record] = [:]
 
     /// The card's primary action — its button, a click on its body, and ⌘↩ on the front card all
     /// land here, so the three can never mean different things.
@@ -1415,6 +1537,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     func raiseWorktreeError(_ verb: String, branch: String, workspace: String, details: String,
                             retry: (@MainActor () -> Void)? = nil) {
         NSLog("Synth: %@ (%@ · %@): %@", verb, branch, workspace, details)
+        // The card already says this to the user; nothing counted it. `.degraded` because the
+        // screen half is done — this is the telemetry half, and re-surfacing would double it.
+        Fault.report(.worktree, .worktreeOpFailed, severity: .degraded,
+                     details: [.stage(.spawn)], evidence: details)
         notifSeq += 1
         let id = UUID()
         // Git's reason goes on the card — the thing you would otherwise have gone to the log
@@ -1791,7 +1917,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     func newTerminal(in branch: Branch? = nil) -> Session? {
         // A freshly opened shell sits at a prompt — nothing is running, so it starts idle.
         // Green (.running) is reserved for a terminal actually running a process.
-        addSession(kind: .terminal, title: "shell", status: .idle, in: branch)
+        guard let session = addSession(kind: .terminal, title: "shell", status: .idle, in: branch) else {
+            // Every caller discards this nil, so ⌘T on a tree with no checked-out branch was
+            // a key that did nothing at all — indistinguishable from a broken shortcut.
+            Fault.surface(.terminalSpawn, .spawnRefusedNoBranch,
+                          say: .init(title: "No branch to open a terminal in"),
+                          evidence: "Check out a branch first.")
+            return nil
+        }
+        return session
     }
 
     /// A coding agent is just a terminal that opened and ran the agent's binary, so it spawns
@@ -2045,6 +2179,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         for agent in AgentRegistry.installed { detachSupervisor(agent.id, session.id) }
         pulseTokens.removeValue(forKey: session.id)
         reportedExitCodes.removeValue(forKey: session.id)
+        launchFaults.removeValue(forKey: session.id)
+        sessionFaults.removeValue(forKey: session.id)
         // The exit-close "done" toast was raised moments before this teardown precisely to
         // outlive its row (routeTransition `closing:`) — clearing unconditionally here is
         // what silently killed it. Every other toast still dies with its session.
@@ -3298,7 +3434,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     /// A session-less card (mirrors `raiseWorktreeError`). Every one of these is ambient: a
     /// result, not a summons, and gone in six seconds.
-    private func raiseAmbientToast(_ kind: NotifKind, message: String, title: String,
+    func raiseAmbientToast(_ kind: NotifKind, message: String, title: String,
                                    icon: String, sub: String? = nil) {
         notifSeq += 1
         let id = UUID()
@@ -4048,6 +4184,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// Persist on a low cadence (backstop for any mutation) plus a flush on quit — cmux's
     /// timer-over-instrumentation model, so no mutation site can forget to save. The
     /// skip-if-unchanged check in the store keeps the idle case free.
+    /// Autosave and the quit flush both stop here when the load was refused. A run that could
+    /// not read the snapshot has nothing worth writing and everything to lose by writing it.
+    var savingSuspended: Bool { PersistenceStore.loadRefused }
+
     private func startAutosave() {
         Task { [weak self] in
             while !Task.isCancelled {
@@ -4083,10 +4223,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     /// Synchronous state flush for app termination — snapshot on main, then block until the write
     /// queue has drained it to disk (PersistenceStore.flush), so quitting never loses the last edit.
-    func flushSave() { PersistenceStore.flush(snapshot()) }
+    func flushSave() {
+        guard !savingSuspended else { return }
+        PersistenceStore.flush(snapshot())
+    }
 
     func saveNow() {
-        PersistenceStore.save(snapshot())
+        // syncAgentBridge still runs: the instance registry and MCP servers describe this
+        // process, not the persisted tree, and a suspended save must not also stop a sibling
+        // Synth from seeing which worktrees this one holds.
+        if !savingSuspended { PersistenceStore.save(snapshot()) }
         syncAgentBridge()
     }
 
@@ -4164,4 +4310,20 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         return parts.joined(separator: ".")
     }
     #endif
+}
+
+/// Which session a bus event is about, when it is about one. Used to disarm the spawn
+/// watchdog on any sign of life without teaching it what each kind of row's liveness
+/// looks like.
+private func eventSessionID(_ event: SessionEvent) -> UUID {
+    switch event {
+    case let .statusChanged(id, _), let .titleChanged(id, _), let .titleReset(id),
+         let .exited(id, _), let .exitCodeReported(id, _), let .kindChanged(id, _),
+         let .markUnread(id), let .agentSessionCaptured(id, _), let .agentReady(id),
+         let .browserNavigated(id, _), let .browserPageTitled(id, _), let .inspectRequested(id),
+         let .spawned(id), let .spawnFailed(id, _), let .launchFailed(id, _):
+        return id
+    case let .openURLRequested(id, _):
+        return id ?? UUID()
+    }
 }

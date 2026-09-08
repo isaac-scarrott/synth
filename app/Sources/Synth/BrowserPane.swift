@@ -61,6 +61,9 @@ import AppKit
                                                    nativeContextMenus: session.kind == .inspect)
         } catch {
             failures[session.id] = error.localizedDescription
+            Fault.report(.browser, .browserEngineUnavailable, severity: .degraded,
+                         session: session.id, details: [.stage(.spawn)],
+                         evidence: error.localizedDescription)
             generation += 1
             return nil
         }

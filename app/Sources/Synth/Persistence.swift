@@ -152,13 +152,36 @@ enum PersistenceStore {
         fileURL.deletingLastPathComponent().appendingPathComponent("state-previous.json")
     }
 
+    /// Set when a snapshot file existed but could not be used — unreadable, undecodable, or a
+    /// version this build doesn't know. It is the difference between "this user has no
+    /// workspaces yet" and "this user's workspaces are on disk and we couldn't read them", and
+    /// nothing distinguished the two before: both produced nil, and four seconds later autosave
+    /// wrote an empty tree over the file it had just failed to parse.
+    private(set) static var loadRefused = false
+
     /// The most recent readable, version-matching snapshot (primary, else backup), or nil.
     static func load() -> PersistedState? {
         for url in [fileURL, backupURL] {
-            guard let data = try? Data(contentsOf: url),
-                  let state = try? JSONDecoder().decode(PersistedState.self, from: data),
+            let which: StaticString = url == fileURL ? "primary" : "backup"
+            guard let data = try? Data(contentsOf: url) else {
+                // A missing file on a first run is not a refusal; an unreadable one is.
+                if FileManager.default.fileExists(atPath: url.path) {
+                    loadRefused = true
+                    Fault.report(.persistence, .loadUnreadable,
+                                 details: [.flag(which, true), .stage(.resolve)],
+                                 evidence: "Couldn't read the saved workspaces.")
+                }
+                continue
+            }
+            guard let state = try? JSONDecoder().decode(PersistedState.self, from: data),
                   state.version == schemaVersion
-            else { continue }
+            else {
+                loadRefused = true
+                Fault.report(.persistence, .loadUndecodable,
+                             details: [.flag(which, true), .count("bytes", data.count)],
+                             evidence: "The saved workspaces file didn't parse.")
+                continue
+            }
             // Seed the write queue's last-written bytes so the first autosave doesn't rewrite an
             // unchanged tree — but only from the primary: a load off the backup means the primary
             // is missing/corrupt, so the next save must actually write it.

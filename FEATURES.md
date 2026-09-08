@@ -2628,3 +2628,24 @@ disclosure to dive deeper.
   split a `ps` record and hand the wrong pid a stamp. A stamp that cannot be read leaves the pid
   alone, and the kill now prints which pids it took and which it left.
   [Details](docs/features/2026-09-08.md)
+
+- **Failures get a spine — Synth stops losing terminals quietly** — terminals were dying silently and
+  nothing tracked it: `Analytics.error` had **zero call sites**, and the only failure event in the
+  product was `app_crashed`. A twelve-agent sweep, adversarially verified, confirmed 151 silent
+  failures (24 killed) — 60 able to end a terminal. `TerminalLauncher.command` returned a wrapper
+  path whose write it never checked; `.exited` collapsed a missing code to `?? 0` and called it a
+  clean quit, deleting the row (macOS `login` returns 0 regardless); every `synth-hook` launch
+  failure exited above the only code that reaches the socket; the three libghostty guards failed to
+  `NSLog`. `Fault` is now the one seam — note/report/surface, callable from C callbacks, logged
+  locally on every channel before anything is sent, with the non-PII rule enforced by the type
+  system (`Detail` has no string case; `evidence` cannot reach `wireProps`). Spawn seams return
+  `Fallible`, so dropping a failure is a compiler warning. A watchdog armed on intent and disarmed
+  by signs of life catches instant death and hangs via `ghostty_surface_process_exited` without
+  knowing the cause. `terminal_spawned`/`terminal_exited` give the rate its denominator and
+  `code_source` the fact `?? 0` destroyed; faults ship as PostHog `$exception`s grouped on our own
+  slugs, with `surfaced=false` as the standing backlog. The user keeps the row, wears `.error`, and
+  reads the reason in the pane with a Retry. Twenty-three sites fixed, not 151 — the terminal path end
+  to end, the highest-leverage choke points, and every confirmed critical (the eighteen were nine
+  after dedup, including a `PersistenceStore.load()` failure that let autosave overwrite a corrupt
+  snapshot with an empty tree). The remaining 41 highs are recorded in `docs/research/silent-failure-audit-2026-09-07.md` and deliberately unscheduled, with the
+  conversion rule and the `surfaced=false` backlog in `CLAUDE.md`.

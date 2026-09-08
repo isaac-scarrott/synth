@@ -27,6 +27,26 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Retained C-side via `surface_config.userdata`; released in `close()`.
     private var contextPtr: UnsafeMutableRawPointer?
 
+    /// Why this view has no surface, when the reason is a failure rather than "not in a
+    /// window yet". It latches: a surface that could not be made will not be made by trying
+    /// again on the next window re-parent, and retrying silently on every pane switch is how
+    /// a permanently dead pane looked exactly like an idle one.
+    private(set) var startFailure: Fault.Code?
+
+    /// Whether the PTY child is already gone. The watchdog asks this rather than waiting for
+    /// an exit event, because the failures that matter most are the ones where no event ever
+    /// arrives. `nil` when there is no surface to ask.
+    var childHasExited: Bool? {
+        guard let surface else { return nil }
+        return ghostty_surface_process_exited(surface)
+    }
+
+    /// On screen, but with nothing behind it. Distinguishes a genuinely dead pane from a
+    /// cached view that simply hasn't been shown yet — the second is normal and must not be
+    /// reported, the first is a blank rounded rectangle that no exit event will ever explain,
+    /// because without a surface there is no PTY to exit.
+    var isBlank: Bool { window != nil && surface == nil && startFailure == nil }
+
     /// Observers registered while the view sits in a window (screen change, occlusion,
     /// display wake), removed when it leaves — paired with their center so workspace
     /// notifications unregister from the right one.
@@ -79,7 +99,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         super.viewDidMoveToWindow()
         removeWindowObservers()
         guard let window else { return }
-        if surface == nil { createSurface() }
+        if surface == nil, startFailure == nil { createSurface() }
         updateDisplayID()
         // Re-stamp scale + size on every window join, not just creation: the observers
         // below are unregistered while the view sits detached (pane switches re-parent
@@ -183,7 +203,21 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     }
 
     private func createSurface() {
-        guard let app = GhosttyApp.shared.app, let window else { return }
+        // Split deliberately. `window == nil` is "not on screen yet" and the view is called
+        // again on the next join; a missing engine is permanent, and returning quietly from
+        // it left a blank rounded card that no exit event could ever explain — because
+        // without a surface there is no PTY to exit.
+        guard let app = GhosttyApp.shared.app else {
+            startFailure = .engineUnavailable
+            Fault.surface(.terminalEngine, .engineUnavailable, session: sessionID,
+                          say: .init(title: "This terminal couldn't start",
+                                     retry: .respawnSession(sessionID)),
+                          details: [.sessionKind(kind), .stage(.spawn)],
+                          evidence: "The terminal engine isn't running.")
+            bus?.post(.spawnFailed(sessionID, .engineUnavailable))
+            return
+        }
+        guard let window else { return }
 
         let ctx = GhosttySurfaceContext(sessionID: sessionID, view: self, bus: bus)
         let ctxPtr = Unmanaged.passRetained(ctx).toOpaque()
@@ -229,8 +263,18 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         }
         // A markdown row is the same shape as an agent row — a login shell that execs one
         // fixed program — so it rides the same launch mechanism.
-        if kind == .markdown, let launch = MarkdownSession.launchCommand(path: markdownPath) {
-            env["SYNTH_LAUNCH_COMMAND"] = launch
+        if kind == .markdown {
+            if let launch = MarkdownSession.launchCommand(path: markdownPath) {
+                env["SYNTH_LAUNCH_COMMAND"] = launch
+            } else {
+                // Without a launch command the row falls through to a plain login shell: a
+                // markdown session that silently isn't one, showing a prompt where a document
+                // should be. Say so rather than let the user wonder why their file didn't open.
+                Fault.surface(.terminalSpawn, .markdownRuntimeMissing, session: sessionID,
+                              say: .init(title: "Synth can't open documents in this build"),
+                              details: [.sessionKind(kind), .stage(.resolve)],
+                              evidence: "The bundled document viewer is missing.")
+            }
         }
 
         // env_vars must outlive ghostty_surface_new; strdup then free after the call.
@@ -254,7 +298,20 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
             }
         }
 
-        guard surface != nil else { NSLog("Synth: ghostty_surface_new failed"); return }
+        guard surface != nil else {
+            // Nothing owns the context now, and nothing ever will — release it here rather
+            // than waiting for a close() that this pane may never receive.
+            Unmanaged<GhosttySurfaceContext>.fromOpaque(ctxPtr).release()
+            contextPtr = nil
+            startFailure = .surfaceNewFailed
+            Fault.surface(.terminalEngine, .surfaceNewFailed, session: sessionID,
+                          say: .init(title: "This terminal couldn't start",
+                                     retry: .respawnSession(sessionID)),
+                          details: [.sessionKind(kind), .stage(.spawn)],
+                          evidence: "The terminal engine refused to open a surface.")
+            bus?.post(.spawnFailed(sessionID, .surfaceNewFailed))
+            return
+        }
         // The layer we handed AppKit in `makeBackingLayer` is gone: libghostty has replaced it with
         // its own IOSurface-backed one, which arrives opaque. Clear it here, on the layer that
         // actually reaches the screen, or the translucent cells composite against black.
@@ -263,6 +320,10 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         updateSurfaceSize()
         applyTheme()
         syncFocus()
+        // The spawn is real *here* — not when the view was asked for, which is a beat before
+        // the window exists and several before a PTY does. This is the denominator every
+        // "how often do terminals die" question needs.
+        bus?.post(.spawned(sessionID))
     }
 
     /// Re-theme the surface to the view's current appearance (working.html's `--tui-*`,

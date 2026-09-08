@@ -42,7 +42,13 @@ enum MarkdownSession {
     /// is the PTY child exiting, which is the child-exited signal that closes the row — the
     /// same contract an agent row has.
     static func launchCommand(path: String?) -> String? {
-        guard let runtime = runtimeURL, let payload = payloadURL else { return nil }
+        guard let runtime = runtimeURL, let payload = payloadURL else {
+            // Nil used to mean the row opened a plain login shell instead of the document, with
+            // nothing said — a markdown session that silently isn't one. The caller now faults
+            // on this; here it stays nil so `isAvailable` and the `synth <file>` path are
+            // unchanged.
+            return nil
+        }
         var words = ["exec", shellQuote(runtime.path), shellQuote(payload.appendingPathComponent("synth-md.js").path)]
         if let path { words.append(shellQuote(path)) }
         return words.joined(separator: " ")

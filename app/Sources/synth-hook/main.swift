@@ -143,8 +143,7 @@ func envSuffix(_ binary: String) -> String {
 
 func runClaudeLaunch(binary: String, agentID: String, userArgs: [String]) -> Never {
     guard let real = resolveAgentBinary(binary) else {
-        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
-        exit(127)
+        reportLaunchFailure(127, "agent_binary_missing", "\(binary) not found")
     }
     let leading = aliasArgs(binary)
 
@@ -212,8 +211,7 @@ func runClaudeLaunch(binary: String, agentID: String, userArgs: [String]) -> Nev
 /// session's.
 func runOpencodeLaunch(binary: String, agentID: String, userArgs: [String]) -> Never {
     guard let real = resolveAgentBinary(binary) else {
-        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
-        exit(127)
+        reportLaunchFailure(127, "agent_binary_missing", "\(binary) not found")
     }
     let leading = aliasArgs(binary)
 
@@ -288,8 +286,7 @@ func mergeOpencodeMCPConfig() {
 ///      so from the app's side this still looks like the one-process-per-row v1 is.
 func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> Never {
     guard let real = resolveAgentBinary(binary) else {
-        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
-        exit(127)
+        reportLaunchFailure(127, "agent_binary_missing", "\(binary) not found")
     }
     let leading = aliasArgs(binary)
 
@@ -336,13 +333,11 @@ func runOpencode2Launch(binary: String, agentID: String, userArgs: [String]) -> 
     guard let servePid = spawnDetached(real, ["serve", "--port", port, "--hostname", "127.0.0.1"],
                                        log: serveLog)
     else {
-        FileHandle.standardError.write(Data("synth: opencode2 serve failed to start\n".utf8))
-        exit(126)
+        reportLaunchFailure(126, "agent_serve_never_came_up", "opencode2 serve failed to start")
     }
     guard waitForOpencode2Health(port: port, password: password, timeout: 10) else {
         kill(servePid, SIGTERM)
-        FileHandle.standardError.write(Data("synth: opencode2 serve never became ready\n".utf8))
-        exit(126)
+        reportLaunchFailure(126, "agent_serve_never_came_up", "opencode2 serve never became ready")
     }
     registerOpencode2MCPServers(port: port, password: password)
 
@@ -465,8 +460,7 @@ func curlSucceeds(_ args: [String]) -> Bool {
 /// turn, which may be minutes after the TUI is up and ready for text.
 func runAgyLaunch(binary: String, agentID: String, userArgs: [String]) -> Never {
     guard let real = resolveAgentBinary(binary) else {
-        FileHandle.standardError.write(Data("synth: \(binary) not found\n".utf8))
-        exit(127)
+        reportLaunchFailure(127, "agent_binary_missing", "\(binary) not found")
     }
     let leading = aliasArgs(binary)
 
@@ -580,8 +574,7 @@ func spawnReportingExit(_ path: String, _ args: [String], agent: String? = nil,
     let rc = posix_spawn(&pid, path, nil, &attr, argv, environ)
     posix_spawnattr_destroy(&attr)
     guard rc == 0 else {
-        FileHandle.standardError.write(Data("synth: spawn failed: \(String(cString: strerror(rc)))\n".utf8))
-        exit(126)
+        reportLaunchFailure(126, "agent_exec_failed", "spawn failed: \(String(cString: strerror(rc)))")
     }
     var status: Int32 = 0
     while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
@@ -688,8 +681,7 @@ func mergeSettings(ours: [String: Any], user: [String: Any]) -> [String: Any] {
 func execReal(_ path: String, _ args: [String]) -> Never {
     let argv = ([path] + args).map { strdup($0) } + [nil]
     execv(path, argv)
-    FileHandle.standardError.write(Data("synth: exec failed: \(String(cString: strerror(errno)))\n".utf8))
-    exit(126)
+    reportLaunchFailure(126, "agent_exec_failed", "exec failed: \(String(cString: strerror(errno)))")
 }
 
 /// Fallback lookup when `SYNTH_REAL_<AGENT>` is unset or points at a shim — scan PATH for the
@@ -828,6 +820,12 @@ func runReport(args: [String]) -> Never {
             lines += jsonLine(["session": sessionID, "title": title])
         }
     }
+    // `--fault` names WHY, when the caller knows. The login wrapper uses it for a $SHELL that
+    // isn't executable — a plain terminal's most silent death, because it happens before any
+    // rc file runs and `login` reports 0 over the top of it.
+    if let f = args.firstIndex(of: "--fault"), f + 1 < args.count {
+        lines += jsonLine(["session": sessionID, "fault": args[f + 1]])
+    }
     if let e = args.firstIndex(of: "--exit"), e + 1 < args.count {
         lines += jsonLine(["session": sessionID, "exitCode": args[e + 1]])
     }
@@ -886,6 +884,24 @@ func jsonLine(_ dict: [String: String]) -> String {
     guard let data = try? JSONSerialization.data(withJSONObject: dict),
           let s = String(data: data, encoding: .utf8) else { return "" }
     return s + "\n"
+}
+
+/// Report a failure that happens BEFORE the agent's process exists. Every launch role used
+/// to write a line to stderr and `exit`, which sounds like reporting and is not: the exit
+/// bypasses `spawnReportingExit` — the only place a code reaches the socket — and the PTY
+/// carrying that stderr line is torn down microseconds later. The app therefore learned
+/// nothing, defaulted the code to 0, and called a launch that never happened a clean quit.
+///
+/// The socket is the only channel that outlives the PTY. `fault` is a literal slug the app
+/// parses into a closed enum, so nothing free-form crosses the boundary.
+func reportLaunchFailure(_ code: Int32, _ fault: StaticString, _ note: String) -> Never {
+    if let sessionID = env["SYNTH_SESSION_ID"], let socketPath = env["SYNTH_SOCKET_PATH"] {
+        sendLines(socketPath: socketPath,
+                  jsonLine(["session": sessionID, "fault": "\(fault)"])
+                  + jsonLine(["session": sessionID, "exitCode": String(code)]))
+    }
+    FileHandle.standardError.write(Data("synth: \(note)\n".utf8))
+    exit(code)
 }
 
 func sendLines(socketPath: String, _ payload: String) {

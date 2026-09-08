@@ -7,19 +7,43 @@ import Foundation
 /// Wire format: one JSON line per signal, `{"session":"<uuid>","signal":"working"}`.
 /// The session id is the row's `Session.id`, injected as `$SYNTH_SESSION_ID` at PTY spawn,
 /// so a signal maps to exactly one row even when several terminals share a worktree.
+/// The hook socket as a supervised capability. It carries the true exit status of every dying
+/// session past macOS `login`, which zeroes it — so losing this socket is not a degraded run,
+/// it is a blind one, and it is worth retrying before saying so.
+extension HookServer: Capability {
+    static var id: String { "hook-socket" }
+    static var domain: Fault.Domain { .hook }
+    static var copy: Fault.Copy? {
+        .init(title: "Synth can't tell what your sessions are doing")
+    }
+    nonisolated var isUp: Bool { isListening }
+    func heal() throws { try start() }
+}
+
 final class HookServer: @unchecked Sendable {
     let socketPath = "/tmp/synth-hook-\(getpid()).sock"
     private weak var bus: EventBus?
     private var listenFD: Int32 = -1
+    /// Read from the main actor by the supervisor while the accept loop writes it from its own
+    /// thread. Both are single stores of a word, and the supervisor re-checks after healing,
+    /// so a stale read costs at most one extra `ensure`.
+    nonisolated var isListening: Bool { listenFD >= 0 }
 
     @MainActor init(bus: EventBus) {
         self.bus = bus
     }
 
-    func start() {
+    /// Bind and serve. Throws so the supervisor owns the retry and the sentence — the accept
+    /// loop dying is the same failure as never binding, and both are recoverable by doing this
+    /// again. Idempotent: a live listener short-circuits.
+    func start() throws {
+        guard listenFD < 0 else { return }
+        // The one cause worth retrying, and the reason healing this is a fix rather than a
+        // hope: a recycled pid inherits the socket file a dead instance left behind, and `bind`
+        // refuses an address already in use. Removing the corpse is the whole repair.
         unlink(socketPath)
         listenFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard listenFD >= 0 else { return }
+        guard listenFD >= 0 else { throw HookError.socketFailed }
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let cap = MemoryLayout.size(ofValue: addr.sun_path)
@@ -34,15 +58,28 @@ final class HookServer: @unchecked Sendable {
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(listenFD, $0, len) }
         }
-        guard bound == 0, listen(listenFD, 16) == 0 else { close(listenFD); listenFD = -1; return }
-        Thread.detachNewThread { [weak self] in self?.acceptLoop() }
+        guard bound == 0, listen(listenFD, 16) == 0 else {
+            close(listenFD); listenFD = -1
+            throw HookError.bindFailed
+        }
+        Guarded.thread { [weak self] in self?.acceptLoop() }
     }
+
+    enum HookError: Error { case socketFailed, bindFailed }
 
     private func acceptLoop() {
         while true {
             let conn = accept(listenFD, nil, nil)
-            if conn < 0 { if errno == EINTR { continue }; break }
-            Thread.detachNewThread { [weak self] in self?.handle(conn) }
+            if conn < 0 {
+                if errno == EINTR { continue }
+                // The listener is gone. Drop it so `isUp` reports the truth and the next
+                // `ensure` rebinds, rather than leaving a live-looking fd nobody is accepting on.
+                let fd = listenFD
+                listenFD = -1
+                close(fd)
+                break
+            }
+            Guarded.thread { [weak self] in self?.handle(conn) }
         }
     }
 
@@ -71,6 +108,12 @@ final class HookServer: @unchecked Sendable {
             }
             if let agentSession = obj["agentSession"] as? String, !agentSession.isEmpty {
                 Task { @MainActor in bus?.post(.agentSessionCaptured(id, agentSession)) }
+            }
+            // Why the launch never happened, named by the shim (or by the login wrapper's
+            // $SHELL check) on its way out. Unknown slugs are dropped rather than forwarded:
+            // the wire vocabulary is closed on both sides.
+            if let slug = obj["fault"] as? String, let code = Fault.Code(wire: slug) {
+                Task { @MainActor in bus?.post(.launchFailed(id, code)) }
             }
             // The session's true exit status (zshexit / the claude shim), sent moments
             // before the process dies — the PTY's own code arrives later as 0 (login).
@@ -180,9 +223,26 @@ final class HookServer: @unchecked Sendable {
     /// handing control back (`_synth_source_user`), and `.zshrc` additionally installs the
     /// preexec/precmd reporter. The `claude` command is skipped — Claude Code drives its own
     /// richer status through the hook pipeline and mustn't fight the coarse per-command dot.
+    /// True once the four startup files are all in place. Read by `decorate`, which must not
+    /// export `ZDOTDIR` at a directory that isn't fully populated: zsh would then read a
+    /// `.zshrc` calling a `_synth_source_user` that `.zshenv` never defined, so every shell in
+    /// the app prints `command not found` and silently skips the user's own config.
+    private static var zdotDirReady = false
+
     private static func writeZDotDir() {
         let fm = FileManager.default
-        try? fm.createDirectory(atPath: zdotDir, withIntermediateDirectories: true)
+        // Staged and moved rather than written in place. Four separate `try?` writes could land
+        // partially, and a torn ZDOTDIR is worse than none: it breaks every shell Synth opens.
+        // `rename(2)` on the finished directory is the one step that cannot half-happen.
+        let staging = zdotDir + ".staging"
+        try? fm.removeItem(atPath: staging)
+        do {
+            try fm.createDirectory(atPath: staging, withIntermediateDirectories: true)
+        } catch {
+            reportZDotDirFailure(error.localizedDescription)
+            return
+        }
+        let zdotDir = staging
         // Temporarily restore the real ZDOTDIR, source the user's file, then re-point ZDOTDIR
         // here so the next startup stage is read from here too (re-capturing USER_ZDOTDIR in
         // case the user's config changed it). Defined in .zshenv (always read first).
@@ -276,6 +336,31 @@ final class HookServer: @unchecked Sendable {
         let unalias = "for _synth_bin in ${=SYNTH_AGENT_BINS}; do unalias -- \"$_synth_bin\" 2>/dev/null; done\n"
             + "unset _synth_bin\n"
         try? (histfix + "_synth_source_user .zshrc\n" + shimfix + unalias + reporter).write(toFile: zdotDir + "/.zshrc", atomically: true, encoding: .utf8)
+
+        // Every file, or none of it. A missing one is exactly the torn state the staging dir
+        // exists to prevent, so it is caught here rather than by the user's next shell.
+        let required = [".zshenv", ".zprofile", ".zlogin", ".zshrc"]
+        guard required.allSatisfy({ fm.fileExists(atPath: staging + "/" + $0) }) else {
+            reportZDotDirFailure("Synth's shell startup files didn't all write.")
+            try? fm.removeItem(atPath: staging)
+            return
+        }
+        try? fm.removeItem(atPath: Self.zdotDir)
+        guard rename(staging, Self.zdotDir) == 0 else {
+            reportZDotDirFailure(String(cString: strerror(errno)))
+            try? fm.removeItem(atPath: staging)
+            return
+        }
+        zdotDirReady = true
+    }
+
+    /// Without the injected ZDOTDIR a session still opens and still works — it just reports
+    /// nothing, so every command's status dot and every shell's true exit code go missing.
+    /// `.degraded`: the user's action succeeded, and telling them about a tracking layer they
+    /// never asked for would be noise. It is counted, which is the point.
+    private static func reportZDotDirFailure(_ why: String) {
+        Fault.report(.hook, .hookEnvWriteFailed, severity: .degraded,
+                     details: [.posixErrno(errno), .stage(.write)], evidence: why)
     }
 
     /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts, the per-session
@@ -361,7 +446,10 @@ final class HookServer: @unchecked Sendable {
             env["SYNTH_USER_ZDOTDIR"] = [base["ZDOTDIR"], base["SYNTH_USER_ZDOTDIR"]]
                 .compactMap { $0 }
                 .first { !$0.isEmpty && !isInjectedZDotDir($0) } ?? ""
-            env["ZDOTDIR"] = zdotDir
+            // Only when the directory is whole — see `zdotDirReady`. A shell with no injected
+            // ZDOTDIR loses status reporting; a shell with a half-written one loses the user's
+            // entire config, which is much worse and looks like Synth broke their machine.
+            if zdotDirReady { env["ZDOTDIR"] = zdotDir }
         }
         // Agent interception additionally needs the shim PATH that routes each agent's binary
         // through synth-hook's launch role, plus whatever that agent needs to report back —

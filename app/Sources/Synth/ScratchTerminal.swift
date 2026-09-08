@@ -153,7 +153,15 @@ struct ScratchTerminalOverlay: View {
             // pane's terminal card, and it now carries that card's 15/13 — stacking 14/11 on top of
             // it here put this surface at 37/30. Ghostty's own 23/19 stands in, 1–2pt off the design's
             // 22/17, which is not worth a second per-surface config to reclaim.
-            TerminalHost(terminal: TerminalManager.shared.view(for: scratch.session, cwd: scratch.cwd))
+            // The scratch terminal has no row to wear an error, so a refused spawn shows its
+            // reason in the card itself. The fault was already raised where it happened.
+            if let terminal = TerminalManager.shared.view(for: scratch.session, cwd: scratch.cwd).reported() {
+                TerminalHost(terminal: terminal)
+            } else {
+                Text("Synth couldn't start this terminal.")
+                    .font(.sans(11)).foregroundStyle(Theme.inkFaint)
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            }
             foot
         }
         .background(Theme.cardSolid)

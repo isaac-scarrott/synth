@@ -2,28 +2,28 @@
 
 > A Mac-native development environment for coding agents. It hosts the agents you already have (Claude Code, OpenCode, Antigravity, or your own command), runs each branch in its own git worktree, and tells you which session needs you.
 
-Every page below is also served as markdown: replace `.html` with `.md`, or read [llms-full.txt](https://isaac-scarrott.github.io/synth-site/llms-full.txt) for all of them in one file.
+Every page below is also served as markdown: replace `.html` with `.md`, or read [llms-full.txt](https://trysynth.dev/llms-full.txt) for all of them in one file.
 
 ## Start
 
-- [Start here](https://isaac-scarrott.github.io/synth-site/docs/index.md): Install Synth, point it at a repository, and get an agent working in its own branch. About five minutes, most of it the download.
-- [How Synth is organised](https://isaac-scarrott.github.io/synth-site/docs/concepts.md): Synth organises work as a tree: a project, its branches, and the sessions running inside each branch. Three nouns, and each of them means something specific.
+- [Start here](https://trysynth.dev/docs/index.md): Install Synth, point it at a repository, and get an agent working in its own branch. About five minutes, most of it the download.
+- [How Synth is organised](https://trysynth.dev/docs/concepts.md): Synth organises work as a tree: a project, its branches, and the sessions running inside each branch. Three nouns, and each of them means something specific.
 
 ## Working in Synth
 
-- [Branches and worktrees](https://isaac-scarrott.github.io/synth-site/docs/branches.md): Every branch row is a real checkout on disk. That is what lets several agents work at once, and it is also why a new branch does not have your dependencies in it.
-- [Sessions](https://isaac-scarrott.github.io/synth-site/docs/sessions.md): A session is one live thing inside a branch. There are six kinds, they all run in that branch's checkout, and every one of them is something an agent can drive.
-- [Agents](https://isaac-scarrott.github.io/synth-site/docs/agents.md): Synth hosts coding agents it did not write. Whichever ones you have installed are the ones it offers, and changing which one you use changes nothing else.
-- [Knowing who needs you](https://isaac-scarrott.github.io/synth-site/docs/attention.md): Every session carries a status, and a collapsed row carries the most urgent status inside it. That is what makes running several agents at once readable.
-- [Configuration](https://isaac-scarrott.github.io/synth-site/docs/configuration.md): Settings, what a project can override, and the answer to the question that comes up most: is this a Synth setting or my agent's own configuration?
+- [Branches and worktrees](https://trysynth.dev/docs/branches.md): Every branch row is a real checkout on disk. That is what lets several agents work at once, and it is also why a new branch does not have your dependencies in it.
+- [Sessions](https://trysynth.dev/docs/sessions.md): A session is one live thing inside a branch. There are six kinds, they all run in that branch's checkout, and every one of them is something an agent can drive.
+- [Agents](https://trysynth.dev/docs/agents.md): Synth hosts coding agents it did not write. Whichever ones you have installed are the ones it offers, and changing which one you use changes nothing else.
+- [Knowing who needs you](https://trysynth.dev/docs/attention.md): Every session carries a status, and a collapsed row carries the most urgent status inside it. That is what makes running several agents at once readable.
+- [Configuration](https://trysynth.dev/docs/configuration.md): Settings, what a project can override, and the answer to the question that comes up most: is this a Synth setting or my agent's own configuration?
 
 ## Reference
 
-- [Keyboard reference](https://isaac-scarrott.github.io/synth-site/docs/keyboard.md): Every binding in Synth, generated from the source the app itself reads, so this page cannot fall behind the build.
-- [Agent tools](https://isaac-scarrott.github.io/synth-site/docs/tools.md): Every agent Synth hosts gets a real browser, a booted iPhone, and a way to hand work to a new branch. You do not wire any of it up, and you do not wire it up again for the next agent.
-- [Troubleshooting](https://isaac-scarrott.github.io/synth-site/docs/troubleshooting.md): The things that actually go wrong, what causes each one, and what to do about it.
+- [Keyboard reference](https://trysynth.dev/docs/keyboard.md): Every binding in Synth, generated from the source the app itself reads, so this page cannot fall behind the build.
+- [Agent tools](https://trysynth.dev/docs/tools.md): Every agent Synth hosts gets a real browser, a booted iPhone, and a way to hand work to a new branch. You do not wire any of it up, and you do not wire it up again for the next agent.
+- [Troubleshooting](https://trysynth.dev/docs/troubleshooting.md): The things that actually go wrong, what causes each one, and what to do about it.
 
 ## Elsewhere
 
-- [Landing page](https://isaac-scarrott.github.io/synth-site/): what Synth is, in five claims.
+- [Landing page](https://trysynth.dev/): what Synth is, in five claims.
 - [Download](https://synth-releases.fly.storage.tigris.dev/Synth.dmg): the signed disk image. macOS 14 or later, Apple silicon.

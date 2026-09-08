@@ -757,7 +757,7 @@ def check_balance(page, slug):
             raise BuildError("%s: %d <%s> against %d </%s>" % (slug, opens, tag, closes, tag))
 
 
-SITE = "https://isaac-scarrott.github.io/synth-site"
+SITE = "https://trysynth.dev"
 
 
 def llms_index(built):

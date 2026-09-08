@@ -2598,3 +2598,5 @@ disclosure to dive deeper.
   switch blanked the whole pane for a frame and faded it back over 220ms. Worst on a browser, where
   the page is the pane. The entrance now belongs to a session's first appearance; flipping back to
   one already open is instant. Mirrored in `working.html` as `.pane--noenter`.
+
+- **Custom site domain** — `https://trysynth.dev` serves the landing page and docs from GitHub Pages; Porkbun DNS, enforced HTTPS, and redirects from `www` and the old Pages address. [Details](docs/features/2026-09-07.md)

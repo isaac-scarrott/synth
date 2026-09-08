@@ -134,15 +134,22 @@ agree before it goes, and the sources of the pictures do not ship.
 ```bash
 python3 site/build_docs.py --check          # the tree on disk is the tree the sources build
 gh repo clone isaac-scarrott/synth-site /tmp/synth-site
-rsync -a --delete \
-  --exclude '.git' \
+rsync -a --delete --dry-run -i \                   # read this before running it for real
+  --exclude '.git' --exclude '.gitignore' --exclude '__pycache__/' \
   --exclude 'build_docs.py' --exclude 'devserver.py' --exclude 'dev-edit.js' \
   --exclude 'docs-src/' --exclude 'capture/' --exclude 'og/' --exclude '_*.html' \
+  --exclude '*@2x.png' \
   site/ /tmp/synth-site/
 cd /tmp/synth-site && git add -A && git commit -m "…" && git push
 ```
 
 `.git` is excluded because `--delete` would otherwise take the destination's history with it.
+`*@2x.png` are the capture masters: the pages ask for the `.webp` twins, and the masters are 5.7 MB
+of files nothing ever requests. Anything that does want to name one — a `schema.org` `screenshot`,
+say — names the `.webp`, because that is the file the site actually serves.
+
+**Run the dry run first and read it.** It is the only thing standing between a stray build artifact
+and the public site, and it has already caught `__pycache__` on its way out the door.
 
 Order matters: the buttons point at bucket objects, so **publish the release first**. Pointing the
 site at an artifact the bucket does not have yet is a 404 on the one link that matters.

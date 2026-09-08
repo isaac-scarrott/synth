@@ -156,9 +156,9 @@ struct ScratchTerminalOverlay: View {
             TerminalHost(terminal: TerminalManager.shared.view(for: scratch.session, cwd: scratch.cwd))
             foot
         }
-        .background(Theme.tuiSolid)
+        .background(Theme.cardSolid)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.tuiHair, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.cardHair, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.26), radius: 22, y: 12)
     }
 

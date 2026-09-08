@@ -2609,3 +2609,12 @@ disclosure to dive deeper.
   byte-identical. [Details](docs/features/2026-09-08.md)
 
 - **Site mark: no frame, follows the browser's theme** — favicon and brand lockups now come off the app icon generator with transparent corners, and the favicon picks charcoal or cream by `prefers-color-scheme`. [Details](docs/features/2026-09-08.md)
+
+- **The tab chip and the session card are one material** — the open tab was a bright white pill with
+  a heavier shadow than the session card underneath it, despite being a twentieth of the size. Fill,
+  edge and lift now come from one set of tokens (`--card`, `--card-solid`, `--card-hair`,
+  `--card-lift` / `--card-lift-chip`), with the shadow scaled to chip size rather than repeated at
+  full strength. The strip's `overflow: hidden` had been clipping that shadow off at the chip's own
+  edges, so the lift never painted; it is `overflow: clip` with a margin now. Ported to the native
+  app, where a translucent chip needed the same punched-out halo the terminal card already used.
+  [Details](docs/features/2026-09-08.md)

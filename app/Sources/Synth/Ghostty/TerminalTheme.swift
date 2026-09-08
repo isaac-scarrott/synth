@@ -2,9 +2,9 @@ import AppKit
 import GhosttyKit
 
 /// The terminal's ghostty configuration, themed to match the app appearance — the native
-/// counterpart of working.html's `--tui-*` tokens. Light mode is a cool near-white surface
-/// carrying the app's own ink. Dark mode overrides only the background (the near-black
-/// `--tui-bg`), so the surface — and the padding band ghostty fills with it — reads as one
+/// counterpart of working.html's `--tui-*` tokens, and the painter of the session card's own fill
+/// (`--card` / `Theme.card`). Light mode is a cool near-white surface carrying the app's own ink.
+/// Dark mode overrides only the background (the near-black `--card`), so the surface — and the padding band ghostty fills with it — reads as one
 /// continuous dark card with the app frame; foreground and ANSI palette ride on Claude Code's
 /// own dark theme rather than fighting it. Everything else (font, padding, clipboard, the
 /// shell-integration=none used by the env scrub) is scheme-independent and lives here too.

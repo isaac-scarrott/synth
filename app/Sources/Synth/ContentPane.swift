@@ -517,47 +517,9 @@ private struct TermSurface: View {
     var body: some View {
         TerminalHost(terminal: terminal)
             .clipShape(shape)
-            .overlay(shape.strokeBorder(Theme.tuiHair, lineWidth: 0.5))
-            .background(halo)
+            .overlay(shape.strokeBorder(Theme.cardHair, lineWidth: 0.5))
+            .cardLift(cornerRadius: 10)
             .padding(EdgeInsets(top: 4, leading: 14, bottom: 14, trailing: 14))
-    }
-
-    /// The card's soft drop shadow, cast by an opaque stand-in with the card's own footprint
-    /// punched back out of it.
-    ///
-    /// `.shadow` blurs the view's *alpha*, so hanging it on the card — which is now translucent, so
-    /// the terminal participates in the window's translucency — laid the shadow underneath the whole
-    /// surface, where it showed straight back through as a grey smear across the cells. CSS never had
-    /// the problem: an outer `box-shadow` is clipped to outside the border-box, which is what the
-    /// `.destinationOut` punch reproduces here.
-    ///
-    /// Worth the trouble rather than dropping the shadow, because it carries more of the design than
-    /// it used to: on light the translucent card composites to within a shade of the pane behind it,
-    /// so this halo and the hairline are the only things left saying "card".
-    private var halo: some View {
-        shape
-            .fill(.black)
-            .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
-            .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
-            .clipShape(OutsideRoundedRect(radius: 10, margin: 24), style: FillStyle(eoFill: true))
-    }
-}
-
-/// Everything within `margin` of the frame *except* a rounded rect the size of the frame — an
-/// even-odd path, so filling or clipping with `FillStyle(eoFill: true)` keeps only the outside.
-///
-/// A blend-mode knockout was the obvious way to do this and the wrong one: `.destinationOut` inside
-/// a `.background` punched straight through the window's translucent coat as well, so the card ended
-/// up sitting on the bare material. A path subtraction composites nothing and guesses nothing.
-private struct OutsideRoundedRect: Shape {
-    let radius: CGFloat
-    /// Has to clear the shadow's own reach (blur radius + offset), or the clip crops the halo.
-    let margin: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var p = Path(rect.insetBy(dx: -margin, dy: -margin))
-        p.addPath(Path(roundedRect: rect, cornerRadius: radius))
-        return p
     }
 }
 

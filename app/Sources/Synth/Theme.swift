@@ -63,15 +63,26 @@ enum Theme {
     static let menuIcon     = dyn(0x7A7A80, 0x979AA3)   // popover item icons
     static let termBg       = dyn(0x191B1F, 0x121317)   // code editor surface (Settings)
     static let chrome       = dyn(0xF2F3F6, 0x22252B)   // browser toolbar (--chrome)
-    /// The terminal card's own fill has no token here on purpose: ghostty paints it, colour *and*
-    /// alpha, from `TerminalTheme` — see `TermSurface`. A SwiftUI fill behind the cells was a second
-    /// coat over the same card, and a pair of numbers that had to be kept in step by hand.
-    ///
-    /// This one is the surface where the terminal has to read as raised rather than as window: the
-    /// scratch terminal is a card floating over a dimmed app, and a translucent one dissolves into
-    /// whatever it is covering.
-    static let tuiSolid     = dyn(0xF7F8FA, 0x121317)
-    static let tuiHair      = mono(0.13, 0.06)          // terminal card inset hairline
+    // MARK: The session card
+    //
+    // One material worn at two sizes: the surface a session is served on, and the tab chip that
+    // opens it. Fill and edge are shared outright — a chip a shade whiter than the card it opens
+    // reads as a different object sitting on top of the app rather than as that card's handle.
+    // The lift is the same recipe scaled (see `cardLift`).
+
+    /// The card's fill. Ghostty paints the *terminal's* copy of this — colour and alpha both, from
+    /// `TerminalTheme` — because a config string cannot read a SwiftUI Color, and because a fill
+    /// behind the cells would be a second coat over the same card. Two painters, one surface, so
+    /// the numbers are duplicated and `t25_opencodecontrast` reads both files and fails if they
+    /// drift. This token is for everything else wearing the card: the open tab above all.
+    static let card         = dyn(0xF7F8FA, 0.55, 0x121317, 0.58)
+    /// The opaque twin, for where the card must read as raised rather than as window (the scratch
+    /// terminal is a card floating over a dimmed app, and a translucent one dissolves into what it
+    /// covers) — and for every plate punched *into* a card, where translucency would show the icon
+    /// underneath straight through the plate.
+    static let cardSolid    = dyn(0xF7F8FA, 0x121317)
+    /// The card's edge, drawn inset so a translucent fill keeps it.
+    static let cardHair     = mono(0.13, 0.06)
     /// The scratch terminal's scrim — deeper than a dialog's 0.16, because that surface is a
     /// detour out of the app rather than a step within it. Not one number in both themes: the
     /// same 0.5 that reads as a firm shade over a near-black app crushes a light one to flat
@@ -184,6 +195,74 @@ enum Theme {
         Color(nsColor: NSColor(name: nil) {
             $0.isDarkAqua ? NSColor(white: 1, alpha: darkAlpha) : NSColor(white: 0, alpha: lightAlpha)
         })
+    }
+}
+
+// MARK: - The session card's lift
+
+extension View {
+    /// The session card's drop shadow — `working.html`'s `--card-lift`, and at `chip: true` its
+    /// `--card-lift-chip`: the same recipe scaled down, because a full-height card and a 28pt tab
+    /// cannot carry the same shadow and read as sitting at one height off the coat.
+    ///
+    /// Cast by an opaque stand-in with the card's own footprint punched back out of it, never hung
+    /// on the card itself. `.shadow` blurs a view's *alpha*, and the card is translucent, so hanging
+    /// it there lays the shadow underneath the whole surface, where it shows straight back through
+    /// as a grey smear. CSS never had the problem: an outer `box-shadow` is clipped to outside the
+    /// border-box, which is what the punch reproduces.
+    func cardLift(cornerRadius: CGFloat, chip: Bool = false, active: Bool = true) -> some View {
+        background(CardHalo(cornerRadius: cornerRadius, chip: chip, active: active))
+    }
+}
+
+private struct CardHalo: View {
+    let cornerRadius: CGFloat
+    let chip: Bool
+    let active: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The tight grounding shadow, always present under a lifted card. (colour, blur, y offset)
+    private var contact: (Color, CGFloat, CGFloat) {
+        if !chip { return (.black.opacity(0.05), 1, 1) }
+        return colorScheme == .dark ? (.black.opacity(0.3), 1, 1) : (.black.opacity(0.05), 0.75, 0.5)
+    }
+    /// The soft ambient lift. Dark drops it at chip size: a black blur reads as nothing against an
+    /// already-dark rail, and the highlight along the top edge stands in for it (see `TabShell`).
+    private var ambient: (Color, CGFloat, CGFloat) {
+        if !chip { return (.black.opacity(0.05), 5, 3) }
+        return colorScheme == .dark ? (.clear, 0, 0) : (.black.opacity(0.06), 3, 2)
+    }
+
+    @ViewBuilder var body: some View {
+        if active {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(.black)
+                .shadow(color: contact.0, radius: contact.1, y: contact.2)
+                .shadow(color: ambient.0, radius: ambient.1, y: ambient.2)
+                .clipShape(OutsideRoundedRect(radius: cornerRadius, margin: 24), style: FillStyle(eoFill: true))
+        }
+    }
+}
+
+/// Everything within `margin` of the frame *except* a rounded rect the size of the frame — an
+/// even-odd path, so filling or clipping with `FillStyle(eoFill: true)` keeps only the outside.
+///
+/// A blend-mode knockout was the obvious way to do this and the wrong one: `.destinationOut` inside
+/// a `.background` punched straight through the window's translucent coat as well, so the card ended
+/// up sitting on the bare material. A path subtraction composites nothing and guesses nothing.
+private struct OutsideRoundedRect: Shape {
+    let radius: CGFloat
+    /// Has to clear the shadow's own reach (blur radius + offset), or the clip crops the halo.
+    let margin: CGFloat
+    /// The knockout is grown a hair past the stand-in it removes. At exactly equal geometry the
+    /// stand-in's *antialiased* edge survives the clip, and on a 28pt chip that read as a dark arc
+    /// drawn round every corner. Half a point costs the shadow nothing and takes the fringe with it.
+    var grow: CGFloat = 0.5
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path(rect.insetBy(dx: -margin, dy: -margin))
+        p.addPath(Path(roundedRect: rect.insetBy(dx: -grow, dy: -grow), cornerRadius: radius + grow))
+        return p
     }
 }
 

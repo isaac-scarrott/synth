@@ -52,6 +52,7 @@ import ttygrid
 HERE = os.path.dirname(os.path.abspath(__file__))
 THEME = os.path.normpath(os.path.join(HERE, "../../Sources/Synth/Resources/opencode-theme.json"))
 TERMINAL_THEME = os.path.normpath(os.path.join(HERE, "../../Sources/Synth/Ghostty/TerminalTheme.swift"))
+THEME_SWIFT = os.path.normpath(os.path.join(HERE, "../../Sources/Synth/Theme.swift"))
 
 # opencode still paints `backgroundElement` — the prompt box — so its ink is judged against that
 # rather than against the terminal surface the rest of the field is now left to. It is the darker of
@@ -173,6 +174,44 @@ def field(em):
 
 
 print("=== T25: opencode — the light half Synth installs, and the field it hands back ===")
+
+# The session card's fill has two painters — ghostty writes the terminal's copy from a config
+# string, SwiftUI writes the open tab's from `Theme.card` — because a config string cannot read a
+# Color. Two copies of one surface is exactly the shape this file exists to catch, so the same
+# comparison the opencode theme gets applies here. Ahead of the opencode skip below: this half needs
+# nothing installed, and a machine without the CLI should still be told when the pair drifts.
+def theme_card():
+    """`Theme.card`'s hex + alpha per half, or None if the Swift has changed shape."""
+    try:
+        src = open(THEME_SWIFT).read()
+    except OSError:
+        return None
+    m = re.search(r"static let card\s*=\s*dyn\(0x([0-9A-Fa-f]{6}),\s*([0-9.]+),\s*"
+                  r"0x([0-9A-Fa-f]{6}),\s*([0-9.]+)\)", src)
+    if not m:
+        return None
+    return {"light": (m.group(1).lower(), float(m.group(2))),
+            "dark": (m.group(3).lower(), float(m.group(4)))}
+
+
+def terminal_alphas():
+    """`TerminalTheme.bgOpacity` per half, or None if the Swift has changed shape."""
+    try:
+        src = open(TERMINAL_THEME).read()
+    except OSError:
+        return None
+    m = re.search(r"bgOpacity = \(light:\s*([0-9.]+),\s*dark:\s*([0-9.]+)\)", src)
+    return {"light": float(m.group(1)), "dark": float(m.group(2))} if m else None
+
+
+_card, _surf, _alpha = theme_card(), terminal_surfaces(), terminal_alphas()
+if None in (_card, _surf, _alpha):
+    print("  NOTE  Theme.swift / TerminalTheme.swift could not be read — the card fill pair "
+          "was not compared", flush=True)
+else:
+    check("`Theme.card` is TerminalTheme's own surface, colour and alpha, in both halves",
+          all(_card[h] == (_surf[h], _alpha[h]) for h in ("light", "dark")),
+          f"Theme.card {_card} vs terminal {_surf} @ {_alpha}")
 
 binary = ccdrive.opencode_binary()
 if not binary:

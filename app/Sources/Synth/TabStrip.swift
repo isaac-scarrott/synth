@@ -45,9 +45,12 @@ struct TabStrip: View {
             // edge sit on one line down the pane.
             .padding(.leading, store.sidebarCollapsed ? 0 : 14)
             // Past the point where every tab is at its floor the row stops shrinking and simply
-            // overruns, exactly as the mock's `overflow: hidden` row does. Masked on the horizontal
-            // only — a plain clip would take the open chip's shadow off with it.
-            .mask { Rectangle().padding(.vertical, -24) }
+            // overruns, exactly as the mock's `overflow: clip` row does — and with the mock's
+            // `overflow-clip-margin`, because a clip flush to the row takes the open chip's lift
+            // off with it. Vertical is generous (nothing is ever near that edge); horizontal is the
+            // mock's 10, which matters only with the sidebar collapsed, where the row's leading
+            // padding drops to 0 and the first chip sits hard against the mask.
+            .mask { Rectangle().padding(EdgeInsets(top: -24, leading: -10, bottom: -24, trailing: -10)) }
             // Served its full ask before the spacer and the PR chip, so the tabs get the room and the
             // slack lands on the right — an even split would starve them the moment a PR chip appears.
             .layoutPriority(1)
@@ -120,9 +123,9 @@ struct TabShell: ViewModifier {
     let hasClose: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    /// The open tab holds its raised fill under the pointer rather than washing back down to the
+    /// The open tab holds its card fill under the pointer rather than washing back down to the
     /// hover tint.
-    private var fill: Color { isActive ? Theme.raised : (hovering ? Theme.rowHover : .clear) }
+    private var fill: Color { isActive ? Theme.card : (hovering ? Theme.rowHover : .clear) }
 
     func body(content: Content) -> some View {
         content
@@ -133,16 +136,19 @@ struct TabShell: ViewModifier {
             .background(shell)
     }
 
-    /// The chip. Elevation is the only thing that says "open" here — a hairline plus a contact
-    /// shadow, and no fill at all when the tab is closed. Dark can't lean on a black drop shadow
-    /// the way light does — it reads as nothing against an already-dark rail — so dark trades the
-    /// wasted ambient blur for a hairline top highlight instead (light catching the tab's edge,
-    /// the standard dark-UI substitute for shadow).
+    /// The chip, and it is the **same card** as the session surface below it: the card's fill, the
+    /// card's hairline, and the card's lift taken down to chip size (`cardLift(chip:)`). A closed
+    /// tab has none of it — no fill at all — which is the whole of what says "open".
+    ///
+    /// Dark can't lean on a black drop shadow the way light does; it reads as nothing against an
+    /// already-dark rail. `cardLift` drops the ambient blur there, and the hairline top highlight
+    /// below stands in for it — light catching the chip's edge, the standard dark-UI substitute
+    /// for shadow. The card is large enough that its edge alone carries it; the chip is not.
     private var shell: some View {
         let shape = RoundedRectangle(cornerRadius: 8)
         return shape.fill(fill)
             .overlay {
-                if isActive { shape.strokeBorder(Theme.borderStrong, lineWidth: 0.5) }
+                if isActive { shape.strokeBorder(Theme.cardHair, lineWidth: 0.5) }
             }
             .overlay {
                 if isActive && colorScheme == .dark {
@@ -151,19 +157,7 @@ struct TabShell: ViewModifier {
                         .clipShape(shape)
                 }
             }
-            .shadow(color: contactShadow, radius: colorScheme == .dark ? 1 : 0.5, y: 1)
-            .shadow(color: ambientShadow, radius: 5, y: 4)
-    }
-
-    /// The tight, always-present grounding shadow (working.html `.tab--active`'s first layer).
-    private var contactShadow: Color {
-        guard isActive else { return .clear }
-        return colorScheme == .dark ? .black.opacity(0.3) : .black.opacity(0.05)
-    }
-    /// The soft ambient lift — light only; in dark it never had enough contrast to show.
-    private var ambientShadow: Color {
-        guard isActive, colorScheme == .light else { return .clear }
-        return .black.opacity(0.08)
+            .cardLift(cornerRadius: 8, chip: true, active: isActive)
     }
 }
 
@@ -202,7 +196,7 @@ private struct TabChip: View {
         ZStack(alignment: .trailing) {
             if renaming {
                 HStack(spacing: contentSpacing) {
-                    TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
+                    TabIcon(session: session, ring: isActive ? Theme.cardSolid : Theme.panel, paneMap: paneMap)
                     RenameField(font: .sans(12, 500))
                     Spacer(minLength: 4)
                 }
@@ -210,7 +204,7 @@ private struct TabChip: View {
             } else {
                 Button { store.open(session); focusContent(store) } label: {
                     HStack(spacing: contentSpacing) {
-                        TabIcon(session: session, ring: isActive ? Theme.raised : Theme.panel, paneMap: paneMap)
+                        TabIcon(session: session, ring: isActive ? Theme.cardSolid : Theme.panel, paneMap: paneMap)
                         Text(session.title)
                             .lineLimit(1).truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)

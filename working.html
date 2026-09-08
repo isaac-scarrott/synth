@@ -54,13 +54,24 @@
     --term-bg: #191b1f;      /* terminal / code surfaces */
     --set-inherit: #8b8e96;  /* an inherited settings field: dimmer INK on --term-bg (clears AA),
                                 never opacity — opacity reads as disabled, not inherited */
-    --tui-bg: rgba(247,248,250,0.55);  /* terminal surface — cool near-white; TUIs that ship their own light theme (Claude Code) build it for #fff, and warmth cost them contrast.
+    /* ---- The session card ----------------------------------------------------------------
+       One material worn at two sizes: the surface a session is served on, and the tab chip that
+       opens it. Fill and edge are shared outright — a chip a shade whiter than the card it opens
+       reads as a different object sitting on top of the app rather than a handle on the card.
+       The lift is the same recipe scaled: a full-height card and a 28px chip cannot carry the
+       same shadow and sit at one height off the coat, so the chip takes offsets and blur down
+       by roughly a third. */
+    --card: rgba(247,248,250,0.55);  /* cool near-white; TUIs that ship their own light theme (Claude Code) build it for #fff, and warmth cost them contrast.
                                 Alpha is low because it stacks on --panel, which already carries the
                                 translucency: the two composite to a card that still shows the desktop
                                 but never lets the photo's texture into the cells. */
-    --tui-solid: #f7f8fa;    /* the same surface where it must read as raised, not as window: the
+    --card-solid: #f7f8fa;   /* the same surface where it must read as raised, not as window: the
                                 scratch terminal is a card floating over a dimmed app, and a
-                                translucent one dissolves into the thing it's covering */
+                                translucent one dissolves into the thing it's covering. Also every
+                                plate punched INTO a card — a translucent one shows the icon through. */
+    --card-hair: rgba(0,0,0,0.13);   /* the card's edge — inset, so a translucent fill keeps it */
+    --card-lift: 0 1px 2px rgba(0,0,0,0.05), 0 3px 10px rgba(0,0,0,0.05);
+    --card-lift-chip: 0 0.5px 1.5px rgba(0,0,0,0.05), 0 2px 6px rgba(0,0,0,0.06);
     --tui-fg: #1c1e23;       /* terminal default text — the app's own --ink, so terminal and chrome read as one surface */
     --tui-dim: #5b5e68;      /* terminal dim / comments */
     --tui-red: #a2241a;      /* terminal red — errors */
@@ -71,7 +82,6 @@
     --tui-cyan: #075d6f;     /* terminal cyan */
     --tui-cursor: #1c1e23;   /* terminal cursor */
     --tui-sel: #d0d9e6;      /* terminal selection */
-    --tui-hair: rgba(0,0,0,0.13);   /* terminal card inset hairline */
     --tab-well: rgba(0,0,0,0.055);    /* the recess a tab chip sits in — a split's tray. One step
                                          below the coat rather than --hover-soft, which is a pointer
                                          state and washes out the moment it has to read as a surface. */
@@ -606,8 +616,8 @@
     margin: 4px 14px 14px;
     padding: 13px 15px;
     border-radius: 10px;
-    background: var(--tui-bg);
-    box-shadow: inset 0 0 0 0.5px var(--tui-hair), 0 1px 2px rgba(0,0,0,0.05), 0 3px 10px rgba(0,0,0,0.05);
+    background: var(--card);
+    box-shadow: inset 0 0 0 0.5px var(--card-hair), var(--card-lift);
     overflow-y: auto;
     font-family: var(--mono);
     font-size: 12px;
@@ -646,7 +656,7 @@
     flex-shrink: 0;
     margin: 0 13px 13px;
     padding: 8px 11px;
-    border: 1px solid var(--tui-hair);
+    border: 1px solid var(--card-hair);
     border-radius: 6px;
     transition: border-color 160ms ease, box-shadow 160ms ease;
   }
@@ -1586,7 +1596,11 @@
   .tabstrip__tabs {
     flex: 1; min-width: 0;
     display: flex; align-items: center; gap: 3px;
-    overflow: hidden;                       /* no scroll — tabs shrink to fit so the + stays visible */
+    /* No scroll — tabs shrink to fit so the + stays visible. `clip` rather than `hidden` because
+       this box is exactly tab-height: `hidden` cut the open chip's drop shadow off at its own
+       edges, so the one thing that says "open" never painted. The margin lets the lift out
+       without letting a tab out. */
+    overflow: clip; overflow-clip-margin: 10px;
   }
   /* ---- .tab is one component with two strips: the branch's sessions (.tabstrip, in tabs mode)
      and Settings' own scopes (.set-tabs). Same height, radius, type, hover and the same raised
@@ -1618,20 +1632,13 @@
     .tab:not(.tab--active):hover { background: var(--hover); }
   }
   /* The open tab lifts off the rail as a card, and that is the whole of "open": no bar, no seam,
-     no fill running out to the window edge. An unopened tab is its label and nothing else. */
+     no fill running out to the window edge. An unopened tab is its label and nothing else.
+     It is the SAME card as the session surface below it — same fill, same edge, and the card's
+     own lift taken down to chip size — so the chip reads as that card's handle rather than as a
+     brighter pill floating over it. */
   .tab--active {
-    background: var(--raised); color: var(--ink);
-    box-shadow: inset 0 0 0 0.5px var(--border-strong),
-                0 1px 1px rgba(0, 0, 0, 0.05), 0 4px 10px rgba(0, 0, 0, 0.08);
-  }
-  /* Dark: a black drop shadow reads as almost nothing against an already-dark rail — the
-     light-mode recipe just wasn't visible here. The lift instead comes from a hairline top
-     highlight (the light-catches-the-edge cue every dark UI uses in place of shadow) plus a
-     tight contact shadow for grounding; the border ring stays the primary edge. */
-  :root[data-theme="dark"] .tab--active {
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
-                inset 0 0 0 0.5px var(--border-strong),
-                0 1px 2px rgba(0, 0, 0, 0.3);
+    background: var(--card); color: var(--ink);
+    box-shadow: inset 0 0 0 0.5px var(--card-hair), var(--card-lift-chip);
   }
   .tab__icon { position: relative; flex-shrink: 0; display: flex; width: 14px; height: 14px; }
   .tab__icon svg { width: 14px; height: 14px; display: block; }
@@ -1641,7 +1648,7 @@
     width: 6px; height: 6px; border-radius: 50%;
     background: var(--input); box-shadow: 0 0 0 1.5px var(--panel);
   }
-  .tab--active.tab--unread .tab__icon::after { box-shadow: 0 0 0 1.5px var(--raised); }
+  .tab--active.tab--unread .tab__icon::after { box-shadow: 0 0 0 1.5px var(--card-solid); }
   .tab__name { overflow: hidden; text-overflow: ellipsis; }
   .tab__ind { flex-shrink: 0; display: flex; align-items: center; }
   .tab__ind .ind { animation: none; }   /* the strip rebuilds on every switch — skip the per-render pop */
@@ -1720,7 +1727,7 @@
     color: var(--accent);
     background: var(--panel); box-shadow: 0 0 0 1px var(--panel);
   }
-  .tab--active .tab__map { background: var(--raised); box-shadow: 0 0 0 1px var(--raised); }
+  .tab--active .tab__map { background: var(--card-solid); box-shadow: 0 0 0 1px var(--card-solid); }
   .tab__map svg { width: 8px; height: 8px; display: block; }
 
   /* the tab a dragged tab is about to pair into a split with — copper ring, echoing the sidebar's pair-to (012) */
@@ -3129,8 +3136,8 @@
     --glass: rgba(40,43,48,0.82);
     --chrome: #22252b;
     --term-bg: #121317;
-    --tui-bg: rgba(18,19,23,0.58);   /* terminal surface — dark card, tinting the panel beneath it */
-    --tui-solid: #121317;
+    --card: rgba(18,19,23,0.58);   /* the session card — a dark well, tinting the panel beneath it */
+    --card-solid: #121317;
     --tui-fg: #e3e5ea;
     --tui-dim: #7e818c;
     --tui-red: #ff8a80;
@@ -3141,7 +3148,12 @@
     --tui-cyan: #86e3dc;
     --tui-cursor: #e3e5ea;
     --tui-sel: #333a48;
-    --tui-hair: rgba(255,255,255,0.06);
+    --card-hair: rgba(255,255,255,0.06);
+    /* A black drop shadow reads as almost nothing against an already-dark coat, so at chip size
+       the lift comes instead from a hairline top highlight — the light-catches-the-edge cue every
+       dark UI uses in place of shadow — over a tight contact shadow. The card is large enough that
+       its edge alone carries it; the chip is not. */
+    --card-lift-chip: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.3);
     --hover-soft: rgba(255,255,255,0.045);
     --hover: rgba(255,255,255,0.07);
     --press: rgba(255,255,255,0.1);
@@ -3220,7 +3232,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--tui-solid);
+    background: var(--card-solid);
     color: var(--tui-fg);
     font-family: var(--mono);
   }
@@ -3277,7 +3289,7 @@
     width: min(680px, calc(100vw - 120px));
     height: min(400px, calc(100vh - 200px));
     border-radius: 14px;
-    box-shadow: inset 0 0 0 0.5px var(--tui-hair), 0 12px 44px rgba(0,0,0,0.26);
+    box-shadow: inset 0 0 0 0.5px var(--card-hair), 0 12px 44px rgba(0,0,0,0.26);
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.96);
     transition: transform 140ms cubic-bezier(0.4, 0, 1, 1), opacity 120ms ease;

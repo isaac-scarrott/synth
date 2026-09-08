@@ -48,11 +48,10 @@ GATE_OWNER = os.environ.get("SYNTH_GATE_RUN") or str(os.getpid())
 def claim_machine():
     """Refuse to start while another harness run holds the machine — from any checkout.
 
-    Two runs cannot share one: they share a single "Synth Dev" Application Support sandbox, and the
-    agent patterns below are path-independent of necessity (a row's `opencode2 serve --port <port>`
-    carries nothing that says whose row it is). So each run reaps the other's agents mid-test, and
-    both report failures neither build caused — an hour of red that looks like a regression and
-    isn't. Cheaper to stop here and say so.
+    Two runs cannot share one: they share a single "Synth Dev" Application Support sandbox, so each
+    seeds state the other is part-way through reading, and two runs from the same checkout also
+    share the bundle path `kill_all` scopes its kills by. So both report failures neither build
+    caused — an hour of red that looks like a regression and isn't. Cheaper to stop here and say so.
     """
     try:
         owner, app = open(GATE_LOCK).read().split("\n", 1)
@@ -71,20 +70,58 @@ def claim_machine():
         f.write(f"{GATE_OWNER}\n{APP}")
 
 
+# What an agent process looks like. Enough to find one, never enough to own it: a row's
+# `opencode2 serve --port <port>` is spelled the same whether Synth started it for this harness or
+# for the developer sitting in front of the machine.
+AGENT_PATTERNS = ("opencode --port", "opencode2 serve --port", "opencode2 --server")
+
+
+def is_our_row(pid):
+    """Whether `pid` was started under a row of THIS harness's app.
+
+    Synth stamps each PTY it spawns with `SYNTH_HOOK_BIN` — the bundle whose `synth-hook` owns the
+    row (Hooks.decorate) — and children inherit it, so the bundle path an agent's command line
+    lacks is in its environment, which `ps -E` prints. Matched as the whole assignment and read one
+    pid at a time: a bundle path also appears bare in `SYNTH_WORKTREE` and in an MCP server's
+    environment, in processes that are nobody's row, and an environment holding a newline splits a
+    `ps` line in two. A stamp that can't be read is a pid left alone — missing one of ours costs a
+    stale process, taking one that isn't ours costs somebody their live session.
+
+    Two kinds of process never read back, both the kernel's choice rather than ours and both
+    already documented at `SessionProcesses.swift`: a SIP-protected platform binary (`/bin/sh`)
+    has its environment stripped, and one that rewrote its argv has overwritten the region the
+    environment lived in. Neither describes an agent — a live `opencode2 serve` reads back fine —
+    but an agent wrapped in a shell script would go unreaped rather than mis-reaped.
+    """
+    stamp = f"SYNTH_HOOK_BIN={APP}/Contents/MacOS/synth-hook"
+    return stamp in sh(f"ps -p {pid} -Eww -o command=")
+
+
 def kill_all():
     """Tear down only THIS harness's app and its children.
 
     Never match on a bare `Synth.app/...` pattern: the developer's own Synth is built to the same
     relative path in their checkout, and a broad pkill takes their running app down with it. The
-    agent patterns cannot be narrowed the same way, which is what `claim_machine` is for.
+    agents are scoped by the same rule, on the environment stamp rather than the command line
+    (`is_our_row`) — `pkill -f 'opencode2 serve --port'` reaped whatever else on the machine
+    happened to be an agent, which meant the developer's own live OpenCode row, once per gate.
     """
     claim_machine()
     exe = f"{APP}/Contents/MacOS/Synth"
+    # Before the app: its teardown takes its own children with it, and a pid read after that has
+    # started is a pid that may already belong to something else.
+    agents = {pid for pattern in AGENT_PATTERNS for pid in sh(f"pgrep -f '{pattern}'").split()}
+    ours = sorted(pid for pid in agents if is_our_row(pid))
+    # Say which it took and which it left. The unscoped version was silent as well as wrong, and
+    # the silence is what made it expensive: finding it meant correlating timestamps across three
+    # sessions rather than reading one line. Pids are numbers, the patterns are literals above.
+    if agents: print(f"  kill_all: agents matched {sorted(agents)}, reaping {ours}", flush=True)
+    if ours: sh("kill " + " ".join(ours))
     sh(f"pkill -f '{exe}'")
     sh(f"pkill -f '{APP}/Contents/Frameworks'")   # our CEF helpers, which hold the CDP port
-    sh("pkill -f 'opencode --port'")
-    sh("pkill -f 'opencode2 serve --port'")
-    sh("pkill -f 'opencode2 --server'")
+    # Settles on the app, never on the agents: one whose stamp couldn't be read is left alone and
+    # can outlive this call. That leak is the price of the leave-alone branch and it is cheap — a
+    # row's port is minted per launch, so a survivor can never collide with the next run's.
     for _ in range(50):
         if not sh(f"pgrep -f '{exe}'"): break
         time.sleep(0.2)

@@ -2618,3 +2618,13 @@ disclosure to dive deeper.
   edges, so the lift never painted; it is `overflow: clip` with a margin now. Ported to the native
   app, where a translucent chip needed the same punched-out halo the terminal card already used.
   [Details](docs/features/2026-09-08.md)
+
+- **The agent gate stops killing the developer's own OpenCode row** — `kill_all()` pkilled
+  `opencode --port`, `opencode2 serve --port` and `opencode2 --server` machine-wide, so every harness
+  gate reaped whichever of the developer's OpenCode sessions were open; three deaths on 2026-09-07,
+  each within 100–200ms of a driven Synth Dev beginning to quit. The patterns still find an agent but
+  no longer own one: candidates from `pgrep -f` are filtered by `SYNTH_HOOK_BIN`, the bundle stamp the
+  app already writes into every PTY, read one pid at a time so a newline in an environment cannot
+  split a `ps` record and hand the wrong pid a stamp. A stamp that cannot be read leaves the pid
+  alone, and the kill now prints which pids it took and which it left.
+  [Details](docs/features/2026-09-08.md)

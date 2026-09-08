@@ -2600,3 +2600,10 @@ disclosure to dive deeper.
   one already open is instant. Mirrored in `working.html` as `.pane--noenter`.
 
 - **Custom site domain** — `https://trysynth.dev` serves the landing page and docs from GitHub Pages; Porkbun DNS, enforced HTTPS, and redirects from `www` and the old Pages address. [Details](docs/features/2026-09-07.md)
+
+- **0.42.1 ships — the pane entrance fix** — a patch release carrying the one app-facing change since
+  0.42.0: a pane's entrance is a session's first appearance, not a replay on every tab switch.
+  `CFBundleVersion` 735, tag `v0.42.1`; both artifacts notarized separately, stapled, and verified
+  credential-less with quarantine set; appcast newest 0.42.1 at 735 with `edSignature` on all 18
+  enclosures, deltas 0.70–1.45 MB. No `synth-site` push — the deployed site was already
+  byte-identical. [Details](docs/features/2026-09-08.md)

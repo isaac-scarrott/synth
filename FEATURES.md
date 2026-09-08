@@ -2681,3 +2681,9 @@ disclosure to dive deeper.
   `browserAddress` keeps everything but the scheme; `browserHostPath` stays for the two places that
   want a name rather than an address. Hovering the pill now gives the whole thing, scheme included.
   [Details](docs/features/2026-09-08.md)
+
+- **0.43.1 ships — the address bar tells the truth** — a same-day patch for the omnibox dropping
+  `?query` and `#fragment`. `CFBundleVersion` 749, tag `v0.43.1`; both artifacts notarized
+  separately, stapled, verified credential-less with quarantine set; appcast newest 0.43.1 at 749
+  with `edSignature` on all 18 enclosures, the delta from 0.43.0 771 KB. No `synth-site` push — a
+  checksum dry run against the deployed repo moved nothing. [Details](docs/features/2026-09-08.md)

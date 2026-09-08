@@ -31,6 +31,9 @@ struct InspectPane: View {
     /// recorded engine failure) the placeholder turns into the refusal.
     @State private var attempt = 0
     @State private var stalled: String?
+    /// Why the last resolve didn't land. Kept because the cap replaces every attempt's own
+    /// answer with one sentence, and by then the reason is the only thing anyone can act on.
+    @State private var lastResolveFailure: String?
     private static let maxAttempts = 25   // × 400ms ≈ 10s of "Waiting for the page…"
 
     private var ownerBrowser: Session? {
@@ -74,11 +77,14 @@ struct InspectPane: View {
             return
         }
         if let ctrl = BrowserManager.shared.existing(browser.id) {
-            if session.browserURL == nil,
-               let url = try? await CDPClient.devToolsFrontendURL(port: ctrl.engine.cdpPort,
-                                                                  synthSessionID: browser.id,
-                                                                  urlHint: browser.browserURL) {
-                session.browserURL = url
+            if session.browserURL == nil {
+                do {
+                    session.browserURL = try await CDPClient.devToolsFrontendURL(
+                        port: ctrl.engine.cdpPort, synthSessionID: browser.id,
+                        urlHint: browser.browserURL)
+                } catch {
+                    lastResolveFailure = "\(error)"
+                }
             }
             if session.browserURL != nil, BrowserManager.shared.existing(session.id) == nil {
                 DispatchQueue.main.async { _ = BrowserManager.shared.controller(for: session) }
@@ -92,6 +98,9 @@ struct InspectPane: View {
         guard !Task.isCancelled else { return }
         if attempt >= Self.maxAttempts {
             stalled = "DevTools couldn’t reach the page — reopen this session to retry."
+            let why = lastResolveFailure
+            Fault.report(.browser, .uncaught, severity: .degraded, session: session.id,
+                         details: [.attempt(attempt), .stage(.resolve)], evidence: why)
         } else {
             attempt += 1
         }

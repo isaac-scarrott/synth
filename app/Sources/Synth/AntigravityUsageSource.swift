@@ -9,13 +9,14 @@ import Foundation
 struct AntigravityUsageSource: UsageSource {
     let descriptor: AgentDescriptor
     var agent: AgentID { descriptor.id }
+    var title: String { descriptor.displayName }
 
     /// `agy` reaches Antigravity's servers to answer either question, and takes seconds about it.
     /// Generous enough that a slow answer still lands within one refresh, short enough that a
     /// wedged CLI never outlives the poll that started it.
     private static let timeout: TimeInterval = 25
 
-    func load() async -> UsageSection {
+    func load() async throws -> UsageSection {
         guard let binary = descriptor.resolvedBinary else {
             return UsageSection(id: agent, title: descriptor.displayName,
                                 status: .unavailable("no quota data"))
@@ -25,11 +26,11 @@ struct AntigravityUsageSource: UsageSource {
         async let quota = UsageCommand.output(binary, ["-p", "/quota"], timeout: Self.timeout)
         async let credits = UsageCommand.output(binary, ["-p", "/credits"], timeout: Self.timeout)
 
-        let metrics = Self.buckets(await quota) + Self.credits(await credits)
-        guard !metrics.isEmpty else {
-            return UsageSection(id: agent, title: descriptor.displayName,
-                                status: .unavailable("no quota data"))
-        }
+        let metrics = Self.buckets(try await quota) + Self.credits(try await credits)
+        // Every field name and the row count are the server's, so `agy` printing a header line, a
+        // boxed table or JSON parses as zero rows here. That is the shape changing under us, not an
+        // account with no buckets — and an account with no buckets is not a thing Antigravity has.
+        guard !metrics.isEmpty else { throw UsageUnreadable.shape("quota table") }
         return UsageSection(id: agent, title: descriptor.displayName, metrics: metrics)
     }
 
@@ -37,7 +38,7 @@ struct AntigravityUsageSource: UsageSource {
 
     /// The percentage `agy` prints is what is LEFT — it reports headroom where the board reports
     /// spend — so it is inverted here, at the one place the two conventions meet.
-    private static func buckets(_ output: String?) -> [UsageMetric] {
+    private static func buckets(_ output: String) -> [UsageMetric] {
         rows(output).compactMap { fields in
             guard fields.count >= 4,
                   let remaining = Double(fields[2].trimmingCharacters(in: CharacterSet(charactersIn: "%")))
@@ -54,7 +55,7 @@ struct AntigravityUsageSource: UsageSource {
     /// `/credits` prints the same two-column table, but only some of its rows are counts — an
     /// upgrade link rides along in the same shape — so a row is shown only where the value is
     /// genuinely a number.
-    private static func credits(_ output: String?) -> [UsageMetric] {
+    private static func credits(_ output: String) -> [UsageMetric] {
         rows(output).compactMap { fields in
             guard fields.count == 2, Double(fields[1]) != nil else { return nil }
             return UsageMetric(id: "antigravity.credits." + fields[0], label: fields[0],
@@ -62,8 +63,8 @@ struct AntigravityUsageSource: UsageSource {
         }
     }
 
-    private static func rows(_ output: String?) -> [[String]] {
-        (output ?? "").split(separator: "\n").map { line in
+    private static func rows(_ output: String) -> [[String]] {
+        output.split(separator: "\n").map { line in
             line.split(separator: "\t", omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
         }

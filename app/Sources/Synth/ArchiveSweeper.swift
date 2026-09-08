@@ -239,9 +239,15 @@ enum ArchiveSweeper {
         let nestedWorktree = all.contains {
             $0.path.standardized.path.hasPrefix(resolved.path + "/")
         }
-        guard !nestedWorktree,
-              !hasNestedRepo(under: resolved, ignoring: GitService.ignoredDirectories(in: ignored))
-        else { return .blocked(.nested) }
+        guard !nestedWorktree else { return .blocked(.nested) }
+        guard let nested = hasNestedRepo(under: resolved,
+                                         ignoring: GitService.ignoredDirectories(in: ignored))
+        else {
+            Fault.report(.worktree, .worktreeOpFailed, details: [.stage(.resolve)],
+                         evidence: "A directory under the candidate could not be listed.")
+            return .blocked(.probeFailed)
+        }
+        guard !nested else { return .blocked(.nested) }
 
         // B5 — no remote means nothing is recoverable, so B4 would block everything anyway.
         // Say it as its own answer rather than as a confusing "not pushed".
@@ -442,12 +448,17 @@ enum ArchiveSweeper {
     /// depth 4, so every worktree that had ever been built was `nested` forever. Anything git
     /// is told to ignore is build output or scratch by the repo's own declaration — a `.git`
     /// down there is a fetched artefact, not work.
-    private static func hasNestedRepo(under root: URL, ignoring: Set<String>) -> Bool {
+    ///
+    /// Nil when a directory inside the depth budget could not be read at all. Every other gate
+    /// in this file treats a failed probe as a block, and this one is a gate on whether an
+    /// `rm -rf` would take commits with it — a directory Synth cannot list is exactly where a
+    /// nested clone it cannot see would be.
+    private static func hasNestedRepo(under root: URL, ignoring: Set<String>) -> Bool? {
         let fm = FileManager.default
-        func scan(_ dir: URL, depth: Int, prefix: String) -> Bool {
-            guard depth <= 4,
-                  let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey])
-            else { return false }
+        func scan(_ dir: URL, depth: Int, prefix: String) -> Bool? {
+            guard depth <= 4 else { return false }
+            guard let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey])
+            else { return nil }
             for entry in entries {
                 let name = entry.lastPathComponent
                 if depth > 0, name == ".git" { return true }
@@ -455,7 +466,8 @@ enum ArchiveSweeper {
                 guard name != ".git", name != "node_modules", !ignoring.contains(relative),
                       (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
                 else { continue }
-                if scan(entry, depth: depth + 1, prefix: relative) { return true }
+                guard let nested = scan(entry, depth: depth + 1, prefix: relative) else { return nil }
+                if nested { return true }
             }
             return false
         }
@@ -501,13 +513,20 @@ enum ArchiveSweeper {
             // non-root run over other users' processes — but the paths it did print are still
             // real. Only a total failure (no output at all) is untrustworthy.
             let out = String(data: data, encoding: .utf8) ?? ""
-            guard !out.isEmpty else { return nil }
+            guard !out.isEmpty else {
+                Fault.report(.worktree, .uncaught, details: [.stage(.spawn),
+                                                            .exitCode(process.terminationStatus)],
+                             evidence: "lsof printed nothing; every candidate blocks this tick.")
+                return nil
+            }
             var paths: Set<String> = []
             for line in out.split(separator: "\n") where line.hasPrefix("n/") {
                 paths.insert(String(line.dropFirst()))
             }
             return paths
         } catch {
+            Fault.report(.worktree, .uncaught, details: [.stage(.spawn)],
+                         evidence: error.localizedDescription)
             return nil
         }
     }

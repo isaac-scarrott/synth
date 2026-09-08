@@ -342,8 +342,8 @@ import AppKit
             emulator().nudgeRepaint(urlHint: address)
         }
         guard attempt < 3 else { return }
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(300 * (attempt + 1)))
+        Guarded.mainTask { [weak self] in
+            try await Task.sleep(for: .milliseconds(300 * (attempt + 1)))
             self?.kickPageTheme(nonce: nonce, attempt: attempt + 1)
         }
     }
@@ -474,7 +474,7 @@ import AppKit
         // `engaged`, not `active`: a toggle during the in-flight attach must cancel it,
         // not race a second attach on top (leaked CDP clients / event tasks).
         if let cm = commentMode, cm.engaged {
-            Task { await cm.exit() }
+            Guarded.mainTask { await cm.exit() }
             return
         }
         let cm = commentMode ?? CommentModeController(sessionID: sessionID, cdpPort: engine.cdpPort)

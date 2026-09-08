@@ -1279,10 +1279,13 @@ extension SimulatorAccessibility {
     /// Merged into whatever is already there rather than written over it — this is the user's own
     /// device, and the file also holds settings they chose.
     ///
-    /// Older runtimes need none of this and are left alone. Called from `SimulatorDeviceCatalog`'s
-    /// boot path, which is the only moment it can work.
+    /// Older runtimes need none of this and are left alone — that is what `false` means. A runtime
+    /// that needs it and did not get it throws instead: the two used to be the same answer, so the
+    /// one that costs the session its whole accessibility capability looked like the one that is
+    /// nothing at all. Called from `SimulatorDeviceCatalog`'s boot path, which is the only moment
+    /// it can work.
     @discardableResult
-    static func prepareForBoot(udid: String, runtimeVersion: String) -> Bool {
+    static func prepareForBoot(udid: String, runtimeVersion: String) throws -> Bool {
         guard needsCachedPreferences(runtimeVersion: runtimeVersion) else { return false }
         let path = preferencesPath(udid: udid)
         var preferences: [String: Any] = [:]
@@ -1295,12 +1298,17 @@ extension SimulatorAccessibility {
                     "AccessibilityEnabled", "ApplicationAccessibilityEnabled"] {
             preferences[key] = true
         }
-        guard let data = try? PropertyListSerialization.data(
-            fromPropertyList: preferences, format: .binary, options: 0) else { return false }
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: preferences, format: .binary, options: 0)
         let directory = (path as NSString).deletingLastPathComponent
-        try? FileManager.default.createDirectory(
+        try FileManager.default.createDirectory(
             atPath: directory, withIntermediateDirectories: true)
-        return FileManager.default.createFile(atPath: path, contents: data)
+        guard FileManager.default.createFile(atPath: path, contents: data) else {
+            throw SimulatorAccessibilityFailure.unavailable(
+                "could not write the guest's accessibility preferences at \(path), so this "
+                + "runtime will boot without an accessibility server a client can reach")
+        }
+        return true
     }
 
     /// "18.4" → false, "26.5" and up → true. A version string that will not parse is treated as

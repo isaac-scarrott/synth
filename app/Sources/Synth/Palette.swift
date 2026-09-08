@@ -193,7 +193,7 @@ struct PaletteFrame {
         guard branchCache[id] == nil, !loadingBranches.contains(id) else { return }
         loadingBranches.insert(id)
         let url = workspace.url
-        Task { [weak self] in
+        Guarded.mainTask { [weak self] in
             let (branches, base) = await Task.detached(priority: .userInitiated) {
                 (GitService.allBranches(at: url),
                  GitService.baseDisplayName(GitService.defaultBase(at: url)))
@@ -463,7 +463,12 @@ struct PaletteFrame {
             PaletteItem(icon: .phosphor(Phosphor.external), label: "Open in default browser",
                         disabled: home,
                         enter: { self.runAndClose {
-                            if let url = live?.address { NSWorkspace.shared.open(url) }
+                            guard let url = live?.address else { return }
+                            if !NSWorkspace.shared.open(url) {
+                                Fault.surface(.app, .uncaught,
+                                              say: .init(title: "Couldn't open that in your browser"),
+                                              evidence: "macOS wouldn't hand this page's address to a browser.")
+                            }
                         } }),
             PaletteItem(icon: .phosphor(Phosphor.search), label: "Find in page",
                         kbd: ["⌘", "F"], disabled: home,

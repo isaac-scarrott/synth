@@ -38,6 +38,8 @@ enum Fault {
         case persistence    = "persistence"
         case worktree       = "worktree"
         case browser        = "browser"
+        case simulator      = "simulator"
+        case usage          = "usage"
         case crash          = "crash"
         /// Anything not yet worth its own breakdown. A door catches errors from files nobody
         /// has classified, and they are better counted here than not counted.
@@ -56,6 +58,8 @@ enum Fault {
             case .persistence:    return "Synth can't save your workspaces"
             case .worktree:       return "That git operation didn't finish"
             case .browser:        return "The browser engine stopped"
+            case .simulator:      return "The simulator isn't responding"
+            case .usage:          return "Synth can't read your usage"
             case .crash:          return "Synth recovered from a crash"
             case .app:            return "Something didn't work"
             }
@@ -83,6 +87,14 @@ enum Fault {
         case agentBinaryMissing          = "agent_binary_missing" // shim exit 127
         case agentExecFailed             = "agent_exec_failed"    // shim exit 126
         case agentServeNeverCameUp       = "agent_serve_never_came_up"
+        /// Text was handed to a live agent and it never took it. Its own key, not `.uncaught`:
+        /// the throttle is `(domain, code, session)`, so sharing the catch-all meant the one
+        /// card these changes exist to raise was the one most likely to be suppressed by an
+        /// unrelated door capture in the same minute.
+        case agentDeliveryNeverTaken     = "agent_delivery_never_taken"
+        /// The app's own observation that a transport never became reachable, as distinct from
+        /// `agentServeNeverCameUp`, which is synth-hook's pre-flight health check.
+        case agentNeverBecameReady       = "agent_never_became_ready"
         // hook / control
         case hookSocketBindFailed        = "hook_socket_bind_failed"
         case hookEnvWriteFailed          = "hook_env_write_failed"
@@ -97,6 +109,11 @@ enum Fault {
         case gitCommandFailed            = "git_command_failed"
         case gitSpawnFailed              = "git_spawn_failed"
         case browserEngineUnavailable    = "browser_engine_unavailable"
+        case simulatorBootFailed         = "simulator_boot_failed"
+        case simulatorAttachExhausted    = "simulator_attach_exhausted"
+        case usageReadFailed             = "usage_read_failed"
+        case updateCheckFailed           = "update_check_failed"
+        case notificationAuthFailed      = "notification_auth_failed"
         // crash spine
         case crashCaptureUnavailable     = "crash_capture_unavailable"
         /// An error that reached a door without anyone naming it — the default, and the one
@@ -124,8 +141,8 @@ enum Fault {
                  .loadUnreadable, .loadUndecodable:
                 return .blocked
             case .surfaceNewFailed, .engineUnavailable, .instantDeath, .agentBinaryMissing,
-                 .agentExecFailed, .agentServeNeverCameUp, .spawnRefusedNoBranch,
-                 .shellNotExecutable, .markdownRuntimeMissing, .capabilityDown:
+                 .agentExecFailed, .spawnRefusedNoBranch, .shellNotExecutable,
+                 .markdownRuntimeMissing, .capabilityDown, .agentDeliveryNeverTaken:
                 return .failed
             default:
                 return .degraded

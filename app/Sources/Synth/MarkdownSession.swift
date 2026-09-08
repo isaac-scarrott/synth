@@ -114,8 +114,14 @@ enum MarkdownSession {
         """
         let path = shimDir + "/synth"
         try? FileManager.default.removeItem(atPath: path)
-        guard (try? script.write(toFile: path, atomically: true, encoding: .utf8)) != nil else { return }
-        chmod(path, 0o755)
+        // Both halves are counted because both leave `synth <file>` gone for the run — setup()
+        // runs once at launch and never comes back — and a `synth` that exists and is not
+        // executable is the more confusing of the two, since the shell says "permission denied"
+        // for a command Synth itself wrote.
+        Guarded.run {
+            try script.write(toFile: path, atomically: true, encoding: .utf8)
+            guard chmod(path, 0o755) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EPERM) }
+        }
     }
 
     /// Theme.swift's tokens, resolved to hex for a process that cannot ask AppKit.

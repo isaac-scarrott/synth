@@ -89,7 +89,14 @@ enum AgentProbe {
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
         proc.standardInput = FileHandle.nullDevice
-        do { try proc.run() } catch { return AgentProbeResult(state: .missing, version: nil) }
+        do { try proc.run() } catch {
+            // Reported as "not on your PATH", which is a different sentence from the truth: the
+            // login shell itself would not start, so nothing was ever asked.
+            Fault.report(.agentLaunch, .uncaught, details: [.stage(.spawn)],
+                         evidence: "Couldn't run \(shell) to ask \(head) its version: "
+                            + error.localizedDescription)
+            return AgentProbeResult(state: .missing, version: nil)
+        }
 
         // Drain off-thread so a chatty rc file can't fill the pipe and deadlock the child before
         // it exits, then join with a timeout and kill it if it hangs — the same shape as
@@ -102,6 +109,9 @@ enum AgentProbe {
         }
         if done.wait(timeout: .now() + 6) == .timedOut {
             proc.terminate()
+            // Same sentence as a command that isn't there, for a command that is there and hung.
+            Fault.report(.agentLaunch, .uncaught, details: [.stage(.resolve), .count("timeout_s", 6)],
+                         evidence: "\(head) --version didn't answer in 6s; reported as missing.")
             return AgentProbeResult(state: .missing, version: nil)
         }
         proc.waitUntilExit()

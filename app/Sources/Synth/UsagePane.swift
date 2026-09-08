@@ -68,7 +68,8 @@ struct UsagePane: View {
                 ForEach(band.rows) { row in
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(row.tiles) { tile in
-                            UsageTile(metric: tile.metric, index: tile.index, now: now)
+                            UsageTile(metric: tile.metric, index: tile.index, now: now,
+                                      unread: tile.unread)
                                 .frame(maxHeight: .infinity)
                         }
                     }
@@ -104,8 +105,10 @@ struct UsagePane: View {
             index += 1
             var rows: [Row] = []
             var pending: [Slot] = []
+            let unread = if case .failed = section.status { true } else { false }
             for metric in metrics(for: section) {
-                pending.append(Slot(id: "\(section.id.rawValue):\(metric.id)", metric: metric, index: index))
+                pending.append(Slot(id: "\(section.id.rawValue):\(metric.id)", metric: metric,
+                                    index: index, unread: unread))
                 index += 1
                 if pending.count == 2 {
                     rows.append(Row(id: pending[0].id, tiles: pending))
@@ -122,13 +125,17 @@ struct UsagePane: View {
     /// A band that has nothing to report says so in a tile of its own rather than being dropped:
     /// the number is an em-dash because the board never invents one to fill the gap, and the tile
     /// carries no eyebrow because there is no measurement here to name.
+    ///
+    /// `.failed` gets the same tile and a different colour, because it is the same absence of a
+    /// number with the opposite meaning behind it: "none spent" is news the reader can act on,
+    /// "we couldn't read it" is a reason not to trust the band at all.
     private func metrics(for section: UsageSection) -> [UsageMetric] {
         switch section.status {
         case .ready:
             return section.metrics
         case .loading:
             return [UsageMetric(id: "status", label: "", value: "—", percent: nil, detail: .text("checking…"))]
-        case .unavailable(let reason):
+        case .unavailable(let reason), .failed(let reason):
             return [UsageMetric(id: "status", label: "", value: "—", percent: nil, detail: .text(reason))]
         }
     }
@@ -150,6 +157,7 @@ struct UsagePane: View {
         let id: String
         let metric: UsageMetric
         let index: Int
+        let unread: Bool
     }
 }
 
@@ -164,6 +172,10 @@ private struct UsageTile: View {
     let metric: UsageMetric
     let index: Int
     let now: Date
+    /// The band's reader failed rather than answered. The only thing it changes is the colour of
+    /// the line that says so — loud enough that the reader doesn't take the em-dash for a zero,
+    /// quiet enough that a network blip doesn't dress the pane up as an incident.
+    var unread = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -186,7 +198,7 @@ private struct UsageTile: View {
                 // the tile looking like it failed to load one.
                 if !detail.isEmpty {
                     RollingNumber(text: detail, font: .mono(11), face: 11)
-                        .foregroundStyle(Theme.inkMeta)
+                        .foregroundStyle(unread ? Theme.danger : Theme.inkMeta)
                 }
             }
         }

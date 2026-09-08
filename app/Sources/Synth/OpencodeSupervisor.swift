@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 /// opencode: hosted as its own TUI inside the session's PTY, supervised over the HTTP event
 /// stream that same process serves. Where Claude Code has to be instrumented (a shim injecting
@@ -19,7 +18,6 @@ import OSLog
     let id = AgentID.opencode
 
     private weak var bus: EventBus?
-    private static let log = Logger(subsystem: bundleIdentifier, category: "opencode")
 
     /// The HTTP port assigned to each session's opencode server, handed to the shim as
     /// `SYNTH_OPENCODE_PORT` so the TUI serves there and we know where to subscribe.
@@ -41,7 +39,7 @@ import OSLog
 
     func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
         guard agent.resolvedCommand != nil else { return }
-        let port = ports[sessionID] ?? Self.freePort()
+        let port = ports[sessionID] ?? (Guarded.run { try Self.freePort() } ?? 0)
         ports[sessionID] = port
 
         agent.exportRealCommand(into: &env)
@@ -67,18 +65,17 @@ import OSLog
     /// before any project one — so Synth changes the binding without writing to a file it
     /// doesn't own, and a project `.opencode/tui.json` still overrides it. `ctrl+d` keeps
     /// `app_exit`: EOF-quits-the-app is the shell convention Claude Code follows too.
-    private static let keybindOverlay: URL? = {
+    private static let keybindOverlay: URL? = Guarded.run {
         let url = AppSupport.root.appendingPathComponent("opencode-tui.json")
         let overlay: [String: Any] = [
             "$schema": "https://opencode.ai/tui.json",
             "keybinds": ["app_exit": "ctrl+d,<leader>q", "session_interrupt": "escape,ctrl+c"],
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: overlay, options: [.sortedKeys])
-        else { return nil }
-        try? FileManager.default.createDirectory(at: AppSupport.root, withIntermediateDirectories: true)
-        guard (try? data.write(to: url, options: .atomic)) != nil else { return nil }
+        let data = try JSONSerialization.data(withJSONObject: overlay, options: [.sortedKeys])
+        try FileManager.default.createDirectory(at: AppSupport.root, withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
         return url
-    }()
+    }
 
     func launchCommand(binary: String, resume: String?, flags: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags
@@ -95,7 +92,7 @@ import OSLog
         let stream = OpencodeEventStream(
             port: port,
             onOpen: {
-                Task { @MainActor [weak self] in
+                Guarded.mainTask { [weak self] in
                     // The stream is open, so the server is listening: the row can now be handed
                     // text. The shim announced the launch a beat earlier — announcing readiness
                     // then would have delivered comments into a port nothing was bound to yet.
@@ -103,7 +100,7 @@ import OSLog
                 }
             },
             onEvent: { event in
-                Task { @MainActor [weak self] in self?.handle(event, session: session) }
+                Guarded.mainTask { [weak self] in self?.handle(event, session: session) }
             }
         )
         streams[session] = stream
@@ -131,7 +128,7 @@ import OSLog
     /// conversation the visible TUI never shows.
     func deliver(_ text: String, to session: UUID) -> Bool {
         guard let port = ports[session] else { return false }
-        Task { await self.deliverConfirmed(text, session: session, port: port) }
+        Guarded.mainTask { await self.deliverConfirmed(text, session: session, port: port) }
         return true
     }
 
@@ -156,7 +153,13 @@ import OSLog
                 if (turnTicks[session] ?? 0) > before { return }
             }
         }
-        Self.log.error("OpenCode never accepted the delivered prompt")
+        // The caller was told this was delivered — `deliver` returns true the moment this task
+        // is scheduled, and CommentDelivery reports "sent" on that. So the one thing the user
+        // knows about their text is wrong, which is what earns a card rather than a count.
+        Fault.surface(.agentLaunch, .agentDeliveryNeverTaken, severity: .failed,
+                      say: Fault.Copy(title: "OpenCode didn't take your text"),
+                      details: [.attempt(12), .stage(.handshake)],
+                      evidence: "The prompt was posted 12 times and no turn ever started.")
     }
 
     private static func post(port: Int, path: String, body: [String: Any]) async throws {
@@ -266,9 +269,9 @@ import OSLog
 
     /// Ask the kernel for a free loopback port, then hand it to the shim. A bind-probe races in
     /// principle; in practice the shim claims it milliseconds later and a collision just retries.
-    private static func freePort() -> Int {
+    private static func freePort() throws -> Int {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { return 0 }
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
@@ -278,12 +281,12 @@ import OSLog
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) }
         }
-        guard bound == 0 else { return 0 }
+        guard bound == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         var out = sockaddr_in()
         let got = withUnsafeMutablePointer(to: &out) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) }
         }
-        guard got == 0 else { return 0 }
+        guard got == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         return Int(UInt16(bigEndian: out.sin_port))
     }
 }
@@ -346,14 +349,30 @@ final class OpencodeEventStream: NSObject, URLSessionDataDelegate, @unchecked Se
         Task.detached { [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             guard let self else { return }
+            let since = Date()
+            var reported = false
             while !self.stopped {
                 if await self.isServing() { break }
+                // A server that never binds is polled for here at 4Hz for the life of the row, and
+                // that looked exactly like a row nobody has typed into yet: no status, no title,
+                // no delivery, and nothing anywhere saying the agent was never reachable.
+                if !reported, Date().timeIntervalSince(since) >= Self.unreachableAfter {
+                    reported = true
+                    Fault.report(.agentLaunch, .agentNeverBecameReady, severity: .degraded,
+                                 details: [.stage(.ready),
+                                           .count("seconds", Int(Self.unreachableAfter))],
+                                 evidence: "opencode's server never answered on its assigned port.")
+                }
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
             guard !self.stopped else { return }
             self.connect()
         }
     }
+
+    /// How long the port may stay dead before the row is called unreachable. Long enough to
+    /// cover a slow TUI boot, short enough that a launch which will never work is on record.
+    private static let unreachableAfter: TimeInterval = 20
 
     private func isServing() async -> Bool {
         var probe = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/global/health")!)

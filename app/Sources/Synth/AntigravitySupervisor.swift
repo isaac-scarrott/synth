@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 /// Antigravity (`agy`): hosted as its own TUI in the session's PTY and supervised the way Claude
 /// Code is — by instrumenting it rather than subscribing to it. `agy` reads hooks from
@@ -23,7 +22,6 @@ import OSLog
     let id = AgentID.antigravity
 
     private weak var bus: EventBus?
-    private static let log = Logger(subsystem: bundleIdentifier, category: "antigravity")
     /// The live log tail per session, cancelled on detach.
     private var tails: [UUID: AntigravityLogTail] = [:]
     /// Sessions already declared reachable, so the boot marker can't post `.agentReady` twice.
@@ -83,17 +81,32 @@ import OSLog
     func attach(session: UUID) {
         guard tails[session] == nil else { return }
         let tail = AntigravityLogTail(path: Self.logPath(session)) { line in
-            Task { @MainActor [weak self] in self?.handle(line, session: session) }
+            Guarded.mainTask { [weak self] in self?.handle(line, session: session) }
         }
         tails[session] = tail
         tail.start()
         // Answering the trust prompt is a keypress, not a log event, so nothing wakes this
         // supervisor when the user finally does it. Re-ask while a session is waiting on it.
-        Task { @MainActor [weak self] in
+        Guarded.mainTask { [weak self] in
+            let since = Date()
+            var reported = false
             while true {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard let self, self.tails[session] != nil, !self.ready.contains(session) else { return }
                 self.considerReady(session)
+                // A row that never reaches its input box stays here for its whole life, looking
+                // exactly like one nobody has typed into: no readiness, no delivery, nothing said.
+                // The trust prompt is excluded — that one is genuinely waiting on a human, and the
+                // row already says so.
+                if !reported, !self.awaitingTrust.contains(session),
+                   Date().timeIntervalSince(since) >= Self.unreachableAfter {
+                    reported = true
+                    Fault.report(.agentLaunch, .agentNeverBecameReady, severity: .degraded,
+                                 session: session,
+                                 details: [.stage(.ready),
+                                           .count("seconds", Int(Self.unreachableAfter))],
+                                 evidence: "Antigravity's log never reached its input box.")
+                }
             }
         }
         // A user who passes their own --log-file keeps it (agy takes one), so there may be no
@@ -103,7 +116,7 @@ import OSLog
         // its row is already dying. Only for a log that never said anything at all: one that is
         // merely mid-boot is `considerReady`'s to judge, and pre-empting it here would reinstate
         // the dropped first comment this whole path exists to prevent.
-        Task { @MainActor [weak self] in
+        Guarded.mainTask { [weak self] in
             try? await Task.sleep(nanoseconds: 10_000_000_000)
             guard let self, self.tails[session] != nil, self.lastLineAt[session] == nil else { return }
             self.markReady(session)
@@ -139,14 +152,15 @@ import OSLog
         // so there is nothing to confirm against and a retry would be the blind kind.
         guard lastLineAt[session] != nil else { return true }
         let before = promptsTaken[session] ?? 0
-        Task { @MainActor [weak self] in
+        Guarded.mainTask { [weak self] in
             await self?.resubmitUntilTaken(text, session: session, after: before)
         }
         return true
     }
 
     private func resubmitUntilTaken(_ text: String, session: UUID, after before: Int) async {
-        for _ in 0..<Self.deliveryAttempts {
+        let attempts = Self.deliveryAttempts
+        for _ in 0..<attempts {
             // A submit's own Enter trails its paste by 0.35s, and agy logs the prompt as it takes
             // it, so this is the whole round trip with room to spare.
             for _ in 0..<10 {
@@ -156,7 +170,12 @@ import OSLog
             guard tails[session] != nil else { return }   // the row went away mid-wait
             _ = TerminalManager.shared.submit(text, to: session)
         }
-        Self.log.error("Antigravity never took the delivered text")
+        // `deliver` returned true on the first submit, so the user has already been told the text
+        // was sent, and every paste since went unacknowledged.
+        Fault.surface(.agentLaunch, .agentDeliveryNeverTaken, severity: .failed,
+                      say: Fault.Copy(title: "Antigravity didn't take your text"),
+                      details: [.attempt(attempts), .stage(.handshake)],
+                      evidence: "The text was pasted \(attempts) times and agy never logged taking it.")
     }
 
     private static let deliveryAttempts = 6
@@ -229,6 +248,9 @@ import OSLog
 
     private static let settle: TimeInterval = 2
     private static let settleCap: TimeInterval = 20
+    /// How long a row may sit short of its input box before that is called a failed launch. Well
+    /// past `settleCap`, so a session that is merely slow to settle is never reported as broken.
+    private static let unreachableAfter: TimeInterval = 40
 
     /// True only when the workspace is *known* and absent from `agy`'s trusted list — an unknown
     /// workspace is not evidence of a prompt, and must not strand the row.

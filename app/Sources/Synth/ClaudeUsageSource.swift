@@ -12,11 +12,12 @@ struct ClaudeUsageSource: UsageSource {
     /// name and its own binary — the same descriptor its supervisor is handed.
     let descriptor: AgentDescriptor
     var agent: AgentID { descriptor.id }
+    var title: String { descriptor.displayName }
 
     private static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
 
-    func load() async -> UsageSection {
-        guard let token = await Self.accessToken() else { return section(.unavailable("not signed in")) }
+    func load() async throws -> UsageSection {
+        guard let token = try await Self.accessToken() else { return section(.unavailable("not signed in")) }
 
         var request = URLRequest(url: Self.endpoint)
         request.timeoutInterval = 10
@@ -27,15 +28,19 @@ struct ClaudeUsageSource: UsageSource {
             request.setValue("claude-code/\(version)", forHTTPHeaderField: "User-Agent")
         }
 
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse else { return section(.unavailable("usage unavailable")) }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw UsageUnreadable.shape("response") }
+        // The one status that is an answer rather than a failure: the account is real, the token
+        // is not, and the user can do something about it.
         guard http.statusCode != 401 else { return section(.unavailable("sign in to Claude Code")) }
-        guard http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return section(.unavailable("usage unavailable")) }
+        guard http.statusCode == 200 else { throw UsageUnreadable.http(http.statusCode) }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw UsageUnreadable.shape("usage body") }
 
         let metrics = Self.windows(json) + Self.spend(json) + Self.extraUsage(json)
-        guard !metrics.isEmpty else { return section(.unavailable("no usage data")) }
+        // A 200 this build can find no metric in means the response moved, not that the account is
+        // idle: every one of `limits`, `spend` and `extra_usage` reads keys the server chooses.
+        guard !metrics.isEmpty else { throw UsageUnreadable.shape("usage body") }
         return UsageSection(id: agent, title: descriptor.displayName, metrics: metrics)
     }
 
@@ -125,16 +130,28 @@ struct ClaudeUsageSource: UsageSource {
 
     // MARK: Credential
 
+    /// `security` exits 44 for "the item is not in the keychain" — a Mac where Claude Code has
+    /// never signed in, and the only outcome here that is an answer rather than a fault. A locked
+    /// keychain, an ACL that refused us, the 5s deadline and a renamed blob are all failures, and
+    /// telling that user they are "not signed in" was the lie the audit found.
+    private static let keychainItemNotFound: Int32 = 44
+
     /// `security` prints the whole credential blob; the bearer is lifted out of it and goes no
-    /// further than the request header.
-    private static func accessToken() async -> String? {
-        guard let out = await UsageCommand.output(
+    /// further than the request header. Nil means signed out; a throw means we couldn't tell.
+    private static func accessToken() async throws -> String? {
+        let out: String
+        do {
+            out = try await UsageCommand.output(
                 "/usr/bin/security",
                 ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
-                timeout: 5),
-              let json = try? JSONSerialization.jsonObject(with: Data(out.utf8)) as? [String: Any],
+                timeout: 5)
+        } catch UsageCommand.Failure.exited(keychainItemNotFound) {
+            return nil
+        }
+        guard let json = try JSONSerialization.jsonObject(with: Data(out.utf8)) as? [String: Any],
               let oauth = json["claudeAiOauth"] as? [String: Any],
-              let token = oauth["accessToken"] as? String, !token.isEmpty else { return nil }
+              let token = oauth["accessToken"] as? String, !token.isEmpty
+        else { throw UsageUnreadable.shape("credential blob") }
         return token
     }
 }
@@ -151,8 +168,10 @@ private actor ClaudeVersion {
     func value(of descriptor: AgentDescriptor) async -> String? {
         guard !asked else { return version }
         asked = true
+        // Dropped rather than raised: the version only decorates a header, and a band that says
+        // "couldn't read usage" because `claude --version` was slow would be reporting on Synth.
         guard let binary = descriptor.resolvedBinary,
-              let out = await UsageCommand.output(binary, ["--version"], timeout: 10)
+              let out = try? await UsageCommand.output(binary, ["--version"], timeout: 10)
         else { return nil }
         // "2.1.263 (Claude Code)" — the version is the first field, the rest is the product name.
         version = out.split(whereSeparator: \.isWhitespace).first.map(String.init)

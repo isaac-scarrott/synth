@@ -20,7 +20,15 @@ enum FolderSize {
         // failed measurement.
         guard let walk = fm.enumerator(at: url, includingPropertiesForKeys: keys,
                                        options: [], errorHandler: { _, _ in true })
-        else { return 0 }
+        else {
+            // A walk that never started is not a folder costing nothing, but the cache keeps
+            // whatever comes back and never re-measures, so the 0 becomes the archive's answer
+            // for that folder for the rest of the run — and the budget's, which reads the same
+            // number to decide what the caps call early.
+            Fault.report(.worktree, .uncaught, details: [.stage(.resolve)],
+                         evidence: "Couldn't enumerate the folder; its size reads as zero.")
+            return 0
+        }
         var total = allocated(url, keys: keys)
         for case let entry as URL in walk { total += allocated(entry, keys: keys) }
         return total

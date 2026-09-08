@@ -1742,7 +1742,7 @@ struct Reveal<Content: View>: View {
                 natural = 0
             } else {
                 let gen = generation
-                Task { @MainActor in
+                Guarded.mainTask {
                     try? await Task.sleep(for: .milliseconds(220))
                     if generation == gen { present = false; natural = 0 }
                 }

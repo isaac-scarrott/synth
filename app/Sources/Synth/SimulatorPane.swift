@@ -145,7 +145,7 @@ final class SimulatorSessionController {
     /// source owns that hop) and a refusal comes back through the same notice a refused tap uses.
     func rotate() {
         source.setOrientation(orientation.toggled) { [weak self] detail in
-            Task { @MainActor in self?.noteInputFailure(detail) }
+            Guarded.mainTask { self?.noteInputFailure(detail) }
         }
     }
 
@@ -177,7 +177,7 @@ final class SimulatorSessionController {
     /// the device, and paying that on main freezes the window — the user's terminals included.
     private func loadInstalledApps() {
         let udid = self.udid
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Guarded.task(priority: .userInitiated) { [weak self] in
             do {
                 let apps = try SimulatorDeviceCatalog.installedApps(udid: udid)
                 await MainActor.run { [weak self] in self?.installedApps = apps }
@@ -195,7 +195,7 @@ final class SimulatorSessionController {
         guard !target.isEmpty else { return }
         let isURL = target.contains("://")
         let source = self.source
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Guarded.task(priority: .userInitiated) { [weak self] in
             do {
                 if isURL { try source.open(url: target) }
                 else { try source.launch(bundleIdentifier: target) }
@@ -214,7 +214,7 @@ final class SimulatorSessionController {
             return
         }
         let udid = self.udid
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Guarded.task(priority: .userInitiated) { [weak self] in
             // A terminate of an app that is not running is not a failure of the relaunch, which is
             // the whole verb — so only the launch decides what the user is told.
             try? SimulatorDeviceCatalog.terminate(udid: udid, bundleIdentifier: bundleIdentifier)
@@ -234,7 +234,7 @@ final class SimulatorSessionController {
     /// is: the send is a bootstrap lookup plus a bounded `mach_msg`.
     func shake() {
         let source = self.source
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Guarded.task(priority: .userInitiated) { [weak self] in
             do {
                 try source.shake()
                 await MainActor.run { [weak self] in self?.note("Shook the device", isError: false) }
@@ -250,9 +250,9 @@ final class SimulatorSessionController {
     func copyScreenshot() {
         let source = self.source
         let udid = self.udid
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let png = (try? source.captureVerifiedFrame())??.pngByCopyingPixels()
-                ?? (try? SimulatorDeviceCatalog.screenshotPNG(udid: udid))
+        Guarded.task(priority: .userInitiated) { [weak self] in
+            let png = Guarded.run { try source.captureVerifiedFrame() }??.pngByCopyingPixels()
+                ?? Guarded.run { try SimulatorDeviceCatalog.screenshotPNG(udid: udid) }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 guard let png else {
@@ -282,7 +282,7 @@ final class SimulatorSessionController {
         actionNotice = SimulatorActionNotice(text: text, isError: isError)
         let generation = UUID()
         noticeGeneration = generation
-        Task { @MainActor [weak self] in
+        Guarded.mainTask { [weak self] in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard let self, self.noticeGeneration == generation else { return }
             self.actionNotice = nil
@@ -295,7 +295,7 @@ final class SimulatorSessionController {
         inputFailure = detail
         let generation = UUID()
         failureGeneration = generation
-        Task { @MainActor [weak self] in
+        Guarded.mainTask { [weak self] in
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             guard let self, self.failureGeneration == generation else { return }
             self.inputFailure = nil
@@ -367,14 +367,29 @@ final class SimulatorSessionController {
         }
 
         let settled = startFailure == nil && degradation?.affectsScreen != true
+        // A boot that was refused is why this device is not booted, and a device that will never
+        // boot is not on its way up. Without these two the "Starting…" branch of the notice strip
+        // wins forever — it is tested before `startFailure` — so the one string that says what
+        // happened is built, stored, and never shown.
+        let bootRefused = SimulatorClaims.bootFailure(for: udid) != nil
+        let exhausted = attempts >= Self.maxAttempts
         // "Booted" is a device state, not a promise that the display is publishing yet: the
         // framebuffer arrives a moment later. So boot state decides what the user is *told* — a
         // device on its way up, or a real failure — and never whether to stop trying. Treating it
         // as a stop condition let one unlucky attempt at the boot boundary degrade the pane for good.
-        isAwaitingBoot = !settled && !isBooted
-        guard !settled, attempts < Self.maxAttempts else { return }
+        isAwaitingBoot = !settled && !isBooted && !bootRefused && !exhausted
+        guard !settled else { return }
+        guard !exhausted else {
+            // Giving up and still trying used to be the same object graph: the loop stopped and
+            // nothing marked it, so the pane kept saying "Starting…" for the life of the session.
+            let reason = startFailure ?? degradation?.summary
+            Fault.report(.simulator, .simulatorAttachExhausted, severity: .degraded, session: sessionID,
+                         details: [.count("attempts", Self.maxAttempts), .stage(.ready)],
+                         evidence: reason)
+            return
+        }
         attempts += 1
-        retryTask = Task { @MainActor [weak self] in
+        retryTask = Guarded.mainTask { [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard let self, !Task.isCancelled else { return }
             self.source.stop()
@@ -396,7 +411,7 @@ final class SimulatorSessionController {
     /// saying which iOS this is.
     private func awaitDeviceInfo() {
         guard deviceInfo == nil else { return }
-        Task { @MainActor [weak self] in
+        Guarded.mainTask { [weak self] in
             for _ in 0..<20 {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard let self, self.deviceInfo == nil else { return }

@@ -23,14 +23,17 @@ private let changelog: [Release] = {
         bundles.append(e.appendingPathComponent("Synth_Synth.bundle"))
     }
     for url in bundles {
-        if let bundle = Bundle(url: url),
-           let res = bundle.url(forResource: "CHANGELOG", withExtension: "json"),
-           let data = try? Data(contentsOf: res),
-           let decoded = try? JSONDecoder().decode([Release].self, from: data) {
-            return decoded
-        }
+        guard let bundle = Bundle(url: url),
+              let res = bundle.url(forResource: "CHANGELOG", withExtension: "json") else { continue }
+        // Present and unreadable is the sharp one, and the old log line asserted the opposite of
+        // it: `Release` requires every field, so one regenerated entry with a renamed key throws
+        // away the whole history, and the app then said the resource was missing when it was there.
+        if let decoded = Guarded.run({
+            try JSONDecoder().decode([Release].self, from: try Data(contentsOf: res))
+        }) { return decoded }
     }
-    NSLog("Synth: CHANGELOG.json resource missing — changelog is empty")
+    Fault.report(.app, .uncaught, severity: .degraded,
+                 evidence: "no readable CHANGELOG.json in the bundle — the changelog is empty")
     return []
 }()
 

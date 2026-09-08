@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 /// opencode2 (OpenCode's v2 preview CLI): the same "subscribe, don't instrument" shape as
 /// `OpencodeSupervisor`, over a materially different transport. v1 is one unauthenticated server
@@ -27,7 +26,6 @@ import OSLog
     let id = AgentID.opencode2
 
     private weak var bus: EventBus?
-    private static let log = Logger(subsystem: bundleIdentifier, category: "opencode2")
 
     /// The `serve` port assigned per session, handed to the shim as `SYNTH_OPENCODE2_PORT`.
     private var ports: [UUID: Int] = [:]
@@ -44,6 +42,10 @@ import OSLog
     /// Bumped whenever a row's session is created or a turn starts — `deliverConfirmed` watches it
     /// to tell a paste the TUI accepted from one it dropped while still booting.
     private var turnTicks: [UUID: Int] = [:]
+    /// Rows whose launch was instrumented. The shim only announces the agent once `serve` answers
+    /// health, so a session that was decorated and never attached is one whose server died — and
+    /// the reason is in the log below, which is why `detach` reads it.
+    private var decorated: Set<UUID> = []
 
     init(bus: EventBus) { self.bus = bus }
 
@@ -51,7 +53,7 @@ import OSLog
 
     func decorate(_ env: inout [String: String], sessionID: UUID, agent: AgentDescriptor) {
         guard agent.resolvedCommand != nil else { return }
-        let port = ports[sessionID] ?? Self.freePort()
+        let port = ports[sessionID] ?? (Guarded.run { try Self.freePort() } ?? 0)
         ports[sessionID] = port
         let password = passwords[sessionID] ?? Self.generatePassword()
         passwords[sessionID] = password
@@ -67,7 +69,8 @@ import OSLog
         // An embedded agent must not self-update mid-session — the same rule `OpencodeSupervisor`
         // and `AntigravitySupervisor` both apply, and v2 reads the same variable v1 does.
         env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
-        Self.adoptKeybinds()
+        decorated.insert(sessionID)
+        Guarded.run { try Self.adoptKeybinds() }
     }
 
     func launchCommand(binary: String, resume: String?, flags: String) -> String {
@@ -94,10 +97,10 @@ import OSLog
         let stream = Opencode2EventStream(
             port: port, password: password,
             onOpen: {
-                Task { @MainActor [weak self] in self?.bus?.post(.agentReady(session)) }
+                Guarded.mainTask { [weak self] in self?.bus?.post(.agentReady(session)) }
             },
             onEvent: { event in
-                Task { @MainActor [weak self] in self?.handle(event, session: session) }
+                Guarded.mainTask { [weak self] in self?.handle(event, session: session) }
             }
         )
         streams[session] = stream
@@ -105,6 +108,7 @@ import OSLog
     }
 
     func detach(session: UUID) {
+        if decorated.remove(session) != nil, streams[session] == nil { readServeLog(session) }
         streams[session]?.stop()
         streams[session] = nil
         agentSessionIDs[session] = nil
@@ -112,6 +116,23 @@ import OSLog
         turnTicks[session] = nil
         ports[session] = nil
         passwords[session] = nil
+    }
+
+    /// `SYNTH_OPENCODE2_LOG` exists so a `serve` that dies can say why — and nothing had ever read
+    /// it, so the reason sat in a file the row's next launch deletes while the user got a bare
+    /// "OpenCode 2 quit · Reopen" card. The shim already counts the failure over the hook socket;
+    /// what only this file can add is the server's own last words, which is why it stays
+    /// `.degraded`: the evidence is the point, not a second event.
+    private func readServeLog(_ session: UUID) {
+        let path = Self.logPath(session)
+        Guarded.task {
+            guard let data = FileManager.default.contents(atPath: path) else { return }
+            let tail = String(decoding: data.suffix(2048), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !tail.isEmpty else { return }
+            Fault.report(.agentLaunch, .agentNeverBecameReady, severity: .degraded,
+                         details: [.stage(.ready)], evidence: tail)
+        }
     }
 
     // MARK: Delivery
@@ -125,7 +146,7 @@ import OSLog
     /// than a confirmation response, since a terminal paste has none.
     func deliver(_ text: String, to session: UUID) -> Bool {
         guard ports[session] != nil else { return false }
-        Task { await self.deliverConfirmed(text, session: session) }
+        Guarded.mainTask { await self.deliverConfirmed(text, session: session) }
         return true
     }
 
@@ -139,7 +160,13 @@ import OSLog
                 if (turnTicks[session] ?? 0) > before { return }
             }
         }
-        Self.log.error("opencode2 never accepted the delivered prompt")
+        // `deliver` returned true the moment this task was scheduled, so the user has already
+        // been told the text was sent. Twelve failed pastes later that is still the only thing
+        // they know about it.
+        Fault.surface(.agentLaunch, .agentDeliveryNeverTaken, severity: .failed,
+                      say: Fault.Copy(title: "OpenCode 2 didn't take your text"),
+                      details: [.attempt(12), .stage(.handshake)],
+                      evidence: "The text was pasted 12 times and no turn ever started.")
     }
 
     // MARK: Event stream
@@ -249,7 +276,7 @@ import OSLog
     /// already claims `theme` in it: only where the binding is still opencode2's own default (or
     /// already ours), preserving every other key, and refusing outright on a file — or a
     /// `keybinds` block — it cannot parse. A binding the user chose is one they meant.
-    private static func adoptKeybinds(home: URL = AgentTheme.defaultHome()) {
+    private static func adoptKeybinds(home: URL = AgentTheme.defaultHome()) throws {
         // key: what Synth wants it to be, what opencode2 ships it as.
         let claims = [("app.exit", "ctrl+d,<leader>q", "ctrl+c,ctrl+d,<leader>q"),
                       ("session.interrupt", "escape,ctrl+c", "escape")]
@@ -277,13 +304,12 @@ import OSLog
         config["keybinds"] = keybinds
         // `withoutEscapingSlashes` because this file is the user's to read: the `$schema` URL comes
         // back out as `https:\/\/opencode.ai/...` without it, which is valid JSON and looks broken.
-        guard let out = try? JSONSerialization.data(
+        let out = try JSONSerialization.data(
             withJSONObject: config,
             options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
-        else { return }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        guard (try? out.write(to: url, options: .atomic)) != nil else { return }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try out.write(to: url, options: .atomic)
         // opencode2 writes this file 0600; an atomic replace would otherwise widen it to 0644.
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
@@ -304,9 +330,9 @@ import OSLog
 
     /// Ask the kernel for a free loopback port, exactly as `OpencodeSupervisor` does — the shim
     /// binds it a moment later, and a collision just retries.
-    private static func freePort() -> Int {
+    private static func freePort() throws -> Int {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { return 0 }
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
@@ -316,12 +342,12 @@ import OSLog
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) }
         }
-        guard bound == 0 else { return 0 }
+        guard bound == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         var out = sockaddr_in()
         let got = withUnsafeMutablePointer(to: &out) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) }
         }
-        guard got == 0 else { return 0 }
+        guard got == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         return Int(UInt16(bigEndian: out.sin_port))
     }
 
@@ -393,14 +419,28 @@ final class Opencode2EventStream: NSObject, URLSessionDataDelegate, @unchecked S
         Task.detached { [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             guard let self else { return }
+            let since = Date()
+            var reported = false
             while !self.stopped {
                 if await self.isServing() { break }
+                // The shim waits for health before it announces the agent, so reaching this for
+                // long means the server died between that check and this one — leaving a row with
+                // no status, no title and no delivery, and nothing anywhere saying so.
+                if !reported, Date().timeIntervalSince(since) >= Self.unreachableAfter {
+                    reported = true
+                    Fault.report(.agentLaunch, .agentNeverBecameReady, severity: .degraded,
+                                 details: [.stage(.ready),
+                                           .count("seconds", Int(Self.unreachableAfter))],
+                                 evidence: "opencode2's server stopped answering its assigned port.")
+                }
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
             guard !self.stopped else { return }
             self.connect()
         }
     }
+
+    private static let unreachableAfter: TimeInterval = 20
 
     private func isServing() async -> Bool {
         var probe = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/api/health")!)

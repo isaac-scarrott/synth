@@ -913,9 +913,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         AgentRegistry.startSupervisors(bus: bus)
         HookEnvironment.setup()
         Capabilities.ensure(hookServer, policy: .once)
-        Task { [weak self] in
+        Guarded.mainTask { [weak self] in
             guard let self else { return }
             for await event in self.bus.stream { self.apply(event) }
+            // Reaching here means the bus finished. Nothing closes it deliberately, so this is
+            // the app going deaf to every derived fact while still looking healthy — a state
+            // that previously had no signal of any kind.
+            Fault.report(.app, .uncaught, severity: .blocked,
+                         details: [.stage(.teardown)],
+                         evidence: "The event bus closed; session state has stopped updating.")
         }
         if let state = PersistenceStore.load() {
             restore(from: state)
@@ -2808,7 +2814,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                                  operation: { ArchiveSweeper.processWorkingDirectories() }).value
         else { return }   // a failed lsof blocks the whole tick rather than passing every candidate
 
-        let foreign = foreignInstanceWorktreePaths()
+        // Fails closed, exactly as the lsof guard above does: an instances directory we could
+        // not read is not evidence that no other Synth is holding a worktree, and this tick's
+        // verdict ends in `git worktree prune`.
+        guard let foreign = Guarded.run({ try foreignInstanceWorktreePaths() }) else { return }
         let grace = archiveGraceSeconds
         var eligible: [(Workspace, Branch, Int?)] = []
 
@@ -3073,8 +3082,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// Worktree paths claimed by *other* live Synth instances. Archived paths deliberately stay
     /// in our own registry entry (see `syncAgentBridge`) — that's what lets the other instance
     /// see we still manage them.
-    private func foreignInstanceWorktreePaths() -> Set<String> {
-        InstanceRegistry.otherInstanceWorktreePaths()
+    private func foreignInstanceWorktreePaths() throws -> Set<String> {
+        try InstanceRegistry.otherInstanceWorktreePaths()
     }
 
     private func raiseSweepDigest(_ names: [String]) {
@@ -3330,7 +3339,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // SECURITY (CommentMode): only ever submit to a supervisor-confirmed-live agent — an
         // agent that never started leaves a bare shell, and Claude Code's delivery is a paste
         // plus Enter, i.e. arbitrary execution. Poll ~20s, settle a beat, re-check.
-        Task { [weak self] in
+        Guarded.mainTask { [weak self] in
             for _ in 0..<40 {
                 try? await Task.sleep(for: .seconds(0.5))
                 guard let self, self.isLiveAgent(session.id) else { continue }
@@ -3339,7 +3348,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                       let supervisor = self.liveSupervisor(for: session) else { continue }
                 if supervisor.deliver(seed, to: session.id) { return }
             }
-            NSLog("Synth: seed never delivered (agent didn't report in)")
+            // Twenty seconds of polling and the agent never reported live. The user asked for
+            // this — a browser comment, a handoff — and was given a row that looks fine and is
+            // holding text it never received.
+            Fault.surface(.agentLaunch, .agentDeliveryNeverTaken, severity: .failed,
+                          session: session.id,
+                          say: .init(title: "The agent never took your text"),
+                          details: [.attempt(40), .stage(.ready)],
+                          evidence: "It never reported itself live.")
         }
         return true
     }
@@ -4189,9 +4205,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     var savingSuspended: Bool { PersistenceStore.loadRefused }
 
     private func startAutosave() {
-        Task { [weak self] in
+        Guarded.mainTask { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(4))
+                try await Task.sleep(for: .seconds(4))
                 guard let self else { return }
                 self.saveNow()
             }

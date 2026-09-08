@@ -16,6 +16,7 @@ struct OpencodeUsageSource: UsageSource {
     let descriptor: AgentDescriptor
     let generation: Generation
     var agent: AgentID { descriptor.id }
+    var title: String { descriptor.displayName }
 
     /// How long the aggregate may run before it is abandoned. Comfortably above what the scan
     /// measures today on a multi-gigabyte history, and well inside the poll that started it.
@@ -27,8 +28,16 @@ struct OpencodeUsageSource: UsageSource {
         NSHomeDirectory() + "/.local/share/opencode/opencode.db"
     }
 
-    func load() async -> UsageSection {
-        guard let totals = await Self.totals(generation), totals.messages > 0 else {
+    func load() async throws -> UsageSection {
+        // No database at all is the ordinary state of a Mac where opencode has never run, and the
+        // only reason "no local history" is ever the true answer. Everything past this point is a
+        // database that exists and would not answer, which is a different sentence.
+        guard FileManager.default.fileExists(atPath: Self.databasePath) else {
+            return UsageSection(id: agent, title: descriptor.displayName,
+                                status: .unavailable("no local history"))
+        }
+        let totals = try await Self.totals(generation)
+        guard totals.messages > 0 else {
             return UsageSection(id: agent, title: descriptor.displayName,
                                 status: .unavailable("no local history"))
         }
@@ -74,11 +83,11 @@ struct OpencodeUsageSource: UsageSource {
         WHERE m.type = 'assistant' AND s.version LIKE '0.0.0%'
         """
 
-    private static func totals(_ generation: Generation) async -> (tokens: Int, cost: Double, messages: Int)? {
+    private static func totals(_ generation: Generation) async throws -> (tokens: Int, cost: Double, messages: Int) {
         let sql = generation == .v1 ? v1Query : v2Query
-        return await withCheckedContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
-                continuation.resume(returning: aggregate(sql))
+                continuation.resume(with: Result { try aggregate(sql) })
             }
         }
     }
@@ -86,13 +95,14 @@ struct OpencodeUsageSource: UsageSource {
     /// Sum in SQL, never in Swift. The shared database runs to gigabytes of message JSON, and
     /// stepping those rows across into Swift to add them up turns a read the board can wait on
     /// into a scan it can't.
-    private static func aggregate(_ sql: String) -> (tokens: Int, cost: Double, messages: Int)? {
+    private static func aggregate(_ sql: String) throws -> (tokens: Int, cost: Double, messages: Int) {
         var db: OpaquePointer?
         // Read-only, so a live opencode writing into the same WAL is never blocked by the board —
         // and so a bug here can never damage the user's history.
         guard sqlite3_open_v2(databasePath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            let message = why(db)
             sqlite3_close(db)
-            return nil
+            throw UsageUnreadable.database(message)
         }
         defer { sqlite3_close(db) }
         // Bounds waiting for a lock. It does nothing about how long the scan itself runs, which is
@@ -113,12 +123,27 @@ struct OpencodeUsageSource: UsageSource {
         }, UnsafeMutableRawPointer(expiry))
 
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+        // A prepare that fails is opencode having renamed a table or a column under us, which is
+        // the failure this reader most needs to hear about: the query still runs, and the answer it
+        // stops giving is indistinguishable from a fresh install.
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw UsageUnreadable.database(why(db))
+        }
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        // Also where the scan budget lands: the progress handler interrupts the step rather than
+        // returning a row.
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw UsageUnreadable.database(why(db))
+        }
 
         return (tokens: Int(sqlite3_column_int64(statement, 0)),
                 cost: sqlite3_column_double(statement, 1),
                 messages: Int(sqlite3_column_int64(statement, 2)))
+    }
+
+    /// SQLite's own sentence. Local-only, and the one thing that separates "the file is locked"
+    /// from "that table is gone".
+    private static func why(_ db: OpaquePointer?) -> String {
+        sqlite3_errmsg(db).map { String(cString: $0) } ?? "no message"
     }
 }

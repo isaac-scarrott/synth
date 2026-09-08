@@ -10,16 +10,25 @@ enum DiffStat {
     /// `DiffStatCache` exists so nothing has to.
     ///
     /// Nil for every way this can fail to be a question: no folder on disk, no repository, no
-    /// base branch that resolves, or a base that resolves but leaves nothing worth saying.
-    /// Silent in all of them, because a hover happens by accident.
+    /// base branch that resolves, a probe git couldn't answer, or a base that resolves but
+    /// leaves nothing worth saying. Silent in all of them, because a hover happens by accident.
     static func line(at worktree: URL, prBase: String?) -> String? {
         guard FileManager.default.fileExists(atPath: worktree.path) else { return nil }
         guard GitService.isRepository(worktree) else { return nil }
         guard let base = base(at: worktree, prBase: prBase) else { return nil }
-        let counts = GitService.diffStat(against: base, at: worktree).value
-        let ahead = GitService.commitsAhead(of: base, at: worktree).value
-        return format(insertions: counts?.insertions ?? 0, deletions: counts?.deletions ?? 0,
-                      ahead: ahead ?? 0, base: GitService.baseDisplayName(base))
+        let diff = GitService.diffStat(against: base, at: worktree)
+        let ahead = GitService.commitsAhead(of: base, at: worktree)
+        // The two probes fail independently, so collapsing `.unknown` to zero states half a
+        // measurement with a whole one's confidence — a diffstat for a branch whose ahead count
+        // could not be read, and nothing anywhere saying so.
+        guard case .known(let counts) = diff, case .known(let commits) = ahead else {
+            Fault.report(.worktree, .gitCommandFailed,
+                         details: [.flag("diffstat_known", diff.value != nil),
+                                   .flag("ahead_known", ahead.value != nil)])
+            return nil
+        }
+        return format(insertions: counts.insertions, deletions: counts.deletions,
+                      ahead: commits, base: GitService.baseDisplayName(base))
     }
 
     /// The ref this branch is measured against, cheapest and most exact first: the PR's own

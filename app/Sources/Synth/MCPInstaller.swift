@@ -39,23 +39,33 @@ import os.log
 
     /// Copy the bundled servers into the shared install dir and (re)install their deps
     /// when needed. npm runs off-main — launch must not wait on the network.
+    ///
+    /// The door: an install that fails leaves `launchEnv` handing every agent launch a
+    /// registration pointing at scripts that aren't there, which the agent reports as a dead
+    /// server and Settings still renders as a lit toggle. It used to end at an os_log line.
     static func refreshServerInstall() {
+        Guarded.run { try installBundledServers() }
+    }
+
+    private static func installBundledServers() throws {
         let fm = FileManager.default
         guard let source = Bundle.main.resourceURL?.appendingPathComponent("mcp", isDirectory: true),
               fm.fileExists(atPath: source.appendingPathComponent("server.mjs").path) else {
-            log.error("bundled mcp/ missing from app resources — MCP servers not installed (bare-binary run?)")
-            return
+            throw InstallError.bundledServersMissing
         }
-        do {
-            try fm.createDirectory(at: installDir, withIntermediateDirectories: true)
-            let packageChanged = try syncFile(from: source, name: "package.json")
-            _ = try syncFile(from: source, name: "shared.mjs")
-            for script in serverScripts.values { _ = try syncFile(from: source, name: script) }
-            let needsInstall = packageChanged
-                || !fm.fileExists(atPath: installDir.appendingPathComponent("node_modules").path)
-            if needsInstall { runNpmInstall() }
-        } catch {
-            log.error("MCP server install failed: \(error.localizedDescription)")
+        try fm.createDirectory(at: installDir, withIntermediateDirectories: true)
+        let packageChanged = try syncFile(from: source, name: "package.json")
+        _ = try syncFile(from: source, name: "shared.mjs")
+        for script in serverScripts.values { _ = try syncFile(from: source, name: script) }
+        let needsInstall = packageChanged
+            || !fm.fileExists(atPath: installDir.appendingPathComponent("node_modules").path)
+        if needsInstall { runNpmInstall() }
+    }
+
+    enum InstallError: LocalizedError {
+        case bundledServersMissing
+        var errorDescription: String? {
+            "bundled mcp/ missing from app resources (bare-binary run?)"
         }
     }
 
@@ -71,11 +81,17 @@ import os.log
 
     private static func runNpmInstall() {
         guard let npm = resolveNpm() else {
-            log.error("npm not found (checked PATH, homebrew, /usr/local, nvm) — run `npm install --omit=dev` in \(installDir.path) by hand")
+            // Said out loud, once, because it is true for the whole run and nothing else in the
+            // app would ever mention it: without deps every bundled server fails to start, and
+            // Settings ▸ Integrations still draws its three toggles as on.
+            Fault.surface(.control, .uncaught, severity: .failed,
+                          say: .init(title: "Synth couldn't install the agent tools"),
+                          evidence: "npm isn't on this Mac's PATH, in homebrew, /usr/local " +
+                                    "or nvm. Install Node, then relaunch Synth.")
             return
         }
         let dir = installDir
-        Thread.detachNewThread {
+        Guarded.thread {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: npm)
             task.arguments = ["install", "--omit=dev", "--no-audit", "--no-fund"]
@@ -88,22 +104,19 @@ import os.log
             let out = Pipe()
             task.standardOutput = out
             task.standardError = out
-            do {
-                try task.run()
-                task.waitUntilExit()
-                if task.terminationStatus == 0 {
-                    Logger(subsystem: bundleIdentifier, category: "mcp")
-                        .info("browser MCP deps installed in \(dir.path)")
-                } else {
-                    let text = String(data: out.fileHandleForReading.readDataToEndOfFile(),
-                                      encoding: .utf8) ?? ""
-                    Logger(subsystem: bundleIdentifier, category: "mcp")
-                        .error("npm install failed (\(task.terminationStatus)): \(text.suffix(400))")
-                }
-            } catch {
-                Logger(subsystem: bundleIdentifier, category: "mcp")
-                    .error("npm launch failed: \(error.localizedDescription)")
+            try task.run()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else {
+                // Counted, not said: unlike a missing npm this is usually the network, and the
+                // next launch runs the install again because node_modules is still absent.
+                let text = String(data: out.fileHandleForReading.readDataToEndOfFile(),
+                                  encoding: .utf8) ?? ""
+                Fault.report(.control, .uncaught, details: [.exitCode(task.terminationStatus)],
+                             evidence: String(text.suffix(400)))
+                return
             }
+            Logger(subsystem: bundleIdentifier, category: "mcp")
+                .info("browser MCP deps installed in \(dir.path)")
         }
     }
 
@@ -191,8 +204,10 @@ import os.log
         let root = URL(fileURLWithPath: worktree)
         for relative in [".mcp.json", "opencode.json", ".agents/mcp_config.json"]
         where isUnmodifiedSynthConfig(relative, inWorktree: worktree) {
-            try? fm.removeItem(at: root.appendingPathComponent(relative))
-            log.info("removed stranded \(relative) from \(worktree)")
+            Guarded.run {
+                try fm.removeItem(at: root.appendingPathComponent(relative))
+                log.info("removed stranded \(relative) from \(worktree)")
+            }
         }
         // `.agents/` is agy's whole customization dir — skills, rules and hooks live there too —
         // so it goes only when Synth's file was the only thing in it.

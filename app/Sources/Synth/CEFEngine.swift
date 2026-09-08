@@ -133,7 +133,7 @@ final class BrowserProcessSupervisor {
         guard initialized else { return }
         CEFShimRuntime.shutdown()
         initialized = false
-        reapHelpers()
+        Guarded.run { try reapHelpers() }
         if let transient = transientRoot {
             try? FileManager.default.removeItem(at: transient)
             transientRoot = nil
@@ -167,17 +167,20 @@ final class BrowserProcessSupervisor {
     /// CefShutdown returns while children are still exiting gracefully (observed ~6s
     /// lag); anything slower gets SIGKILL. Only OUR direct children — another Synth
     /// launched from the same bundle shares the helper paths but not the parent pid.
-    private func reapHelpers() {
+    private func reapHelpers() throws {
         let deadline = Date(timeIntervalSinceNow: 3)
-        var survivors = helperChildPIDs()
+        var survivors = try helperChildPIDs()
         while !survivors.isEmpty && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
-            survivors = helperChildPIDs()
+            survivors = try helperChildPIDs()
         }
         for pid in survivors { kill(pid, SIGKILL) }
     }
 
-    private func helperChildPIDs() -> [pid_t] {
+    /// Throws rather than answering "none": an unlaunchable pgrep and a clean teardown produce
+    /// the same empty list, and believing the second one lets the app exit over live helpers
+    /// that then absorb the next launch's profile singleton.
+    private func helperChildPIDs() throws -> [pid_t] {
         let helperPrefix = Bundle.main.bundlePath + "/Contents/Frameworks/Synth Helper"
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
@@ -185,7 +188,7 @@ final class BrowserProcessSupervisor {
                           "-f", helperPrefix]
         let out = Pipe()
         task.standardOutput = out
-        guard (try? task.run()) != nil else { return [] }
+        try task.run()
         task.waitUntilExit()
         let data = out.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?
@@ -213,8 +216,9 @@ final class BrowserProcessSupervisor {
 
     /// Throws away one workspace's profile — the only thing that deletes one now, and only
     /// because the user asked (stage five: the old lifecycle deleted every profile on close
-    /// and never asked anyone). False when it could not be done, which is one case: another
-    /// Synth holds the profile root and its browsers are live on it.
+    /// and never asked anyone). False when it could not be done — another Synth holds the
+    /// profile root and its browsers are live on it, or the files themselves would not go —
+    /// so a clear that left the profile standing is never reported as one that removed it.
     ///
     /// Callers ask this workspace's engines to close first, but closing a CEF browser is
     /// asynchronous and they will still be flushing when this runs. That is exactly why the
@@ -232,28 +236,33 @@ final class BrowserProcessSupervisor {
         // its profile is not ours to delete. The root claim's own lock is the answer: taken
         // briefly here, and refused means someone is live on it.
         if let root {
-            remove(profile: root.appendingPathComponent(workspaceKey, isDirectory: true))
-            return true
+            return Guarded.run {
+                try remove(profile: root.appendingPathComponent(workspaceKey, isDirectory: true))
+            } != nil
         }
         let fd = open(Self.sharedLock.path, O_CREAT | O_RDWR, 0o644)
         guard fd >= 0 else { return false }
         defer { close(fd) }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return false }
         defer { flock(fd, LOCK_UN) }
-        remove(profile: Self.sharedRoot.appendingPathComponent(workspaceKey, isDirectory: true))
-        return true
+        return Guarded.run {
+            try remove(profile: Self.sharedRoot.appendingPathComponent(workspaceKey,
+                                                                       isDirectory: true))
+        } != nil
     }
 
-    private func remove(profile dir: URL) {
+    private func remove(profile dir: URL) throws {
         let fm = FileManager.default
         guard fm.fileExists(atPath: dir.path) else { return }
         let aside = Self.profilesRoot.appendingPathComponent(
             ".cleared-\(UUID().uuidString)", isDirectory: true)
-        guard (try? fm.moveItem(at: dir, to: aside)) != nil else {
+        do {
+            try fm.moveItem(at: dir, to: aside)
+        } catch {
             // Nowhere to move it to (a full disk, a permissions change) — emptying in place is
             // the honest fallback, and the husk it may leave is one profile's worth of files
             // that the next clear takes out.
-            try? fm.removeItem(at: dir)
+            try fm.removeItem(at: dir)
             return
         }
         try? fm.removeItem(at: aside)

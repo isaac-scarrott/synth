@@ -28,15 +28,27 @@ final class ControlServer: @unchecked Sendable {
     let socketPath = InstanceRegistry.controlSocketPath
     private weak var store: AppStore?
     private var listenFD: Int32 = -1
+    /// Read from the main actor by the supervisor while the accept loop writes it from its own
+    /// thread — the same single-word store `HookServer.isListening` documents.
+    nonisolated var isListening: Bool { listenFD >= 0 }
 
     @MainActor init(store: AppStore) {
         self.store = store
     }
 
-    func start() {
+    @MainActor func start() {
+        Capabilities.ensure(self, policy: .once)
+    }
+
+    /// Bind and serve. Throws so the supervisor owns the retry and the sentence. Idempotent: a
+    /// live listener short-circuits, so a heal against a half-started socket is safe.
+    @MainActor private func openSocket() throws {
+        guard listenFD < 0 else { return }
+        // A recycled pid inherits the socket file a dead instance left behind, and `bind` refuses
+        // an address already in use. Removing the corpse is the whole repair.
         unlink(socketPath)
         listenFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard listenFD >= 0 else { return }
+        guard listenFD >= 0 else { throw ControlError.socketFailed }
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let cap = MemoryLayout.size(ofValue: addr.sun_path)
@@ -51,14 +63,34 @@ final class ControlServer: @unchecked Sendable {
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(listenFD, $0, len) }
         }
-        guard bound == 0, listen(listenFD, 16) == 0 else { close(listenFD); listenFD = -1; return }
-        Thread.detachNewThread { [weak self] in self?.acceptLoop() }
+        guard bound == 0, listen(listenFD, 16) == 0 else {
+            close(listenFD); listenFD = -1
+            throw ControlError.bindFailed
+        }
+        // Only now is the path real. Advertising it before this point told a sibling Synth, and
+        // every bundled MCP server, to talk to a socket nothing was listening on.
+        InstanceRegistry.shared.advertiseControlSocket()
+        Guarded.thread { [weak self] in self?.acceptLoop() }
     }
+
+    enum ControlError: Error { case socketFailed, bindFailed }
 
     private func acceptLoop() {
         while true {
             let conn = accept(listenFD, nil, nil)
-            if conn < 0 { if errno == EINTR { continue }; break }
+            if conn < 0 {
+                if errno == EINTR { continue }
+                // The listener is gone. Drop it so `isUp` reports the truth rather than leaving a
+                // live-looking fd nobody is accepting on.
+                let fd = listenFD
+                listenFD = -1
+                close(fd)
+                // Hand it back to the supervisor rather than just dying quietly: the same
+                // unlink-and-rebind that fixes a stale socket at launch fixes one lost mid-run,
+                // and without this the capability stayed `.up` in the map forever.
+                Task { @MainActor in Capabilities.ensure(self, policy: .once) }
+                break
+            }
             // A client that connects and hangs up before reading the reply would otherwise
             // raise SIGPIPE on the write below — whose default action kills Synth. Any local
             // process could take the app down by probing the socket. Fail the write instead.
@@ -69,7 +101,7 @@ final class ControlServer: @unchecked Sendable {
             // n <= 0 break fires and the defer close(conn) releases both.
             var rcvto = timeval(tv_sec: 30, tv_usec: 0)
             setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &rcvto, socklen_t(MemoryLayout<timeval>.size))
-            Thread.detachNewThread { [weak self] in self?.handle(conn) }
+            Guarded.thread { [weak self] in self?.handle(conn) }
         }
     }
 
@@ -86,7 +118,11 @@ final class ControlServer: @unchecked Sendable {
             acc.append(contentsOf: buf[0..<n])
         }
         let line = acc.firstIndex(of: 0x0A).map { acc.prefix(upTo: $0) } ?? acc
-        let request = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] ?? [:]
+        // A line that doesn't parse used to be indistinguishable from a client bug: it became an
+        // empty request and was answered "missing verb". Counted now, so a truncated or oversized
+        // payload — the 256 KB cap above is reachable by app.worktreeCreate — leaves a trace.
+        let request = Guarded.run { try JSONSerialization.jsonObject(with: line) }
+            as? [String: Any] ?? [:]
 
         // The store is main-actor state; hop over synchronously — this runs on a
         // per-connection thread, so blocking it is free.
@@ -109,7 +145,10 @@ final class ControlServer: @unchecked Sendable {
         } else {
             DispatchQueue.main.sync {
                 MainActor.assumeIsolated {
-                    response = Self.process(request, store: store)
+                    // The door every MCP verb enters through. A verb that throws answers the
+                    // caller instead of unwinding out of the handler thread with nothing said.
+                    response = Guarded.run { try Self.process(request, store: store) }
+                        ?? ["ok": false, "error": "the verb failed inside Synth"]
                 }
             }
         }
@@ -170,7 +209,8 @@ final class ControlServer: @unchecked Sendable {
         return box.response ?? ["ok": false, "error": "internal: prompt resolved without a response"]
     }
 
-    @MainActor private static func process(_ request: [String: Any], store: AppStore?) -> [String: Any] {
+    @MainActor private static func process(_ request: [String: Any],
+                                           store: AppStore?) throws -> [String: Any] {
         guard let store else { return ["ok": false, "error": "store gone"] }
         guard let verb = request["verb"] as? String else {
             return ["ok": false, "error": "missing verb"]
@@ -872,7 +912,7 @@ final class ControlServer: @unchecked Sendable {
         // The tick runs git off the main actor, so this kicks it off and returns; the harness
         // polls `automation.archiveStatus` for the verdicts it settled on.
         case "automation.archiveSweep" where automation:
-            Task { await store.sweepTick(force: true) }
+            Guarded.task { await store.sweepTick(force: true) }
             return ["ok": true]
 
         // Say "focus came back". Self-dismissing cards bank their remaining life while Synth
@@ -1086,4 +1126,18 @@ final class ControlServer: @unchecked Sendable {
         }
         return branch.sessions.first { $0.id == sid }
     }
+}
+
+/// The control socket as a supervised capability, for the same reason the hook socket is one:
+/// the failure worth retrying is a socket file left at this pid's path by an instance that died,
+/// and if it stays down every agent's Synth tools are gone for the whole run rather than for a
+/// moment — which is worth a sentence, because nothing else in the app would say it.
+extension ControlServer: Capability {
+    static var id: String { "control-socket" }
+    static var domain: Fault.Domain { .control }
+    static var copy: Fault.Copy? {
+        .init(title: "Your agents can't reach Synth this run")
+    }
+    nonisolated var isUp: Bool { isListening }
+    func heal() throws { try openSocket() }
 }

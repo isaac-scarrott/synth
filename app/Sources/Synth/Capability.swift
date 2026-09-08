@@ -31,7 +31,7 @@ protocol Capability: AnyObject {
     var isUp: Bool { get }
     /// Make it work. Throw if it can't. Called on the first failure and on each retry, so it
     /// must be safe to run against a half-started capability.
-    func heal() throws
+    func heal() async throws
 }
 
 /// How hard to try before admitting it. Deliberately short: three attempts over ~six seconds.
@@ -39,11 +39,12 @@ protocol Capability: AnyObject {
 /// "still trying" state past the point of belief is its own kind of lie.
 struct HealPolicy: Sendable {
     var attempts: Int = 3
-    var delays: [Duration] = [.milliseconds(250), .seconds(2), .seconds(4)]
+    /// Waits BETWEEN attempts, so there is one fewer of these than there are attempts.
+    var delays: [Duration] = [.milliseconds(250), .seconds(2)]
     static let standard = HealPolicy()
     /// For a capability whose failure is almost always a stale artefact from a dead process:
     /// one immediate retry fixes it or nothing will.
-    static let once = HealPolicy(attempts: 1, delays: [.milliseconds(50)])
+    static let once = HealPolicy(attempts: 1, delays: [])
 }
 
 @MainActor
@@ -77,9 +78,15 @@ enum Capabilities {
         Guarded.mainTask {
             defer { healing.remove(C.id) }
             for attempt in 0..<policy.attempts {
-                try? await Task.sleep(for: policy.delays[min(attempt, policy.delays.count - 1)])
+                // The FIRST attempt is immediate. Sleeping before it made `ensure` unusable as
+                // a start path — the engine came up 250ms after launch, so a pane rendering in
+                // that window was told the terminal engine was unavailable when it was merely
+                // not up yet. Back off only between retries, which is what a backoff is.
+                if attempt > 0 {
+                    try? await Task.sleep(for: policy.delays[min(attempt - 1, policy.delays.count - 1)])
+                }
                 do {
-                    try capability.heal()
+                    try await capability.heal()
                 } catch {
                     Fault.note(C.domain, .healFailed)
                     continue

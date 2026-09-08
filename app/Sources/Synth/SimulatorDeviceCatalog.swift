@@ -233,8 +233,13 @@ enum SimulatorDeviceCatalog {
             // iOS 26.5 and later cache the guest's accessibility preferences at boot, so the keys
             // that let an out-of-process client read the accessibility tree have to be in place
             // before `simctl boot` — this is the only moment writing them does anything.
-            SimulatorAccessibility.prepareForBoot(
-                udid: udid, runtimeVersion: runtimeVersion(of: device))
+            //
+            // A device that boots without them is still a device: the accessibility tree is one
+            // capability of several, so a refused write is counted and the boot goes on.
+            Guarded.run {
+                try SimulatorAccessibility.prepareForBoot(
+                    udid: udid, runtimeVersion: runtimeVersion(of: device))
+            }
             do {
                 try SimulatorShell.simctl(["boot", udid], timeout: 120)
             } catch let failure as SimulatorShell.Failure {
@@ -369,7 +374,7 @@ enum SimulatorDeviceCatalog {
     /// model identifier; the scale and pixel size come from the device type bundle's own
     /// `profile.plist`, which is a plain file read and available before the device boots.
     private static func deviceTypeProfiles() -> [String: DeviceTypeProfile] {
-        guard let listing = try? simctlJSON(["list", "devicetypes", "--json"]),
+        guard let listing = Guarded.run({ try simctlJSON(["list", "devicetypes", "--json"]) }),
               let entries = listing["devicetypes"] as? [[String: Any]] else { return [:] }
         var profiles: [String: DeviceTypeProfile] = [:]
         for entry in entries {
@@ -495,7 +500,7 @@ enum SimulatorClaims {
     static func record(_ udid: String) {
         lock.lock(); defer { lock.unlock() }
         guard booted.updateValue(udid, forKey: key(udid)) == nil else { return }
-        persist(booted)
+        Guarded.run { try persist(booted) }
     }
 
     /// Forgets a claim, answering whether there was one — i.e. whether Synth booted this device and
@@ -504,7 +509,7 @@ enum SimulatorClaims {
     static func forget(_ udid: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard booted.removeValue(forKey: key(udid)) != nil else { return false }
-        persist(booted)
+        Guarded.run { try persist(booted) }
         return true
     }
 
@@ -535,7 +540,7 @@ enum SimulatorClaims {
         lock.lock(); defer { lock.unlock() }
         let key = key(udid)
         guard !interest.contains(key), booted.removeValue(forKey: key) != nil else { return false }
-        persist(booted)
+        Guarded.run { try persist(booted) }
         return true
     }
 
@@ -602,11 +607,14 @@ enum SimulatorClaims {
         let orphans = orphanedFiles()
         guard !orphans.isEmpty else { return }
         let abandoned = Set(orphans.flatMap(\.udids))
-        Task.detached(priority: .utility) {
+        Guarded.task(priority: .utility) {
+            // A listing that failed is not an empty fleet. Throwing here leaves every claim file
+            // where it is, so the next launch sweeps what this one could not even read.
             let bootedNow = Dictionary(
-                ((try? SimulatorDeviceCatalog.devices()) ?? []).filter(\.isBooted)
+                try SimulatorDeviceCatalog.devices().filter(\.isBooted)
                     .map { (key($0.udid), $0.udid) },
                 uniquingKeysWith: { first, _ in first })
+            var stillBooted: Set<String> = []
             for claimed in abandoned {
                 guard let udid = bootedNow[claimed] else { continue }
                 if wanted(claimed) {
@@ -617,9 +625,18 @@ enum SimulatorClaims {
                     continue
                 }
                 NSLog("Synth: releasing simulator %@ left booted by a previous run", udid)
-                try? SimulatorDeviceCatalog.shutdown(udid: udid)
+                do {
+                    try SimulatorDeviceCatalog.shutdown(udid: udid)
+                } catch {
+                    // The claim outlives a shutdown that did not happen — deleting it here is what
+                    // turns a still-booted device into one nobody will ever look for again.
+                    stillBooted.insert(claimed)
+                    Fault.report(.app, .uncaught, evidence: "\(error)")
+                }
             }
-            for orphan in orphans { try? FileManager.default.removeItem(at: orphan.file) }
+            for orphan in orphans where orphan.udids.allSatisfy({ !stillBooted.contains($0) }) {
+                try? FileManager.default.removeItem(at: orphan.file)
+            }
         }
     }
 
@@ -629,14 +646,15 @@ enum SimulatorClaims {
         directory.appendingPathComponent("\(pid).json")
     }
 
-    private static func persist(_ claims: [String: String]) {
+    /// The file this run's claims are swept from if the run does not survive to release them, so a
+    /// write that does not happen is a device that stays booted with nothing pointing at it. It
+    /// throws to the caller's door rather than to nowhere.
+    private static func persist(_ claims: [String: String]) throws {
         let url = file(pid: getpid())
         guard !claims.isEmpty else { try? FileManager.default.removeItem(at: url); return }
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        guard let data = try? JSONSerialization.data(withJSONObject: claims.values.sorted()) else {
-            return
-        }
-        try? data.write(to: url, options: .atomic)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: claims.values.sorted())
+        try data.write(to: url, options: .atomic)
     }
 
     private static func orphanedFiles() -> [(file: URL, udids: [String])] {
@@ -698,7 +716,7 @@ enum SimulatorClaims {
     func claim(_ udid: String) {
         SimulatorClaims.noteInterest(in: udid)
         SimulatorClaims.markBootPending(udid)
-        Task.detached(priority: .userInitiated) {
+        Guarded.task(priority: .userInitiated) {
             do {
                 if try SimulatorDeviceCatalog.boot(udid: udid) == .booted {
                     // Recorded here and not a line earlier: this is the shutdown → booted
@@ -708,8 +726,12 @@ enum SimulatorClaims {
                 try SimulatorDeviceCatalog.waitUntilBooted(udid: udid)
                 SimulatorClaims.clearBootFailure(for: udid)
             } catch {
+                // The rest of this task still has to run — the boot pending mark has to come off,
+                // and an abandoned boot still owes a shutdown — so the failure is raised here
+                // rather than thrown at the door.
                 SimulatorClaims.recordBootFailure(String(describing: error), for: udid)
-                NSLog("Synth: simulator %@ would not boot: %@", udid, String(describing: error))
+                Fault.report(.simulator, .simulatorBootFailed, severity: .degraded,
+                             details: [.stage(.spawn)], evidence: String(describing: error))
             }
             SimulatorClaims.clearBootPending(udid)
             // A cold boot takes tens of seconds, and a row can close inside them. Its release
@@ -719,7 +741,7 @@ enum SimulatorClaims {
             if SimulatorClaims.abandonIfUnwanted(udid) {
                 NSLog("Synth: simulator %@ was released before its boot finished; shutting it down",
                       udid)
-                try? SimulatorDeviceCatalog.shutdown(udid: udid)
+                Guarded.run { try SimulatorDeviceCatalog.shutdown(udid: udid) }
             }
             // Refresh so the picker shows the device as booted. `self`, not `Simulators.fleet`:
             // the cache being updated must be the one this claim came through.
@@ -732,8 +754,8 @@ enum SimulatorClaims {
     func release(_ udid: String) {
         SimulatorClaims.dropInterest(in: udid)
         guard SimulatorClaims.forget(udid) else { return }
-        Task.detached(priority: .utility) {
-            try? SimulatorDeviceCatalog.shutdown(udid: udid)
+        Guarded.task(priority: .utility) {
+            try SimulatorDeviceCatalog.shutdown(udid: udid)
         }
     }
 
@@ -742,7 +764,7 @@ enum SimulatorClaims {
     static func releaseSynchronously(_ udid: String) {
         SimulatorClaims.dropInterest(in: udid)
         guard SimulatorClaims.forget(udid) else { return }
-        try? SimulatorDeviceCatalog.shutdown(udid: udid)
+        Guarded.run { try SimulatorDeviceCatalog.shutdown(udid: udid) }
     }
 
     static func reconcileOrphanedClaims() { SimulatorClaims.reconcileOrphanedInstances() }
@@ -750,8 +772,14 @@ enum SimulatorClaims {
     private func refresh() {
         guard !isRefreshing else { return }
         isRefreshing = true
-        Task.detached(priority: .userInitiated) {
-            let listed = (try? SimulatorDeviceCatalog.devices()) ?? []
+        Guarded.task(priority: .userInitiated) {
+            // The latch comes off whichever way this ends, or a listing that failed once would
+            // leave the cache frozen for the life of the app.
+            defer { Guarded.mainTask { self.isRefreshing = false } }
+            // A `simctl` that could not answer is not an empty fleet, and this assignment is
+            // unconditional: swallowing the throw wrote "no simulator devices are installed" over
+            // a listing that was right a second ago, which is a lie the picker cannot see through.
+            let listed = try SimulatorDeviceCatalog.devices()
             let devices = listed.filter(\.isAvailable).map {
                 SimulatorDevice(
                     udid: $0.udid, name: $0.name, runtime: $0.runtimeName, isBooted: $0.isBooted,
@@ -762,7 +790,6 @@ enum SimulatorClaims {
                 self.cache = devices
                 self.index = Dictionary(devices.map { ($0.udid.lowercased(), $0) },
                                         uniquingKeysWith: { first, _ in first })
-                self.isRefreshing = false
             }
         }
     }

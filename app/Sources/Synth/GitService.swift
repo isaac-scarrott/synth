@@ -927,11 +927,26 @@ enum GitService {
     /// there, `diff --quiet` on a clean tree and `merge-base --is-ancestor` all exit 1 while
     /// working perfectly, and reporting them would bury the real failures under the app's own
     /// routine questions.
+    /// The subcommand, skipping git's global options and their values. `-C <path>` is on every
+    /// call this app makes and its value does not start with `-`, so taking the first non-flag
+    /// argument returned the worktree path — which matched nothing, disabled the exception list
+    /// entirely, and put the repo path in the evidence line.
+    private static func subcommand(of args: [String]) -> String {
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if arg == "-C" || arg == "-c" { i += 2; continue }
+            if arg.hasPrefix("-") { i += 1; continue }
+            return arg
+        }
+        return ""
+    }
+
     private static func reportIfFailed(_ args: [String], _ status: Int32, _ output: String) {
         guard status != 0, status != -1 else { return }   // -1 already reported at the spawn
-        let subcommand = args.first { !$0.hasPrefix("-") } ?? ""
+        let subcommand = Self.subcommand(of: args)
         let asksAQuestion = ["rev-parse", "merge-base", "check-ignore", "show-ref",
-                             "cat-file", "check-ref-format"].contains(subcommand)
+                             "cat-file", "check-ref-format", "remote"].contains(subcommand)
             || args.contains("--quiet") || args.contains("--exit-code")
         guard !asksAQuestion else { return }
         // The subcommand is a closed vocabulary — git's own — so it is safe to send; the

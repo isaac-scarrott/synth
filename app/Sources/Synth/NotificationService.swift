@@ -29,8 +29,13 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
         }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, err in
-            if let err { NSLog("Synth: notification authorization failed: \(err.localizedDescription)") }
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, err in
+            // Denial is the user's own answer and nothing to report. An error is not: it leaves
+            // every later post silently dropped, and this is the only moment that is knowable.
+            if let err {
+                Fault.report(.app, .notificationAuthFailed, details: [.flag("granted", granted)],
+                             evidence: "Notification authorization failed: \(err.localizedDescription)")
+            }
         }
     }
 
@@ -91,8 +96,12 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
             return
         }
         UNUserNotificationCenter.current().add(req) { err in
-            if let err { NSLog("Synth: notification refused (\(title)): \(err.localizedDescription)") }
-            else { NSLog("Synth: notification posted (\(title))") }
+            if let err {
+                Fault.report(.app, .uncaught,
+                             evidence: "Notification refused (\(title)): \(err.localizedDescription)")
+            } else {
+                NSLog("Synth: notification posted (\(title))")
+            }
         }
     }
 
@@ -112,7 +121,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate, @un
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         let id = (info["session"] as? String).flatMap(UUID.init(uuidString:))
-        Task { @MainActor in
+        Guarded.mainTask {
             NSApp.activate(ignoringOtherApps: true)   // system errors carry no session — just come front
             if let id, let s = self.store?.session(id) { self.store?.jump(to: s) }
         }

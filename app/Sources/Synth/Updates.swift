@@ -59,8 +59,31 @@ final class UpdateBridge: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDel
         }
         // Sparkle calls this on the main thread today; hop rather than assume, because assuming
         // is a fatalError if a future Sparkle ever changes its mind.
-        if Thread.isMainThread { MainActor.assumeIsolated { stage() } } else { Task { @MainActor in stage() } }
+        if Thread.isMainThread { MainActor.assumeIsolated { stage() } } else { Guarded.mainTask { stage() } }
         return true
+    }
+
+    /// An update cycle that ended in an error rather than in a build.
+    ///
+    /// `SUEnableAutomaticChecks` + `SUAutomaticallyUpdate` mean the whole cycle is designed to be
+    /// invisible, which is right for success and was wrong for failure: a 404 appcast, a DNS
+    /// failure, an EdDSA signature that won't verify or a download that keeps dying left no record
+    /// of any kind, in an app whose users only ever learn about a release by receiving it.
+    ///
+    /// Counted and silent. Nobody pressed anything — a scheduled check is Synth's own errand — and
+    /// a check the user *did* ask for from the app menu still gets Sparkle's own window. What this
+    /// closes is a build that quietly stops updating forever.
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        // Sparkle reports "there is no newer build" through the same channel as a failure, and that
+        // is the answer every healthy check ends with.
+        guard (error as NSError).code != Int(SUError.noUpdateError.rawValue) else { return }
+        Fault.report(.app, .uncaught, severity: .degraded, details: [.stage(.resolve)],
+                     evidence: error.localizedDescription)
+    }
+
+    func updater(_ updater: SPUUpdater, failedToDownloadUpdate item: SUAppcastItem, error: Error) {
+        Fault.report(.app, .uncaught, severity: .degraded, details: [.stage(.write)],
+                     evidence: error.localizedDescription)
     }
 }
 

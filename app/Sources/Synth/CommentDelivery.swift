@@ -122,14 +122,14 @@ final class CommentDelivery {
     private func bootAndSubmit(_ row: Session, message: String, count: Int,
                                screenshots: [String]) {
         deliveryTask?.cancel()
-        deliveryTask = Task { [weak self] in
+        deliveryTask = Guarded.mainTask { [weak self] in
             for _ in 0..<40 {   // ~20s: the agent boots and reports in, or never will
-                try? await Task.sleep(for: .seconds(0.5))
+                try await Task.sleep(for: .seconds(0.5))
                 guard let self, !Task.isCancelled else { return }
                 guard let store = self.store, store.isLiveAgent(row.id) else { continue }
                 // Live confirmed — one more beat so a TUI is past its first paint and won't eat an
                 // early paste; re-check liveness after the beat.
-                try? await Task.sleep(for: .seconds(1))
+                try await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled, store.isLiveAgent(row.id),
                       let supervisor = store.liveSupervisor(for: row) else { continue }
                 if supervisor.deliver(message, to: row.id) {

@@ -123,7 +123,15 @@ struct AgentDescriptor: Sendable {
         var words = [command]
         var seen: Set<String> = []
         while let head = words.first, let expansion = aliases[head], seen.insert(head).inserted {
-            guard !expansion.contains(where: { "|&;<>()`$\n{}*?[]'\"\\".contains($0) }) else { return nil }
+            guard !expansion.contains(where: { "|&;<>()`$\n{}*?[]'\"\\".contains($0) }) else {
+                // Nil here removes the agent from `installed`, and with it from ⌘K, from the
+                // session template, from the shim set and from the decorate loop — a whole agent
+                // disappearing on the strength of one alias, which the user is told nowhere.
+                Fault.report(.agentLaunch, .agentBinaryMissing, severity: .degraded,
+                             details: [.stage(.resolve), .flag("alias_unrunnable", true)],
+                             evidence: "\(command) is aliased to a shell fragment Synth can't exec.")
+                return nil
+            }
             let expanded = expansion.split(whereSeparator: \.isWhitespace).map(String.init)
             guard !expanded.isEmpty else { return nil }
             words = expanded + words.dropFirst()
@@ -368,7 +376,7 @@ extension AgentDescriptor: Identifiable {}
         if let installedCache { return installedCache }
         let snapshot = all.filter { $0.resolvedBinary != nil }
         installedCache = snapshot
-        ShellEnvironment.prewarm { Task { @MainActor in refreshInstalled() } }
+        ShellEnvironment.prewarm { Guarded.mainTask { refreshInstalled() } }
         return snapshot
     }
 

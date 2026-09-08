@@ -192,14 +192,35 @@ enum PRService {
         let semaphore = DispatchSemaphore(value: 0)
         var result: Data?
         var status: Int?
-        let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+        // The transport error is read for its two halves here rather than carried out whole:
+        // `Error` is not Sendable, and only its code and its sentence are ever wanted.
+        var failureCode: Int?
+        var failureText: String?
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             status = (response as? HTTPURLResponse)?.statusCode
+            failureCode = (error as? NSError)?.code
+            failureText = error?.localizedDescription
             result = data
             semaphore.signal()
         }
         task.resume()
         semaphore.wait()
-        guard let status, (200..<300).contains(status) else { return nil }
+        // Every arm still answers "couldn't ask" — that contract is what keeps the sweeper from
+        // reading a revoked token as "this branch has no PR". What changes is that a revoked
+        // token, an SSO block, a rate limit and being offline stop being the same silence: the
+        // status code separates them, and the badges vanishing off every row is now countable.
+        guard let status else {
+            let why = failureText ?? "No response from GitHub."
+            Fault.report(.worktree, .uncaught,
+                         details: [.stage(.handshake), .count("url_error", failureCode ?? 0)],
+                         evidence: why)
+            return nil
+        }
+        guard (200..<300).contains(status) else {
+            Fault.report(.worktree, .uncaught,
+                         details: [.stage(.handshake), .count("http_status", status)])
+            return nil
+        }
         return result
     }
 
@@ -225,7 +246,14 @@ enum PRService {
               let repository = d["repository"] as? [String: Any],
               let prs = repository["pullRequests"] as? [String: Any],
               let nodes = prs["nodes"] as? [[String: Any]]
-        else { return nil }
+        else {
+            // A 200 carrying a GraphQL `errors` payload lands here — the shape a scope-less
+            // token or a renamed repo takes — and it is otherwise indistinguishable from being
+            // offline, because both arrive at the caller as the same `.none`.
+            Fault.report(.worktree, .uncaught, details: [.stage(.handshake)],
+                         evidence: "GitHub answered 2xx with no pullRequests nodes.")
+            return nil
+        }
         return nodes.compactMap { node in
             guard let number = node["number"] as? Int,
                   let stateRaw = node["state"] as? String,

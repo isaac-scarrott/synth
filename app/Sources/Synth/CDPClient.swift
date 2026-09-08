@@ -77,12 +77,26 @@ final class CDPClient: NSObject, @unchecked Sendable {
         }
     }
 
+    /// The socket died on its own. This is the only place the real cause exists — `close()`
+    /// resolves every pending send with its own "connection closed", and that generic sentence
+    /// is what every consumer sees — so it is recorded before the cause is thrown away. A close
+    /// Synth asked for arrives here too, as a cancellation, and says nothing.
+    private func socketFailed(_ error: Error) {
+        queue.async {
+            guard !self.closed else { return }
+            Fault.report(.browser, .uncaught, severity: .degraded,
+                         details: [.stage(.teardown)],
+                         evidence: error.localizedDescription)
+        }
+        close()
+    }
+
     private func receiveLoop() {
         task.receive { [weak self] result in
             guard let self else { return }
             switch result {
-            case .failure:
-                self.close()
+            case .failure(let error):
+                self.socketFailed(error)
             case .success(let msg):
                 var text: String?
                 if case .string(let s) = msg { text = s }
@@ -143,20 +157,29 @@ extension CDPClient {
             candidates.sort { ($0.url == hint ? 0 : 1) < ($1.url == hint ? 0 : 1) }
         }
         let want = synthSessionID.uuidString
+        // A target that refuses the probe is not the same thing as a target that isn't ours, and
+        // the scan cannot stop for either — so the last refusal is carried to the throw. Without
+        // it a live-but-wedged page reports identically to a page that was never there.
+        var lastProbeFailure: String?
         for target in candidates {
             guard let ws = target.webSocketDebuggerUrl, let wsURL = URL(string: ws) else { continue }
             let client = CDPClient(url: wsURL)
-            let reply = try? await client.send(
-                "Runtime.evaluate",
-                ["expression": "window.__synthSessionId || null", "returnByValue": true],
-                timeout: 5)
-            if let result = reply?["result"] as? [String: Any],
-               result["value"] as? String == want {
-                return client
+            do {
+                let reply = try await client.send(
+                    "Runtime.evaluate",
+                    ["expression": "window.__synthSessionId || null", "returnByValue": true],
+                    timeout: 5)
+                if let result = reply["result"] as? [String: Any],
+                   result["value"] as? String == want {
+                    return client
+                }
+            } catch {
+                lastProbeFailure = "\(error)"
             }
             client.close()
         }
-        throw CDPError(description: "no CDP page target for session \(want) on port \(port)")
+        throw CDPError(description: "no CDP page target for session \(want) on port \(port)"
+            + (lastProbeFailure.map { " — last target answered: \($0)" } ?? ""))
     }
 
     /// The DevTools frontend URL for a Synth browser session's page — what an inspect
@@ -171,14 +194,20 @@ extension CDPClient {
             candidates.sort { ($0.url == hint ? 0 : 1) < ($1.url == hint ? 0 : 1) }
         }
         let want = synthSessionID.uuidString
+        var lastProbeFailure: String?
         for target in candidates {
             guard let id = target.id,
                   let ws = target.webSocketDebuggerUrl, let wsURL = URL(string: ws) else { continue }
             let client = CDPClient(url: wsURL)
-            let reply = try? await client.send(
-                "Runtime.evaluate",
-                ["expression": "window.__synthSessionId || null", "returnByValue": true],
-                timeout: 5)
+            var reply: [String: Any]?
+            do {
+                reply = try await client.send(
+                    "Runtime.evaluate",
+                    ["expression": "window.__synthSessionId || null", "returnByValue": true],
+                    timeout: 5)
+            } catch {
+                lastProbeFailure = "\(error)"
+            }
             client.close()
             if let result = reply?["result"] as? [String: Any],
                result["value"] as? String == want,
@@ -187,6 +216,7 @@ extension CDPClient {
                 return url
             }
         }
-        throw CDPError(description: "no CDP page target for session \(want) on port \(port)")
+        throw CDPError(description: "no CDP page target for session \(want) on port \(port)"
+            + (lastProbeFailure.map { " — last target answered: \($0)" } ?? ""))
     }
 }

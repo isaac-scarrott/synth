@@ -70,7 +70,7 @@ final class BranchHoverCardModel {
         let wait = self.branch != nil ? .zero
                  : Date() < warmUntil ? Self.warm
                  : Self.cold
-        openTask = Task { [weak self] in
+        openTask = Guarded.mainTask { [weak self] in
             try? await Task.sleep(for: wait)
             guard !Task.isCancelled else { return }
             self?.show(branch)
@@ -89,7 +89,7 @@ final class BranchHoverCardModel {
         openTask?.cancel(); openTask = nil
         pendingID = nil
         guard closeTask == nil, branch != nil else { return }
-        closeTask = Task { [weak self] in
+        closeTask = Guarded.mainTask { [weak self] in
             try? await Task.sleep(for: Self.grace)
             guard !Task.isCancelled else { return }
             self?.hide()

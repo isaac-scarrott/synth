@@ -6,7 +6,8 @@ import Foundation
 /// { pid, cdpPort, createdAt, worktreePaths, controlSocket } — so the bundled MCP
 /// server can find the instance managing $CLAUDE_PROJECT_DIR. Written at launch
 /// (cdpPort 0 until the CEF runtime binds one: the port exists only once the first
-/// browser engine spins up, but list/create must work before that), refreshed as
+/// browser engine spins up, but list/create must work before that; `controlSocket`
+/// absent until ControlServer has bound one), refreshed as
 /// workspaces/branches change, removed on clean quit, and dead-pid leftovers are
 /// swept at launch (the BrowserProcessSupervisor.sweepDeadInstances pattern).
 @MainActor final class InstanceRegistry {
@@ -22,13 +23,19 @@ import Foundation
     private var cdpPort: UInt16 = 0
     private var worktreePaths: [String] = []
     private var started = false
+    /// False until ControlServer has actually bound. The path is derived from the pid, so it
+    /// could always be written — and was, which meant a failed bind still advertised a socket
+    /// for the bundled MCP servers and a sibling Synth to talk to.
+    private var controlSocketListening = false
 
     private init() {}
 
     func start() {
         guard !started else { return }
         started = true
-        try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+        Guarded.run {
+            try FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+        }
         sweepDeadInstances()
         Self.reapOrphanedSessionTrees()
         // The same orphans, reached the other way: `reapOrphanedSessionTrees` finds trees that
@@ -36,7 +43,7 @@ import Foundation
         // other — a `setsid`'d dev server has no login leader to match on, and a process that
         // rewrote its argv has no environment stamp left to read.
         SessionProcesses.reapOrphansOfDeadInstances()
-        write()
+        Guarded.run { try write() }
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { _ in
@@ -57,34 +64,45 @@ import Foundation
         }
         guard canonical != worktreePaths else { return }
         worktreePaths = canonical
-        write()
+        Guarded.run { try write() }
+    }
+
+    /// ControlServer bound its socket. Until this lands the advertisement carries no
+    /// `controlSocket` key at all, so a client reads the absence rather than a dead path.
+    func advertiseControlSocket() {
+        guard !controlSocketListening else { return }
+        controlSocketListening = true
+        Guarded.run { try write() }
     }
 
     /// The CEF runtime bound its per-instance CDP port (BrowserProcessSupervisor).
     func setCDPPort(_ port: UInt16) {
         guard port != cdpPort else { return }
         cdpPort = port
-        write()
+        Guarded.run { try write() }
     }
 
     private var fileURL: URL {
         Self.dir.appendingPathComponent("\(getpid()).json")
     }
 
-    private func write() {
+    /// Throws, because this file IS the discovery: it is how the bundled MCP servers find the
+    /// running app and how a sibling Synth learns which worktrees this one claims. A write that
+    /// silently didn't happen leaves both reading a stale claim, or none at all — and every
+    /// later refresh takes the same route, so one unwritable directory loses all of them.
+    private func write() throws {
         // `started` gates check-mode (`--browser-check` inits CEF without the app
         // lifecycle) from registering an instance it will never clean up.
         guard started else { return }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "pid": Int(getpid()),
             "cdpPort": Int(cdpPort),
             "createdAt": createdAt,
             "worktreePaths": worktreePaths,
-            "controlSocket": Self.controlSocketPath,
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload,
-                                                     options: [.sortedKeys]) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        if controlSocketListening { payload["controlSocket"] = Self.controlSocketPath }
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        try data.write(to: fileURL, options: .atomic)
     }
 
     private func removeFile() {
@@ -97,10 +115,14 @@ import Foundation
     /// The archive sweeper refuses to touch these: `AppStore.runGit` serialises git per repo
     /// within one process and cannot span apps, so two sweepers racing a `worktree prune` on
     /// one repo is corruption rather than nuisance.
-    static func otherInstanceWorktreePaths() -> Set<String> {
+    static func otherInstanceWorktreePaths() throws -> Set<String> {
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-        else { return [] }
+        // Throws rather than returning the empty set. An empty answer here means "no other
+        // Synth is holding anything", which the sweeper reads as permission to prune — so a
+        // directory we merely failed to READ would have licensed removing another instance's
+        // live worktrees. Its neighbour already treats an unknown as a refusal; this now
+        // matches, and the caller decides.
+        let files = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         var paths: Set<String> = []
         for file in files where file.pathExtension == "json" {
             guard let data = try? Data(contentsOf: file),
@@ -125,32 +147,35 @@ import Foundation
     /// orphaned group. Multi-instance safe: a live sibling's sessions are never ppid 1.
     private static func reapOrphanedSessionTrees() {
         DispatchQueue.global(qos: .utility).async {
-            let ps = Process()
-            ps.executableURL = URL(fileURLWithPath: "/bin/ps")
-            ps.arguments = ["-axo", "pid=,ppid=,pgid=,command="]
-            let pipe = Pipe()
-            ps.standardOutput = pipe
-            ps.standardError = FileHandle.nullDevice
-            guard (try? ps.run()) != nil else { return }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            ps.waitUntilExit()
-            guard let out = String(data: data, encoding: .utf8) else { return }
+            Guarded.run {
+                let ps = Process()
+                ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+                ps.arguments = ["-axo", "pid=,ppid=,pgid=,command="]
+                let pipe = Pipe()
+                ps.standardOutput = pipe
+                ps.standardError = FileHandle.nullDevice
+                try ps.run()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                ps.waitUntilExit()
+                guard let out = String(data: data, encoding: .utf8) else { return }
 
-            var groups = Set<pid_t>()
-            for line in out.split(separator: "\n") {
-                // Specifically a Synth session-tree leader: `/usr/bin/login` running one of our
-                // `synth-login-<pid>.sh` scripts — not merely any command that mentions the
-                // path (a claude shell can carry it in an arg). The first three space-separated
-                // fields are pid, ppid, pgid (from `-o …=`); the rest is the command line.
-                guard line.contains("/usr/bin/login"), line.contains("synth-login-") else { continue }
-                let f = line.split(separator: " ", omittingEmptySubsequences: true)
-                guard f.count >= 3, let ppid = pid_t(f[1]), ppid == 1,
-                      let pgid = pid_t(f[2]), pgid > 1 else { continue }
-                groups.insert(pgid)
-            }
-            for pgid in groups {
-                killpg(pgid, SIGTERM)
-                DispatchQueue.global().asyncAfter(deadline: .now() + 2) { killpg(pgid, SIGKILL) }
+                var groups = Set<pid_t>()
+                for line in out.split(separator: "\n") {
+                    // Specifically a Synth session-tree leader: `/usr/bin/login` running one of
+                    // our `synth-login-<pid>.sh` scripts — not merely any command that mentions
+                    // the path (a claude shell can carry it in an arg). The first three
+                    // space-separated fields are pid, ppid, pgid (from `-o …=`); the rest is the
+                    // command line.
+                    guard line.contains("/usr/bin/login"), line.contains("synth-login-") else { continue }
+                    let f = line.split(separator: " ", omittingEmptySubsequences: true)
+                    guard f.count >= 3, let ppid = pid_t(f[1]), ppid == 1,
+                          let pgid = pid_t(f[2]), pgid > 1 else { continue }
+                    groups.insert(pgid)
+                }
+                for pgid in groups {
+                    killpg(pgid, SIGTERM)
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 2) { killpg(pgid, SIGKILL) }
+                }
             }
         }
     }

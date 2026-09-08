@@ -131,12 +131,17 @@ import Observation
         let dir = CommentDelivery.commentsDir(sessionID: sessionID)
         let stamp = CommentDelivery.timestamp()
         let screenURL = dir.appendingPathComponent("screen-\(stamp).png")
-        if (try? png.write(to: screenURL)) != nil {
-            pendingScreenshots.append(screenURL.path)
+        // The composer stays open on a write that failed and `send` delivers regardless, so a
+        // refused write is a comment that reaches the agent claiming evidence it does not carry.
+        guard Guarded.run({ try png.write(to: screenURL) }) != nil else {
+            discardPending()
+            showNotice("Couldn't save the screenshot for this comment. Nothing sent.")
+            return
         }
+        pendingScreenshots.append(screenURL.path)
         if let cropped = Self.crop(png, around: point, pixelSize: frame.pixelSize) {
             let cropURL = dir.appendingPathComponent("element-\(stamp).png")
-            if (try? cropped.write(to: cropURL)) != nil {
+            if Guarded.run({ try cropped.write(to: cropURL) }) != nil {
                 pendingScreenshots.insert(cropURL.path, at: 0)
             }
         }
@@ -174,7 +179,7 @@ import Observation
             }
         }
         anchorTask = task
-        Task { @MainActor [weak self] in
+        Guarded.mainTask { [weak self] in
             let resolved = await task.value
             guard let self, self.anchorGeneration == generation else { return }
             self.pendingAnchor = resolved.anchor
@@ -204,7 +209,7 @@ import Observation
             // The click's hit test is still out. Waiting for it is the difference between a located
             // comment and "somewhere on this screen", and the user has already said their piece.
             showNotice("Reading what you clicked, then sending…")
-            Task { @MainActor [weak self] in
+            Guarded.mainTask { [weak self] in
                 let anchor = await pendingHitTest.value
                 guard let self else {
                     CommentDelivery.discard(screenshots)   // the pane went; leave no orphans
@@ -291,7 +296,7 @@ import Observation
     private func showNotice(_ text: String) {
         notice = text
         noticeTask?.cancel()
-        noticeTask = Task { [weak self] in
+        noticeTask = Guarded.mainTask { [weak self] in
             try? await Task.sleep(for: .seconds(5))
             if !Task.isCancelled { self?.notice = nil }
         }

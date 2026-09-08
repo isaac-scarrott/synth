@@ -98,7 +98,7 @@ struct CreateWorktreeSheet: View {
             // for-each-ref off the main thread — a large/cold repo can take a beat.
             let repo = workspace.url
             let shown = Set(workspace.branches.map(\.name))
-            Task {
+            Guarded.mainTask {
                 let (names, def) = await Task.detached(priority: .userInitiated) {
                     (GitService.branches(at: repo).map(\.name),
                      GitService.baseDisplayName(GitService.defaultBase(at: repo)))

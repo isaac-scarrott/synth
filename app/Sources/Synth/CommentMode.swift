@@ -81,18 +81,20 @@ import Observation
             parked = false
             active = true
             let label = targetTitle ?? "Claude Code"
-            Task { [weak self] in
-                _ = try? await client.send("Runtime.evaluate",
-                                           ["expression": Self.injectionSource(targetLabel: label)],
-                                           timeout: 5)
+            Guarded.mainTask { [weak self] in
+                // Future documents first: the two are independent, and this way a current-page
+                // injection that refuses still leaves the mode armed across the next navigation.
                 await self?.installNewDocumentScript(verb: "enter")
+                _ = try await client.send("Runtime.evaluate",
+                                          ["expression": Self.injectionSource(targetLabel: label)],
+                                          timeout: 5)
             }
             NSLog("Synth: comment mode resumed for %@ (%d unsent)", sessionID.uuidString, pendingCount)
             return
         }
         attachNonce += 1
         let nonce = attachNonce
-        attachTask = Task { [weak self] in
+        attachTask = Guarded.mainTask { [weak self] in
             await self?.attach(urlHint: urlHint)
             // Clear only our own slot — a cancel + re-enter has already replaced it.
             if let self, self.attachNonce == nonce { self.attachTask = nil }
@@ -102,9 +104,18 @@ import Observation
     /// One CDP attach, cancellable end-to-end: controller state is mutated only after the
     /// final cancellation check, so an exit() mid-attach leaves nothing behind — the local
     /// client is closed here, never leaked into `self.client`.
-    private func attach(urlHint: URL?) async {
+    ///
+    /// `healing` is a re-attach after the socket died under a mode that is still on: the flags
+    /// already say what the mode is, so it leaves them alone and injects the verb that matches —
+    /// `restore` brings a parked batch's pins back without turning the picker on.
+    private func attach(urlHint: URL?, healing: Bool = false) async {
         var opened: CDPClient?
         do {
+            guard Self.overlayJS != nil else {
+                throw CDPClient.CDPError(description:
+                    "the comment overlay is missing from this build — launch a bundle assembled "
+                    + "by app/dev.sh or app/dist.sh")
+            }
             let client = try await CDPClient.attach(port: cdpPort, synthSessionID: sessionID,
                                                     urlHint: urlHint)
             opened = client
@@ -112,24 +123,29 @@ import Observation
             try await client.send("Runtime.enable")
             try await client.send("Page.enable")
             try await client.send("Runtime.addBinding", ["name": "__synthComment"])
-            let source = Self.injectionSource(targetLabel: targetTitle ?? "Claude Code")
+            let source = Self.injectionSource(targetLabel: targetTitle ?? "Claude Code",
+                                              verb: healing && parked ? "restore" : "enter")
             // Future documents: the binding survives navigation on its own; the overlay
             // is re-injected per document. Current document: evaluate the same source now.
             let added = try await client.send("Page.addScriptToEvaluateOnNewDocument",
                                               ["source": source])
-            _ = try? await client.send("Runtime.evaluate", ["expression": source])
+            _ = try await client.send("Runtime.evaluate", ["expression": source])
             try Task.checkCancellation()
             self.client = client
             injectedScriptID = added["identifier"] as? String
-            active = true
+            if !healing { active = true }
             listen(to: client)
             NSLog("Synth: comment mode ON for %@ (cdp %d, target → %@)",
                   sessionID.uuidString, Int(cdpPort), targetTitle ?? "none")
         } catch {
             opened?.close()
-            if !(error is CancellationError), !Task.isCancelled {
-                showNotice("Comment mode failed to attach: \(error)")
-            }
+            guard !(error is CancellationError), !Task.isCancelled else { return }
+            // A heal's own attempts are the ladder's business — it says one thing at the end
+            // rather than three on the way.
+            if !healing { showNotice("Comment mode failed to attach: \(error)") }
+            Fault.report(.browser, .uncaught, severity: .degraded, session: sessionID,
+                         details: [.stage(.handshake), .flag("healing", healing)],
+                         evidence: "\(error)")
         }
     }
 
@@ -143,12 +159,23 @@ import Observation
         guard let client else { teardown(); return }
         // What leaving means is the page's to answer — it holds the queue. 'parked' means the
         // comments stayed on it, so everything here stays up for them.
-        let reply = try? await client.send(
-            "Runtime.evaluate",
-            ["expression": "window.__synthOverlay && window.__synthOverlay.exit ? window.__synthOverlay.exit() : 'off'",
-             "returnByValue": true],
-            timeout: 3)
-        let answer = ((reply?["result"] as? [String: Any])?["value"] as? String) ?? "off"
+        var answer = "off"
+        do {
+            let reply = try await client.send(
+                "Runtime.evaluate",
+                ["expression": "window.__synthOverlay && window.__synthOverlay.exit ? window.__synthOverlay.exit() : 'off'",
+                 "returnByValue": true],
+                timeout: 3)
+            answer = ((reply["result"] as? [String: Any])?["value"] as? String) ?? "off"
+        } catch {
+            // No answer means tearing down, because that is the only reading that cannot strand
+            // an attachment — but it is a guess, and a batch the page was in fact keeping is
+            // lost with it, so what the page never said is counted rather than assumed away.
+            Fault.report(.browser, .uncaught,
+                         severity: pendingCount > 0 ? .failed : .degraded, session: sessionID,
+                         details: [.stage(.teardown), .count("pending", pendingCount)],
+                         evidence: "\(error)")
+        }
         if answer == "parked" {
             park()
             return
@@ -187,7 +214,7 @@ import Observation
         guard !parked else { return }
         active = false
         parked = true
-        Task { [weak self] in await self?.installNewDocumentScript(verb: "restore") }
+        Guarded.mainTask { [weak self] in await self?.installNewDocumentScript(verb: "restore") }
         NSLog("Synth: comment mode parked for %@ (%d unsent)", sessionID.uuidString, pendingCount)
     }
 
@@ -195,7 +222,7 @@ import Observation
         guard parked else { return }
         parked = false
         active = true
-        Task { [weak self] in await self?.installNewDocumentScript(verb: "enter") }
+        Guarded.mainTask { [weak self] in await self?.installNewDocumentScript(verb: "enter") }
     }
 
     /// The script every future document of this target gets. `enter` while the mode is on (it
@@ -247,8 +274,8 @@ import Observation
     /// `active`: a parked batch is still sendable, which is the point of parking it.
     func sendBatch() {
         guard let client, active || parked else { return }
-        Task {
-            _ = try? await client.send(
+        Guarded.mainTask {
+            _ = try await client.send(
                 "Runtime.evaluate",
                 ["expression": "window.__synthOverlay && window.__synthOverlay.send && window.__synthOverlay.send()"],
                 timeout: 5)
@@ -258,16 +285,54 @@ import Observation
     // MARK: Page → host
 
     private func listen(to client: CDPClient) {
-        eventTask = Task { [weak self] in
+        eventTask = Guarded.mainTask { [weak self] in
             for await event in client.events {
                 guard event.method == "Runtime.bindingCalled",
                       event.params["name"] as? String == "__synthComment",
                       let payload = event.params["payload"] as? String else { continue }
                 await self?.handleBinding(payload)
             }
-            // Socket gone (page target closed) — drop out of the mode.
-            self?.teardown()
+            try await self?.socketEnded(client)
         }
+    }
+
+    /// The CDP stream finished under a mode that is still on — the page target went away
+    /// (a renderer swap, a navigation Chromium served from a new target). Nothing on the page
+    /// changed: the pins, the island and its Send are all still drawn, so the only visible
+    /// symptom is that everything stops working. A fresh attach against the *new* target is
+    /// the whole repair, and it is bounded — three tries over about six seconds, after which
+    /// the mode is honestly over and the user is told if they were holding anything.
+    private func socketEnded(_ ended: CDPClient) async throws {
+        guard client === ended else { return }
+        client = nil
+        injectedScriptID = nil
+        guard active || parked else { teardown(); return }
+        Fault.note(.browser, .healing)
+        let hint = BrowserManager.shared.existing(sessionID)?.address
+        for attempt in 0..<3 {
+            try await Task.sleep(for: .seconds([0.25, 2, 4][attempt]))
+            guard client == nil, active || parked else { return }
+            await attach(urlHint: hint, healing: true)
+            if client != nil {
+                Fault.note(.browser, .healed)
+                return
+            }
+            Fault.note(.browser, .healFailed)
+        }
+        let details: [Fault.Detail] = [.attempt(3), .count("pending", pendingCount)]
+        if pendingCount > 0 {
+            Fault.surface(.browser, .capabilityDown, severity: .failed, session: sessionID,
+                          say: Fault.Copy(title: pendingCount == 1
+                              ? "A browser comment couldn't be sent"
+                              : "\(pendingCount) browser comments couldn't be sent"),
+                          details: details,
+                          evidence: "The page Synth was commenting on went away, and three "
+                              + "attempts to find it again came back with nothing.")
+        } else {
+            Fault.report(.browser, .capabilityDown, severity: .degraded, session: sessionID,
+                         details: details)
+        }
+        teardown()
     }
 
     private func handleBinding(_ payload: String) async {
@@ -297,9 +362,14 @@ import Observation
         var viewportPath = "-"
         if let shot = try? await client.send("Page.captureScreenshot", ["format": "png"],
                                              timeout: 20), let png = Self.decodePNG(shot) {
-            viewportPath = dir.appendingPathComponent("\(stamp)-viewport.png").path
-            try? png.write(to: URL(fileURLWithPath: viewportPath))
-            screenshots.append(viewportPath)
+            // The message names every path it lists, so a write that didn't happen must not be
+            // named — an agent sent to a file that isn't there is worse off than one told there
+            // is no shot. "-" is what the composer already says for a capture that never came.
+            let url = dir.appendingPathComponent("\(stamp)-viewport.png")
+            if Guarded.run({ try png.write(to: url) }) != nil {
+                viewportPath = url.path
+                screenshots.append(viewportPath)
+            }
         }
 
         // Document bounds for clamping the padded clips: the clip below is in page
@@ -347,10 +417,13 @@ import Observation
                 continue
             }
             let no = (comment["n"] as? NSNumber)?.intValue ?? i + 1
-            let path = dir.appendingPathComponent("\(stamp)-\(no)-element.png").path
-            try? png.write(to: URL(fileURLWithPath: path))
-            elementPaths.append(path)
-            screenshots.append(path)
+            let url = dir.appendingPathComponent("\(stamp)-\(no)-element.png")
+            guard Guarded.run({ try png.write(to: url) }) != nil else {
+                elementPaths.append(nil)
+                continue
+            }
+            elementPaths.append(url.path)
+            screenshots.append(url.path)
         }
 
         let message = Self.composeBatchMessage(payload, viewportPath: viewportPath,
@@ -388,8 +461,8 @@ import Observation
         guard let client else { return }
         let json = (try? JSONSerialization.data(withJSONObject: [text]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
-        Task {
-            _ = try? await client.send("Runtime.evaluate", [
+        Guarded.mainTask {
+            _ = try await client.send("Runtime.evaluate", [
                 "expression": "window.__synthOverlay && window.__synthOverlay.\(verb) && "
                     + "window.__synthOverlay.\(verb)(\(json)[0])",
             ], timeout: 5)
@@ -406,9 +479,9 @@ import Observation
     private func showNotice(_ text: String) {
         notice = text
         noticeTask?.cancel()
-        noticeTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            if !Task.isCancelled { self?.notice = nil }
+        noticeTask = Guarded.mainTask { [weak self] in
+            try await Task.sleep(for: .seconds(4))
+            self?.notice = nil
         }
     }
 
@@ -475,14 +548,18 @@ import Observation
     static func injectionSource(targetLabel: String, verb: String = "enter") -> String {
         let cfg = (try? JSONSerialization.data(withJSONObject: ["targetLabel": targetLabel]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-        return overlayJS +
+        return (overlayJS ?? "") +
             "\n;window.__synthOverlay && window.__synthOverlay.\(verb) && window.__synthOverlay.\(verb)(\(cfg));"
     }
 
-    /// CommentOverlay.js from the SwiftPM resource bundle. Looked up by hand (not
-    /// `Bundle.module`, which fatalErrors when the dev bundle misses the copy) with an
-    /// inline stub fallback so comment mode still binds without the resource.
-    private static let overlayJS: String = {
+    /// CommentOverlay.js from the SwiftPM resource bundle. Looked up by hand rather than through
+    /// `Bundle.module`, which fatalErrors when the dev bundle misses the copy.
+    ///
+    /// Nil is a build without the overlay, and `attach` refuses on it. The stub that used to
+    /// stand here bound cleanly, answered `exit()` with 'off' and did nothing else — so the bar
+    /// lit up, the picker never appeared, and no comment could ever be made or parked. A mode
+    /// that cannot work should say so once, not look like it is on.
+    private static let overlayJS: String? = {
         var bundles: [URL] = []
         if let r = Bundle.main.resourceURL { bundles.append(r.appendingPathComponent("Synth_Synth.bundle")) }
         if let e = Bundle.main.executableURL?.deletingLastPathComponent() {
@@ -495,10 +572,8 @@ import Observation
                 return js
             }
         }
-        NSLog("Synth: CommentOverlay.js resource missing — using the inline stub overlay")
-        return """
-        (() => { if (window.__synthOverlay) return;
-          window.__synthOverlay = { enter(cfg) {}, restore(cfg) {}, exit() { return 'off'; } }; })();
-        """
+        Fault.report(.browser, .uncaught, severity: .degraded, details: [.stage(.resolve)],
+                     evidence: "CommentOverlay.js is not in the resource bundle")
+        return nil
     }()
 }

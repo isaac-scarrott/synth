@@ -60,7 +60,8 @@ enum SimulatorControl {
     // MARK: - Discovery
 
     private static func devices() -> [String: Any] {
-        let fleet = fleetDevices()
+        let fleet: [SimulatorDevice]
+        do { fleet = try fleetDevices() } catch { return fail(describe(error)) }
         return ["ok": true,
                 "xcode": SimulatorDeviceCatalog.isXcodeAvailable,
                 "devices": fleet.map {
@@ -69,8 +70,18 @@ enum SimulatorControl {
     }
 
     private static func list(_ request: [String: Any], _ store: AppStore?) -> [String: Any] {
-        let fleet = Dictionary(fleetDevices().map { ($0.udid.lowercased(), $0) },
+        // The fleet enriches the sessions here rather than being the answer, so a listing that
+        // failed does not fail the call — but it must not read as a device that was deleted.
+        let fleet: [String: SimulatorDevice]
+        let fleetFailure: String?
+        do {
+            fleet = Dictionary(try fleetDevices().map { ($0.udid.lowercased(), $0) },
                                uniquingKeysWith: { first, _ in first })
+            fleetFailure = nil
+        } catch {
+            fleet = [:]
+            fleetFailure = describe(error)
+        }
         return onMain {
             guard let store else { return fail("store gone") }
             guard let branch = branch(request, store) else { return noBranch(request) }
@@ -91,6 +102,9 @@ enum SimulatorControl {
                     entry["device"] = device.name
                     entry["runtime"] = device.runtime
                     entry["booted"] = device.isBooted
+                } else if let fleetFailure {
+                    entry["note"] = "Synth could not read the installed fleet, so this device's "
+                        + "state is unknown: \(fleetFailure)"
                 } else {
                     entry["note"] = "this UDID is not in the installed fleet — the device was deleted"
                 }
@@ -117,7 +131,8 @@ enum SimulatorControl {
     // MARK: - Lifecycle
 
     private static func create(_ request: [String: Any], _ store: AppStore?) -> [String: Any] {
-        let fleet = fleetDevices()
+        let fleet: [SimulatorDevice]
+        do { fleet = try fleetDevices() } catch { return fail(describe(error)) }
         let requested = (request["device"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let device = pick(requested, from: fleet) else {
@@ -294,8 +309,14 @@ enum SimulatorControl {
                     + "every second and a cold boot takes tens of seconds. Wait, then retry; "
                     + "simulator_list reports when it is attached.")
             }
-            return fail("Synth is not attached to device \(target.udid): "
-                + (target.startFailure ?? "its device is unavailable") + ".")
+            // A boot that was refused is no longer reported as "still booting", so the claim's
+            // reason has to be reachable from here too — it is the only thing that knows.
+            let reason = target.startFailure
+                ?? SimulatorClaims.bootFailure(for: target.udid).map {
+                    "Synth asked this device to boot and it did not: \($0)"
+                }
+                ?? "its device is unavailable"
+            return fail("Synth is not attached to device \(target.udid): \(reason).")
         }
 
         switch verb {
@@ -526,12 +547,21 @@ enum SimulatorControl {
     /// agent "no devices are installed" because we asked too soon is a lie it cannot see through.
     /// The catalog is asked directly in that case, on this thread, where the three `simctl` calls
     /// it costs are affordable.
-    private static func fleetDevices() -> [SimulatorDevice] {
+    ///
+    /// It throws rather than answering `[]`, because `[]` is the very lie this fallback exists to
+    /// prevent: a `simctl` that could not answer became "no devices are installed", which is the
+    /// one sentence about a fleet an agent cannot see through.
+    private static func fleetDevices() throws -> [SimulatorDevice] {
         let cached = onMain { Simulators.fleet.devices() }
         guard cached.isEmpty, SimulatorDeviceCatalog.isXcodeAvailable else { return cached }
-        return ((try? SimulatorDeviceCatalog.devices()) ?? []).filter(\.isAvailable).map {
-            SimulatorDevice(udid: $0.udid, name: $0.name, runtime: $0.runtimeName,
-                            isBooted: $0.isBooted)
+        do {
+            return try SimulatorDeviceCatalog.devices().filter(\.isAvailable).map {
+                SimulatorDevice(udid: $0.udid, name: $0.name, runtime: $0.runtimeName,
+                                isBooted: $0.isBooted)
+            }
+        } catch {
+            Fault.report(.control, .uncaught, evidence: describe(error))
+            throw error
         }
     }
 

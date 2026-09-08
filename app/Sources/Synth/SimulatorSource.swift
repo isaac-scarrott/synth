@@ -471,6 +471,15 @@ final class SimulatorDeviceSource: SimulatorSource {
             onFrame?(frame)
         }
         source.onDisplaySizeChange = { [weak self] size in self?.onDisplaySizeChange?(size) }
+        // The live path can lose its surface long after it started, and it has nobody else to tell:
+        // the reason was composed and handed to a callback nothing had ever assigned.
+        (source as? SimulatorFrameSource)?.onLiveScreenLost = { [weak self] detail in
+            guard let self else { return }
+            note(SimulatorSourceDegradation.Reason(
+                capability: .screen, detail: detail,
+                fallback: "nothing — the picture is the last frame Synth could read"))
+            publishDegradation()
+        }
         try source.start()
         locked { _screen = source }
     }
@@ -871,7 +880,11 @@ final class SimctlScreenshotSource: SimulatorScreenSource {
     }
 
     private func makeFrame(force: Bool) -> SimulatorFrame? {
-        guard let png = try? SimulatorDeviceCatalog.screenshotPNG(udid: udid) else { return nil }
+        // A screenshot that could not be taken and a screen that has not changed are the same nil
+        // to `poll()`, which backs the timer off and says nothing. This is a protocol witness and
+        // cannot throw, so the failure is counted where it happens.
+        guard let png = Guarded.run({ try SimulatorDeviceCatalog.screenshotPNG(udid: udid) })
+        else { return nil }
         let digest = Data(SHA256.hash(data: png))
         if !force, digest == lastDigest { return nil }
 

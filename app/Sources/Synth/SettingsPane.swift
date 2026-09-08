@@ -1722,6 +1722,12 @@ private struct AboutRow: View {
                         checking = false
                         #if DEBUG
                         store.stageStubUpdate(version: AppStore.debugNextVersion())
+                        #else
+                        // A shipped build with no updater can never find one, and the check the
+                        // user just asked for would otherwise end as 1.4s of "Checking…".
+                        Fault.surface(.app, .uncaught,
+                                      say: .init(title: "This build can't check for updates"),
+                                      evidence: "It shipped without an update feed, so it will never find one.")
                         #endif
                     }
                 }

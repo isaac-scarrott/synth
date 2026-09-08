@@ -21,7 +21,7 @@ extension GhosttyApp: Capability {
     var isUp: Bool { app != nil }
     func heal() throws { try start() }
 
-    enum EngineError: Error { case initFailed, appNewFailed }
+    enum EngineError: Error { case initFailed, appNewFailed, initNotRetryable }
 }
 
 @MainActor final class GhosttyApp {
@@ -42,6 +42,7 @@ extension GhosttyApp: Capability {
     /// something stronger than a policy: after a successful init, healing may only rebuild the
     /// app object, never re-init the library.
     private var didInit = false
+    private var didAttemptInit = false
 
     /// True once the engine is up. The terminal spawn path asks before promising a surface.
     var isReady: Bool { app != nil }
@@ -55,6 +56,11 @@ extension GhosttyApp: Capability {
         guard app == nil else { return }
 
         if !didInit {
+            // Set BEFORE the call, not after. This is a one-shot by contract, so a failed
+            // attempt has spent it just as surely as a successful one; healing past this point
+            // means rebuilding the app object only.
+            guard !didAttemptInit else { throw EngineError.initNotRetryable }
+            didAttemptInit = true
             // Breakpad again: `ghostty_init` claims the Mach exception ports, and left claimed
             // it swallows every crash (layered under PostHog's handler it deadlocks the forward
             // and a crash becomes a hang). SynthApp holds this window around the launch call;

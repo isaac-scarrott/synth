@@ -35,13 +35,18 @@ enum UsageDetail: Hashable, Sendable {
     case resets(at: Date)
 }
 
-/// Why a section has no metrics. The board never invents a number to fill the gap, so this is the
-/// only other thing a band can say.
+/// Why a section has no metrics. The board never invents a number to fill the gap, so these are the
+/// only other things a band can say.
 enum UsageStatus: Hashable, Sendable {
     case ready
     case loading
-    /// Shown verbatim in place of tiles: "not signed in", "no usage data", a transport error.
+    /// The answer, and it is nothing: "not signed in", "no local history". The reader reached the
+    /// agent and the agent has no numbers to give.
     case unavailable(String)
+    /// We could not find out. Held apart from `unavailable` because on a board whose whole claim is
+    /// that a number came from the agent's own account, "you have used none of it" and "we couldn't
+    /// read it" are opposite statements, and the board used to make the first one for both.
+    case failed(String)
 }
 
 /// One agent's band: its name, and whatever it could tell us.
@@ -63,9 +68,13 @@ struct UsageSection: Identifiable, Sendable {
 /// each agent's usage arrives over a different transport, the same way its status does.
 protocol UsageSource: Sendable {
     var agent: AgentID { get }
-    /// Read the agent's own account/history. Returns a section whose status says what happened;
-    /// throwing is reserved for programmer error, not for "the user isn't signed in".
-    func load() async -> UsageSection
+    /// The band's heading, held here as well as in the section so the board can still name an agent
+    /// whose read threw before it had a section to put a name on.
+    var title: String { get }
+    /// Read the agent's own account/history. A status is the answer — "not signed in", "no local
+    /// history"; a throw is the absence of one, and `UsageBoard.refresh` is the door that catches
+    /// it. Nothing here decides between the two twice.
+    func load() async throws -> UsageSection
 }
 
 /// The board's state, refreshed on an interval while the pane is on screen.
@@ -111,10 +120,10 @@ protocol UsageSource: Sendable {
     /// the pane doesn't stack timers or restart every countdown.
     func start() {
         guard ticker == nil else { return }
-        ticker = Task { [weak self] in
+        ticker = Guarded.mainTask { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(for: .seconds(UsageBoard.refreshInterval))
+                try await Task.sleep(for: .seconds(UsageBoard.refreshInterval))
             }
         }
     }
@@ -129,14 +138,51 @@ protocol UsageSource: Sendable {
         refreshing = true
         defer { refreshing = false }
 
-        await withTaskGroup(of: UsageSection.self) { group in
+        await withTaskGroup(of: UsageSection?.self) { group in
             for source in sources {
-                group.addTask { await source.load() }
+                group.addTask { await Self.read(source) }
             }
             for await section in group {
-                merge(section)
+                if let section { merge(section) }
             }
         }
+    }
+
+    /// The door every usage read comes in through. A source that throws has not reported "none" —
+    /// it has failed to report at all, and this is the one place with both facts in hand: the band
+    /// to say so on, and the agent to count it against.
+    nonisolated private static func read(_ source: UsageSource) async -> UsageSection? {
+        do {
+            return try await source.load()
+        } catch is CancellationError {
+            // The pane closed mid-read. Leaving the band as it stands is the honest end to work
+            // nobody is waiting for any more.
+            return nil
+        } catch let error as URLError where error.code == .cancelled {
+            return nil
+        } catch {
+            // Once per source per run. The read is retried every 60s and its own band already
+            // shows the failure continuously, so repeating the event says nothing new and would
+            // spend the process-wide fault budget on a condition that is not changing.
+            if firstFailure(for: source.agent) {
+                Fault.report(.usage, .usageReadFailed, severity: .degraded,
+                             details: [.sessionKind(.agent(source.agent)), .stage(.ready)],
+                             evidence: error.localizedDescription)
+            }
+            return UsageSection(id: source.agent, title: source.title,
+                                status: .failed("couldn't read usage"))
+        }
+    }
+
+    /// Sources whose failure has already been counted this run — see the catch in `read`.
+    /// Static and lock-guarded because `read` is nonisolated: "once per run" is a property of
+    /// the process, not of a board that may be rebuilt when the pane reopens.
+    private static let unreadableLock = NSLock()
+    nonisolated(unsafe) private static var reportedUnreadable: Set<AgentID> = []
+
+    nonisolated private static func firstFailure(for agent: AgentID) -> Bool {
+        unreadableLock.lock(); defer { unreadableLock.unlock() }
+        return reportedUnreadable.insert(agent).inserted
     }
 
     /// Replace one band in place. Order is fixed by `configure`, so a slow source landing last

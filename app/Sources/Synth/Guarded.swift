@@ -49,6 +49,18 @@ enum Guarded {
         }
     }
 
+    /// Work that must leave the caller's actor — a blocking subprocess, a long file walk.
+    /// `task` inherits isolation, so it is the wrong door for these: converting a git spawn
+    /// with it would move the block onto the main thread and freeze the UI it is protecting.
+    @discardableResult
+    static func detached(priority: TaskPriority? = nil,
+                         file: StaticString = #fileID, line: UInt = #line,
+                         _ body: @escaping @Sendable () async throws -> Void) -> Task<Void, Never> {
+        Task.detached(priority: priority) {
+            do { try await body() } catch { capture(error, file, line) }
+        }
+    }
+
     /// A detached thread — the socket accept loops. A thread whose body throws or returns
     /// early silently stops serving, which is indistinguishable from serving nothing.
     static func thread(file: StaticString = #fileID, line: UInt = #line,
@@ -124,6 +136,15 @@ extension Fault.Domain {
              "BrowserEngine.swift", "BrowserEngineFactory.swift", "CommentMode.swift",
              "CommentDelivery.swift", "InspectPane.swift":
             return .browser
+        case "SimulatorCheck.swift", "SimulatorControl.swift", "SimulatorSource.swift",
+             "SimulatorFrameSource.swift", "SimulatorHID.swift", "SimulatorOrientation.swift",
+             "SimulatorPrivateRuntime.swift", "SimulatorDeviceCatalog.swift",
+             "SimulatorPane.swift", "SimulatorAccessibility.swift", "SimulatorCommentMode.swift":
+            return .simulator
+        case "ClaudeUsageSource.swift", "OpencodeUsageSource.swift", "AntigravityUsageSource.swift",
+             "UsageSources.swift", "UsageModel.swift", "UsageReading.swift", "UsageMeter.swift",
+             "UsagePane.swift", "Updates.swift", "ChangelogPane.swift":
+            return .usage
         case "CrashReporter.swift", "MachExceptionPorts.swift":
             return .crash
         default:

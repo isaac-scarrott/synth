@@ -2672,3 +2672,12 @@ disclosure to dive deeper.
   notarized separately, stapled, and verified credential-less with quarantine set; appcast newest
   0.43.0 at 743 with `edSignature` on all 18 enclosures, five deltas 1.47–1.74 MB. No `synth-site`
   push — the deployed site was already byte-identical. [Details](docs/features/2026-09-08.md)
+
+- **The omnibox shows the whole address, params and all** — `browserHostPath` was `browserHost`
+  "tightened to host+path", and the tightening silently dropped `?query` and `#fragment`. The pill
+  was the visible half; the omnibox drop seeded its edit field from the same property, so clicking
+  the address to retype it handed you a URL with your params already deleted and Enter navigated off
+  the page you were on, and comment mode's "Page:" line named a URL the agent could not reach.
+  `browserAddress` keeps everything but the scheme; `browserHostPath` stays for the two places that
+  want a name rather than an address. Hovering the pill now gives the whole thing, scheme included.
+  [Details](docs/features/2026-09-08.md)

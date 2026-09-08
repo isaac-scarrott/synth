@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.43.1",
+    "date": "2026-09-08",
+    "changes": [
+      "The browser's address bar shows the whole address again, query and fragment included. It had been showing host and path only, so a page whose identity is its query read as its bare path — and worse, clicking the address to retype it seeded the field with your params already deleted, so Enter navigated off the page you were on. Comment mode had the same gap: a pin from another page named a URL the agent could not reach. Hovering the pill now gives the whole address, scheme and all."
+    ]
+  },
+  {
     "version": "0.43.0",
     "date": "2026-09-08",
     "changes": [

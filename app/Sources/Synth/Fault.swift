@@ -107,6 +107,11 @@ enum Fault {
         case healFailed                  = "heal_failed"
         case healed                      = "healed"
         case capabilityDown              = "capability_down"
+        /// A session's whole process tree being signalled. Recorded because this is the most
+        /// destructive thing the app does routinely and it did it with no record at all: the
+        /// group is computed from a pid read before the surface was freed, and if that group is
+        /// ever not ours, every process in somebody else's tree dies with no trace on either side.
+        case reapedProcessGroup          = "reaped_process_group"
 
         /// The boundary parse for a slug arriving from another process (synth-hook, over the
         /// hook socket). Unknown slugs are dropped rather than forwarded as free text.
@@ -225,10 +230,14 @@ enum Fault {
 /// happened is a seam nobody calls.
 extension Fault {
 
-    /// Breadcrumb. One ring write and one debug log line. No event, no screen.
-    nonisolated static func note(_ domain: Domain, _ code: Code) {
+    /// Breadcrumb. One ring write and one log line. No event, no screen — so it is free to
+    /// call on a hot path, and free to carry the numbers that make the line worth reading.
+    nonisolated static func note(_ domain: Domain, _ code: Code, _ details: [Detail] = [],
+                                 evidence: @autoclosure @Sendable () -> String? = nil) {
         trail.append("\(domain.rawValue)/\(code.rawValue)")
-        logger(domain).debug("· \(code.rawValue, privacy: .public)")
+        let wire = wireProps(details).map { "\($0)=\($1)" }.sorted().joined(separator: " ")
+        let local = evidence() ?? ""
+        logger(domain).notice("· \(code.rawValue, privacy: .public) \(wire, privacy: .public) \(local, privacy: .private)")
     }
 
     /// Telemetry + log, nothing on screen. The default rung: "we must be able to count this."

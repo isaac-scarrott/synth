@@ -374,6 +374,13 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         guard leafPID > 1 else { return }
         let pgid = getpgid(leafPID)
         guard pgid > 1, pgid != getpgrp() else { return }
+        // The group is derived from a pid captured before `ghostty_surface_free`, and this
+        // signals every process in it. If that group is ever not ours, this kills somebody
+        // else's tree and neither side has any way to know — so say which group, for which
+        // session, before signalling rather than after. The session id is local-only evidence.
+        Fault.note(.terminalExit, .reapedProcessGroup,
+                   [.count("pgid", Int(pgid)), .count("leaf_pid", Int(leafPID))],
+                   evidence: "session \(sessionID)")
         killpg(pgid, SIGTERM)
         // Escalate to SIGKILL for anything that ignored TERM (a wedged node event loop).
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) { killpg(pgid, SIGKILL) }

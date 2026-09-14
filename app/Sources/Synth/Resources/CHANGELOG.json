@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.44.0",
+    "date": "2026-09-14",
+    "changes": [
+      "Archived worktrees clean themselves up. A merged branch is archived for you, and an archived folder is deleted after the wait you pick (1, 7, 14 or 30 days) or sooner when the count or disk cap is hit, oldest first. Restoring re-cuts the checkout from the branch, and a merged branch the remote has dropped retires with its row.",
+      "The sweeper's gate chain is gone: the twenty-four keep-reasons and their chips, the second-opinion rule, the bulk brake and its Review card, the dry-run and the two-week hold. Settings is one switch and three pickers; rows read \"4h ago · 1.2 GB · 6 days left\".",
+      "One card, \"Cleaned up N archived worktrees\", plus any delete error. Archiving and retiring are silent."
+    ]
+  },
+  {
     "version": "0.43.2",
     "date": "2026-09-14",
     "changes": [

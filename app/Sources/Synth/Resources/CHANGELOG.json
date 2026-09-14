@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.43.2",
+    "date": "2026-09-14",
+    "changes": [
+      "The browser no longer flashes white when you click. Every navigation re-applied the page's colour scheme with a repaint nudge that resized the page to a single pixel and back, up to four times over two seconds — each one a blank frame. The nudge now changes nothing about the viewport, so the page stays put."
+    ]
+  },
+  {
     "version": "0.43.1",
     "date": "2026-09-08",
     "changes": [

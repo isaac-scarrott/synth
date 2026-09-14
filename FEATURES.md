@@ -2694,3 +2694,9 @@ disclosure to dive deeper.
   white flashes per click, recorded at 60fps. Now `width: 0, height: 0` (CDP's "no size override")
   — emulation still toggles, the viewport never moves; 0 blank frames in 8 rounds against the
   1×1 control's 1–3 in 4. [Details](docs/features/2026-09-14.md)
+
+- **0.43.2 ships — the browser stops flashing on click** — a patch carrying the theme-nudge fix and
+  nothing else. `CFBundleVersion` 752, tag `v0.43.2`; both artifacts notarized separately, stapled,
+  verified credential-less with quarantine set; appcast newest 0.43.2 at 752 with `edSignature` on
+  all 18 enclosures, the delta from 0.43.1 344 KB. No `synth-site` push — `site/` is unchanged.
+  [Details](docs/features/2026-09-14.md)

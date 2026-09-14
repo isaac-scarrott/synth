@@ -2709,3 +2709,9 @@ disclosure to dive deeper.
   6 days left". One card, "Cleaned up N archived worktrees", plus the delete error — archiving and
   retiring are silent. `ArchiveSweeper` 533 → ~100 lines; `t9_archive` rewritten, 47 checks.
   [Details](docs/features/2026-09-14.md)
+
+- **0.44.0 ships — archived worktrees clean themselves up** — a minor carrying the sweeper rewrite
+  and nothing else. `CFBundleVersion` 755, tag `v0.44.0`; both artifacts notarized separately,
+  stapled, verified credential-less with quarantine set; appcast newest 0.44.0 at 755 with
+  `edSignature` on all 18 enclosures, the delta from 0.43.2 1.0 MB. No `synth-site` push —
+  `site/` is unchanged. [Details](docs/features/2026-09-14.md)

@@ -2687,3 +2687,10 @@ disclosure to dive deeper.
   separately, stapled, verified credential-less with quarantine set; appcast newest 0.43.1 at 749
   with `edSignature` on all 18 enclosures, the delta from 0.43.0 771 KB. No `synth-site` push — a
   checksum dry run against the deployed repo moved nothing. [Details](docs/features/2026-09-08.md)
+
+- **The browser flickered on every click — the theme nudge was resizing the page to a pixel** —
+  `nudgeRepaint`'s 1×1 `setDeviceMetricsOverride` + clear blanked the page for a frame whenever the
+  two resizes missed one vsync, and `kickPageTheme` retried it four times per navigation: three
+  white flashes per click, recorded at 60fps. Now `width: 0, height: 0` (CDP's "no size override")
+  — emulation still toggles, the viewport never moves; 0 blank frames in 8 rounds against the
+  1×1 control's 1–3 in 4. [Details](docs/features/2026-09-14.md)

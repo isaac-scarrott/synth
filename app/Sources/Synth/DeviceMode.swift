@@ -523,17 +523,22 @@ enum PageTheme: String, CaseIterable, Identifiable {
     /// A style-only change like `applyTheme`'s schedules a repaint on CEF's own compositor
     /// clock rather than forcing one, and can sit unpainted — measured on CEF 144, reproduced
     /// after Conditions closes and its own layout pass runs, and not simply a matter of
-    /// waiting: still unpainted seconds later with nothing else touching the page. A metrics
-    /// override, by contrast, is a real viewport transition Chromium always lays out and
-    /// paints for — so a meaningless one, set and immediately cleared, drags the pending
-    /// repaint forward as a side effect. The controller calls this only when no real screen
-    /// override is meant to be active; when one is, it re-asserts that instead (see
+    /// waiting: still unpainted seconds later with nothing else touching the page. Enabling
+    /// device emulation, by contrast, is a transition Chromium always lays out and paints
+    /// for — so a meaningless one, set and immediately cleared, drags the pending repaint
+    /// forward as a side effect. The controller calls this only when no real screen override
+    /// is meant to be active; when one is, it re-asserts that instead (see
     /// BrowserSessionController.applyPageTheme).
+    ///
+    /// Width and height 0 are CDP's "no size override": the viewport never changes. A 1×1
+    /// override resizes the page to a pixel and back, and whenever the two frames miss one
+    /// vsync Chromium shows its background in between — the whole page white for a frame, up
+    /// to four times per navigation with the controller's retries (features 2026-09-14).
     func nudgeRepaint(urlHint: URL?) {
         enqueue { [weak self] in
             guard let client = await self?.connect(urlHint: urlHint) else { return }
             _ = try? await client.send("Emulation.setDeviceMetricsOverride",
-                                       ["width": 1, "height": 1, "deviceScaleFactor": 0, "mobile": false])
+                                       ["width": 0, "height": 0, "deviceScaleFactor": 0, "mobile": false])
             _ = try? await client.send("Emulation.clearDeviceMetricsOverride", [:])
         }
     }

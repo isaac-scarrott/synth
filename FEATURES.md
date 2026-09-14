@@ -2700,3 +2700,12 @@ disclosure to dive deeper.
   verified credential-less with quarantine set; appcast newest 0.43.2 at 752 with `edSignature` on
   all 18 enclosures, the delta from 0.43.1 344 KB. No `synth-site` push — `site/` is unchanged.
   [Details](docs/features/2026-09-14.md)
+
+- **Archived means cleaned up — the sweeper drops its gate chain** — twenty-four keep-reasons, the
+  two-reading rule, the bulk brake, the dry-run and the two-week hold all go. A merged branch is
+  archived for you; an archived folder is deleted after the wait (1 / 7 / 14 / 30 days) or sooner
+  over the count/disk cap, oldest first; a restore re-cuts from the branch; a merged, remote-dropped
+  ref retires with its row. Settings is a switch and three pickers; rows read "4h ago · 1.2 GB ·
+  6 days left". One card, "Cleaned up N archived worktrees", plus the delete error — archiving and
+  retiring are silent. `ArchiveSweeper` 533 → ~100 lines; `t9_archive` rewritten, 47 checks.
+  [Details](docs/features/2026-09-14.md)

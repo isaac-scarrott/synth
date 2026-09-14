@@ -26,11 +26,10 @@ struct PRInfo: Sendable, Equatable {
     let number: Int
     let state: PRState
     let url: String
-    /// The branch this PR merges *into*. The sweeper needs it to catch commits made after a
-    /// merge — GitHub still reports MERGED while the local tip has moved past the merge commit.
+    /// The branch this PR merges *into* — what the hover card's diffstat measures against.
     var baseRefName: String = ""
     /// A draft reads OPEN today, so nothing depends on this yet. It's here so that the next
-    /// person to simplify the state check can't accidentally make drafts sweepable.
+    /// person to simplify the state check can't accidentally make drafts read as finished.
     var isDraft: Bool = false
     /// Login of the account owning the head repo. A cross-fork PR merges the *fork's* branch;
     /// a same-named local branch is a different thing and must not inherit its merged state.
@@ -70,21 +69,14 @@ enum PRService {
         return pullRequest(branch: branch, at: worktree, token: token)
     }
 
-    /// One named branch's PR, regardless of what's checked out where — what the sweeper
-    /// uses for a worktree that's already gone from disk, keyed by the branch name it last
-    /// knew.
+    /// One named branch's PR, regardless of what's checked out where — what the PR refresh
+    /// uses for a row whose folder is already gone, keyed by the branch name it last knew. The
+    /// auth token is already resolved (see `pullRequest(at:token:)`); GraphQL answers nothing
+    /// unauthenticated, so no token means "couldn't ask" outright.
     ///
     /// **nil means "couldn't ask"** — no GitHub remote, no credential to authenticate with,
     /// offline, unparseable answer — and is not the same as `.some(nil)`, which means "asked,
-    /// and this branch has no PR". Display can treat both as "no badge"; nothing that
-    /// *deletes* anything may.
-    static func pullRequest(branch: String, at repo: URL) -> PRInfo?? {
-        pullRequest(branch: branch, at: repo, token: authToken(at: repo))
-    }
-
-    /// Same as `pullRequest(branch:at:)`, but with the auth token already resolved (see
-    /// `pullRequest(at:token:)`). GraphQL answers nothing unauthenticated, so no token means
-    /// "couldn't ask" outright — there is no unauthenticated fallback to try.
+    /// and this branch has no PR". Display can treat both as "no badge".
     static func pullRequest(branch: String, at repo: URL, token: String?) -> PRInfo?? {
         guard let (owner, name) = githubOwnerRepo(at: repo), let token else { return .none }
         guard let data = query(owner: owner, name: name, branch: branch, token: token),
@@ -205,8 +197,8 @@ enum PRService {
         }
         task.resume()
         semaphore.wait()
-        // Every arm still answers "couldn't ask" — that contract is what keeps the sweeper from
-        // reading a revoked token as "this branch has no PR". What changes is that a revoked
+        // Every arm still answers "couldn't ask" — that contract is what keeps a revoked token
+        // from reading as "this branch has no PR". What changes is that a revoked
         // token, an SSO block, a rate limit and being offline stop being the same silence: the
         // status code separates them, and the badges vanishing off every row is now countable.
         guard let status else {

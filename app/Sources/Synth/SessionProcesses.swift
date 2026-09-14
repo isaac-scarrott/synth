@@ -199,7 +199,7 @@ enum SessionProcesses {
         AppSupport.dir("worktrees").resolvingSymlinksInPath().standardized.path
 
     /// A process's current directory, from `proc_pidinfo`. Nil when it can't be read — which is
-    /// a refusal to reap, not a pass, matching `ArchiveSweeper`'s treatment of a failed cwd probe.
+    /// a refusal to reap, not a pass.
     private static func workingDirectory(of pid: pid_t) -> String? {
         var info = proc_vnodepathinfo()
         let size = MemoryLayout<proc_vnodepathinfo>.size

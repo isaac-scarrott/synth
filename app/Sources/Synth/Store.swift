@@ -509,46 +509,29 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         entries.firstIndex { isAgentEnabled($0.kind) }
     }
 
-    // MARK: Archive sweep settings
+    // MARK: Archive clean-up settings
 
-    /// Whether the sweeper may reclaim archived worktrees at all. On by default: an archived
-    /// worktree the user never returns to is dead disk, and the conditions are conservative
-    /// enough (merged, clean, past the grace, held aside another two weeks before real
-    /// deletion, branch never touched) to run unattended. `archive_sweeper_kill` is the
-    /// emergency stop.
+    /// Whether archived worktrees are cleaned up at all. On by default: an archived worktree
+    /// the user never returns to is dead disk, and the row stays restorable from ⌘K →
+    /// Archived either way — the folder is re-cut from the branch once it has gone.
+    /// `archive_sweeper_kill` is the emergency stop.
     var archiveSweepEnabled = AppStore.loadBoolPref(AppStore.archiveSweepKey, default: true) {
         didSet { UserDefaults.standard.set(archiveSweepEnabled, forKey: AppStore.archiveSweepKey) }
     }
     static let archiveSweepKey = "synth-archive-sweep"
 
-    /// Retire the branch ref once its folder is gone for good. Kept apart from the sweep it
-    /// rides on because it ends a different thing: a folder can be put back, and a row whose
-    /// branch has gone is a row with no way back, so it is dropped rather than left in the
-    /// Archived list unrestorable. Only ever asked of a merged branch the remote has already
-    /// dropped, so what it deletes is a name, never a commit.
-    var archiveRetireBranches = AppStore.loadBoolPref(AppStore.archiveRetireKey, default: true) {
-        didSet { UserDefaults.standard.set(archiveRetireBranches, forKey: AppStore.archiveRetireKey) }
-    }
-    static let archiveRetireKey = "synth-archive-retire-branches"
-
-    /// Days an archived worktree sits untouched before the sweeper will consider it. 0 means
-    /// never — the sweeper is off but Archive still works, which is the point of keeping the
-    /// two settings apart. Offered as Never / 7 / 14 / 30.
-    var archiveGraceDays = AppStore.loadIntPref(AppStore.archiveGraceKey, default: 7) {
+    /// Days an archived worktree keeps its folder before it is deleted. Offered as 1 / 7 / 14 /
+    /// 30; the switch above is the off. A stored 0 is the old "Never" option and reads as the
+    /// default, since the switch now carries that meaning.
+    var archiveGraceDays = max(1, AppStore.loadIntPref(AppStore.archiveGraceKey, default: 7)) {
         didSet { UserDefaults.standard.set(archiveGraceDays, forKey: AppStore.archiveGraceKey) }
     }
     static let archiveGraceKey = "synth-archive-grace-days"
 
     /// How many archived worktrees may sit on disk at once, and how much disk they may occupy
-    /// between them. 0 is no cap on either.
-    ///
-    /// Archive-wide, not per project, because a disk is: three projects each politely under a
-    /// per-project cap still fill the same drive. And a cap is only ever a reason to look
-    /// sooner — over budget, the oldest UNBLOCKED folders stop waiting out the rest of their
-    /// grace and face the gate chain now. It cannot let one *through* a gate: `ArchiveSweeper`
-    /// promises every byte it reclaims is reconstructible from a remote, and a budget that
-    /// evicted the oldest folder regardless would be a hole straight through that. An archive
-    /// full of unpushed work stays over budget and says so on the rows.
+    /// between them. 0 is no cap on either. Over a cap, the oldest go before their wait has
+    /// run. Archive-wide, not per project, because a disk is: three projects each politely
+    /// under a per-project cap still fill the same drive.
     var archiveMaxCount = AppStore.loadIntPref(AppStore.archiveMaxCountKey, default: 25) {
         didSet { UserDefaults.standard.set(archiveMaxCount, forKey: AppStore.archiveMaxCountKey) }
     }
@@ -559,14 +542,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
     static let archiveMaxGBKey = "synth-archive-max-gb"
 
-    /// Evaluate every condition, log the verdict, delete nothing. Defaults ON for the dev
-    /// channel, so the author's own worktrees are never the test subjects.
-    var archiveDryRun = AppStore.loadBoolPref(AppStore.archiveDryRunKey, default: isDevChannel) {
-        didSet { UserDefaults.standard.set(archiveDryRun, forKey: AppStore.archiveDryRunKey) }
-    }
-    static let archiveDryRunKey = "synth-archive-dry-run"
-
-    /// The grace, in seconds, with the harness override applied. Waiting seven days is not a
+    /// The wait, in seconds, with the harness override applied. Waiting seven days is not a
     /// test, so `app/harness/` can compress the clock the same way `SYNTH_STATE_DIR` redirects
     /// the snapshot. Read fresh so a test can set it between ticks.
     var archiveGraceSeconds: TimeInterval {
@@ -973,10 +949,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// autosave model.
     private func syncAgentBridge() {
         let paths = workspaces.flatMap { $0.branches.map(\.worktreeURL.path) }
-        // The registry keeps ALL paths, archived included: it is how a sibling Synth learns
-        // this instance still manages that folder, and the sibling's sweeper refuses to touch
-        // anything another live instance claims. Dropping archived paths here would fail that
-        // check open in exactly the case it exists for.
+        // The registry keeps ALL paths, archived included: an archived folder is still this
+        // instance's to clean up, and a sibling Synth reads the registry to learn that.
         InstanceRegistry.shared.update(worktreePaths: paths)
         // Only live rows can claim the servers: an archived worktree is one the user has stopped
         // working in, and a terminal opened there is not a session Synth is hosting agents for.
@@ -2510,9 +2484,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// the sessions' teardown are both deferred to the undo's commit, so an undo within the
     /// window leaves the checkout and its processes untouched (working.html archive-with-undo).
     /// Archive a branch row: it leaves the sidebar at once, its folder is untouched, and the
-    /// sweeper may reclaim the folder later once the work is provably recoverable from a
-    /// remote (see `ArchiveSweeper`). Restorable from ⌘K → Archived for as long as the folder
-    /// is still there.
+    /// clean-up deletes the folder once the wait has run or the archive is over a cap (see
+    /// `ArchiveSweeper`). Restorable from ⌘K → Archived before and after that — a restore with
+    /// no folder left cuts the checkout again from the branch.
     ///
     /// `archivedAt` is stamped in the *commit*, not here. The undo window must change nothing
     /// — and stamping at the gesture would hide the row behind `visibleRows`' archive filter,
@@ -2566,41 +2540,34 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     private func archiveReattach(_ branch: Branch, to homes: [(ws: Workspace, index: Int)],
                                  archived: Bool) {
         branch.archivedAt = archived ? Date() : nil
-        branch.lastCleanSweepEval = nil
         for h in homes.sorted(by: { $0.index < $1.index }) {
             h.ws.branches.insert(branch, at: min(h.index, h.ws.branches.count))
         }
         pruneLayout(); syncActive()
     }
 
-    /// Bring an archived row back into the sidebar, moving its folder back if the sweeper
-    /// already put it on hold.
+    /// Bring an archived row back into the sidebar.
     ///
-    /// A row whose folder the reaper already reclaimed still comes back: the branch is a git
+    /// A row whose folder the clean-up already deleted still comes back: the branch is a git
     /// ref and the checkout is derived from it, so the worktree is cut again and the row waits
     /// pending like a fresh create. Restore is the only way back — an archived row is out of
     /// the sidebar and its name is taken in the New-branch picker — so a restore that declined
     /// to act stranded the branch with no route to it at all.
     func restoreArchivedBranch(_ branch: Branch) {
         guard branch.isArchived else { return }
-        let onDisk = FileManager.default.fileExists(atPath: branch.worktreeURL.path)
-            || heldFolder(for: branch).map {
-                GitService.releaseHeldWorktree(from: $0, to: branch.worktreeURL)
-            } ?? false
+        let onDisk = archivedOnDisk(branch)
         let days = branch.archivedAt.map { Int(Date().timeIntervalSince($0) / 86_400) } ?? 0
         branch.archivedAt = nil
-        branch.lastCleanSweepEval = nil
         if onDisk { branch.markActivity() } else { recutWorktree(branch) }
         syncActive()
         Analytics.capture("worktree_restored", ["days_archived": days, "recut": !onDisk])
     }
 
-    /// Check the branch out again into the folder it used to occupy. The reaper deletes the
-    /// folder and prunes the repo afterwards, so a restore that arrives between those two
-    /// steps meets a registration git still holds for a path with nothing at it — which is
-    /// why the reuse below asks the filesystem and not `worktree list`. No session template
-    /// runs: this is a restore, and a restore that spawned sessions the archived row didn't
-    /// have would be a create wearing its name.
+    /// Check the branch out again into the folder it used to occupy. The fast delete renames
+    /// the folder aside and prunes in one git chain, but a folder can also go by hand and
+    /// leave its registration standing — which is why the reuse below asks the filesystem
+    /// and not `worktree list`. No session template runs: this is a restore, and a restore
+    /// that spawned sessions the archived row didn't have would be a create wearing its name.
     private func recutWorktree(_ branch: Branch) {
         guard let ws = workspace(of: branch) else { return }
         let repo = ws.url
@@ -2617,14 +2584,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         }
     }
 
-    /// The `.archived-…` sibling holding this branch's folder, if the sweeper has moved it.
-    func heldFolder(for branch: Branch) -> URL? {
-        let parent = branch.worktreeURL.deletingLastPathComponent()
-        let stem = GitService.archivePrefix + branch.worktreeURL.lastPathComponent + "-"
-        guard let entries = try? FileManager.default.contentsOfDirectory(at: parent,
-                                                                        includingPropertiesForKeys: nil)
-        else { return nil }
-        return entries.first { $0.lastPathComponent.hasPrefix(stem) }
+    /// Whether an archived row still has its folder. A row outlives its folder in the Archived
+    /// list — restorable by re-cutting — until the branch itself ends (`retireFinishedBranches`).
+    func archivedOnDisk(_ branch: Branch) -> Bool {
+        FileManager.default.fileExists(atPath: branch.worktreeURL.path)
     }
 
     /// Every archived row in a workspace, most recently archived first.
@@ -2633,23 +2596,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             .sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) }
     }
 
-    // MARK: Archive sweep
+    // MARK: Archive clean-up
 
-    /// The last verdict the sweeper reached for each archived branch, so the Archived list can
-    /// say *why* something is still on disk. Runtime-only — re-derived every tick. Observed:
-    /// a tick lands minutes after the pane opened, and a verdict nothing re-renders for is a
-    /// verdict the user reads on their next visit.
-    private var sweepVerdicts: [UUID: ArchiveSweeper.Verdict] = [:]
     @ObservationIgnored private var sweepTask: Task<Void, Never>?
     @ObservationIgnored private var sweepInFlight = false
-    @ObservationIgnored private var sweptThisLaunch = 0
-    @ObservationIgnored private var lastVerdictRefresh: Date?
-
-    /// The folder an archived branch is actually costing. The sweeper renames a worktree aside
-    /// before the reaper deletes it, so bytes read off the original path would be nothing for
-    /// exactly the rows closest to going — which is also why the budget and every number the
-    /// pane shows have to read it through here rather than each picking a path.
-    func archivedFolder(_ branch: Branch) -> URL { heldFolder(for: branch) ?? branch.worktreeURL }
 
     /// "4h ago" / "just now". `relativeAge` alone is a column heading — the sidebar's "2h" sits
     /// under a header that says what it measures. On an archived row it is a sentence fragment
@@ -2661,100 +2611,44 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     /// The "when" half of an Archived row: how long ago it was put away.
-    ///
-    /// This used to be the whole ctx line, on the argument that which of two dozen conditions
-    /// is holding a folder is housekeeping, and narrating it would make a simple action read
-    /// like a system report. What that missed is that the folder outliving its grace is the
-    /// question users actually arrive with — "why hasn't this been cleaned up yet" — and with
-    /// no answer on the row, the sweeper is a process deleting folders nobody can enumerate.
-    /// So the "why" now rides alongside it (`archiveVerdictLine`, composed by the palette's
-    /// `archivedCtx`), and this returns its first half.
     func archiveStatusLine(_ branch: Branch) -> String {
         guard branch.archivedAt != nil else { return "" }
         return "archived " + archivedAge(branch)
     }
 
-    /// The sweeper's verdict as a stable slug — automation and logs only, never shown.
-    func archiveReason(_ branch: Branch) -> String {
-        switch sweepVerdicts[branch.id] {
-        case .eligible?:           return "eligible"
-        case .waiting?:            return "waiting"
-        case .needsSecondOpinion?: return "second-opinion"
-        case .blocked(let r)?:     return r.rawValue
-        case nil:                  return "unchecked"
-        }
+    /// When this folder goes: "6 days left", or "next clean-up". Nil when there is nothing to
+    /// count down to — the clean-up is off, or the folder has already gone.
+    func archiveCountdown(_ branch: Branch) -> String? {
+        guard archiveSweepEnabled, let at = branch.archivedAt, archivedOnDisk(branch) else { return nil }
+        return ArchiveSweeper.countdown(archivedAt: at, graceSeconds: archiveGraceSeconds,
+                                        due: archiveDue().contains(branch.id))
     }
 
-    /// The sweeper's own last word on a branch, unfiltered — the harness and the logs read it
-    /// through `archiveReason`, surfaces read the two below.
-    func archiveVerdict(_ branch: Branch) -> ArchiveSweeper.Verdict? { sweepVerdicts[branch.id] }
-
-    /// The Archived row's chip, and the ⌘K ctx line under the same name.
-    ///
-    /// Both nil with the sweep off or the wait at Never: no turn ever comes then, so a
-    /// countdown or a "held aside next sweep" would be a promise nothing is going to keep.
-    func archiveVerdictChip(_ branch: Branch) -> String? { displayVerdict(branch)?.chip }
-    func archiveVerdictLine(_ branch: Branch) -> String? { displayVerdict(branch)?.line }
-
-    /// The stored verdict as the UI should read it. One correction: a branch the budget has
-    /// already called early must not still count down a grace it will not wait out. Its next
-    /// evaluation runs with no grace at all, and since a `.waiting` verdict clears
-    /// `lastCleanSweepEval`, the honest thing to say meanwhile is what that evaluation is
-    /// about to say — it is being checked.
-    private func displayVerdict(_ branch: Branch) -> ArchiveSweeper.Verdict? {
-        guard archiveSweepEnabled, archiveGraceDays > 0,
-              let verdict = sweepVerdicts[branch.id] else { return nil }
-        if case .waiting = verdict, archiveOverBudget().contains(branch.id) {
-            return .needsSecondOpinion
-        }
-        return verdict
-    }
-
-    /// Archived branches the budget has called early: the oldest unblocked ones, enough to get
-    /// back under both caps. Blocked ones still count toward the budget — they occupy the disk
-    /// — they just can't pay it down.
-    ///
-    /// Blockedness is last tick's verdict, which on the very first tick nobody has: the oldest
-    /// folders are called early, meet their gates, and the set corrects itself from the
-    /// verdicts that produces. Being called early costs a folder nothing but its grace.
-    func archiveOverBudget() -> Set<UUID> {
-        guard archiveSweepEnabled, archiveGraceDays > 0 else { return [] }
+    /// The archived folders the next tick deletes: every one past its wait, and the oldest of
+    /// the rest while the archive is over either cap. Only rows with a folder count — a row
+    /// whose folder has already gone costs no disk and has nothing left to clean.
+    func archiveDue() -> Set<UUID> {
+        guard archiveSweepEnabled else { return [] }
         let entries = workspaces.flatMap { ws in
-            ws.branches.filter(\.isArchived).compactMap { branch -> ArchiveSweeper.BudgetEntry? in
-                guard let at = branch.archivedAt else { return nil }
-                return ArchiveSweeper.BudgetEntry(
-                    id: branch.id, archivedAt: at,
-                    bytes: FolderSizeCache.shared.bytes(for: archivedFolder(branch)) ?? 0,
-                    blocked: sweepVerdicts[branch.id]?.block != nil)
+            ws.branches.filter(\.isArchived).compactMap { branch -> ArchiveSweeper.Entry? in
+                guard let at = branch.archivedAt, archivedOnDisk(branch) else { return nil }
+                return ArchiveSweeper.Entry(id: branch.id, archivedAt: at,
+                                            bytes: FolderSizeCache.shared.bytes(for: branch.worktreeURL) ?? 0)
             }
         }
-        return ArchiveSweeper.overBudget(entries, maxCount: archiveMaxCount,
-                                         maxBytes: Int64(archiveMaxGB) * 1_073_741_824)
+        return ArchiveSweeper.due(entries, graceSeconds: archiveGraceSeconds,
+                                  maxCount: archiveMaxCount,
+                                  maxBytes: Int64(archiveMaxGB) * 1_073_741_824)
     }
 
-    /// Fill in the verdicts for a surface that has just opened, rather than making it wait out
-    /// the 90 seconds the repeating sweep spends letting `gh` and the network settle.
-    ///
-    /// Fire-and-forget, and debounced twice over: a tick is one `lsof` plus a `gh` per
-    /// candidate, and a SwiftUI pane asks for this on every re-render. Until one lands the
-    /// rows simply carry no chip, which is the right thing for "not measured yet" to look like.
-    func refreshArchiveVerdicts() {
-        guard archiveSweepEnabled, archiveGraceDays > 0, !sweepInFlight else { return }
-        if let last = lastVerdictRefresh, Date().timeIntervalSince(last) < 60 { return }
-        let archived = workspaces.flatMap { $0.branches.filter(\.isArchived) }
-        guard archived.contains(where: { sweepVerdicts[$0.id] == nil }) else { return }
-        lastVerdictRefresh = Date()
-        Task { [weak self] in await self?.sweepTick(force: true) }
-    }
-
-    /// Start the repeating sweep. Unlike `startAutosave` the handle is retained, so quit can
+    /// Start the repeating clean-up. Unlike `startAutosave` the handle is retained, so quit can
     /// actually cancel it — autosave's discarded handle makes it permanently uncancellable,
     /// which is a wart to copy from, not a pattern.
     func startArchiveSweep() {
         sweepTask?.cancel()
         // Once per launch: the worktree root reconciled against git, and one card for whatever
         // it could not account for. Before the first tick so a stray never sits under a row the
-        // sweeper is about to judge.
+        // clean-up is about to judge.
         Task { [weak self] in
             let strays = await Task.detached(priority: .background) {
                 GitService.reconcileStrayWorktreeFolders()
@@ -2787,16 +2681,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         return NSApp.isActive ? 300 : 1800
     }
 
-    /// One pass. Evaluates every archived branch and holds the folders that clear every gate.
+    /// One pass: delete the archived folders that are due, archive the live rows whose branch
+    /// is merged, and end the archived rows whose branch has gone.
     func sweepTick(force: Bool = false) async {
         guard !sweepInFlight else { return }
         // The kill flag is a KILL, never an ENABLE: `isEnabled` returns false when the user has
         // opted out of analytics, so as an enable flag a privacy-conscious user would silently
-        // lose the feature. Absent ⇒ false ⇒ the sweeper runs.
+        // lose the feature. Absent ⇒ false ⇒ the clean-up runs.
         guard !Analytics.isEnabled("archive_sweeper_kill") else { return }
-        guard force || (archiveSweepEnabled && archiveGraceDays > 0) else { return }
-        // Low Power Mode and thermal pressure gate the *tick*, not a candidate — a laptop
-        // permanently in Low Power Mode must not report every worktree as blocked forever.
+        guard force || archiveSweepEnabled else { return }
+        // Low Power Mode and thermal pressure gate the *tick*, not a candidate.
         let info = ProcessInfo.processInfo
         guard force || (!info.isLowPowerModeEnabled && info.thermalState != .serious
                         && info.thermalState != .critical) else { return }
@@ -2804,225 +2698,126 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         sweepInFlight = true
         defer { sweepInFlight = false }
 
-        // Fresh PR state before deciding anything — a stale read is what makes "no open PR"
-        // dangerous. Reaping first frees disk even when nothing new qualifies.
-        let hold = ArchiveSweeper.holdSeconds
-        await Task.detached(priority: .utility) { GitService.reapHeldWorktrees(hold: hold) }.value
+        // Fresh PR state before the finished-row pass reads it.
         await refreshPullRequestsAndWait()
-
-        guard let cwdPaths = await Task.detached(priority: .utility,
-                                                 operation: { ArchiveSweeper.processWorkingDirectories() }).value
-        else { return }   // a failed lsof blocks the whole tick rather than passing every candidate
-
-        // Fails closed, exactly as the lsof guard above does: an instances directory we could
-        // not read is not evidence that no other Synth is holding a worktree, and this tick's
-        // verdict ends in `git worktree prune`.
-        guard let foreign = Guarded.run({ try foreignInstanceWorktreePaths() }) else { return }
-        let grace = archiveGraceSeconds
-        var eligible: [(Workspace, Branch, Int?)] = []
 
         // The size cap has to work on a Synth whose owner never opened the Archived pane, so
         // the tick warms the measurements itself. Deduped and off the main actor — the walk is
         // paid once per folder per launch, and an archived folder's size doesn't move.
-        let archivedPaths = workspaces.flatMap { $0.branches.filter(\.isArchived).map(archivedFolder) }
-        FolderSizeCache.shared.warm(archivedPaths)
-        // Read once, before any verdict is rewritten, so every candidate this tick is judged
-        // against the same budget.
-        let calledEarly = archiveOverBudget()
+        FolderSizeCache.shared.warm(workspaces.flatMap {
+            $0.branches.filter(\.isArchived).filter(archivedOnDisk).map(\.worktreeURL)
+        })
 
-        for ws in workspaces {
-            for branch in archivedBranches(in: ws) {
-                // A clock that jumped backwards must never manufacture an expired grace.
-                if let at = branch.archivedAt, at > Date() { branch.archivedAt = Date() }
-                guard let archivedAt = branch.archivedAt else { continue }
-                let candidate = ArchiveSweeper.Candidate(
-                    branchID: branch.id, name: branch.name, repo: ws.url,
-                    worktree: branch.worktreeURL, archivedAt: archivedAt,
-                    lastCleanEval: branch.lastCleanSweepEval,
-                    hasSessions: !branch.sessions.isEmpty,
-                    foreignInstancePaths: foreign)
-                var verdict = await runGit(repo: ws.url) {
-                    ArchiveSweeper.evaluate(candidate, graceSeconds: grace, cwdPaths: cwdPaths)
-                }
-                // Over budget, this one's turn comes now instead of when its grace runs out —
-                // and "now" means the same evidence pass with the grace at zero, so every gate
-                // and the second-opinion rule still stand between it and being held aside.
-                if case .waiting = verdict, calledEarly.contains(branch.id) {
-                    verdict = await runGit(repo: ws.url) {
-                        ArchiveSweeper.evaluate(candidate, graceSeconds: 0, cwdPaths: cwdPaths)
-                    }
-                }
-                // The row may have been restored or deleted while git was answering.
-                guard let live = workspaces.first(where: { $0.id == ws.id })?
-                        .branches.first(where: { $0.id == candidate.branchID }), live.isArchived
-                else { continue }
-                sweepVerdicts[live.id] = verdict
-                switch verdict {
-                case .needsSecondOpinion:
-                    if live.lastCleanSweepEval == nil { live.lastCleanSweepEval = Date() }
-                case .eligible(let pr):
-                    eligible.append((ws, live, pr))
-                case .waiting, .blocked:
-                    live.lastCleanSweepEval = nil
-                }
-            }
-        }
+        // Archived rows first, live rows after: a row archived on this tick starts its wait
+        // now and is judged as an archived row on the next one, which gives the user a tick's
+        // worth of Archived list to object to before its folder moves.
+        // The one card the clean-up raises is the one that says a folder went. Archiving a
+        // merged row and retiring its ref are both silent: neither touches disk, and the row
+        // is a ⌘K away either way.
+        let cleaned = cleanUpDueArchives()
+        if !cleaned.isEmpty { raiseSweepDigest(cleaned) }
 
-        // After the archived rows, never before: a row archived here starts its grace now and
-        // meets the gate chain as an archived row on the next tick, not this one.
-        let finished = await autoArchiveFinishedRows(cwdPaths: cwdPaths, foreign: foreign)
-        if !finished.isEmpty { raiseFinishedDigest(finished) }
-
-        // Before the eligible check below, not after: most ticks have no folder to hold, and a
-        // pass that only ran on the ticks that did would never reach the rows whose folders are
-        // long gone — which is every row this one is for.
+        let finished = await autoArchiveFinishedRows()
         let ended = await retireFinishedBranches()
-        if !ended.retired.isEmpty || ended.orphaned > 0 {
-            raiseRetiredDigest(ended.retired, orphaned: ended.orphaned)
-        }
 
-        logTick(eligible: eligible.count)
-        guard !eligible.isEmpty else { return }
-
-        // The bulk brake: reopening after a long absence with a dozen suddenly-eligible
-        // worktrees is exactly where a human belongs.
-        guard eligible.count <= ArchiveSweeper.bulkBrake else {
-            raiseArchiveReviewCard(count: eligible.count, in: eligible.first?.0)
-            return
-        }
-        guard !archiveDryRun else {
-            for (_, branch, _) in eligible {
-                ArchiveSweeper.log.info("dry-run: would hold \(branch.name, privacy: .public)")
-            }
-            return
-        }
-
-        var held: [String] = []
-        for (ws, branch, pr) in eligible.prefix(ArchiveSweeper.perTickCap) {
-            guard sweptThisLaunch < ArchiveSweeper.perLaunchCap else { break }
-            let path = branch.worktreeURL
-            let moved = await runGit(repo: ws.url) { () -> Bool in
-                guard ArchiveSweeper.isSettled(at: path) else { return false }
-                return GitService.holdWorktree(repo: ws.url, path: path) != nil
-            }
-            guard moved else { continue }
-            sweptThisLaunch += 1
-            held.append(branch.name)
-            ArchiveSweeper.log.info("held \(branch.name, privacy: .public) at \(path.path, privacy: .public)")
-            Analytics.capture("archive_swept", ["pr_state": pr == nil ? "ancestor" : "merged",
-                                                "grace_days": archiveGraceDays])
-        }
-        if !held.isEmpty { raiseSweepDigest(held) }
+        Analytics.capture("archive_sweep_tick", [
+            "archived": workspaces.reduce(0) { $0 + archivedBranches(in: $1).count },
+            "cleaned": cleaned.count, "finished": finished.count,
+            "retired": ended.retired, "orphaned": ended.orphaned,
+        ])
     }
 
-    /// Archive, on the user's behalf, every live row whose work is finished. A merged branch left
-    /// in the tree is noise at a glance and — the real cost — a folder the sweeper could never
-    /// reach: it only ever evaluated archived rows, so a merged checkout nobody archived by hand
-    /// stayed on disk for good. Sixty of them at 400 GB was how that was found.
+    /// Delete the folder of every archived row that is due. The fast delete path — renamed
+    /// aside and pruned behind any in-flight op on the repo, the real `rm` afterwards where
+    /// nobody waits on it — so a tick with thirty due folders costs thirty renames. Returns the
+    /// names, for the digest.
+    private func cleanUpDueArchives() -> [String] {
+        let due = archiveDue()
+        var cleaned: [String] = []
+        for ws in workspaces {
+            for branch in archivedBranches(in: ws)
+            where due.contains(branch.id) && branch.sessions.isEmpty && branch.worktreeURL != ws.url {
+                deleteWorktreeFolder(repo: ws.url, path: branch.worktreeURL,
+                                     branchName: branch.name, workspaceName: ws.name)
+                FolderSizeCache.shared.forget(branch.worktreeURL)
+                cleaned.append(branch.name)
+                ArchiveSweeper.log.info("cleaned up \(branch.name, privacy: .public)")
+                Analytics.capture("archive_swept", ["grace_days": archiveGraceDays])
+            }
+        }
+        return cleaned
+    }
+
+    /// Archive, on the user's behalf, every live row whose branch is merged. A merged branch
+    /// left in the tree is noise at a glance and — the real cost — a folder the clean-up could
+    /// never reach: it only ever looks at archived rows, so a merged checkout nobody archived by
+    /// hand stayed on disk for good. Sixty of them at 400 GB was how that was found.
     ///
-    /// The bar is the full hold predicate with no grace — merged, clean, pushed, nothing attached,
-    /// nothing running inside, read clean twice a day apart (`ArchiveSweeper.evaluate`) — or, for
-    /// a row whose folder is already gone, the branch's own half of it (`evaluateVanished`).
-    /// Archiving touches no disk and is one ⌘K away from undone, so a lower bar would be
-    /// defensible; the higher one means a row never leaves the tree while there is anything in
-    /// its folder the user might be in the middle of.
-    ///
-    /// Only Synth's own worktrees: a hand-made checkout Synth merely adopted is the user's to put
-    /// away. And a cheap merged-or-not gate runs first, because `relevance` asks GitHub about
-    /// anything that isn't an ancestor of the default branch — one `gh` call per unmerged row per
-    /// tick, forever, is not a tick.
-    private func autoArchiveFinishedRows(cwdPaths: Set<String>,
-                                         foreign: Set<String>) async -> [(Workspace, Branch)] {
-        var archived: [(Workspace, Branch)] = []
+    /// Merged means every commit on the branch is in the default branch, or GitHub says the PR
+    /// merged (a squash leaves the branch no ancestor of anything). Nothing attached, not still
+    /// being created, and only Synth's own worktrees: a hand-made checkout Synth merely adopted
+    /// is the user's to put away. Archiving touches no disk, and ⌘K → Archived is the way back.
+    private func autoArchiveFinishedRows() async -> [Branch] {
+        var archived: [Branch] = []
         for ws in workspaces {
             let repo = ws.url
             let root = GitService.worktreeRoot(for: repo).standardized.path
             for branch in ws.liveBranches
             where !branch.isPending && branch.sessions.isEmpty
                 && branch.worktreeURL.deletingLastPathComponent().standardized.path == root {
-                let wt = branch.worktreeURL, name = branch.name, pr = branch.pr
-                let candidate = ArchiveSweeper.Candidate(
-                    branchID: branch.id, name: name, repo: repo, worktree: wt, archivedAt: Date(),
-                    lastCleanEval: branch.lastCleanSweepEval, hasSessions: false,
-                    foreignInstancePaths: foreign)
-                let verdict = await runGit(repo: repo) { () -> ArchiveSweeper.Verdict? in
+                let name = branch.name, id = branch.id
+                let prMerged = branch.pr?.state == .merged
+                let merged = await runGit(repo: repo) { () -> Bool in
+                    if prMerged { return true }
                     let base = GitService.defaultBase(at: repo)
-                    let ancestor = base != "HEAD" && GitService.isAncestor(name, of: base, at: repo).value == true
-                    guard ancestor || pr?.state == .merged else { return nil }
-                    return FileManager.default.fileExists(atPath: wt.path)
-                        ? ArchiveSweeper.evaluate(candidate, graceSeconds: 0, cwdPaths: cwdPaths)
-                        : ArchiveSweeper.evaluateVanished(candidate)
+                    return base != "HEAD" && name != base
+                        && GitService.isAncestor(name, of: base, at: repo).value == true
                 }
+                guard merged else { continue }
                 // The row may have gained a session, or been archived by hand, while git answered.
                 guard let live = workspaces.first(where: { $0.id == ws.id })?
-                        .branches.first(where: { $0.id == candidate.branchID }),
+                        .branches.first(where: { $0.id == id }),
                       !live.isArchived, live.sessions.isEmpty
                 else { continue }
-                switch verdict {
-                case .needsSecondOpinion?:
-                    if live.lastCleanSweepEval == nil { live.lastCleanSweepEval = Date() }
-                case .eligible?:
-                    guard !archiveDryRun else {
-                        ArchiveSweeper.log.info("dry-run: would archive \(live.name, privacy: .public)")
-                        continue
-                    }
-                    archiveFinishedRow(live)
-                    archived.append((ws, live))
-                default:
-                    live.lastCleanSweepEval = nil
-                }
+                archiveFinishedRow(live)
+                archived.append(live)
             }
         }
         return archived
     }
 
     /// The finished-row pass's commit: `softArchiveBranch` without the undo card. There is nothing
-    /// to tear down (no sessions is one of its gates), the tick raises one digest for all of them,
-    /// and the way back is the same as ever — ⌘K → Archived.
+    /// to tear down (no sessions is one of its gates), and the way back is the same as ever —
+    /// ⌘K → Archived.
     private func archiveFinishedRow(_ branch: Branch) {
         let homes = archiveDetach(branch)
         archiveReattach(branch, to: homes, archived: true)
         Analytics.capture("worktree_archived", ["trigger": "merged"])
     }
 
-    /// End the archived rows whose folder is gone for good: delete the branch ref where there
-    /// is still one to delete, and drop the row either way (`ArchiveSweeper.branchEnd`).
+    /// End the archived rows whose folder is gone: delete the branch ref where there is still
+    /// one to delete, and drop the row either way (`ArchiveSweeper.branchEnd`).
     ///
-    /// This is what the archive path was missing at its far end. A row archived, held and
-    /// reaped left its branch behind forever, so a machine that had run Synth for a season
-    /// carried hundreds of merged refs and an Archived list of rows with nothing behind them —
-    /// 443 branches in one repo, 200 of them merged, checkout-less and gone from the remote.
+    /// This is what the archive path was missing at its far end. A row archived and cleaned up
+    /// left its branch behind forever, so a machine that had run Synth for a season carried
+    /// hundreds of merged refs and an Archived list of rows with nothing behind them — 443
+    /// branches in one repo, 200 of them merged, checkout-less and gone from the remote.
     ///
-    /// Returns the names it retired and the count it dropped as orphans, for the digest.
-    private func retireFinishedBranches() async -> (retired: [String], orphaned: Int) {
-        guard archiveRetireBranches else { return ([], 0) }
-        var retired: [String] = []
+    /// Returns how many it retired and how many it dropped as orphans.
+    private func retireFinishedBranches() async -> (retired: Int, orphaned: Int) {
+        var retired = 0
         var orphaned = 0
         var examined = 0
         for ws in workspaces {
             for branch in archivedBranches(in: ws) {
-                // The cap counts rows *looked at*, not rows ended. Every archived row that still
-                // has a folder is the overwhelming majority and is rejected by a stat below with
-                // no git at all, so a settled archive costs this pass nothing; a backlog drains a
-                // capped number of git chains per tick instead of running hundreds every time.
                 guard examined < ArchiveSweeper.retireCap else { break }
-                // A held folder reads as absent — the hold is a rename — so ask the store, which
-                // is the only thing that can tell "reaped" from "sitting aside under a new name".
-                guard branch.sessions.isEmpty, heldFolder(for: branch) == nil,
-                      !FileManager.default.fileExists(atPath: branch.worktreeURL.standardized.path)
-                else { continue }
+                guard branch.sessions.isEmpty, !archivedOnDisk(branch) else { continue }
                 examined += 1
                 let candidate = ArchiveSweeper.Candidate(
                     branchID: branch.id, name: branch.name, repo: ws.url,
-                    worktree: branch.worktreeURL, archivedAt: branch.archivedAt ?? Date(),
-                    lastCleanEval: nil, hasSessions: !branch.sessions.isEmpty,
-                    foreignInstancePaths: [])
+                    worktree: branch.worktreeURL, hasSessions: !branch.sessions.isEmpty)
                 let end = await runGit(repo: ws.url, { ArchiveSweeper.branchEnd(candidate) })
                 guard end != .keep else { continue }
-                guard !archiveDryRun else {
-                    ArchiveSweeper.log.info("dry-run: would end \(branch.name, privacy: .public)")
-                    continue
-                }
                 // The row may have been restored while git answered.
                 guard let live = workspaces.first(where: { $0.id == ws.id })?
                         .branches.first(where: { $0.id == candidate.branchID }), live.isArchived
@@ -3031,42 +2826,17 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 if end == .retire {
                     guard await runGit(repo: ws.url, { GitService.deleteBranch(name, at: ws.url) })
                     else { continue }
-                    retired.append(name)
+                    retired += 1
                     Analytics.capture("branch_retired", ["trigger": "remote-gone"])
                 } else {
                     orphaned += 1
                     Analytics.capture("branch_retired", ["trigger": "orphaned"])
                 }
                 archiveDetach(live)          // detached and never reattached: the row is over
-                sweepVerdicts[live.id] = nil
                 ArchiveSweeper.log.info("ended \(name, privacy: .public) (\(String(describing: end), privacy: .public))")
             }
         }
         return (retired, orphaned)
-    }
-
-    /// One line for both endings. An orphaned row had no ref left to delete, so saying "deleted"
-    /// of it would be a claim about the user's repo that isn't true.
-    private func raiseRetiredDigest(_ retired: [String], orphaned: Int) {
-        var message: String
-        if retired.count == 1, orphaned == 0 {
-            message = "Deleted branch \(retired[0]) — merged and gone from the remote"
-        } else if retired.isEmpty {
-            message = orphaned == 1 ? "Removed 1 archived row whose branch was already gone"
-                                    : "Removed \(orphaned) archived rows whose branches were already gone"
-        } else {
-            message = "Deleted \(retired.count) merged branches"
-            if orphaned > 0 { message += ", removed \(orphaned) rows with no branch left" }
-        }
-        raiseArchiveNotif(message, tier: .ambient, drains: true)
-    }
-
-    private func raiseFinishedDigest(_ rows: [(Workspace, Branch)]) {
-        let message = rows.count == 1 ? "Archived \(rows[0].1.name) — merged"
-                                      : "Archived \(rows.count) merged branches"
-        raiseArchiveNotif(message, tier: .ambient, drains: true,
-                          action: NotifAction(label: "Review"),
-                          run: { [weak self] in self?.openArchivedList(rows[0].0) })
     }
 
     /// Folders under Synth's worktree root that git doesn't list and that hold files. Never
@@ -3079,39 +2849,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                           run: { NSWorkspace.shared.activateFileViewerSelecting(strays) })
     }
 
-    /// Worktree paths claimed by *other* live Synth instances. Archived paths deliberately stay
-    /// in our own registry entry (see `syncAgentBridge`) — that's what lets the other instance
-    /// see we still manage them.
-    private func foreignInstanceWorktreePaths() throws -> Set<String> {
-        try InstanceRegistry.otherInstanceWorktreePaths()
-    }
-
     private func raiseSweepDigest(_ names: [String]) {
         raiseArchiveNotif(names.count == 1 ? "Cleaned up \(names[0])"
                                            : "Cleaned up \(names.count) archived worktrees",
                           tier: .ambient, drains: true)
     }
 
-    /// A housekeeping nudge, not a question your agent is blocked on — so it stops wearing the
-    /// needs-input costume (blue, breathing, out-ranking a real done toast) and offers the place
-    /// it is pointing at instead. Still sticky: it is asking for a decision.
-    private func raiseArchiveReviewCard(count: Int, in ws: Workspace?) {
-        let what = count == 1 ? "1 worktree" : "\(count) worktrees"
-        raiseArchiveNotif("\(what) ready to clean up", tier: .attention, drains: false,
-                          action: ws == nil ? nil : NotifAction(label: "Review"),
-                          run: ws.map { w in { [weak self] in self?.openArchivedList(w) } })
-    }
-
-    /// Open ⌘K straight at a workspace's archived list — where the review card points.
-    func openArchivedList(_ ws: Workspace) {
-        openPalette()
-        if let p = palette { p.push(p.archivedFrame(ws)) }
-    }
-
-    /// One coalesced card per sweep that actually did something. Never per item — the deck's
-    /// drain pauses while the app is unfocused, so per-item cards pile up invisibly and then
-    /// arrive all at once. A blocked candidate is not a failure and raises nothing; it shows as
-    /// a ctx line in the Archived list.
+    /// One coalesced card per tick that deleted something. Never per item — the deck's drain
+    /// pauses while the app is unfocused, so per-item cards pile up invisibly and then arrive
+    /// all at once.
     private func raiseArchiveNotif(_ message: String, tier: NotifTier, drains: Bool,
                                    action: NotifAction? = nil,
                                    run: (@MainActor () -> Void)? = nil) {
@@ -3124,16 +2870,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                  message: message, iconPath: Phosphor.archive,
                                  tier: tier, action: action, drains: drains))
         if let run { notifActions[id] = run }
-    }
-
-    private func logTick(eligible: Int) {
-        var blocked: [String: Int] = [:]
-        for verdict in sweepVerdicts.values {
-            if let reason = verdict.block { blocked[reason.rawValue, default: 0] += 1 }
-        }
-        var props: [String: Any] = ["archived": sweepVerdicts.count, "eligible": eligible]
-        for (reason, n) in blocked { props["blocked_\(reason)"] = n }
-        Analytics.capture("archive_sweep_tick", props)
     }
 
     /// The comment ladder's spawn rung (CommentMode rung 3): an agent row created exactly
@@ -3688,8 +3424,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 guard let branch = ws.branches.first(where: { $0.id == branchID }) else { continue }
                 // Outer nil is "couldn't ask" for this branch — offline, no GitHub remote,
                 // no credential. Keep whatever we last knew rather than clearing the badge;
-                // a stale PR number is closer to the truth than none, and the sweeper reads
-                // this state independently anyway.
+                // a stale PR number is closer to the truth than none.
                 guard let inner = asked else { continue }
                 askedAny = true
                 if branch.pr != inner { branch.pr = inner }
@@ -3699,17 +3434,10 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     /// Refresh every workspace and wait for it, so a caller that needs fresh PR state —
-    /// the archive sweeper — reads it after the answer lands rather than beside it.
+    /// the finished-row pass — reads it after the answer lands rather than beside it.
     func refreshPullRequestsAndWait(force: Bool = false) async {
         let tasks = workspaces.compactMap { refreshPullRequests(in: $0, force: force) }
         for task in tasks { await task.value }
-    }
-
-    /// When each workspace's PR state was last successfully read. The sweeper refuses to act
-    /// on a workspace whose PR state it has never actually seen this session.
-    func prStateFresh(for workspace: Workspace, within: TimeInterval) -> Bool {
-        guard let last = lastPRRefresh[workspace.id] else { return false }
-        return Date().timeIntervalSince(last) <= within
     }
 
     // MARK: Worktrees (ADR-0007: every branch row is a real folder)
@@ -4085,8 +3813,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                             // The branch's remembered split, serialized to session identities;
                             // nil for a single pane (014). Leaves whose session is gone collapse.
                             layout: serializeLayout(br.layout, valid: Set(br.sessions.map(\.id))),
-                            archivedAt: br.archivedAt,
-                            lastCleanSweepEval: br.lastCleanSweepEval)
+                            archivedAt: br.archivedAt)
                     },
                     setupScript: wsScripts[ws.id],
                     agentFlags: wsAgentFlags[ws.id].map { flags in
@@ -4125,10 +3852,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             guard !confirmedMissing(pw.url) else { continue }
             let branches: [Branch] = pw.branches.compactMap { pb -> Branch? in
                 // Only *live* rows are reconciled against disk. An archived row's folder is
-                // expected to be absent — the sweeper holds it aside and later reclaims it — so
-                // reading that absence as "deleted outside Synth" dropped the row on the next
-                // launch: the Archived list forgot the branch, and any folder still on hold was
-                // orphaned with nothing but the reaper's clock left to touch it.
+                // expected to be absent — the clean-up deletes it, and the row stays restorable
+                // by re-cutting — so reading that absence as "deleted outside Synth" dropped the
+                // row on the next launch and the Archived list forgot the branch.
                 guard pb.archivedAt != nil || !confirmedMissing(pb.worktreeURL) else { return nil }
                 var sessions = pb.sessions.map { ps in
                     Session(id: ps.id, kind: SessionKind(rawValue: ps.kind) ?? .terminal,
@@ -4151,7 +3877,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                 sessions: sessions, lastActivity: pb.lastActivity,
                                 lastActivityAt: pb.lastActivityAt,
                                 browserRecents: recents, archivedAt: pb.archivedAt)
-                br.lastCleanSweepEval = pb.lastCleanSweepEval
                 // Restore the remembered split, resolving leaves against this branch's sessions;
                 // an unresolved leaf (e.g. a runtime browser that didn't come back) collapses (014).
                 br.layout = deserializeLayout(pb.layout, valid: Set(sessions.map(\.id)))

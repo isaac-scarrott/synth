@@ -2576,10 +2576,8 @@
   .set-row__ctl .set-seg { width: 216px; margin: 0; }
   /* four options in the width built for three wraps every label onto two lines */
   .set-row__ctl .set-seg--4 { width: 272px; }
-  /* The archive's three rows all take the five-wide width, though only the wait has five options:
-     stacked segs that start at different x read as a misalignment, not as three controls each
-     sized to its own contents. */
-  .set-row__ctl .set-seg--5 { width: 330px; }
+  /* The archive's three rows all take this width: stacked segs that start at different x read
+     as a misalignment, not as three controls each sized to its own contents. */
   .set-override__word { font-size: 12px; font-weight: 500; color: var(--text-muted); transition: color 160ms ease; }
   .set-override.is-on .set-override__word { color: var(--ink-3); }
 
@@ -3037,20 +3035,6 @@
     cursor: pointer; white-space: nowrap;
     transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, transform 110ms var(--ease-out);
   }
-  /* Why this folder is still here. A blocked row is the normal, correct state — the sweeper
-     protecting work — so it stays a quiet neutral chip; only the row that is about to go gets
-     the accent, because that is the one worth catching before it does. */
-  .arc-why {
-    /* wide enough for the longest Block.line intact — a reason clipped to "commits not pushed
-       anywhere — k…" is worse than no reason, because it looks like the answer is elsewhere */
-    flex-shrink: 0; max-width: 232px;
-    padding: 2px 8px; border-radius: 999px;
-    background: var(--hover); color: var(--text-muted);
-    font-size: 10px; font-weight: 550; line-height: 15px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .arc-why--eligible { background: rgba(var(--accent-rgb),0.12); color: var(--ink-open); }
-  .arc-why--checking { font-style: italic; }
   .arc-policy { margin-top: 9px; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
   .arc-btn:active { transform: scale(0.97); }
   @media (hover: hover) and (pointer: fine) {
@@ -7339,68 +7323,37 @@
   const fmtSize = (mb) => mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB';
   const arcMb = (list) => list.reduce((n, a) => n + a.mb, 0);
 
-  // Why a given folder is still on disk — the question the list exists to answer. These are
-  // ArchiveSweeper.Block's own lines, minus its "— kept" suffix: on a chip sitting on a row that
-  // is plainly still there, "kept" is the one word the UI has already said. ⌘K puts it back,
-  // where the reason is flat text with no row under it to carry that.
-  const ARC_BLOCK = {
-    unpushed: 'commits not pushed',
-    untracked: 'untracked files',
-    prOpen: 'PR still open',
-    prClosed: 'PR closed, not merged',
-    noPR: 'never merged',
-    sessions: 'sessions attached',
-    precious: 'local-only config',
-    prUnknown: "can't reach GitHub",
-  };
-
-  // The sweeper's verdict for one entry, in the order the Swift one asks.
-  //
-  // The caps only decide WHEN a folder's turn comes; the blocks decide IF it can ever go. That
-  // split is not a nicety — ArchiveSweeper's whole invariant is that every byte it reclaims is
-  // reconstructible from a remote, so a disk budget that evicted the oldest folder regardless
-  // would be a hole straight through it. An over-budget archive full of unpushed work stays put
-  // and says so; the budget is a reason to look, not a licence to delete.
-  function arcVerdict(a) {
-    const p = appSet.archive;
-    if (!p.sweep || !p.graceDays) return { kind: 'off' };
-    if (a.block) return { kind: 'blocked', line: ARC_BLOCK[a.block] };
-    const days = Math.ceil((a.at + p.graceDays * 86400000 - Date.now()) / 86400000);
-    // Over budget, the oldest unblocked folders stop waiting out the rest of their grace.
-    if (days > 0 && !overBudget().has(a)) return { kind: 'waiting', line: days + (days === 1 ? ' day left' : ' days left') };
-    if (!a.secondOpinion) return { kind: 'checking', line: 'checking…' };
-    return { kind: 'eligible', line: 'held aside next sweep' };
-  }
-
-  // The unblocked oldest folders the count/size caps have called early, as a set. Blocked ones
-  // still count toward the budget — they are occupying the disk — they just can't pay it down.
-  function overBudget() {
-    const p = appSet.archive, called = new Set();
-    if (!p.sweep || !p.graceDays) return called;
-    const byAge = [...archived].sort((x, y) => x.at - y.at);
+  // When a folder goes: after the wait, or sooner while the archive is over its count or disk
+  // cap — oldest first until it is under both. Archived is the whole decision; nothing about
+  // the folder's contents is consulted, and a restore after the folder has gone re-cuts the
+  // checkout from the branch (Store.swift: restoreArchivedBranch).
+  function arcDue() {
+    const p = appSet.archive, due = new Set();
+    if (!p.sweep) return due;
     let n = archived.length, mb = arcMb(archived);
-    for (const a of byAge) {
-      if ((!p.maxCount || n <= p.maxCount) && (!p.maxGb || mb <= p.maxGb * 1024)) break;
-      if (a.block) continue;
-      called.add(a); n--; mb -= a.mb;
+    for (const a of [...archived].sort((x, y) => x.at - y.at)) {
+      const overCap = (p.maxCount && n > p.maxCount) || (p.maxGb && mb > p.maxGb * 1024);
+      if (!overCap && Date.now() - a.at < p.graceDays * 86400000) continue;
+      due.add(a); n--; mb -= a.mb;
     }
-    return called;
+    return due;
   }
-
-  // Everything the sweeper would hold this tick. The bulk brake is the Swift one: past it the
-  // sweeper does nothing at all and asks for a human, because reopening after a long absence
-  // with a dozen suddenly-eligible worktrees is exactly where a human belongs.
-  const ARC_BULK_BRAKE = 5;
-  const arcEligible = () => archived.filter((a) => arcVerdict(a).kind === 'eligible');
+  // "6 days left", or "next clean-up" once it is due (ArchiveSweeper.countdown). Empty with the
+  // clean-up off: a countdown nothing is going to keep is a promise, not a fact.
+  function arcCountdown(a) {
+    const p = appSet.archive;
+    if (!p.sweep) return '';
+    if (arcDue().has(a)) return 'next clean-up';
+    const days = Math.max(1, Math.ceil((a.at + p.graceDays * 86400000 - Date.now()) / 86400000));
+    return days + (days === 1 ? ' day left' : ' days left');
+  }
 
   function pruneArchived() {
-    const due = arcEligible();
-    if (!due.length || due.length > ARC_BULK_BRAKE) return;   // brake: a card, not a sweep
-    due.forEach((a) => archived.splice(archived.indexOf(a), 1));
+    arcDue().forEach((a) => archived.splice(archived.indexOf(a), 1));
   }
 
-  // Every surface reads the archive through here, so none of them can show a folder the sweeper
-  // has already held aside — a stale Restore button is a promise the disk can't keep.
+  // Every surface reads the archive through here, so none of them can show a folder the
+  // clean-up has already deleted as one still costing disk.
   const liveArchive = (proj) => { pruneArchived(); return archived.filter((a) => a.project === proj); };
 
   function archiveBranch(row) {
@@ -7411,7 +7364,7 @@
       icon: ICON_ARCHIVE,
       onCommit: (restore) => {
         archived.unshift({ name, project, mb, restore, at: Date.now() });
-        pruneArchived();   // the new folder is what may have pushed the archive over budget
+        pruneArchived();   // the new folder is what may have pushed the archive over a cap
         refreshSettings();
       },
     });
@@ -7434,22 +7387,17 @@
       wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
     };
   }
-  // The archive as it usually looks: a couple still inside their grace, and a long tail that has
-  // outlived it and is staying anyway. That tail is the point — an archive where everything old
-  // has already gone is an archive that never has to explain itself.
+  // The archive as it usually looks: everything inside its wait, each row counting down.
   [
-    ['synth',       'fix/webhook-retry',    4, 1180, null],
-    ['synth',       'experiment/new-nav',  19,  640, 'unpushed'],
-    ['synth',       'chore/ci-cache',      44,  310, null],
-    ['synth',       'feat/search-v2',      70, 2460, 'prOpen'],
-    ['synth',       'spike/tabs-strip',   220,  890, 'noPR'],
-    ['synth',       'fix/pane-focus',     310,  410, 'untracked'],
-    ['synth',       'feat/agent-picker',  460, 1620, 'prClosed'],
-    ['aviator-api', 'chore/deps',          31,  520, 'prUnknown'],
-  ].forEach(([project, name, hours, mb, block]) => archived.push({
-    project, name, mb, block,
+    ['synth',       'fix/webhook-retry',    4, 1180],
+    ['synth',       'experiment/new-nav',  19,  640],
+    ['synth',       'chore/ci-cache',      44,  310],
+    ['synth',       'feat/search-v2',      70, 2460],
+    ['synth',       'fix/pane-focus',     110,  410],
+    ['aviator-api', 'chore/deps',          31,  520],
+  ].forEach(([project, name, hours, mb]) => archived.push({
+    project, name, mb,
     at: Date.now() - hours * 3600000,
-    secondOpinion: hours > 24,   // a cold launch never sweeps on day one
     restore: reAdd(project, name, hours < 24 ? hours + 'h' : Math.floor(hours / 24) + 'd'),
   }));
 
@@ -8915,9 +8863,8 @@
     label: 'Deleted ' + brName(row), icon: ICON_TRASH, destructive: true, sub: 'the folder goes when the bar does',
   }));
 
-  // Everything this project has archived, and why each folder is still there. Without this
-  // list the clean-up is a background process deleting folders the user cannot enumerate —
-  // and it is also the entire answer to "why hasn't this been cleaned up yet".
+  // Everything this project has archived, and when each folder goes. Without this list the
+  // clean-up is a background process deleting folders the user cannot enumerate.
   // A row drills in rather than restoring outright, because Restore is not the only thing you
   // come here to do — "stop waiting and delete it now" is the other, and a list whose ↵ silently
   // picks one of the two verbs can't offer the other at all (Palette.swift: archivedBranchFrame).
@@ -8953,12 +8900,11 @@
     if (mins < 1440) return Math.floor(mins / 60) + 'h ago';
     return Math.floor(mins / 1440) + 'd ago';
   }
-  // Block.line's own doc calls itself "the ⌘K ctx line", so the reason rides here next to the
-  // age rather than only in Settings — the palette is where you meet an archived worktree first.
+  // The countdown rides here next to the age rather than only in Settings — the palette is
+  // where you meet an archived worktree first.
   function archivedCtx(a) {
-    const v = arcVerdict(a);
-    if (!v.line) return 'archived ' + ageText(a);
-    return 'archived ' + ageText(a) + ' · ' + v.line + (v.kind === 'blocked' ? ' — kept' : '');
+    const left = arcCountdown(a);
+    return 'archived ' + ageText(a) + (left ? ' · ' + left : '');
   }
 
   // New branch via ⌘K: empty until you type, then fuzzy-match every local and remote
@@ -9232,12 +9178,10 @@
     simSessions: false,
     analytics: true,
     // Mirrors SettingsPane.swift's Archived worktrees section and Store's defaults
-    // (archiveSweepEnabled = true, archiveGraceDays = 7). maxCount/maxGb are the disk budget
-    // the app doesn't have yet — see arcVerdict for why they can only bring a folder's turn
-    // forward, never skip the gates it still has to clear.
+    // (archiveSweepEnabled = true, archiveGraceDays = 7, archiveMaxCount = 25, archiveMaxGB = 50).
     archive: { sweep: true, graceDays: 7, maxCount: 25, maxGb: 50 },
   };
-  const GRACE_OPTS = [[0, 'Never'], [1, '1 day'], [7, '7 days'], [14, '14 days'], [30, '30 days']];
+  const GRACE_OPTS = [[1, '1 day'], [7, '7 days'], [14, '14 days'], [30, '30 days']];
   const COUNT_OPTS = [[10, '10'], [25, '25'], [50, '50'], [0, 'No cap']];
   const GB_OPTS = [[20, '20 GB'], [50, '50 GB'], [100, '100 GB'], [0, 'No cap']];
   const SOUNDS = [
@@ -9713,26 +9657,21 @@
   // ---- The two tabs ------------------------------------------------------------------
   const SCRIPT_NOTE = '$SYNTH_MAIN = primary checkout · 5 min limit';
 
-  // The clean-up the sweeper performs, and the three knobs on it. Only the switch carries a
-  // description, and only the half of SettingsPane.swift's line you can't read off the controls:
-  // that the sweep touches nothing unrecoverable and never deletes the branch. Each picker states
-  // its own rule — a sentence under "Never · 7 · 14 · 30 days" would only say it again, slower.
+  // The clean-up and the three knobs on it. Only the switch carries a description. Each picker
+  // states its own rule — a sentence under "1 · 7 · 14 · 30 days" would only say it again, slower.
   //
   // Every row after the switch folds away when it's off: what remains has nothing to configure,
   // and unlike the agent rows there's no field here whose absence would hide the way back.
   function archivePolicyRows() {
     const p = appSet.archive;
-    const pick = (key, opts, label) => `<div class="seg seg--slide set-seg set-seg--5" role="group" aria-label="${label}"><span class="seg__thumb" data-thumb></span>${
+    const pick = (key, opts, label) => `<div class="seg seg--slide set-seg set-seg--4" role="group" aria-label="${label}"><span class="seg__thumb" data-thumb></span>${
       opts.map(([v, t]) => `<button class="seg__btn${p[key] === v ? ' is-on' : ''}" data-arc-opt="${key}" data-arc-val="${v}">${t}</button>`).join('')}</div>`;
-    const sweep = row('Clean up finished worktrees',
-      desc('Merged branches are archived for you. A folder goes only once the work is safely on a remote, and the git branch is never deleted.'),
+    const sweep = row('Clean up archived worktrees',
+      desc('Merged branches are archived for you. An archived worktree is deleted after the wait, or sooner once the archive is over a cap; its branch goes too once the remote has dropped it.'),
       switchCtl(p.sweep, 'archive.sweep'));
     if (!p.sweep) return sweep;
-    // A budget can only bring an unblocked folder's turn forward — it never lets one through a
-    // gate. That's the load-bearing fact, and it is carried by the verdicts in the list rather
-    // than asserted here, where it would be a caption nobody reads twice.
     return sweep
-      + row('Wait before cleaning up', '', pick('graceDays', GRACE_OPTS, 'Wait before cleaning up'))
+      + row('Delete after', '', pick('graceDays', GRACE_OPTS, 'Delete after'))
       + row('Most worktrees archived', '', pick('maxCount', COUNT_OPTS, 'Most worktrees archived'))
       + row('Most disk archived', '', pick('maxGb', GB_OPTS, 'Most disk archived'));
   }
@@ -9852,15 +9791,14 @@
       list.length ? `<span class="arc-total">${list.length} · ${fmtSize(arcMb(list))}</span>` : '',
       `<div class="arc-body">${body}</div>`);
   }
-  // The budget is archive-wide but the list above is one project's, so the two numbers are shown
-  // apart — otherwise "6 · 7.0 GB" reads as the budget it is being measured against. Two ratios,
+  // The caps are archive-wide but the list above is one project's, so the two numbers are shown
+  // apart — otherwise "6 · 7.0 GB" reads as the cap it is being measured against. Two ratios,
   // no sentence: a cap you can't see coming is indistinguishable from folders vanishing at random,
   // and which folders it has called early is already on their own rows.
   function arcPolicy() {
     const p = appSet.archive;
-    // A budget with nothing to spend it on is a number, not a fact — the caps can only bring a
-    // folder's turn forward, and with the sweep off or the wait at Never no turn ever comes.
-    if (!p.sweep || !p.graceDays) return '';
+    // A cap with nothing to measure against is a number, not a fact.
+    if (!p.sweep) return '';
     const parts = [];
     if (p.maxCount) parts.push(`${archived.length} / ${p.maxCount} worktrees`);
     // both sides of a ratio share one unit — "7.8 GB / 50 GB" says GB twice to say it once
@@ -9868,15 +9806,14 @@
     return parts.length ? `<div class="arc-policy">Archive-wide ${parts.join(' · ')}</div>` : '';
   }
   // Keyed by name, not index: a delete re-renders the list, and an index would then point at
-  // whichever row slid up into the gap. The verdict is the row's whole reason for existing —
-  // "why is this still here" is the question, and every row answers it in its own words.
+  // whichever row slid up into the gap. "4h ago · 1.2 GB · 6 days left": when it was put away,
+  // what it costs, and when it goes.
   const arcRow = (a) => {
-    const v = arcVerdict(a);
+    const left = arcCountdown(a);
     return `<div class="arc-row">
     <span class="arc-icon">${ICON_ARCHIVE}</span>
     <span class="arc-name">${esc(a.name)}</span>
-    <span class="arc-meta">${ageText(a)} · ${fmtSize(a.mb)}</span>
-    ${v.line ? `<span class="arc-why arc-why--${v.kind}">${esc(v.line)}</span>` : ''}
+    <span class="arc-meta">${ageText(a)} · ${fmtSize(a.mb)}${left ? ' · ' + left : ''}</span>
     <button class="arc-btn" data-arc-restore="${esc(a.name)}">Restore</button>
     <button class="tpl-x" data-arc-del="${esc(a.name)}" title="Delete permanently" aria-label="Delete ${esc(a.name)} permanently">${ICON_TRASH}</button>
   </div>`;
@@ -10231,7 +10168,7 @@
       setTabsMode(b.dataset.tabsOpt === 'tabs');   // view mode: changes the shell, so it rebuilds
       renderSettings();
     }));
-    // Every archive knob changes which folders are due, so each one rebuilds — the verdict on
+    // Every archive knob changes which folders are due, so each one rebuilds — the countdown on
     // every row in the project tab is downstream of these three numbers.
     content.querySelectorAll('[data-arc-opt]').forEach((b) => b.addEventListener('click', () => {
       appSet.archive[b.dataset.arcOpt] = +b.dataset.arcVal;
@@ -10241,8 +10178,8 @@
       const [grp, k] = b.dataset.switch.split('.');
       // Nothing else here changes the shape of the pane, so nothing else rebuilds it.
       if (grp === 'agent') { setSwitch(b, agentOn[k] = !agentOn[k]); syncAgentUI(k, agentOn[k]); return; }
-      // The sweep switch takes three rows with it and rewrites every verdict below, so it is the
-      // one switch here that does change the shape of the pane.
+      // The clean-up switch takes three rows with it and rewrites every countdown below, so it
+      // is the one switch here that does change the shape of the pane.
       if (grp === 'archive') { appSet.archive.sweep = !appSet.archive.sweep; renderSettings(); return; }
       setSwitch(b, k ? (appSet[grp][k] = !appSet[grp][k]) : (appSet[grp] = !appSet[grp]));
     }));

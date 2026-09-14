@@ -824,20 +824,17 @@ struct PaletteFrame {
         }
     }
 
-    /// When it was put away, and — once the sweeper has a verdict — why the folder is still
-    /// there. `ArchiveSweeper.Block.line` calls itself "the ⌘K ctx line" in its own doc, so the
-    /// reason rides here beside the age rather than living only in Settings: ⌘K is where you
-    /// meet an archived worktree first, and "why hasn't this gone yet" is asked where it is seen.
-    /// No verdict (sweep off, wait at Never, nothing evaluated yet) leaves the age alone.
+    /// When it was put away, and when its folder goes. ⌘K is where you meet an archived
+    /// worktree first, so the countdown rides here beside the age rather than only in Settings.
+    /// Nothing to count down to (clean-up off, folder already gone) leaves the age alone.
     private func archivedCtx(_ br: Branch) -> String {
         let age = store.archiveStatusLine(br)
-        guard let line = store.archiveVerdictLine(br) else { return age }
+        guard let line = store.archiveCountdown(br) else { return age }
         return "\(age) · \(line)"
     }
 
-    /// Everything a project has archived, with why each one is still on disk. Without this the
-    /// sweeper is a background process deleting folders the user can't enumerate — and it is
-    /// also the whole answer to "why hasn't this been cleaned up yet".
+    /// Everything a project has archived, with when each folder goes. Without this the clean-up
+    /// is a background process deleting folders the user can't enumerate.
     /// A row drills in rather than restoring outright: Restore isn't the only thing you come here
     /// to do — "stop waiting and delete it now" is the other, and a list whose ↵ silently picks
     /// one of the two verbs can't offer the other at all.

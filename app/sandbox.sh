@@ -67,19 +67,17 @@ repo, made = fx.build(sandbox / "repos", support)
 
 print(f"\n  repo:      {repo}")
 print(f"  worktrees: {support / 'worktrees'}\n")
-print("  scenario                 what the sweeper must decide")
+print("  scenario                 what the clean-up does with it")
 print("  " + "-" * 62)
 for name, expect in fx.EXPECTED.items():
-    print(f"  {name:<24} {'RECLAIM' if expect is None else 'keep — ' + expect}")
+    print(f"  {name:<24} {expect}")
 PY
 
 cat <<EOF
 
-  Clocks (compressed — real defaults are 7 days / 14 days / 300s):
-    grace        0s   archived rows are eligible immediately
-    eval gap     0s   but still need TWO sweeps, one tick apart
-    tick        60s   a sweep runs every minute
-    hold       600s   a reclaimed folder sits aside 10 min before real deletion
+  Clocks (compressed — real defaults are 7 days / 300s):
+    wait         0s   an archived folder is due on the next tick
+    tick        60s   a tick runs every minute
 
   Launching "$NAME" — quit it like any app; ./sandbox.sh --reset removes everything.
 
@@ -90,13 +88,10 @@ EOF
 # script returns — which looks exactly like "the sandbox crashed on launch".
 SYNTH_SUPPORT_DIR="$SUPPORT" \
 SYNTH_ARCHIVE_GRACE_SECONDS=0 \
-SYNTH_ARCHIVE_EVAL_GAP_SECONDS=0 \
 SYNTH_ARCHIVE_TICK_SECONDS=60 \
-SYNTH_ARCHIVE_HOLD_SECONDS=600 \
   nohup "$APP/Contents/MacOS/Synth" \
     -synth-archive-sweep '<true/>' \
     -synth-archive-grace-days '<integer>7</integer>' \
-    -synth-archive-dry-run '<false/>' \
     </dev/null >"$SANDBOX/synth.log" 2>&1 &
 PID=$!
 disown $PID 2>/dev/null || true

@@ -1,14 +1,17 @@
 """Archive + background clean-up gate.
 
-Builds a sandbox repo with a real `origin` (a bare clone on disk, so `--not --remotes` and
-`origin/HEAD` mean something) and one worktree per hazard, then drives a real Synth over the
-control socket with every clock compressed to zero.
+Builds a sandbox repo with a real `origin` (a bare clone on disk, so `origin/HEAD` means
+something) and one worktree per shape, then drives a real Synth over the control socket with
+the wait compressed to zero.
 
-The point of this suite is the NEGATIVE cases. A sweeper that deletes a merged, clean, fully
-pushed worktree is easy; one that refuses to delete the seven folders below is the whole
-feature, and each of those refusals is a data-loss bug if it regresses.
+The rule under test is short. A merged branch is archived for you; an archived worktree's
+folder is deleted after the wait, or sooner once the archive is over a cap, whatever is inside
+it; a restore after that re-cuts the checkout from the branch; and a merged branch the remote
+has dropped ends with its ref. What is NOT here is any reading of the folder's contents — the
+suite archives a dirty worktree and one with an unpushed commit and asserts both folders go,
+because that was the change.
 """
-import json, os, pathlib, subprocess, sys, time, urllib.parse, uuid
+import json, os, pathlib, sys, time
 
 import lib
 from lib import check, result, sh, wait, kill_all, launch, Ctl, support_dir
@@ -18,13 +21,7 @@ APP_SUPPORT = support_dir()
 
 
 import archive_fixture as fx
-from archive_fixture import file_url, git, stable_hash
-
-
-def build_sandbox():
-    """The shared scenario set, keyed by this suite's names."""
-    repo, made = fx.build(H / "sandbox", APP_SUPPORT)
-    return repo, made
+from archive_fixture import git
 
 
 def seed(repo, made):
@@ -36,10 +33,10 @@ def seed(repo, made):
 
 
 def sweep_until(ctl, done, ticks=8, secs=10):
-    """Drive forced sweeps until `done`.
+    """Drive forced ticks until `done`.
 
     One `archiveSweep` is a request, not a tick: `sweepInFlight` coalesces a second away while
-    the first is still running, and with every clock compressed the suite asks far faster than a
+    the first is still running, and with the clock compressed the suite asks far faster than a
     real one ever would. Asserting on a fixed number of calls made these checks depend on how
     long a tick happened to take.
     """
@@ -56,9 +53,21 @@ def status_map(ctl):
     return {r["branch"]: r for r in rows}
 
 
+def on_disk(ctl, name):
+    return status_map(ctl).get(name, {}).get("onDisk")
+
+
 def tree_branches(ctl):
     """Every branch row the sidebar draws, across workspaces."""
     return [b for ws in ctl("automation.tree").get("workspaces", []) for b in ws["branches"]]
+
+
+def archive_by_hand(ctl, name):
+    """The gesture, and the undo window elapsing. Headless, the drain is held (the card would
+    still be there for a returning user), so say so explicitly rather than sleeping forever."""
+    ctl("automation.archiveBranch", branch=name)
+    ctl("automation.notifDrain")
+    return wait(lambda: name in status_map(ctl), secs=20)
 
 
 def enter_row(ctl, label):
@@ -106,32 +115,31 @@ def new_branch_frame(ctl, query):
     return dict(fr, items=[], missing="New branch", offered=trail)
 
 
+def worktree_entry(repo, path):
+    porcelain = git(repo, "worktree list --porcelain")
+    return next((blk for blk in porcelain.split("\n\n") if str(path) in blk), "")
+
+
 def main():
     kill_all()
-    repo, made = build_sandbox()
+    repo, made = fx.build(H / "sandbox", APP_SUPPORT)
     state = seed(repo, made)
 
-    env_clocks = {
+    os.environ.update({
         "SYNTH_ARCHIVE_GRACE_SECONDS": "0",     # no waiting a week
-        "SYNTH_ARCHIVE_EVAL_GAP_SECONDS": "0",  # but the two-evaluation rule still applies
         "SYNTH_ARCHIVE_TICK_SECONDS": "3600",   # only forced ticks, so the test drives the clock
-        "SYNTH_ARCHIVE_HOLD_SECONDS": "999999",  # nothing reaped until we ask
-    }
-    os.environ.update(env_clocks)
+    })
 
     log = "/tmp/t9_archive.log"
     p, sock = launch(state, log, extra_args=[
         "-synth-archive-sweep", "<true/>",
         "-synth-archive-grace-days", "<integer>7</integer>",
-        "-synth-archive-dry-run", "<false/>",
+        "-synth-archive-max-count", "<integer>0</integer>",
+        "-synth-archive-max-gb", "<integer>0</integer>",
     ])
     ctl = Ctl(sock, repo)
     try:
         # --- the finished-row pass ------------------------------------------------------
-        # A merged, clean, pushed row nobody archived is archived for them — the sweeper used
-        # to evaluate archived rows only, so such a folder stayed on disk for good. Same
-        # two-reading rule as a hold: the first tick banks a reading, the second acts. And the
-        # same refusals: a row with anything unrecoverable in its folder stays in the tree.
         check("every scenario row starts in the tree",
               all(name in tree_branches(ctl) for name in made), str(tree_branches(ctl)))
         # A folder that goes mid-session — by hand, or another tool's cleanup — leaves its row
@@ -140,51 +148,61 @@ def main():
         sh(f"rm -rf '{made['merged-gone']}'")
         sh(f"rm -rf '{made['remote-gone']}'")
         git(repo, "worktree prune")
-        ctl("automation.archiveSweep")
-        time.sleep(6)
-        check("one clean reading archives nothing",
-              all(name in tree_branches(ctl) for name in made), str(tree_branches(ctl)))
-        # Every shape the finished-row pass may take on the user's behalf. `nested-ignored`
-        # and `env-from-template` are merged and clean too — what used to keep them was a gate
-        # mistaking a fetched dependency and a generated `.env` for work.
-        finished = {"merged-clean", "with-stash", "merged-gone",
-                    "nested-ignored", "env-from-template", "ref-gone"}
+
+        finished = {"merged-clean", "has-edits", "has-untracked", "merged-gone", "ref-gone"}
         # Rows that end during this suite: their branch goes, so they go. Every later count of
         # the Archived list has to leave room for them.
         retired = {"remote-gone", "ref-gone"}
-        auto = sweep_until(ctl, lambda: finished <= set(status_map(ctl)))
-        check("merged + clean + pushed rows are archived for the user", bool(auto),
-              str(sorted(status_map(ctl))))
-        # The tick evaluates archived rows BEFORE it archives finished ones, so a row archived
-        # on this tick meets the gate chain on the next one — it cannot be archived and held in
-        # the same breath, which is what gives the user a tick's worth of Archived list to
-        # object to before any folder moves.
-        held_now = {n: status_map(ctl).get(n, {}).get("held") for n in ("merged-clean", "with-stash")}
-        check("a row archived this tick is not held on the same tick",
-              set(held_now.values()) == {"false"}, str(held_now))
+        kept = {"not-pushed", "never-merged"}
 
+        # One tick, not a loop: the pass archives every merged row in a single pass, and the
+        # folders must NOT go on the same tick — archived rows are judged before live rows are
+        # archived, which is what gives the user a tick's worth of Archived list to object to.
+        ctl("automation.archiveSweep")
+        auto = wait(lambda: finished <= set(status_map(ctl)), secs=30)
+        check("merged rows are archived for the user, whatever is in the folder", bool(auto),
+              str(sorted(status_map(ctl))))
+        same_tick = {n: on_disk(ctl, n) for n in ("merged-clean", "has-edits", "has-untracked")}
+        check("a row archived this tick keeps its folder until the next one",
+              set(same_tick.values()) == {"true"}, str(same_tick))
         check("the folder-less merged row is archived on the branch's evidence alone",
               "merged-gone" in status_map(ctl), str(sorted(status_map(ctl))))
         check("archived-for-you rows leave the tree",
               not finished & set(tree_branches(ctl)), str(tree_branches(ctl)))
-        kept_live = [n for n in made
-                     if n not in finished | retired and n not in tree_branches(ctl)]
-        check("every row with something to lose stays in the tree", not kept_live, str(kept_live))
+        check("unmerged rows stay in the tree", kept <= set(tree_branches(ctl)),
+              str(tree_branches(ctl)))
+
+        # --- the clean-up ---------------------------------------------------------------
+        # The wait is zero, so every archived folder is due on the next tick. Uncommitted edits
+        # and untracked files are not a reason to keep one: archived is the whole decision.
+        cleanable = {"merged-clean", "has-edits", "has-untracked"}
+        gone = sweep_until(ctl, lambda: all(on_disk(ctl, n) == "false" for n in cleanable))
+        check("archived folders are deleted once the wait has run", bool(gone),
+              str({n: on_disk(ctl, n) for n in cleanable}))
+        check("the dirty worktree's folder really went", not made["has-edits"].exists())
+        check("git no longer lists the cleaned worktree",
+              not worktree_entry(repo, made["merged-clean"]),
+              worktree_entry(repo, made["merged-clean"]))
+        check("cleaned rows stay in the Archived list, restorable",
+              cleanable <= set(status_map(ctl)), str(sorted(status_map(ctl))))
+        check("a cleaned row reads as such",
+              all(status_map(ctl)[n]["countdown"] == "" for n in cleanable),
+              str({n: status_map(ctl)[n]["countdown"] for n in cleanable}))
+        check("the list itself says only when",
+              all(r["status"].startswith("archived ") for r in status_map(ctl).values()),
+              str({k: v["status"] for k, v in status_map(ctl).items()})[:200])
 
         # --- retiring the ref -----------------------------------------------------------
-        # The far end of the archive path, and what it was missing: a row archived, held and
-        # reaped used to leave its branch behind for good, so a machine that had run Synth for a
-        # season carried hundreds of merged refs and an Archived list of rows with nothing behind
-        # them. The ref goes only when the remote has already dropped it — and because a row
-        # whose branch has gone can no longer be restored, the row goes with it.
-        gone = sweep_until(ctl, lambda: "remote-gone" not in status_map(ctl)
-                           and "remote-gone" not in tree_branches(ctl))
-        check("a merged branch the remote has dropped is retired", bool(gone),
+        # The far end of the archive path: a row archived and cleaned up used to leave its
+        # branch behind for good. The ref goes only when the remote has already dropped it —
+        # and because a row whose branch has gone can no longer be restored, the row goes too.
+        ended = sweep_until(ctl, lambda: "remote-gone" not in status_map(ctl)
+                            and "remote-gone" not in tree_branches(ctl))
+        check("a merged branch the remote has dropped is retired", bool(ended),
               f"archived={'remote-gone' in status_map(ctl)} tree={'remote-gone' in tree_branches(ctl)}")
         check("and its ref is really deleted",
               not git(repo, "branch --list remote-gone").strip(),
               git(repo, "branch --list remote-gone"))
-
         # The negative, and the reason the remote is the gate rather than "merged" alone: same
         # shape in every other respect, but origin still lists it.
         check("a merged branch the remote still lists keeps its ref",
@@ -194,14 +212,9 @@ def main():
               "merged-gone" in status_map(ctl), str(sorted(status_map(ctl))))
 
         # The other ending: a branch removed outside Synth entirely. There is no ref to delete,
-        # and a row that can no longer be restored is not a row — it is the Archived list
-        # remembering something that stopped existing.
+        # and a row that can no longer be restored is not a row.
         check("the orphan-to-be starts archived", "ref-gone" in status_map(ctl))
-        # Reading the archived list forces ticks, so by now the sweep may already have held this
-        # folder aside under its `.archived-…` name. Take both, as the reaper eventually would.
-        sh(f"rm -rf '{made['ref-gone']}'")
-        for held in made["ref-gone"].parent.glob(".archived-ref-gone-*"):
-            sh(f"rm -rf '{held}'")
+        wait(lambda: on_disk(ctl, "ref-gone") == "false", secs=30)
         git(repo, "worktree prune")
         git(repo, "branch -D ref-gone")
         check("the branch really went", not git(repo, "branch --list ref-gone").strip(),
@@ -215,230 +228,109 @@ def main():
         # nothing. If this regresses, undo puts a row back that the archive filter then hides,
         # and the row is unreachable except through ⌘K. On a row the pass above can't take,
         # so nothing but the gesture is what moves it.
-        check("the row starts in the tree", "has-untracked" in tree_branches(ctl))
-        first = ctl("automation.archiveBranch", branch="has-untracked")
+        check("the row starts in the tree", "not-pushed" in tree_branches(ctl))
+        first = ctl("automation.archiveBranch", branch="not-pushed")
         check("archiveBranch verb finds the row", first.get("ok") is True, str(first))
         immediately = status_map(ctl)
         check("archive is not committed during the undo window",
-              "has-untracked" not in immediately, f"saw {list(immediately)}")
-
-        # Let the window elapse. Headless, the drain is held (the card would still be there
-        # for a returning user), so say so explicitly rather than sleeping forever.
+              "not-pushed" not in immediately, f"saw {list(immediately)}")
         ctl("automation.notifDrain")
-        landed = wait(lambda: "has-untracked" in status_map(ctl), secs=20)
+        landed = wait(lambda: "not-pushed" in status_map(ctl), secs=20)
         check("archive lands once the undo window drains", bool(landed))
-
         # The commit puts the row back in `branches` so the Archived list can reach it. It must
         # not put it back on screen: the sidebar drew straight from `branches`, so archiving a
         # row made it vanish for the length of the undo window and then reappear.
         check("the archived row stays out of the tree once committed",
-              "has-untracked" not in tree_branches(ctl), str(tree_branches(ctl)))
+              "not-pushed" not in tree_branches(ctl), str(tree_branches(ctl)))
 
-        for name in made:
-            if name not in finished | retired | {"has-untracked"}:
-                ctl("automation.archiveBranch", branch=name)
-                ctl("automation.notifDrain")
-        want = len(made) - len(retired)
-        wait(lambda: len(status_map(ctl)) == want, secs=25)
-        rows = status_map(ctl)
-        check("every archived row is listed", len(rows) == want,
-              f"{len(rows)}/{want}: {sorted(rows)}")
-        left = [b for b in tree_branches(ctl) if b in made]
-        check("archiving every row empties the tree", not left, f"still drawn: {left}")
+        # --- an unpushed commit survives its folder --------------------------------------
+        # The folder goes like any other archived folder. The commit does not go with it: it
+        # is on the branch ref, and the ref is only ever retired once the remote has it.
+        gone = sweep_until(ctl, lambda: on_disk(ctl, "not-pushed") == "false")
+        check("an archived worktree with an unpushed commit still loses its folder", bool(gone),
+              str(status_map(ctl).get("not-pushed")))
+        check("its branch ref survives",
+              git(repo, "branch --list not-pushed").strip().endswith("not-pushed"),
+              git(repo, "branch --list not-pushed"))
+        check("and the unpushed commit is still on it",
+              git(repo, "log -1 --format=%s not-pushed") == "never pushed anywhere",
+              git(repo, "log -1 --format=%s not-pushed"))
 
-        # --- the two-evaluation rule ----------------------------------------------------
-        # Scoped to the rows the batch above just archived. The reclaimable ones are long past
-        # this point — the retire checks drove ticks of their own — and the rule they are
-        # subject to is asserted where they meet it, one section up.
-        batch = set(made) - finished - retired
-        ctl("automation.archiveSweep")
-        time.sleep(6)
-        after_one = status_map(ctl)
-        check("first sweep holds nothing (needs a second opinion)",
-              all(after_one[n]["held"] == "false" for n in batch if n in after_one),
-              str({n: after_one[n]["held"] for n in batch
-                   if n in after_one and after_one[n]["held"] == "true"}))
-
-        # --- the sweep itself -----------------------------------------------------------
-        # A tick holds at most `perTickCap` folders, so drive ticks until the reclaimable set
-        # is through rather than assuming one pass clears it.
-        reclaimable = {"merged-clean", "with-stash", "nested-ignored", "env-from-template"}
-        for _ in range(4):
-            ctl("automation.archiveSweep")
-            time.sleep(8)
-            rows = status_map(ctl)
-            if all(rows.get(n, {}).get("held") == "true" for n in reclaimable): break
-
-        check("merged + clean + pushed worktree is reclaimed",
-              rows.get("merged-clean", {}).get("held") == "true",
-              rows.get("merged-clean", {}).get("status", "missing"))
-
-        # A stash must not block: it survives the folder, and blocking would make one
-        # forgotten stash permanently unsweepable.
-        check("a stash does not block the sweep",
-              rows.get("with-stash", {}).get("held") == "true",
-              rows.get("with-stash", {}).get("status", "missing"))
-
-        # Both of these were permanent refusals until the gates learned to tell a fetched or
-        # generated file from an original — the shape that leaves a machine with a hundred
-        # worktrees none of which can ever be reclaimed.
-        check("a nested repo under an ignored path does not block the sweep",
-              rows.get("nested-ignored", {}).get("held") == "true",
-              rows.get("nested-ignored", {}).get("reason", "missing"))
-
-        check("an ignored file copied from a committed template does not block the sweep",
-              rows.get("env-from-template", {}).get("held") == "true",
-              rows.get("env-from-template", {}).get("reason", "missing"))
-
-        # Everything below is a refusal. Each is a data-loss bug if it flips.
-        expected_kept = {
-            "has-untracked": "untracked",
-            "has-edits":     "uncommitted",
-            "not-pushed":    "unpushed",
-            "mid-rebase":    "inProgress",
-            "locked":        "locked",
-            "has-nested":    "nested",
-            "env-original":  "precious",
-            # Never merged: survives, and for the right reason — not "merged".
-            "never-merged":  ("noPR", "prUnknown"),
-        }
-        for name, want in expected_kept.items():
-            row = rows.get(name, {})
-            want = want if isinstance(want, tuple) else (want,)
-            check(f"kept: {name}",
-                  row.get("held") == "false" and row.get("reason") in want,
-                  f"held={row.get('held')} reason={row.get('reason', 'missing')!r}")
-
-        # The list itself says only WHEN — archiving is one simple idea to the user, and the
-        # reasons above are housekeeping that never reaches the UI.
-        check("archived rows read as a plain age",
-              all(r["status"].startswith("archived ") for r in rows.values()),
-              str({k: v["status"] for k, v in rows.items()})[:200])
-
-        # --- restore round-trip ---------------------------------------------------------
-        # The hold is a rename, so restore is a rename back — and because the hold never
-        # prunes, git still knows about the worktree and no repair is needed.
-        held_path = made["merged-clean"]
-        check("held folder really left its original path", not held_path.exists())
-        siblings = list(held_path.parent.glob(".archived-merged-clean-*"))
-        check("held folder sits aside with a timestamp", len(siblings) == 1, str(siblings))
-
-        restored = ctl("automation.archiveRestore", branch="merged-clean")
-        check("restore reports success", restored.get("ok") is True, str(restored))
-        check("restore puts the row back in the tree",
-              "merged-clean" in tree_branches(ctl), str(tree_branches(ctl)))
-        check("restored folder is back at its original path", held_path.exists())
-        check("git still resolves the restored worktree",
-              git(held_path, "rev-parse --is-inside-work-tree") == "true")
-        porcelain = git(repo, "worktree list --porcelain")
-        entry = next((blk for blk in porcelain.split("\n\n") if str(held_path) in blk), "")
-        check("restored worktree is registered again", bool(entry), porcelain[:200])
-        check("restored worktree is not prunable", "prunable" not in entry, entry)
-
-        # --- the New-branch picker offers archived rows ----------------------------------
-        # An archived row is out of the tree but its name is still taken, so a picker that
-        # filtered on every row — not just the live ones — made the branch unreachable by
-        # either route: absent from the sidebar, and absent from the one frame that adds it.
-        frame = new_branch_frame(ctl, "has-untracked")
-        # The picker reads git off the main thread, so the frame opens with the fallback row
-        # alone and fills when the branch list lands. Re-ask rather than assert on the first.
-        wait(lambda: "has-untracked" in ctl("automation.palette").get("items", []), secs=20)
-        frame = ctl("automation.paletteQuery", query="has-untracked")
-        check("the New-branch picker offers an archived branch",
-              "has-untracked" in frame.get("items", []),
-              f"crumb={frame.get('crumb')!r} items={frame.get('items')} {frame.get('missing', '')}")
-        check("the archived row is offered as a restore, not a second create",
-              frame.get("items", []).count("has-untracked") == 1
-              and not frame.get("note"),
-              f"items={frame.get('items')} note={frame.get('note')!r}")
-        items = frame.get("items", [])
-        if "has-untracked" in items:
-            enter_row(ctl, "has-untracked")
-            check("picking it puts the row back in the tree",
-                  bool(wait(lambda: "has-untracked" in tree_branches(ctl), secs=15)),
-                  str(tree_branches(ctl)))
-            check("and takes it out of the Archived list",
-                  "has-untracked" not in status_map(ctl), str(sorted(status_map(ctl))))
-
-        # --- the reaper -----------------------------------------------------------------
-        # It reads nothing but the epoch in the folder name, so no predicate bug can reach it.
-        stale = held_path.parent / f".archived-reapme-{int(time.time())}-deadbeef"
-        stale.mkdir()
-        (stale / "x").write_text("x")
-        ctl("automation.archiveSweep")   # a tick reaps first
-        time.sleep(4)
-        check("reaper does not delete a folder whose hold is live", stale.exists())
-
-        os.environ["SYNTH_ARCHIVE_HOLD_SECONDS"] = "0"
-        kill_all()
-        p, sock = launch(state, log + ".2", extra_args=[
-            "-synth-archive-sweep", "<true/>", "-synth-archive-dry-run", "<false/>",
-        ])
-        ctl = Ctl(sock, repo)
-        gone = wait(lambda: not stale.exists(), secs=30)
-        check("reaper deletes a folder whose hold has expired", bool(gone),
-              "still present" if stale.exists() else "")
-
-        # --- restore after the folder is gone for good -----------------------------------
-        # The same launch reaped with-stash's held folder. Its row is still archived, and
-        # restore is the only route to it — so restore has to cut the checkout again from the
-        # branch rather than decline. A restore that gave up here left the branch with no way
-        # back at all: hidden from the tree, and its name taken in the picker.
-        recut = made["with-stash"]
-        reaped = wait(lambda: not recut.exists()
-                      and not list(recut.parent.glob(".archived-with-stash-*")), secs=30)
-        check("the reaper took with-stash's folder", bool(reaped),
-              str(list(recut.parent.glob("*with-stash*"))))
-        check("the reaped row is still archived", "with-stash" in status_map(ctl),
-              str(sorted(status_map(ctl))))
-
-        again = ctl("automation.archiveRestore", branch="with-stash")
+        # --- restore after the folder is gone -------------------------------------------
+        # Restore is the only route back to an archived row — hidden from the tree, its name
+        # taken in the picker — so it has to cut the checkout again rather than decline.
+        recut = made["not-pushed"]
+        again = ctl("automation.archiveRestore", branch="not-pushed")
         check("restore reports success with no folder to move back",
               again.get("ok") is True, str(again))
         check("the row comes back into the tree",
-              bool(wait(lambda: "with-stash" in tree_branches(ctl), secs=30)),
+              bool(wait(lambda: "not-pushed" in tree_branches(ctl), secs=30)),
               str(tree_branches(ctl)))
         check("the checkout is cut again at its old path",
               bool(wait(lambda: recut.exists(), secs=30)),
               str(list(recut.parent.iterdir())[:12]))
         check("the re-cut worktree is a real checkout of the branch",
-              git(recut, "rev-parse --abbrev-ref HEAD") == "with-stash",
+              git(recut, "rev-parse --abbrev-ref HEAD") == "not-pushed",
               git(recut, "rev-parse --abbrev-ref HEAD"))
-        porcelain = git(repo, "worktree list --porcelain")
-        entry = next((blk for blk in porcelain.split("\n\n") if str(recut) in blk), "")
-        check("the re-cut worktree is registered", bool(entry), porcelain[:200])
-
-        # The same restore, with the reaper's half-done state built by hand instead of waited
-        # for. The reaper deletes a held folder and prunes the repo afterwards, so for a moment
-        # `worktree list` names a path with nothing at it — and a restore that read the list
-        # alone called that a checkout, marked the row ready, and cut nothing. Landing in that
-        # window is a race the check above loses only sometimes; deleting the folder and
-        # leaving git's registration standing is the same state, every run.
-        sh(f"rm -rf '{recut}'")
-        stale_entry = next((blk for blk in git(repo, "worktree list --porcelain").split("\n\n")
-                            if str(recut) in blk), "")
-        check("git still holds a registration for the folder that just went",
-              "prunable" in stale_entry, stale_entry)
-        ctl("automation.archiveBranch", branch="with-stash")
-        ctl("automation.notifDrain")
-        wait(lambda: "with-stash" in status_map(ctl), secs=20)
-        over_stale = ctl("automation.archiveRestore", branch="with-stash")
-        check("restore reports success over a registration git hasn't pruned",
-              over_stale.get("ok") is True, str(over_stale))
-        check("and cuts the checkout again rather than trusting the registration",
-              bool(wait(lambda: recut.exists(), secs=30)),
-              str(list(recut.parent.iterdir())[:12]))
-        check("which is a real checkout of the branch",
-              git(recut, "rev-parse --abbrev-ref HEAD") == "with-stash",
-              git(recut, "rev-parse --abbrev-ref HEAD"))
-        entry = next((blk for blk in git(repo, "worktree list --porcelain").split("\n\n")
-                      if str(recut) in blk), "")
-        check("and is registered, with nothing stale left behind",
+        check("with the unpushed commit checked out",
+              (recut / "local.txt").exists(), str(list(recut.iterdir())[:12]))
+        entry = worktree_entry(repo, recut)
+        check("the re-cut worktree is registered, with nothing stale left behind",
               bool(entry) and "prunable" not in entry, entry)
+
+        # --- the New-branch picker offers archived rows ----------------------------------
+        # An archived row is out of the tree but its name is still taken, so a picker that
+        # filtered on every row — not just the live ones — made the branch unreachable by
+        # either route: absent from the sidebar, and absent from the one frame that adds it.
+        check("the spike is archived by hand", bool(archive_by_hand(ctl, "never-merged")))
+        frame = new_branch_frame(ctl, "never-merged")
+        # The picker reads git off the main thread, so the frame opens with the fallback row
+        # alone and fills when the branch list lands. Re-ask rather than assert on the first.
+        wait(lambda: "never-merged" in ctl("automation.palette").get("items", []), secs=20)
+        frame = ctl("automation.paletteQuery", query="never-merged")
+        check("the New-branch picker offers an archived branch",
+              "never-merged" in frame.get("items", []),
+              f"crumb={frame.get('crumb')!r} items={frame.get('items')} {frame.get('missing', '')}")
+        check("the archived row is offered as a restore, not a second create",
+              frame.get("items", []).count("never-merged") == 1
+              and not frame.get("note"),
+              f"items={frame.get('items')} note={frame.get('note')!r}")
+        if "never-merged" in frame.get("items", []):
+            enter_row(ctl, "never-merged")
+            check("picking it puts the row back in the tree",
+                  bool(wait(lambda: "never-merged" in tree_branches(ctl), secs=15)),
+                  str(tree_branches(ctl)))
+            check("and takes it out of the Archived list",
+                  "never-merged" not in status_map(ctl), str(sorted(status_map(ctl))))
+
+        # --- the caps -------------------------------------------------------------------
+        # A wait nothing will run out, and a count cap of one: the older of two archived
+        # folders goes before its wait, the newer keeps counting down. Relaunched, because
+        # the cap is a preference and the wait an environment clock.
+        os.environ["SYNTH_ARCHIVE_GRACE_SECONDS"] = "999999"
+        kill_all()
+        p, sock = launch(state, log + ".2", extra_args=[
+            "-synth-archive-sweep", "<true/>",
+            "-synth-archive-max-count", "<integer>1</integer>",
+            "-synth-archive-max-gb", "<integer>0</integer>",
+        ])
+        ctl = Ctl(sock, repo)
+        wait(lambda: "not-pushed" in tree_branches(ctl), secs=30)
+        check("the older row is archived first", bool(archive_by_hand(ctl, "not-pushed")))
+        time.sleep(1.5)   # so the two archivedAt stamps order unambiguously
+        check("then the newer", bool(archive_by_hand(ctl, "never-merged")))
+        before = {n: on_disk(ctl, n) for n in ("not-pushed", "never-merged")}
+        check("both keep their folders inside the wait", set(before.values()) == {"true"}, str(before))
+        capped = sweep_until(ctl, lambda: on_disk(ctl, "not-pushed") == "false", ticks=3)
+        check("over the count cap, the oldest folder goes before its wait", bool(capped),
+              str(status_map(ctl).get("not-pushed")))
+        check("the newest stays, counting down", on_disk(ctl, "never-merged") == "true",
+              str(status_map(ctl).get("never-merged")))
+        left = status_map(ctl).get("never-merged", {}).get("countdown", "")
+        check("and says how long it has", left.endswith("days left"), repr(left))
 
     finally:
         kill_all()
-        sh(f"git -C '{repo}' worktree unlock '{made['locked']}' 2>/dev/null")
     return result()
 
 

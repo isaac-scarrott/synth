@@ -3,16 +3,16 @@
 Everything here is asserted through `automation.notifs`, which reports each standing card as
 NotificationDeck renders it — kind, tier, verb line, evidence sub-line, what its button offers,
 whether it is running a countdown. No agent binaries and no pixels: the cards under test are
-raised by soft deletes, worktree failures and the archive sweeper, all of which are drivable.
+raised by soft deletes, worktree failures and the archive clean-up, all of which are drivable.
 
 The point of the suite is that a card's *presentation* now carries meaning. A regression that
 puts a housekeeping digest back in needs-input blue, or drops the who-line rule and floats a dot
 over an empty title again, or makes the × mean the same thing as a click, is a regression in the
 only thing these cards exist to do.
 
-Two phases, because the sweeper needs a repo with a real `origin` before anything is eligible:
-phase A drives soft deletes and worktree failures against a plain fixture; phase B reuses t9's
-sandbox and asserts only the shape of the card a sweep raises.
+Two phases, because the clean-up needs a repo with a real `origin` before a row is archived for
+you: phase A drives soft deletes and worktree failures against a plain fixture; phase B reuses
+t9's sandbox and asserts only the shape of the one card a clean-up raises.
 """
 import os, pathlib, sys, time, uuid
 sys.path.insert(0, ".")
@@ -118,14 +118,11 @@ check("19. × drops a sticky card", not card(lambda c: c["kind"] == "error"))
 p.terminate()
 
 # --- Phase B: the shape of a housekeeping card --------------------------------------------------
-# t9 proves the sweeper decides correctly; this asserts only how it speaks. It needs a repo with
-# a real origin, so nothing is eligible in the plain fixture above.
+# t9 proves the clean-up decides correctly; this asserts only how it speaks.
 kill_all()
 os.environ.update({
     "SYNTH_ARCHIVE_GRACE_SECONDS": "0",
-    "SYNTH_ARCHIVE_EVAL_GAP_SECONDS": "0",
     "SYNTH_ARCHIVE_TICK_SECONDS": "3600",
-    "SYNTH_ARCHIVE_HOLD_SECONDS": "999999",
 })
 H = pathlib.Path(lib.H)
 sandbox, made = fx.build(H / "sandbox", support_dir())
@@ -135,8 +132,7 @@ sd2.mkdir(parents=True)
 (sd2 / "state.json").write_text(__import__("json").dumps(fx.state(sandbox, made)))
 p2, sock2 = launch(sd2, f"{lib.H}/t10b.log", extra_args=[
     "-synth-archive-sweep", "<true/>",
-    "-synth-archive-grace-days", "<integer>0</integer>",
-    "-synth-archive-dry-run", "<false/>",
+    "-synth-archive-grace-days", "<integer>7</integer>",
 ])
 ctl2 = Ctl(sock2, sandbox)
 ctl2("automation.notifRoute", route="deck")
@@ -146,8 +142,8 @@ def cards2():
     return ctl2("automation.notifs").get("notifs", [])
 
 
-# Archive the one shape the sweeper may ever reclaim (merged, clean, pushed), then let its undo
-# window elapse — headless the drain is held, so say it out loud.
+# Archive a row by hand, then let its undo window elapse — headless the drain is held, so say
+# it out loud. With the wait at zero its folder is due on the next tick.
 ctl2("automation.archiveBranch", branch="merged-clean")
 ctl2("automation.notifDrain")
 wait(lambda: any(r["branch"] == "merged-clean"
@@ -155,13 +151,14 @@ wait(lambda: any(r["branch"] == "merged-clean"
 for c in cards2():
     ctl2("automation.notifDismiss", sessionId=c["sessionId"])
 
-# Two evaluations, because a single one never holds anything (t9's own rule).
-ctl2("automation.archiveSweep")
-time.sleep(6)
 ctl2("automation.archiveSweep")
 digest = wait(lambda: next((c for c in cards2() if c["kind"] == "neutral"), None), 30, 0.3)
-check("20. a sweep digest is NEUTRAL — the app's own housekeeping, not a green completion",
+check("20. a clean-up digest is NEUTRAL — the app's own housekeeping, not a green completion",
       bool(digest), digest and digest["message"])
+check("20b. and it is the only card the tick raised — archiving merged rows is silent",
+      digest and digest["message"] == "Cleaned up merged-clean"
+      and sum(1 for c in cards2() if c["kind"] == "neutral") == 1,
+      str([c["message"] for c in cards2()]))
 check("21. it is ambient — a result, not a summons", digest and digest["tier"] == "ambient",
       digest and digest["tier"])
 check("22. it runs a countdown", digest and digest["drains"] == "true")
@@ -180,57 +177,6 @@ ctl2("automation.notifFocus", active=True)
 drained = wait(lambda: (not any(c["kind"] == "neutral" for c in cards2())) or None, 20, 0.4)
 check("25. and dismisses itself once focus returns", bool(drained))
 
-# --- Tier 1, neutral: the housekeeping nudge that used to wear the needs-input costume ---------
-# Same colour discipline as the digest, opposite life: it is asking for a decision, so it sticks
-# and offers the place it is pointing at. The bulk brake is lowered so one eligible worktree
-# trips it.
 p2.terminate()
 kill_all()
-# A fresh sandbox: phase B already reclaimed the one eligible worktree, so nothing in that one
-# is left for a brake to trip over.
-os.environ["SYNTH_ARCHIVE_BULK_BRAKE"] = "0"
-sandbox3, made3 = fx.build(H / "sandbox3", support_dir())
-sd3 = H / "state3"
-sh(f"rm -rf '{sd3}'")
-sd3.mkdir(parents=True)
-(sd3 / "state.json").write_text(__import__("json").dumps(fx.state(sandbox3, made3)))
-p3, sock3 = launch(sd3, f"{lib.H}/t10c.log", extra_args=[
-    "-synth-archive-sweep", "<true/>",
-    "-synth-archive-grace-days", "<integer>0</integer>",
-    "-synth-archive-dry-run", "<false/>",
-])
-ctl3 = Ctl(sock3, sandbox3)
-ctl3("automation.notifRoute", route="deck")
-ctl3("automation.notifFocus", active=False)
-ctl3("automation.archiveBranch", branch="merged-clean")
-ctl3("automation.notifDrain")
-wait(lambda: any(r["branch"] == "merged-clean"
-                 for r in ctl3("automation.archiveStatus").get("archived", [])), 20)
-for c in ctl3("automation.notifs").get("notifs", []):
-    ctl3("automation.notifDismiss", sessionId=c["sessionId"])
-ctl3("automation.archiveSweep")
-time.sleep(6)
-ctl3("automation.archiveSweep")
-nudge = wait(lambda: next((c for c in ctl3("automation.notifs").get("notifs", [])
-                           if c["kind"] == "neutral" and c["action"] == "Review"), None), 30, 0.4)
-check("26. the bulk brake raises a REVIEW card, not a needs-input one", bool(nudge),
-      nudge and nudge["message"])
-check("27. it is neutral and sticky — a decision, not a blocked agent",
-      nudge and nudge["tier"] == "attention" and nudge["drains"] == "false",
-      nudge and (nudge["tier"], nudge["drains"]))
-check("28. its copy fits a 320pt card, and counts in English",
-      bool(nudge) and len(nudge["message"]) <= 34 and nudge["message"] == "1 worktree ready to clean up",
-      nudge and f'{len(nudge["message"])} chars: {nudge["message"]}')
-if nudge:
-    ctl3("automation.notifAction", sessionId=nudge["sessionId"])
-    time.sleep(1)
-pal = ctl3("automation.palette")
-check("29. Review opens the archived list it points at",
-      pal.get("open") is True and "rchived" in (pal.get("crumb") or ""),
-      f'open={pal.get("open")} crumb={pal.get("crumb")!r}')
-
-p3.terminate()
-kill_all()
-for repo_, made_ in ((sandbox, made), (sandbox3, made3)):
-    sh(f"git -C '{repo_}' worktree unlock '{made_['locked']}' 2>/dev/null")
 sys.exit(result())

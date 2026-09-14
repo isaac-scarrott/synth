@@ -109,33 +109,6 @@ import Foundation
         try? FileManager.default.removeItem(at: fileURL)
     }
 
-    /// Worktree paths claimed by *other* live Synth instances (a Dev build alongside a stable
-    /// one is the normal case, and both can manage worktrees of the same repo).
-    ///
-    /// The archive sweeper refuses to touch these: `AppStore.runGit` serialises git per repo
-    /// within one process and cannot span apps, so two sweepers racing a `worktree prune` on
-    /// one repo is corruption rather than nuisance.
-    static func otherInstanceWorktreePaths() throws -> Set<String> {
-        let fm = FileManager.default
-        // Throws rather than returning the empty set. An empty answer here means "no other
-        // Synth is holding anything", which the sweeper reads as permission to prune — so a
-        // directory we merely failed to READ would have licensed removing another instance's
-        // live worktrees. Its neighbour already treats an unknown as a refusal; this now
-        // matches, and the caller decides.
-        let files = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-        var paths: Set<String> = []
-        for file in files where file.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: file),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let pid = obj["pid"] as? Int, pid_t(pid) != getpid(),
-                  kill(pid_t(pid), 0) == 0 || errno == EPERM,   // still alive
-                  let claimed = obj["worktreePaths"] as? [String]
-            else { continue }
-            paths.formUnion(claimed)
-        }
-        return paths
-    }
-
     /// Reap session process trees orphaned by a previous Synth that crashed or was
     /// force-quit: its `login` children reparent to launchd (ppid 1) but keep running —
     /// the in-process quit teardown (TerminalManager.shutdownAll → killpg) never got to run,

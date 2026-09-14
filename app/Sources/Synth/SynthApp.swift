@@ -90,11 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Reclaim escaped session processes whenever the machine is tight (SessionProcesses) —
         // only ever orphans of instances that are gone, never a live row's own dev server.
         SessionProcesses.startPressureMonitor()
-        // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd),
-        // and reap any archive hold whose window elapsed while Synth was shut.
+        // Finish any fast delete a crash interrupted (folders renamed aside but never rm'd).
         Task.detached(priority: .background) {
             GitService.sweepDetachedWorktrees()
-            GitService.reapHeldWorktrees(hold: ArchiveSweeper.holdSeconds)
         }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

@@ -289,14 +289,10 @@ extension URL {
     /// by the store (syncBranchLayout) and serialized to disk (slice 014).
     var layout: PaneNode?
     /// When the user archived this row. Non-nil is the whole archive state: the row leaves the
-    /// sidebar, keeps its folder, and starts the clock the sweeper measures against. Set at
+    /// sidebar, keeps its folder, and starts the clock the clean-up measures against. Set at
     /// undo-commit, not at the gesture — the 8s window must change nothing, and a row hidden
     /// by an archive the user then undid would be unreachable.
     var archivedAt: Date?
-    /// When the sweeper last found this branch clean on every condition. Two clean readings a
-    /// day apart are required before it acts, which is what makes a transient — mid-rebase,
-    /// briefly offline — unable to authorise a delete on its own.
-    var lastCleanSweepEval: Date?
 
     init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", lastActivityAt: Date? = nil, browserRecents: [BrowserRecent] = [], isPending: Bool = false, archivedAt: Date? = nil) {
         self.id = id

@@ -100,10 +100,8 @@ enum GitService {
     struct WorktreeInfo {
         let path: URL
         let branch: String?   // nil when detached
-        /// `git worktree lock` — a machine-readable "do not touch" the sweeper honours.
         var isLocked: Bool = false
-        /// git already considers the checkout folder gone. An archived worktree reads
-        /// prunable, because archiving renames the folder aside without pruning.
+        /// git already considers the checkout folder gone.
         var isPrunable: Bool = false
     }
 
@@ -138,10 +136,9 @@ enum GitService {
     }
 
     /// The checkout the branch actually has: a registration git holds whose folder is really
-    /// on disk. A line in `worktree list` is not one. Archiving renames a folder aside without
-    /// pruning, and the reaper deletes a held folder before it prunes the repo — so between
-    /// those two steps git names a path with nothing at it, and a caller that read the list
-    /// alone marked the row ready at that path and never cut the checkout again.
+    /// on disk. A line in `worktree list` is not one — a folder deleted by hand leaves its
+    /// registration standing until a prune, and a caller that read the list alone marked the
+    /// row ready at that path and never cut the checkout again.
     static func liveWorktree(repo: URL, branch: String) -> WorktreeInfo? {
         worktrees(at: repo).first {
             $0.branch == branch && FileManager.default.fileExists(atPath: $0.path.path)
@@ -227,11 +224,10 @@ enum GitService {
         try? FileManager.default.createDirectory(at: path.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         // git refuses to add at a path it still holds a registration for even when the folder
-        // that registration names is gone — "missing but already registered". Ours go missing
-        // by design: the reaper deletes a held folder and prunes the repo afterwards, so every
-        // restore that arrives between those two steps lands on this refusal. `-f` is scoped
-        // to exactly that — a registration for *this* path with nothing on disk — and is never
-        // used to step over a branch that is genuinely checked out somewhere else.
+        // that registration names is gone — "missing but already registered", which is what a
+        // folder deleted by hand leaves behind. `-f` is scoped to exactly that — a registration
+        // for *this* path with nothing on disk — and is never used to step over a branch that
+        // is genuinely checked out somewhere else.
         let stale = worktrees(at: repo).contains {
             $0.path.resolvingSymlinksInPath().path == path.resolvingSymlinksInPath().path
                 && !FileManager.default.fileExists(atPath: $0.path.path)
@@ -304,50 +300,6 @@ enum GitService {
         return trash
     }
 
-    // MARK: Archive hold
-
-    static let archivePrefix = ".archived-"
-
-    /// The sweeper's terminal act, and deliberately *not* a delete: rename the checkout to a
-    /// hidden `.archived-<name>-<epoch>-<id>` sibling and stop. The folder is intact and one
-    /// `mv` from being restored for `archiveHold` days, after which `reapHeldWorktrees` — which
-    /// reads nothing but the epoch in the filename — deletes it for real.
-    ///
-    /// Crucially this does **not** prune. Pruning drops `<repo>/.git/worktrees/<name>/`, which
-    /// holds the worktree's index and its HEAD reflog; that would make the hold recover files
-    /// but not git state, and "reversible" would be a lie. Leaving the entry costs a line of
-    /// `prunable` in `worktree list` and buys a restore that is exactly `mv` back. The prune
-    /// happens at reap, once the folder is genuinely gone.
-    ///
-    /// Returns the held folder, or nil when the rename failed.
-    static func holdWorktree(repo: URL, path: URL, now: Date = Date()) -> URL? {
-        let stamp = Int(now.timeIntervalSince1970)
-        let held = path.deletingLastPathComponent().appendingPathComponent(
-            "\(archivePrefix)\(path.lastPathComponent)-\(stamp)-\(UUID().uuidString.prefix(8))",
-            isDirectory: true)
-        do { try FileManager.default.moveItem(at: path, to: held) } catch { return nil }
-        return held
-    }
-
-    /// Undo a hold: move the folder back to where git still expects it. No `worktree repair`
-    /// is needed precisely because `holdWorktree` never pruned. Returns true on success.
-    static func releaseHeldWorktree(from held: URL, to path: URL) -> Bool {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: held.path), !fm.fileExists(atPath: path.path) else { return false }
-        do { try fm.moveItem(at: held, to: path) } catch { return false }
-        return true
-    }
-
-    /// The epoch a `.archived-…` folder was held at, or nil when the name doesn't carry one.
-    static func heldAt(_ folder: URL) -> Date? {
-        let name = folder.lastPathComponent
-        guard name.hasPrefix(archivePrefix) else { return nil }
-        // …-<epoch>-<id>: the id is the last field, the epoch the one before it.
-        let fields = name.split(separator: "-")
-        guard fields.count >= 2, let epoch = TimeInterval(fields[fields.count - 2]) else { return nil }
-        return Date(timeIntervalSince1970: epoch)
-    }
-
     /// Launch sweep: delete `.deleting-…` folders a crash left behind under the app's
     /// worktree root (a detached delete that never finished its background rm).
     static func sweepDetachedWorktrees() {
@@ -357,53 +309,17 @@ enum GitService {
         }
     }
 
-    /// The reaper. Deletes `.archived-…` folders whose hold has expired, then prunes the repo
-    /// they belonged to. This is the only irreversible step in the whole archive path, and it
-    /// is deliberately the dumbest code in it: it consults no policy, no PR state, and no
-    /// persisted store — only a timestamp in a folder name. No bug in the sweep predicate can
-    /// reach it early.
-    static func reapHeldWorktrees(hold: TimeInterval, now: Date = Date()) {
-        var touched = Set<URL>()
-        forEachWorktreeRootEntry { root, entry in
-            guard let at = heldAt(entry), now.timeIntervalSince(at) >= hold else { return }
-            do { try FileManager.default.removeItem(at: entry) } catch { return }
-            touched.insert(root)
-        }
-        // The folders are gone for real now, so the entries they left behind are safe to drop.
-        // Each root maps back to one repo via the worktree its entries name.
-        for root in touched { pruneRepoBehind(root) }
-    }
-
-    /// `worktreeRoot(for:)` hashes the repo path, so a root can't be reversed into a repo.
-    /// Any surviving sibling worktree names it, though — that folder is a checkout of the
-    /// repo, and `rev-parse` inside it points at the common dir.
-    private static func pruneRepoBehind(_ root: URL) {
-        let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
-        for entry in entries where !entry.lastPathComponent.hasPrefix(".") {
-            let (status, out) = runChecked(["-C", entry.path, "rev-parse", "--path-format=absolute",
-                                            "--git-common-dir"], timeout: 10)
-            guard status == 0 else { continue }
-            let common = out.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !common.isEmpty else { continue }
-            let repo = URL(fileURLWithPath: common).deletingLastPathComponent()
-            pruneWorktrees(at: repo)
-            return
-        }
-    }
-
     // MARK: Stray folders
 
     /// Launch reconcile of the worktree root against git. A folder under a repo's root that git
     /// doesn't list as a worktree is a stray: a create that failed between mkdir and checkout, a
     /// registration git pruned once the folder was emptied by hand, a row removed with its folder
-    /// left behind. Nothing else ever looks at them again — the sweeper reads rows, the reaper
-    /// reads `.archived-` names — so they accumulated unseen.
+    /// left behind. Nothing else ever looks at them again — the clean-up reads rows — so they
+    /// accumulated unseen.
     ///
     /// A stray with no regular file anywhere inside is deleted; there is nothing in it to lose.
-    /// Anything holding a file is returned for the caller to show, and not touched: the sweeper's
-    /// invariant needs git to prove a folder reconstructible, and a folder git doesn't know can't
-    /// be proved anything.
+    /// Anything holding a file is returned for the caller to show, and not touched: a folder
+    /// git doesn't know has no branch to re-cut it from.
     static func reconcileStrayWorktreeFolders(now: Date = Date()) -> [URL] {
         let fm = FileManager.default
         var strays: [URL] = []
@@ -465,13 +381,13 @@ enum GitService {
         }
     }
 
-    // MARK: Sweep probes
+    // MARK: Branch probes
     //
-    // Everything the archive sweeper asks git before it will touch a folder. Each probe
-    // answers `.unknown` when git couldn't be asked — a non-zero exit, a timeout, an
-    // unparseable answer. `.unknown` is never "clean": `runChecked` merges stderr into
-    // stdout, so a `fatal:` is indistinguishable from porcelain by content, and inferring
-    // a clean tree from a failed probe is how a sweeper deletes work.
+    // What the clean-up asks git about a branch before it will end one. Each probe answers
+    // `.unknown` when git couldn't be asked — a non-zero exit, a timeout, an unparseable
+    // answer. `.unknown` is never "yes": `runChecked` merges stderr into stdout, so a
+    // `fatal:` is indistinguishable from porcelain by content, and inferring an answer from
+    // a failed probe is how a clean-up deletes a branch it shouldn't.
 
     /// A probe's answer, or the fact that there isn't one.
     enum Probe<T> {
@@ -484,114 +400,10 @@ enum GitService {
         }
     }
 
-    struct Cleanliness {
-        /// Staged, unstaged, or unmerged changes to tracked files.
-        var tracked: [String] = []
-        /// Untracked and unignored — source that exists in no commit and on no remote.
-        var untracked: [String] = []
-    }
-
-    /// `--no-optional-locks` matters: without it `status` refreshes and writes the worktree's
-    /// index, which races a live agent working in that folder.
-    static func cleanliness(at wt: URL) -> Probe<Cleanliness> {
-        let (status, out) = runChecked(["-C", wt.path, "--no-optional-locks", "status",
-                                        "--porcelain=v2", "-uall", "--ignore-submodules=none"],
-                                       timeout: probeTimeout)
-        guard status == 0 else { return .unknown }
-        var result = Cleanliness()
-        for line in out.split(separator: "\n") {
-            if line.hasPrefix("1 ") || line.hasPrefix("2 ") || line.hasPrefix("u ") {
-                result.tracked.append(String(line))
-            } else if line.hasPrefix("? ") {
-                result.untracked.append(String(line.dropFirst(2)))
-            }
-        }
-        return .known(result)
-    }
-
-    /// Commits on this worktree's HEAD that no remote-tracking ref can reach — the one check
-    /// that actually answers "would deleting this folder lose work".
-    ///
-    /// Deliberately `--not --remotes` and not `@{upstream}`: with `autoSetupMerge` a branch
-    /// cut off `origin/main` has upstream `origin/main`, so "ahead 3" only means "not in
-    /// main" and says nothing about whether the commits are pushed anywhere. Branches with no
-    /// upstream at all make `@{upstream}` an error rather than an answer.
-    /// `ref` defaults to the worktree's HEAD; a branch name lets the question be asked of a row
-    /// whose folder is already gone, at the repo itself.
-    static func commitsOnNoRemote(_ ref: String = "HEAD", at wt: URL) -> Probe<Int> {
-        let (status, out) = runChecked(["-C", wt.path, "rev-list", "--count", ref, "--not", "--remotes"],
-                                       timeout: probeTimeout)
-        guard status == 0, let n = Int(out.trimmingCharacters(in: .whitespacesAndNewlines)) else { return .unknown }
-        return .known(n)
-    }
-
     static func remotes(at repo: URL) -> Probe<[String]> {
         let (status, out) = runChecked(["-C", repo.path, "remote"], timeout: probeTimeout)
         guard status == 0 else { return .unknown }
         return .known(out.split(separator: "\n").map(String.init))
-    }
-
-    /// A half-finished rebase leaves a *clean* worktree with unreplayed patches sitting in
-    /// `rebase-merge/`. None of this surfaces in `status --porcelain`, so it has to be read
-    /// off the git dir directly. Returns the operation's name, or nil when there isn't one.
-    static func inProgressOperation(at wt: URL) -> Probe<String?> {
-        guard let dir = gitDir(at: wt) else { return .unknown }
-        let fm = FileManager.default
-        let markers = [("rebase-merge", "rebase"), ("rebase-apply", "rebase"), ("MERGE_HEAD", "merge"),
-                       ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert"),
-                       ("BISECT_LOG", "bisect"), ("sequencer", "revert"), ("AUTO_MERGE", "merge")]
-        for (file, name) in markers where fm.fileExists(atPath: dir.appendingPathComponent(file).path) {
-            return .known(name)
-        }
-        return .known(nil)
-    }
-
-    /// Everything in the worktree git is ignoring. `--directory` collapses whole ignored trees
-    /// (`node_modules/`, `app/.build/`) to one entry with a trailing slash, which is what keeps
-    /// this cheap enough to run on a tick. Paths are worktree-relative.
-    ///
-    /// One call answers two of the sweeper's questions — which ignored files are precious, and
-    /// which directories a nested-repo walk has no business descending into — so it is the probe
-    /// and the two filters below are pure.
-    static func ignoredEntries(at wt: URL) -> Probe<[String]> {
-        let (status, out) = runChecked(["-C", wt.path, "ls-files", "--others", "--ignored",
-                                        "--exclude-standard", "--directory"], timeout: probeTimeout)
-        guard status == 0 else { return .unknown }
-        return .known(out.split(separator: "\n").map(String.init))
-    }
-
-    /// Ignored files whose loss would hurt and that no remote can restore — the `.env` class.
-    /// The caller decides whether each one is reconstructible anyway.
-    static func precious(in entries: [String]) -> [String] {
-        entries.filter { path in
-            guard path.split(separator: "/").count <= 3 else { return false }
-            let name = (path as NSString).lastPathComponent
-            if name.hasPrefix(".env") { return true }
-            return [".pem", ".key", ".db", ".sqlite", ".sqlite3"].contains { name.hasSuffix($0) }
-        }
-    }
-
-    /// The ignored *directories*, without their trailing slash.
-    static func ignoredDirectories(in entries: [String]) -> Set<String> {
-        Set(entries.filter { $0.hasSuffix("/") }.map { String($0.dropLast()) })
-    }
-
-    /// Is this file's content already a committed blob, sitting next to it? A generated `.env`
-    /// that byte-matches the tracked `.env.development.demo` it was stamped out of is in the
-    /// repo's object store and on the remote with it — losing the folder loses nothing.
-    ///
-    /// Scoped to the file's own directory: templates sit beside what they seed, and an
-    /// unbounded object search on a monorepo is not a tick.
-    static func contentIsCommittedNearby(_ relative: String, at wt: URL) -> Bool {
-        let (hashStatus, hash) = runChecked(["-C", wt.path, "hash-object", "--", relative],
-                                            timeout: probeTimeout)
-        let sha = hash.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard hashStatus == 0, !sha.isEmpty else { return false }
-        let dir = (relative as NSString).deletingLastPathComponent
-        let (treeStatus, tree) = runChecked(["-C", wt.path, "ls-tree", "HEAD", "--",
-                                             dir.isEmpty ? "." : dir + "/"], timeout: probeTimeout)
-        guard treeStatus == 0 else { return false }
-        return tree.split(separator: "\n").contains { $0.contains(sha) }
     }
 
     /// Does any remote still carry this branch? A merged branch the remote has already dropped
@@ -621,30 +433,10 @@ enum GitService {
     }
 
     /// Does git track this path? Untracked is the whole licence to delete a file Synth wrote:
-    /// removing a tracked one leaves a ` D` in `status` that no one asked for, and that the
-    /// archive sweeper then reads — correctly — as work in progress.
+    /// removing a tracked one leaves a ` D` in `status` that no one asked for.
     static func isTracked(_ relative: String, at wt: URL) -> Bool {
         runChecked(["-C", wt.path, "ls-files", "--error-unmatch", "--", relative],
                    timeout: probeTimeout).status == 0
-    }
-
-    /// Stash entries whose subject names this branch. Stashes live in the repo, not the
-    /// worktree, so they *survive* the folder — this is lost context, not lost work.
-    static func stashSubjects(at repo: URL) -> Probe<[String]> {
-        let (status, out) = runChecked(["-C", repo.path, "stash", "list", "--format=%gs"],
-                                       timeout: probeTimeout)
-        guard status == 0 else { return .unknown }
-        return .known(out.split(separator: "\n").map(String.init))
-    }
-
-    static func hasDirtySubmodules(at wt: URL) -> Probe<Bool> {
-        guard FileManager.default.fileExists(atPath: wt.appendingPathComponent(".gitmodules").path) else {
-            return .known(false)
-        }
-        let (status, out) = runChecked(["-C", wt.path, "submodule", "status", "--recursive"],
-                                       timeout: probeTimeout)
-        guard status == 0 else { return .unknown }
-        return .known(out.split(separator: "\n").contains { $0.hasPrefix("+") || $0.hasPrefix("U") })
     }
 
     /// `git merge-base --is-ancestor` — 0 when `ancestor` is reachable from `descendant`.
@@ -657,18 +449,6 @@ enum GitService {
         case 1:  return .known(false)
         default: return .unknown
         }
-    }
-
-    /// A held index lock means something else is mid-write in this worktree.
-    static func hasIndexLock(at wt: URL) -> Bool {
-        guard let dir = gitDir(at: wt) else { return false }
-        return FileManager.default.fileExists(atPath: dir.appendingPathComponent("index.lock").path)
-    }
-
-    /// `git fetch --prune`, so `--not --remotes` is answering against refs the remote still
-    /// has. A stale remote-tracking ref can make a force-pushed branch read as fully pushed.
-    static func fetchPrune(at repo: URL) -> Bool {
-        runChecked(["-C", repo.path, "fetch", "--prune", "--quiet", "origin"], timeout: 30).status == 0
     }
 
     // MARK: Worktree diffstat
@@ -882,7 +662,7 @@ enum GitService {
     }
 
     /// `timeout` nil means wait forever, which is right for the interactive paths — a
-    /// checkout the user is watching should finish, not get cut off. The sweeper always
+    /// checkout the user is watching should finish, not get cut off. The clean-up always
     /// passes one: it runs unattended on a repeating tick, and `readDataToEndOfFile` blocks
     /// a cooperative-pool thread until git exits, so one `status` against a hung network
     /// volume or a locked index would leak a thread per tick, forever. Killing the child

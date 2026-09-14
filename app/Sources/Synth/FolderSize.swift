@@ -2,8 +2,7 @@ import Foundation
 import Observation
 
 /// Bytes on disk under a folder. The archive is the only surface that asks: "still on disk" is
-/// a claim about disk, and a list of folders that never says what they cost is asking the user
-/// to take the sweeper's word for it.
+/// a claim about disk, and the disk cap is measured in it.
 enum FolderSize {
     /// Blocking. Walks the whole tree. Never call this from the main actor — `FolderSizeCache`
     /// exists so nothing has to.

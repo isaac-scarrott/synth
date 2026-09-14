@@ -175,46 +175,33 @@ struct SettingsPane: View {
                     AddAgentButton()
                 }
             }
-            // Only the switch carries a description, and only the half of it you can't read off
-            // the controls: that the sweep touches nothing unrecoverable. Each picker states its
-            // own rule — a sentence under "Never · 1 · 7 · 14 · 30 days" would say it again,
-            // slower. All three share one width: stacked pickers starting at different x read as
-            // a misalignment, not as three controls each sized to its own contents.
+            // Only the switch carries a description. Each picker states its own rule — a
+            // sentence under "1 · 7 · 14 · 30 days" would say it again, slower. All three share
+            // one width: stacked pickers starting at different x read as a misalignment, not as
+            // three controls each sized to its own contents.
             //
             // Every row after the switch folds away when it's off: what remains has nothing to
             // configure, and unlike the agent rows there's no field here whose absence would hide
             // the way back.
             SetSection(label: "Archived worktrees") {
-                switchRow("Clean up finished worktrees",
-                          "Merged branches are archived for you, and a folder goes only once the work is safely on a remote.",
+                switchRow("Clean up archived worktrees",
+                          "Merged branches are archived for you. An archived worktree is deleted after the wait, or sooner once the archive is over a cap; its branch goes too once the remote has dropped it.",
                           bind(\.archiveSweepEnabled))
                 if store.archiveSweepEnabled {
                     SetDivider()
-                    // Its own switch because it ends a different thing. A folder is reversible
-                    // twice over — held aside for two weeks, then re-cut from the branch — and
-                    // this is the step that takes the branch, so the row has to be able to say
-                    // what makes that safe rather than hide inside the sentence above.
-                    switchRow("Delete the branch too",
-                              "Once the folder is gone for good, so is the branch — but only a branch that is merged and that the remote has already deleted.",
-                              bind(\.archiveRetireBranches))
-                    SetDivider()
-                    SetToggleRow(label: "Wait before cleaning up") {
-                        SetSeg(options: [(0, "Never"), (1, "1 day"), (7, "7 days"), (14, "14 days"), (30, "30 days")],
-                               selection: bind(\.archiveGraceDays), width: SegWidth.five)
+                    SetToggleRow(label: "Delete after") {
+                        SetSeg(options: [(1, "1 day"), (7, "7 days"), (14, "14 days"), (30, "30 days")],
+                               selection: bind(\.archiveGraceDays), width: SegWidth.four)
                     }
                     SetDivider()
-                    // A budget can only bring an unblocked folder's turn forward — it never lets
-                    // one through a gate. That fact is carried by the verdicts on the Archived
-                    // rows, where it is about a folder you can see, rather than asserted here as
-                    // a caption nobody reads twice.
                     SetToggleRow(label: "Most worktrees archived") {
                         SetSeg(options: [(10, "10"), (25, "25"), (50, "50"), (0, "No cap")],
-                               selection: bind(\.archiveMaxCount), width: SegWidth.five)
+                               selection: bind(\.archiveMaxCount), width: SegWidth.four)
                     }
                     SetDivider()
                     SetToggleRow(label: "Most disk archived") {
                         SetSeg(options: [(20, "20 GB"), (50, "50 GB"), (100, "100 GB"), (0, "No cap")],
-                               selection: bind(\.archiveMaxGB), width: SegWidth.five)
+                               selection: bind(\.archiveMaxGB), width: SegWidth.four)
                     }
                 }
             }
@@ -1439,9 +1426,10 @@ private struct BrowsingData: View {
 // MARK: - Archived worktrees (working.html .arc-*)
 
 private extension AppStore {
-    /// Measured bytes only: a folder still being walked contributes nothing rather than a guess.
+    /// Measured bytes only: a folder still being walked contributes nothing rather than a guess,
+    /// and a folder already cleaned up contributes nothing because it costs nothing.
     func archivedBytes(_ branches: [Branch]) -> Int64 {
-        branches.reduce(0) { $0 + (FolderSizeCache.shared.bytes(for: archivedFolder($1)) ?? 0) }
+        branches.filter(archivedOnDisk).reduce(0) { $0 + (FolderSizeCache.shared.bytes(for: $1.worktreeURL) ?? 0) }
     }
 }
 
@@ -1470,11 +1458,10 @@ private struct ArchivedWorktrees: View {
                 }
             }
         }
-        // Both land well after the pane is drawn and both dedupe themselves; the id re-runs them
-        // when a row is archived or restored while Settings is open.
+        // Lands well after the pane is drawn and dedupes itself; the id re-runs it when a row is
+        // archived or restored while Settings is open.
         .task(id: branches.map(\.id)) {
-            FolderSizeCache.shared.warm(branches.map { store.archivedFolder($0) })
-            store.refreshArchiveVerdicts()
+            FolderSizeCache.shared.warm(branches.filter(store.archivedOnDisk).map(\.worktreeURL))
         }
     }
 }
@@ -1501,28 +1488,17 @@ private struct ArcRow: View {
     @Environment(AppStore.self) private var store
     let branch: Branch
 
-    private var eligible: Bool {
-        if case .eligible = store.archiveVerdict(branch) { return true }
-        return false
-    }
-
-    /// Read off the displayed verdict, not the stored one: a branch the budget has called early
-    /// reads as checking too, and the chip has to agree with the words in it.
-    private var checking: Bool { store.archiveVerdictChip(branch) == ArchiveSweeper.Block.secondOpinion.chip }
-
     var body: some View {
         HStack(spacing: 9) {
             Phos(path: Phosphor.archive, size: 14).foregroundStyle(Theme.inkFaint).frame(width: 14)
             // Everything to the right of the name is rigid, so the name is what gives up width:
-            // a reason clipped to "commits not pushed anywhe…" is worse than no reason at all,
-            // because it looks like the answer is somewhere else.
+            // a countdown clipped to "6 days le…" is worse than none at all.
             Text(branch.name)
                 .font(.sans(13, 500)).foregroundStyle(Theme.ink)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(meta)
                 .font(.sans(11, tabular: true)).foregroundStyle(Theme.inkFaint).fixedSize()
-            if let chip = store.archiveVerdictChip(branch) { ArcWhy(text: chip, eligible: eligible, checking: checking) }
             restoreButton
             deleteButton
         }
@@ -1533,12 +1509,16 @@ private struct ArcRow: View {
             .shadow(color: .black.opacity(0.04), radius: 0.75, y: 1))
     }
 
-    /// "4h ago · 1.2 GB" — the size only once the walk lands, because a folder claiming 0 MB is
-    /// worse than a folder claiming nothing.
+    /// "4h ago · 1.2 GB · 6 days left" — the size only once the walk lands, because a folder
+    /// claiming 0 MB is worse than a folder claiming nothing; the countdown only while there is
+    /// a folder to count down for. A row whose folder has already gone says so, because it is
+    /// still restorable and the list is the one place that fact is visible.
     private var meta: String {
-        let when = store.archivedAge(branch)
-        guard let bytes = FolderSizeCache.shared.bytes(for: store.archivedFolder(branch)) else { return when }
-        return "\(when) · \(FolderSize.format(bytes))"
+        var parts = [store.archivedAge(branch)]
+        guard store.archivedOnDisk(branch) else { return parts[0] + " · cleaned up" }
+        if let bytes = FolderSizeCache.shared.bytes(for: branch.worktreeURL) { parts.append(FolderSize.format(bytes)) }
+        if let left = store.archiveCountdown(branch) { parts.append(left) }
+        return parts.joined(separator: " · ")
     }
 
     /// `.arc-btn`, which is not quite `.tpl-add__btn`: tighter, and it answers to the pointer.
@@ -1581,9 +1561,6 @@ private struct ArcRow: View {
     }
 }
 
-/// Why this folder is still on disk. A blocked row is the normal, correct state — the sweeper
-/// protecting work — so it stays a quiet neutral chip; only the row that is about to go gets the
-/// accent, because that is the one worth catching before it does.
 /// `.arc-btn:active`. Shallower than `IconPressStyle`'s 0.94, which is tuned for an icon with
 /// room to move — a text button that shrinks that far reads as a wobble rather than a press.
 private struct ArcPressStyle: ButtonStyle {
@@ -1594,36 +1571,16 @@ private struct ArcPressStyle: ButtonStyle {
     }
 }
 
-private struct ArcWhy: View {
-    let text: String
-    let eligible: Bool
-    /// The sweeper has read this one clean once and is waiting on a second reading a day later.
-    /// Italic because it is the only chip that is not a verdict — it is the absence of one, and
-    /// a reader who can't tell it from "PR still open" will read a pause as a decision.
-    let checking: Bool
-
-    var body: some View {
-        Text(text)
-            .font(.sans(10, 550))
-            .italic(checking)
-            .foregroundStyle(eligible ? Theme.inkOpen : Theme.inkMuted)
-            .lineLimit(1).fixedSize()
-            .padding(.horizontal, 8).padding(.vertical, 2)
-            .background(Capsule().fill(eligible ? Theme.accent.opacity(0.12) : Theme.rowHover))
-    }
-}
-
-/// The budget is archive-wide but the list above is one project's, so the two numbers are shown
-/// apart — otherwise the row's own "7 · 7.3 GB" reads as the budget it is being measured against.
+/// The caps are archive-wide but the list above is one project's, so the two numbers are shown
+/// apart — otherwise the row's own "7 · 7.3 GB" reads as the cap it is being measured against.
 /// Two ratios, no sentence: a cap you can't see coming is indistinguishable from folders
 /// vanishing at random, and which folders it has called early is already on their own rows.
 private struct ArcPolicy: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        // A budget with nothing to spend it on is a number, not a fact — the caps can only bring
-        // a folder's turn forward, and with the sweep off or the wait at Never no turn ever comes.
-        if store.archiveSweepEnabled, store.archiveGraceDays > 0, !parts.isEmpty {
+        // A cap with nothing to measure against is a number, not a fact.
+        if store.archiveSweepEnabled, !parts.isEmpty {
             Text("Archive-wide " + parts.joined(separator: " · "))
                 .font(.sans(11, tabular: true))
                 .foregroundStyle(Theme.inkFaint)
@@ -1632,7 +1589,7 @@ private struct ArcPolicy: View {
     }
 
     private var parts: [String] {
-        let archived = store.workspaces.flatMap { $0.branches.filter(\.isArchived) }
+        let archived = store.workspaces.flatMap { $0.branches.filter(\.isArchived) }.filter(store.archivedOnDisk)
         var parts: [String] = []
         if store.archiveMaxCount > 0 { parts.append("\(archived.count) / \(store.archiveMaxCount) worktrees") }
         // both sides of a ratio share one unit — "7.8 GB / 50 GB" says GB twice to say it once
@@ -1652,7 +1609,7 @@ private struct ArcPolicy: View {
 /// tags — a second implementation would drift on the raised state within a release.
 private enum SegWidth {
     static let three: CGFloat = 216
-    static let five: CGFloat = 330
+    static let four: CGFloat = 272
 }
 
 private struct SetSeg<Value: Hashable>: View {

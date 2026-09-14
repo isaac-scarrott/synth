@@ -889,10 +889,9 @@ final class ControlServer: @unchecked Sendable {
             store.requestDelete(.session(session))
             return ["ok": true]
 
-        // Archive a branch row by name, and force a sweep. Without these the sweeper is only
+        // Archive a branch row by name, and force a tick. Without these the clean-up is only
         // testable by waiting a week — `SYNTH_ARCHIVE_*_SECONDS` compress the clocks, and this
-        // drives the rest. The evidence comes back per branch so a harness can assert on *why*
-        // something was kept, not just that nothing happened.
+        // drives the rest.
         case "automation.archiveBranch" where automation:
             guard let name = request["branch"] as? String,
                   let target = store.workspaces.flatMap(\.branches).first(where: { $0.name == name })
@@ -910,7 +909,7 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true]
 
         // The tick runs git off the main actor, so this kicks it off and returns; the harness
-        // polls `automation.archiveStatus` for the verdicts it settled on.
+        // polls `automation.archiveStatus` for what it did.
         case "automation.archiveSweep" where automation:
             Guarded.task { await store.sweepTick(force: true) }
             return ["ok": true]
@@ -987,8 +986,8 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true,
                     "archived": store.workspaces.flatMap { store.archivedBranches(in: $0) }.map { br in
                         ["branch": br.name, "status": store.archiveStatusLine(br),
-                         "reason": store.archiveReason(br),
-                         "held": String(store.heldFolder(for: br) != nil)]
+                         "countdown": store.archiveCountdown(br) ?? "",
+                         "onDisk": String(store.archivedOnDisk(br))]
                     }]
 
         case "automation.paletteMove" where automation:

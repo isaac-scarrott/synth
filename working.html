@@ -9176,6 +9176,8 @@
     sounds: { done: true, input: true, fail: false },
     mcp: { browser: true, app: false },
     simSessions: false,
+    // On by default — Store.usageAlertsEnabled.
+    usageAlerts: true,
     analytics: true,
     // Mirrors SettingsPane.swift's Archived worktrees section and Store's defaults
     // (archiveSweepEnabled = true, archiveGraceDays = 7, archiveMaxCount = 25, archiveMaxGB = 50).
@@ -9688,6 +9690,8 @@
         `<div class="seg seg--slide set-seg" role="group" aria-label="Show sessions in"><span class="seg__thumb" data-thumb></span>${
           [['sidebar', 'Sidebar'], ['tabs', 'Tabs']].map(([v, t]) => `<button class="seg__btn${(tabsMode ? 'tabs' : 'sidebar') === v ? ' is-on' : ''}" data-tabs-opt="${v}">${t}</button>`).join('')}</div>`))
     + sec('Notification sounds', SOUNDS.map(([k, l, d]) => row(l, desc(d), switchCtl(appSet.sounds[k], 'sounds.' + k))).join(''))
+    + sec('Usage', row('Usage alerts', desc('A card when an agent passes 80% of a usage limit, and one that stays at 95%.'),
+        switchCtl(appSet.usageAlerts, 'usageAlerts')))
     + sec('Integrations', MCP.map(([k, l, d]) => row(l, desc(d), switchCtl(appSet.mcp[k], 'mcp.' + k))).join('')
       + row('Simulator sessions', desc(SIM_SESSIONS_DESC), switchCtl(appSet.simSessions, 'simSessions')))
     + sec('New worktree defaults',
@@ -9873,7 +9877,7 @@
   // too. Both are variable in count, so both are rendered as lists, never as fixed bars.
   // `pct` is what's been USED — Antigravity reports remaining_fraction, so its supervisor
   // inverts on the way in rather than leaving two conventions loose in the UI. `active` means a
-  // session of that agent is running, so its windows climb while the pane is open.
+  // session of that agent is running, so its windows climb whether or not the pane is open.
   const USAGE_DATA = {
     claude: {
       // a session of this agent is running right now, so its windows are moving as you watch
@@ -9969,12 +9973,45 @@
     content.querySelectorAll('.usage-tile__meta[data-reset]').forEach((el) => {
       setRolling(el, fmtCountdown(+el.dataset.reset - Date.now()));
     });
-    // The running agent is spending its window while you watch it, so that one number climbs —
-    // which is the only reason anything on this pane changes on its own.
-    driftTick = (driftTick + 1) % 4;
-    if (driftTick === 0) driftUsage();
   }
-  let driftTick = 0;
+  // A window crossing one of these lines says so once, whichever agent it belongs to: the board
+  // answers "how close am I to a limit" when you look, this card when you don't. Memory is per
+  // window, so one that resets can speak again. Remembered but not raised while the board is on
+  // screen — it is already saying it — or while Settings has alerts switched off.
+  const USAGE_ALERT_AT = [95, 80];
+  const usageSaid = new Map();   // `${agent}:${n}` -> the highest line already said
+  // `${agent}` / `${agent}:urgent` -> its standing card, so a later crossing replaces its like and an
+  // 80% card never replaces a 95% one still waiting to be seen.
+  const usageAlertCards = {};
+  function noteUsageAlerts(key) {
+    const d = USAGE_DATA[key], meta = TPL_KINDS[key];
+    const crossed = [];
+    d.metrics.forEach((m, n) => {
+      if (m.pct === undefined) return;
+      const id = `${key}:${n}`, prior = usageSaid.get(id) || 0;
+      const line = USAGE_ALERT_AT.find((t) => m.pct >= t);
+      if (!line) { usageSaid.delete(id); return; }
+      if (line > prior) crossed.push(m);
+      usageSaid.set(id, Math.max(line, prior));
+    });
+    if (!crossed.length || !appSet.usageAlerts || app.classList.contains('usage')) return;
+    // One card per agent per reading, led by its fullest window.
+    const lead = crossed.reduce((a, b) => (b.pct > a.pct ? b : a));
+    // At the last line the agent is close to refusing, so that card waits to be dismissed.
+    const urgent = lead.pct >= USAGE_ALERT_AT[0];
+    const slot = urgent ? key + ':urgent' : key;
+    if (usageAlertCards[slot]) clearNotif(usageAlertCards[slot]);
+    const sub = [lead.resetsAt ? fmtCountdown(lead.resetsAt - Date.now()) : '',
+                 crossed.length > 1 ? `+${crossed.length - 1} more` : ''].filter(Boolean).join(' · ');
+    const card = raiseSystemNotif({
+      kind: 'neutral', tier: urgent ? '' : 'ambient', glyph: ICON_USAGE, life: urgent ? 0 : NOTIF_DONE_MS,
+      who: { icon: meta.icon, text: meta.label }, what: `${lead.label} at ${lead.pct}%`, sub,
+      act: { label: 'View', run: () => { clearNotif(card); enterUsage(); } },
+    });
+    usageAlertCards[slot] = card;
+  }
+  // The running agent spends its window whether or not you're watching, so its numbers climb in
+  // the background — the tiles follow when the board is open, the alert when it isn't.
   function driftUsage() {
     Object.keys(USAGE_DATA).forEach((key) => {
       const d = USAGE_DATA[key];
@@ -9991,8 +10028,10 @@
         const lit = Math.round((m.pct / 100) * USAGE_SEGMENTS);
         [...meter.children].forEach((seg, b) => seg.classList.toggle('is-lit', b < lit));
       });
+      noteUsageAlerts(key);
     });
   }
+  setInterval(driftUsage, 4000);
   function stopUsageTicker() { if (usageTimer) { clearInterval(usageTimer); usageTimer = null; } }
   function renderUsage() {
     stopUsageTicker();

@@ -231,6 +231,7 @@ private struct NotifCard: View {
         }
     }
     private var glyphPath: String {
+        if let path = notif.glyphPath { return path }
         switch notif.kind {
         case .error: return Phosphor.exclamation
         case .input: return Phosphor.question

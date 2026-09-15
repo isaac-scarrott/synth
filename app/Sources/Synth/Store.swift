@@ -142,6 +142,9 @@ struct InAppNotif: Identifiable {
     /// both from the session. A system toast persists until clicked.
     var message: String? = nil
     var iconPath: String? = nil
+    /// The chip's mark, when it isn't the who-line's icon — a usage card names its agent by the
+    /// agent's own mark and wears the meter in the chip.
+    var glyphPath: String? = nil
 
     var tier: NotifTier = .attention
     /// Evidence under the verb line — an exit code, git's own message, a size. Never a
@@ -383,6 +386,12 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     static let soundInputKey = "synth-sound-input"
     static let soundErrorKey = "synth-sound-error"
     static let soundDoneKey  = "synth-sound-done"
+    /// On by default: the point is a word you didn't go looking for. Off also stops the Usage board
+    /// reading in the background, since nothing else wants the number while the pane is closed.
+    var usageAlertsEnabled = AppStore.loadBoolPref(AppStore.usageAlertsKey, default: true) {
+        didSet { UserDefaults.standard.set(usageAlertsEnabled, forKey: AppStore.usageAlertsKey) }
+    }
+    static let usageAlertsKey = "synth-usage-alerts"
     /// UserDefaults' `bool(forKey:)` can't tell "unset" from `false`, so read the object and
     /// fall back to the type's default only when it's genuinely absent.
     static func loadBoolPref(_ key: String, default def: Bool) -> Bool {
@@ -929,6 +938,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         syncAgentBridge()
         startAutosave()
         refreshPullRequests()
+        // A driven run never reads the real account unasked: a gate would spend the user's rate
+        // limit and raise their real alerts. `automation.usageReading` feeds the same path.
+        UsageBoard.shared.start(agents: { [weak self] in self?.availableAgents ?? [] },
+                                background: { [weak self] in !Automation.isDriven && self?.usageAlertsEnabled == true },
+                                onReading: { [weak self] in try self?.noteUsageReading($0) })
         // The done-toast drain follows focus as well as hover: routeTransition raises the
         // deck even unfocused, and the clock must not run while nobody can see it.
         for (name, active) in [(NSApplication.didBecomeActiveNotification, true),
@@ -3194,6 +3208,43 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                  title: title, colorIndex: nil, outlivesSession: true,
                                  message: message, iconPath: icon,
                                  tier: .ambient, sub: sub, drains: true))
+    }
+
+    // MARK: Usage alerts
+
+    /// The card standing for each agent at each urgency, so a later crossing replaces its like
+    /// rather than stacking — and an 80% card never replaces a 95% one still waiting to be seen.
+    @ObservationIgnored private var usageAlertCards: [String: UUID] = [:]
+
+    /// One board reading checked against the alert lines. Remembered even while it isn't raised —
+    /// the Usage pane on screen is already saying it, and switching alerts back on shouldn't
+    /// replay every window that crossed while they were off.
+    func noteUsageReading(_ section: UsageSection) throws {
+        let crossed = try UsageAlerts.note(section)
+        guard let lead = crossed.max(by: { $0.percent < $1.percent }), usageAlertsEnabled, !usageOpen
+        else { return }
+        let urgent = lead.threshold >= UsageAlerts.urgent
+        let slot = section.id.rawValue + (urgent ? "/urgent" : "")
+        if let standing = usageAlertCards[slot] { clearNotif(standing) }
+
+        // One card per agent per reading, led by its fullest window: a launch that finds three
+        // windows already past a line says so once, not three times.
+        var sub: [String] = []
+        if case .resets(let at) = lead.metric.detail { sub.append(UsageFormat.countdown(at.timeIntervalSinceNow)) }
+        if crossed.count > 1 { sub.append("+\(crossed.count - 1) more") }
+
+        notifSeq += 1
+        let id = UUID()
+        usageAlertCards[slot] = id
+        // Below the last line it's a result, not a summons, and the drain already holds while Synth
+        // isn't frontmost. At it the agent is close to refusing, so the card waits to be dismissed.
+        notifs.append(InAppNotif(id: id, kind: .neutral, seq: notifSeq, sessionKind: .agent(section.id),
+                                 title: section.title, colorIndex: nil, outlivesSession: true,
+                                 message: "\(lead.metric.label) at \(Int(lead.percent.rounded()))%",
+                                 glyphPath: Phosphor.usage, tier: urgent ? .attention : .ambient,
+                                 sub: sub.isEmpty ? nil : sub.joined(separator: " · "),
+                                 action: NotifAction(label: "View"), drains: !urgent))
+        notifActions[id] = { [weak self] in self?.enterUsage() }
     }
 
     /// Folder picker → adds the repo with its default branch. Panel runs modally, so

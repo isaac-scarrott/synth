@@ -833,6 +833,8 @@ final class ControlServer: @unchecked Sendable {
                     // Every Notification Center post this run would have made, recorded instead of
                     // delivered (NotificationService.add) — the unfocused branch, assertable.
                     "nc": NotificationService.shared.captured,
+                    // The deck isn't drawn over Usage, and a usage card's button is what opens it.
+                    "usageOpen": store.usageOpen,
                     "notifs": store.notifOrder.map { n -> [String: String] in
                         ["sessionId": n.id.uuidString,
                          "kind": String(describing: n.kind),
@@ -938,6 +940,20 @@ final class ControlServer: @unchecked Sendable {
             }
             store.dismissNotif(id)
             return ["ok": true]
+
+        // One board reading, as a reader would land it. Driven runs never poll the real account
+        // (UsageBoard), so this is how a gate walks a window across the alert lines.
+        case "automation.usageReading" where automation:
+            let metrics = (request["metrics"] as? [[String: Any]] ?? []).map { m in
+                UsageMetric(id: m["id"] as? String ?? "", label: m["label"] as? String ?? "",
+                            value: "", percent: (m["percent"] as? NSNumber)?.doubleValue,
+                            detail: (m["resetsIn"] as? NSNumber)
+                                .map { .resets(at: Date().addingTimeInterval($0.doubleValue)) } ?? .text(""))
+            }
+            let section = UsageSection(id: AgentID(request["agent"] as? String ?? "claudeCode"),
+                                       title: request["title"] as? String ?? "Claude Code",
+                                       metrics: metrics)
+            return ["ok": Guarded.run { try store.noteUsageReading(section) } != nil]
 
         // Undo cards don't drain while the app is unfocused, and a headless one never is —
         // so a harness has to say "the window elapsed" out loud.

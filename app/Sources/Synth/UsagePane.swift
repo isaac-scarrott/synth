@@ -34,12 +34,8 @@ struct UsagePane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onReceive(clock) { now = $0 }
-        .task {
-            let agents = store.availableAgents
-            board.configure(agents: agents, sources: UsageSources.all(for: agents))
-            board.start()
-        }
-        .onDisappear { board.stop() }
+        .task { board.watch(true) }
+        .onDisappear { board.watch(false) }
     }
 
     // MARK: Head (working.html .pane__head)
@@ -226,23 +222,8 @@ private struct UsageTile: View {
     private var detail: String {
         switch metric.detail {
         case .text(let text): return text
-        case .resets(let date): return Self.countdown(date.timeIntervalSince(now))
+        case .resets(let date): return UsageFormat.countdown(date.timeIntervalSince(now))
         }
-    }
-
-    /// Seconds appear only inside the last hour, where they're the part that's actually changing;
-    /// above that they'd be noise on a number that moves once a minute.
-    private static func countdown(_ remaining: TimeInterval) -> String {
-        guard remaining > 0 else { return "resetting…" }
-        let total = Int(remaining)
-        let days = total / 86_400
-        let hours = (total % 86_400) / 3_600
-        let minutes = (total % 3_600) / 60
-        let seconds = total % 60
-        if days > 0 { return "resets in \(days)d \(hours)h" }
-        if hours > 0 { return "resets in \(hours)h \(minutes)m" }
-        if minutes > 0 { return "resets in \(minutes)m \(String(format: "%02d", seconds))s" }
-        return "resets in \(seconds)s"
     }
 }
 

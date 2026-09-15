@@ -99,6 +99,11 @@ struct SettingsPane: View {
                 SetDivider()
                 switchRow("Command failed", "A terminal command exited non-zero.", bind(\.soundError))
             }
+            SetSection(label: "Usage") {
+                switchRow("Usage alerts",
+                          "A card when an agent passes 80% of a usage limit, and one that stays at 95%.",
+                          bind(\.usageAlertsEnabled))
+            }
             SetSection(label: "Integrations") {
                 // No tool counts in these lines: the browser row claimed 13 for months while the
                 // server grew past 20, and a number nobody can see is wrong is worse than none.

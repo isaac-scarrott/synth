@@ -2715,3 +2715,13 @@ disclosure to dive deeper.
   stapled, verified credential-less with quarantine set; appcast newest 0.44.0 at 755 with
   `edSignature` on all 18 enclosures, the delta from 0.43.2 1.0 MB. No `synth-site` push —
   `site/` is unchanged. [Details](docs/features/2026-09-14.md)
+
+## [2026-09-15](docs/features/2026-09-15.md)
+
+- **Usage alerts — a window past 80% or 95% says so once** — any agent window with a ceiling
+  crossing a line raises one card ("Current session at 81%", agent on the who-line, reset countdown,
+  **View** opens Usage): ambient and draining at 80%, sticky at 95%. Once per window (memory on disk
+  beside `state.json`, forgotten on a fall or a passed deadline), one card per agent per urgency,
+  silent while the board is open. Settings → Usage → Usage alerts, on by default; off also stops the
+  board's background poll (60s watched / 5 min otherwise; never in driven runs). `t38_usage_alerts`,
+  24 checks. [Details](docs/features/2026-09-15.md)

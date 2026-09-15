@@ -77,7 +77,8 @@ protocol UsageSource: Sendable {
     func load() async throws -> UsageSection
 }
 
-/// The board's state, refreshed on an interval while the pane is on screen.
+/// The board's state, refreshed on an interval — briskly while the pane is on screen, slowly while
+/// it isn't, so a window crossing a line can be said (`UsageAlerts`) without anyone looking.
 ///
 /// Polling is per-agent and independent: one agent's network call failing or hanging must not
 /// stop another's local read from landing, so sections are merged in as they arrive rather than
@@ -94,15 +95,29 @@ protocol UsageSource: Sendable {
 
     /// A remote window doesn't move fast enough to be worth asking about more often than this, and
     /// the endpoints are rate-limited like everything else on the account.
-    static let refreshInterval: TimeInterval = 60
+    static let watchedInterval: TimeInterval = 60
+    /// Nobody is looking, so the only question is whether a line was crossed — and a 5-hour window
+    /// cannot go from 80% to 95% in less than several of these.
+    static let backgroundInterval: TimeInterval = 300
+    /// Launch already spawns agents, restores panes and checks for updates; a keychain read and a
+    /// round trip for a number nobody is looking at yet can wait until that has settled.
+    static let launchDelay: TimeInterval = 20
 
     private var sources: [UsageSource] = []
     private var ticker: Task<Void, Never>?
+    private var watched = false
+    /// Asked on every refresh rather than handed once, so an agent switched on or off in Settings
+    /// is read (or not) from the next poll without anyone reopening the pane.
+    private var agents: @MainActor () -> [AgentDescriptor] = { [] }
+    /// Whether anyone wants a reading while the pane is closed — asked each tick, so a switch
+    /// flipped in Settings takes effect from the next one.
+    private var background: @MainActor () -> Bool = { false }
+    private var onReading: @MainActor (UsageSection) throws -> Void = { _ in }
 
     /// The agents to show, in registry order, each with whatever source can read it. An agent with
     /// no source at all still gets a band — saying "no usage data" is information, and silently
     /// dropping an installed agent would read as Synth not knowing about it.
-    func configure(agents: [AgentDescriptor], sources: [UsageSource]) {
+    private func configure(agents: [AgentDescriptor], sources: [UsageSource]) {
         self.sources = sources
         let known = Set(sources.map(\.agent))
         let existing = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
@@ -116,21 +131,34 @@ protocol UsageSource: Sendable {
         }
     }
 
-    /// Start polling. Safe to call again — an already-running ticker is left alone so reopening
-    /// the pane doesn't stack timers or restart every countdown.
-    func start() {
-        guard ticker == nil else { return }
-        ticker = Guarded.mainTask { [weak self] in
-            while !Task.isCancelled {
-                await self?.refresh()
-                try await Task.sleep(for: .seconds(UsageBoard.refreshInterval))
-            }
-        }
+    /// Start polling for the life of the app. Every section that lands is handed to `onReading`.
+    func start(agents: @escaping @MainActor () -> [AgentDescriptor],
+               background: @escaping @MainActor () -> Bool,
+               onReading: @escaping @MainActor (UsageSection) throws -> Void) {
+        self.agents = agents
+        self.background = background
+        self.onReading = onReading
+        poll(after: Self.launchDelay)
     }
 
-    func stop() {
+    /// The pane opening asks now and then every minute; closing it only stretches the next wait.
+    /// A poll already in flight is left to land either way — restarting under it would cancel the
+    /// readers mid-answer, and the fresh refresh would find `refreshing` still set and read nothing.
+    func watch(_ on: Bool) {
+        guard on != watched else { return }
+        watched = on
+        if on, !refreshing { poll(after: 0) }
+    }
+
+    private func poll(after delay: TimeInterval) {
         ticker?.cancel()
-        ticker = nil
+        ticker = Guarded.mainTask { [weak self] in
+            try await Task.sleep(for: .seconds(delay))
+            while let self, !Task.isCancelled {
+                if self.watched || self.background() { await self.refresh() }
+                try await Task.sleep(for: .seconds(self.watched ? Self.watchedInterval : Self.backgroundInterval))
+            }
+        }
     }
 
     func refresh() async {
@@ -138,12 +166,18 @@ protocol UsageSource: Sendable {
         refreshing = true
         defer { refreshing = false }
 
+        let agents = agents()
+        configure(agents: agents, sources: UsageSources.all(for: agents))
         await withTaskGroup(of: UsageSection?.self) { group in
             for source in sources {
                 group.addTask { await Self.read(source) }
             }
             for await section in group {
-                if let section { merge(section) }
+                guard let section else { continue }
+                merge(section)
+                // Per reading, not around the loop: one reading's alert failing to be remembered
+                // must not cost the other agents theirs, or the poll its next tick.
+                Guarded.run { try onReading(section) }
             }
         }
     }

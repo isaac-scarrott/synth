@@ -2733,3 +2733,11 @@ disclosure to dive deeper.
   verified credential-less with quarantine set; appcast newest 0.45.0 at 758 with `edSignature` on
   all 18 enclosures, the delta from 0.44.0 1.0 MB. No `synth-site` push — `site/` is unchanged.
   `9551d64` landed after the tag and ships next time. [Details](docs/features/2026-09-16.md)
+
+- **0.45.1 ships — Inspect connects** — a patch carrying one fix: the DevTools frontend's socket
+  carries its own `Origin`, which Chromium 111+ rejects with 403 unless named, so every inspect
+  session sat on a "disconnected" banner. `--remote-allow-origins` now names that one origin.
+  `CFBundleVersion` 762, tag `v0.45.1`; both artifacts notarized separately, stapled, verified
+  credential-less with quarantine set; appcast newest 0.45.1 at 762 with `edSignature` on all 18
+  enclosures, the delta from 0.45.0 0.8 MB. No `synth-site` push — `site/` is unchanged.
+  [Details](docs/features/2026-09-16.md)

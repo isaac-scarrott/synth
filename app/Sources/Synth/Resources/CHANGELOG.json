@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.45.1",
+    "date": "2026-09-16",
+    "changes": [
+      "Inspect connects again. The DevTools pane opened onto its own \"disconnected\" banner because Chromium refuses a DevTools socket that carries an origin it wasn't told about — and the frontend's socket carries its own. The endpoint now names that one origin, so the pane attaches on open."
+    ]
+  },
+  {
     "version": "0.45.0",
     "date": "2026-09-16",
     "changes": [

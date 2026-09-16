@@ -2725,3 +2725,11 @@ disclosure to dive deeper.
   silent while the board is open. Settings → Usage → Usage alerts, on by default; off also stops the
   board's background poll (60s watched / 5 min otherwise; never in driven runs). `t38_usage_alerts`,
   24 checks. [Details](docs/features/2026-09-15.md)
+
+## [2026-09-16](docs/features/2026-09-16.md)
+
+- **0.45.0 ships — a window past 80% or 95% says so once** — a minor carrying usage alerts and
+  nothing else. `CFBundleVersion` 758, tag `v0.45.0`; both artifacts notarized separately, stapled,
+  verified credential-less with quarantine set; appcast newest 0.45.0 at 758 with `edSignature` on
+  all 18 enclosures, the delta from 0.44.0 1.0 MB. No `synth-site` push — `site/` is unchanged.
+  `9551d64` landed after the tag and ships next time. [Details](docs/features/2026-09-16.md)

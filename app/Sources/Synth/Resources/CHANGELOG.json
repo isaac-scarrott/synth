@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.45.0",
+    "date": "2026-09-16",
+    "changes": [
+      "Synth tells you when an agent window is running out. Any window with a ceiling raises one card as it crosses 80% (\"Current session at 81%\") and again at 95% — the agent, the reset countdown, and a View button that opens Usage. The 80% card is ambient and drains away; the 95% one sticks. One card per agent per line, once per window, and nothing at all while the Usage board is already open. Settings → Usage → Usage alerts to turn it off, which also stops the background poll."
+    ]
+  },
+  {
     "version": "0.44.0",
     "date": "2026-09-14",
     "changes": [

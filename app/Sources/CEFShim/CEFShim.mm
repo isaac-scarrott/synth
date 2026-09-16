@@ -47,6 +47,7 @@ static BOOL g_initialized = NO;
 static BOOL g_contextInitialized = NO;
 static BOOL g_shutdownDone = NO;
 static BOOL g_automation = NO;
+static uint16_t g_cdpPort = 0;
 // Every live CEF browser (sessions + DevTools windows); CefShutdown is only legal at 0.
 static std::atomic<int> g_aliveBrowsers{0};
 // Weak registry of session browsers so runtime shutdown can force-close stragglers.
@@ -201,6 +202,18 @@ class ShimApp : public CefApp, public CefBrowserProcessHandler {
                                      CefRefPtr<CefCommandLine> command_line) override {
     if (g_automation) {
       command_line->AppendSwitch("use-mock-keychain");
+    }
+    // The inspect session loads Chromium's DevTools frontend as an ordinary http:// page off
+    // this endpoint, so its socket to /devtools/page/<id> carries an Origin header — and
+    // Chromium 111+ answers any origin-bearing DevTools socket with 403 unless the origin is
+    // named here, leaving the frontend on its own "disconnected" banner. Synth's own CDP
+    // clients send no Origin and were never affected, which is why only Inspect broke. Only
+    // the endpoint's own origin is allowed: the anti-DNS-rebinding guard stands for every
+    // other page, which is what "*" would give away.
+    if (g_cdpPort != 0) {
+      command_line->AppendSwitchWithValue(
+          "remote-allow-origins",
+          std::string("http://127.0.0.1:") + std::to_string(g_cdpPort));
     }
   }
 
@@ -1254,6 +1267,7 @@ class ShimClient : public CefClient,
     return g_initialized;
   }
   g_automation = automation;
+  g_cdpPort = cdpPort;
 
   GraftCefAppProtocol();
 

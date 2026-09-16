@@ -85,6 +85,19 @@ enum BrowserCheck {
         report(fetchCDPVersion(port: engine.cdpPort) != nil, "cdp-endpoint",
                fetchCDPVersionCache ?? "no response from /json/version")
 
+        // The inspect pane loads Chromium's DevTools frontend as an ordinary http:// page off
+        // this endpoint, so the frontend's CDP socket carries an Origin header — the one thing
+        // Chromium 111+ refuses (403) unless the origin is allowlisted, and the whole of what
+        // "inspect says disconnected" was. Synth's own clients send no Origin, so nothing else
+        // here can see this break. The foreign origin is the control: if it were accepted too,
+        // the header isn't reaching the server and the first line proves nothing.
+        let allowed = socketAccepted(port: engine.cdpPort, origin: "http://127.0.0.1:\(engine.cdpPort)")
+        let foreign = socketAccepted(port: engine.cdpPort, origin: "http://synth-check.invalid")
+        report(allowed && !foreign, "devtools-frontend-origin",
+               allowed ? (foreign ? "every origin accepted — the allowlist is not being enforced"
+                                  : "endpoint origin accepted, foreign origin refused")
+                       : "the frontend's own origin is refused — DevTools will show disconnected")
+
         // The Chromium sandbox, asserted from outside the process (ADR-0011 stage five). macOS
         // Chromium hands every sandboxed child a seatbelt client fd on its command line and
         // gives an unsandboxed one --no-sandbox instead, so the two are told apart by what the
@@ -148,6 +161,46 @@ enum BrowserCheck {
             pump(until: { false }, timeout: 0.5)
         }
         return nil
+    }
+
+    /// Whether a page-target CDP socket opened with `origin` completes a command round-trip —
+    /// the frontend's handshake, made from outside the frontend. Nil targets (no page yet) and
+    /// a refused handshake are the same answer here: not connectable.
+    private static func socketAccepted(port: UInt16, origin: String) -> Bool {
+        guard let listURL = URL(string: "http://127.0.0.1:\(port)/json/list") else { return false }
+        final class Box: @unchecked Sendable {
+            var targetID: String??
+            var answered: Bool?
+        }
+        let box = Box()
+        URLSession.shared.dataTask(with: listURL) { data, _, _ in
+            let targets = data.flatMap {
+                (try? JSONSerialization.jsonObject(with: $0)) as? [[String: Any]]
+            } ?? []
+            let id = targets.first { $0["type"] as? String == "page" }?["id"] as? String
+            DispatchQueue.main.async { box.targetID = .some(id) }
+        }.resume()
+        pump(until: { box.targetID != nil }, timeout: 10)
+        guard let targetID = box.targetID ?? nil,
+              let wsURL = URL(string: "ws://127.0.0.1:\(port)/devtools/page/\(targetID)") else {
+            return false
+        }
+
+        var request = URLRequest(url: wsURL)
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+        let socket = URLSession(configuration: .ephemeral).webSocketTask(with: request)
+        socket.resume()
+        socket.send(.string(#"{"id":1,"method":"Runtime.evaluate","params":{"expression":"1","returnByValue":true}}"#)) { error in
+            guard error != nil else { return }
+            DispatchQueue.main.async { if box.answered == nil { box.answered = false } }
+        }
+        socket.receive { result in
+            let ok = (try? result.get()) != nil
+            DispatchQueue.main.async { if box.answered == nil { box.answered = ok } }
+        }
+        pump(until: { box.answered != nil }, timeout: 10)
+        socket.cancel(with: .normalClosure, reason: nil)
+        return box.answered ?? false
     }
 
     /// How each of this bundle's live helpers was launched. Same pgrep as the count below,

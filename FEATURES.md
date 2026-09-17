@@ -2741,3 +2741,7 @@ disclosure to dive deeper.
   credential-less with quarantine set; appcast newest 0.45.1 at 762 with `edSignature` on all 18
   enclosures, the delta from 0.45.0 0.8 MB. No `synth-site` push — `site/` is unchanged.
   [Details](docs/features/2026-09-16.md)
+- The usage board reports credits once, in pounds — `extra_usage` reported the same pool as
+  `spend` but in bare minor units, so £59.72 also rendered as an "Extra usage £5,972.00" card. The
+  duplicate tile goes; money now reaches the board only through `amount(...)`, which carries its own
+  exponent. [Details](docs/features/2026-09-17.md)

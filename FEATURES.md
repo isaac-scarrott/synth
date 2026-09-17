@@ -2745,3 +2745,8 @@ disclosure to dive deeper.
   `spend` but in bare minor units, so £59.72 also rendered as an "Extra usage £5,972.00" card. The
   duplicate tile goes; money now reaches the board only through `amount(...)`, which carries its own
   exponent. [Details](docs/features/2026-09-17.md)
+- 0.45.2 ships — the Usage board's two money cards disagreed by a factor of a hundred, and the
+  wrong one was the alarming one; the duplicate is gone. `CFBundleVersion` 764, tag `v0.45.2`; both
+  artifacts notarized separately, stapled, verified credential-less with quarantine set; appcast
+  newest 0.45.2 at 764 with `edSignature` on all 18 enclosures, 5 deltas of 0.8–1.1 MB. No
+  `synth-site` push — `site/` is unchanged. [Details](docs/features/2026-09-17.md)

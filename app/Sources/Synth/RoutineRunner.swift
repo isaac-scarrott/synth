@@ -115,6 +115,10 @@ extension AppStore {
                 try await self.carryOut(r, run: run)
             } catch let failure as RoutineDidNotStart {
                 self.failRoutineRun(r, runID: run.id, reason: failure.reason, speaks: failure.speaks)
+            } catch {
+                // Anything else is a fault the door counts; the run still has to say it didn't start.
+                self.failRoutineRun(r, runID: run.id, reason: error.localizedDescription, speaks: true)
+                throw error
             }
         }
     }
@@ -135,6 +139,14 @@ extension AppStore {
         let (row, note) = try await routineBranch(r, in: ws, name: name, test: run.trigger == .test)
         if let note { editRun(r.id, run.id) { $0.reason = note } }
 
+        // Claude Code stops a folder it has never seen at a trust prompt no one is there to
+        // answer. A folder Synth cut for this routine inherits the repo's trust — only if the
+        // user already gave it. An existing branch's folder is theirs, and stays as they left it.
+        let cutHere = run.trigger == .test || r.target == .same || r.target == .fresh
+        let claude = hostedByClaude(r.agent)
+        if claude, cutHere { try ClaudeTrust.inherit(row.worktreeURL, from: ws.url) }
+        let untrusted = claude && !ClaudeTrust.isTrusted(ws.url)
+
         if run.trigger != .test, case .existing = r.target { closeSettledRun(of: r, on: row) }
         if run.trigger != .test, case .same = r.target { closeSettledRun(of: r, on: row) }
 
@@ -154,14 +166,19 @@ extension AppStore {
             closeSession(session)
             throw RoutineDidNotStart(reason: "Its terminal couldn't start.")
         }
-        try await seed(session, on: row, with: Self.seedText(r, run: run, branch: row.name), agentName: agentName)
+        try await seed(session, on: row, with: Self.seedText(r, run: run, branch: row.name), agentName: agentName,
+                       stalled: untrusted
+                           ? "\(ws.name) isn't trusted in Claude Code yet, so it stopped at the trust prompt. "
+                             + "Open Claude Code in \(ws.name) once, accept the prompt, then run it again."
+                           : nil)
     }
 
     /// Hand the prompt over. SECURITY (CommentMode): only ever to a supervisor-confirmed-live
     /// agent — one that never started leaves a bare shell, and Claude Code's delivery is a paste
     /// plus Enter, i.e. arbitrary execution. Nobody is waiting on a routine, so it waits longer
     /// than `seedAgent` does, and gives up at once on a session that has already ended.
-    private func seed(_ session: Session, on row: Branch, with text: String, agentName: String) async throws {
+    private func seed(_ session: Session, on row: Branch, with text: String, agentName: String,
+                      stalled: String?) async throws {
         let seconds = ProcessInfo.processInfo.environment["SYNTH_ROUTINE_SEED_SECONDS"]
             .flatMap(Double.init) ?? 60
         let deadline = Date().addingTimeInterval(seconds)
@@ -192,7 +209,13 @@ extension AppStore {
         }
         Fault.report(.agentLaunch, .agentDeliveryNeverTaken, severity: .degraded, session: session.id,
                      details: [.stage(.ready)], evidence: "A routine's agent never reported itself live.")
-        throw RoutineDidNotStart(reason: "The agent never took the text — \(agentName) didn't come up in time.")
+        throw RoutineDidNotStart(reason: stalled
+            ?? "The agent never took the text — \(agentName) didn't come up in time.")
+    }
+
+    /// Claude Code itself, or a command of the user's that Claude's supervisor hosts.
+    private func hostedByClaude(_ agent: AgentID) -> Bool {
+        agent == .claudeCode || customAgents.first { $0.agentID == agent }?.base == .claudeCode
     }
 
     /// `[Synth routine "Name" — scheduled for 09:00, started 09:04 on routine/foo. …]`, then the

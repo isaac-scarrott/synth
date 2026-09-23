@@ -28,7 +28,22 @@ term = str(uuid.uuid4())
 sd = seed_state(repo, sessions=[
     {"id": term, "kind": "terminal", "title": "dev shell", "titleIsCustom": True},
 ])
-ENV = {"SYNTH_ROUTINE_SEED_SECONDS": "25"}
+# Claude's config is the gate's own: Synth reads and writes the trust entries in it, and the
+# Claude it spawns reads it — the user's ~/.claude.json is never touched. Onboarding is marked
+# done so a spawned Claude reaches its trust decision rather than the theme picker.
+import json, os, pathlib, hashlib
+CFG = pathlib.Path(lib.H) / "claude-config"
+sh(f"rm -rf '{CFG}'"); CFG.mkdir(parents=True)
+CFG_FILE = CFG / ".claude.json"
+try:
+    real = json.loads((pathlib.Path.home() / ".claude.json").read_text())
+except (OSError, ValueError):
+    real = {}
+seed_cfg = {k: real[k] for k in ("hasCompletedOnboarding", "lastOnboardingVersion", "theme") if k in real}
+seed_cfg.update(fullscreenUpsellSeenCount=99, fullscreenDownsellSeenCount=99, projects={})
+CFG_FILE.write_text(json.dumps(seed_cfg, indent=2))
+REPO_REAL = os.path.realpath(repo)
+ENV = {"SYNTH_ROUTINE_SEED_SECONDS": "25", "CLAUDE_CONFIG_DIR": str(CFG)}
 p, sock = launch(sd, f"{lib.H}/t39.log", env_extra=ENV)
 ctl = Ctl(sock, repo)
 ctl("automation.notifRoute", route="deck")
@@ -167,6 +182,50 @@ check("35. with the closed reason", s and s[0]["skipReason"] == "missedTooOld"
       and s[0]["reason"] == "Synth was closed, and the slot was more than a day old by the time it opened.", s)
 ctl("automation.routineTick", id=R3, now=sat.timestamp() + 60)
 check("36. and never again", len(runs("Weekday stale")) == 1)
+
+# --- Claude's folder trust: inherited from a trusted repo, never invented ---------------------
+def cfg():
+    return json.loads(CFG_FILE.read_text())
+
+def trusted_paths():
+    return sorted(k for k, v in cfg().get("projects", {}).items() if v.get("hasTrustDialogAccepted") is True)
+
+check("37a. the repo isn't trusted, and nothing Synth cut has been", trusted_paths() == [], trusted_paths())
+ru = create(name="Untrusted run", target="fresh")["id"]
+ctl("automation.routineFire", id=ru, trigger="runNow")
+u = wait(lambda: (runs("Untrusted run") or [{}])[0].get("outcome") == "failed" and runs("Untrusted run")[0], 60)
+check("37b. an untrusted repo's run stalls and fails", bool(u), runs("Untrusted run"))
+check("37c. saying the project isn't trusted in Claude Code, and what to do",
+      u and u["reason"].startswith("repo isn't trusted in Claude Code yet") and "accept the prompt" in u["reason"],
+      u and u["reason"])
+check("37d. and Synth trusted nothing", trusted_paths() == [], trusted_paths())
+
+c0 = cfg()
+c0.setdefault("projects", {})[REPO_REAL] = {"hasTrustDialogAccepted": True, "allowedTools": ["Bash(ls)"]}
+c0["synthGateSentinel"] = {"nested": [1, 2.5, "three", None, False], "n": 1790000000000}
+CFG_FILE.write_text(json.dumps(c0, indent=2))
+rt = create(name="Trusted run", target="fresh")["id"]
+ctl("automation.routineFire", id=rt, trigger="runNow")
+tr = wait(lambda: (runs("Trusted run") or [{}])[0].get("sessionId") and runs("Trusted run")[0], 30)
+wt_real = tr and os.path.realpath(tr["worktreePath"])
+c1 = cfg()
+check("37e. a trusted repo's new worktree inherits the trust",
+      tr and c1["projects"].get(wt_real, {}).get("hasTrustDialogAccepted") is True, tr and c1["projects"].get(wt_real))
+check("37f. with that one key and nothing invented beside it",
+      tr and set(c1["projects"].get(wt_real, {})) <= {"hasTrustDialogAccepted", "allowedTools", "mcpContextUris",
+          "mcpServers", "enabledMcpjsonServers", "disabledMcpjsonServers", "hasClaudeMdExternalIncludesApproved",
+          "hasClaudeMdExternalIncludesWarningShown", "projectOnboardingSeenCount", "lastSessionId", "history",
+          "hasCompletedProjectOnboarding", "exampleFiles", "exampleFilesGeneratedAt"},
+      tr and sorted(c1["projects"].get(wt_real, {})))
+check("37g. every other key is carried through as it was",
+      c1.get("synthGateSentinel") == c0["synthGateSentinel"]
+      and c1["projects"][REPO_REAL]["allowedTools"] == ["Bash(ls)"]
+      and all(c1.get(k) == v for k, v in seed_cfg.items() if k != "projects"),
+      {k: c1.get(k) for k in ("synthGateSentinel",)})
+check("37h. and only the repo and the worktree Synth cut are trusted", trusted_paths() == sorted([REPO_REAL, wt_real]),
+      trusted_paths())
+for rid in (ru, rt):
+    ctl("automation.routineDelete", id=rid)
 
 # --- Delete: the routine and its queue go; its branches and the busy run stay -------------------
 fresh_branch = runs("Nightly sweep")[-1]["branch"]

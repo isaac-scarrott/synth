@@ -37,9 +37,9 @@ struct ClaudeUsageSource: UsageSource {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { throw UsageUnreadable.shape("usage body") }
 
-        let metrics = Self.windows(json) + Self.spend(json) + Self.extraUsage(json)
+        let metrics = Self.windows(json) + Self.spend(json)
         // A 200 this build can find no metric in means the response moved, not that the account is
-        // idle: every one of `limits`, `spend` and `extra_usage` reads keys the server chooses.
+        // idle: both `limits` and `spend` read keys the server chooses.
         guard !metrics.isEmpty else { throw UsageUnreadable.shape("usage body") }
         return UsageSection(id: agent, title: descriptor.displayName, metrics: metrics)
     }
@@ -92,22 +92,6 @@ struct ClaudeUsageSource: UsageSource {
         return [UsageMetric(id: "claude.spend", label: "Usage credits", value: used,
                             percent: number(spend["percent"]),
                             detail: .text(limit.map { "of \($0) this month" } ?? ""))]
-    }
-
-    /// The same rule for the separate extra-usage pool: shown only where the account reports it
-    /// enabled, since every other account reports it as nulls.
-    private static func extraUsage(_ json: [String: Any]) -> [UsageMetric] {
-        guard let extra = json["extra_usage"] as? [String: Any], extra["is_enabled"] as? Bool == true,
-              let used = number(extra["used_credits"]), let currency = extra["currency"] as? String
-        else { return [] }
-        let places = extra["decimal_places"] as? Int ?? 2
-        let limit = number(extra["monthly_limit"]).map {
-            "of \(UsageFormat.money($0, currency: currency, places: places)) this month"
-        }
-        return [UsageMetric(id: "claude.extra_usage", label: "Extra usage",
-                            value: UsageFormat.money(used, currency: currency, places: places),
-                            percent: number(extra["utilization"]),
-                            detail: .text(limit ?? ""))]
     }
 
     /// Money arrives as minor units plus the exponent that scales them, so the currency's own

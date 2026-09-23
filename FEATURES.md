@@ -2726,6 +2726,31 @@ disclosure to dive deeper.
   board's background poll (60s watched / 5 min otherwise; never in driven runs). `t38_usage_alerts`,
   24 checks. [Details](docs/features/2026-09-15.md)
 
+## [2026-09-16](docs/features/2026-09-16.md)
+
+- **0.45.0 ships — a window past 80% or 95% says so once** — a minor carrying usage alerts and
+  nothing else. `CFBundleVersion` 758, tag `v0.45.0`; both artifacts notarized separately, stapled,
+  verified credential-less with quarantine set; appcast newest 0.45.0 at 758 with `edSignature` on
+  all 18 enclosures, the delta from 0.44.0 1.0 MB. No `synth-site` push — `site/` is unchanged.
+  `9551d64` landed after the tag and ships next time. [Details](docs/features/2026-09-16.md)
+
+- **0.45.1 ships — Inspect connects** — a patch carrying one fix: the DevTools frontend's socket
+  carries its own `Origin`, which Chromium 111+ rejects with 403 unless named, so every inspect
+  session sat on a "disconnected" banner. `--remote-allow-origins` now names that one origin.
+  `CFBundleVersion` 762, tag `v0.45.1`; both artifacts notarized separately, stapled, verified
+  credential-less with quarantine set; appcast newest 0.45.1 at 762 with `edSignature` on all 18
+  enclosures, the delta from 0.45.0 0.8 MB. No `synth-site` push — `site/` is unchanged.
+  [Details](docs/features/2026-09-16.md)
+- The usage board reports credits once, in pounds — `extra_usage` reported the same pool as
+  `spend` but in bare minor units, so £59.72 also rendered as an "Extra usage £5,972.00" card. The
+  duplicate tile goes; money now reaches the board only through `amount(...)`, which carries its own
+  exponent. [Details](docs/features/2026-09-17.md)
+- 0.45.2 ships — the Usage board's two money cards disagreed by a factor of a hundred, and the
+  wrong one was the alarming one; the duplicate is gone. `CFBundleVersion` 764, tag `v0.45.2`; both
+  artifacts notarized separately, stapled, verified credential-less with quarantine set; appcast
+  newest 0.45.2 at 764 with `edSignature` on all 18 enclosures, 5 deltas of 0.8–1.1 MB. No
+  `synth-site` push — `site/` is unchanged. [Details](docs/features/2026-09-17.md)
+
 ## [2026-09-23](docs/features/2026-09-23.md)
 
 - **Routines — a saved prompt an agent is handed on a schedule (design)** — local, only while Synth

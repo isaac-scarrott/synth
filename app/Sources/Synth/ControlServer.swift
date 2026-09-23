@@ -255,6 +255,8 @@ final class ControlServer: @unchecked Sendable {
                     "error": "no Synth branch manages worktree \(request["worktreePath"] ?? "<missing>")"]
         }
 
+        if automation, let reply = store.routineAutomation(verb, request, branch: branch) { return reply }
+
         switch verb {
         case "browser.list":
             let sessions = branch.sessions.filter { $0.kind == .browser }.map { s in

@@ -425,6 +425,24 @@ enum GitService {
                    timeout: probeTimeout).status == 0
     }
 
+    /// `git fetch <remote>` for a routine's cut. Bounded: an unattended run behind a dead VPN
+    /// must still start (from the local base), not hang the repo's git chain.
+    static func fetch(_ remote: String, at repo: URL) -> Bool {
+        runChecked(["-C", repo.path, "fetch", "--quiet", remote], timeout: 60).status == 0
+    }
+
+    /// `git branch -m`. git carries a worktree checked out on the branch along with it.
+    static func renameBranch(_ name: String, to newName: String, at repo: URL) -> String? {
+        let (status, out) = runChecked(["-C", repo.path, "branch", "-m", "--", name, newName])
+        return status == 0 ? nil : out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// `git worktree move` — the folder and git's registration of it, together.
+    static func moveWorktree(repo: URL, from: URL, to: URL) -> String? {
+        let (status, out) = runChecked(["-C", repo.path, "worktree", "move", from.path, to.path])
+        return status == 0 ? nil : out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Delete a branch ref with `-d`, never `-D`. git's own merged-into-HEAD check is a free
     /// second opinion on top of the caller's, and a branch it refuses is a branch worth keeping:
     /// the whole point of retiring a ref is that nothing is lost by it.

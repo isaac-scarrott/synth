@@ -2770,3 +2770,8 @@ disclosure to dive deeper.
   [Details](docs/features/2026-09-23.md)
 - **Settings and Usage keep their header in tabs mode** — only a session pane's head gives way to the
   tab strip; Settings keeps its Synth/project tabs, Usage its title. [Details](docs/features/2026-09-23.md)
+- **0.46.0 ships — Routines** — a saved prompt handed to an agent on a schedule, from the board
+  beside Usage; runs never take the pane, and cut branches inherit the repo's Claude Code or
+  Antigravity trust. `CFBundleVersion` 778, tag `v0.46.0`; both artifacts notarized, stapled and
+  verified credential-less; appcast signed on all 18 enclosures, deltas 1.5–1.6 MB. No
+  `synth-site` push. [Details](docs/features/2026-09-23.md)

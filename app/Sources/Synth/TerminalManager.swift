@@ -147,6 +147,31 @@ enum TerminalLauncher {
         return .success(view)
     }
 
+    /// Where a surface boots when nothing is showing it. libghostty creates a surface — and
+    /// with it the PTY — only once its view joins a window, which is why a quiet spawn used to
+    /// open the session for a beat and flip back. This window is never ordered in: no screen,
+    /// no key status, no Space, not in the Windows menu. A view parked here moves into the real
+    /// window the first time its session is opened (TerminalHost's addSubview re-parents it),
+    /// and the surface it already made goes with it.
+    private lazy var backstage: NSWindow = {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 480),
+                         styleMask: [.borderless], backing: .buffered, defer: true)
+        w.isReleasedWhenClosed = false
+        w.isExcludedFromWindowsMenu = true
+        w.ignoresMouseEvents = true
+        w.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        return w
+    }()
+
+    /// Start a session's process without mounting it anywhere the user can see — a routine's
+    /// run. `agentFlags` bind here, as they do on any first `view(for:)`, and the pane reuses
+    /// this view when the row is later opened.
+    func boot(_ session: Session, cwd: URL, agentFlags: String) -> Fallible<Void> {
+        view(for: session, cwd: cwd, agentFlags: agentFlags).map { view in
+            if view.window == nil { backstage.contentView?.addSubview(view) }
+        }
+    }
+
     // MARK: The watchdog
 
     /// Two checks, armed the moment a terminal is asked for and disarmed by any evidence of

@@ -689,6 +689,13 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     /// Every project's routines (Routines.swift), durable in `state.json`.
     var routines: [Routine] = []
+    /// Runs that have fired but whose agent hasn't been handed its prompt yet — cutting a branch,
+    /// booting, waiting for the supervisor. Busy for queueing, never persisted: a relaunch
+    /// mid-start has no start left to finish (RoutineRunner.swift).
+    var routineRunsPending: Set<UUID> = []
+    /// A routine something asked to show — the "Routine didn't start" card's View. The board
+    /// reads and clears it (`requestOpenRoutine`).
+    var pendingRoutineOpen: UUID?
 
     /// The Routines board — a third full-pane mode, exclusive with Settings and Usage. What it
     /// shows, where its keyboard cursor rests and which field holds the caret are all board
@@ -960,6 +967,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         UsageBoard.shared.start(agents: { [weak self] in self?.availableAgents ?? [] },
                                 background: { [weak self] in !Automation.isDriven && self?.usageAlertsEnabled == true },
                                 onReading: { [weak self] in try self?.noteUsageReading($0) })
+        startRoutineScheduler()
         // The done-toast drain follows focus as well as hover: routeTransition raises the
         // deck even unfocused, and the clock must not run while nobody can see it.
         for (name, active) in [(NSApplication.didBecomeActiveNotification, true),
@@ -1032,6 +1040,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             let prev = s.status
             s.status = status
             routeTransition(id, prev: prev, next: status)
+            if prev.isBusy, !status.isBusy { drainRoutineQueues() }
         case let .titleChanged(id, title):
             // Claude Code's ai-title, refined each turn — but never clobber a hand-picked name.
             if let s = session(id), !s.titleIsCustom, s.title != title { s.title = title }
@@ -2542,6 +2551,17 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                    })
     }
 
+    /// Archive with no undo card — the commit half of `softArchiveBranch` alone. For archives
+    /// nobody gestured at (a routine's new Test replacing its last one), where a card offering
+    /// to undo something you didn't do is noise.
+    func archiveBranchQuietly(_ branch: Branch) {
+        let homes = archiveDetach(branch)
+        for s in branch.sessions { teardownSession(s) }
+        branch.sessions = []
+        archiveReattach(branch, to: homes, archived: true)
+        Analytics.capture("worktree_archived", ["trigger": "routine"])
+    }
+
     /// Delete a worktree's folder from disk now, skipping the archive hold entirely. The
     /// deliberate path, reached only from ⌘K's confirm — the branch itself is never touched.
     func deleteWorktreeNow(_ branch: Branch) {
@@ -3534,7 +3554,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
 
     /// Run `op` off the main thread, behind any in-flight op on `repo`, returning its
     /// result on the main actor.
-    private func runGit<T: Sendable>(repo: URL, _ op: @escaping @Sendable () -> T) async -> T {
+    func runGit<T: Sendable>(repo: URL, _ op: @escaping @Sendable () -> T) async -> T {
         let prev = gitTails[repo]
         let task = Task<T, Never> {
             await prev?.value

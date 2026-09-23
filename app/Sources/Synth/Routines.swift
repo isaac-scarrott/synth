@@ -108,7 +108,10 @@ struct RoutineSchedule: Codable, Equatable {
         var latest: Date?
         // Bounded: a routine asleep for a year is still one catch-up, found in ≤ 400 steps
         // for anything coarser than hourly; hourly is capped by its one-hour window anyway.
-        let floor = kind == .once ? after : max(after, upTo.addingTimeInterval(-catchUpWindow - 86_400))
+        // Three days past the window, not one: Weekdays' latest slot can sit a whole weekend
+        // back, and a floor that cut it off answered nil — so a stale Friday was never recorded
+        // as skipped.
+        let floor = kind == .once ? after : max(after, upTo.addingTimeInterval(-catchUpWindow - 3 * 86_400))
         cursor = floor
         for _ in 0..<400 {
             guard let next = slot(after: cursor, calendar: calendar), next <= upTo else { break }
@@ -307,7 +310,11 @@ extension AppStore {
     /// A run that started and whose agent is still mid-turn — "Running" on the board, and what
     /// makes the next firing queue and Delete ask.
     func isBusy(_ run: RoutineRun) -> Bool {
-        guard run.outcome == .started, let id = run.sessionID, let s = session(id) else { return false }
+        guard run.outcome == .started else { return false }
+        // Still cutting its branch or waiting on its agent: no session to ask yet, but a second
+        // firing mustn't slip in underneath it.
+        if routineRunsPending.contains(run.id) { return true }
+        guard let id = run.sessionID, let s = session(id) else { return false }
         return s.status.isBusy
     }
 }

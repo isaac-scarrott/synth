@@ -2725,3 +2725,15 @@ disclosure to dive deeper.
   silent while the board is open. Settings → Usage → Usage alerts, on by default; off also stops the
   board's background poll (60s watched / 5 min otherwise; never in driven runs). `t38_usage_alerts`,
   24 checks. [Details](docs/features/2026-09-15.md)
+
+## [2026-09-23](docs/features/2026-09-23.md)
+
+- **Routines — a saved prompt an agent is handed on a schedule (design)** — local, only while Synth
+  is open; per project, stored in Synth's state. Three targets: an existing branch, one
+  `routine/<name>` branch reused by every run, or a new dated branch per run. Every run is a new
+  agent session that never takes the pane or keys. Schedules are presets only. At most one run
+  waits while another is busy. Catch-up runs once, within a period. Test runs in a throwaway
+  `-test` worktree. The Routines board sits beside Usage (the list grouped by project, then detail
+  with the editor and the last 20 runs); a red dot and one sticky card appear only when a run
+  didn't start. ⌘K only navigates. `working.html` first, Swift port pending.
+  [Details](docs/features/2026-09-23.md)

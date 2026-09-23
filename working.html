@@ -179,6 +179,7 @@
     transition: opacity 140ms ease;
   }
   .desk-pick--seed { bottom: 34px; }
+  .desk-pick--routine { bottom: 60px; }
   .desk-pick:hover { opacity: 1; }
   .desk-pick button {
     border: 0;
@@ -1734,6 +1735,8 @@
   .tab--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.7); background: rgba(var(--accent-rgb), 0.12); }
   /* tabs mode drops the per-pane title bar (the strip carries name + icon); its PR chip moves to the strip */
   html[data-tabs="on"] .pane__head { display: none; }
+  /* ...but the Routines board has no strip standing in for it, and its head carries Back and New */
+  html[data-tabs="on"] .app.routines .pane__head { display: flex; }
   .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; margin-left: auto; padding-left: 6px; }
   .tab-dropline::before {
     content: ""; position: absolute; left: -2px; top: -3px;
@@ -2692,6 +2695,115 @@
   /* A lit top edge rather than a drop shadow: the tile catches light, it doesn't float. */
   .usage-tile { box-shadow: 0 1px 1.5px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7); }
 
+  /* ---- Routines: a saved prompt an agent is handed on a schedule. The board borrows Settings'
+     cards and rows outright, so the keyboard cursor, the ring and the row rhythm are the ones you
+     already know; what it adds is only what a schedule needs to say — when next, and how the
+     last run went. The run's own outcome (what the agent did) lives on its branch row, not here:
+     this surface answers "did it fire", the sidebar answers "what did it find". */
+  .set-body__inner.rt-body__inner { max-width: 700px; }
+  .rt-item, .rt-run--jump { cursor: pointer; }
+  @media (hover: hover) and (pointer: fine) {
+    .rt-item:hover, .rt-run--jump:hover { background: var(--hover-soft); }
+  }
+  .rt-item__next { flex-shrink: 0; font-size: 11px; font-family: var(--mono); color: var(--ink-meta); font-variant-numeric: tabular-nums; }
+  .rt-item__chev { display: flex; flex-shrink: 0; color: var(--text-faint); }
+  .rt-item__chev svg { width: 11px; height: 11px; display: block; }
+  .rt-item .set-row__desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rt-badge {
+    flex-shrink: 0; padding: 1px 7px; border-radius: 999px; background: var(--hover);
+    font-family: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; color: var(--text-faint);
+  }
+  /* Outcome of a firing, not of the work: green only means "it started". The four words are the
+     whole vocabulary, and "didn't start" is the one that is ever red. */
+  .rt-out { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 12px; font-weight: 550; color: var(--ink-3); }
+  .rt-out i { width: 7px; height: 7px; border-radius: 99px; background: var(--ink-meta); }
+  .rt-out--started i { background: var(--run); }
+  .rt-out--running i { background: var(--work); }
+  .rt-out--queued i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--work); }
+  .rt-out--skipped i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-meta); }
+  .rt-out--failed { color: var(--error); }
+  .rt-out--failed i { background: var(--error); }
+  .set-row__desc-line .rt-out { font-size: 11px; font-weight: 500; }
+
+  .rt-acts { display: flex; align-items: center; gap: 6px; margin-bottom: 18px; }
+  .rt-acts__spacer { flex: 1; }
+  .rt-acts .set-agent__confirm-txt { flex: 1; }
+  .rt-acts .tpl-add__btn--danger { color: var(--error); }
+  .rt-body__inner .set-cmd--box .set-cmd__bin { color: var(--set-inherit); }
+  .tpl-add__btn.rt-primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 600; }
+  .tpl-add__btn.rt-primary svg { color: var(--on-accent); }
+  @media (hover: hover) and (pointer: fine) {
+    .tpl-add__btn.rt-primary:hover { background: var(--accent); border-color: transparent; color: var(--on-accent); filter: brightness(1.06); }
+  }
+  .rt-kbd { margin-left: 3px; font-size: 11px; font-weight: 500; opacity: 0.7; }
+
+  .rt-input {
+    width: 260px; padding: 5px 9px;
+    border: 0.5px solid var(--line); border-radius: 7px; background: var(--raised);
+    font-family: inherit; font-size: 13px; color: var(--ink); outline: none;
+  }
+  .rt-input--time { width: 88px; font-variant-numeric: tabular-nums; }
+  .rt-input--date { width: 132px; }
+  .rt-input:focus, .rt-prompt:focus { box-shadow: 0 0 0 2.5px rgba(var(--accent-rgb),0.22); border-color: rgba(var(--accent-rgb),0.5); }
+  .rt-prompt {
+    display: block; width: 100%; min-height: 112px; margin-top: 9px; padding: 11px 13px;
+    border: 0.5px solid var(--line); border-radius: 10px; background: var(--raised);
+    font-family: inherit; font-size: 13px; line-height: 1.55; color: var(--ink);
+    resize: vertical; outline: none;
+  }
+  .rt-prompt::placeholder, .rt-input::placeholder { color: var(--text-faint); }
+  /* Three targets as one pick. Plain buttons rather than the sliding .seg: on this board h is
+     "back", so the control can't also claim it the way a Settings seg does. */
+  .rt-seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--hover-soft); box-shadow: inset 0 0 0 0.5px var(--line-soft); }
+  .rt-seg button {
+    padding: 4px 10px; border: 0; border-radius: 6px; background: none;
+    font-family: inherit; font-size: 12px; font-weight: 550; color: var(--ink-4); cursor: pointer; white-space: nowrap;
+  }
+  .rt-seg button.is-on { background: var(--raised); color: var(--ink); box-shadow: 0 0 0 0.5px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.08); }
+  .rt-branch { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .rt-sub { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .rt-more__chev { display: flex; color: var(--text-faint); transition: transform 185ms var(--ease-out); }
+  .rt-more__chev svg { width: 11px; height: 11px; display: block; }
+  .rt-more.is-open .rt-more__chev { transform: rotate(90deg); }
+  .rt-more { cursor: pointer; }
+  .rt-more .set-row__label { color: var(--ink-3); }
+
+  .rt-run .set-row__head { gap: 10px; }
+  .rt-run__branch { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rt-run__when { flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--ink-meta); font-variant-numeric: tabular-nums; }
+  .rt-run__when span { color: var(--text-faint); }
+
+  .rt-back {
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 22px; height: 22px; margin-right: -4px; padding: 0;
+    border: 0; border-radius: 6px; background: none; color: var(--ink-meta); cursor: pointer;
+  }
+  .rt-back svg { width: 12px; height: 12px; display: block; transform: rotate(180deg); }
+  @media (hover: hover) and (pointer: fine) { .rt-back:hover { background: var(--hover); color: var(--ink); } }
+
+  /* Starters: prefilled text and nothing else — picking one fills the editor, it doesn't save. */
+  .rt-starters { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 18px; }
+  .rt-starter {
+    display: block; padding: 11px 13px; text-align: left;
+    border: 0.5px solid var(--border); border-radius: 11px; background: var(--raised);
+    box-shadow: 0 1px 1.5px rgba(0,0,0,0.04); font-family: inherit; cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .rt-starter__name { font-size: 13px; font-weight: 550; color: var(--ink); }
+  .rt-starter__sub { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
+  @media (hover: hover) and (pointer: fine) { .rt-starter:hover { background: var(--hover-soft); border-color: var(--line-2); } }
+  body.kbd .rt-starter.sel { background: var(--hover); box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb),0.5); }
+  .rt-empty { padding: 30px 20px 22px; text-align: center; }
+  .rt-empty .session__icon { display: flex; justify-content: center; width: auto; height: auto; }
+  .rt-empty .session__icon svg { width: 26px; height: 26px; color: var(--text-faint); }
+
+  /* The entry's one signal: a routine that didn't start and you haven't looked at yet. Done and
+     needs-input already speak on the run's own row, so nothing else ever lights this. */
+  .foot-btn__dot { width: 7px; height: 7px; margin-left: auto; margin-right: 3px; border-radius: 99px; background: var(--error); }
+  /* A run's rows say nobody here started them: a small mark after the name, quiet ink. */
+  .rt-mark { display: flex; flex-shrink: 0; margin-left: 5px; color: var(--ink-meta); }
+  .rt-mark svg { width: 11px; height: 11px; display: block; }
+
   /* caption above a field: real casing, plus the constraint text that used to be a footnote */
   .set-cap { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 6px; }
   .set-cap__name { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink-4); }
@@ -3329,6 +3441,12 @@
     <button type="button" data-seed="3">3</button>
     <button type="button" data-seed="4">4</button>
   </div>
+  <!-- Prototype affordance: make a scheduled slot arrive now, so a routine firing on its own (and
+       failing to) can be seen without waiting for 09:00. Not a Synth control. -->
+  <div class="desk-pick desk-pick--routine" role="group" aria-label="Fire a routine slot">
+    <button type="button" data-rt-proto="fire">slot fires</button>
+    <button type="button" data-rt-proto="fail">slot fails</button>
+  </div>
   <main class="app is-dev" id="app">
     <div class="resize-handle" id="resizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize · double-click to reset"></div>
     <button class="icon-btn expand-btn" id="expandBtn" aria-label="Expand sidebar">
@@ -3352,6 +3470,11 @@
         <button class="foot-btn" id="openUsage" aria-label="Usage">
           <svg viewBox="0 0 256 256" fill="currentColor"><rect x="32" y="144" width="48" height="80" rx="8"/><rect x="104" y="96" width="48" height="128" rx="8"/><rect x="176" y="48" width="48" height="176" rx="8"/></svg>
           <span>Usage</span>
+        </button>
+        <button class="foot-btn" id="openRoutines" aria-label="Routines">
+          <svg viewBox="0 0 256 256" fill="currentColor"><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.72l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm88-24a8,8,0,0,0-8,8V82c-6.35-7.36-12.83-14.45-20.12-21.83a96,96,0,1,0-2,137.7,8,8,0,0,0-11-11.64A80,80,0,1,1,184.54,71.4C192.68,79.64,199.81,87.64,207,96H184a8,8,0,0,0,0,16h40a8,8,0,0,0,8-8V64A8,8,0,0,0,224,56Z"/></svg>
+          <span>Routines</span>
+          <i class="foot-btn__dot" hidden></i>
         </button>
       </div>
 
@@ -4027,7 +4150,7 @@
     try { localStorage.setItem(LS_TABS, tabsMode ? 'on' : 'off'); } catch (e) {}
     document.documentElement.dataset.tabs = tabsMode ? 'on' : 'off';
     rollUpGroups();                 // the 2-deep sidebar leans on the branch roll-up
-    if (!app.classList.contains('settings') && !app.classList.contains('usage') && layout) renderLayout();   // (re)draw / drop the strips
+    if (!app.classList.contains('settings') && !app.classList.contains('usage') && !app.classList.contains('routines') && layout) renderLayout();   // (re)draw / drop the strips
   }
 
   // ===== Per-branch layout ownership, persistence & sticky nav (014 / 005) =====
@@ -4480,6 +4603,7 @@
   function openSession(el) {
     if (!el) return;
     leaveSettingsMode();                // jumping to a session leaves settings mode
+    if (app.classList.contains('routines')) leaveRoutinesMode();
     setupEl = null;                     // opening a real session revokes any armed setup-resolve
     const bk = branchKeyOf(el);
     if (bk !== currentBranchKey) {       // branch switch: stash the one we leave, load the target's
@@ -4508,6 +4632,7 @@
   // finished checkout only resolves in place while this still points here.
   function openWorktreeSetup(groupRow) {
     leaveSettingsMode();
+    if (app.classList.contains('routines')) leaveRoutinesMode();
     // the setup skeleton is a transient, branchless view — stash the branch we leave so its
     // remembered layout survives, and don't let the skeleton clobber any branch's entry (014)
     if (currentBranchKey != null) branchLayouts.set(currentBranchKey, durableLayout());
@@ -6722,6 +6847,7 @@
     if (app.classList.contains('settings')) return [...content.querySelectorAll('.set-row')];
     // Usage is read-only — no rows of its own to walk, so the cursor just holds the button.
     if (app.classList.contains('usage')) return [document.getElementById('openUsage')];
+    if (app.classList.contains('routines')) { const rows = rtRows(); return rows.length ? rows : [document.getElementById('openRoutines')]; }
     const foot = [...document.querySelectorAll('.sidebar__foot .foot-btn:not([hidden]), .sidebar__usage .foot-btn')];
     return [...treeRows(), ...foot];
   }
@@ -6730,6 +6856,7 @@
   function currentRow(rows) {
     if (app.classList.contains('settings')) return content.querySelector('.set-item--open > .set-row') || rows[0];
     if (app.classList.contains('usage')) return document.getElementById('openUsage');
+    if (app.classList.contains('routines')) return rows[0];
     return openEl && rows.includes(openEl) ? openEl : null;
   }
   // rows that own the create/rename/delete verbs — the tree only (you can't
@@ -6776,6 +6903,8 @@
     if (!row) return;
     if (row.id === 'openSettings') { enterSettings(); return; }
     if (row.id === 'openUsage') { enterUsage(); return; }
+    if (row.id === 'openRoutines') { enterRoutines(); return; }
+    if (app.classList.contains('routines') && content.contains(row)) { activateRoutineRow(row); return; }
     if (row === updateBtn) { restartForUpdate(); return; }
     if (row.matches('.set-row')) { activateSetting(row); return; }
     if (canDisclose(row)) { toggle(row.closest('[data-repo]')); return; }
@@ -6880,6 +7009,22 @@
     }
     // Esc leaves Usage — nothing inside it can hold focus, so it's always the one layer
     if (k === 'Escape' && app.classList.contains('usage')) { e.preventDefault(); exitUsage(); return; }
+    // Routines: Esc leaves the field you're in, then the routine, then the board — one layer a press.
+    // ⌘R runs the open routine now (⌘↩ already means "jump to the front card" everywhere).
+    if (app.classList.contains('routines')) {
+      if (k === 'Escape') {
+        e.preventDefault();
+        const f = document.activeElement;
+        if (f && content.contains(f) && f.closest('.set-row')) { f.blur(); document.body.classList.add('kbd'); select(f.closest('.set-row'), true); return; }
+        rtBack();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (k === 'r' || k === 'R') && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        if (rtView && rtView.id && !e.repeat) rtFire(rtById(rtView.id), 'now');
+        return;
+      }
+    }
     // Cmd/Ctrl+B toggles the sidebar
     if ((e.metaKey || e.ctrlKey) && (k === 'b' || k === 'B')) {
       e.preventDefault();
@@ -6892,7 +7037,7 @@
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && k >= '1' && k <= '9') { e.preventDefault(); focusPane(+k); return; }
     // ===== Split layer (007): pure ⌘-chords over the mouse split model. Placed before the browser
     // page-verbs so ⌘⌥L (focus-right alias) beats ⌘L (address), while a bare ⌘L still reaches it. =====
-    if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !app.classList.contains('usage') && !document.querySelector('.backdrop')) {
+    if ((e.metaKey || e.ctrlKey) && !app.classList.contains('settings') && !app.classList.contains('usage') && !app.classList.contains('routines') && !document.querySelector('.backdrop')) {
       // Tabs chords (tabsMode only, so tabs-off is untouched):
       //  • ⌃⇥ / ⌃⇧⇥ cycle the active pane's tabs.
       //  • ⌘W closes the active tab (its specific tab, not just the open session) — the same
@@ -6933,14 +7078,14 @@
       if (k === '`' && !e.shiftKey && !e.altKey) { e.preventDefault(); cyclePane(1); return; }
     }
     // Cmd/Ctrl+T spawns a terminal in the branch you're on (matches the native app)
-    if ((e.metaKey || e.ctrlKey) && (k === 't' || k === 'T') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage')) {
+    if ((e.metaKey || e.ctrlKey) && (k === 't' || k === 'T') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage') && !app.classList.contains('routines')) {
       const br = contextBranch();
       if (br) { e.preventDefault(); addTerminal(br); }
       return;
     }
     // Cmd/Ctrl+N opens the new-session picker (terminal / agents / browser) for the branch
     // you're in — the same choice `a` offers on a sidebar row, context-resolved like ⌘T.
-    if ((e.metaKey || e.ctrlKey) && (k === 'n' || k === 'N') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage')) {
+    if ((e.metaKey || e.ctrlKey) && (k === 'n' || k === 'N') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage') && !app.classList.contains('routines')) {
       const br = contextBranch();
       if (br) { e.preventDefault(); openPaletteAt(newSessionFrame(br)); }
       return;
@@ -6948,7 +7093,7 @@
     // Cmd/Ctrl+W closes the current context — the focused sidebar row when its ring is
     // showing, else the open session — through the same flow as `d` on a sidebar row.
     // (In tabs mode the earlier ⌘W branch already closed the active tab and returned.)
-    if ((e.metaKey || e.ctrlKey) && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage')) {
+    if ((e.metaKey || e.ctrlKey) && (k === 'w' || k === 'W') && !e.shiftKey && !e.altKey && !app.classList.contains('settings') && !app.classList.contains('usage') && !app.classList.contains('routines')) {
       const row = contextRow();
       if (row) { e.preventDefault(); if (!e.repeat) requestDelete(row); }
       return;
@@ -7017,6 +7162,8 @@
     }
     if (k === 'ArrowDown' || k === 'j') { e.preventDefault(); move(1); }
     else if (k === 'ArrowUp' || k === 'k') { e.preventDefault(); move(-1); }
+    else if ((k === 'ArrowRight' || k === 'l') && app.classList.contains('routines')) { e.preventDefault(); if (selEl) activateRow(selEl); }
+    else if ((k === 'ArrowLeft' || k === 'h') && app.classList.contains('routines')) { e.preventDefault(); rtBack(); }
     else if (k === 'ArrowRight' || k === 'l') {
       e.preventDefault();
       if (stepSetting(1)) return;
@@ -7198,6 +7345,7 @@
   // up rather than resting. The 180-square it ships in does not centre the curve, so the
   // viewBox crops to the curve's own bounds. Brand black/white, not the agent accent.
   const ICON_ANTIGRAVITY = '<svg viewBox="22.5 28.125 134.335 123.75" fill="none"><path d="M144.248 149.062c7.5 5.626 18.75 1.876 8.437-8.437-30.937-30-24.375-112.5-62.812-112.5-38.438 0-31.875 82.5-62.813 112.5-11.25 11.25.938 14.063 8.438 8.437 29.062-19.687 27.187-54.375 54.375-54.375 27.187 0 25.312 34.688 54.375 54.375Z" fill="var(--ag-mark)"/></svg>';
+  const ICON_ROUTINE = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.72l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm88-24a8,8,0,0,0-8,8V82c-6.35-7.36-12.83-14.45-20.12-21.83a96,96,0,1,0-2,137.7,8,8,0,0,0-11-11.64A80,80,0,1,1,184.54,71.4C192.68,79.64,199.81,87.64,207,96H184a8,8,0,0,0,0,16h40a8,8,0,0,0,8-8V64A8,8,0,0,0,224,56Z"/></svg>';
   const ICON_USAGE = '<svg viewBox="0 0 256 256" fill="currentColor"><rect x="32" y="144" width="48" height="80" rx="8"/><rect x="104" y="96" width="48" height="128" rx="8"/><rect x="176" y="48" width="48" height="176" rx="8"/></svg>';
   const ICON_BROWSER = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128,24h0A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6a135.28,135.28,0,0,0,22.3-45.6h35.66A88.29,88.29,0,0,1,148.41,213.6Z"/></svg>';
   const ICON_CARET = '<svg viewBox="0 0 256 256" fill="currentColor"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>';
@@ -7867,7 +8015,7 @@
     function computeDrop(x, y) {
       const cr = content.getBoundingClientRect();
       const dragged = start.row;
-      if (!layout || app.classList.contains('settings') || app.classList.contains('usage')) {
+      if (!layout || app.classList.contains('settings') || app.classList.contains('usage') || app.classList.contains('routines')) {
         return { kind: 'split', open: true, refuse: false, rect: { left: cr.left, top: cr.top, w: cr.width, h: cr.height } };
       }
       // A session from another branch / worktree never joins this surface (003) — refuse every zone
@@ -8687,6 +8835,7 @@
           { sec: 'nav', icon: ICON_FOLDER,  label: 'Projects', enter: () => pushFrame(workspacesFrame()) },
           { sec: 'nav', icon: ICON_BRANCH,  label: 'Branches',   enter: () => pushFrame(categoryFrame('branch')) },
           { sec: 'nav', icon: ICON_STACK,   label: 'Sessions',   enter: () => pushFrame(categoryFrame('session')) },
+          { sec: 'nav', icon: ICON_ROUTINE, label: 'Routines',   enter: () => runAndClose(() => enterRoutines()) },
           { sec: 'act', icon: ICON_TERMINAL, label: 'Scratch terminal', kbd: ['⌘', '⇧', 'T'], enter: () => runAndClose(openScratch) },
           { sec: 'act', icon: ICON_SIDEBAR, label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { sec: 'act', icon: ICON_GEAR,    label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
@@ -8696,6 +8845,9 @@
         const items = [
           ...here.items.map((it) => ({ ...it, ctx: it.unit })),
           { icon: ICON_TERMINAL, label: 'Scratch terminal', kbd: ['⌘', '⇧', 'T'], enter: () => runAndClose(openScratch) },
+          { icon: ICON_ROUTINE,  label: 'Routines', enter: () => runAndClose(() => enterRoutines()) },
+          // each routine by name, straight to its page — ⌘K only ever navigates to routines
+          ...ROUTINES.map((r) => ({ icon: ICON_ROUTINE, label: r.name, ctx: r.project, meta: rtScheduleWords(r.schedule), enter: () => runAndClose(() => enterRoutines(r.id)) })),
           { icon: ICON_PLUS,     label: 'Add project', enter: () => runAndClose(addProjectViaPicker) },
           { icon: ICON_SIDEBAR,  label: 'Toggle sidebar', kbd: ['⌘', 'B'], enter: () => runAndClose(() => app.classList.toggle('collapsed')) },
           { icon: ICON_GEAR,     label: 'Settings', kbd: ['⌘', ','], enter: () => runAndClose(() => enterSettings()) },
@@ -9119,6 +9271,7 @@
     applyTheme();
     if (app.classList.contains('settings')) renderSettings();
     if (app.classList.contains('usage')) renderUsage();
+    if (app.classList.contains('routines')) renderRoutines();
   }
   themeMql.addEventListener('change', () => { if (themePref === 'system') applyTheme(); });
   applyTheme();
@@ -10052,6 +10205,7 @@
     if (paletteOpen) closePalette();
     if (shortcutsEl) closeShortcuts();
     if (app.classList.contains('settings')) leaveSettingsMode();
+    if (app.classList.contains('routines')) leaveRoutinesMode();
     setupEl = null;
     app.classList.add('usage');
     document.getElementById('openUsage').classList.add('is-on');
@@ -10071,6 +10225,567 @@
   document.getElementById('openUsage').addEventListener('click', () => {
     if (app.classList.contains('usage')) exitUsage(); else enterUsage();
   });
+
+  // ===== Routines =======================================================================
+  // A saved prompt Synth hands to an agent on a schedule — on this Mac, only while Synth is open
+  // (docs/features/2026-09-23.md). Each run is a NEW agent session, on one of three targets: a
+  // branch you already have, one routine/<name> branch reused every run, or a fresh dated branch
+  // per run. Nothing a run does ever takes the pane or the keyboard. The fixtures below stand in
+  // for the routines persisted in state.json and the in-process scheduler.
+  const RT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const RT_DAYS_LONG = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  const RT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const RT_SCHEDULES = [['hourly', 'Hourly'], ['daily', 'Daily'], ['weekdays', 'Weekdays'], ['weekly', 'Weekly'], ['once', 'Once']];
+  const RT_TARGETS = [['existing', 'Existing branch'], ['same', 'Same each run'], ['new', 'New each run']];
+  const RT_HISTORY = 20;
+  const RT_FIXTURE_RUN_MS = 7000;   // how long a fixture run stays busy before it settles
+
+  const RT_STARTERS = [
+    { name: 'Review my open PRs', schedule: { kind: 'weekdays', time: '09:00' }, target: { kind: 'new' },
+      prompt: 'Look at every open pull request I authored in this repo. For each one, check CI, unresolved review comments and merge conflicts. Fix what you can on the PR branch and push. End with a short list of what still needs me.' },
+    { name: 'Bump dependencies', schedule: { kind: 'weekly', day: 1, time: '07:00' }, target: { kind: 'same' },
+      prompt: 'Update outdated dependencies one at a time and run the tests after each. Keep the bumps that pass, revert the ones that don\'t, and commit each bump on its own. Finish with what you skipped and why.' },
+    { name: 'Hunt a flaky test', schedule: { kind: 'daily', time: '02:00' }, target: { kind: 'new' },
+      prompt: 'Run the test suite five times. If any test both passes and fails across the runs, find out why and fix the cause. If everything is stable, say so and stop.' },
+    { name: 'Morning brief', schedule: { kind: 'weekdays', time: '08:30' }, target: { kind: 'existing', branch: 'main' },
+      prompt: 'Summarise what changed on main since yesterday morning: merged PRs, who touched what, and anything that looks risky. Don\'t change any files.' },
+  ];
+
+  const rtAt = (daysAgo, hhmm) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); const [h, m] = hhmm.split(':'); d.setHours(+h, +m, 0, 0); return d; };
+  const rtSlug = (s) => (s || 'routine').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'routine';
+  const rtPad = (n) => String(n).padStart(2, '0');
+  const rtStamp = (d) => `${d.getFullYear()}-${rtPad(d.getMonth() + 1)}-${rtPad(d.getDate())}-${rtPad(d.getHours())}${rtPad(d.getMinutes())}`;
+  const rtTime = (d) => `${rtPad(d.getHours())}:${rtPad(d.getMinutes())}`;
+  let rtSeq = 0;
+  const ROUTINES = [
+    { id: 'rt' + (++rtSeq), name: 'Review my open PRs', project: 'synth', agent: 'claude', base: 'main', flags: '',
+      prompt: RT_STARTERS[0].prompt, target: { kind: 'new' }, schedule: { kind: 'weekdays', time: '09:00' },
+      runs: [
+        { at: rtAt(1, '09:00'), trigger: 'schedule', outcome: 'started', branch: 'routine/review-my-open-prs-' + rtStamp(rtAt(1, '09:00')) },
+        { at: rtAt(2, '10:14'), slot: rtAt(2, '09:00'), trigger: 'catchup', outcome: 'started', branch: 'routine/review-my-open-prs-' + rtStamp(rtAt(2, '10:14')) },
+        { at: rtAt(5, '09:00'), trigger: 'schedule', outcome: 'skipped', reason: 'Synth was closed, and the slot was more than a day old by the time it opened.' },
+      ] },
+    { id: 'rt' + (++rtSeq), name: 'Bump dependencies', project: 'synth', agent: 'claude', base: 'main', flags: '--model opus',
+      prompt: RT_STARTERS[1].prompt, target: { kind: 'same' }, schedule: { kind: 'weekly', day: 1, time: '07:00' }, unseenFail: true,
+      runs: [
+        { at: rtAt(2, '07:00'), trigger: 'schedule', outcome: 'failed', reason: 'The agent never took the text — Claude Code didn\'t come up in time.' },
+        { at: rtAt(9, '07:00'), trigger: 'schedule', outcome: 'started', branch: 'routine/bump-dependencies', note: 'Fetch failed, so it started from your local main.' },
+      ] },
+    { id: 'rt' + (++rtSeq), name: 'Morning brief', project: 'aviator-api', agent: 'opencode', base: 'main', flags: '',
+      prompt: RT_STARTERS[3].prompt, target: { kind: 'existing', branch: 'main' }, schedule: { kind: 'weekdays', time: '08:30' },
+      runs: [ { at: rtAt(6, '08:30'), trigger: 'schedule', outcome: 'started', branch: 'main' } ] },
+  ];
+
+  let rtView = null;          // null = the list; { id } = one routine; { draft, pristine } = a new one
+  let rtMoreOpen = false;     // Base + Extra flags, folded away — most routines never touch them
+  let rtConfirmDel = null;    // the routine whose Delete is asking (only ever while a run is busy)
+
+  const rtById = (id) => ROUTINES.find((r) => r.id === id) || null;
+  const rtAgentName = (k) => (SESSION_KINDS[k] && SESSION_KINDS[k].name) || (customOf(k) && customOf(k).name) || k;
+  const rtLive = (run) => !!(run.session && document.contains(run.session));
+  // Busy from the moment it fires — a run still cutting its branch has no session yet, but a
+  // second one mustn't slip in underneath it.
+  const rtBusyRun = (r) => r.runs.find((x) => x.outcome === 'started' && (x.pending || (rtLive(x) && sessionIsBusy(x.session)))) || null;
+  const rtProjectBranches = (project) => {
+    const head = headByName(project);
+    return head ? [...head.closest('[data-repo]').querySelectorAll('.branch')].map(brName) : [];
+  };
+  const rtFindBranch = (head, name) => [...head.closest('[data-repo]').querySelectorAll('.branch')].find((b) => brName(b) === name) || null;
+  function rtBranchName(r, kind, at) {
+    if (kind === 'existing') return r.target.branch;
+    if (kind === 'same') return `routine/${rtSlug(r.name)}`;
+    if (kind === 'test') return `routine/${rtSlug(r.name)}-test`;
+    return `routine/${rtSlug(r.name)}-${rtStamp(at)}`;
+  }
+
+  // ---- Time, in words ----
+  function rtWhen(d) {
+    const day = new Date(d); day.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diff = Math.round((day - today) / 86400e3);
+    const t = rtTime(d);
+    if (diff === 0) return `Today ${t}`;
+    if (diff === 1) return `Tomorrow ${t}`;
+    if (diff === -1) return `Yesterday ${t}`;
+    if (Math.abs(diff) < 6) return `${RT_DAYS[d.getDay()]} ${t}`;
+    return `${d.getDate()} ${RT_MONTHS[d.getMonth()]} ${t}`;
+  }
+  function rtScheduleWords(s) {
+    if (s.kind === 'hourly') return 'Hourly';
+    if (s.kind === 'daily') return `Daily ${s.time}`;
+    if (s.kind === 'weekdays') return `Weekdays ${s.time}`;
+    if (s.kind === 'weekly') return `${RT_DAYS_LONG[s.day]} ${s.time}`;
+    const [y, m, dd] = (s.date || '').split('-');
+    return s.date ? `Once, ${+dd} ${RT_MONTHS[+m - 1]} ${s.time}` : `Once ${s.time}`;
+  }
+  function rtTargetWords(r) {
+    if (r.target.kind === 'existing') return `on ${r.target.branch}`;
+    if (r.target.kind === 'same') return rtBranchName(r, 'same');
+    return 'new branch each run';
+  }
+  // The next slot at or after now. A Once that has already fired has none.
+  function rtNext(r) {
+    const s = r.schedule;
+    const now = new Date();
+    if (s.kind === 'once') {
+      if (r.ran || !s.date) return null;
+      const d = new Date(`${s.date}T${s.time}`);
+      return d;   // a missed Once still runs, on the next launch
+    }
+    if (s.kind === 'hourly') { const d = new Date(now); d.setMinutes(0, 0, 0); d.setHours(d.getHours() + 1); return d; }
+    const [h, m] = s.time.split(':');
+    for (let i = 0; i < 8; i++) {
+      const d = new Date(now); d.setDate(d.getDate() + i); d.setHours(+h, +m, 0, 0);
+      if (d <= now) continue;
+      const wd = d.getDay();
+      if (s.kind === 'weekdays' && (wd === 0 || wd === 6)) continue;
+      if (s.kind === 'weekly' && wd !== s.day) continue;
+      return d;
+    }
+    return null;
+  }
+
+  // ---- Firing ----
+  // One way in for every trigger: 'schedule', 'catchup', 'now', 'test'. A run while another is
+  // still busy waits — at most one waiting, and it carries the latest slot, not the first.
+  function rtFire(r, trigger, slot) {
+    const at = new Date();
+    if (trigger !== 'test' && rtBusyRun(r)) {
+      const q = r.runs.find((x) => x.outcome === 'queued');
+      if (q) { q.at = at; q.slot = slot; q.trigger = trigger; }
+      else r.runs.unshift({ at, slot, trigger, outcome: 'queued', reason: 'Waiting for the run before it to finish.' });
+      rtRefresh();
+      return;
+    }
+    rtStart(r, trigger, at, slot);
+  }
+  function rtStart(r, trigger, at, slot) {
+    const head = headByName(r.project);
+    if (!head) { rtFail(r, trigger, at, `${r.project} is no longer in Synth.`); return; }
+    if (!agentEnabled(r.agent)) { rtFail(r, trigger, at, `${rtAgentName(r.agent)} is switched off in Settings.`); return; }
+    const kind = trigger === 'test' ? 'test' : r.target.kind;
+    const name = rtBranchName(r, kind, at);
+    let br = rtFindBranch(head, name);
+    if (kind === 'existing' && !br) { rtFail(r, trigger, at, `${name} isn't a branch in ${r.project} any more.`); return; }
+    // A new Test replaces the last one, so a routine never has more than one test worktree.
+    if (kind === 'test' && br) { archiveBranch(br); br = null; }
+    const run = { at, slot, trigger, outcome: 'started', branch: name, pending: true };
+    r.runs.unshift(run);
+    r.runs.length = Math.min(r.runs.length, RT_HISTORY);
+    if (r.schedule.kind === 'once' && trigger !== 'test') r.ran = true;
+    const go = (branchRow) => rtSeed(r, run, branchRow, kind);
+    if (br) go(br); else rtCut(head, name, r, at, go);
+    rtRefresh();
+  }
+  // Cut a routine branch WITHOUT the setup skeleton: addBranch moves the pane onto the new
+  // worktree because a person just asked for it; a routine asked for nothing, so the row lands
+  // pending in the tree and the pane stays exactly where you left it.
+  function rtCut(head, name, r, at, done) {
+    const repo = head.closest('[data-repo]');
+    const wrapper = branchGroupShell(name, 'now');
+    wrapper.classList.add('row-enter');
+    const groupRow = wrapper.querySelector('.branch--group');
+    groupRow.classList.add('branch--pending');
+    groupRow.querySelector('.branch__roll').innerHTML = '<span class="wt-spinner"></span>';
+    groupRow.querySelector('.branch__name').insertAdjacentHTML('afterend', rtMarkHTML(r, at));
+    repo.querySelector('.branches').appendChild(wrapper);
+    wrapper.querySelectorAll('[data-row]').forEach(addRowActions);
+    rollUpGroups();
+    wrapper.addEventListener('animationend', () => wrapper.classList.remove('row-enter'), { once: true });
+    setTimeout(() => {
+      groupRow.classList.remove('branch--pending');
+      groupRow.querySelector('.branch__roll').innerHTML = '';
+      done(groupRow);
+    }, 1200);
+  }
+  const rtMarkHTML = (r, at) => `<span class="rt-mark" title="Routine: ${esc(r.name)} · ${esc(rtWhen(at))}">${ICON_ROUTINE}</span>`;
+  // Every run is a new agent session. On a branch the routine reuses, the previous run's session
+  // goes first — but only once it's idle and you've read it, so nothing you haven't seen is lost.
+  function rtSeed(r, run, branchRow, kind) {
+    if (kind === 'existing' || kind === 'same') {
+      const prev = r.runs.find((x) => x !== run && rtLive(x) && x.branch === run.branch);
+      if (prev && !sessionIsBusy(prev.session) && !prev.session.classList.contains('session--unread') && prev.session !== openEl) {
+        prev.session.remove();
+        rollUpGroups();
+      }
+    }
+    const s = addSession(branchRow, r.agent, { open: false, name: r.name });
+    s.querySelector('.session__name').insertAdjacentHTML('afterend', rtMarkHTML(r, run.at));
+    setSessionState(s, 'work');
+    run.session = s;
+    run.pending = false;
+    // Fixture: the agent works a while, then settles — "done" arrives through the ordinary
+    // background routing, the same card any session finishing off-screen raises.
+    setTimeout(() => {
+      if (document.contains(s) && sessionState(s) === 'work') setSessionState(s, 'idle');
+      rtDrainQueue(r);
+      rtRefresh();
+    }, RT_FIXTURE_RUN_MS);
+    rtRefresh();
+  }
+  function rtDrainQueue(r) {
+    const q = r.runs.find((x) => x.outcome === 'queued');
+    if (!q || rtBusyRun(r)) return;
+    r.runs.splice(r.runs.indexOf(q), 1);
+    rtStart(r, q.trigger, new Date(), q.slot);
+  }
+  // Didn't start is the one outcome that speaks up by itself: a sticky card once, and the dot on
+  // the sidebar entry until you've looked at the routine.
+  function rtFail(r, trigger, at, reason) {
+    r.runs.unshift({ at, trigger, outcome: 'failed', reason });
+    r.runs.length = Math.min(r.runs.length, RT_HISTORY);
+    r.unseenFail = true;
+    const card = raiseSystemNotif({
+      kind: 'error', tier: '', glyph: ICON_ROUTINE, life: 0,
+      who: { icon: ICON_ROUTINE, text: r.name }, what: 'Routine didn\'t start', sub: reason,
+      act: { label: 'View', run: () => { clearNotif(card); enterRoutines(r.id); } },
+    });
+    rtRefresh();
+  }
+
+  // ---- Render ----
+  const rtOutcome = (run) => (run.outcome === 'started' && (run.pending || (rtLive(run) && sessionIsBusy(run.session)))) ? 'running' : run.outcome;
+  const RT_OUT_WORD = { started: 'Ran', running: 'Running', queued: 'Queued', skipped: 'Skipped', failed: 'Didn\'t start' };
+  const RT_TRIGGER_WORD = { now: 'Run now', test: 'Test', catchup: 'Catch-up' };
+  const rtOutHTML = (o, text) => `<span class="rt-out rt-out--${o}"><i></i>${esc(text || RT_OUT_WORD[o])}</span>`;
+  const rtPop = (field, opts, value) => `<span class="set-pop"><select class="set-pop__sel" data-rt-f="${field}">${
+    opts.map(([v, l]) => `<option value="${esc(String(v))}"${String(v) === String(value) ? ' selected' : ''}>${esc(l)}</option>`).join('')
+  }</select><span class="set-pop__chev">${ICON_CARET}</span></span>`;
+
+  function rtItemHTML(r) {
+    const last = r.runs[0];
+    const next = rtNext(r);
+    const right = `<span class="rt-item__next">${next ? 'Next ' + esc(rtWhen(next)) : 'Ran'}</span>`;
+    let lastHTML = '';
+    if (last) {
+      const o = rtOutcome(last);
+      lastHTML = rtOutHTML(o, o === 'started' ? 'Ran ' + rtWhen(last.at) : RT_OUT_WORD[o]);
+    }
+    return `<div class="set-row rt-item" data-row data-rt-id="${r.id}">
+      <div class="set-row__head">
+        <div class="set-row__label">${esc(r.name)}</div>
+        ${right}
+        <span class="rt-item__chev">${ICON_CARET}</span>
+      </div>
+      <div class="set-row__desc-line">${desc(esc([rtScheduleWords(r.schedule), rtTargetWords(r), rtAgentName(r.agent)].join(' · ')))}${lastHTML}</div>
+    </div>`;
+  }
+  function rtStartersHTML() {
+    return `<div class="rt-starters">${RT_STARTERS.map((s, i) => `<button class="rt-starter" data-rt-starter="${i}">
+      <div class="rt-starter__name">${esc(s.name)}</div>
+      <div class="rt-starter__sub">${esc(rtScheduleWords(s.schedule))} · ${esc(RT_TARGETS.find(([k]) => k === s.target.kind)[1].toLowerCase())}</div>
+    </button>`).join('')}</div>`;
+  }
+  function rtListHTML() {
+    if (!ROUTINES.length) {
+      return `<div class="rt-empty">
+          <span class="session__icon">${ICON_ROUTINE}</span>
+          <div class="set-empty__title">No routines yet</div>
+          <div class="set-empty__sub">A routine hands an agent the same prompt on a schedule. It runs on this Mac while Synth is open.</div>
+          <button class="tpl-add__btn rt-primary" data-rt-new style="display:inline-flex;margin-top:14px">${ICON_PLUS} New routine</button>
+        </div>
+        <section class="set-grp"><div class="set-grp__label">Start from</div>${rtStartersHTML()}</section>`;
+    }
+    const order = projectHeads().map(wsName);
+    const projects = [...new Set(ROUTINES.map((r) => r.project))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return projects.map((p) =>
+      `<section class="set-grp"><div class="set-grp__label">${esc(p)}</div><div class="set-card">${
+        ROUTINES.filter((r) => r.project === p).map(rtItemHTML).join('')}</div></section>`).join('');
+  }
+  function rtRunHTML(run, i) {
+    const o = rtOutcome(run);
+    const jump = rtLive(run);
+    const when = rtWhen(run.at) + (run.slot && rtTime(run.slot) !== rtTime(run.at) ? ` <span>for ${rtTime(run.slot)}</span>` : '');
+    const why = run.reason || run.note;
+    return `<div class="set-row rt-run${jump ? ' rt-run--jump' : ''}" data-row data-rt-run="${i}">
+      <div class="set-row__head">
+        ${rtOutHTML(o)}
+        ${RT_TRIGGER_WORD[run.trigger] ? `<span class="rt-badge">${RT_TRIGGER_WORD[run.trigger]}</span>` : ''}
+        <span class="rt-run__branch">${esc(run.branch || '')}</span>
+        <span class="rt-run__when">${when}</span>
+      </div>
+      ${why ? desc(esc(why)) : ''}
+    </div>`;
+  }
+  function rtDetailHTML(r) {
+    const draft = !!(rtView && rtView.draft);
+    const busy = !draft && rtBusyRun(r);
+    let acts;
+    if (draft) {
+      acts = `<button class="tpl-add__btn rt-primary" data-rt-save>Save</button>
+        <button class="tpl-add__btn" data-rt-save="test">Save and test</button>
+        <span class="rt-acts__spacer"></span>
+        <button class="tpl-add__btn" data-rt-back>Cancel</button>`;
+    } else if (rtConfirmDel === r.id) {
+      acts = `<span class="set-agent__confirm-txt">A run is still busy. It carries on; only the routine goes.</span>
+        <button class="tpl-add__btn tpl-add__btn--danger" data-rt-delete="yes">Delete</button>
+        <button class="tpl-add__btn" data-rt-delete="no">Cancel</button>`;
+    } else {
+      acts = `<button class="tpl-add__btn rt-primary" data-rt-run>Run now<span class="rt-kbd">⌘R</span></button>
+        <button class="tpl-add__btn" data-rt-test>Test</button>
+        <span class="rt-acts__spacer"></span>
+        <button class="tpl-add__btn tpl-add__btn--danger" data-rt-delete>Delete</button>`;
+    }
+    const projects = projectHeads().map((h) => [wsName(h), wsName(h)]);
+    const agents = liveAgents().map((k) => [k, rtAgentName(k)]);
+    const tk = r.target.kind;
+    const now = new Date();
+    const targetSub = tk === 'existing'
+      ? `<div class="rt-sub">${rtPop('branch', rtProjectBranches(r.project).map((b) => [b, b]), r.target.branch)}</div>`
+      : `<div class="rt-sub"><span class="rt-branch">${esc(rtBranchName(r, tk, now))}</span></div>`;
+    const targetDesc = { existing: 'A new session on a branch you already have, alongside whatever is there.',
+      same: 'One branch, kept between runs — each run picks up where the last left off.',
+      new: 'A fresh branch from Base every run.' }[tk];
+    const s = r.schedule;
+    const schedCtl = rtPop('schedule', RT_SCHEDULES, s.kind)
+      + (s.kind === 'weekly' ? rtPop('day', RT_DAYS_LONG.map((d, i) => [i, d.slice(0, -1)]), s.day) : '')
+      + (s.kind === 'once' ? `<input class="rt-input rt-input--date" type="date" data-rt-f="date" value="${esc(s.date || '')}">` : '')
+      + (s.kind !== 'hourly' ? `<input class="rt-input rt-input--time" type="time" data-rt-f="time" value="${esc(s.time || '09:00')}">` : '');
+    const next = draft ? null : rtNext(r);
+    const schedDesc = draft ? 'Missed while Synth was closed? It runs once when Synth opens, if the slot is within a day (a week for weekly).'
+      : (next ? `Next: ${rtWhen(next)}` : 'Ran — it won\'t fire again.');
+    const more = `<div class="set-row rt-more${rtMoreOpen ? ' is-open' : ''}" data-row data-rt-more>
+        <div class="set-row__head"><span class="rt-more__chev">${ICON_CARET}</span><div class="set-row__label">More</div></div>
+      </div>`
+      + (rtMoreOpen ? (tk === 'existing' ? '' : row('Base', desc('What each new branch is cut from. Fetched first; if the fetch fails, the local copy is used and the run says so.'),
+          rtPop('base', rtProjectBranches(r.project).map((b) => [b, b]), r.base)))
+        + row('Extra flags', desc(`Added after ${esc(r.project)}'s own flags for ${esc(rtAgentName(r.agent))}, for this routine only. The model goes here too.`), '',
+          `<div class="set-cmd set-cmd--edit set-cmd--box"><span class="set-cmd__prompt">$</span><span class="set-cmd__bin">${esc(r.agent === 'claude' ? 'claude' : r.agent)}</span><input class="set-cmd__tail" data-rt-f="flags" value="${esc(r.flags || '')}" placeholder="--model opus" spellcheck="false"></div>`)
+        : '');
+    const editor = `<section class="set-grp"><div class="set-card">
+        ${row('Name', '', `<input class="rt-input" data-rt-f="name" value="${esc(r.name)}" placeholder="Morning brief" spellcheck="false">`)}
+        ${row('Project', '', rtPop('project', projects, r.project))}
+        ${row('Prompt', desc('Handed to the agent every run, after one line from Synth naming the routine and when it was meant to run.'), '',
+          `<textarea class="rt-prompt" data-rt-f="prompt" placeholder="What should the agent do each time?">${esc(r.prompt)}</textarea>`)}
+        ${row('Agent', '', rtPop('agent', agents, r.agent))}
+        ${row('Branch', desc(targetDesc), `<div class="rt-seg" role="group" aria-label="Branch">${RT_TARGETS.map(([k, l]) =>
+          `<button type="button" data-rt-target="${k}" class="${k === tk ? 'is-on' : ''}">${l}</button>`).join('')}</div>`, targetSub)}
+        ${row('Schedule', desc(esc(schedDesc)), schedCtl)}
+        ${more}
+      </div></section>`;
+    const starters = draft && rtView.pristine ? `<section class="set-grp"><div class="set-grp__label">Start from</div>${rtStartersHTML()}</section>` : '';
+    const runs = draft ? '' : `<section class="set-grp"><div class="set-grp__label">Runs</div><div class="set-card">${
+      r.runs.length ? r.runs.map(rtRunHTML).join('')
+        : row('No runs yet', desc(next ? `The first one is ${esc(rtWhen(next))}. Run now or Test to see it sooner.` : 'Run now or Test to see one.'))
+    }</div></section>`;
+    return `<div class="rt-acts">${acts}</div>${starters}${editor}${runs}`;
+  }
+  function renderRoutines() {
+    const r = rtView ? (rtView.draft || rtById(rtView.id)) : null;
+    if (rtView && !r) rtView = null;
+    const keep = selEl && content.contains(selEl) ? rtRows().indexOf(selEl) : -1;
+    const scroll = content.querySelector('.set-body') ? content.querySelector('.set-body').scrollTop : 0;
+    content.innerHTML = `<div class="pane">
+      <div class="pane__head">
+        ${r ? `<button class="rt-back" data-rt-back aria-label="All routines" title="All routines (Esc)">${ICON_CARET}</button>` : ''}
+        <div class="pane__title"><span class="session__icon">${ICON_ROUTINE}</span><span>Routines</span></div>
+        ${r ? `<div class="pane__crumb"><b>${esc(r.project)}</b> / ${esc(r.name || 'New routine')}</div>` : ''}
+        <div class="pane__spacer"></div>
+        ${r || !ROUTINES.length ? '' : `<button class="tpl-add__btn" data-rt-new>${ICON_PLUS} New routine</button>`}
+      </div>
+      <div class="set-body"><div class="set-body__inner rt-body__inner">${r ? rtDetailHTML(r) : rtListHTML()}</div></div>
+    </div>`;
+    content.querySelector('.set-body').scrollTop = scroll;
+    if (keep >= 0 && rtRows()[keep]) select(rtRows()[keep]);
+    rtSyncDot();
+  }
+  // Re-render only while the board is up and you're not mid-typing in it.
+  function rtRefresh() {
+    rtSyncDot();
+    if (!app.classList.contains('routines')) return;
+    const f = document.activeElement;
+    if (f && content.contains(f) && f.matches('input, textarea, select')) return;
+    renderRoutines();
+  }
+  function rtSyncDot() {
+    document.querySelector('#openRoutines .foot-btn__dot').hidden = !ROUTINES.some((r) => r.unseenFail);
+  }
+  const rtRows = () => [...content.querySelectorAll('.rt-body__inner .set-row, .rt-body__inner .rt-starter')];
+
+  // ---- Navigation ----
+  function rtOpen(id) {
+    const r = rtById(id);
+    if (!r) return;
+    r.unseenFail = false;
+    rtView = { id };
+    rtMoreOpen = false;
+    rtConfirmDel = null;
+    renderRoutines();
+    content.querySelector('.set-body').scrollTop = 0;
+    select(rtRows()[0], true);
+  }
+  function rtNewDraft(starter) {
+    const head = contextWorkspaceHead() || projectHeads()[0];
+    const project = head ? wsName(head) : '';
+    const s = starter || {};
+    const target = s.target ? { ...s.target } : { kind: 'new' };
+    if (target.kind === 'existing' && !rtProjectBranches(project).includes(target.branch)) target.branch = rtProjectBranches(project)[0];
+    rtView = { pristine: !starter, draft: {
+      id: null, name: s.name || '', project, agent: liveAgents()[0], base: 'main', flags: '',
+      prompt: s.prompt || '', target, schedule: s.schedule ? { ...s.schedule } : { kind: 'weekdays', time: '09:00' }, runs: [],
+    } };
+    rtMoreOpen = false;
+    renderRoutines();
+    const name = content.querySelector('[data-rt-f="name"]');
+    if (!starter && name) { name.focus(); document.body.classList.remove('kbd'); }
+    else select(rtRows()[0], true);
+  }
+  function rtSave(thenTest) {
+    const d = rtView.draft;
+    if (!d.name.trim()) d.name = 'Untitled routine';
+    d.id = 'rt' + (++rtSeq);
+    delete d.pristine;
+    ROUTINES.push(d);
+    rtView = { id: d.id };
+    if (thenTest) rtFire(d, 'test');
+    renderRoutines();
+  }
+  function rtBack() {
+    if (!rtView) { exitRoutines(); return; }
+    const id = rtView.id;
+    rtView = null;
+    rtConfirmDel = null;
+    renderRoutines();
+    select(content.querySelector(`[data-rt-id="${id}"]`) || rtRows()[0], true);
+  }
+  function rtDelete(r) {
+    ROUTINES.splice(ROUTINES.indexOf(r), 1);
+    rtConfirmDel = null;
+    rtBack();
+  }
+  function rtJumpRun(run) {
+    if (!rtLive(run)) return;
+    leaveRoutinesMode();
+    jumpTo(run.session);
+  }
+  // ↵ / l on a row of the editor drives the row's own control, like Settings.
+  function activateRoutineRow(row) {
+    if (row.matches('.rt-item')) { rtOpen(row.dataset.rtId); return; }
+    if (row.matches('.rt-starter')) { rtNewDraft(RT_STARTERS[+row.dataset.rtStarter]); return; }
+    if (row.matches('.rt-run')) { const r = rtById(rtView.id); if (r) rtJumpRun(r.runs[+row.dataset.rtRun]); return; }
+    if (row.matches('[data-rt-more]')) { rtMoreOpen = !rtMoreOpen; renderRoutines(); return; }
+    const seg = row.querySelector('.rt-seg');
+    if (seg) { const on = [...seg.children].findIndex((b) => b.classList.contains('is-on')); seg.children[(on + 1) % seg.children.length].click(); return; }
+    const f = row.querySelector('input, textarea, select');
+    if (f) { f.focus(); document.body.classList.remove('kbd'); }
+  }
+
+  function enterRoutines(id) {
+    closeMenu();
+    if (paletteOpen) closePalette();
+    if (shortcutsEl) closeShortcuts();
+    if (app.classList.contains('settings')) leaveSettingsMode();
+    if (app.classList.contains('usage')) leaveUsageMode();
+    setupEl = null;
+    app.classList.add('routines');
+    document.getElementById('openRoutines').classList.add('is-on');
+    rtView = null;
+    if (id) { rtOpen(id); return; }
+    renderRoutines();
+    document.body.classList.add('kbd');
+    select(rtRows()[0] || document.getElementById('openRoutines'), true);
+  }
+  function leaveRoutinesMode() {
+    app.classList.remove('routines');
+    document.getElementById('openRoutines').classList.remove('is-on');
+    rtView = null;
+    rtConfirmDel = null;
+  }
+  function exitRoutines() {
+    if (!app.classList.contains('routines')) return;
+    leaveRoutinesMode();
+    renderLayout();
+    select(openEl && treeRows().includes(openEl) ? openEl : document.getElementById('openRoutines'));
+  }
+  document.getElementById('openRoutines').addEventListener('click', () => {
+    if (app.classList.contains('routines')) exitRoutines(); else enterRoutines();
+  });
+
+  // ---- Editing: every field writes straight to the routine (a draft until Save) ----
+  function rtWrite(r, field, value) {
+    if (field === 'name') r.name = value;
+    else if (field === 'prompt') r.prompt = value;
+    else if (field === 'flags') r.flags = value;
+    else if (field === 'agent') r.agent = value;
+    else if (field === 'base') r.base = value;
+    else if (field === 'branch') r.target.branch = value;
+    else if (field === 'project') {
+      r.project = value;
+      if (r.target.kind === 'existing') r.target.branch = rtProjectBranches(value)[0];
+    }
+    else if (field === 'schedule') {
+      r.schedule = { kind: value, time: r.schedule.time || '09:00' };
+      if (value === 'weekly') r.schedule.day = 1;
+      if (value === 'once') { const t = new Date(); t.setDate(t.getDate() + 1); r.schedule.date = `${t.getFullYear()}-${rtPad(t.getMonth() + 1)}-${rtPad(t.getDate())}`; r.ran = false; }
+    }
+    else if (field === 'day') r.schedule.day = +value;
+    else if (field === 'time') r.schedule.time = value;
+    else if (field === 'date') { r.schedule.date = value; r.ran = false; }
+    if (rtView && rtView.draft) rtView.pristine = false;
+  }
+  const rtCurrent = () => rtView && (rtView.draft || rtById(rtView.id));
+  content.addEventListener('input', (e) => {
+    if (!app.classList.contains('routines')) return;
+    const f = e.target.closest('[data-rt-f]');
+    const r = rtCurrent();
+    if (!f || !r || f.tagName === 'SELECT') return;
+    const wasPristine = rtView.pristine;
+    rtWrite(r, f.dataset.rtF, f.value);
+    const crumb = content.querySelector('.pane__crumb');
+    if (crumb) crumb.innerHTML = `<b>${esc(r.project)}</b> / ${esc(r.name || 'New routine')}`;
+    // The preview of a same-branch name follows the name as you type it.
+    const prev = content.querySelector('.rt-branch');
+    if (prev && f.dataset.rtF === 'name') prev.textContent = rtBranchName(r, r.target.kind, new Date());
+    if (wasPristine && !rtView.pristine) { const st = content.querySelector('.rt-starters'); if (st) st.closest('.set-grp').remove(); }
+  });
+  content.addEventListener('change', (e) => {
+    if (!app.classList.contains('routines')) return;
+    const f = e.target.closest('[data-rt-f]');
+    const r = rtCurrent();
+    if (!f || !r) return;
+    rtWrite(r, f.dataset.rtF, f.value);
+    if (f.tagName === 'SELECT' || f.type === 'time' || f.type === 'date') { f.blur(); renderRoutines(); }
+  });
+  content.addEventListener('click', (e) => {
+    if (!app.classList.contains('routines')) return;
+    const t = e.target;
+    const r = rtCurrent();
+    if (t.closest('[data-rt-back]')) { rtBack(); return; }
+    if (t.closest('[data-rt-new]')) { rtNewDraft(); return; }
+    const starter = t.closest('[data-rt-starter]');
+    if (starter) { rtNewDraft(RT_STARTERS[+starter.dataset.rtStarter]); return; }
+    const item = t.closest('[data-rt-id]');
+    if (item) { rtOpen(item.dataset.rtId); return; }
+    if (!r) return;
+    const save = t.closest('[data-rt-save]');
+    if (save) { rtSave(save.dataset.rtSave === 'test'); return; }
+    if (t.closest('[data-rt-run]')) { rtFire(r, 'now'); return; }
+    if (t.closest('[data-rt-test]')) { rtFire(r, 'test'); return; }
+    const del = t.closest('[data-rt-delete]');
+    if (del) {
+      if (del.dataset.rtDelete === 'no') { rtConfirmDel = null; renderRoutines(); return; }
+      if (del.dataset.rtDelete === 'yes' || !rtBusyRun(r)) { rtDelete(r); return; }
+      rtConfirmDel = r.id; renderRoutines(); return;
+    }
+    const tgt = t.closest('[data-rt-target]');
+    if (tgt) {
+      r.target = { kind: tgt.dataset.rtTarget, branch: r.target.branch || rtProjectBranches(r.project)[0] };
+      if (rtView.draft) rtView.pristine = false;
+      renderRoutines(); return;
+    }
+    if (t.closest('[data-rt-more]')) { rtMoreOpen = !rtMoreOpen; renderRoutines(); return; }
+    const run = t.closest('.rt-run--jump');
+    if (run && rtView.id) { rtJumpRun(r.runs[+run.dataset.rtRun]); return; }
+  });
+
+  // Prototype affordance: a scheduled slot arriving now, or failing to.
+  document.querySelectorAll('[data-rt-proto]').forEach((b) => b.addEventListener('click', () => {
+    const r = ROUTINES[0];
+    if (!r) return;
+    if (b.dataset.rtProto === 'fire') rtFire(r, 'schedule', new Date());
+    else rtFail(r, 'schedule', new Date(), `The agent never took the text — ${rtAgentName(r.agent)} didn't come up in time.`);
+  }));
+  rtSyncDot();
 
   // ---- Render ------------------------------------------------------------------------
   function renderSettings() {
@@ -10451,6 +11166,7 @@
     if (paletteOpen) closePalette();
     if (shortcutsEl) closeShortcuts();
     if (app.classList.contains('usage')) leaveUsageMode();
+    if (app.classList.contains('routines')) leaveRoutinesMode();
     setupEl = null;   // leaving for settings revokes any armed setup-resolve
     if (scope) { setProject = scope; setTab = 'project'; try { localStorage.setItem(PROJ_KEY, wsName(scope)); } catch (e) {} }
     app.classList.add('settings');

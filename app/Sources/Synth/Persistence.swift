@@ -24,6 +24,9 @@ struct PersistedState: Codable {
     /// The agents the user defined themselves (name, command, base). Typed setup, so it rides here
     /// with the script and the template rather than in UserDefaults with the on/off switches.
     var customAgents: [CustomAgent]?
+    /// Routines (Routines.swift), with their run history. Optional/omitted when there are none,
+    /// so a pre-routines snapshot decodes and `version` stays 1.
+    var routines: [Routine]?
 }
 
 struct PersistedWorkspace: Codable {

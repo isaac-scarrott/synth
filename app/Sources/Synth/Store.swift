@@ -687,6 +687,9 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// across a launch.
     var usageOpen = false
 
+    /// Every project's routines (Routines.swift), durable in `state.json`.
+    var routines: [Routine] = []
+
     /// A project's setup script is its DELTA — the extra lines that run AFTER the shared
     /// base (globalScript). Empty = pure inheritance. `wsSkipScript` is the rare opt-out:
     /// run only the project's lines, not the shared base. Design surface only, no runner yet.
@@ -2482,11 +2485,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         }
         workspaces.remove(at: index)
         expanded.remove(ws.id)
+        let ownRoutines = routines.filter { $0.workspaceID == ws.id }
+        routines.removeAll { $0.workspaceID == ws.id }
         pruneLayout(); syncActive()
 
         softDelete("Removed \(ws.name)", subject: .glyph(Phosphor.folder), restore: { [weak self] in
             guard let self else { return }
             self.workspaces.insert(ws, at: min(index, self.workspaces.count))
+            self.routines.append(contentsOf: ownRoutines)
             if wasExpanded { self.expanded.insert(ws.id) }
             self.pruneLayout(); self.syncActive()
         }, commit: { [weak self] in
@@ -3882,7 +3888,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             globalScript: globalScript,
             globalAgentFlags: globalAgentFlags.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
             globalSessionTemplate: globalSessionTemplate,
-            customAgents: customAgents.isEmpty ? nil : customAgents
+            customAgents: customAgents.isEmpty ? nil : customAgents,
+            routines: routines.isEmpty ? nil : routines
         )
     }
 
@@ -3958,6 +3965,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // The registry learns about them here (customAgents' didSet), which is what puts a user's
         // own command on PATH as a shim and into every "New …" for the rest of the run.
         if let ca = state.customAgents { customAgents = ca }
+        let restoredProjects = Set(restored.map(\.id))
+        routines = (state.routines ?? []).filter { restoredProjects.contains($0.workspaceID) }
         let liveIDs = Set(restored.flatMap { ws in
             [ws.id] + ws.branches.flatMap { [$0.id] + $0.sessions.map(\.id) }
         })

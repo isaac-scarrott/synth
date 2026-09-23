@@ -32,12 +32,6 @@ extension AppStore {
         startRoutineRun(id, trigger: trigger, slot: slot, at: now)
     }
 
-    /// The View on a "Routine didn't start" card. The board owns showing a routine; this only
-    /// says which one was asked for — the board reads `pendingRoutineOpen` and clears it.
-    func requestOpenRoutine(_ id: UUID) {
-        pendingRoutineOpen = id
-    }
-
     /// Start whatever is waiting behind a run that has settled. Called when a session leaves
     /// busy, when a start finishes (either way), and on every scheduler tick as a backstop.
     func drainRoutineQueues() {
@@ -90,10 +84,22 @@ extension AppStore {
 
     // MARK: A run
 
+    /// A new-each-run branch is stamped to the minute, so two runs in the same minute (Run now
+    /// twice, a catch-up beside a Run now) would land on one branch. The second gets `-2`, `-3`….
+    private func freshBranchName(_ r: Routine, trigger: RoutineTrigger, at: Date) -> String {
+        let name = r.branchName(for: trigger, at: at)
+        guard trigger != .test, r.target == .fresh,
+              let ws = workspaces.first(where: { $0.id == r.workspaceID }) else { return name }
+        let taken = Set(ws.branches.map(\.name))
+        var candidate = name, n = 2
+        while taken.contains(candidate) { candidate = "\(name)-\(n)"; n += 1 }
+        return candidate
+    }
+
     private func startRoutineRun(_ id: UUID, trigger: RoutineTrigger, slot: Date?, at: Date) {
         guard let r = routine(id) else { return }
         let run = RoutineRun(firedAt: at, slot: slot, trigger: trigger, outcome: .started,
-                             branch: r.branchName(for: trigger, at: at))
+                             branch: freshBranchName(r, trigger: trigger, at: at))
         editRoutine(id) { r in
             r.runs.insert(run, at: 0)
             Self.account(slot, trigger: trigger, in: &r)
@@ -404,11 +410,11 @@ extension AppStore {
         let id = UUID()
         notifs.append(InAppNotif(id: id, kind: .error, seq: notifSeq, sessionKind: .terminal,
                                  title: r.name, colorIndex: nil, outlivesSession: true,
-                                 message: "Routine didn't start", iconPath: Phosphor.exclamation,
+                                 message: "Routine didn't start", iconPath: Phosphor.routine,
                                  tier: .attention, sub: reason,
                                  action: NotifAction(label: "View"), drains: false))
         let routineID = r.id
-        notifActions[id] = { [weak self] in self?.requestOpenRoutine(routineID) }
+        notifActions[id] = { [weak self] in self?.openRoutine(routineID) }
         let toNC = automationNotifRoute.map { $0 == .notificationCenter } ?? !NSApp.isActive
         if toNC {
             NotificationService.shared.postSystemError(title: "Routine didn't start",
@@ -520,9 +526,7 @@ extension AppStore {
         }
         switch verb {
         case "automation.routines":
-            return ["ok": true,
-                    "pendingRoutineOpen": pendingRoutineOpen?.uuidString ?? "",
-                    "routines": routines.map(routineJSON)]
+            return ["ok": true, "routines": routines.map(routineJSON)]
 
         case "automation.routineCreate":
             // An unknown `workspaceId` is passed through on purpose: refusing it is `validate`'s job.

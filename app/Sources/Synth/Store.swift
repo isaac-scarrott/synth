@@ -693,10 +693,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// booting, waiting for the supervisor. Busy for queueing, never persisted: a relaunch
     /// mid-start has no start left to finish (RoutineRunner.swift).
     var routineRunsPending: Set<UUID> = []
-    /// A routine something asked to show — the "Routine didn't start" card's View. The board
-    /// reads and clears it (`requestOpenRoutine`).
-    var pendingRoutineOpen: UUID?
-
     /// The Routines board — a third full-pane mode, exclusive with Settings and Usage. What it
     /// shows, where its keyboard cursor rests and which field holds the caret are all board
     /// state (RoutinesBoard.swift); none of it survives a launch.

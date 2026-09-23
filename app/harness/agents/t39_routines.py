@@ -167,7 +167,8 @@ check("32. one sticky card says it didn't start", card and card["tier"] == "atte
       and card["title"] == "Catch up" and card["sub"] == f["reason"] and card["action"] == "View", card)
 if card:
     ctl("automation.notifAction", sessionId=card["sessionId"])
-check("33. View asks for that routine", ctl("automation.routines").get("pendingRoutineOpen") == R2)
+board = ctl("automation.routineBoard")
+check("33. View opens that routine on the board", board.get("open") is True and R2.lower() in board.get("view", "").lower(), board)
 
 # --- A slot older than the window is recorded, not fired -----------------------------------------
 # Weekdays at 00:05, looked at on a Saturday night: the latest slot is Friday's, two days back.
@@ -256,7 +257,8 @@ check("41. with their runs, outcomes and slots",
       all([(x["id"], x["outcome"], x["slot"]) for x in back[n]["runs"]]
           == [(x["id"], x["outcome"], x["slot"]) for x in kept[n]["runs"]] for n in back),
       {n: [x["outcome"] for x in back[n]["runs"]] for n in back})
-check("42. and the unseen dot", back.get("Catch up", {}).get("failureUnseen") is True)
+# "Catch up" was opened by its card's View (33), which is what marks a failure seen.
+check("42. and the seen dot stays seen", back.get("Catch up", {}).get("failureUnseen") is False)
 
 p.terminate()
 kill_all()

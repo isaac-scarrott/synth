@@ -882,7 +882,7 @@ final class ControlServer: @unchecked Sendable {
             return ["ok": true, "navCursor": store.navCursor?.uuidString ?? ""]
 
         // The board's mouse-only entry points (the head's "New routine"), and what it shows.
-        case "automation.routines" where automation:
+        case "automation.routineBoard" where automation:
             switch request["action"] as? String {
             case "new": store.newRoutineDraft()
             case "open": if let id = (request["id"] as? String).flatMap(UUID.init) { store.enterRoutines(id) } else { store.enterRoutines() }

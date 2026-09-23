@@ -166,13 +166,17 @@ extension AppStore {
         let (row, note) = try await routineBranch(r, run: run, mark: mark, in: ws)
         editRun(r.id, run.id) { $0.branch = row.name; if let note { $0.reason = note } }
 
-        // Claude Code stops a folder it has never seen at a trust prompt no one is there to
-        // answer. A folder Synth cut for this routine inherits the repo's trust — only if the
-        // user already gave it. An existing branch's folder is theirs, and stays as they left it.
+        // Claude Code and Antigravity stop a folder they have never seen at a trust prompt no one
+        // is there to answer. A folder Synth cut for this routine inherits the repo's trust — only
+        // if the user already gave it. An existing branch's folder is theirs, and stays as they left it.
         let cutHere = test || r.target == .same || r.target == .fresh
-        let claude = hostedByClaude(r.agent)
-        if claude, cutHere { try ClaudeTrust.inherit(row.worktreeURL, from: ws.url) }
-        let untrusted = claude && !ClaudeTrust.isTrusted(ws.url)
+        let trust = trustKept(by: r.agent)
+        if let trust, cutHere { try trust.inherit(row.worktreeURL, from: ws.url) }
+        let stalled = trust.flatMap { trust in
+            trust.isTrusted(ws.url) ? nil
+                : "\(ws.name) isn't trusted in \(trust.agentName) yet, so it stopped at the trust prompt. "
+                  + "Open \(trust.agentName) in \(ws.name) once, accept the prompt, then run it again."
+        }
 
         if !test, r.target != .fresh { closeSettledRun(of: r, on: row) }
 
@@ -195,10 +199,7 @@ extension AppStore {
         }
         try await seed(session, of: r.id, run: run, on: row,
                        with: Self.seedText(r, run: run, branch: row.name), agentName: agentName,
-                       stalled: untrusted
-                           ? "\(ws.name) isn't trusted in Claude Code yet, so it stopped at the trust prompt. "
-                             + "Open Claude Code in \(ws.name) once, accept the prompt, then run it again."
-                           : nil)
+                       stalled: stalled)
     }
 
     /// Hand the prompt over. SECURITY (CommentMode): only ever to a supervisor-confirmed-live
@@ -236,7 +237,7 @@ extension AppStore {
                 return
             }
         }
-        // A folder Claude Code hasn't been told to trust is an expected stop, said in history
+        // A folder the agent hasn't been told to trust is an expected stop, said in history
         // only; an agent that never came up anywhere else is a fault worth counting.
         if let stalled { throw RoutineDidNotStart(reason: stalled) }
         Fault.report(.agentLaunch, .agentDeliveryNeverTaken, severity: .degraded, session: session.id,
@@ -244,9 +245,14 @@ extension AppStore {
         throw RoutineDidNotStart(reason: "The agent never took the text — \(agentName) didn't come up in time.")
     }
 
-    /// Claude Code itself, or a command of the user's that Claude's supervisor hosts.
-    private func hostedByClaude(_ agent: AgentID) -> Bool {
-        agent == .claudeCode || customAgents.first { $0.agentID == agent }?.base == .claudeCode
+    /// The trust list `agent` stops at: its own, or its base's for a command of the user's that
+    /// a built-in's supervisor hosts. Nil for an agent that asks nothing of a new folder.
+    private func trustKept(by agent: AgentID) -> AgentTrust? {
+        switch customAgents.first(where: { $0.agentID == agent })?.base ?? agent {
+        case .claudeCode: .claude
+        case .antigravity: .antigravity
+        default: nil
+        }
     }
 
     /// `[Synth routine "Name" — scheduled for 09:00, started 09:04 on routine/foo. …]`, then the

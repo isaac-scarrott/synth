@@ -46,7 +46,31 @@ seed_cfg = {k: real[k] for k in ("hasCompletedOnboarding", "lastOnboardingVersio
 seed_cfg.update(fullscreenUpsellSeenCount=99, fullscreenDownsellSeenCount=99, projects={})
 CFG_FILE.write_text(json.dumps(seed_cfg, indent=2))
 REPO_REAL = os.path.realpath(repo)
-ENV = {"SYNTH_ROUTINE_SEED_SECONDS": "25", "CLAUDE_CONFIG_DIR": str(CFG)}
+# Antigravity's trust list is the gate's own too. `agy` has no override for where it reads it, so
+# the agent here is a custom one on agy's base whose command is a stand-in: it records the working
+# directory `agy` would have seen (Go's os.Getwd: $PWD when it names the folder) and logs the
+# workspace line agy logs, then waits — as agy does at a trust prompt, since no list of the
+# user's names the folders this gate cuts. A real agy would read the user's list, and a prompt
+# delivered into its trust modal would answer it there.
+AGY = pathlib.Path(lib.H) / "agy-settings.json"
+AGY.unlink(missing_ok=True)
+AGY_PWD = pathlib.Path(lib.H) / "agy-pwd"
+sh(f"rm -rf '{AGY_PWD}'"); AGY_PWD.mkdir()
+AGY_BIN = pathlib.Path(lib.H) / "agy-bin"
+AGY_BIN.mkdir(exist_ok=True)
+(AGY_BIN / "synth-t39-agy").write_text("""#!/bin/sh
+printf '%s\\n' "$PWD" > "$T39_AGY_PWD/$(basename "$PWD")"
+while [ $# -gt 0 ]; do [ "$1" = --log-file ] && log="$2"; shift; done
+[ -n "$log" ] && printf 'I0000 manager.go:443] Initializing CLI store manager for workspace %s\\n' "$PWD" >> "$log"
+exec sleep 600
+""")
+(AGY_BIN / "synth-t39-agy").chmod(0o755)
+_st = json.loads((sd / "state.json").read_text())
+_st["customAgents"] = [{"id": "custom-agy-gate", "name": "Gate Antigravity",
+                        "binary": "synth-t39-agy", "base": "antigravity", "named": True}]
+(sd / "state.json").write_text(json.dumps(_st))
+ENV = {"SYNTH_ROUTINE_SEED_SECONDS": "25", "CLAUDE_CONFIG_DIR": str(CFG), "SYNTH_AGY_SETTINGS": str(AGY),
+       "T39_AGY_PWD": str(AGY_PWD), "PATH": f"{AGY_BIN}:{lib.OPENCODE_PATH}:{os.environ['PATH']}"}
 p, sock = launch(sd, f"{lib.H}/t39.log", env_extra=ENV)
 ctl = Ctl(sock, repo)
 ctl("automation.notifRoute", route="deck")
@@ -283,6 +307,45 @@ for rid in (ru, rt):
 # Everything after this cuts worktrees nobody should take a turn in: the repo stops being
 # trusted, so new worktrees don't inherit it and every agent waits at its trust prompt.
 c2 = cfg(); c2["projects"].pop(REPO_REAL, None); CFG_FILE.write_text(json.dumps(c2, indent=2))
+
+# --- Antigravity's folder trust: the same treatment, in its own list ---------------------------
+def agy_cfg():
+    return json.loads(AGY.read_text())
+
+claude_trusted = trusted_paths()
+a0 = {"someOtherKey": {"x": [1, 2.5, None]}, "trustedWorkspaces": ["/elsewhere/trusted-by-hand"]}
+AGY.write_text(json.dumps(a0, indent=2))
+a0_bytes = AGY.read_bytes()
+au = create(name="Agy untrusted", target="fresh", agent="custom-agy-gate")
+check("37h1. a custom agent on Antigravity's base can be a routine's agent", au.get("ok"), au)
+ctl("automation.routineFire", id=au.get("id", ""), trigger="runNow")
+agu = wait(lambda: (runs("Agy untrusted") or [{}])[0].get("outcome") == "failed" and runs("Agy untrusted")[0], 60)
+check("37h2. an untrusted repo's Antigravity run stalls and fails, saying so in Antigravity's words",
+      agu and agu["reason"] == "repo isn't trusted in Antigravity yet, so it stopped at the trust prompt. "
+      "Open Antigravity in repo once, accept the prompt, then run it again.", agu and agu["reason"])
+check("37h3. and Synth wrote nothing to Antigravity's list", AGY.read_bytes() == a0_bytes, agy_cfg())
+
+a1 = {"someOtherKey": {"x": [1, 2.5, None]}, "theme": "tokyo night",
+      "trustedWorkspaces": ["/elsewhere/trusted-by-hand", REPO_REAL]}
+AGY.write_text(json.dumps(a1, indent=2))
+at = create(name="Agy trusted", target="fresh", agent="custom-agy-gate")["id"]
+ctl("automation.routineFire", id=at, trigger="runNow")
+agt = wait(lambda: (runs("Agy trusted") or [{}])[0].get("worktreePath") and runs("Agy trusted")[0], 30) or {}
+wt_agy = agt.get("worktreePath", "")
+seen = wait(lambda: (AGY_PWD / os.path.basename(wt_agy)).exists() and (AGY_PWD / os.path.basename(wt_agy)).read_text().strip(), 30) if wt_agy else None
+a2 = agy_cfg()
+added = a2.get("trustedWorkspaces", [])[len(a1["trustedWorkspaces"]):]
+check("37h4. a trusted repo's new worktree is appended to Antigravity's list",
+      a2.get("trustedWorkspaces", [])[:2] == a1["trustedWorkspaces"] and bool(added)
+      and all(os.path.realpath(x) == os.path.realpath(wt_agy) for x in added), (a2.get("trustedWorkspaces"), wt_agy))
+check("37h5. in the exact spelling the agent's working directory had", bool(seen) and seen in added, (seen, added))
+check("37h6. every other key is carried through as it was",
+      {k: v for k, v in a2.items() if k != "trustedWorkspaces"} == {k: v for k, v in a1.items() if k != "trustedWorkspaces"}, a2)
+check("37h7. and Claude's config was left alone by an Antigravity run", trusted_paths() == claude_trusted,
+      (claude_trusted, trusted_paths()))
+for rid in (au.get("id", ""), at):
+    ctl("automation.routineDelete", id=rid)
+AGY.write_text(json.dumps(a0, indent=2))
 
 # --- Base shown = base used ------------------------------------------------------------------------
 ctl("automation.routineBoard", action="open", id=R1)

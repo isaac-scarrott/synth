@@ -2768,3 +2768,5 @@ disclosure to dive deeper.
   as well as the board. A Claude run in a folder Synth cut inherits the repo's trust in
   `~/.claude.json`, only when the repo is already trusted. `t39_routines`, 88 checks.
   [Details](docs/features/2026-09-23.md)
+- **Settings and Usage keep their header in tabs mode** — only a session pane's head gives way to the
+  tab strip; Settings keeps its Synth/project tabs, Usage its title. [Details](docs/features/2026-09-23.md)

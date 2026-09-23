@@ -323,7 +323,7 @@ private struct SessionPane: View {
     var body: some View {
         VStack(spacing: 0) {
             // Tabs: the strip carries the session's name + icon and the branch's PR, so the
-            // per-pane header is redundant (working.html `html[data-tabs=on] .pane__head{display:none}`).
+            // per-pane header is redundant (working.html hides a session pane's `.pane__head` in tabs mode).
             if !store.tabsMode {
                 PaneHead(session: session,
                          workspace: store.branch(of: session).flatMap { store.workspace(of: $0) },

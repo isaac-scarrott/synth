@@ -422,8 +422,9 @@ def agy_trust(path, trusted=True):
     pasted at it. The answer is a keypress and lands in `agy`'s own settings; a gate that must
     reach the *other* side of that prompt sets it here, and only ever for its own scratch repos,
     so a run neither depends on what this machine happens to have trusted nor grants anything for
-    the user's real worktrees. Synth itself never writes this file — a row blocked on the prompt
-    is `needsInput`, which is what t15 asserts before granting."""
+    the user's real worktrees. A row blocked on the prompt is `needsInput`, which is what t15
+    asserts before granting. Synth writes this file only for a folder a routine cut in a repo
+    already trusted here (`AgentTrust`), and t39 points that at its own copy."""
     path = str(pathlib.Path(path).resolve())
     st = json.loads(AGY_SETTINGS.read_text()) if AGY_SETTINGS.exists() else {}
     entries = [p for p in st.get("trustedWorkspaces", []) if p != path]

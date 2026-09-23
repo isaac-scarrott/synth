@@ -1733,10 +1733,9 @@
 
   /* the tab a dragged tab is about to pair into a split with — copper ring, echoing the sidebar's pair-to (012) */
   .tab--pair-to { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.7); background: rgba(var(--accent-rgb), 0.12); }
-  /* tabs mode drops the per-pane title bar (the strip carries name + icon); its PR chip moves to the strip */
-  html[data-tabs="on"] .pane__head { display: none; }
-  /* ...but the Routines board has no strip standing in for it, and its head carries Back and New */
-  html[data-tabs="on"] .app.routines .pane__head { display: flex; }
+  /* tabs mode drops a session pane's title bar (the strip carries name + icon); its PR chip moves to the strip.
+     Settings, Usage and Routines have no strip standing in for them, so they keep theirs. */
+  html[data-tabs="on"] .app:not(.settings):not(.usage):not(.routines) .pane__head { display: none; }
   .tabstrip__pr { display: flex; align-items: center; flex-shrink: 0; margin-left: auto; padding-left: 6px; }
   .tab-dropline::before {
     content: ""; position: absolute; left: -2px; top: -3px;

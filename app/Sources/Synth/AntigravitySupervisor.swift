@@ -189,8 +189,8 @@ import Foundation
         if let range = line.range(of: Self.workspaceMarker) {
             let path = String(line[range.upperBound...])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            // Compared against the trusted list, which agy stores fully resolved.
-            workspaces[session] = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            // Kept as agy spells it: agy trusts a workspace only when its list holds this exact string.
+            workspaces[session] = path
         }
         lastLineAt[session] = Date()
         if line.contains(Self.bootMarker), bootedAt[session] == nil { bootedAt[session] = Date() }
@@ -265,15 +265,17 @@ import Foundation
         bus?.post(.agentReady(session))
     }
 
-    /// The workspaces the user has already trusted, as `agy` records them. Read every time and
-    /// never written: the answer changes the moment the user answers the prompt, and this is the
-    /// only way Synth hears about it.
+    /// The workspaces `agy` trusts, as it records them. Read every time and
+    /// never written here: the answer changes the moment the user answers the prompt, and this is
+    /// the only way Synth hears about it. The file `agy` itself reads, never a gate's
+    /// `SYNTH_AGY_SETTINGS` — a row judged trusted by a list `agy` never saw would have its prompt
+    /// pasted into the trust modal, and the Enter would answer it.
     private static func trustedWorkspaces() -> Set<String> {
         let path = NSHomeDirectory() + "/.gemini/antigravity-cli/settings.json"
         guard let data = FileManager.default.contents(atPath: path),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let list = root["trustedWorkspaces"] as? [String] else { return [] }
-        return Set(list.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
+        return Set(list)
     }
 
     /// `agy` logs this when it hands the resolved account and model to its backend — the first

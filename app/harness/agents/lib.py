@@ -424,11 +424,16 @@ def agy_trust(path, trusted=True):
     so a run neither depends on what this machine happens to have trusted nor grants anything for
     the user's real worktrees. A row blocked on the prompt is `needsInput`, which is what t15
     asserts before granting. Synth writes this file only for a folder a routine cut in a repo
-    already trusted here (`AgentTrust`), and t39 points that at its own copy."""
-    path = str(pathlib.Path(path).resolve())
+    already trusted here (`AgentTrust`), and t39 points that at its own copy.
+
+    agy matches its working directory exactly — `$PWD` as the terminal was handed it, so
+    `/var/folders/…` for a gate repo, never the `/private/var/…` it resolves to. Both spellings are
+    written: the resolved one alone leaves agy at its prompt, and a paste's Enter then answers it."""
+    spellings = [str(pathlib.Path(path).absolute()), str(pathlib.Path(path).resolve())]
+    spellings = list(dict.fromkeys(spellings))
     st = json.loads(AGY_SETTINGS.read_text()) if AGY_SETTINGS.exists() else {}
-    entries = [p for p in st.get("trustedWorkspaces", []) if p != path]
-    if trusted: entries.append(path)
+    entries = [p for p in st.get("trustedWorkspaces", []) if p not in spellings]
+    if trusted: entries += spellings
     st["trustedWorkspaces"] = entries
     AGY_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
     AGY_SETTINGS.write_text(json.dumps(st, indent=2))

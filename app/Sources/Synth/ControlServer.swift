@@ -835,6 +835,7 @@ final class ControlServer: @unchecked Sendable {
                     "nc": NotificationService.shared.captured,
                     // The deck isn't drawn over Usage, and a usage card's button is what opens it.
                     "usageOpen": store.usageOpen,
+                    "routinesOpen": store.routinesOpen,
                     "notifs": store.notifOrder.map { n -> [String: String] in
                         ["sessionId": n.id.uuidString,
                          "kind": String(describing: n.kind),
@@ -877,6 +878,18 @@ final class ControlServer: @unchecked Sendable {
         case "automation.navMove" where automation:
             store.moveCursor((request["delta"] as? NSNumber)?.intValue ?? 1)
             return ["ok": true, "navCursor": store.navCursor?.uuidString ?? ""]
+
+        // The board's mouse-only entry points (the head's "New routine"), and what it shows.
+        case "automation.routines" where automation:
+            switch request["action"] as? String {
+            case "new": store.newRoutineDraft()
+            case "open": if let id = (request["id"] as? String).flatMap(UUID.init) { store.enterRoutines(id) } else { store.enterRoutines() }
+            default: break
+            }
+            return ["ok": true, "open": store.routinesOpen, "view": String(describing: store.routinesView),
+                    "cursor": store.routineCursor.map { String(describing: $0) } ?? "",
+                    "focus": store.routineFocus.map { String(describing: $0) } ?? "",
+                    "count": store.routines.count]
 
         case "automation.navActivate" where automation:
             store.activateCursor()

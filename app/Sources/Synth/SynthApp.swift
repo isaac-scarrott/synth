@@ -196,7 +196,7 @@ struct RootView: View {
     /// answering a question nobody asked. Usage is the same kind of full-pane takeover.
     private var hoverCardBlocked: Bool {
         !store.tabsMode || store.draggingRowID != nil || store.renamingRowID != nil
-            || store.activeMenu != nil || store.settingsOpen || store.usageOpen
+            || store.activeMenu != nil || store.settingsOpen || store.usageOpen || store.routinesOpen
     }
 
     var body: some View {
@@ -223,7 +223,8 @@ struct RootView: View {
             // When collapsed with no header to host the toggle (the empty "No session" state),
             // float it at the top-left on the traffic-light axis. The session/settings/usage
             // headers carry their own inline toggle.
-            if store.sidebarCollapsed, store.openSession == nil, !store.settingsOpen, !store.usageOpen {
+            if store.sidebarCollapsed, store.openSession == nil, !store.settingsOpen, !store.usageOpen,
+               !store.routinesOpen {
                 SidebarToggle()
                     .padding(.top, (Theme.titlebarHeight - SidebarToggle.box) / 2)
                     .padding(.leading, Theme.trafficLightsClearance)
@@ -569,6 +570,18 @@ struct RootView: View {
             if event.keyCode == 53, store.usageOpen {      // …and usage
                 store.exitUsage(); return nil
             }
+            // Routines: Esc leaves the field you're in first, then one layer of the board. ⌘R
+            // runs the open routine now — ⌘↩ already means "jump to the front card".
+            if store.routinesOpen {
+                if event.keyCode == 53 { store.routineEscape(); return nil }
+                if key == "r", event.modifierFlags.contains(.command),
+                   !event.modifierFlags.contains(.shift), !event.modifierFlags.contains(.option) {
+                    if !event.isARepeat, case .detail(let id) = store.routinesView {
+                        store.fireRoutine(id, trigger: .runNow)
+                    }
+                    return nil
+                }
+            }
 
             // [ / ] walk the Settings tabs, matching working.html's stepSettingsTab: General and
             // then every project, wrapping. It steps the whole strip rather than flipping between
@@ -790,6 +803,20 @@ struct RootView: View {
                 if fr is GhosttySurfaceView || fr is NSText || fr is NSTextView { return event }
                 // A focused browser page keeps its keys too (Space/Enter act in the page).
                 if BrowserManager.shared.ownsFirstResponder(fr) { return event }
+            }
+
+            // The board takes the cursor while it is up (working.html `activeRows`): j/k walk its
+            // rows, l/→/↵ act on one, h/← go back a layer.
+            // A date or time field keeps its arrows: they step the value under the caret.
+            if store.routinesOpen, !(event.window?.firstResponder is NSDatePicker),
+               event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+                switch (event.keyCode, key) {
+                case (125, _), (_, "j"): store.moveRoutineCursor(1); return nil
+                case (126, _), (_, "k"): store.moveRoutineCursor(-1); return nil
+                case (124, _), (36, _), (76, _), (49, _), (_, "l"): store.activateRoutineRow(); return nil
+                case (123, _), (_, "h"): store.routineBack(); return nil
+                default: break
+                }
             }
 
             switch event.keyCode {

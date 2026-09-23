@@ -690,6 +690,20 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// Every project's routines (Routines.swift), durable in `state.json`.
     var routines: [Routine] = []
 
+    /// The Routines board — a third full-pane mode, exclusive with Settings and Usage. What it
+    /// shows, where its keyboard cursor rests and which field holds the caret are all board
+    /// state (RoutinesBoard.swift); none of it survives a launch.
+    var routinesOpen = false
+    var routinesView: RoutinesView = .list
+    var routineCursor: RoutineRow?
+    var routineFocus: RoutineField?
+    /// Base + Extra flags, folded away — most routines never touch them.
+    var routineMoreOpen = false
+    /// The routine whose Delete is asking — only ever while one of its runs is busy.
+    var routineConfirmDelete: UUID?
+    /// Why the draft couldn't be saved, in `RoutineError`'s own words.
+    var routineDraftError: String?
+
     /// A project's setup script is its DELTA — the extra lines that run AFTER the shared
     /// base (globalScript). Empty = pure inheritance. `wsSkipScript` is the rare opt-out:
     /// run only the project's lines, not the shared base. Design surface only, no runner yet.
@@ -1673,6 +1687,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     func open(_ session: Session) {
         settingsOpen = false   // jumping to a session leaves settings mode
         usageOpen = false
+        leaveRoutines()
         // …but it still remembers the project you jumped into, for the next Settings visit.
         if let br = branch(of: session), let ws = workspace(of: br) { retargetSettings(toWorkspace: ws.id) }
         // Take-me-to-it (002), branch-aware and sticky (014). A branch switch stashes the layout you
@@ -1712,6 +1727,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     func openWorktreeSetup(_ branch: Branch) {
         settingsOpen = false
         usageOpen = false
+        leaveRoutines()
         // The setup skeleton is a transient, branchless single pane — stash the branch we leave so
         // its remembered layout survives, and don't let the skeleton clobber any branch's entry (014).
         currentBranch?.layout = durableLayout
@@ -1742,6 +1758,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         openSetupBranchID = nil   // leaving for settings revokes any armed setup-resolve
         if let project { settingsProjectID = project.id; settingsTab = .project }
         usageOpen = false
+        leaveRoutines()
         settingsOpen = true
         // The tree stays live; the keyboard cursor rests on the lit Settings foot button.
         navCursor = NavID.settingsFoot
@@ -1791,6 +1808,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         sidebarCollapsed = false
         openSetupBranchID = nil
         settingsOpen = false
+        leaveRoutines()
         usageOpen = true
         navCursor = NavID.usageFoot
     }

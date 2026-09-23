@@ -586,6 +586,8 @@ struct PaletteFrame {
                                 enter: { self.push(self.branchesFrame()) }),
                     PaletteItem(icon: .phosphor(Phosphor.squares), label: "Sessions", sec: "nav",
                                 enter: { self.push(self.sessionsFrame()) }),
+                    PaletteItem(icon: .phosphor(Phosphor.routine), label: "Routines", sec: "nav",
+                                enter: { self.runAndClose { self.store.enterRoutines() } }),
                     PaletteItem(icon: .phosphor(Phosphor.terminal), label: "Scratch terminal", sec: "act",
                                 kbd: ["⌘", "⇧", "T"],
                                 enter: { self.runAndClose { self.store.openScratchTerminal() } }),
@@ -609,6 +611,17 @@ struct PaletteFrame {
                 PaletteItem(icon: .phosphor(Phosphor.terminal), label: "Scratch terminal",
                             kbd: ["⌘", "⇧", "T"],
                             enter: { self.runAndClose { self.store.openScratchTerminal() } }),
+                PaletteItem(icon: .phosphor(Phosphor.routine), label: "Routines",
+                            enter: { self.runAndClose { self.store.enterRoutines() } }),
+            ]
+            // Each routine by name, straight to its page — ⌘K only ever navigates to routines.
+            items += store.routines.map { r in
+                PaletteItem(icon: .phosphor(Phosphor.routine), label: r.name,
+                            ctx: store.workspaces.first { $0.id == r.workspaceID }?.name,
+                            meta: r.schedule.words,
+                            enter: { self.runAndClose { self.store.enterRoutines(r.id) } })
+            }
+            items += [
                 PaletteItem(icon: .phosphor(Phosphor.plus), label: "Add project",
                             enter: { self.runAndClose { self.store.promptAddWorkspace() } }),
                 PaletteItem(icon: .phosphor(Phosphor.sidebar), label: "Toggle sidebar",

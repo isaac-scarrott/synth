@@ -51,6 +51,8 @@ struct ContentPane: View {
                 SettingsPane()
             } else if store.usageOpen {
                 UsagePane()
+            } else if store.routinesOpen {
+                RoutinesPane()
             } else if let root = store.layout {
                 // Tabs (experimental): one strip per branch above the pane tree — the horizontal
                 // twin of the sidebar's session rows. The pane tree spine below is unchanged; the

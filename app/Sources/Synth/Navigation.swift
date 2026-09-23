@@ -27,6 +27,8 @@ enum NavID {
     static let updateFoot   = UUID(uuidString: "00000000-0000-0000-0000-0000000F0072")!
     /// Usage sits above the tree rather than in the foot, but it is the same kind of target.
     static let usageFoot    = UUID(uuidString: "00000000-0000-0000-0000-0000000F0073")!
+    /// Routines sits directly under Usage, the same kind of target.
+    static let routinesFoot = UUID(uuidString: "00000000-0000-0000-0000-0000000F0074")!
 }
 
 extension AppStore {
@@ -83,7 +85,7 @@ extension AppStore {
     var activeRows: [UUID] {
         visibleRows.map(\.id)
             + (stagedUpdate != nil ? [NavID.updateFoot] : [])
-            + [NavID.settingsFoot, NavID.usageFoot]
+            + [NavID.settingsFoot, NavID.usageFoot, NavID.routinesFoot]
     }
 
     /// The waiting build stopped waiting while the cursor was on its button. Settings is the
@@ -283,6 +285,7 @@ extension AppStore {
         // The lit foot button toggles Settings; the tree is live on both screens.
         if navCursor == NavID.settingsFoot { toggleSettings(); return }
         if navCursor == NavID.usageFoot { toggleUsage(); return }
+        if navCursor == NavID.routinesFoot { toggleRoutines(); return }
         if navCursor == NavID.updateFoot { restartForUpdate(); return }
         switch cursorRef {
         case let .workspace(w): toggleExpanded(w.id)
@@ -443,12 +446,12 @@ extension AppStore {
 
     /// ⌘W — close the current context through the same flow as `d` on a sidebar row:
     /// the focused sidebar row when the keyboard owns the sidebar, else the open session
-    /// (working.html contextRow → requestDelete). Inert in Settings and Usage, where an idle
+    /// (working.html contextRow → requestDelete). Inert in Settings, Usage and Routines, where an idle
     /// open session would otherwise close invisibly behind a full-pane surface. Returns whether
     /// it closed anything, so ⌘W can fall through to the stock window-close when there isn't.
     @discardableResult
     func closeContext() -> Bool {
-        guard !settingsOpen, !usageOpen else { return false }
+        guard !settingsOpen, !usageOpen, !routinesOpen else { return false }
         if keyboardActive, let ref = cursorRef { requestDelete(ref); return true }
         if let s = openSession { requestDelete(.session(s)); return true }
         return false

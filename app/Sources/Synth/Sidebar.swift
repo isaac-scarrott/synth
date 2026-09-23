@@ -73,11 +73,20 @@ struct Sidebar: View {
     /// working.html `.sidebar__usage` — above the tree rather than folded into the foot with
     /// Settings: "how close am I to a limit" is a glance you want on every screen, not a place
     /// you go looking for. Same `foot-btn` chrome, and deliberately no trailing meta.
+    ///
+    /// Routines sits directly under it in the same chrome. Its one signal is the red dot: a run
+    /// that didn't start and that nobody has looked at yet. Nothing else ever lights it.
     private var usageRow: some View {
-        FootButton(icon: Phosphor.usage, title: "Usage",
-                   selected: store.keyboardActive && store.navCursor == NavID.usageFoot,
-                   active: store.usageOpen) { store.toggleUsage() }
-            .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 2)
+        VStack(spacing: 0) {
+            FootButton(icon: Phosphor.usage, title: "Usage",
+                       selected: store.keyboardActive && store.navCursor == NavID.usageFoot,
+                       active: store.usageOpen) { store.toggleUsage() }
+            // While the board is up its own rows hold the cursor, so the entry never rings too.
+            FootButton(icon: Phosphor.routine, title: "Routines",
+                       selected: store.keyboardActive && store.navCursor == NavID.routinesFoot && !store.routinesOpen,
+                       active: store.routinesOpen, dot: store.routineFailureUnseen) { store.toggleRoutines() }
+        }
+        .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 2)
     }
 
     private var header: some View {
@@ -161,6 +170,8 @@ private struct FootButton: View {
     /// than a filled slab, which would be the loudest thing in a shell made of hairlines and
     /// washes — and shouting on behalf of housekeeping that installs itself on the next quit.
     var waiting = false
+    /// Routines' unseen failure (working.html `.foot-btn__dot`).
+    var dot = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -200,6 +211,9 @@ private struct FootButton: View {
                         .font(.mono(11, 500))
                         .foregroundStyle(Theme.ink4)
                 }
+                if dot {
+                    Circle().fill(Theme.danger).frame(width: 7, height: 7).padding(.trailing, 3)
+                }
             }
             .padding(.horizontal, 6).padding(.vertical, 6)
             .contentShape(Rectangle())
@@ -216,6 +230,17 @@ private struct FootButton: View {
         if waiting { return Theme.ink }
         if active { return Theme.inkOpen }
         return hovering ? Theme.repoName : Theme.branchName
+    }
+}
+
+/// A run's rows say nobody here started them: a small mark after the name, in quiet ink.
+private struct RoutineMark: View {
+    let routine: Routine
+    let run: RoutineRun
+    var body: some View {
+        Phos(path: Phosphor.routine, size: 11)
+            .foregroundStyle(Theme.inkMeta)
+            .help("Routine: \(routine.name) · \(RoutineWords.when(run.firedAt))")
     }
 }
 
@@ -493,10 +518,15 @@ private struct BranchRow: View {
         if store.tabsMode {
             HStack(spacing: 4) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(branch.name)
-                        .font(.sans(13, isActiveBranch ? 600 : 500))
-                        .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
-                        .lineLimit(1).truncationMode(.tail)
+                    HStack(spacing: 5) {
+                        Text(branch.name)
+                            .font(.sans(13, isActiveBranch ? 600 : 500))
+                            .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
+                            .lineLimit(1).truncationMode(.tail)
+                        if let hit = store.routineRun(forBranch: branch.name, in: workspace.id) {
+                            RoutineMark(routine: hit.routine, run: hit.run)
+                        }
+                    }
                     tabsBranchFacts
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -510,6 +540,9 @@ private struct BranchRow: View {
                     .font(.sans(12, isActiveBranch ? 600 : 500))
                     .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
                     .lineLimit(1).truncationMode(.middle)
+                if let hit = store.routineRun(forBranch: branch.name, in: workspace.id) {
+                    RoutineMark(routine: hit.routine, run: hit.run).padding(.leading, -1)
+                }
                 // The branch's PR rides beside the name — identity, not status, so it
                 // stays clear of the roll-up's reserved right axis. Colour is the state.
                 if let pr = branch.pr {
@@ -668,6 +701,9 @@ private struct SessionRow: View {
                                     .foregroundStyle(nameColor)
                                     .lineLimit(1)
                             }
+                        if let hit = store.routineRun(forSession: session.id) {
+                            RoutineMark(routine: hit.routine, run: hit.run).padding(.leading, -3)
+                        }
                         Spacer(minLength: 4)
                         Group {
                             // The mark mirrors the OWNER's icon, so the tie names which agent.

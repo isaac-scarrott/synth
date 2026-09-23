@@ -125,6 +125,15 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⏎"], label: "Send the comment you are writing"),
             Shortcut(keys: ["esc"], label: "Exit comment mode, or cancel a comment"),
         ]),
+        // The board is a contextual surface like the browser: ⌘R means "run this one now" only
+        // while a routine is open, which is exactly why it has to be written down somewhere.
+        ShortcutCategory(name: "Routines", icon: Phosphor.routine, rows: [
+            Shortcut(keys: ["⌘", "R"], label: "Run routine now"),
+            Shortcut(keys: ["↑", "↓"], label: "Move", alt: ["J", "K"]),
+            Shortcut(keys: ["↵"], label: "Open · edit", alt: ["L"]),
+            Shortcut(keys: ["←"], label: "Back", alt: ["H"]),
+            Shortcut(keys: ["esc"], label: "Leave the field, then back"),
+        ]),
         // Comment mode belongs to whatever Synth is driving, not to the browser it started in —
         // under a "Browser" heading these read as unavailable to someone holding a simulator.
         ShortcutCategory(name: "Comments", icon: Phosphor.commentMode, rows: [

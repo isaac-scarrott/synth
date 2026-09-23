@@ -2737,3 +2737,9 @@ disclosure to dive deeper.
   with the editor and the last 20 runs); a red dot and one sticky card appear only when a run
   didn't start. ⌘K only navigates. `working.html` first, Swift port pending.
   [Details](docs/features/2026-09-23.md)
+- **Routines in the app — the board, the engine, and Claude's folder trust** — the Swift port: the
+  board beside Usage, an in-process scheduler, runs whose agent boots in a hidden window so nothing
+  ever takes the pane, and one API (`Routines.swift`) meant for a future synth-app `routine_create`
+  as well as the board. A Claude run in a folder Synth cut inherits the repo's trust in
+  `~/.claude.json`, only when the repo is already trusted. `t39_routines`, 88 checks.
+  [Details](docs/features/2026-09-23.md)

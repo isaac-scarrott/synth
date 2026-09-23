@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.46.0",
+    "date": "2026-09-23",
+    "changes": [
+      "Routines: save a prompt and Synth hands it to an agent on a schedule — hourly, daily, weekdays, weekly or once — on this Mac while Synth is open. Each run starts a new agent session on a branch you already have, on one routine branch it keeps, or on a fresh branch every time, and never takes the pane or your keyboard. Routines sits under Usage: create one from a starter, see its last 20 runs, Run now (⌘R), or Test it in a throwaway worktree. A run that couldn't start says so once, with a red dot on Routines.",
+      "A routine slot missed while Synth was closed runs once when Synth opens, if it's still recent. For Claude Code and Antigravity, a branch Synth cuts for a routine inherits the trust you already gave its repo, so a run never stops at a trust prompt nobody is there to answer."
+    ]
+  },
+  {
     "version": "0.45.2",
     "date": "2026-09-17",
     "changes": [

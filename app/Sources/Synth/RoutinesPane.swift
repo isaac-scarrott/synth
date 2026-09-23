@@ -147,7 +147,7 @@ struct RoutinesPane: View {
     private func detail(_ r: Routine) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             detailActions(r).padding(.bottom, 18)
-            editor(RoutineDraft(r), next: r.nextSlot(), isDraft: false)
+            editor(store.boardDraft ?? RoutineDraft(r), next: r.nextSlot(), isDraft: false)
             runs(r).padding(.top, 28)
         }
     }
@@ -157,10 +157,7 @@ struct RoutinesPane: View {
             HStack(spacing: 6) {
                 RtButton(title: "Save", style: .primary) { store.saveRoutineDraft(thenTest: false) }
                 RtButton(title: "Save and test") { store.saveRoutineDraft(thenTest: true) }
-                if let err = store.routineDraftError {
-                    Text(err).font(.sans(12)).foregroundStyle(Theme.danger)
-                        .lineLimit(1).truncationMode(.tail).padding(.leading, 6)
-                }
+                editorError
                 Spacer(minLength: 8)
                 RtButton(title: "Cancel") { store.routineBack() }
             }
@@ -181,9 +178,18 @@ struct RoutinesPane: View {
             } else {
                 RtButton(title: "Run now", style: .primary, kbd: "⌘R") { store.fireRoutine(r.id, trigger: .runNow) }
                 RtButton(title: "Test") { store.fireRoutine(r.id, trigger: .test) }
+                editorError
                 Spacer(minLength: 8)
                 RtButton(title: "Delete", style: .danger) { store.requestDeleteRoutine(r.id) }
             }
+        }
+    }
+
+    /// Why the draft or the edit on screen isn't saved, beside the buttons that act on it.
+    @ViewBuilder private var editorError: some View {
+        if let err = store.routineDraftError {
+            Text(err).font(.sans(12)).foregroundStyle(Theme.danger)
+                .lineLimit(1).truncationMode(.tail).padding(.leading, 6)
         }
     }
 
@@ -192,7 +198,7 @@ struct RoutinesPane: View {
         let branches = ws?.liveBranches.map(\.name) ?? []
         let agentName = RoutineWords.agent(d.agent)
         let schedDesc = isDraft
-            ? "Missed while Synth was closed? It runs once when Synth opens, if the slot is within a day (a week for weekly)."
+            ? d.schedule.catchUpWords
             : next.map { "Next: \(RoutineWords.when($0))" } ?? "Ran — it won't fire again."
         return RtCard {
             RtRow("Name", row: .field(.name), first: true, selected: selected(.field(.name))) {
@@ -243,14 +249,13 @@ struct RoutinesPane: View {
                 .id(RoutineRow.more)
             if store.routineMoreOpen {
                 if d.target.choice != .existing {
-                    let def = ws.flatMap { w in w.branches.first { $0.worktreeURL.standardizedFileURL == w.url.standardizedFileURL }?.name }
-                        ?? branches.first ?? "main"
-                    let base = d.base ?? def
+                    let base = store.effectiveBase(d)
                     RtRow("Base", row: .field(.base),
                           desc: "What each new branch is cut from. Fetched first; if the fetch fails, the local copy is used and the run says so.",
                           selected: selected(.field(.base))) {
-                        RtPop(field: .base, options: (branches.contains(base) ? branches : [base] + branches).map { ($0, $0) },
-                              selection: base) { b in store.editBoardRoutine { $0.base = b } }
+                        RtPop(field: .base,
+                              options: (base.map { branches.contains($0) ? branches : [$0] + branches } ?? branches).map { ($0, $0) },
+                              selection: base ?? "") { b in store.editBoardRoutine { $0.base = b } }
                     }
                 }
                 RtRow("Extra flags", row: .field(.flags),
@@ -272,7 +277,7 @@ struct RoutinesPane: View {
             RtPop(field: .schedule, options: RoutineSchedule.Kind.allCases.map { ($0, $0.label) },
                   selection: s.kind) { store.setBoardScheduleKind($0) }
             if s.kind == .weekly {
-                RtPop(field: nil, options: (1...7).map { ($0, Calendar.current.weekdaySymbols[$0 - 1]) },
+                RtPop(field: nil, options: (1...7).map { ($0, RoutineWords.weekday($0)) },
                       selection: s.weekday) { w in store.editBoardRoutine { $0.schedule.weekday = w } }
             }
             if s.kind == .once {
@@ -545,10 +550,14 @@ private struct RtRunRow: View {
         .onHover { hovering = $0 }
     }
 
+    /// When it fired, and the slot it was for when those differ. A skip never fired: it shows
+    /// the slot it let go.
     private var when: some View {
-        let slotDiffers = run.slot.map { RoutineWords.time($0) != RoutineWords.time(run.firedAt) } ?? false
-        return (Text(RoutineWords.when(run.firedAt)).foregroundColor(Theme.inkMeta)
-                + Text(slotDiffers ? " for \(RoutineWords.time(run.slot!))" : "").foregroundColor(Theme.inkFaint))
+        let skipped = run.outcome == .skipped
+        let at = skipped ? run.slot ?? run.firedAt : run.firedAt
+        let forSlot = skipped ? nil : run.slot.flatMap { RoutineWords.time($0) != RoutineWords.time(at) ? $0 : nil }
+        return (Text(RoutineWords.when(at)).foregroundColor(Theme.inkMeta)
+                + Text(forSlot.map { " for \(RoutineWords.time($0))" } ?? "").foregroundColor(Theme.inkFaint))
             .font(.mono(11)).monospacedDigit()
     }
 }

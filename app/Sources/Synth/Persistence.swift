@@ -71,6 +71,9 @@ struct PersistedBranch: Codable {
     /// decode and an unarchived branch adds no keys (`version` stays 1: a bump discards the
     /// snapshot outright, and this change is additive).
     var archivedAt: Date?
+    /// The routine run that cut this branch. Optional/omitted on every other branch (additive,
+    /// so `version` stays 1).
+    var routineMark: RoutineMark?
 }
 
 /// The on-disk shape of a pane tree (ADR-0014): a leaf carries a `session` id; a split carries
@@ -107,6 +110,9 @@ struct PersistedSession: Codable {
     /// Optional/omitted so a pre-markdown snapshot decodes and every other kind adds no key
     /// (additive, so `version` stays 1 — a bump would throw the whole snapshot away).
     var markdownPath: String?
+    /// The routine run that spawned this session. Optional/omitted on every other session
+    /// (additive, so `version` stays 1).
+    var routineMark: RoutineMark?
 }
 
 extension PersistedSession {

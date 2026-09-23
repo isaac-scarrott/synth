@@ -49,22 +49,6 @@ struct RoutineStarter {
     ]
 }
 
-extension RoutineDraft {
-    /// The editable half of a saved routine, so the board edits a draft and a routine through
-    /// one path.
-    init(_ r: Routine) {
-        self.init(name: r.name, workspaceID: r.workspaceID, prompt: r.prompt, agent: r.agent,
-                  target: r.target, base: r.base, extraFlags: r.extraFlags, schedule: r.schedule)
-    }
-}
-
-extension Routine {
-    mutating func apply(_ d: RoutineDraft) {
-        name = d.name; workspaceID = d.workspaceID; prompt = d.prompt; agent = d.agent
-        target = d.target; base = d.base; extraFlags = d.extraFlags; schedule = d.schedule
-    }
-}
-
 extension RoutineTarget {
     /// The segmented control's three choices (the stored `.existing` carries its branch).
     enum Choice: CaseIterable { case existing, same, fresh
@@ -104,31 +88,7 @@ extension RoutineSchedule.Kind {
     }
 }
 
-/// Time in the board's words (working.html `rtWhen`): "Today 09:00", "Tomorrow 09:00",
-/// "Yesterday 09:00", a weekday within six days, else "21 Sep 09:00".
-enum RoutineWords {
-    static func time(_ d: Date, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.hour, .minute], from: d)
-        return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
-    }
-
-    static func when(_ d: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let diff = calendar.dateComponents([.day], from: calendar.startOfDay(for: now),
-                                           to: calendar.startOfDay(for: d)).day ?? 0
-        let t = time(d, calendar: calendar)
-        switch diff {
-        case 0: return "Today \(t)"
-        case 1: return "Tomorrow \(t)"
-        case -1: return "Yesterday \(t)"
-        case -5...5: return "\(calendar.shortWeekdaySymbols[calendar.component(.weekday, from: d) - 1]) \(t)"
-        default:
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_GB")
-            f.dateFormat = "d MMM"
-            return "\(f.string(from: d)) \(t)"
-        }
-    }
-
+extension RoutineWords {
     static func target(_ t: RoutineTarget, slug: String) -> String {
         switch t {
         case .existing(let branch): "on \(branch)"
@@ -190,11 +150,11 @@ extension AppStore {
         }
     }
 
-    /// The draft or routine the editor is showing.
+    /// The draft or routine the editor is showing — a saved routine's refused edit included.
     var boardDraft: RoutineDraft? {
         switch routinesView {
         case .list: nil
-        case .detail(let id): routine(id).map(RoutineDraft.init)
+        case .detail(let id): routineEdit ?? routine(id).map(RoutineDraft.init)
         case .draft(let d, _): d
         }
     }
@@ -236,7 +196,7 @@ extension AppStore {
         routinesOpen = true
         routinesView = .list
         routineConfirmDelete = nil
-        routineDraftError = nil
+        resetRoutineEditor()
         routineFocus = nil
         navCursor = NavID.routinesFoot
         focusSidebar()
@@ -249,11 +209,12 @@ extension AppStore {
     func openRoutine(_ id: UUID) {
         guard routine(id) != nil else { return }
         if !routinesOpen { enterRoutines() }
-        updateRoutine(id) { $0.failureUnseen = false }
+        markRoutineSeen(id)
+        if let r = routine(id) { resolveRoutineProjectBase(r.workspaceID) }
         routinesView = .detail(id)
         routineMoreOpen = false
         routineConfirmDelete = nil
-        routineDraftError = nil
+        resetRoutineEditor()
         routineFocus = nil
         keyboardActive = true
         routineCursor = routineRows.first
@@ -265,9 +226,21 @@ extension AppStore {
         routinesOpen = false
         routinesView = .list
         routineConfirmDelete = nil
-        routineDraftError = nil
+        resetRoutineEditor()
         routineFocus = nil
         routineCursor = nil
+    }
+
+    /// The editor names the base a run would cut from; resolving it can touch git, so off-main.
+    private func resolveRoutineProjectBase(_ wsID: UUID) {
+        Guarded.mainTask { [weak self] in await self?.loadRoutineProjectBase(wsID) }
+    }
+
+    /// What the editor holds for the routine or draft on screen goes when that screen does.
+    private func resetRoutineEditor() {
+        routineDraftError = nil
+        routineEdit = nil
+        routineExistingMemory = nil
     }
 
     func exitRoutines() {
@@ -285,7 +258,7 @@ extension AppStore {
         guard routinesView != .list else { exitRoutines(); return }
         routinesView = .list
         routineConfirmDelete = nil
-        routineDraftError = nil
+        resetRoutineEditor()
         routineFocus = nil
         let rows = routineRows
         routineCursor = from.map(RoutineRow.routine).flatMap { rows.contains($0) ? $0 : nil } ?? rows.first
@@ -295,16 +268,20 @@ extension AppStore {
     func newRoutineDraft(_ starter: RoutineStarter? = nil) {
         let ws = openSession.flatMap { branch(of: $0) }.flatMap { workspace(of: $0) } ?? workspaces.first
         guard let ws else { return }
-        var target = starter?.target ?? .fresh
-        if case .existing(let b) = target, !ws.liveBranches.contains(where: { $0.name == b }) {
-            target = .existing(branch: ws.liveBranches.first?.name ?? b)
+        var draft = defaultDraft(in: ws.id)
+        if let starter {
+            draft.name = starter.name
+            draft.prompt = starter.prompt
+            draft.schedule = starter.schedule
+            draft.target = starter.target
+            if case .existing(let b) = starter.target {
+                draft.target = .existing(branch: existingBranch(preferring: b, in: ws))
+            }
         }
-        let draft = RoutineDraft(name: starter?.name ?? "", workspaceID: ws.id, prompt: starter?.prompt ?? "",
-                                 agent: availableAgents.first?.id ?? .claudeCode, target: target, base: nil,
-                                 schedule: starter?.schedule ?? RoutineSchedule(kind: .weekdays, hour: 9, minute: 0))
+        resolveRoutineProjectBase(ws.id)
         routinesView = .draft(draft, pristine: starter == nil)
         routineMoreOpen = false
-        routineDraftError = nil
+        resetRoutineEditor()
         if starter == nil {
             routineFocus = .name
             keyboardActive = false
@@ -316,43 +293,48 @@ extension AppStore {
     }
 
     /// Every edit lands here: a draft changes in place (and stops being pristine); a saved
-    /// routine autosaves through `updateRoutine`, so it applies from the next run.
+    /// routine autosaves through `updateRoutine`, so it applies from the next run. An edit
+    /// `updateRoutine` refuses stays on screen with the rule it broke, and saves once it's valid.
     func editBoardRoutine(_ change: (inout RoutineDraft) -> Void) {
+        guard let before = boardDraft else { return }
+        var d = before
+        change(&d)
+        // A field writing back what it already holds (focus does this) is not an edit.
+        guard d != before else { return }
+        if case .existing(let b) = before.target, d.target.choice != .existing { routineExistingMemory = b }
         switch routinesView {
         case .list: return
-        case .draft(let before, _):
-            var d = before
-            change(&d)
-            // A field writing back what it already holds (focus does this) is not an edit.
-            guard d != before else { return }
+        case .draft:
             routinesView = .draft(d, pristine: false)
             routineDraftError = nil
         case .detail(let id):
-            guard let r = routine(id) else { return }
-            var d = RoutineDraft(r)
-            change(&d)
-            guard d != RoutineDraft(r) else { return }
-            updateRoutine(id) { $0.apply(d) }
+            do {
+                try updateRoutine(id) { $0 = d }
+                routineEdit = nil
+                routineDraftError = nil
+            } catch {
+                // Not a fault: the rule the edit broke, said to the person making it.
+                routineEdit = d
+                routineDraftError = (error as? RoutineError)?.message ?? "\(error)"
+            }
         }
     }
 
-    /// Moving a routine to another project resets what only made sense in the old one.
     func setBoardProject(_ wsID: UUID) {
-        guard let ws = workspaces.first(where: { $0.id == wsID }) else { return }
-        editBoardRoutine { d in
-            d.workspaceID = wsID
-            d.base = nil
-            if case .existing = d.target { d.target = .existing(branch: ws.liveBranches.first?.name ?? "main") }
-        }
+        routineExistingMemory = nil
+        resolveRoutineProjectBase(wsID)
+        editBoardRoutine { reproject(&$0, to: wsID) }
     }
 
+    /// Existing comes back to the branch it last held, while that branch is still here.
     func setBoardTarget(_ choice: RoutineTarget.Choice) {
         guard let d = boardDraft, let ws = workspaces.first(where: { $0.id == d.workspaceID }) else { return }
+        let remembered = routineExistingMemory
         editBoardRoutine { d in
             switch choice {
             case .existing:
                 if case .existing = d.target { return }
-                d.target = .existing(branch: ws.liveBranches.first?.name ?? "main")
+                d.target = .existing(branch: existingBranch(preferring: remembered, in: ws))
             case .same: d.target = .same
             case .fresh: d.target = .fresh
             }

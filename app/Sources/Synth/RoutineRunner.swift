@@ -5,9 +5,10 @@ import AppKit
 // prompt. Everything a caller can do to a routine still enters through Routines.swift's API;
 // this file is what happens after `fireRoutine`.
 //
-// A run never takes the pane, the focus, the sidebar cursor or a keystroke. Rows appear in the
-// tree (pending, then ready) and that is all anyone sees until the agent finishes and the
-// ordinary background routing marks it unread.
+// A run never takes the pane, the focus, the sidebar cursor, the open session or a keystroke.
+// Rows appear in the tree (pending, then ready) and that is all anyone sees until the agent
+// finishes and the ordinary background routing marks it unread. Anything a person is holding —
+// the open session, a pane, the row under the cursor — a run leaves exactly where it is.
 
 /// A start that couldn't happen, in words for the run's history and the one card it raises.
 private struct RoutineDidNotStart: Error {
@@ -15,6 +16,8 @@ private struct RoutineDidNotStart: Error {
     /// False when the user's own gesture ended it — a new Test replacing one still booting.
     /// Recorded, but no card and no dot for something they just did.
     var speaks = true
+    /// Set when the cause is a real fault rather than an expected state; the run's door counts it.
+    var fault: Fault.Record?
 }
 
 extension AppStore {
@@ -76,10 +79,25 @@ extension AppStore {
         }
     }
 
-    /// A scheduled or caught-up firing has accounted for its slot, whatever it goes on to do.
+    /// A firing has accounted for its slot, whatever it goes on to do. Any run of a Once but a
+    /// Test uses it up — Run now included — so it reads "Ran" and never fires again.
     private static func account(_ slot: Date?, trigger: RoutineTrigger, in r: inout Routine) {
-        guard let slot, trigger == .schedule || trigger == .catchUp else { return }
-        r.lastSlot = max(r.lastSlot ?? slot, slot)
+        var at = trigger == .schedule || trigger == .catchUp ? slot : nil
+        if trigger != .test, let once = r.schedule.onceSlot() { at = max(at ?? once, once) }
+        guard let at else { return }
+        r.lastSlot = max(r.lastSlot ?? at, at)
+    }
+
+    /// The form a routine takes on disk. A start still in flight is written down as what it
+    /// becomes if Synth quits now — a start cut off before the agent took the text is history,
+    /// never a card — and the next save, once it lands, writes what it really became.
+    func persistedRoutine(_ r: Routine) -> Routine {
+        var r = r
+        for i in r.runs.indices where routineRunsPending.contains(r.runs[i].id) {
+            r.runs[i].outcome = .failed
+            r.runs[i].reason = "Synth quit before the agent took the text."
+        }
+        return r
     }
 
     // MARK: A run
@@ -98,6 +116,7 @@ extension AppStore {
 
     private func startRoutineRun(_ id: UUID, trigger: RoutineTrigger, slot: Date?, at: Date) {
         guard let r = routine(id) else { return }
+        let project = workspaces.first { $0.id == r.workspaceID }?.name ?? "Its project"
         let run = RoutineRun(firedAt: at, slot: slot, trigger: trigger, outcome: .started,
                              branch: freshBranchName(r, trigger: trigger, at: at))
         editRoutine(id) { r in
@@ -118,9 +137,10 @@ extension AppStore {
                 self.drainRoutineQueues()
             }
             do {
-                try await self.carryOut(r, run: run)
+                try await self.carryOut(r, run: run, project: project)
             } catch let failure as RoutineDidNotStart {
                 self.failRoutineRun(r, runID: run.id, reason: failure.reason, speaks: failure.speaks)
+                if let fault = failure.fault { throw fault }
             } catch {
                 // Anything else is a fault the door counts; the run still has to say it didn't start.
                 self.failRoutineRun(r, runID: run.id, reason: error.localizedDescription, speaks: true)
@@ -131,9 +151,9 @@ extension AppStore {
 
     /// Branch, session, prompt. `r` is the routine as it stood when it fired — an edit made
     /// mid-start applies from the next run, and a delete mid-start lets this one finish.
-    private func carryOut(_ r: Routine, run: RoutineRun) async throws {
+    private func carryOut(_ r: Routine, run: RoutineRun, project: String) async throws {
         guard let ws = workspaces.first(where: { $0.id == r.workspaceID }) else {
-            throw RoutineDidNotStart(reason: "Its project is no longer in Synth.")
+            throw RoutineDidNotStart(reason: "\(project) is no longer in Synth.")
         }
         let agentName = AgentRegistry.descriptor(r.agent)?.displayName ?? "The agent"
         guard availableAgents.contains(where: { $0.id == r.agent }) else {
@@ -141,20 +161,20 @@ extension AppStore {
                 ? "\(agentName) is switched off in Settings."
                 : "\(agentName) isn't available on this Mac.")
         }
-        let name = run.branch ?? r.branchName(for: run.trigger, at: run.firedAt)
-        let (row, note) = try await routineBranch(r, in: ws, name: name, test: run.trigger == .test)
-        if let note { editRun(r.id, run.id) { $0.reason = note } }
+        let test = run.trigger == .test
+        let mark = RoutineMark(name: r.name, firedAt: run.firedAt, test: test)
+        let (row, note) = try await routineBranch(r, run: run, mark: mark, in: ws)
+        editRun(r.id, run.id) { $0.branch = row.name; if let note { $0.reason = note } }
 
         // Claude Code stops a folder it has never seen at a trust prompt no one is there to
         // answer. A folder Synth cut for this routine inherits the repo's trust — only if the
         // user already gave it. An existing branch's folder is theirs, and stays as they left it.
-        let cutHere = run.trigger == .test || r.target == .same || r.target == .fresh
+        let cutHere = test || r.target == .same || r.target == .fresh
         let claude = hostedByClaude(r.agent)
         if claude, cutHere { try ClaudeTrust.inherit(row.worktreeURL, from: ws.url) }
         let untrusted = claude && !ClaudeTrust.isTrusted(ws.url)
 
-        if run.trigger != .test, case .existing = r.target { closeSettledRun(of: r, on: row) }
-        if run.trigger != .test, case .same = r.target { closeSettledRun(of: r, on: row) }
+        if !test, r.target != .fresh { closeSettledRun(of: r, on: row) }
 
         // Idle until it has its prompt: a spawn row starts `.working`, and the agent's own
         // start signal settling it to idle would read as "done" before anything was asked.
@@ -164,15 +184,17 @@ extension AppStore {
         session.status = .idle
         session.title = r.name
         session.titleIsCustom = true
+        session.routineMark = mark
         editRun(r.id, run.id) { $0.sessionID = session.id }
 
         let flags = [agentFlags(r.agent, for: ws), r.extraFlags.trimmingCharacters(in: .whitespaces)]
             .filter { !$0.isEmpty }.joined(separator: " ")
-        guard TerminalManager.shared.boot(session, cwd: row.worktreeURL, agentFlags: flags).reported() != nil else {
+        if case .failure(let fault) = TerminalManager.shared.boot(session, cwd: row.worktreeURL, agentFlags: flags) {
             closeSession(session)
-            throw RoutineDidNotStart(reason: "Its terminal couldn't start.")
+            throw RoutineDidNotStart(reason: "Its terminal couldn't start.", fault: fault)
         }
-        try await seed(session, on: row, with: Self.seedText(r, run: run, branch: row.name), agentName: agentName,
+        try await seed(session, of: r.id, run: run, on: row,
+                       with: Self.seedText(r, run: run, branch: row.name), agentName: agentName,
                        stalled: untrusted
                            ? "\(ws.name) isn't trusted in Claude Code yet, so it stopped at the trust prompt. "
                              + "Open Claude Code in \(ws.name) once, accept the prompt, then run it again."
@@ -183,15 +205,16 @@ extension AppStore {
     /// agent — one that never started leaves a bare shell, and Claude Code's delivery is a paste
     /// plus Enter, i.e. arbitrary execution. Nobody is waiting on a routine, so it waits longer
     /// than `seedAgent` does, and gives up at once on a session that has already ended.
-    private func seed(_ session: Session, on row: Branch, with text: String, agentName: String,
-                      stalled: String?) async throws {
+    private func seed(_ session: Session, of routineID: UUID, run: RoutineRun, on row: Branch,
+                      with text: String, agentName: String, stalled: String?) async throws {
         let seconds = ProcessInfo.processInfo.environment["SYNTH_ROUTINE_SEED_SECONDS"]
             .flatMap(Double.init) ?? 60
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             try await Task.sleep(for: .seconds(0.5))
             guard let live = self.session(session.id) else {
-                if row.isArchived {
+                let replaced = routine(routineID)?.runs.contains { $0.trigger == .test && $0.firedAt > run.firedAt }
+                if run.trigger == .test, replaced == true {
                     throw RoutineDidNotStart(reason: "A newer Test replaced it before the agent took the text.",
                                              speaks: false)
                 }
@@ -213,10 +236,12 @@ extension AppStore {
                 return
             }
         }
+        // A folder Claude Code hasn't been told to trust is an expected stop, said in history
+        // only; an agent that never came up anywhere else is a fault worth counting.
+        if let stalled { throw RoutineDidNotStart(reason: stalled) }
         Fault.report(.agentLaunch, .agentDeliveryNeverTaken, severity: .degraded, session: session.id,
                      details: [.stage(.ready)], evidence: "A routine's agent never reported itself live.")
-        throw RoutineDidNotStart(reason: stalled
-            ?? "The agent never took the text — \(agentName) didn't come up in time.")
+        throw RoutineDidNotStart(reason: "The agent never took the text — \(agentName) didn't come up in time.")
     }
 
     /// Claude Code itself, or a command of the user's that Claude's supervisor hosts.
@@ -229,10 +254,7 @@ extension AppStore {
     static func seedText(_ r: Routine, run: RoutineRun, branch: String) -> String {
         let cal = Calendar.current
         func time(_ d: Date, dayToo: Bool) -> String {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.dateFormat = dayToo ? "EEE d MMM HH:mm" : "HH:mm"
-            return f.string(from: d)
+            dayToo ? RoutineWords.dayAndTime(d) : RoutineWords.time(d)
         }
         let when: String
         switch run.trigger {
@@ -250,25 +272,46 @@ extension AppStore {
             + r.prompt
     }
 
+    /// Whether a person is holding this session: it is open, in a pane (on screen or in a
+    /// branch's remembered split), or under the sidebar cursor. A run never touches one.
+    private func heldByUser(_ sessionID: UUID) -> Bool {
+        openSessionID == sessionID || navCursor == sessionID || leaf(of: sessionID) != nil || inSplit(sessionID)
+    }
+
+    private func heldByUser(_ branch: Branch) -> Bool {
+        cursorInside(.branch(branch)) || openSetupBranchID == branch.id
+            || branch.sessions.contains { heldByUser($0.id) }
+    }
+
     /// Every run is a new session. On a branch the routine reuses, the last run's session goes
-    /// first — only once it's idle, read and not on screen, so nothing unseen is lost.
+    /// first — only once it's idle, read and nobody is holding it, so nothing unseen is lost.
+    /// The cursor on the branch row holds it too: in tabs mode that row is all the tree shows.
     private func closeSettledRun(of r: Routine, on row: Branch) {
+        guard navCursor != row.id else { return }
         for past in routine(r.id)?.runs ?? [] {
             guard let id = past.sessionID, let s = session(id), branch(of: s)?.id == row.id,
-                  !s.status.isBusy, s.status != .needsInput, !s.unread,
-                  openSessionID != id, leaf(of: id) == nil else { continue }
+                  !s.status.isBusy, s.status != .needsInput, !s.unread, !heldByUser(id) else { continue }
             closeSession(s)
         }
+    }
+
+    /// A Test's worktree is throwaway: once its last session is closed, the branch archives
+    /// quietly — restorable from ⌘K → Archived like any other archive.
+    func archiveClosedTest(_ branch: Branch) {
+        guard branch.routineMark?.test == true, branch.sessions.isEmpty, !branch.isArchived,
+              !branch.isPending, workspace(of: branch) != nil else { return }
+        archiveBranchQuietly(branch)
     }
 
     // MARK: The branch
 
     /// The ready row this run lands on, and a note for its history (a fetch that failed).
-    private func routineBranch(_ r: Routine, in ws: Workspace, name: String,
-                               test: Bool) async throws -> (Branch, String?) {
-        if test {
-            try await retireTestBranch(name, in: ws)
-            return try await cutRoutineBranch(name, base: r.base, in: ws)
+    private func routineBranch(_ r: Routine, run: RoutineRun, mark: RoutineMark,
+                               in ws: Workspace) async throws -> (Branch, String?) {
+        let name = run.branch ?? r.branchName(for: run.trigger, at: run.firedAt)
+        if run.trigger == .test {
+            let fresh = try await retireTestBranch(name, in: ws)
+            return try await cutRoutineBranch(fresh, base: r.base, mark: mark, in: ws)
         }
         switch r.target {
         case .existing:
@@ -282,18 +325,14 @@ extension AppStore {
                 try await waitReady(row, name: name)
                 return (row, nil)
             }
-            // The same-each-run branch archived by hand: bring it back the way the Archived
-            // list would, so its history and its row stay one.
             if let row = ws.branches.first(where: { $0.name == name && $0.isArchived }) {
-                restoreArchivedBranch(row)
-                try await waitReady(row, name: name)
-                return (row, nil)
+                return try await reviveRoutineBranch(row, base: r.base, in: ws)
             }
-            return try await cutRoutineBranch(name, base: r.base, in: ws)
+            return try await cutRoutineBranch(name, base: r.base, mark: mark, in: ws)
         }
     }
 
-    /// A row that is still materialising — cut by an earlier run, restored a moment ago.
+    /// A row that is still materialising — cut by an earlier run.
     private func waitReady(_ row: Branch, name: String) async throws {
         let deadline = Date().addingTimeInterval(180)
         while row.isPending, Date() < deadline { try await Task.sleep(for: .seconds(0.25)) }
@@ -304,23 +343,50 @@ extension AppStore {
 
     /// Cut `name` into a worktree WITHOUT the setup skeleton or the session template: the create
     /// flows move the pane because a person just asked for a worktree, and a routine asked for
-    /// nothing. The row lands pending in the tree and the pane, cursor and focus stay put.
-    private func cutRoutineBranch(_ name: String, base: String?,
+    /// nothing. The row lands pending in the tree and the pane, cursor and focus stay put; a cut
+    /// that fails takes its row back out and becomes the run's one "didn't start" reason.
+    private func cutRoutineBranch(_ name: String, base: String?, mark: RoutineMark,
                                   in ws: Workspace) async throws -> (Branch, String?) {
         let repo = ws.url
         let planned = GitService.plannedWorktreePath(repo: repo, branch: name)
-        let row = Branch(name: name, worktreeURL: planned, isPending: true)
+        let row = Branch(name: name, worktreeURL: planned, isPending: true, routineMark: mark)
         ws.branches.append(row)
         expanded.insert(ws.id)
         let cut = await runGit(repo: repo) { Self.cutWorktree(repo: repo, name: name, base: base, path: planned) }
         if let error = cut.error {
+            // The cursor stays wherever it is — unless it went onto this row, which then hands
+            // it to the project (`removeBranch`).
             removeBranch(row, deleteWorktree: false)
-            Fault.report(.worktree, .worktreeOpFailed, severity: .degraded,
-                         details: [.stage(.spawn)], evidence: error)
             throw RoutineDidNotStart(reason: "Couldn't create its worktree: \(Self.gitReason(error))")
         }
         row.worktreeURL = cut.path
         row.isPending = false
+        row.markActivity()
+        saveNow()
+        return (row, cut.note)
+    }
+
+    /// The same-each-run branch archived by hand comes back for its next run, so its history and
+    /// its row stay one — quietly: the row returns to the tree, checked out again if the clean-up
+    /// took its folder, and nothing else moves. (`restoreArchivedBranch` is the person's path; its
+    /// failure offers a Retry that opens the setup skeleton.)
+    private func reviveRoutineBranch(_ row: Branch, base: String?,
+                                     in ws: Workspace) async throws -> (Branch, String?) {
+        let archivedAt = row.archivedAt
+        let repo = ws.url, name = row.name, path = row.worktreeURL
+        row.archivedAt = nil
+        row.isPending = true
+        let cut = await runGit(repo: repo) { () -> (path: URL, error: String?, note: String?) in
+            if FileManager.default.fileExists(atPath: path.path) { return (path, nil, nil) }
+            return Self.cutWorktree(repo: repo, name: name, base: base, path: path)
+        }
+        row.isPending = false
+        if let error = cut.error {
+            if cursorInside(.branch(row)) { navCursor = ws.id }
+            row.archivedAt = archivedAt
+            throw RoutineDidNotStart(reason: "Couldn't check out \(name) again: \(Self.gitReason(error))")
+        }
+        row.worktreeURL = cut.path
         row.markActivity()
         saveNow()
         return (row, cut.note)
@@ -337,7 +403,7 @@ extension AppStore {
         if GitService.branchExists(name, at: repo) {
             return (path, GitService.addWorktree(repo: repo, path: path, branch: name), nil)
         }
-        let baseRef = base ?? GitService.defaultBase(at: repo)
+        let baseRef = routineBase(base, repo: repo)
         var from = baseRef
         var note: String?
         let remotes = GitService.remotes(at: repo).value ?? []
@@ -358,32 +424,32 @@ extension AppStore {
     /// Test's archived folder, a stray. Never write into a folder another row may own.
     private nonisolated static func freePath(_ path: URL) -> URL {
         guard FileManager.default.fileExists(atPath: path.path) else { return path }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyyMMdd-HHmmss"
         return path.deletingLastPathComponent()
-            .appendingPathComponent(path.lastPathComponent + "-" + f.string(from: Date()), isDirectory: true)
+            .appendingPathComponent(path.lastPathComponent + "-" + Routine.stamp(Date(), "yyyyMMdd-HHmmss"),
+                                    isDirectory: true)
     }
 
     /// A new Test replaces the last one: its row is archived (quietly — nobody asked to archive
     /// anything) and its branch renamed aside to `…-test-<stamp>`, so the archived row stays
-    /// restorable with its commits and the name is free for the fresh cut.
-    private func retireTestBranch(_ name: String, in ws: Workspace) async throws {
+    /// restorable with its commits and the name is free for the fresh cut. A last Test someone
+    /// is holding stays exactly as it is, and the new one is cut beside it under a dated name.
+    /// Returns the name the new Test is cut on.
+    private func retireTestBranch(_ name: String, in ws: Workspace) async throws -> String {
+        let stamped = "\(name)-\(Routine.stamp(Date(), "yyyy-MM-dd-HHmmss"))"
         let holders = ws.branches.filter { $0.name == name }
+        if holders.contains(where: { !$0.isArchived && heldByUser($0) }) { return stamped }
         for row in holders where !row.isArchived { archiveBranchQuietly(row) }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd-HHmmss"
-        let retired = "\(name)-\(f.string(from: Date()))"
         let repo = ws.url
         let error = await runGit(repo: repo) { () -> String? in
             guard GitService.branchExists(name, at: repo) else { return nil }
-            return GitService.renameBranch(name, to: retired, at: repo)
+            return GitService.renameBranch(name, to: stamped, at: repo)
         }
+        // A rename git refused is already counted at the git seam (`GitService.runChecked`).
         if let error {
             throw RoutineDidNotStart(reason: "Couldn't put the last test away: \(Self.gitReason(error))")
         }
-        for row in holders { row.name = retired }
+        for row in holders { row.name = stamped }
+        return name
     }
 
     /// git's fatal line, not its progress chatter (the same rule `raiseWorktreeError` uses).
@@ -436,8 +502,8 @@ enum RoutineTickCause { case launch, wake, tick }
     fileprivate var task: Task<Void, Never>?
     fileprivate var wake: NSObjectProtocol?
 
-    /// Seconds between ticks, or nil when the scheduler doesn't run. A driven instance never
-    /// fires on its own — a gate would find runs it didn't ask for — unless the gate turns the
+    /// Seconds between ticks, or nil when the scheduler doesn't tick. A driven instance never
+    /// ticks on its own — a gate would find runs it didn't ask for — unless the gate turns the
     /// clock on with `SYNTH_ROUTINE_TICK_SECONDS`.
     static var interval: TimeInterval? {
         if let raw = ProcessInfo.processInfo.environment["SYNTH_ROUTINE_TICK_SECONDS"],
@@ -448,23 +514,40 @@ enum RoutineTickCause { case launch, wake, tick }
 
 extension AppStore {
     func startRoutineScheduler() {
-        guard let interval = RoutineClock.interval else { return }
+        let interval = RoutineClock.interval
         let clock = RoutineClock.shared
         clock.task?.cancel()
         clock.task = Guarded.mainTask { [weak self] in
             // A beat after launch: the restore has landed and the terminal engine is up.
-            try await Task.sleep(for: .seconds(min(interval, 5)))
+            try await Task.sleep(for: .seconds(min(interval ?? 5, 5)))
+            self?.settleRestoredQueues()
+            guard let interval else { return }
             self?.routineTick(cause: .launch)
             while !Task.isCancelled {
                 try await Task.sleep(for: .seconds(interval))
                 self?.routineTick(cause: .tick)
             }
         }
-        if clock.wake == nil {
+        if interval != nil, clock.wake == nil {
             clock.wake = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.routineTick(cause: .wake) }
+            }
+        }
+    }
+
+    /// A run left waiting when Synth quit is judged again at launch like any missed slot: within
+    /// the schedule's window it fires as a catch-up; older, it is recorded as skipped.
+    func settleRestoredQueues(now: Date = Date()) {
+        for r in routines {
+            guard let q = r.runs.first(where: { $0.outcome == .queued }) else { continue }
+            editRoutine(r.id) { $0.runs.removeAll { $0.id == q.id } }
+            let slot = q.slot ?? q.firedAt
+            if now.timeIntervalSince(slot) <= r.schedule.catchUpWindow {
+                fireRoutine(r.id, trigger: .catchUp, slot: slot)
+            } else {
+                skipRoutineSlot(r, slot: slot, now: now, cause: .launch)
             }
         }
     }
@@ -489,24 +572,20 @@ extension AppStore {
             } else if age <= r.schedule.catchUpWindow {
                 fireRoutine(r.id, trigger: .catchUp, slot: slot)
             } else {
-                skipRoutineSlot(r, slot: slot, cause: cause)
+                skipRoutineSlot(r, slot: slot, now: now, cause: cause)
             }
         }
     }
 
-    private func skipRoutineSlot(_ r: Routine, slot: Date, cause: RoutineTickCause) {
+    /// A slot the scheduler owed and let go: recorded at the look that found it, as the
+    /// schedule's own firing (no trigger badge), and shown at the slot's time.
+    private func skipRoutineSlot(_ r: Routine, slot: Date, now: Date, cause: RoutineTickCause) {
         let away = cause == .wake ? "The Mac was asleep" : "Synth was closed"
         let back = cause == .wake ? "woke" : "opened"
-        let span: String
-        switch r.schedule.kind {
-        case .hourly: span = "an hour"
-        case .weekly: span = "a week"
-        case .daily, .weekdays, .once: span = "a day"
-        }
         editRoutine(r.id) { r in
-            r.runs.insert(RoutineRun(firedAt: Date(), slot: slot, trigger: .catchUp, outcome: .skipped,
+            r.runs.insert(RoutineRun(firedAt: now, slot: slot, trigger: .schedule, outcome: .skipped,
                                      skipReason: .missedTooOld,
-                                     reason: "\(away), and the slot was more than \(span) old by the time it \(back)."),
+                                     reason: "\(away), and the slot was more than \(r.schedule.catchUpSpan) old by the time it \(back)."),
                           at: 0)
         }
         Analytics.capture("routine_skipped", ["reason": RoutineRun.SkipReason.missedTooOld.rawValue])
@@ -516,13 +595,21 @@ extension AppStore {
 // MARK: - Automation (SYNTH_AUTOMATION=1 only)
 
 extension AppStore {
-    /// The routine verbs a gate drives. Each maps onto the public API — `routineCreate` is a
-    /// rehearsal of the synth-app `routine_create` verb, so it goes through `createRoutine` and
-    /// nothing else. Nil for a verb that isn't one of these.
+    /// The routine verbs a gate drives. Each maps onto the public API — `routineCreate` and
+    /// `routineUpdate` rehearse the synth-app `routine_create` / `routine_update` verbs, so they
+    /// go through `defaultDraft`, `createRoutine` and `updateRoutine` and nothing else. Nil for a
+    /// verb that isn't one of these.
     func routineAutomation(_ verb: String, _ request: [String: Any], branch: Branch) -> [String: Any]? {
         func uuid(_ key: String) -> UUID? { (request[key] as? String).flatMap(UUID.init(uuidString:)) }
         func date(_ key: String) -> Date? {
             (request[key] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
+        }
+        func reply(_ body: () throws -> [String: Any]) -> [String: Any] {
+            do { return try body() } catch let e as RoutineError {
+                return ["ok": false, "error": e.message]
+            } catch {
+                return ["ok": false, "error": String(describing: error)]
+            }
         }
         switch verb {
         case "automation.routines":
@@ -530,35 +617,15 @@ extension AppStore {
 
         case "automation.routineCreate":
             // An unknown `workspaceId` is passed through on purpose: refusing it is `validate`'s job.
-            let workspaceID = uuid("workspaceId") ?? workspace(of: branch)?.id ?? UUID()
-            let target: RoutineTarget
-            switch request["target"] as? String {
-            case "existing": target = .existing(branch: request["branch"] as? String ?? "")
-            case "same": target = .same
-            default: target = .fresh
-            }
-            let s = request["schedule"] as? [String: Any] ?? [:]
-            var schedule = RoutineSchedule(kind: RoutineSchedule.Kind(rawValue: s["kind"] as? String ?? "") ?? .daily)
-            if let h = s["hour"] as? Int { schedule.hour = h }
-            if let m = s["minute"] as? Int { schedule.minute = m }
-            if let w = s["weekday"] as? Int { schedule.weekday = w }
-            if let d = s["date"] as? NSNumber { schedule.date = Date(timeIntervalSince1970: d.doubleValue) }
-            let draft = RoutineDraft(
-                name: request["name"] as? String ?? "",
-                workspaceID: workspaceID,
-                prompt: request["prompt"] as? String ?? "",
-                agent: AgentID(request["agent"] as? String ?? AgentID.claudeCode.rawValue),
-                target: target,
-                base: request["base"] as? String,
-                extraFlags: request["extraFlags"] as? String ?? "",
-                schedule: schedule)
-            do {
-                let r = try createRoutine(draft)
-                return ["ok": true, "id": r.id.uuidString]
-            } catch let e as RoutineError {
-                return ["ok": false, "error": e.message]
-            } catch {
-                return ["ok": false, "error": String(describing: error)]
+            var draft = defaultDraft(in: uuid("workspaceId") ?? workspace(of: branch)?.id ?? UUID())
+            Self.applyRoutineFields(request, to: &draft)
+            return reply { ["ok": true, "id": try createRoutine(draft).id.uuidString] }
+
+        case "automation.routineUpdate":
+            guard let id = uuid("id") else { return ["ok": false, "error": "need id"] }
+            return reply {
+                try updateRoutine(id) { Self.applyRoutineFields(request, to: &$0) }
+                return ["ok": true]
             }
 
         case "automation.routineFire":
@@ -588,6 +655,27 @@ extension AppStore {
         }
     }
 
+    /// The fields a request names, over whatever the draft already holds.
+    private static func applyRoutineFields(_ request: [String: Any], to d: inout RoutineDraft) {
+        if let v = request["name"] as? String { d.name = v }
+        if let v = request["prompt"] as? String { d.prompt = v }
+        if let v = request["agent"] as? String { d.agent = AgentID(v) }
+        if let v = request["base"] as? String { d.base = v }
+        if let v = request["extraFlags"] as? String { d.extraFlags = v }
+        switch request["target"] as? String {
+        case "existing": d.target = .existing(branch: request["branch"] as? String ?? "")
+        case "same": d.target = .same
+        case "fresh": d.target = .fresh
+        default: break
+        }
+        guard let s = request["schedule"] as? [String: Any] else { return }
+        if let k = (s["kind"] as? String).flatMap(RoutineSchedule.Kind.init(rawValue:)) { d.schedule.kind = k }
+        if let h = s["hour"] as? Int { d.schedule.hour = h }
+        if let m = s["minute"] as? Int { d.schedule.minute = m }
+        if let w = s["weekday"] as? Int { d.schedule.weekday = w }
+        if let t = s["date"] as? NSNumber { d.schedule.date = Date(timeIntervalSince1970: t.doubleValue) }
+    }
+
     private func routineJSON(_ r: Routine) -> [String: Any] {
         var target: [String: Any] = ["kind": r.target.kind]
         if case .existing(let b) = r.target { target["branch"] = b }
@@ -598,8 +686,10 @@ extension AppStore {
             "agent": r.agent.rawValue,
             "target": target,
             "base": r.base ?? "",
+            "effectiveBase": effectiveBase(RoutineDraft(r)) ?? "",
             "extraFlags": r.extraFlags,
             "schedule": r.schedule.kind.rawValue,
+            "scheduleWords": r.schedule.words,
             "lastSlot": r.lastSlot?.timeIntervalSince1970 ?? 0,
             "nextSlot": r.nextSlot()?.timeIntervalSince1970 ?? 0,
             "failureUnseen": r.failureUnseen,

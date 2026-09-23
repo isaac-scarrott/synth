@@ -704,8 +704,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     var routineMoreOpen = false
     /// The routine whose Delete is asking — only ever while one of its runs is busy.
     var routineConfirmDelete: UUID?
-    /// Why the draft couldn't be saved, in `RoutineError`'s own words.
+    /// Why the draft or the edit couldn't be saved, in `RoutineError`'s own words.
     var routineDraftError: String?
+    /// An edit to a saved routine that `updateRoutine` refused: the board keeps showing it (with
+    /// `routineDraftError`) and saves it the moment it becomes valid.
+    var routineEdit: RoutineDraft?
+    /// The branch the editor last had under Existing, so switching away and back keeps it.
+    var routineExistingMemory: String?
+    /// Each project's default base (`AppStore.routineBase(_:repo:)` with no base of its own),
+    /// resolved off the main thread for the editor to show.
+    var routineProjectBases: [UUID: String] = [:]
 
     /// A project's setup script is its DELTA — the extra lines that run AFTER the shared
     /// base (globalScript). Empty = pure inheritance. `wsSkipScript` is the rare opt-out:
@@ -2160,6 +2168,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let successor = successorSession(for: session, alsoLeaving: Set(cascade.map(\.id)))
         // An open browser of this row's own is still "the surface you closed".
         let wasOpen = openSessionID.map { id in ([session] + cascade).contains { $0.id == id } } ?? false
+        let home = branch(of: session)
         // Containment cascade (ADR-0011 stage four): an owning claude row's browsers
         // live and die with it — and a browser's inspect with the browser (the recursion
         // carries the cascade the rest of the way down). The delete confirm names them.
@@ -2174,6 +2183,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // Layout spine (009): closing a live session collapses its pane and reflows the sibling —
         // the existing removeUnit → prune path, no new guard (004 §6).
         settleAfterClose(successor: successor, wasOpen: wasOpen)
+        if let home { archiveClosedTest(home) }
     }
 
     /// Release everything a session holds *outside* the tree: its terminal + browser
@@ -2446,6 +2456,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             if let openVictim { self.jump(to: openVictim) }
         }, commit: { [weak self] in
             victims.forEach { self?.teardownSession($0) }
+            for h in homes { self?.archiveClosedTest(h.branch) }
         })
     }
 
@@ -3898,13 +3909,15 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                                  browserURL: s.kind == .inspect ? nil : s.browserURL,
                                                  ownerSessionID: s.ownerSessionID,
                                                  simulatorUDID: s.simulatorUDID,
-                                                 markdownPath: s.markdownPath)
+                                                 markdownPath: s.markdownPath,
+                                                 routineMark: s.routineMark)
                             },
                             browserRecents: br.browserRecents.isEmpty ? nil : br.browserRecents,
                             // The branch's remembered split, serialized to session identities;
                             // nil for a single pane (014). Leaves whose session is gone collapse.
                             layout: serializeLayout(br.layout, valid: Set(br.sessions.map(\.id))),
-                            archivedAt: br.archivedAt)
+                            archivedAt: br.archivedAt,
+                            routineMark: br.routineMark)
                     },
                     setupScript: wsScripts[ws.id],
                     agentFlags: wsAgentFlags[ws.id].map { flags in
@@ -3923,7 +3936,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             globalAgentFlags: globalAgentFlags.reduce(into: [:]) { $0[$1.key.rawValue] = $1.value },
             globalSessionTemplate: globalSessionTemplate,
             customAgents: customAgents.isEmpty ? nil : customAgents,
-            routines: routines.isEmpty ? nil : routines
+            routines: routines.isEmpty ? nil : routines.map(persistedRoutine)
         )
     }
 
@@ -3954,7 +3967,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                             agentSessionID: ps.resumeID, browserURL: ps.browserURL,
                             ownerSessionID: ps.ownerSessionID,
                             simulatorUDID: ps.simulatorUDID,
-                            markdownPath: ps.markdownPath)
+                            markdownPath: ps.markdownPath,
+                            routineMark: ps.routineMark)
                 }
                 // An inspect whose browser didn't survive the snapshot is meaningless — the
                 // live cascade guarantees the pair closes together, so a dangling one can only
@@ -3968,7 +3982,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                 let br = Branch(id: pb.id, name: pb.name, worktreeURL: pb.worktreeURL,
                                 sessions: sessions, lastActivity: pb.lastActivity,
                                 lastActivityAt: pb.lastActivityAt,
-                                browserRecents: recents, archivedAt: pb.archivedAt)
+                                browserRecents: recents, archivedAt: pb.archivedAt,
+                                routineMark: pb.routineMark)
                 // Restore the remembered split, resolving leaves against this branch's sessions;
                 // an unresolved leaf (e.g. a runtime browser that didn't come back) collapses (014).
                 br.layout = deserializeLayout(pb.layout, valid: Set(sessions.map(\.id)))

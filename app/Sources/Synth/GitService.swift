@@ -437,12 +437,6 @@ enum GitService {
         return status == 0 ? nil : out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// `git worktree move` — the folder and git's registration of it, together.
-    static func moveWorktree(repo: URL, from: URL, to: URL) -> String? {
-        let (status, out) = runChecked(["-C", repo.path, "worktree", "move", from.path, to.path])
-        return status == 0 ? nil : out.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     /// Delete a branch ref with `-d`, never `-D`. git's own merged-into-HEAD check is a free
     /// second opinion on top of the caller's, and a branch it refuses is a branch worth keeping:
     /// the whole point of retiring a ref is that nothing is lost by it.

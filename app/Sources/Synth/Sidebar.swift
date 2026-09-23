@@ -234,13 +234,12 @@ private struct FootButton: View {
 }
 
 /// A run's rows say nobody here started them: a small mark after the name, in quiet ink.
-private struct RoutineMark: View {
-    let routine: Routine
-    let run: RoutineRun
+private struct RoutineMarkGlyph: View {
+    let mark: RoutineMark
     var body: some View {
         Phos(path: Phosphor.routine, size: 11)
             .foregroundStyle(Theme.inkMeta)
-            .help("Routine: \(routine.name) · \(RoutineWords.when(run.firedAt))")
+            .help("Routine: \(mark.name) · \(RoutineWords.when(mark.firedAt))")
     }
 }
 
@@ -523,8 +522,8 @@ private struct BranchRow: View {
                             .font(.sans(13, isActiveBranch ? 600 : 500))
                             .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
                             .lineLimit(1).truncationMode(.tail)
-                        if let hit = store.routineRun(forBranch: branch.name, in: workspace.id) {
-                            RoutineMark(routine: hit.routine, run: hit.run)
+                        if let mark = branch.routineMark {
+                            RoutineMarkGlyph(mark: mark)
                         }
                     }
                     tabsBranchFacts
@@ -540,8 +539,8 @@ private struct BranchRow: View {
                     .font(.sans(12, isActiveBranch ? 600 : 500))
                     .foregroundStyle(isActiveBranch ? Theme.repoName : Theme.branchName)
                     .lineLimit(1).truncationMode(.middle)
-                if let hit = store.routineRun(forBranch: branch.name, in: workspace.id) {
-                    RoutineMark(routine: hit.routine, run: hit.run).padding(.leading, -1)
+                if let mark = branch.routineMark {
+                    RoutineMarkGlyph(mark: mark).padding(.leading, -1)
                 }
                 // The branch's PR rides beside the name — identity, not status, so it
                 // stays clear of the roll-up's reserved right axis. Colour is the state.
@@ -701,8 +700,8 @@ private struct SessionRow: View {
                                     .foregroundStyle(nameColor)
                                     .lineLimit(1)
                             }
-                        if let hit = store.routineRun(forSession: session.id) {
-                            RoutineMark(routine: hit.routine, run: hit.run).padding(.leading, -3)
+                        if let mark = session.routineMark {
+                            RoutineMarkGlyph(mark: mark).padding(.leading, -3)
                         }
                         Spacer(minLength: 4)
                         Group {

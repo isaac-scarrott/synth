@@ -567,7 +567,8 @@ final class ControlServer: @unchecked Sendable {
                  "liveAgent": store.isLiveAgent(s.id),
                  // stage-four containment, so an adoption is assertable from outside
                  "ownerSessionId": store.owner(of: s)?.id.uuidString ?? "",
-                 "agentSessionId": s.agentSessionID ?? ""]
+                 "agentSessionId": s.agentSessionID ?? "",
+                 "routineMark": s.routineMark?.name ?? ""]
             }
             return ["ok": true, "sessions": rows]
 
@@ -1010,7 +1011,11 @@ final class ControlServer: @unchecked Sendable {
                         ["workspace": ws.name,
                          "path": ws.url.path,
                          "count": ws.liveBranches.count,
-                         "branches": ws.liveBranches.map(\.name)]
+                         "branches": ws.liveBranches.map(\.name),
+                         // The routine each run-cut row names in its mark, by branch.
+                         "routineMarks": ws.liveBranches.reduce(into: [String: String]()) { marks, b in
+                             if let m = b.routineMark { marks[b.name] = m.name }
+                         }]
                     }]
 
         case "automation.archiveStatus" where automation:

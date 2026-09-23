@@ -141,8 +141,10 @@ enum SessionStatus: Equatable, Sendable {
     /// document. nil for every other kind, and for a markdown row spawned from a template,
     /// which has no document to name yet.
     var markdownPath: String?
+    /// Set when a routine run spawned this session (Routines.swift). Persisted with the row.
+    var routineMark: RoutineMark?
 
-    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, agentSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil, simulatorUDID: String? = nil, markdownPath: String? = nil) {
+    init(id: UUID = UUID(), kind: SessionKind, title: String, status: SessionStatus = .idle, unread: Bool = false, titleIsCustom: Bool = false, agentSessionID: String? = nil, browserURL: URL? = nil, ownerSessionID: UUID? = nil, simulatorUDID: String? = nil, markdownPath: String? = nil, routineMark: RoutineMark? = nil) {
         self.id = id
         self.kind = kind
         self.spawnedKind = kind
@@ -155,6 +157,7 @@ enum SessionStatus: Equatable, Sendable {
         self.ownerSessionID = ownerSessionID
         self.simulatorUDID = simulatorUDID
         self.markdownPath = markdownPath
+        self.routineMark = routineMark
     }
 }
 
@@ -293,8 +296,10 @@ extension URL {
     /// undo-commit, not at the gesture — the 8s window must change nothing, and a row hidden
     /// by an archive the user then undid would be unreachable.
     var archivedAt: Date?
+    /// Set when a routine run cut this branch (Routines.swift). Persisted with the row.
+    var routineMark: RoutineMark?
 
-    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", lastActivityAt: Date? = nil, browserRecents: [BrowserRecent] = [], isPending: Bool = false, archivedAt: Date? = nil) {
+    init(id: UUID = UUID(), name: String, worktreeURL: URL, sessions: [Session] = [], lastActivity: String = "", lastActivityAt: Date? = nil, browserRecents: [BrowserRecent] = [], isPending: Bool = false, archivedAt: Date? = nil, routineMark: RoutineMark? = nil) {
         self.id = id
         self.name = name
         self.worktreeURL = worktreeURL
@@ -304,6 +309,7 @@ extension URL {
         self.browserRecents = browserRecents
         self.isPending = isPending
         self.archivedAt = archivedAt
+        self.routineMark = routineMark
     }
 
     /// A branch with sessions is a live "branch group": expandable, with a roll-up.

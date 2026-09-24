@@ -2779,3 +2779,7 @@ disclosure to dive deeper.
   drawing at 120 fps in the never-shown staging window, and the browser MCP server no longer pins
   every page visible through Playwright's focus emulation; a page gets it only while an agent is
   driving it. [Details](docs/features/2026-09-24.md)
+- **0.46.1 ships — a browser nobody can see stops drawing** — off-screen and agent-only browsers
+  no longer burn GPU and battery. `CFBundleVersion` 781, tag `v0.46.1`; artifacts notarized,
+  stapled and verified credential-less; appcast signed on all 18 enclosures, delta 634 KB from
+  0.46.0. [Details](docs/features/2026-09-24.md)

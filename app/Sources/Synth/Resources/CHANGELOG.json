@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.46.1",
+    "date": "2026-09-24",
+    "changes": [
+      "Much lower CPU, GPU and battery use while agents work: a browser nobody is looking at — one an agent opened but you haven't, or one you've switched away from — no longer keeps drawing in the background. A page an agent is actively driving still renders, and goes quiet a minute after the agent stops."
+    ]
+  },
+  {
     "version": "0.46.0",
     "date": "2026-09-23",
     "changes": [

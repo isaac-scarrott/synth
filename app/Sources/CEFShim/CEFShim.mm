@@ -487,6 +487,7 @@ static void CopyToPasteboard(const CefString &text) {
 
 @interface CEFShimBrowser ()
 - (void)containerDidMoveToWindow:(nullable NSWindow *)window;
+- (void)syncVisibility;
 @end
 
 @implementation CEFShimContainerView
@@ -1525,6 +1526,20 @@ class ShimClient : public CefClient,
   if (window && window != self.stagingWindow) {
     self.stagingWindow = nil;
   }
+  [self syncVisibility];
+}
+
+/// Chromium counts a page as visible while its view sits in any window, including the staging
+/// window nobody ever sees, which is where an agent's browser lives until someone opens it.
+/// Such a page runs its animations and rAF at full frame rate. Hiding the view is what
+/// WebContentsViewCocoa reads as hidden: frames stop, and a CDP capture still gets one.
+- (void)syncVisibility {
+  if (!_browser) {
+    return;
+  }
+  NSWindow *window = self.containerView.window;
+  NSView *cefView = (__bridge NSView *)_browser->GetHost()->GetWindowHandle();
+  cefView.hidden = !window || window == self.stagingWindow;
 }
 
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser {
@@ -1532,6 +1547,7 @@ class ShimClient : public CefClient,
   NSView *cefView = (__bridge NSView *)browser->GetHost()->GetWindowHandle();
   cefView.frame = self.containerView.bounds;
   [self.containerView addSubview:cefView];
+  [self syncVisibility];
 }
 
 - (void)handleAddressChange:(NSString *)url {

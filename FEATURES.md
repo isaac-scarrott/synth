@@ -2775,3 +2775,7 @@ disclosure to dive deeper.
   Antigravity trust. `CFBundleVersion` 778, tag `v0.46.0`; both artifacts notarized, stapled and
   verified credential-less; appcast signed on all 18 enclosures, deltas 1.5–1.6 MB. No
   `synth-site` push. [Details](docs/features/2026-09-23.md)
+- **A browser nobody can see stops drawing** — an agent's unopened browser is hidden rather than
+  drawing at 120 fps in the never-shown staging window, and the browser MCP server no longer pins
+  every page visible through Playwright's focus emulation; a page gets it only while an agent is
+  driving it. [Details](docs/features/2026-09-24.md)

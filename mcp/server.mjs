@@ -79,8 +79,10 @@ async function connectedBrowser(inst) {
     const started = Date.now();
     let browser;
     try {
+      // noDefaults: see `wake` — Playwright's default focus emulation would keep every page
+      // on the engine rendering for as long as this connection lives.
       browser = await chromium.connectOverCDP(
-        `http://127.0.0.1:${inst.cdpPort}`, { timeout: budget });
+        `http://127.0.0.1:${inst.cdpPort}`, { timeout: budget, noDefaults: true });
     } catch (e) {
       if (!/Timeout .* exceeded/.test(e.message)) throw e;
       throw new Error(
@@ -269,7 +271,41 @@ async function targetEntry(inst, sessionId) {
   const pages = await sessionPagesSeeking(inst, (p) => p.sessionId === sessionId);
   const hit = pages.find((p) => p.sessionId === sessionId);
   if (!hit) throw new Error(`no live browser session ${sessionId} — see browser_list`);
+  await wake(hit.page);
   return hit;
+}
+
+/** Awake only while driven. Chromium counts a focus-emulated page as captured — visible and
+ *  drawing every frame — and Playwright's default attach emulates focus on every page it
+ *  sees. This connection lives as long as the Claude session and attaches to every page on
+ *  the engine, so each agent kept every browser in Synth animating off screen, costing about
+ *  two cores in the GPU process between them. A page nobody is looking at is hidden, and a
+ *  hidden page runs no requestAnimationFrame, which Playwright's actionability checks wait
+ *  on, so the page an agent acts on gets focus emulation back until it has gone
+ *  AWAKE_IDLE_MS without a call. Detaching the session is what ends the emulation. */
+const AWAKE_IDLE_MS = 60_000;
+const awake = new Map(); // page -> { ready, timer }
+
+async function wake(page) {
+  let lease = awake.get(page);
+  if (!lease) {
+    const ready = page.context().newCDPSession(page).then(async (client) => {
+      await client.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+      return client;
+    });
+    lease = { ready, timer: null };
+    awake.set(page, lease);
+    page.once("close", () => { clearTimeout(lease.timer); awake.delete(page); });
+  }
+  clearTimeout(lease.timer);
+  const current = lease;
+  current.timer = setTimeout(() => {
+    if (awake.get(page) === current) awake.delete(page);
+    current.ready.then((client) => client.detach()).catch(() => {});
+  }, AWAKE_IDLE_MS);
+  current.timer.unref?.();
+  try { await current.ready; }
+  catch (e) { if (awake.get(page) === current) awake.delete(page); throw e; }
 }
 
 async function targetPage(inst, sessionId) {

@@ -2786,3 +2786,7 @@ disclosure to dive deeper.
 - **A conversation Claude deleted starts fresh and says so** — a restored Claude row whose
   transcript Claude's 30-day cleanup removed starts a new `claude` with one card saying why,
   instead of an error row whose Retry could never work. [Details](docs/features/2026-09-29.md)
+- **0.46.2 ships — a conversation Claude deleted starts fresh and says so** — a Claude row left
+  past Claude's 30-day cleanup reopens fresh with a card, not an error row. `CFBundleVersion` 784,
+  tag `v0.46.2`; artifacts notarized, stapled and verified credential-less; appcast signed on all
+  6 new enclosures, delta 837 KB from 0.46.1. [Details](docs/features/2026-09-29.md)

@@ -2794,3 +2794,7 @@ disclosure to dive deeper.
   Usage and Routines: ⌃O / ⌃I on the sidebar, ⌃⌘← / ⌃⌘→ from anywhere, since a terminal owns ⌃O and
   ⌃I (Tab). Each place listed once; somewhere new drops the forward half. `t43_history`, 11 checks.
   [Details](docs/features/2026-09-29.md)
+- **0.47.0 ships — back and forward through the places you've been** — ⌃⌘← / ⌃⌘→ anywhere, ⌃O /
+  ⌃I on the sidebar. `CFBundleVersion` 787, tag `v0.47.0`; artifacts notarized, stapled and
+  verified credential-less; appcast signed on all 6 new enclosures, delta 0.97 MB from 0.46.2.
+  [Details](docs/features/2026-09-29.md)

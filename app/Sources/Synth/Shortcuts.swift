@@ -70,6 +70,8 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["⌘", "⇧", "T"], label: "Scratch terminal"),
             Shortcut(keys: ["⌘", "W"], label: "Close session"),
             Shortcut(keys: ["⌘", "B"], label: "Toggle sidebar"),
+            Shortcut(keys: ["⌃", "⌘", "←"], label: "Back"),
+            Shortcut(keys: ["⌃", "⌘", "→"], label: "Forward"),
             Shortcut(keys: ["⌘", "⏎"], label: "Jump to notification"),
             Shortcut(keys: ["⌘", ","], label: "Settings"),
             Shortcut(keys: ["⌘", "?"], label: "Keyboard shortcuts"),
@@ -90,6 +92,7 @@ struct ShortcutsSheet: View {
             Shortcut(keys: ["R"], label: "Rename"),
             Shortcut(keys: ["D"], label: "Close · archive"),
             Shortcut(keys: ["⇧J", "⇧K"], label: "Reorder"),
+            Shortcut(keys: ["⌃O", "⌃I"], label: "Back · forward"),
             Shortcut(keys: ["esc"], label: "Focus content"),
         ]),
         ShortcutCategory(name: "Split layout", icon: Phosphor.squares, rows: [

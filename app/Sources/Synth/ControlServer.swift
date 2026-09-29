@@ -859,6 +859,11 @@ final class ControlServer: @unchecked Sendable {
         case "automation.nav" where automation:
             return ["ok": true,
                     "openSessionId": store.openSessionID?.uuidString ?? "",
+                    // What ⌃O / ⌃I walk: the session ids above, or settings / usage / routines.
+                    "place": store.currentPlace.map { place -> String in
+                        if case .session(let id) = place { return id.uuidString }
+                        return String(describing: place)
+                    } ?? "",
                     "navCursor": store.navCursor?.uuidString ?? "",
                     // The whole run the cursor walks, in order — the tree plus the foot buttons.
                     // `rows` is one branch's sessions, so it can't show that a foot button joined

@@ -2790,3 +2790,7 @@ disclosure to dive deeper.
   past Claude's 30-day cleanup reopens fresh with a card, not an error row. `CFBundleVersion` 784,
   tag `v0.46.2`; artifacts notarized, stapled and verified credential-less; appcast signed on all
   6 new enclosures, delta 837 KB from 0.46.1. [Details](docs/features/2026-09-29.md)
+- **Back and forward through the places you've been** — vim's jumplist over sessions, Settings,
+  Usage and Routines: ⌃O / ⌃I on the sidebar, ⌃⌘← / ⌃⌘→ from anywhere, since a terminal owns ⌃O and
+  ⌃I (Tab). Each place listed once; somewhere new drops the forward half. `t43_history`, 11 checks.
+  [Details](docs/features/2026-09-29.md)

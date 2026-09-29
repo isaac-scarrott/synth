@@ -582,6 +582,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// `openFromSidebar` raises this and the mount consumes it. Any dive-into-content path
     /// (`focusContent`) clears it, so a normal open focuses the shell as before.
     var suppressShellFocusOnOpen = false
+    /// Where ⌃O and ⌃I go (History.swift). Session-long, like vim's jumplist without viminfo.
+    @ObservationIgnored var history = PlaceHistory()
 
     /// True from the moment a keystroke hides the pointer (`NSCursor.setHiddenUntilMouseMoves`)
     /// until it next genuinely moves. SwiftUI's `onHover`/`onContinuousHover` re-fire from mere
@@ -975,6 +977,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
                                 background: { [weak self] in !Automation.isDriven && self?.usageAlertsEnabled == true },
                                 onReading: { [weak self] in try self?.noteUsageReading($0) })
         startRoutineScheduler()
+        trackPlaces()
         // The done-toast drain follows focus as well as hover: routeTransition raises the
         // deck even unfocused, and the clock must not run while nobody can see it.
         for (name, active) in [(NSApplication.didBecomeActiveNotification, true),

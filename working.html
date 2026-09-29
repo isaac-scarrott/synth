@@ -4119,6 +4119,53 @@
     idle:  `<span class="ind"></span>`,
   };
   let openEl = null;
+
+  // ===== Back / forward: vim's jumplist over places =====
+  // A place is the open session, or Settings / Usage / Routines. Each appears once, at the spot
+  // you last left it, so bouncing between two sessions never buries a third under copies; going
+  // somewhere new drops the forward half, as a browser does. ⌃O / ⌃I on the sidebar, ⌃⌘← / ⌃⌘→
+  // from anywhere — inside a pane ⌃I is Tab to a shell and ⌃O is vim's own jumplist.
+  const jumps = { back: [], fwd: [], cur: null };
+  const placeNow = () => app.classList.contains('routines') ? 'routines'
+    : app.classList.contains('usage') ? 'usage'
+    : app.classList.contains('settings') ? 'settings'
+    : openEl;
+  // Called from every path that changes the place; the microtask coalesces one open's
+  // intermediate states into the single move it made.
+  let placeQueued = false;
+  function notePlace() {
+    if (placeQueued) return;
+    placeQueued = true;
+    queueMicrotask(() => {
+      placeQueued = false;
+      const p = placeNow();
+      if (!p || p === jumps.cur) return;
+      if (jumps.cur) {
+        jumps.back = jumps.back.filter((x) => x !== jumps.cur);
+        jumps.back.push(jumps.cur);
+        if (jumps.back.length > 100) jumps.back.shift();
+      }
+      jumps.fwd = [];
+      jumps.cur = p;
+    });
+  }
+  // A closed session stays in the list until it is stepped over, then it is gone.
+  function travel(dir, keepSidebar) {
+    const from = dir < 0 ? jumps.back : jumps.fwd, to = dir < 0 ? jumps.fwd : jumps.back;
+    let p;
+    while ((p = from.pop())) {
+      if ((typeof p !== 'string' && !p.isConnected) || p === jumps.cur) continue;
+      if (jumps.cur) to.push(jumps.cur);
+      jumps.cur = p;
+      if (p === 'settings') enterSettings();
+      else if (p === 'usage') enterUsage();
+      else if (p === 'routines') enterRoutines();
+      else { openSession(p); if (keepSidebar) handToSidebar(p); else focusContent(); }
+      jumps.cur = placeNow() || p;
+      return;
+    }
+  }
+
   // ===== Layout: the pane tree (the spine — 009) =====
   // A leaf binds exactly one session (no empty pane, 004 §2): { leaf:true, session, setup, el }
   // — a setup skeleton counts as bound. A split is binary: { leaf:false, dir:'row'|'col', a, b,
@@ -4294,6 +4341,7 @@
     nav.querySelectorAll('.session--open').forEach((x) => x.classList.remove('session--open'));
     const leaf = activePane, s = leaf && leaf.session;
     openEl = s || null;
+    notePlace();
     if (s) {
       s.classList.add('session--open');
       s.classList.remove('session--unread');
@@ -6986,6 +7034,11 @@
       return;
     }
     if (paletteOpen) return; // the palette owns the keyboard while it's open
+    if (e.ctrlKey && e.metaKey && !e.altKey && !e.shiftKey && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+      e.preventDefault();
+      travel(k === 'ArrowLeft' ? -1 : 1, !(e.target instanceof Element && e.target.closest('.content')));
+      return;
+    }
     // Cmd/Ctrl+, toggles Settings (the Mac Preferences convention); Esc leaves it
     if ((e.metaKey || e.ctrlKey) && k === ',') {
       e.preventDefault();
@@ -7128,6 +7181,9 @@
     if (e.target instanceof Element && e.target.closest('.content')) return;
     // an open row menu owns the keyboard (its ↵/Esc are handled by the menu key handler)
     if (openMenuEl) return;
+    if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (k === 'o' || k === 'i')) {
+      e.preventDefault(); travel(k === 'o' ? -1 : 1, true); return;
+    }
     // Esc hands focus from the sidebar back to the main window (the open session's surface).
     if (k === 'Escape') {
       if (document.querySelector('.backdrop')) return;   // a dialog owns Esc first
@@ -8184,6 +8240,8 @@
       [['⌘', '⇧', 'T'], 'Scratch terminal'],
       [['⌘', 'W'], 'Close session'],
       [['⌘', 'B'], 'Toggle sidebar'],
+      [['⌃', '⌘', '←'], 'Back'],
+      [['⌃', '⌘', '→'], 'Forward'],
       [['⌘', '⏎'], 'Jump to notification'],
       [['⌘', ','], 'Settings'],
       [['⌘', '?'], 'Keyboard shortcuts'],
@@ -8204,6 +8262,7 @@
       [['R'], 'Rename'],
       [['D'], 'Close · archive'],
       [['⇧J', '⇧K'], 'Reorder'],
+      [['⌃O', '⌃I'], 'Back · forward'],
       [['esc'], 'Focus content'],
     ]],
     ['Split layout', [
@@ -10208,6 +10267,7 @@
     setupEl = null;
     app.classList.add('usage');
     document.getElementById('openUsage').classList.add('is-on');
+    notePlace();
     renderUsage();
   }
   function leaveUsageMode() {
@@ -10678,6 +10738,7 @@
     setupEl = null;
     app.classList.add('routines');
     document.getElementById('openRoutines').classList.add('is-on');
+    notePlace();
     rtView = null;
     if (id) { rtOpen(id); return; }
     renderRoutines();
@@ -11170,6 +11231,7 @@
     if (scope) { setProject = scope; setTab = 'project'; try { localStorage.setItem(PROJ_KEY, wsName(scope)); } catch (e) {} }
     app.classList.add('settings');
     document.getElementById('openSettings').classList.add('is-on');
+    notePlace();
     renderSettings();
     select(content.querySelector('.set-row'), true);
   }

@@ -798,6 +798,16 @@ struct RootView: View {
                 store.cycleTab(event.modifierFlags.contains(.shift) ? -1 : 1)
                 focusContent(store); return nil
             }
+            // ⌃⌘← / ⌃⌘→ go back and forward through the places you've been, from anywhere —
+            // Xcode's chord. ⌃O / ⌃I are the same moves on the sidebar (below), but inside a pane
+            // they belong to the program: ⌃I is Tab to a shell, ⌃O is vim's own jumplist.
+            if event.modifierFlags.intersection([.command, .control, .option, .shift]) == [.command, .control],
+               event.keyCode == 123 || event.keyCode == 124 {
+                let fr = event.window?.firstResponder
+                let inPane = fr is GhosttySurfaceView || BrowserManager.shared.ownsFirstResponder(fr)
+                store.travel(event.keyCode == 123 ? -1 : 1, keepSidebar: !inPane)
+                return nil
+            }
 
             if let fr = event.window?.firstResponder {
                 if fr is GhosttySurfaceView || fr is NSText || fr is NSTextView { return event }
@@ -849,6 +859,11 @@ struct RootView: View {
                 case "k" where bare && event.modifierFlags.contains(.shift):
                     guard let ref = store.cursorRef else { return event }
                     store.reorder(ref, by: -1, animated: !reduceMotion); return nil
+                // ⌃O back, ⌃I forward — vim's jumplist over places.
+                case "o" where event.modifierFlags.intersection([.command, .control, .option, .shift]) == .control:
+                    store.travel(-1, keepSidebar: true); return nil
+                case "i" where event.modifierFlags.intersection([.command, .control, .option, .shift]) == .control:
+                    store.travel(1, keepSidebar: true); return nil
                 case "j": store.moveCursor(1); return nil
                 case "k": store.moveCursor(-1); return nil
                 case "l" where bare: store.expandOrIn(); return nil     // vim expand-or-in

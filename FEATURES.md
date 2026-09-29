@@ -2783,3 +2783,6 @@ disclosure to dive deeper.
   no longer burn GPU and battery. `CFBundleVersion` 781, tag `v0.46.1`; artifacts notarized,
   stapled and verified credential-less; appcast signed on all 18 enclosures, delta 634 KB from
   0.46.0. [Details](docs/features/2026-09-24.md)
+- **A conversation Claude deleted starts fresh and says so** — a restored Claude row whose
+  transcript Claude's 30-day cleanup removed starts a new `claude` with one card saying why,
+  instead of an error row whose Retry could never work. [Details](docs/features/2026-09-29.md)

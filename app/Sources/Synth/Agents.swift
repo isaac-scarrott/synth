@@ -451,10 +451,16 @@ extension AgentDescriptor: Identifiable {}
     /// conversation's. Default no-op; a supervisor overrides it only if that assumption can fail
     /// (a resumed row's first observed event isn't guaranteed to be its own).
     func seedResume(session: UUID, resumeID: String)
+
+    /// Why `resumeID` can no longer be resumed because the agent deleted it itself, or nil while
+    /// it can. Asked before a restored row spawns, so the row starts fresh and says so rather than
+    /// running a resume that can only fail. Default nil.
+    func deletedConversation(_ resumeID: String, agent: AgentDescriptor) -> String?
 }
 
 extension AgentSupervisor {
     func seedResume(session: UUID, resumeID: String) {}
+    func deletedConversation(_ resumeID: String, agent: AgentDescriptor) -> String? { nil }
 }
 
 /// Shell-quote a string for the single-quoted context the launch command types into a shell.
@@ -497,5 +503,47 @@ func shellQuoteAgentArg(_ s: String) -> String {
         let extra = flags.isEmpty ? "" : " " + flags
         if let resume { return "exec \(binary) --resume \(shellQuoteAgentArg(resume))\(extra)" }
         return "exec \(binary)\(extra)"
+    }
+
+    /// Built-in only: a custom command may run Claude under its own `CLAUDE_CONFIG_DIR`, where
+    /// Synth's folder is the wrong one to look in and every conversation would look deleted.
+    func deletedConversation(_ resumeID: String, agent: AgentDescriptor) -> String? {
+        guard agent.id == .claudeCode, ClaudeTranscripts.isDeleted(resumeID) else { return nil }
+        return "Unused for \(ClaudeTranscripts.retentionDays) days"
+    }
+}
+
+/// Claude Code's saved conversations, `<config>/projects/<cwd>/<id>.jsonl`. Every `claude` start
+/// deletes the ones untouched for `cleanupPeriodDays` (30 unless set), and `--resume` of a
+/// deleted one prints "No conversation found" and exits 1 — a row left for a month came back as
+/// an error that retrying could never clear.
+enum ClaudeTranscripts {
+    static var configDir: URL {
+        if let dir = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !dir.isEmpty {
+            return URL(fileURLWithPath: dir, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+    }
+
+    /// Searched across every project, not just the cwd's: Claude hashes long paths into the folder
+    /// name, and a false "deleted" throws away a conversation that would have resumed. A projects
+    /// folder Synth can't list proves nothing, so it resumes as it always did.
+    static func isDeleted(_ id: String) -> Bool {
+        let projects = configDir.appendingPathComponent("projects")
+        guard let folders = try? FileManager.default.contentsOfDirectory(atPath: projects.path)
+        else { return false }
+        return !folders.contains {
+            FileManager.default.fileExists(atPath: projects.appendingPathComponent($0)
+                .appendingPathComponent(id + ".jsonl").path)
+        }
+    }
+
+    static var retentionDays: Int {
+        let settings = configDir.appendingPathComponent("settings.json")
+        guard let data = try? Data(contentsOf: settings),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let days = json["cleanupPeriodDays"] as? Int
+        else { return 30 }
+        return days
     }
 }

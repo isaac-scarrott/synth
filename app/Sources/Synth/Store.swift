@@ -37,6 +37,9 @@ enum SessionEvent: Sendable {
     /// The agent reported its own session id (Claude Code via its SessionStart hook, opencode
     /// off `session.created`) — stored so a restored row can resume the conversation (ADR-0010).
     case agentSessionCaptured(UUID, String)
+    /// A restored agent row's conversation was deleted by the agent itself, so the row is starting
+    /// a fresh one. Carries the agent's reason (Claude Code: "Unused for 30 days").
+    case agentConversationDeleted(UUID, String)
     /// The agent is not merely *starting* but reachable — its supervisor can hand it text.
     /// Only a supervisor posts this: Claude Code is ready the moment its own hook fires from
     /// inside the running process, while opencode is ready only once its event stream connects
@@ -1189,6 +1192,20 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             guard let s = session(id) else { break }
             if s.agentSessionID != agentSessionID { s.agentSessionID = agentSessionID }
             liveAgentIDs.insert(id)
+        case let .agentConversationDeleted(id, why):
+            guard let s = session(id) else { break }
+            let agent = s.kind.agentID.flatMap { AgentRegistry.descriptor($0) }
+            notifSeq += 1
+            // Its own id, not the session's: a session's card hides while that session is open,
+            // and this one lands the moment it is opened.
+            notifs.append(InAppNotif(id: UUID(), kind: .neutral, seq: notifSeq,
+                                     sessionKind: s.kind, title: s.title,
+                                     colorIndex: branch(of: s).flatMap { workspace(of: $0) }?.colorIndex,
+                                     outlivesSession: true,
+                                     message: "\(agent?.displayName ?? "The agent") deleted this conversation",
+                                     glyphPath: Phosphor.info, tier: .attention,
+                                     sub: "\(why) — this is a fresh one"))
+            Analytics.capture("agent_conversation_deleted", ["session_kind": s.kind.analyticsSlug])
         case let .browserNavigated(id, url):
             guard let s = session(id) else { return }
             s.browserURL = url
@@ -4175,5 +4192,8 @@ private func eventSessionID(_ event: SessionEvent) -> UUID {
         return id
     case let .openURLRequested(id, _):
         return id ?? UUID()
+    // Posted before the PTY exists, so it says nothing about whether the row came up.
+    case .agentConversationDeleted:
+        return UUID()
     }
 }

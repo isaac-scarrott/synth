@@ -140,6 +140,13 @@ enum TerminalLauncher {
         let env = HookEnvironment.decorate(base, sessionID: session.id, socketPath: hookSocketPath,
                                            cwd: cwd.path)
 
+        if let resumeID = session.agentSessionID,
+           let agent = session.kind.agentID.flatMap({ AgentRegistry.descriptor($0) }),
+           let why = AgentRegistry.supervisor(agent.id)?.deletedConversation(resumeID, agent: agent) {
+            session.agentSessionID = nil
+            bus?.post(.agentConversationDeleted(session.id, why))
+        }
+
         let view = GhosttySurfaceView(session: session, cwd: cwd, env: env,
                                       command: command, agentFlags: agentFlags, bus: bus)
         views[session.id] = view

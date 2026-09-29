@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.47.0",
+    "date": "2026-09-29",
+    "changes": [
+      "Back and forward through the places you've been — sessions, Settings, Usage and Routines. ⌃⌘← and ⌃⌘→ from anywhere, or ⌃O and ⌃I on the sidebar, like vim's jumplist."
+    ]
+  },
+  {
     "version": "0.46.2",
     "date": "2026-09-29",
     "changes": [

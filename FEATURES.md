@@ -2806,3 +2806,7 @@ disclosure to dive deeper.
   waits for it and `sentry_close()`s it. The minidumps it hid gave up two fixes: a CEF view
   messaged after close, and focus handed to a view outside its window.
   [Details](docs/features/2026-09-30.md)
+- **0.47.1 ships — a crash is a crash again** — Ghostty's Sentry evicted so crashes report, a CEF
+  view messaged after close, focus only in a view's own window. `CFBundleVersion` 790, tag
+  `v0.47.1`; notarized, stapled, verified credential-less; appcast signed on all 6 enclosures,
+  delta 874 KB from 0.47.0. [Details](docs/features/2026-09-30.md)

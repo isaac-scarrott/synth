@@ -57,10 +57,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Kill the per-focus password-autofill key-view walk before any field can focus — it stalls
         // every native text field by 250–400ms on a loaded tree (see AutoFillSuppression).
         AutoFillSuppression.install()
-        // Start the terminal engine before analytics. The Mach-ports capture/restore that has
-        // to bracket `ghostty_init` now lives inside `start()` itself, so a later heal gets the
-        // same protection as the launch — leaving it here would have made recovery quietly cost
-        // us crash reporting for the rest of the run.
+        // Start the terminal engine before analytics: `start()` evicts Ghostty's crash handler
+        // (GhosttyCrashHandler), and PLCrash has to install after that, not under it.
         Capabilities.ensure(GhosttyApp.shared)
         // Anonymous usage analytics — off on the dev channel and honouring the saved opt-out
         // (read straight from defaults so it doesn't wait on the store). No-ops until a key is set.

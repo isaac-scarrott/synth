@@ -24,7 +24,7 @@ struct TerminalHost: NSViewRepresentable {
         let store = store
         DispatchQueue.main.async {
             if store.suppressShellFocusOnOpen { store.suppressShellFocusOnOpen = false }
-            else { container.window?.makeFirstResponder(terminal) }
+            else { focusWhenMounted(terminal) }
         }
         return container
     }

@@ -2798,3 +2798,11 @@ disclosure to dive deeper.
   ⌃I on the sidebar. `CFBundleVersion` 787, tag `v0.47.0`; artifacts notarized, stapled and
   verified credential-less; appcast signed on all 6 new enclosures, delta 0.97 MB from 0.46.2.
   [Details](docs/features/2026-09-29.md)
+
+## [2026-09-30](docs/features/2026-09-30.md)
+
+- **A crash is a crash again** — libghostty's Sentry installed Breakpad on a thread after
+  `ghostty_init`, beat the port restore, and turned every crash into a silent `exit(1)`. Synth now
+  waits for it and `sentry_close()`s it. The minidumps it hid gave up two fixes: a CEF view
+  messaged after close, and focus handed to a view outside its window.
+  [Details](docs/features/2026-09-30.md)

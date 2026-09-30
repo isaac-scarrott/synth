@@ -1657,11 +1657,19 @@ struct SidebarResizeHandle: View {
     store.keyboardActive = false
     store.suppressShellFocusOnOpen = false   // diving into the pane always focuses the shell
     guard let id = store.openSessionID else { return }
-    if let view = TerminalManager.shared.existingView(id) {
-        NSApp.keyWindow?.makeFirstResponder(view)
-    } else if let ctrl = BrowserManager.shared.existing(id) {
-        NSApp.keyWindow?.makeFirstResponder(ctrl.engine.view)
-    }
+    let view: NSView? = TerminalManager.shared.existingView(id) ?? BrowserManager.shared.existing(id)?.engine.view
+    if let view { focusWhenMounted(view) }
+}
+
+/// Focus `view` in its own window, waiting a few turns for SwiftUI to mount it when a tab chip
+/// or history jump opened the session in the same breath. Handing a windowless view to the key
+/// window's makeFirstResponder is what AppKit logs as "in a different window! This would
+/// eventually crash when the view is freed." A visible window, because an agent's browser nobody
+/// has opened yet sits in a staging window that is never ordered in.
+@MainActor func focusWhenMounted(_ view: NSView, turns: Int = 10) {
+    if let window = view.window, window.isVisible { window.makeFirstResponder(view); return }
+    guard turns > 0 else { return }
+    DispatchQueue.main.async { focusWhenMounted(view, turns: turns - 1) }
 }
 
 /// The mock's `.icon-btn`: 26×26, radius 7, hover 5% bg, press scale 0.94.

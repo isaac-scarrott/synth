@@ -61,14 +61,10 @@ extension GhosttyApp: Capability {
             // means rebuilding the app object only.
             guard !didAttemptInit else { throw EngineError.initNotRetryable }
             didAttemptInit = true
-            // Breakpad again: `ghostty_init` claims the Mach exception ports, and left claimed
-            // it swallows every crash (layered under PostHog's handler it deadlocks the forward
-            // and a crash becomes a hang). SynthApp holds this window around the launch call;
-            // a heal has to hold it too, or recovering the terminal would silently cost us
-            // crash reporting for the rest of the run.
-            let ports = MachExceptionPorts.capture()
+            // `ghostty_init` starts Sentry's Breakpad, which swallows every crash in the process
+            // unless it is evicted before PLCrash and CrashReporter install (GhosttyCrashHandler).
             let rc = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
-            if let ports { MachExceptionPorts.restore(ports) }
+            GhosttyCrashHandler.evict()
             guard rc == GHOSTTY_SUCCESS else { throw EngineError.initFailed }
             didInit = true
         }

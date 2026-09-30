@@ -46,7 +46,7 @@ enum Analytics {
         // absent on macOS, so there's nothing to disable here; the screen is never recorded.
         config.optOut = optedOut                    // honour the saved preference from event one
         // Native crash capture with real stacks: PLCrashReporter's Mach handler, the process's
-        // only one — libghostty's Breakpad is evicted right after ghostty_init (MachExceptionPorts),
+        // only one — libghostty's Breakpad is evicted right after ghostty_init (GhosttyCrashHandler),
         // because stacked under this it deadlocks the forward and a crash becomes a hang. Needs
         // exception autocapture enabled on the PostHog project too — the SDK skips the integration
         // when remote config says no.

@@ -1534,7 +1534,10 @@ class ShimClient : public CefClient,
 /// Such a page runs its animations and rAF at full frame rate. Hiding the view is what
 /// WebContentsViewCocoa reads as hidden: frames stop, and a CDP capture still gets one.
 - (void)syncVisibility {
-  if (!_browser) {
+  // -close frees the wrapper view. OnBeforeClose, which clears _browser, usually runs inside
+  // -close; when it's deferred, GetWindowHandle() is a dangling pointer in between. 29 Sep 2026
+  // crashed here, messaging through CF forwarding from a container that moved window.
+  if (!_browser || _closeRequested) {
     return;
   }
   NSWindow *window = self.containerView.window;

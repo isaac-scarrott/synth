@@ -145,7 +145,7 @@ extension Fault.Domain {
              "UsageSources.swift", "UsageModel.swift", "UsageReading.swift", "UsageMeter.swift",
              "UsagePane.swift", "Updates.swift", "ChangelogPane.swift":
             return .usage
-        case "CrashReporter.swift", "MachExceptionPorts.swift":
+        case "CrashReporter.swift", "GhosttyCrashHandler.swift":
             return .crash
         default:
             return .app

@@ -56,6 +56,9 @@ write_info_plist() {
   <!-- Synth never asks for Bluetooth, but the embedded Chromium (Web Bluetooth) and libghostty
        engines probe it; without this key TCC hard-aborts the whole app the first time they do. -->
   <key>NSBluetoothAlwaysUsageDescription</key><string>Synth's embedded browser needs Bluetooth to run web pages that use it.</string>
+  <!-- Agents in Synth's terminals (e.g. hold-space voice input) record through Synth: TCC
+       attributes their mic access to the app that spawned them, so the prompt names Synth. -->
+  <key>NSMicrophoneUsageDescription</key><string>Agents running in Synth's terminals use the microphone for voice input.</string>
 ${sparkle}
 </dict>
 </plist>

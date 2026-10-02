@@ -2810,3 +2810,9 @@ disclosure to dive deeper.
   view messaged after close, focus only in a view's own window. `CFBundleVersion` 790, tag
   `v0.47.1`; notarized, stapled, verified credential-less; appcast signed on all 6 enclosures,
   delta 874 KB from 0.47.0. [Details](docs/features/2026-09-30.md)
+- **Synth asks for the microphone** — `NSMicrophoneUsageDescription` + `audio-input` entitlement,
+  so voice input in terminal agents prompts instead of failing silently; CEF helpers still lack it.
+  [Details](docs/features/2026-10-02.md)
+- **0.47.2 ships — Synth asks for the microphone** — `CFBundleVersion` 793, tag `v0.47.2`;
+  notarized, stapled, verified credential-less with the entitlement present; appcast signed on all
+  18 enclosures, delta 67 KB from 0.47.1. [Details](docs/features/2026-10-02.md)

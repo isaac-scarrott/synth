@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.47.2",
+    "date": "2026-10-02",
+    "changes": [
+      "Voice input in agents running in Synth's terminals now asks for the microphone, and Synth appears under Privacy → Microphone."
+    ]
+  },
+  {
     "version": "0.47.1",
     "date": "2026-09-30",
     "changes": [

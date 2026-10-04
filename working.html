@@ -112,7 +112,6 @@
     --live-lift: #c4b5fd;    /* liveness (running/working) — the sphere's near face, where the light lands */
     --live-deep: #4c1d95;    /* and its rim, where the surface turns away. Violet: the one hue no
                                 other right-side indicator claims — the ? is slate-blue, the ! red. */
-    --live-rest: 0.28;       /* the dormant sphere between beats */
     --input: #3a6db3;        /* needs-input STATE only — slate-blue sibling of the charcoal, not the old iOS blue */
     --input-rgb: 58,109,179; /* drives every functional rgba(var(--input-rgb),A) ring/wash */
     --copper: #a05633;       /* AI-owned/session warm mark — one token collapsing the terracottas, kept distinct from the pale accent */
@@ -1837,11 +1836,8 @@
      The ramp is walked a fifth at a time, one step per ring, so no two neighbouring rings
      jump more than a fifth of it and the shading curves rather than steps; the rim stops a
      fifth short of --live-deep, which at 1.35px on a light sidebar read as a black speck.
-     One clock: each ring is delayed by its true radial distance from the centre, so the
-     beat leaves the middle as a circular wavefront (the old lattice stepped by Manhattan
-     distance, which made a diamond — visible, and at odds with a round mark).
-     The dormant sphere never drops out of sight (--live-rest): the indicator has to read
-     as PRESENT between beats, or a slow session looks dead.
+     It holds still: in the native shell a looping animation re-renders the window every
+     frame, and each frame spends a SwiftUI counter that crashes the app after a few days.
      .beat--run / .beat--work carry no styling of their own; they mark the state
      for the roll-up logic, which reads the DOM to decide what a group shows. */
   .beat {
@@ -1857,43 +1853,33 @@
   }
   .beat i {
     border-radius: 50%;
-    opacity: var(--live-rest);
-    animation: beat-pulse 1.15s ease-in-out infinite;
+    opacity: 0.85;
   }
-  /* Rings out from the centre cell (13). Each carries its diameter, its point on the
-     lift→deep ramp (100/80/60/40/20) and its delay (radius x 118ms). The corners are held rather than
+  /* Rings out from the centre cell (13). Each carries its diameter and its point on the
+     lift→deep ramp (100/80/60/40/20). The corners are held rather than
      removed, so the lattice keeps its geometry and the nth-child indices stay readable. */
   .beat i:nth-child(13) { width: 2.5px; height: 2.5px; background: var(--live-lift); }
   .beat i:nth-child(8), .beat i:nth-child(12), .beat i:nth-child(14), .beat i:nth-child(18) {
-    width: 2px; height: 2px; animation-delay: 118ms;
+    width: 2px; height: 2px;
     background: color-mix(in oklab, var(--live-lift) 80%, var(--live-deep));
   }
   .beat i:nth-child(7), .beat i:nth-child(9), .beat i:nth-child(17), .beat i:nth-child(19) {
-    width: 1.8px; height: 1.8px; animation-delay: 167ms;
+    width: 1.8px; height: 1.8px;
     background: color-mix(in oklab, var(--live-lift) 60%, var(--live-deep));
   }
   .beat i:nth-child(3), .beat i:nth-child(11), .beat i:nth-child(15), .beat i:nth-child(23) {
-    width: 1.5px; height: 1.5px; animation-delay: 236ms;
+    width: 1.5px; height: 1.5px;
     background: color-mix(in oklab, var(--live-lift) 40%, var(--live-deep));
   }
   .beat i:nth-child(2), .beat i:nth-child(4), .beat i:nth-child(6), .beat i:nth-child(10),
   .beat i:nth-child(16), .beat i:nth-child(20), .beat i:nth-child(22), .beat i:nth-child(24) {
-    width: 1.35px; height: 1.35px; animation-delay: 264ms;
+    width: 1.35px; height: 1.35px;
     background: color-mix(in oklab, var(--live-lift) 20%, var(--live-deep));
   }
   .beat i:nth-child(1), .beat i:nth-child(5), .beat i:nth-child(21), .beat i:nth-child(25) { visibility: hidden; }
-  @keyframes beat-pulse {
-    0%, 100% { opacity: var(--live-rest); transform: scale(0.72); }
-    50% { opacity: 1; transform: scale(1); }
-  }
 
-  /* attention glyphs: needs-input (?) and error (!) — bare marks, no border.
-     Breathe lives on the svg so it doesn't displace the slot's ind-in entry. */
+  /* attention glyphs: needs-input (?) and error (!) — bare marks, no border. */
   .ind--input { color: var(--input); }
-  .ind--input svg {
-    animation: attn-breathe 2s var(--ease-in-out) infinite;
-    transform-origin: center;
-  }
   .ind--error { color: var(--error); }
 
   /* repo-level roll-up: surfaces nested input/error while collapsed */
@@ -1906,10 +1892,6 @@
 
   @keyframes ind-in {
     from { opacity: 0; transform: scale(0.4); }
-  }
-  @keyframes attn-breathe {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.55; transform: scale(0.9); }
   }
 
   /* ---- In-app notifications: a stacked deck at the shell's bottom-left corner ----
@@ -1954,7 +1936,6 @@
   .notif--ambient .notif__glyph { width: 22px; height: 22px; border-radius: 7px; }
   .notif--ambient .notif__glyph svg { width: 14px; height: 14px; }
   .notif--input .notif__glyph { color: var(--input); background: color-mix(in srgb, var(--input) 13%, transparent); }
-  .notif--input .notif__glyph svg { animation: attn-breathe 2s var(--ease-in-out) infinite; }
   .notif--error .notif__glyph { color: var(--error); background: color-mix(in srgb, var(--error) 13%, transparent); }
   .notif--done .notif__glyph { color: var(--run); background: color-mix(in srgb, var(--run) 13%, transparent); }
   /* The app talking about its own housekeeping never wears a session's state colour — so green
@@ -3163,11 +3144,10 @@
     * { transition-duration: 0.01ms !important; }
     .row:active, .icon-btn:active { transform: translateY(0); }
     .kebab:active { transform: none; }
-    .ind, .beat i, .ind--input svg, .term__cursor, .tui__spin, .chat__composer.awaiting, .skel, .pane { animation: none; }
-    .session--pulse, .notif--input .notif__glyph svg { animation: none; }
+    .ind, .term__cursor, .tui__spin, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .session--pulse { animation: none; }
     .usage-tile, .usage-band, .usage-meter i { animation: none; }
     .roll__reel { transition: none; }
-    .beat i { opacity: 0.85; transform: none; }
     .collapse, .app, .menu, .menu__viewport, .backdrop, .dialog, .cmdk, .cmdk__panel, .cmdk__list { transition: none; }
     /* the card keeps its fade — only the slide-in and the row-to-row glide go */
     .hovercard, .hovercard.is-open, .hovercard.is-open.is-moving { transform: none !important; transition: opacity 120ms ease; }

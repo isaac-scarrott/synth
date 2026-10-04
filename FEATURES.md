@@ -2816,3 +2816,7 @@ disclosure to dive deeper.
 - **0.47.2 ships — Synth asks for the microphone** — `CFBundleVersion` 793, tag `v0.47.2`;
   notarized, stapled, verified credential-less with the entitlement present; appcast signed on all
   18 enclosures, delta 67 KB from 0.47.1. [Details](docs/features/2026-10-02.md)
+- **Nothing in the window loops in SwiftUI** — perpetual SwiftUI animations spent SwiftUI's
+  process-wide display-list counter until `FocusBridge` trapped at `UInt32.max` (~4.7 days with one
+  live session). The sphere holds still, `?` stops breathing, spinners run on Core Animation.
+  [Details](docs/features/2026-10-04.md)

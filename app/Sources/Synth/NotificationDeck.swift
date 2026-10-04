@@ -241,8 +241,8 @@ private struct NotifCard: View {
         }
     }
 
-    // The escalated sidebar AttentionGlyph: same Phosphor path + state colour, breathing on
-    // needs-input. Attention wears it in a 26pt chip, ambient in 22 — a result, not a summons.
+    // The escalated sidebar AttentionGlyph: same Phosphor path + state colour. Attention wears
+    // it in a 26pt chip, ambient in 22 — a result, not a summons.
     private var glyph: some View {
         let box: CGFloat = ambient ? 22 : 26
         let mark: CGFloat = ambient ? 14 : 17
@@ -256,7 +256,6 @@ private struct NotifCard: View {
             }
         }
             .foregroundStyle(glyphColor)
-            .modifier(BreatheIf(on: notif.kind == .input))
             .frame(width: box, height: box)
             .background(RoundedRectangle(cornerRadius: ambient ? 7 : 8).fill(glyphColor.opacity(0.13)))
     }
@@ -414,9 +413,3 @@ private struct MorePill: View {
     }
 }
 
-/// Applies the sidebar's `attn-breathe` only for needs-input (errors sit still), so the glyph
-/// reuse matches Sidebar.swift exactly.
-private struct BreatheIf: ViewModifier {
-    let on: Bool
-    func body(content: Content) -> some View { on ? AnyView(content.attnBreathe()) : AnyView(content) }
-}

@@ -1136,28 +1136,74 @@ private struct BranchRollup: View {
 private struct AttentionGlyph: View {
     let state: RollupState
     var body: some View {
-        // Breathe lives on the glyph, not the slot, so it composes under the slot's
-        // entry pop (working.html: attn-breathe on the svg inside .ind--input).
-        let glyph = Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
+        Phos(path: state == .input ? Phosphor.question : Phosphor.exclamation, size: 15)
             .foregroundStyle(state == .input ? Theme.input : Theme.danger)
-        if state == .input { glyph.attnBreathe() } else { glyph }
     }
 }
 
 /// The pending row's indicator: a quiet 11px arc spinning in the shared 16px slot —
 /// a worktree create in flight (features 2026-07-06).
 private struct PendingSpinner: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var spinning = false
     var body: some View {
-        Circle()
-            .trim(from: 0.12, to: 1)
-            .stroke(Theme.inkFaint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-            .frame(width: 11, height: 11)
-            .rotationEffect(.degrees(spinning ? 360 : 0))
-            .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false),
-                       value: spinning)
-            .onAppear { spinning = true }
+        ArcSpinner(diameter: 11, lineWidth: 1.5).frame(width: 11, height: 11)
+    }
+}
+
+/// An open arc turning once every 0.9s, spun by Core Animation in the render server.
+///
+/// Nothing in the window may loop in SwiftUI. A `repeatForever` animation re-renders the hosting
+/// view every frame, and every render spends ids from SwiftUI's process-wide
+/// `DisplayList.Version` counter; `FocusBridge` narrows that counter to `UInt32` and traps once
+/// it passes 4.29 billion. One live sidebar sphere spent ~10k ids a second, which is a crash
+/// after about four days. A layer animation spends none.
+struct ArcSpinner: NSViewRepresentable {
+    let diameter: CGFloat
+    let lineWidth: CGFloat
+
+    func makeNSView(context: Context) -> ArcSpinnerView { ArcSpinnerView(diameter: diameter, lineWidth: lineWidth) }
+    func updateNSView(_ view: ArcSpinnerView, context: Context) {}
+}
+
+final class ArcSpinnerView: NSView {
+    private let arc = CAShapeLayer()
+
+    init(diameter: CGFloat, lineWidth: CGFloat) {
+        super.init(frame: NSRect(x: 0, y: 0, width: diameter, height: diameter))
+        wantsLayer = true
+        let inset = lineWidth / 2
+        arc.path = CGPath(ellipseIn: CGRect(x: inset, y: inset, width: diameter - lineWidth,
+                                            height: diameter - lineWidth), transform: nil)
+        arc.fillColor = nil
+        arc.lineWidth = lineWidth
+        arc.lineCap = .round
+        arc.strokeStart = 0.12
+        arc.frame = bounds
+        layer?.addSublayer(arc)
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+            spin.fromValue = 0
+            spin.toValue = -2 * Double.pi   // clockwise in AppKit's y-up layer space
+            spin.duration = 0.9
+            spin.repeatCount = .infinity
+            spin.isRemovedOnCompletion = false
+            arc.add(spin, forKey: "spin")
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var intrinsicContentSize: NSSize { bounds.size }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            arc.strokeColor = NSColor(Theme.inkFaint).cgColor
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        viewDidChangeEffectiveAppearance()
     }
 }
 
@@ -1165,13 +1211,10 @@ private struct PendingSpinner: View {
 /// four corners lie outside the ball and drop out so the silhouette reads round; the remaining
 /// 21 dots shrink and sink from `Theme.liveLift` towards `Theme.liveDeep` as they go out, because the
 /// middle is the sphere's near face and the rim is where the surface turns away from you.
-/// One clock, each ring delayed by its true radial distance from the centre, so the beat leaves
-/// the middle as a circular wavefront. The dormant sphere stays visible (`rest`) so a slow
-/// session still reads as present between beats rather than blinking out of existence.
+/// It holds still — see `ArcSpinner` for why nothing in the window loops in SwiftUI.
 private struct Beat: View {
     private static let cell: CGFloat = 2       // lattice pitch; a dot may overhang its own cell
     private static let gap: CGFloat = 1
-    private static let rest: Double = 0.28
 
     /// The rings, keyed by squared distance from the centre cell — an integer, so a cell lands on
     /// its ring exactly. The four corners (8) are absent: they lie off the sphere.
@@ -1188,9 +1231,6 @@ private struct Beat: View {
         5: (Theme.dyn(0x613FAA, 0x825AE3), 1.35),   // the rim
     ]
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var lit = false
-
     var body: some View {
         VStack(spacing: Self.gap) {
             ForEach(0..<5, id: \.self) { row in
@@ -1201,9 +1241,7 @@ private struct Beat: View {
                 }
             }
         }
-        // Frozen at rest the sphere reads as switched off, so reduced motion holds it lit.
-        .opacity(reduceMotion ? 0.85 : 1)
-        .onAppear { lit = true }
+        .opacity(0.85)
     }
 
     @ViewBuilder
@@ -1217,11 +1255,6 @@ private struct Beat: View {
                     Circle()
                         .fill(ring.color)
                         .frame(width: ring.diameter, height: ring.diameter)
-                        .opacity(lit ? 1 : Self.rest)
-                        .scaleEffect(lit ? 1 : 0.72)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.575)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(squared).squareRoot() * 0.118), value: lit)
                 }
             }
     }
@@ -1236,26 +1269,7 @@ private struct UnreadDot: View {
     }
 }
 
-// Ambient pulse, reserved for genuine attention (needs-input / working).
-private struct PulseModifier: ViewModifier {
-    let halfDuration: Double
-    let minOpacity: Double
-    let minScale: Double
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var on = false
-    func body(content: Content) -> some View {
-        content
-            .opacity(reduceMotion ? 1 : (on ? 1 : minOpacity))
-            .scaleEffect(reduceMotion ? 1 : (on ? 1 : minScale))
-            .animation(reduceMotion ? nil : .easeInOut(duration: halfDuration).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = true }
-    }
-}
-
 extension View {
-    // attn-breathe: 2s cycle, opacity 1↔0.55 + scale 1↔0.9.
-    func attnBreathe() -> some View { modifier(PulseModifier(halfDuration: 1.0, minOpacity: 0.55, minScale: 0.9)) }
-
     /// Row hover + keyboard-selection chrome (working.html: hover 3.5%, sel 5% + ring).
     func rowChrome(hovering: Bool, selected: Bool) -> some View {
         background(

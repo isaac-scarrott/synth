@@ -631,17 +631,8 @@ private struct WorktreeSetupPane: View {
 /// The setup pane's centred arc spinner — the pending-row spinner (Sidebar) scaled up
 /// to carry the empty pane.
 private struct SetupSpinner: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var spinning = false
     var body: some View {
-        Circle()
-            .trim(from: 0.12, to: 1)
-            .stroke(Theme.inkFaint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .frame(width: 22, height: 22)
-            .rotationEffect(.degrees(spinning ? 360 : 0))
-            .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false),
-                       value: spinning)
-            .onAppear { spinning = true }
+        ArcSpinner(diameter: 22, lineWidth: 2).frame(width: 22, height: 22)
     }
 }
 

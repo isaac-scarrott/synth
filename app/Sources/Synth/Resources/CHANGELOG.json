@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.47.3",
+    "date": "2026-10-04",
+    "changes": [
+      "Fixes a crash after Synth had been open for a few days with agents running. The live indicator now holds still and the needs-input mark no longer pulses."
+    ]
+  },
+  {
     "version": "0.47.2",
     "date": "2026-10-02",
     "changes": [

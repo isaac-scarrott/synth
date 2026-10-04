@@ -2820,3 +2820,6 @@ disclosure to dive deeper.
   process-wide display-list counter until `FocusBridge` trapped at `UInt32.max` (~4.7 days with one
   live session). The sphere holds still, `?` stops breathing, spinners run on Core Animation.
   [Details](docs/features/2026-10-04.md)
+- **0.47.3 ships — Synth survives a long run** — `CFBundleVersion` 796, tag `v0.47.3`; notarized,
+  stapled, verified credential-less; appcast signed on all 18 enclosures.
+  [Details](docs/features/2026-10-04.md)

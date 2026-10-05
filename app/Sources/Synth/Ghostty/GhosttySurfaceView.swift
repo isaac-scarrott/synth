@@ -52,6 +52,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// notifications unregister from the right one.
     private var windowObservers: [(NotificationCenter, NSObjectProtocol)] = []
 
+    /// The appearance the surface was last themed for; nil until the first theme.
+    private var themedDark: Bool?
+
     /// Accumulates text produced by `interpretKeyEvents` during a keyDown so it can be
     /// attached to the ghostty key event (empty for control/navigation keys, which
     /// libghostty encodes itself from keycode+mods).
@@ -108,6 +111,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         // nothing changed.
         updateSurfaceSize()
         updateOcclusion()
+        // An appearance flip while detached was skipped, and joining a window that already
+        // matches sends no further callback — so catch up here.
+        applyTheme()
 
         // libghostty paces its renderer with a display link keyed to the display id, and
         // the window server purges Metal drawables while a window is occluded or its
@@ -328,9 +334,17 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
 
     /// Re-theme the surface to the view's current appearance (working.html's `--tui-*`,
     /// light "paper" vs dark card). Called on creation and whenever the appearance flips.
+    ///
+    /// Only in a window, and only when `dark` moved. AppKit re-sends
+    /// `viewDidChangeEffectiveAppearance` on every re-parent, and every pane switch re-parents a
+    /// cached view through a detached stretch where it inherits the app's (system) appearance, not
+    /// the window's pinned one. Theming there would rebuild the ghostty config and rewrite Claude
+    /// Code's theme file to the wrong half and back on every switch, inside the key's frame.
     private func applyTheme() {
-        guard let surface else { return }
+        guard let surface, window != nil else { return }
         let dark = TerminalTheme.isDark(effectiveAppearance)
+        guard dark != themedDark else { return }
+        themedDark = dark
         AgentTheme.sync(dark: dark)
         let config = TerminalTheme.makeConfig(dark: dark)
         ghostty_surface_update_config(surface, config)

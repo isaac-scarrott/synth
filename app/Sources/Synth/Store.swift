@@ -3301,7 +3301,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         // One card per agent per reading, led by its fullest window: a launch that finds three
         // windows already past a line says so once, not three times.
         var sub: [String] = []
-        if case .resets(let at) = lead.metric.detail { sub.append(UsageFormat.countdown(at.timeIntervalSinceNow)) }
+        if case .resets(let at) = lead.metric.detail { sub.append(UsageFormat.countdown(at.timeIntervalSinceNow).text) }
         if crossed.count > 1 { sub.append("+\(crossed.count - 1) more") }
 
         notifSeq += 1

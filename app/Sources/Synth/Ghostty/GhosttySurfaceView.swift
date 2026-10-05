@@ -52,6 +52,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// notifications unregister from the right one.
     private var windowObservers: [(NotificationCenter, NSObjectProtocol)] = []
 
+    /// Whether the renderer holds its swap chain; a new surface starts with one.
+    private var rendererRealized = true
+
     /// Accumulates text produced by `interpretKeyEvents` during a keyDown so it can be
     /// attached to the ghostty key event (empty for control/navigation keys, which
     /// libghostty encodes itself from keycode+mods).
@@ -98,7 +101,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         removeWindowObservers()
-        guard let window else { return }
+        guard let window else { updateOcclusion(); return }
         if surface == nil, startFailure == nil { createSurface() }
         updateDisplayID()
         // Re-stamp scale + size on every window join, not just creation: the observers
@@ -190,8 +193,21 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Mirror the window's occlusion into the renderer, forcing a full repaint on the
     /// occluded→visible edge: the window server may have purged the layer's drawables
     /// while hidden, and an idle shell produces no damage to trigger a redraw.
+    ///
+    /// Out of every window — a row you navigated away from, which TerminalManager keeps alive
+    /// so its shell survives — the surface is invisible and its renderer gives back its swap
+    /// chain, the window-sized IOSurfaces it draws into. The PTY, the terminal state and the
+    /// threads stay: the row is still running, nothing is drawing it. Without this every row
+    /// ever opened held about 60 MB of IOSurface, and kept rebuilding frames for its output,
+    /// for as long as it lived. The swap chain is rebuilt before the next window join paints.
     private func updateOcclusion() {
-        guard let surface, let window else { return }
+        guard let surface else { return }
+        guard let window else {
+            ghostty_surface_set_occlusion(surface, false)
+            setRendererRealized(false)
+            return
+        }
+        setRendererRealized(true)
         // A driven window is parked at alphaValue 0, and AppKit reports a fully transparent
         // window as occluded — so the renderer stops, the layer never gets content, and every
         // capture of a terminal comes back empty. `Automation.park`'s whole contract is
@@ -200,6 +216,15 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         let visible = window.occlusionState.contains(.visible) || Automation.isDriven
         ghostty_surface_set_occlusion(surface, visible)
         if visible { ghostty_surface_refresh(surface) }
+    }
+
+    /// libghostty takes realize/unrealize strictly alternating and drops the message rather
+    /// than block when its mailbox is full, so the mirror moves only when it was taken; a
+    /// dropped one is sent again on the next window join or occlusion change.
+    private func setRendererRealized(_ realized: Bool) {
+        guard let surface, rendererRealized != realized,
+              ghostty_surface_set_renderer_realized(surface, realized) else { return }
+        rendererRealized = realized
     }
 
     private func createSurface() {

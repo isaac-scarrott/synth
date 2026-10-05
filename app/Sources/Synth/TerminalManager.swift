@@ -15,6 +15,10 @@ import GhosttyKit
 /// `xec claude`. As an argument the line cannot be consumed by whatever the user's rc files do,
 /// on any shell.
 enum TerminalLauncher {
+    static func scriptPath(for pid: pid_t) -> String {
+        NSTemporaryDirectory() + "synth-login-\(pid).sh"
+    }
+
     /// Written on demand rather than once at startup: the per-user temp dir is swept of
     /// anything untouched for three days while the app is still running, and a Synth left up
     /// over a long weekend lost the wrapper under itself — every new row then exec'd a path
@@ -25,7 +29,7 @@ enum TerminalLauncher {
     /// `login` then reported as exit 0 and the app read as a clean quit. The row vanished.
     /// A path this function has no reason to believe in is not a path it may return.
     static func command() -> Fallible<String> {
-        let path = NSTemporaryDirectory() + "synth-login-\(getpid()).sh"
+        let path = scriptPath(for: getpid())
         if FileManager.default.isExecutableFile(atPath: path) { return .success(path) }
         let script = """
         #!/bin/sh

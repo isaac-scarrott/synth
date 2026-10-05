@@ -363,17 +363,21 @@ final class HookServer: @unchecked Sendable {
                      details: [.posixErrno(errno), .stage(.write)], evidence: why)
     }
 
-    /// Remove `/tmp` leftovers — shim dirs, hook sockets, login scripts, the per-session
-    /// workspaces `agy` is handed via `--add-dir` (`AntigravitySupervisor.root`) — keyed on a pid
-    /// that is no longer alive. Each Synth process names these `synth-*-<pid>`; a crash or
-    /// `SIGKILL` skips cleanup, so without this they pile up and stale shim dirs pollute the
-    /// PATH of any Synth launched from inside another Synth session.
-    private static func reapStale() {
-        let fm = FileManager.default
-        // Shim dirs + hook sockets are hardcoded under /tmp; login scripts under the
-        // per-user temp dir — sweep both.
-        for dir in Set(["/tmp/", NSTemporaryDirectory()]) {
-            guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { continue }
+    /// Remove leftovers — shim dirs, hook sockets, login scripts, the per-session workspaces
+    /// `agy` is handed via `--add-dir` (`AntigravitySupervisor.root`) — keyed on a pid that is no
+    /// longer alive. Each Synth process names these `synth-*-<pid>`; a crash or `SIGKILL` skips
+    /// cleanup, so without this they pile up and stale shim dirs pollute the PATH of any Synth
+    /// launched from inside another Synth session.
+    ///
+    /// Only `/tmp` is listed. The login script lives in the per-user temp dir, which every other
+    /// tool the user runs shares — thousands of entries, most of a second to list on a cold
+    /// cache, all to find one file per dead pid — so it is removed by name once its pid turns up
+    /// dead here. Off the main thread: nothing at launch reads what this removes.
+    private nonisolated static func reapStale() {
+        DispatchQueue.global(qos: .utility).async {
+            let fm = FileManager.default
+            guard let entries = try? fm.contentsOfDirectory(atPath: "/tmp") else { return }
+            var dead = Set<pid_t>()
             for name in entries {
                 let pid: String?
                 if name.hasPrefix("synth-shims-")        { pid = String(name.dropFirst("synth-shims-".count)) }
@@ -384,18 +388,18 @@ final class HookServer: @unchecked Sendable {
                     pid = String(name.dropFirst("synth-hook-".count).dropLast(".sock".count))
                 } else if name.hasPrefix("synth-ctl-"), name.hasSuffix(".sock") {
                     pid = String(name.dropFirst("synth-ctl-".count).dropLast(".sock".count))
-                } else if name.hasPrefix("synth-login-"), name.hasSuffix(".sh") {
-                    pid = String(name.dropFirst("synth-login-".count).dropLast(".sh".count))
                 } else { pid = nil }
-                guard let pid, let n = Int32(pid), n != getpid(), !isAlive(n) else { continue }
-                try? fm.removeItem(atPath: dir + name)
+                guard let pid, let n = pid_t(pid), n != getpid(), !isAlive(n) else { continue }
+                try? fm.removeItem(atPath: "/tmp/" + name)
+                dead.insert(n)
             }
+            for pid in dead { try? fm.removeItem(atPath: TerminalLauncher.scriptPath(for: pid)) }
         }
     }
 
     /// True when a process with `pid` still exists (`kill(pid, 0)`): 0 → alive, or EPERM
     /// (alive, not ours to signal). ESRCH means it's gone and its leftovers are reapable.
-    private static func isAlive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
+    private nonisolated static func isAlive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
 
     /// A synth-injected `$ZDOTDIR` from ANY instance (this one or an ancestor's), never the
     /// user's own — these are per-pid temp dirs that die with their instance.

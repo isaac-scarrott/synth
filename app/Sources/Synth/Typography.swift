@@ -50,7 +50,30 @@ enum Typography {
         return false
     }()
 
+    private struct Face: Hashable {
+        let family: String, size: CGFloat, weight: Double, tabular: Bool
+    }
+
+    /// Call sites build their font inside view bodies, so one keypress asks for the same few
+    /// dozen faces hundreds of times, and resolving one from a descriptor costs 40µs (150µs
+    /// tabular, which loads the feature table). A face is a pure function of its four inputs,
+    /// so each is built once. The cap is for the device frame, whose sizes follow a continuous
+    /// fit scale: every resize step would otherwise add faces for as long as the app runs.
+    private static var faces: [Face: NSFont] = [:]
+    private static let facesLock = NSLock()
+
     static func nsFont(_ family: String, _ size: CGFloat, _ weight: Double, tabular: Bool = false) -> NSFont {
+        let face = Face(family: family, size: size, weight: weight, tabular: tabular)
+        facesLock.lock()
+        defer { facesLock.unlock() }
+        if let font = faces[face] { return font }
+        if faces.count >= 256 { faces.removeAll(keepingCapacity: true) }
+        let font = makeFont(family, size, weight, tabular: tabular)
+        faces[face] = font
+        return font
+    }
+
+    private static func makeFont(_ family: String, _ size: CGFloat, _ weight: Double, tabular: Bool) -> NSFont {
         guard available else {
             let fallback: NSFont = family == monoFamily
                 ? .monospacedSystemFont(ofSize: size, weight: systemWeight(weight))

@@ -12,13 +12,6 @@ struct UsagePane: View {
     /// Shared, so stepping out to a session and back shows the last reading instead of asking
     /// every agent again — one of which takes seconds to answer.
     @State private var board = UsageBoard.shared
-    @State private var now = Date()
-
-    /// One clock for the whole pane. A timer per counting tile would let them drift apart, and a
-    /// board of a dozen windows would wake the app a dozen times a second to say the same thing.
-    /// Held in state because a stored publisher is rebuilt every time the parent's body runs, and
-    /// a countdown that restarts its second on every unrelated store change never finishes one.
-    @State private var clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,7 +26,6 @@ struct UsagePane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onReceive(clock) { now = $0 }
         .task { board.watch(true) }
         .onDisappear { board.watch(false) }
     }
@@ -64,8 +56,7 @@ struct UsagePane: View {
                 ForEach(band.rows) { row in
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(row.tiles) { tile in
-                            UsageTile(metric: tile.metric, index: tile.index, now: now,
-                                      unread: tile.unread)
+                            UsageTile(metric: tile.metric, index: tile.index, unread: tile.unread)
                                 .frame(maxHeight: .infinity)
                         }
                     }
@@ -167,7 +158,6 @@ struct UsagePane: View {
 private struct UsageTile: View {
     let metric: UsageMetric
     let index: Int
-    let now: Date
     /// The band's reader failed rather than answered. The only thing it changes is the colour of
     /// the line that says so — loud enough that the reader doesn't take the em-dash for a zero,
     /// quiet enough that a network blip doesn't dress the pane up as an incident.
@@ -189,12 +179,18 @@ private struct UsageTile: View {
                 if let percent = metric.percent {
                     UsageMeter(percent: percent, tileIndex: index)
                 }
+                switch metric.detail {
                 // A window the server reports with no reset time (a per-model cap nothing has been
                 // spent against yet) has nothing to say down here, and an empty line would leave
                 // the tile looking like it failed to load one.
-                if !detail.isEmpty {
-                    RollingNumber(text: detail, font: .mono(11), face: 11)
-                        .foregroundStyle(unread ? Theme.danger : Theme.inkMeta)
+                case .text(let text):
+                    if !text.isEmpty { detailLine(text) }
+                // The only line on the board that moves with the clock, so the only view that
+                // reads it.
+                case .resets(let deadline):
+                    TimelineView(CountdownSchedule(deadline: deadline)) { context in
+                        detailLine(UsageFormat.countdown(deadline.timeIntervalSince(context.date)).text)
+                    }
                 }
             }
         }
@@ -219,10 +215,27 @@ private struct UsageTile: View {
         .usageEntrance(index: index)
     }
 
-    private var detail: String {
-        switch metric.detail {
-        case .text(let text): return text
-        case .resets(let date): return UsageFormat.countdown(date.timeIntervalSince(now))
+    private func detailLine(_ text: String) -> some View {
+        RollingNumber(text: text, font: .mono(11), face: 11)
+            .foregroundStyle(unread ? Theme.danger : Theme.inkMeta)
+    }
+}
+
+/// The instants a countdown to `deadline` says something new, and no others: hourly while it
+/// reads in days, every minute in hours, every second in its last hour. A fixed one-second tick
+/// redrew the line sixty times for every minute it actually showed.
+private struct CountdownSchedule: TimelineSchedule {
+    let deadline: Date
+
+    func entries(from start: Date, mode: TimelineScheduleMode) -> UnfoldFirstSequence<Date> {
+        sequence(first: start) { date in
+            // The countdown truncates, so its text changes just past the boundary, not on it.
+            if let changesAt = UsageFormat.countdown(deadline.timeIntervalSince(date)).changesAt {
+                return deadline.addingTimeInterval(0.001 - changesAt)
+            }
+            // "resetting…" is final, but TimelineView never shows a finite schedule's last entry:
+            // one that never arrives keeps the reset from being it.
+            return date == .distantFuture ? nil : .distantFuture
         }
     }
 }

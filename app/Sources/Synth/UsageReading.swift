@@ -109,17 +109,23 @@ enum UsageFormat {
 
     /// Seconds appear only inside the last hour, where they're the part that's actually changing;
     /// above that they'd be noise on a number that moves once a minute.
-    static func countdown(_ remaining: TimeInterval) -> String {
-        guard remaining > 0 else { return "resetting…" }
+    ///
+    /// `changesAt` is the time remaining below which the text next differs. It is set by the
+    /// smallest unit on screen, so the branch that picks the unit also says how long it holds —
+    /// nil once it reads "resetting…", which nothing follows.
+    static func countdown(_ remaining: TimeInterval) -> (text: String, changesAt: TimeInterval?) {
+        guard remaining > 0 else { return ("resetting…", nil) }
         let total = Int(remaining)
         let days = total / 86_400
         let hours = (total % 86_400) / 3_600
         let minutes = (total % 3_600) / 60
         let seconds = total % 60
-        if days > 0 { return "resets in \(days)d \(hours)h" }
-        if hours > 0 { return "resets in \(hours)h \(minutes)m" }
-        if minutes > 0 { return "resets in \(minutes)m \(String(format: "%02d", seconds))s" }
-        return "resets in \(seconds)s"
+        let (text, unit) =
+            if days > 0 { ("resets in \(days)d \(hours)h", 3_600) }
+            else if hours > 0 { ("resets in \(hours)h \(minutes)m", 60) }
+            else if minutes > 0 { ("resets in \(minutes)m \(String(format: "%02d", seconds))s", 1) }
+            else { ("resets in \(seconds)s", 1) }
+        return (text, TimeInterval(total / unit * unit))
     }
 
     /// The detail line for a window that resets, or a blank one when the agent didn't say when.

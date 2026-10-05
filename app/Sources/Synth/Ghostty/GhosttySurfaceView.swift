@@ -98,7 +98,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         removeWindowObservers()
-        guard let window else { return }
+        guard let window else { updateOcclusion(); return }
         if surface == nil, startFailure == nil { createSurface() }
         updateDisplayID()
         // Re-stamp scale + size on every window join, not just creation: the observers
@@ -190,14 +190,18 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Mirror the window's occlusion into the renderer, forcing a full repaint on the
     /// occluded→visible edge: the window server may have purged the layer's drawables
     /// while hidden, and an idle shell produces no damage to trigger a redraw.
+    ///
+    /// No window counts as occluded. A pane switch detaches the cached view, and libghostty
+    /// keeps what it was last told: a switched-away terminal it still believes visible draws
+    /// a Metal frame, and ticks the main thread, for every burst of output nobody can see.
     private func updateOcclusion() {
-        guard let surface, let window else { return }
+        guard let surface else { return }
         // A driven window is parked at alphaValue 0, and AppKit reports a fully transparent
         // window as occluded — so the renderer stops, the layer never gets content, and every
         // capture of a terminal comes back empty. `Automation.park`'s whole contract is
         // "unseeable but still laid out and rendering", so under automation the renderer is
         // told what park means rather than what the window server sees.
-        let visible = window.occlusionState.contains(.visible) || Automation.isDriven
+        let visible = window.map { $0.occlusionState.contains(.visible) || Automation.isDriven } ?? false
         ghostty_surface_set_occlusion(surface, visible)
         if visible { ghostty_surface_refresh(surface) }
     }

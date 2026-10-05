@@ -201,15 +201,19 @@ struct RootView: View {
         @Bindable var store = store
         ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
-                if !store.sidebarCollapsed {
-                    Sidebar()
-                        .frame(width: store.sidebarWidth)
-                        .overlay(alignment: .trailing) { SidebarResizeHandle() }
-                        // Above ContentPane so the resize handle, which overhangs the
-                        // trailing edge onto the session card, still receives hits.
-                        .zIndex(1)
-                        .transition(.move(edge: .leading))
-                }
+                // Collapsing narrows the sidebar's slot to 0 and slides it out past the leading
+                // edge, as working.html animates its grid column to 0. Never unmount it: every
+                // reveal would rebuild the whole tree — hundreds of row bodies — on the frames
+                // of the animation that slides it in.
+                Sidebar()
+                    .frame(width: store.sidebarWidth)
+                    .overlay(alignment: .trailing) { SidebarResizeHandle() }
+                    .frame(width: store.sidebarCollapsed ? 0 : store.sidebarWidth, alignment: .trailing)
+                    .allowsHitTesting(!store.sidebarCollapsed)
+                    .accessibilityHidden(store.sidebarCollapsed)
+                    // Above ContentPane so the resize handle, which overhangs the
+                    // trailing edge onto the session card, still receives hits.
+                    .zIndex(1)
                 ContentPane()
             }
             .background(Theme.windowCoat)

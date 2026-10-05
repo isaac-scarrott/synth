@@ -100,10 +100,10 @@ enum AgentTheme {
 
     /// Point Claude Code at the light or dark half of Synth's own theme.
     ///
-    /// Both writes are conditional on the content actually changing. Appearance flips are rare and
-    /// surface re-themes are not — `applyTheme` runs on every window move between displays — and
-    /// each needless write to `~/.claude.json` is a chance to land on top of the agent's own save,
-    /// while each needless write to the theme file wakes every running session's watcher.
+    /// Both writes are conditional on the content actually changing. Appearance flips are rare, but
+    /// every new surface and every on-screen surface on a flip calls this — and each needless write
+    /// to `~/.claude.json` is a chance to land on top of the agent's own save, while each needless
+    /// write to the theme file wakes every running session's watcher.
     static func sync(dark: Bool, home: URL = defaultHome()) {
         // opencode rides along here, but only for the ergonomics of one call site: its theme file
         // carries both halves and opencode picks between them itself, so it has nothing to do with

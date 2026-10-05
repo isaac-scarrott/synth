@@ -27,13 +27,17 @@ struct Sidebar: View {
         if store.workspaces.isEmpty {
             EmptySidebarHint()
         } else {
+            let here = Here(cursor: store.keyboardActive ? store.navCursor : nil,
+                            openSession: store.openSessionID,
+                            openBranch: store.openSessionBranchID,
+                            setupBranch: store.openSetupBranchID)
             ScrollViewReader { proxy in
                 ScrollView {
                     // Projects chunk by air, not indent — a project name sits only 4px left of
                     // the branch names under it, so without the gap the two tiers read as peers
                     // (working.html `.nav > .repo { margin-bottom: 10px }` over its 6px group tail).
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        ForEach(store.workspaces) { WorkspaceRow(workspace: $0) }
+                        ForEach(store.workspaces) { WorkspaceRow(workspace: $0, here: here.within($0)) }
                     }
                     // 10pt side gutter floats the row pills off the edge; rows are full-width so
                     // the hover band spans the sidebar, with depth as per-row leading padding.
@@ -243,23 +247,54 @@ private struct RoutineMarkGlyph: View {
     }
 }
 
+/// Where you are, as one subtree of the sidebar sees it: the lit keyboard cursor, the open session
+/// and the branch holding it, and the branch whose setup skeleton is showing — each nil unless it
+/// lies inside that subtree. The tree reads them from the store once and each tier hands its
+/// children only their share, so a cursor move or a tab switch changes the inputs of the rows it
+/// enters or leaves and no others. Rows that read them from the store re-evaluated on every
+/// switch, every one the lazy stack had built.
+private struct Here: Equatable {
+    var cursor: UUID?
+    var openSession: UUID?
+    var openBranch: UUID?
+    var setupBranch: UUID?
+
+    func within(_ ws: Workspace) -> Here {
+        func holds(_ id: UUID?) -> Bool { id.map { id in ws.branches.contains { $0.id == id } } ?? false }
+        let cursorInside = cursor.map { c in
+            c == ws.id || ws.branches.contains { $0.id == c || $0.sessions.contains { $0.id == c } }
+        } ?? false
+        let openInside = holds(openBranch)
+        return Here(cursor: cursorInside ? cursor : nil,
+                    openSession: openInside ? openSession : nil,
+                    openBranch: openInside ? openBranch : nil,
+                    setupBranch: holds(setupBranch) ? setupBranch : nil)
+    }
+
+    func within(_ br: Branch) -> Here {
+        let cursorInside = cursor.map { c in c == br.id || br.sessions.contains { $0.id == c } } ?? false
+        let openInside = openBranch == br.id
+        return Here(cursor: cursorInside ? cursor : nil,
+                    openSession: openInside ? openSession : nil,
+                    openBranch: openInside ? openBranch : nil,
+                    setupBranch: setupBranch == br.id ? setupBranch : nil)
+    }
+}
+
 // MARK: - Workspace (tier 1)
 
 private struct WorkspaceRow: View {
     @Environment(AppStore.self) private var store
     let workspace: Workspace
+    let here: Here
     @State private var hovering = false
 
     private var isOpen: Bool { store.expanded.contains(workspace.id) }
-    private var selected: Bool { store.keyboardActive && store.navCursor == workspace.id }
+    private var selected: Bool { here.cursor == workspace.id }
     private var renaming: Bool { store.renamingRowID == workspace.id }
     /// Focus peek: while collapsed, the branch holding the open session still shows —
     /// just that branch, nothing else (working.html `.collapse:has(.session--open)`).
-    private var peekBranchID: UUID? {
-        guard !isOpen, let open = store.openSession, let br = store.branch(of: open),
-              store.workspace(of: br)?.id == workspace.id else { return nil }
-        return br.id
-    }
+    private var peekBranchID: UUID? { isOpen ? nil : here.openBranch }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -313,13 +348,9 @@ private struct WorkspaceRow: View {
                     } else {
                         // Peeking a collapsed workspace shows only the branch that holds the
                         // open session; expanded, every branch shows.
-                        // `selected` computed here, passed as a plain value: a cursor move
-                        // then re-evaluates only the two rows whose value flipped, not every
-                        // row body in the tree (hundreds, at scale).
                         ForEach(peekBranchID.map { id in workspace.liveBranches.filter { $0.id == id } }
                                 ?? workspace.liveBranches) {
-                            BranchRow(branch: $0, workspace: workspace,
-                                      selected: store.keyboardActive && store.navCursor == $0.id)
+                            BranchRow(branch: $0, workspace: workspace, here: here.within($0))
                         }
                     }
                 }
@@ -351,10 +382,11 @@ private struct BranchRow: View {
     @Environment(BranchHoverCardModel.self) private var hoverCard
     let branch: Branch
     let workspace: Workspace
-    /// Computed by the parent (see WorkspaceRow) so cursor moves don't touch this body.
-    let selected: Bool
+    let here: Here
     @State private var hovering = false
 
+    private var selected: Bool { here.cursor == branch.id }
+    private var holdsOpenSession: Bool { here.openBranch == branch.id }
     private var isOpen: Bool { store.expanded.contains(branch.id) }
     /// Tabs mode answers this hover with the card, and the card deliberately does not repeat the
     /// branch name — the row under the pointer is already showing it. A tooltip arriving a second
@@ -370,16 +402,16 @@ private struct BranchRow: View {
         // Tabs: the 2-deep sidebar never shows a session row below the branch, so there is
         // nothing to peek — the branch carries the pill itself (see isActivePill).
         if store.tabsMode { return false }
-        return !isOpen && store.openSession.map { store.branch(of: $0)?.id == branch.id } == true
+        return !isOpen && holdsOpenSession
     }
     private var isActivePill: Bool {
         // Its own setup skeleton is what the content pane is showing — highlight the row
         // so the still-grayed pending pill still reads as "this is the one you're on".
-        if store.openSetupBranchID == branch.id { return true }
+        if here.setupBranch == branch.id { return true }
         // The branch containing the open session carries the active-name colour whenever
         // it's collapsed; the white header pill on top of that is gated separately (see
         // activePillBackground) so a peeked session doesn't double-encode.
-        guard let open = store.openSession, store.branch(of: open)?.id == branch.id else { return false }
+        guard holdsOpenSession else { return false }
         // Tabs: the branch is the deepest row and its sessions never show below it, so it is
         // the only "you are here" — it carries the pill even while nominally expanded.
         if store.tabsMode { return true }
@@ -389,10 +421,7 @@ private struct BranchRow: View {
     /// here" (working.html `.branch--active`, applied by derivePill). Only the pill background
     /// is gated on visibility (see activePillBackground); the name is not, so the branch you're
     /// checked out on never renders identical to the ones around it.
-    private var isActiveBranch: Bool {
-        if store.openSetupBranchID == branch.id { return true }
-        return store.openSession.map { store.branch(of: $0)?.id == branch.id } == true
-    }
+    private var isActiveBranch: Bool { here.setupBranch == branch.id || holdsOpenSession }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -481,30 +510,7 @@ private struct BranchRow: View {
             // now (working.html hides `.nav .session` and `.session-group`). Keep the disclosure
             // shut so nothing renders below the branch.
             Reveal(open: !store.tabsMode && (isOpen || peeking)) {
-                VStack(alignment: .leading, spacing: 1) {
-                    if branch.sessions.isEmpty {
-                        EmptyGroupHint(text: "No sessions yet", leading: 61)
-                    } else if peeking {
-                        // Peeking a collapsed group shows only the open session.
-                        ForEach(branch.sessions.filter { $0.id == store.openSessionID }) {
-                            SessionRow(session: $0,
-                                       selected: store.keyboardActive && store.navCursor == $0.id)
-                        }
-                    } else {
-                        // Expanded: the branch's split (012) pulls its member rows into a bare
-                        // horizontal band of tiles — reading order, membership only — placed where
-                        // the first member lived; everything else stays a full-width row.
-                        ForEach(sessionItems) { item in
-                            switch item {
-                            case let .row(s):
-                                SessionRow(session: s,
-                                           selected: store.keyboardActive && store.navCursor == s.id)
-                            case let .band(members):
-                                SessionEchoBand(members: members)
-                            }
-                        }
-                    }
-                }
+                SessionList(branch: branch, peeking: peeking, here: here)
             }
         }
         .reorderLift(.branch(branch))
@@ -564,7 +570,7 @@ private struct BranchRow: View {
     }
 
     private var tabsBranchFacts: some View {
-        TimelineView(.periodic(from: Date(), by: 60)) { ctx in
+        TimelineView(.everyMinute) { ctx in
             Text(factsLabel(now: ctx.date))
                 .font(.sans(11, 500, tabular: true))
                 .foregroundStyle(Theme.inkMeta)
@@ -602,6 +608,55 @@ private struct BranchRow: View {
         return "\(sessions) · \(activity.isEmpty ? "now" : activity)"
     }
 
+    // The pill shows only when the active group's open session isn't visible below it: an
+    // expanded group (isActivePill already false) and a collapsed group peeking that one
+    // session both let the session carry the focus, so the pill would double-encode and read
+    // as a stuck hover. Only a group with nothing to peek (a pending setup) keeps it. Mirrors
+    // working.html dropping the pill for `.repo--open` and `.repo:not(.repo--open):has(.session--open)`.
+    @ViewBuilder private var activePillBackground: some View {
+        if isActivePill && !peeking {
+            RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border, lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
+        }
+    }
+}
+
+/// A branch's session rows, its own view so only a mounted list reads what they need: the
+/// split echo looks up the current branch, and a list that is never shown (every branch in
+/// tabs mode, a collapsed one in classic) must not re-run its branch row on every branch switch.
+private struct SessionList: View {
+    @Environment(AppStore.self) private var store
+    let branch: Branch
+    let peeking: Bool
+    let here: Here
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            if branch.sessions.isEmpty {
+                EmptyGroupHint(text: "No sessions yet", leading: 61)
+            } else if peeking {
+                // Peeking a collapsed group shows only the open session.
+                ForEach(branch.sessions.filter { $0.id == here.openSession }) {
+                    SessionRow(session: $0, selected: here.cursor == $0.id, isOpen: true)
+                }
+            } else {
+                // Expanded: the branch's split (012) pulls its member rows into a bare
+                // horizontal band of tiles — reading order, membership only — placed where
+                // the first member lived; everything else stays a full-width row.
+                ForEach(sessionItems) { item in
+                    switch item {
+                    case let .row(s):
+                        SessionRow(session: s, selected: here.cursor == s.id,
+                                   isOpen: here.openSession == s.id)
+                    case let .band(members):
+                        SessionEchoBand(members: members, here: here)
+                    }
+                }
+            }
+        }
+    }
+
     /// The expanded session list, with the branch's split members folded into one band placed
     /// where the first member (in branch order) lived — the on-screen split for the current
     /// branch, the remembered layout for any other, so the band survives switching branches /
@@ -625,19 +680,6 @@ private struct BranchRow: View {
         }
         return out
     }
-
-    // The pill shows only when the active group's open session isn't visible below it: an
-    // expanded group (isActivePill already false) and a collapsed group peeking that one
-    // session both let the session carry the focus, so the pill would double-encode and read
-    // as a stuck hover. Only a group with nothing to peek (a pending setup) keeps it. Mirrors
-    // working.html dropping the pill for `.repo--open` and `.repo:not(.repo--open):has(.session--open)`.
-    @ViewBuilder private var activePillBackground: some View {
-        if isActivePill && !peeking {
-            RoundedRectangle(cornerRadius: 8).fill(Theme.raised)
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border, lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
-        }
-    }
 }
 
 // MARK: - Session (tier 3)
@@ -646,13 +688,14 @@ private struct SessionRow: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: Session
-    /// Computed by the parent (see BranchRow) so cursor moves don't touch this body.
+    /// Both from the parent's `Here` (see BranchRow), so a cursor move or a switch re-evaluates
+    /// only the rows whose answer flipped.
     let selected: Bool
+    let isOpen: Bool
     @State private var hovering = false
     // Ambient "done" wash: a background session settling to idle sweeps a soft highlight once
     // (working.html `session--pulse`). Bumping the store token starts a single 900ms fade.
     @State private var pulse = false
-    private var isOpen: Bool { store.openSessionID == session.id }
     private var renaming: Bool { store.renamingRowID == session.id }
 
     private var nameColor: Color {
@@ -793,10 +836,12 @@ private enum SessionListItem: Identifiable {
 /// overflows its single row; hover restores the name.
 private struct SessionEchoBand: View {
     let members: [Session]
+    let here: Here
     var body: some View {
         HStack(spacing: 3) {
             ForEach(members) { s in
-                SessionTile(session: s, minimizeWhenIdle: members.count > 3)
+                SessionTile(session: s, selected: here.cursor == s.id, isOpen: here.openSession == s.id,
+                            minimizeWhenIdle: members.count > 3)
             }
         }
         .padding(.leading, 55).padding(.trailing, 6).padding(.vertical, 1)
@@ -809,11 +854,11 @@ private struct SessionEchoBand: View {
 private struct SessionTile: View {
     @Environment(AppStore.self) private var store
     let session: Session
+    let selected: Bool
+    let isOpen: Bool
     let minimizeWhenIdle: Bool
     @State private var hovering = false
 
-    private var isOpen: Bool { store.openSessionID == session.id }
-    private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
     private var showName: Bool { !minimizeWhenIdle || isOpen || hovering }
 
     var body: some View {
@@ -1115,7 +1160,7 @@ private struct BranchRollup: View {
                 Ind { UnreadDot() }.accessibilityLabel("Unread output")
             } else if showsActivity && (branch.lastActivityAt != nil || !branch.lastActivity.isEmpty) {
                 // Relative age, re-rendered each minute so it decays live ("now" → "5m" → "2h").
-                TimelineView(.periodic(from: Date(), by: 60)) { ctx in
+                TimelineView(.everyMinute) { ctx in
                     Text(branch.activityLabel(now: ctx.date))
                         .font(.sans(11, 500, tabular: true)).foregroundStyle(Theme.branchMeta)
                 }

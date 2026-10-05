@@ -201,11 +201,13 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// while hidden, and an idle shell produces no damage to trigger a redraw.
     ///
     /// Out of every window — a row you navigated away from, which TerminalManager keeps alive
-    /// so its shell survives — the surface is invisible and its renderer gives back its swap
+    /// so its shell survives — the surface is occluded and its renderer gives back its swap
     /// chain, the window-sized IOSurfaces it draws into. The PTY, the terminal state and the
-    /// threads stay: the row is still running, nothing is drawing it. Without this every row
-    /// ever opened held about 60 MB of IOSurface, and kept rebuilding frames for its output,
-    /// for as long as it lived. The swap chain is rebuilt before the next window join paints.
+    /// threads stay: the row is still running, nothing is drawing it. libghostty keeps what it
+    /// was last told, so a switched-away terminal it still believed visible drew a Metal frame,
+    /// and ticked the main thread, for every burst of output nobody could see, and every row
+    /// ever opened held about 60 MB of IOSurface for as long as it lived. The swap chain is
+    /// rebuilt before the next window join paints.
     private func updateOcclusion() {
         guard let surface else { return }
         guard let window else {

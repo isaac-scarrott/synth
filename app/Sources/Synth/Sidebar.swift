@@ -342,7 +342,9 @@ private struct WorkspaceRow: View {
             .onSecondaryClick { store.openRowActions(.workspace(workspace)) }
 
             Reveal(open: isOpen || peekBranchID != nil) {
-                VStack(alignment: .leading, spacing: 1) {
+                // Lazy too: the tree's LazyVStack only skips whole workspaces, so a plain stack
+                // here builds and lays out every branch of an open project before the first frame.
+                LazyVStack(alignment: .leading, spacing: 1) {
                     if workspace.liveBranches.isEmpty {
                         EmptyGroupHint(text: "No branches yet", leading: 37)
                     } else {
@@ -632,7 +634,7 @@ private struct SessionList: View {
     let here: Here
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        LazyVStack(alignment: .leading, spacing: 1) {
             if branch.sessions.isEmpty {
                 EmptyGroupHint(text: "No sessions yet", leading: 61)
             } else if peeking {
@@ -1791,7 +1793,11 @@ struct Reveal<Content: View>: View {
     let open: Bool
     @ViewBuilder var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var natural: CGFloat = 0
+    /// nil = no height imposed, the content's own. A group already open when it appears (launch,
+    /// or scrolled into the lazy tree) starts there: measured from 0, every open group would lay
+    /// out as a bare header on the first pass, and the LazyVStack would build all of them to fill
+    /// the viewport.
+    @State private var natural: CGFloat?
     @State private var present: Bool
     /// Generation stamp for the deferred unmount: any open-state flip after the close
     /// invalidates the pending unmount (a quick reopen must not tear content down).
@@ -1801,6 +1807,7 @@ struct Reveal<Content: View>: View {
         self.open = open
         self.content = content()
         _present = State(initialValue: open)
+        _natural = State(initialValue: open ? nil : 0)
     }
 
     var body: some View {

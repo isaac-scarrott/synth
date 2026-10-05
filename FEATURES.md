@@ -2823,3 +2823,22 @@ disclosure to dive deeper.
 - **0.47.3 ships — Synth survives a long run** — `CFBundleVersion` 796, tag `v0.47.3`; notarized,
   stapled, verified credential-less; appcast signed on all 18 enclosures.
   [Details](docs/features/2026-10-04.md)
+
+## [2026-10-05](docs/features/2026-10-05.md)
+
+- **⌘B reveals the sidebar without rebuilding it** — the sidebar stays mounted and collapses to a
+  0-width slot; reveal went from 160-400ms to 9-15ms. [Details](docs/features/2026-10-05.md)
+- **Re-hosting a terminal no longer re-themes it** — themes only in a window and only when `dark`
+  changes; ~108ms of main thread per navigation run to zero. [Details](docs/features/2026-10-05.md)
+- **Hidden terminals give back their renderer's GPU memory** — out of every window the renderer is
+  unrealized; 12 rows 751 MB to 62.6 MB IOSurface. [Details](docs/features/2026-10-05.md)
+- **Switched-away terminals stop drawing** — no window means occluded; 3 hidden printers 11.7% to
+  0.4% CPU. [Details](docs/features/2026-10-05.md)
+- **Launch no longer lists all of $TMPDIR** — stale login scripts found from `/tmp` pids, off main;
+  `HookEnvironment.setup` 821.8ms cold to 1.4-5ms. [Details](docs/features/2026-10-05.md)
+- **The Usage pane redraws a countdown only when its text changes** — per-line `TimelineView`
+  instead of a pane-wide 1s timer; 259 to 131 renders/s. [Details](docs/features/2026-10-05.md)
+- **⌘K and ⌘W no longer re-render every sidebar row** — dead `activeMenu` state removed; ⌘K bodies
+  101 to 19. [Details](docs/features/2026-10-05.md)
+- **Each Geist face is built once** — `Typography.nsFont` caches faces (capped).
+  [Details](docs/features/2026-10-05.md)

@@ -194,7 +194,7 @@ struct RootView: View {
     /// answering a question nobody asked. Usage is the same kind of full-pane takeover.
     private var hoverCardBlocked: Bool {
         !store.tabsMode || store.draggingRowID != nil || store.renamingRowID != nil
-            || store.activeMenu != nil || store.settingsOpen || store.usageOpen || store.routinesOpen
+            || store.settingsOpen || store.usageOpen || store.routinesOpen
     }
 
     var body: some View {
@@ -272,16 +272,6 @@ struct RootView: View {
                 ModalBackdrop(onDismiss: { store.creatingWorktreeIn = nil }) {
                     CreateWorktreeSheet(workspace: ws, onClose: { store.creatingWorktreeIn = nil })
                         .environment(store)
-                }
-            }
-        }
-        .overlayPreferenceValue(MenuAnchorKey.self) { anchors in
-            GeometryReader { proxy in
-                if let m = store.activeMenu, let anchor = anchors[m.rowID] {
-                    MenuOverlay(menu: m, kebabRect: proxy[anchor], container: proxy.size) {
-                        store.activeMenu = nil
-                    }
-                    .environment(store)
                 }
             }
         }
@@ -454,7 +444,6 @@ struct RootView: View {
             // ⌘⇧F opens the feedback sheet from anywhere — even over the terminal (like ⌘K).
             if key == "f", event.modifierFlags.contains(.command), event.modifierFlags.contains(.shift) {
                 if store.palette != nil { store.closePalette() }
-                store.activeMenu = nil
                 store.feedbackOpen = true
                 return nil
             }
@@ -490,7 +479,6 @@ struct RootView: View {
                 if store.shortcutsOpen { store.shortcutsOpen = false }
                 else {
                     if store.palette != nil { store.closePalette() }
-                    store.activeMenu = nil
                     store.shortcutsCategory = 0
                     store.shortcutsOpen = true
                 }
@@ -619,14 +607,6 @@ struct RootView: View {
                 }
             }
 
-            if let menu = store.activeMenu {
-                if event.keyCode == 53 { store.activeMenu = nil; return nil }   // Esc closes menu
-                // ↵ commits the removal while the menu is showing its delete confirm.
-                if (event.keyCode == 36 || event.keyCode == 76), store.menuConfirming {
-                    menu.onDelete(); store.activeMenu = nil; return nil
-                }
-                return event
-            }
             // Esc answers the page's question, ahead of everything else: a page holding on a
             // dialog is the most modal thing on screen, and Esc is the safe direction — it
             // cancels, and never proceeds past a certificate or grants a camera. Accepting

@@ -252,8 +252,6 @@ private struct WorkspaceRow: View {
 
     private var isOpen: Bool { store.expanded.contains(workspace.id) }
     private var selected: Bool { store.keyboardActive && store.navCursor == workspace.id }
-    private var menuOpen: Bool { store.activeMenu?.rowID == workspace.id }
-    private var revealed: Bool { hovering || menuOpen }
     private var renaming: Bool { store.renamingRowID == workspace.id }
     /// Focus peek: while collapsed, the branch holding the open session still shows —
     /// just that branch, nothing else (working.html `.collapse:has(.session--open)`).
@@ -288,16 +286,16 @@ private struct WorkspaceRow: View {
                                 .font(.sans(13, 600))
                                 .foregroundStyle(Theme.repoName)
                             Spacer(minLength: 4)
-                            trailing.opacity(revealed ? 0 : 1)
+                            trailing.opacity(hovering ? 0 : 1)
                         }
                         .padding(.horizontal, 6).padding(.vertical, 6)
-                        .rowContentFade(revealed)
+                        .rowContentFade(hovering)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(RowButtonStyle())
 
                     RowActions(ref: .workspace(workspace))
-                        .opacity(revealed ? 1 : 0)
+                        .opacity(hovering ? 1 : 0)
                         .padding(.trailing, 2)
                 }
             }
@@ -358,7 +356,6 @@ private struct BranchRow: View {
     @State private var hovering = false
 
     private var isOpen: Bool { store.expanded.contains(branch.id) }
-    private var revealed: Bool { hovering || store.activeMenu?.rowID == branch.id }
     /// Tabs mode answers this hover with the card, and the card deliberately does not repeat the
     /// branch name — the row under the pointer is already showing it. A tooltip arriving a second
     /// later to say it anyway would be two surfaces for one hover, the second one redundant.
@@ -440,14 +437,14 @@ private struct BranchRow: View {
                         // The worktree is still materialising — the row is present but not
                         // yet actionable, and reads that way (grayed + spinner).
                         .opacity(branch.isPending ? 0.5 : 1)
-                        .rowContentFade(revealed)
+                        .rowContentFade(hovering)
                         .background(activePillBackground)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(RowButtonStyle())
 
                     RowActions(ref: .branch(branch))
-                        .opacity(revealed ? 1 : 0)
+                        .opacity(hovering ? 1 : 0)
                         .padding(.trailing, 2)
                 }
             }
@@ -553,7 +550,7 @@ private struct BranchRow: View {
                 if branch.isPending {
                     Ind { PendingSpinner() }
                 } else {
-                    BranchRollup(branch: branch, collapsed: !isOpen).opacity(revealed ? 0 : 1)
+                    BranchRollup(branch: branch, collapsed: !isOpen).opacity(hovering ? 0 : 1)
                 }
             }
             // Full-width row: 37pt leading holds the branch content at its indent
@@ -594,8 +591,8 @@ private struct BranchRow: View {
                 }
             }
         }
-        .opacity(revealed ? 0 : 1)
-        .animation(.easeOut(duration: 0.12), value: revealed)
+        .opacity(hovering ? 0 : 1)
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
     private func factsLabel(now: Date) -> String {
@@ -655,7 +652,6 @@ private struct SessionRow: View {
     // Ambient "done" wash: a background session settling to idle sweeps a soft highlight once
     // (working.html `session--pulse`). Bumping the store token starts a single 900ms fade.
     @State private var pulse = false
-    private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
     private var isOpen: Bool { store.openSessionID == session.id }
     private var renaming: Bool { store.renamingRowID == session.id }
 
@@ -715,10 +711,10 @@ private struct SessionRow: View {
                                 StatusIndicator(status: session.status)
                             }
                         }
-                        .opacity(revealed ? 0 : 1)
+                        .opacity(hovering ? 0 : 1)
                     }
                     .padding(.leading, 61).padding(.trailing, 6).frame(minHeight: 30)
-                    .rowContentFade(revealed)
+                    .rowContentFade(hovering)
                     // The open session's sticky tint (working.html .session--open), deepening
                     // on hover like every other accent wash.
                     .background(
@@ -742,7 +738,7 @@ private struct SessionRow: View {
                 }
 
                 RowActions(ref: .session(session))
-                    .opacity(revealed ? 1 : 0)
+                    .opacity(hovering ? 1 : 0)
                     .padding(.trailing, 2)
             }
         }
@@ -818,9 +814,7 @@ private struct SessionTile: View {
 
     private var isOpen: Bool { store.openSessionID == session.id }
     private var selected: Bool { store.keyboardActive && store.navCursor == session.id }
-    // Show the kebab (and hence the name) whenever this tile is hovered or its menu is open.
-    private var revealed: Bool { hovering || store.activeMenu?.rowID == session.id }
-    private var showName: Bool { !minimizeWhenIdle || isOpen || revealed }
+    private var showName: Bool { !minimizeWhenIdle || isOpen || hovering }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -834,7 +828,7 @@ private struct SessionTile: View {
                             .lineLimit(1).truncationMode(.tail)
                     }
                     // Reserve room for the action cluster so the name never sits under it.
-                    if revealed { Spacer(minLength: 46) }
+                    if hovering { Spacer(minLength: 46) }
                 }
                 .padding(.horizontal, 7).padding(.vertical, 6)
                 .frame(maxWidth: showName ? .infinity : nil, alignment: .leading)
@@ -850,7 +844,7 @@ private struct SessionTile: View {
             .buttonStyle(.plain)
             // The action cluster — hover-revealed like a session row's: close, and ⋯ for the
             // drilled ⌘K actions (Unsplit / Close …). A tile IS a session row (012).
-            if revealed {
+            if hovering {
                 RowActions(ref: .session(session)).padding(.trailing, 3)
             }
         }
@@ -895,8 +889,7 @@ private struct RowActions: View {
                 RowActionButton(ref: ref, glyph: Phosphor.close, size: 14, help: "Close",
                                 danger: true) { store.requestDelete(ref) }
                 RowActionButton(ref: ref, glyph: Phosphor.dots, size: 16, help: "Actions") {
-                    // ⋯ opens the ⌘K palette drilled to this row (working.html openRowActions),
-                    // not the hover popover. The popover stays for the `d` quick-delete keybinding.
+                    // ⋯ opens the ⌘K palette drilled to this row (working.html openRowActions).
                     store.openRowActions(ref)
                 }
             case .workspace:
@@ -913,7 +906,6 @@ private struct RowActions: View {
                 }
             }
         }
-        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { [id = ref.id] anchor in [id: anchor] }
     }
 }
 
@@ -926,7 +918,6 @@ private struct RowActionButton: View {
     var danger = false
     let action: () -> Void
 
-    private var menuOpen: Bool { store.activeMenu?.rowID == ref.id }
     @State private var hovering = false
 
     var body: some View {
@@ -937,7 +928,7 @@ private struct RowActionButton: View {
                 .foregroundStyle(hovering ? (danger ? Theme.danger : Theme.ink2) : Theme.inkMeta)
                 .frame(width: 22, height: 22)
                 .background(RoundedRectangle(cornerRadius: 7)
-                    .fill(hovering || (menuOpen && !danger) ? Theme.rowSelected : .clear))
+                    .fill(hovering ? Theme.rowSelected : .clear))
                 .contentShape(Rectangle())
         }
         .onHover { hovering = $0 }

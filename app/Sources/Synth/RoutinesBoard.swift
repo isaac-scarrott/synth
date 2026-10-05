@@ -186,7 +186,6 @@ extension AppStore {
     }
 
     func enterRoutines(_ id: UUID? = nil) {
-        activeMenu = nil
         closePalette()
         shortcutsOpen = false
         sidebarCollapsed = false

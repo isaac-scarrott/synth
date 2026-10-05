@@ -133,8 +133,7 @@ final class BranchHoverCardModel {
 }
 
 /// The branch rows publish their bounds; the root overlay reads the hovered one's to place the
-/// card. Its own key rather than `MenuAnchorKey` — that one belongs to the kebab cluster, and a
-/// shared dictionary would have the two surfaces racing to describe different rectangles.
+/// card.
 struct BranchHoverAnchorKey: PreferenceKey {
     static let defaultValue: [UUID: Anchor<CGRect>] = [:]
     static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {

@@ -1152,7 +1152,6 @@ extension AppStore {
     func requestDeleteArchivedWorktree(_ branch: Branch) {
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
-        activeMenu = nil
         pal.stack = [pal.rootFrame()]
         pal.push(pal.confirmDeleteWorktree(branch))
     }

@@ -2842,3 +2842,5 @@ disclosure to dive deeper.
   101 to 19. [Details](docs/features/2026-10-05.md)
 - **Each Geist face is built once** — `Typography.nsFont` caches faces (capped).
   [Details](docs/features/2026-10-05.md)
+- **The autosave tick checks the worktree list before canonicalizing it**: an unchanged tick at 800
+  worktrees goes from ~30ms to 0.014ms. [Details](docs/features/2026-10-05.md)

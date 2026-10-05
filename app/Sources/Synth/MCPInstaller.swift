@@ -152,10 +152,10 @@ import os.log
     /// decides what the next agent launch in each worktree is handed (`launchEnv`), and sweeps
     /// up the config files older builds left in the tree.
     static func updateLaunchConfig(worktrees: [String], servers: [String: Bool]) {
-        enabledServers = servers
-        liveWorktrees = Set(worktrees.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
         guard lastSynced == nil || lastSynced! != (worktrees, servers) else { return }
         lastSynced = (worktrees, servers)
+        enabledServers = servers
+        liveWorktrees = Set(worktrees.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
         for path in worktrees { removeStrandedConfigs(in: path) }
     }
 

@@ -22,6 +22,9 @@ import Foundation
     private let createdAt = ISO8601DateFormatter().string(from: Date())
     private var cdpPort: UInt16 = 0
     private var worktreePaths: [String] = []
+    /// What `worktreePaths` was canonicalized from. Canonicalizing is a filesystem walk per path,
+    /// so the autosave cadence compares this instead.
+    private var rawWorktreePaths: [String] = []
     private var started = false
     /// False until ControlServer has actually bound. The path is derived from the pid, so it
     /// could always be written — and was, which meant a failed bind still advertised a socket
@@ -59,6 +62,8 @@ import Foundation
     /// realpath($CLAUDE_PROJECT_DIR) comparison holds. Skips the rewrite when unchanged
     /// (called on the autosave cadence).
     func update(worktreePaths raw: [String]) {
+        guard raw != rawWorktreePaths else { return }
+        rawWorktreePaths = raw
         let canonical = raw.map {
             URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path
         }

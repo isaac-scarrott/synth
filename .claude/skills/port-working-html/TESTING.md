@@ -51,7 +51,7 @@ K 36 '[]' $'\r'      # Return   (53 Esc, 49 Space, 51 Delete)
 Type a string by sending its characters in turn (`keyCode` + `chars`), the way the gates do. Mouse
 clicks have nowhere to land — drive the keyboard-first UI (global nav, ⌘K palette, sheets) by keys.
 The hover-reveal kebab is `pointer-events:none` until hovered, which no synthetic click reproduces;
-to verify a hover/menu-only state, set the store state in code (e.g. `activeMenu = …`), screenshot,
+to verify a hover-only state, set the store state in code (e.g. `renamingRowID = …`), screenshot,
 then revert.
 
 ## Headless driving over the control socket

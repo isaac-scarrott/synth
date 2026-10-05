@@ -46,7 +46,6 @@ extension AppStore {
     func openScratchTerminal() {
         guard scratch == nil, let br = contextBranchForNewSession(), !br.isPending else { return }
         if palette != nil { closePalette() }
-        activeMenu = nil
         shortcutsOpen = false
         scratch = ScratchTerminal(branchName: br.name, cwd: br.worktreeURL)
         Analytics.capture("scratch_terminal_opened", [:])

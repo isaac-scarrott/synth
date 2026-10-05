@@ -1061,7 +1061,7 @@ final class ControlServer: @unchecked Sendable {
 
         case "automation.palette" where automation:
             guard let pal = store.palette else {
-                return ["ok": true, "open": false, "menuOpen": store.activeMenu != nil]
+                return ["ok": true, "open": false]
             }
             let frame = pal.stack.last
             return ["ok": true, "open": true,
@@ -1076,8 +1076,7 @@ final class ControlServer: @unchecked Sendable {
                     "disabled": pal.items.map(\.disabled),
                     // ADR-0013: red marks loss, so a harness must be able to see which rows wear it.
                     "danger": pal.items.map(\.danger),
-                    "activeIndex": pal.activeIndex,
-                    "menuOpen": store.activeMenu != nil]
+                    "activeIndex": pal.activeIndex]
 
         // Pin the window to a chosen size. `Automation.park` clears `frameAutosaveName` so a
         // driven window comes up at whatever SwiftUI's natural size happens to be — which no

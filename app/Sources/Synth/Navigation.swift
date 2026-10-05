@@ -412,7 +412,6 @@ extension AppStore {
     // MARK: Inline rename (r on the selected row)
 
     func beginRename(_ ref: RowRef) {
-        activeMenu = nil
         renameText = currentName(of: ref)
         renamingRowID = ref.id
         keyboardActive = true
@@ -436,7 +435,6 @@ extension AppStore {
     /// confirm; the irreversible act lives behind `Delete worktree now` in ⌘K, which confirms
     /// from every surface.
     func requestDelete(_ ref: RowRef) {
-        activeMenu = nil
         switch ref {
         case let .workspace(w): softRemoveWorkspace(w)
         case let .session(s):   softCloseSession(s)

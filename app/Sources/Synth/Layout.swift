@@ -477,7 +477,6 @@ extension AppStore {
     /// from a bare setup skeleton — there's no live pane to subdivide yet.
     func openSplitPicker(dir: SplitDir, before: Bool) {
         guard let ap = activePane, ap.sessionID != nil else { return }
-        activeMenu = nil
         if palette == nil { palette = PaletteModel(store: self) }
         guard let pal = palette else { return }
         pal.stack = [pal.rootFrame()]

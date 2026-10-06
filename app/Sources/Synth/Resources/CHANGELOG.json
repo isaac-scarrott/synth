@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.47.4",
+    "date": "2026-10-06",
+    "changes": [
+      "Synth launches faster, especially with many projects: the sidebar builds only the rows on screen and launch no longer waits on background checks.",
+      "Moving around the sidebar, switching with ⌘1…9 and revealing it with ⌘B respond faster.",
+      "Terminals you aren't looking at stop drawing and give back their graphics memory.",
+      "Pull request status is fetched with one request per repository instead of one per branch.",
+      "Less work in the background: autosave only writes when something changed, and usage alerts check only what they need while the Usage pane is closed.",
+      "Opening and closing browsers no longer slowly grows memory.",
+      "Status indicators change without the pop animation."
+    ]
+  },
+  {
     "version": "0.47.3",
     "date": "2026-10-04",
     "changes": [

@@ -2849,3 +2849,20 @@ disclosure to dive deeper.
 
 - **Status indicators swap without the entry pop** — supersedes the 2026-07-06 `ind-in` pop; a
   status change went from ~1,200 display-list ids to 30-220. [Details](docs/features/2026-10-06.md)
+- **Sidebar rows build only what is on screen and take where-you-are from their parent** — first
+  frame, nav steps and ⌘1…9 no longer scale with row count; 10x60x3 tabs launch 3.5 to 1.15s.
+  [Details](docs/features/2026-10-06.md)
+- **Browser open/close no longer grows the PartitionAlloc pool** — one held profile per workspace,
+  `NWConnection` CDP sockets, session id stamped at context creation. [Details](docs/features/2026-10-06.md)
+- **PR refresh asks GitHub once per repo** — 400 rows: 804 spawns/requests over 21.6s to 4 over
+  0.8s. [Details](docs/features/2026-10-06.md)
+- **Subprocess waits return when the child exits** — `waitUntilExit()` replaced app-wide;
+  `AppStore.init` 160-246ms to 12-27ms. [Details](docs/features/2026-10-06.md)
+- **The tab strip's row declares it has no alignment guides** — `FlexRow.explicitAlignment` off the
+  branch-switch profile. [Details](docs/features/2026-10-06.md)
+- **Autosave only snapshots the tree after it changes** — idle ticks do no snapshot and no encode.
+  [Details](docs/features/2026-10-06.md)
+- **The closed-pane usage poll reads only what an alert can use** — no OpenCode DB scan or
+  `agy /credits` while nobody looks. [Details](docs/features/2026-10-06.md)
+- **A pane mount stops forcing terminal repaints** — switch and back: 6 to 4 frames, 0 refreshes.
+  [Details](docs/features/2026-10-06.md)

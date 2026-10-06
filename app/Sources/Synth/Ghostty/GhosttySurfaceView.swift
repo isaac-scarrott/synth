@@ -58,6 +58,9 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// Whether the renderer holds its swap chain; a new surface starts with one.
     private var rendererRealized = true
 
+    /// What the renderer's display link was last keyed to; nil until the first join.
+    private var keyedDisplay: KeyedDisplay?
+
     /// Accumulates text produced by `interpretKeyEvents` during a keyDown so it can be
     /// attached to the ghostty key event (empty for control/navigation keys, which
     /// libghostty encodes itself from keycode+mods).
@@ -186,7 +189,7 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
     /// which stops frame callbacks without any error surfacing.
     private func displayReconfigured() {
         guard let surface else { return }
-        updateDisplayID()
+        updateDisplayID(rekey: true)
         updateSurfaceSize()
         ghostty_surface_refresh(surface)
         // While this notification is in flight the window can still report the old
@@ -196,9 +199,10 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         DispatchQueue.main.async { [weak self] in self?.updateSurfaceSize() }
     }
 
-    /// Mirror the window's occlusion into the renderer, forcing a full repaint on the
-    /// occluded→visible edge: the window server may have purged the layer's drawables
-    /// while hidden, and an idle shell produces no damage to trigger a redraw.
+    /// Mirror the window's occlusion into the renderer. The occluded→visible edge needs a full
+    /// repaint — the window server may have purged the layer's drawables while hidden, and an
+    /// idle shell produces no damage to trigger one — and libghostty draws that frame itself
+    /// when told the surface is visible.
     ///
     /// Out of every window — a row you navigated away from, which TerminalManager keeps alive
     /// so its shell survives — the surface is occluded and its renderer gives back its swap
@@ -223,7 +227,6 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         // told what park means rather than what the window server sees.
         let visible = window.occlusionState.contains(.visible) || Automation.isDriven
         ghostty_surface_set_occlusion(surface, visible)
-        if visible { ghostty_surface_refresh(surface) }
     }
 
     /// libghostty takes realize/unrealize strictly alternating and drops the message rather
@@ -376,7 +379,6 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
         let config = TerminalTheme.makeConfig(dark: dark)
         ghostty_surface_update_config(surface, config)
         ghostty_config_free(config)
-        ghostty_surface_refresh(surface)
     }
 
     /// Free the surface + release its retained context. Called by TerminalManager.terminate.
@@ -455,17 +457,53 @@ final class GhosttySurfaceView: NSView, NSTextInputClient {
             CATransaction.commit()
         }
 
+        // Safe to call from every geometry hook: libghostty drops a size or scale equal to the
+        // last one, and repaints on its own when either really moves.
         ghostty_surface_set_content_scale(surface, scale, scale)
         ghostty_surface_set_size(surface, UInt32(pxW), UInt32(pxH))
-        ghostty_surface_refresh(surface)
     }
 
-    private func updateDisplayID() {
+    /// Unlike size and scale, libghostty acts on every display id it is sent — re-keys the link
+    /// and wakes the renderer, which draws a frame when visible — so an unchanged key is sent
+    /// only when `rekey` asks for exactly that.
+    private func updateDisplayID(rekey: Bool = false) {
         guard let surface,
               let screen = window?.screen,
               let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
         else { return }
-        ghostty_surface_set_display_id(surface, num.uint32Value)
+        let key = KeyedDisplay(id: num.uint32Value, topology: DisplayTopology.shared.generation)
+        guard rekey || key != keyedDisplay else { return }
+        keyedDisplay = key
+        ghostty_surface_set_display_id(surface, key.id)
+    }
+
+    /// A display id alone can't tell a link that is current from one keyed before a wake or a
+    /// replug that handed back the same id; the topology generation can.
+    private struct KeyedDisplay: Equatable {
+        let id: UInt32
+        let topology: Int
+    }
+
+    /// Counts display wakes and reconfigurations app-wide. A row you navigated away from sits
+    /// detached with its window observers removed and misses them, so on its next join this is
+    /// how it learns its link needs re-keying — without re-keying on every join that had no
+    /// such event in between.
+    @MainActor private final class DisplayTopology {
+        static let shared = DisplayTopology()
+        private(set) var generation = 0
+
+        private init() {
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.generation += 1 }
+            }
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.generation += 1 }
+            }
+        }
     }
 
     // MARK: Focus

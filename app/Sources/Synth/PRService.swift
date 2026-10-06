@@ -138,9 +138,9 @@ enum PRService {
         process.standardOutput = pipe
         process.standardError = Pipe()
         do {
-            try process.run()
+            let exited = try process.start()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
+            exited.wait()
             guard process.terminationStatus == 0 else { return nil }
             let token = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (token?.isEmpty == false) ? token : nil

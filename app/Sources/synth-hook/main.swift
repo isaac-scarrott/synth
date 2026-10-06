@@ -430,20 +430,24 @@ func registerOpencode2MCPServers(port: String, password: String) {
 
 /// Start `curl` with `args`, or nil if it could not be launched at all. No output is ever needed
 /// from these calls — only whether the server accepted the request.
-func startCurl(_ args: [String]) -> Process? {
+func startCurl(_ args: [String], onExit: (@Sendable (Process) -> Void)? = nil) -> Process? {
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
     proc.arguments = args
     proc.standardOutput = FileHandle.nullDevice
     proc.standardError = FileHandle.nullDevice
+    proc.terminationHandler = onExit
     do { try proc.run() } catch { return nil }
     return proc
 }
 
-/// Run `curl` with `args` to completion, true on a zero exit.
+/// Run `curl` with `args` to completion, true on a zero exit. Waits on the termination handler,
+/// not `waitUntilExit()`, which only notices the exit on a ~70ms run-loop poll — once per
+/// health probe while opencode2 comes up.
 func curlSucceeds(_ args: [String]) -> Bool {
-    guard let proc = startCurl(args) else { return false }
-    proc.waitUntilExit()
+    let exited = DispatchSemaphore(value: 0)
+    guard let proc = startCurl(args, onExit: { _ in exited.signal() }) else { return false }
+    exited.wait()
     return proc.terminationStatus == 0
 }
 

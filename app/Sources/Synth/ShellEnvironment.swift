@@ -86,7 +86,8 @@ enum ShellEnvironment {
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
         proc.standardInput = FileHandle.nullDevice
-        do { try proc.run() } catch { return nil }
+        let exited: Process.Exit
+        do { exited = try proc.start() } catch { return nil }
 
         // Drain on a background queue so a chatty rc file can't fill the pipe buffer and deadlock
         // the child before it exits; join with a timeout and give up (kill the shell) if it hangs.
@@ -100,7 +101,7 @@ enum ShellEnvironment {
             proc.terminate()
             return nil
         }
-        proc.waitUntilExit()
+        exited.wait()
         guard proc.terminationStatus == 0,
               let out = String(data: box.data, encoding: .utf8) else { return nil }
         // The sentinel-bracketed segment is the PATH; everything around it is rc-file noise.

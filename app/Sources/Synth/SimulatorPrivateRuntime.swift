@@ -391,7 +391,8 @@ enum SimulatorShell {
         let outPipe = Pipe(), errPipe = Pipe()
         process.standardOutput = outPipe
         process.standardError = errPipe
-        do { try process.run() } catch {
+        let exited: Process.Exit
+        do { exited = try process.start() } catch {
             throw Failure.launchFailed(
                 command: ([executable] + arguments).joined(separator: " "),
                 underlying: error.localizedDescription)
@@ -413,7 +414,7 @@ enum SimulatorShell {
             let deadline = Date().addingTimeInterval(timeout)
             while process.isRunning, Date() < deadline { usleep(5_000) }
             if process.isRunning {
-                // SIGTERM, then SIGKILL. `waitUntilExit()` below is unbounded, so a child that
+                // SIGTERM, then SIGKILL. `exited.wait()` below is unbounded, so a child that
                 // ignores SIGTERM would park this thread and its two pipe fds for the life of the
                 // app — and these run on control-connection threads, one fd each. A bounded call
                 // that waits forever after its own timeout fires is not bounded.
@@ -423,7 +424,7 @@ enum SimulatorShell {
                 if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             }
         }
-        process.waitUntilExit()
+        exited.wait()
         group.wait()
 
         return Output(

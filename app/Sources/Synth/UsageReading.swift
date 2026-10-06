@@ -44,7 +44,7 @@ enum UsageCommand {
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
         proc.standardInput = FileHandle.nullDevice
-        try proc.run()
+        let exited = try proc.start()
 
         // Drain on another queue: a program that outruns the pipe buffer blocks forever against a
         // parent that only starts reading once the child has exited.
@@ -58,7 +58,7 @@ enum UsageCommand {
             proc.terminate()
             throw Failure.timedOut(timeout)
         }
-        proc.waitUntilExit()
+        exited.wait()
         guard proc.terminationStatus == 0 else { throw Failure.exited(proc.terminationStatus) }
         guard let text = String(data: box.data, encoding: .utf8) else { throw Failure.outputNotUTF8 }
         return text

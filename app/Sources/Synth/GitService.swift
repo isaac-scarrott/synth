@@ -646,13 +646,13 @@ enum GitService {
         process.standardOutput = stdout
         process.standardError = Pipe()
         do {
-            try process.run()
+            let exited = try process.start()
             stdin.fileHandleForWriting.write(Data("protocol=\(proto)\nhost=\(host)\n\n".utf8))
             try? stdin.fileHandleForWriting.close()
             let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
             DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: killer)
             let data = stdout.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
+            exited.wait()
             killer.cancel()
             guard process.terminationStatus == 0, let text = String(data: data, encoding: .utf8)
             else { return nil }
@@ -688,7 +688,7 @@ enum GitService {
         process.standardOutput = pipe
         process.standardError = pipe
         do {
-            try process.run()
+            let exited = try process.start()
             var killer: DispatchWorkItem?
             if let timeout {
                 let item = DispatchWorkItem { if process.isRunning { process.terminate() } }
@@ -696,7 +696,7 @@ enum GitService {
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: item)
             }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
+            exited.wait()
             killer?.cancel()
             let output = String(data: data, encoding: .utf8) ?? ""
             reportIfFailed(args, process.terminationStatus, output)

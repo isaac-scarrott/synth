@@ -188,8 +188,7 @@ final class BrowserProcessSupervisor {
                           "-f", helperPrefix]
         let out = Pipe()
         task.standardOutput = out
-        try task.run()
-        task.waitUntilExit()
+        try task.start().wait()
         let data = out.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?
             .split(separator: "\n").compactMap { pid_t($0) } ?? []

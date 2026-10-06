@@ -364,9 +364,7 @@ private struct WorkspaceRow: View {
     @ViewBuilder private var trailing: some View {
         if !isOpen {
             HStack(spacing: 8) {
-                // .id(a) — a single branch hosts both states here, so force a fresh
-                // slot identity on input↔error swaps to replay the entry pop.
-                if let a = workspace.attention { Ind { AttentionGlyph(state: a) }.id(a) }
+                if let a = workspace.attention { Ind { AttentionGlyph(state: a) } }
                 Text("\(workspace.liveBranches.count)")
                     .font(.sans(11, 500, tabular: true))
                     .foregroundStyle(Theme.repoCount)
@@ -1073,24 +1071,13 @@ private struct Monogram: View {
 /// working.html `.ind` — every right-side indicator lives in one fixed 16×16 slot,
 /// contents centered, so every indicator shares one vertical axis down the whole
 /// sidebar regardless of glyph size (6px dot, 15px `?`/`!`).
-/// The slot pops in with a soft overshoot (ind-in, 240ms back-out) whenever it
-/// appears or swaps state — a state swap lands as a new view identity (a different
-/// switch branch, or `.id`) so the pop retriggers, like the HTML replacing the node.
 // Shared with the content tab strip (TabStrip.swift) — the tab reuses the sidebar's exact
 // indicator chrome, mirroring the mock's `makeTabEl` cloning `.session__icon` / `.ind`.
 struct Ind<Content: View>: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown = false
     @ViewBuilder var content: Content
 
     var body: some View {
-        content
-            .scaleEffect(reduceMotion || shown ? 1 : 0.4)
-            .opacity(reduceMotion || shown ? 1 : 0)
-            // cubic-bezier(0.34,1.56,0.64,1) ≈ a lightly under-damped 240ms spring.
-            .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.6), value: shown)
-            .onAppear { shown = true }
-            .frame(width: 16, height: 16)
+        content.frame(width: 16, height: 16)
     }
 }
 

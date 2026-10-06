@@ -1651,7 +1651,6 @@
   .tab--active.tab--unread .tab__icon::after { box-shadow: 0 0 0 1.5px var(--card-solid); }
   .tab__name { overflow: hidden; text-overflow: ellipsis; }
   .tab__ind { flex-shrink: 0; display: flex; align-items: center; }
-  .tab__ind .ind { animation: none; }   /* the strip rebuilds on every switch — skip the per-render pop */
   .tab__close {
     flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
@@ -1822,9 +1821,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    /* every indicator pops in with a soft overshoot when its slot appears or swaps state
-       (state swaps replace the whole .ind node, so this retriggers) */
-    animation: ind-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
   }
   .ind svg { width: 15px; height: 15px; display: block; }
 
@@ -1889,10 +1885,6 @@
      checked-out dot) beside the header is redundant and can read as out of sync —
      drop it while expanded; it's the only signal when collapsed. Activity meta stays. */
   .repo--open > .branch--group .branch__roll .ind { display: none; }
-
-  @keyframes ind-in {
-    from { opacity: 0; transform: scale(0.4); }
-  }
 
   /* ---- In-app notifications: a stacked deck at the shell's bottom-left corner ----
      Background sessions only (never the open one). A session that moves to needs-input or
@@ -3144,7 +3136,7 @@
     * { transition-duration: 0.01ms !important; }
     .row:active, .icon-btn:active { transform: translateY(0); }
     .kebab:active { transform: none; }
-    .ind, .term__cursor, .tui__spin, .chat__composer.awaiting, .skel, .pane { animation: none; }
+    .term__cursor, .tui__spin, .chat__composer.awaiting, .skel, .pane { animation: none; }
     .session--pulse { animation: none; }
     .usage-tile, .usage-band, .usage-meter i { animation: none; }
     .roll__reel { transition: none; }

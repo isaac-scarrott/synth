@@ -2844,3 +2844,8 @@ disclosure to dive deeper.
   [Details](docs/features/2026-10-05.md)
 - **The autosave tick checks the worktree list before canonicalizing it**: an unchanged tick at 800
   worktrees goes from ~30ms to 0.014ms. [Details](docs/features/2026-10-05.md)
+
+## [2026-10-06](docs/features/2026-10-06.md)
+
+- **Status indicators swap without the entry pop** — supersedes the 2026-07-06 `ind-in` pop; a
+  status change went from ~1,200 display-list ids to 30-220. [Details](docs/features/2026-10-06.md)

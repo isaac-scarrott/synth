@@ -2866,3 +2866,6 @@ disclosure to dive deeper.
   `agy /credits` while nobody looks. [Details](docs/features/2026-10-06.md)
 - **A pane mount stops forcing terminal repaints** — switch and back: 6 to 4 frames, 0 refreshes.
   [Details](docs/features/2026-10-06.md)
+- **0.47.4 ships — the two performance sweeps** — `CFBundleVersion` 839, tag `v0.47.4`;
+  notarized, stapled, verified credential-less; appcast signed on all 18 enclosures.
+  [Details](docs/features/2026-10-06.md)

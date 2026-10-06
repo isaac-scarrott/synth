@@ -75,10 +75,16 @@ protocol UsageSource: Sendable {
     /// history"; a throw is the absence of one, and `UsageBoard.refresh` is the door that catches
     /// it. Nothing here decides between the two twice.
     func load() async throws -> UsageSection
+    /// Read only the metrics with a ceiling — all a reading made while the pane is closed is for,
+    /// because `UsageAlerts` reads nothing else. Nil when the agent reports no ceiling at all:
+    /// there is nothing an alert could be raised from, so nobody looking means nothing to ask.
+    func loadLimits() async throws -> UsageSection?
 }
 
 /// The board's state, refreshed on an interval — briskly while the pane is on screen, slowly while
-/// it isn't, so a window crossing a line can be said (`UsageAlerts`) without anyone looking.
+/// it isn't, so a window crossing a line can be said (`UsageAlerts`) without anyone looking. The
+/// slow poll asks only for windows with a ceiling: a token total or a credit balance can't cross a
+/// line, and reading one costs a multi-gigabyte scan or a CLI round trip that nobody would see.
 ///
 /// Polling is per-agent and independent: one agent's network call failing or hanging must not
 /// stop another's local read from landing, so sections are merged in as they arrive rather than
@@ -166,15 +172,25 @@ protocol UsageSource: Sendable {
         refreshing = true
         defer { refreshing = false }
 
+        var limitsOnly: Bool
+        // The pane opening during a closed-pane pass finds it skipped what only the pane shows, so
+        // that is asked for as soon as the pass lands rather than at the next tick a minute away.
+        repeat {
+            limitsOnly = !watched
+            await pass(limitsOnly: limitsOnly)
+        } while limitsOnly && watched
+    }
+
+    private func pass(limitsOnly: Bool) async {
         let agents = agents()
         configure(agents: agents, sources: UsageSources.all(for: agents))
         await withTaskGroup(of: UsageSection?.self) { group in
             for source in sources {
-                group.addTask { await Self.read(source) }
+                group.addTask { await Self.read(source, limitsOnly: limitsOnly) }
             }
             for await section in group {
                 guard let section else { continue }
-                merge(section)
+                merge(section, limitsOnly: limitsOnly)
                 // Per reading, not around the loop: one reading's alert failing to be remembered
                 // must not cost the other agents theirs, or the poll its next tick.
                 Guarded.run { try onReading(section) }
@@ -185,9 +201,9 @@ protocol UsageSource: Sendable {
     /// The door every usage read comes in through. A source that throws has not reported "none" —
     /// it has failed to report at all, and this is the one place with both facts in hand: the band
     /// to say so on, and the agent to count it against.
-    nonisolated private static func read(_ source: UsageSource) async -> UsageSection? {
+    nonisolated private static func read(_ source: UsageSource, limitsOnly: Bool) async -> UsageSection? {
         do {
-            return try await source.load()
+            return limitsOnly ? try await source.loadLimits() : try await source.load()
         } catch is CancellationError {
             // The pane closed mid-read. Leaving the band as it stands is the honest end to work
             // nobody is waiting for any more.
@@ -220,9 +236,16 @@ protocol UsageSource: Sendable {
     }
 
     /// Replace one band in place. Order is fixed by `configure`, so a slow source landing last
-    /// never reshuffles the board under the reader.
-    private func merge(_ section: UsageSection) {
+    /// never reshuffles the board under the reader. A limits-only reading never asked for the
+    /// band's other tiles, so they stay as last read rather than vanishing until the pane next asks.
+    private func merge(_ section: UsageSection, limitsOnly: Bool) {
         guard let i = sections.firstIndex(where: { $0.id == section.id }) else { return }
-        sections[i] = section
+        guard limitsOnly, case .ready = section.status, case .ready = sections[i].status else {
+            sections[i] = section
+            return
+        }
+        let read = Set(section.metrics.map(\.id))
+        let unasked = sections[i].metrics.filter { $0.percent == nil && !read.contains($0.id) }
+        sections[i] = UsageSection(id: section.id, title: section.title, metrics: section.metrics + unasked)
     }
 }

@@ -56,6 +56,9 @@ struct OpencodeUsageSource: UsageSource {
         return UsageSection(id: agent, title: descriptor.displayName, metrics: metrics)
     }
 
+    /// A running total has no ceiling to cross, so a closed pane never pays for the scan.
+    func loadLimits() async throws -> UsageSection? { nil }
+
     // MARK: History
 
     /// v1's own era. Its `session` rollup columns look like the cheap answer and are not one —

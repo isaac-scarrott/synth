@@ -63,6 +63,14 @@ enum BrowserEngineFactory {
         #endif
     }
 
+    /// No workspace goes by this key any more (removed, or renamed to a new one). The
+    /// profile stays on disk; it just stops being held loaded.
+    static func unloadProfile(workspaceKey: String) {
+        #if canImport(CEFShim)
+        BrowserProcessSupervisor.shared.unloadProfile(workspaceKey: workspaceKey)
+        #endif
+    }
+
     /// False when the profile could not be thrown away — another Synth is live on it, or this
     /// build has no engine and therefore nothing that owns one.
     static func clearProfile(workspaceKey: String) -> Bool {

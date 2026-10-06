@@ -201,10 +201,10 @@ final class BrowserProcessSupervisor {
     /// per session: the workspace is the unit the user thinks in, and two sessions on the
     /// same repo being signed in as different people would be a surprise, not isolation.
     ///
-    /// Loaded once and held for the runtime's life, because the profile outlives any one
-    /// browser on it. Chromium unloads a profile when the last context on it goes, so a
-    /// context per browser reloaded history, passwords and seven leveldb databases on every
-    /// open, inside the main-thread create pump, and tore them down on every close,
+    /// Loaded once and held while the workspace is in the sidebar, because the profile
+    /// outlives any one browser on it. Chromium unloads a profile when the last context on it
+    /// goes, so a context per browser reloaded history, passwords and seven leveldb databases
+    /// on every open, inside the main-thread create pump, and tore them down on every close,
     /// fragmenting the allocator a little more each time.
     func profile(workspaceKey: String) throws -> CEFShimProfile {
         if let loaded = profiles[workspaceKey] { return loaded }
@@ -218,6 +218,13 @@ final class BrowserProcessSupervisor {
         }
         profiles[workspaceKey] = profile
         return profile
+    }
+
+    /// No workspace goes by this key any more. The directory stays where it is — the repo
+    /// added back signs straight back in — and the profile unloads once any browser still
+    /// open on it closes.
+    func unloadProfile(workspaceKey: String) {
+        profiles[workspaceKey] = nil
     }
 
     /// Where a workspace's profile is right now: under the live root once the runtime is up,

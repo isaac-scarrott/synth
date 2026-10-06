@@ -2536,6 +2536,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             self.pruneLayout(); self.syncActive()
         }, commit: { [weak self] in
             for s in ws.branches.flatMap(\.sessions) { self?.teardownSession(s) }
+            BrowserEngineFactory.unloadProfile(workspaceKey: ws.browserProfileKey)
         })
     }
 

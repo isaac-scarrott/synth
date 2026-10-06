@@ -52,12 +52,13 @@ import AppKit
         guard !dead.contains(session.id), !creating.contains(session.id),
               failures[session.id] == nil else { return nil }
         if let existing = controllers[session.id] { return existing }
+        guard let profileKey = profileKey(for: session) else { return nil }
         creating.insert(session.id)
         defer { creating.remove(session.id) }
         let engine: BrowserEngine
         do {
             engine = try BrowserEngineFactory.make(sessionID: session.id,
-                                                   workspaceKey: profileKey(for: session),
+                                                   workspaceKey: profileKey,
                                                    nativeContextMenus: session.kind == .inspect)
         } catch {
             failures[session.id] = error.localizedDescription
@@ -79,13 +80,14 @@ import AppKit
         return failures[id]
     }
 
-    /// The profile directory this session's engine runs on. A session whose workspace can't
-    /// be resolved (a row mid-teardown) gets its own, so it can never silently land in
-    /// another project's signed-in profile.
-    private func profileKey(for session: Session) -> String {
+    /// The profile this session's engine runs on. Nil for a session whose workspace can't be
+    /// resolved — a row mid-teardown, already out of the tree — which gets no engine at all:
+    /// there is no pane to show one, an undo puts the row back where this resolves, and a
+    /// profile of its own would stay loaded until quit (the supervisor holds profiles).
+    private func profileKey(for session: Session) -> String? {
         guard let store,
               let branch = store.branch(of: session),
-              let workspace = store.workspace(of: branch) else { return "session-\(session.id.uuidString)" }
+              let workspace = store.workspace(of: branch) else { return nil }
         return workspace.browserProfileKey
     }
 

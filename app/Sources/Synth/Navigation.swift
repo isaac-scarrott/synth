@@ -335,6 +335,7 @@ extension AppStore {
                 : workspaces.count > 1 ? workspaces[i + 1].id : nil
         }
         for session in workspace.branches.flatMap(\.sessions) { teardownSession(session) }
+        BrowserEngineFactory.unloadProfile(workspaceKey: workspace.browserProfileKey)
         workspaces.removeAll { $0.id == workspace.id }
         expanded.remove(workspace.id)
         // Collapse any panes whose session just vanished (009). A whole group leaving nominates
@@ -396,7 +397,10 @@ extension AppStore {
         let v = name.trimmingCharacters(in: .whitespaces)
         guard !v.isEmpty else { return }
         switch ref {
-        case let .workspace(w): w.name = v
+        case let .workspace(w):
+            let oldKey = w.browserProfileKey
+            w.name = v
+            if w.browserProfileKey != oldKey { BrowserEngineFactory.unloadProfile(workspaceKey: oldKey) }
         case let .branch(b):    b.name = v
         case let .session(s):   s.title = v; s.titleIsCustom = true
         }

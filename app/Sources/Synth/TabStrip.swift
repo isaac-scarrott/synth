@@ -426,6 +426,14 @@ private struct FlexRow: Layout {
         }
     }
 
+    /// The row centres every child on its own midline, so no guide inside a tab ever positions it
+    /// and the row has none to offer its parent. Left to the default, every guide the enclosing stacks
+    /// ask for on a layout pass is answered by placing every tab and walking its whole subtree for one.
+    func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+                           subviews: Subviews, cache: inout Cache) -> CGFloat? { nil }
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+                           subviews: Subviews, cache: inout Cache) -> CGFloat? { nil }
+
     private func gaps(_ count: Int) -> CGFloat { spacing * CGFloat(max(0, count - 1)) }
 
     /// One pass per child that bottoms out: the overflow is shared in proportion to each remaining

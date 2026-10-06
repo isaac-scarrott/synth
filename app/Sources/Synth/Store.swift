@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import os
 import SwiftUI
 
 /// A low-frequency derived fact posted by a session's supervisor onto the bus.
@@ -4036,8 +4037,8 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     /// Persist on a low cadence (backstop for any mutation) plus a flush on quit — cmux's
-    /// timer-over-instrumentation model, so no mutation site can forget to save. The
-    /// skip-if-unchanged check in the store keeps the idle case free.
+    /// timer-over-instrumentation model, so no mutation site can forget to save. A tick only
+    /// snapshots once observation has seen the tree change (`treeChanged`), so idle is free.
     /// Autosave and the quit flush both stop here when the load was refused. A run that could
     /// not read the snapshot has nothing worth writing and everything to lose by writing it.
     var savingSuspended: Bool { PersistenceStore.loadRefused }
@@ -4082,12 +4083,26 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         PersistenceStore.flush(snapshot())
     }
 
+    /// Whether anything the last `snapshot()` read has changed since. Observation raises it on
+    /// whichever thread made the change, so it is locked rather than main-actor state.
+    private let treeChanged = OSAllocatedUnfairLock(initialState: true)
+
     func saveNow() {
         // syncAgentBridge still runs: the instance registry and MCP servers describe this
         // process, not the persisted tree, and a suspended save must not also stop a sibling
         // Synth from seeing which worktrees this one holds.
-        if !savingSuspended { PersistenceStore.save(snapshot()) }
+        if !savingSuspended, treeChanged.withLock({ changed in defer { changed = false }; return changed }) {
+            PersistenceStore.save(observedSnapshot())
+        }
         syncAgentBridge()
+    }
+
+    /// The snapshot, taken under observation: the first later change to anything it read raises
+    /// `treeChanged`, so a tick on an untouched tree neither snapshots nor encodes.
+    private func observedSnapshot() -> PersistedState {
+        withObservationTracking { snapshot() } onChange: { [treeChanged] in
+            treeChanged.withLock { $0 = true }
+        }
     }
 
     #if DEBUG

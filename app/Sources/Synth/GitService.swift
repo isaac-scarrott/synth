@@ -613,19 +613,23 @@ enum GitService {
         return status == 0 && !trimmed.isEmpty ? trimmed : nil
     }
 
-    /// The branch actually checked out at `worktree` right now, straight from `worktree
-    /// list` — not whatever the model last recorded, so a `git checkout` run by hand inside
-    /// the folder doesn't leave callers (PRService) reading a stale branch name. Nil when
-    /// detached, or when `worktree` isn't a registered checkout of its repo.
-    static func checkedOutBranch(at worktree: URL) -> String? {
-        // Resolved, not just `.standardized`: git registers a worktree's canonical path (it
-        // resolves symlinks the same way `--show-toplevel` does for `repositoryRoot`), and a
-        // caller's path is very often not canonical yet — `/tmp` is `/private/tmp`, and a
-        // user's home can sit behind an iCloud or network-mount symlink. `.standardized` alone
-        // cleans up `.`/`..` and redundant slashes but never resolves a symlink, so an exact
-        // string compare against it silently finds nothing and every caller reads "detached".
-        let path = worktree.resolvingSymlinksInPath().path
-        return worktrees(at: worktree).first { $0.path.resolvingSymlinksInPath().path == path }?.branch
+    /// The branch actually checked out in each of the repo's worktrees right now, straight
+    /// from one `worktree list` — not whatever the model last recorded, so a `git checkout`
+    /// run by hand inside a folder doesn't leave callers (PRService) reading a stale branch
+    /// name. Keyed by the folder's symlink-resolved path; a detached worktree is absent.
+    ///
+    /// Resolved, not just `.standardized`: git registers a worktree's canonical path (it
+    /// resolves symlinks the same way `--show-toplevel` does for `repositoryRoot`), and a
+    /// caller's path is very often not canonical yet — `/tmp` is `/private/tmp`, and a user's
+    /// home can sit behind an iCloud or network-mount symlink. `.standardized` alone cleans up
+    /// `.`/`..` and redundant slashes but never resolves a symlink, so a lookup by it silently
+    /// finds nothing and every caller reads "detached".
+    static func checkedOutBranches(at repo: URL) -> [String: String] {
+        var branches: [String: String] = [:]
+        for wt in worktrees(at: repo) {
+            if let branch = wt.branch { branches[wt.path.resolvingSymlinksInPath().path] = branch }
+        }
+        return branches
     }
 
     /// Whatever git itself would hand `push`/`fetch` for `host` — the same credential

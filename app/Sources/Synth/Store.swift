@@ -2629,6 +2629,7 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
         let days = branch.archivedAt.map { Int(Date().timeIntervalSince($0) / 86_400) } ?? 0
         branch.archivedAt = nil
         if onDisk { branch.markActivity() } else { recutWorktree(branch) }
+        if let ws = workspace(of: branch) { refreshPullRequests(in: ws, force: true) }
         syncActive()
         Analytics.capture("worktree_restored", ["days_archived": days, "recut": !onDisk])
     }
@@ -3456,24 +3457,14 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     }
 
     /// In-flight and last-completed reads, keyed by workspace. `didBecomeActive` fires on
-    /// every ⌘-tab back, and without these a burst of activations spawns unbounded network
-    /// calls — up to two per branch (list + merge-queue), fanned out concurrently.
+    /// every ⌘-tab back, and without these a burst of activations asks GitHub again each time.
     @ObservationIgnored private var prRefreshInFlight: Set<UUID> = []
     @ObservationIgnored private var lastPRRefresh: [UUID: Date] = [:]
     private static let prRefreshFloor: TimeInterval = 60
-    /// In-flight PR lookups per workspace refresh. Bounds both the blocking network calls
-    /// (GitHub's own concurrent-request comfort zone) and the GCD threads they occupy while
-    /// blocked — a repo with 100+ worktrees must not spawn 100+ live threads at once.
-    private static let prRefreshConcurrency = 6
 
-    /// One workspace's read: one PRService call per branch, asking about whatever's actually
-    /// checked out in that branch's own worktree folder (not the name the model last
-    /// recorded) so a manual `git checkout` inside it doesn't leave a stale badge. A branch
-    /// with no folder on disk (archived, or still mid-create) falls back to asking by the
-    /// name the model has. Calls run off the main thread and bounded-concurrently with each
-    /// other (`prRefreshConcurrency` in flight at once — a repo with 100+ worktrees must not
-    /// fire that many blocking network calls, and subprocesses, onto GCD's global queue at
-    /// once); the result is folded back onto the branches on the main actor.
+    /// One workspace's read: one `PRService.pullRequests` pass over its live rows, off the
+    /// main thread, folded back onto the branches on the main actor. Archived rows aren't
+    /// asked — nothing reads their PR, and a restore asks again (`restoreArchivedBranch`).
     @discardableResult
     private func refreshPullRequests(in workspace: Workspace, force: Bool = false) -> Task<Void, Never>? {
         let id = workspace.id
@@ -3482,58 +3473,26 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
             return nil
         }
         let repo = workspace.url
-        let candidates = workspace.branches.map { (id: $0.id, name: $0.name, worktreeURL: $0.worktreeURL) }
-        guard !candidates.isEmpty else { return nil }
-        // Captured as a local rather than read as `Self.prRefreshConcurrency` inside the
-        // detached closure below: `Store` is `@MainActor`, so its static members are too,
-        // and reading one from a non-isolated context needs `await` under Swift 6's actor
-        // rules even though it's a constant — read it here, on the actor, instead.
-        let concurrency = Self.prRefreshConcurrency
+        let rows = workspace.liveBranches.map {
+            PRService.Row(id: $0.id, name: $0.name, worktree: $0.worktreeURL)
+        }
+        guard !rows.isEmpty else { return nil }
         prRefreshInFlight.insert(id)
         return Task { [weak self] in
-            let results = await Task.detached(priority: .utility) { () -> [(UUID, PRInfo??)] in
-                // Resolved once per repo, not once per branch: `git credential fill` is a
-                // subprocess call (a Keychain round trip in the worst case), and every
-                // branch shares the same repo's credential.
-                let token = PRService.authToken(at: repo)
-                var out = [(UUID, PRInfo??)]()
-                out.reserveCapacity(candidates.count)
-                let lock = NSLock()
-                // Chunked, not one `concurrentPerform` over every branch: a semaphore/group
-                // `.wait()` is unavailable in an async context (Swift 6 refuses it outright —
-                // it can starve the cooperative thread pool), and `concurrentPerform` alone
-                // grows its own worker pool to cover blocked threads on I/O-bound work — fine
-                // at this chunk size, a real thread-explosion risk at "every branch in a
-                // 100-worktree repo" size. `concurrentPerform` blocks the calling thread
-                // until its chunk finishes, so chunks are naturally sequenced with no extra
-                // synchronization.
-                var index = 0
-                while index < candidates.count {
-                    let end = min(index + concurrency, candidates.count)
-                    let chunk = Array(candidates[index..<end])
-                    DispatchQueue.concurrentPerform(iterations: chunk.count) { i in
-                        let c = chunk[i]
-                        let asked = FileManager.default.fileExists(atPath: c.worktreeURL.path)
-                            ? PRService.pullRequest(at: c.worktreeURL, token: token)
-                            : PRService.pullRequest(branch: c.name, at: repo, token: token)
-                        lock.lock(); out.append((c.id, asked)); lock.unlock()
-                    }
-                    index = end
-                }
-                return out
+            let results = await Task.detached(priority: .utility) {
+                PRService.pullRequests(for: rows, in: repo)
             }.value
             guard let self else { return }
             self.prRefreshInFlight.remove(id)
             guard let ws = self.workspaces.first(where: { $0.id == id }) else { return }
             var askedAny = false
-            for (branchID, asked) in results {
+            // A row missing from `results` couldn't be asked — offline, no GitHub remote, no
+            // credential. Keep whatever we last knew rather than clearing the badge; a stale
+            // PR number is closer to the truth than none.
+            for (branchID, pr) in results {
                 guard let branch = ws.branches.first(where: { $0.id == branchID }) else { continue }
-                // Outer nil is "couldn't ask" for this branch — offline, no GitHub remote,
-                // no credential. Keep whatever we last knew rather than clearing the badge;
-                // a stale PR number is closer to the truth than none.
-                guard let inner = asked else { continue }
                 askedAny = true
-                if branch.pr != inner { branch.pr = inner }
+                if branch.pr != pr { branch.pr = pr }
             }
             if askedAny { self.lastPRRefresh[id] = Date() }
         }

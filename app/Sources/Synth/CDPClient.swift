@@ -1,8 +1,12 @@
 import Foundation
+import Network
 
-/// Minimal Chrome DevTools Protocol client over URLSessionWebSocketTask (ADR-0011
-/// stage three). One client per page target — CEF serves a per-target socket at
-/// `webSocketDebuggerUrl`, so there is no Target.attachToTarget multiplexing here.
+/// Minimal Chrome DevTools Protocol client over a Network.framework WebSocket (ADR-0011
+/// stage three). Not URLSessionWebSocketTask: on macOS 15 a finished one is never freed, and
+/// it keeps its session, connection and cache with it — ~30KB for the life of the app per
+/// socket, and every browser opens at least one (its page theme). One client per page
+/// target — CEF serves a per-target socket at `webSocketDebuggerUrl`, so there is no
+/// Target.attachToTarget multiplexing here.
 /// All mutable state is confined to `queue`; the public API is callable from any
 /// task. Events (Runtime.bindingCalled etc.) arrive on `events`.
 final class CDPClient: NSObject, @unchecked Sendable {
@@ -18,7 +22,7 @@ final class CDPClient: NSObject, @unchecked Sendable {
     /// Every protocol event received on this socket, in arrival order. Finished on close.
     let events: AsyncStream<Event>
 
-    private let task: URLSessionWebSocketTask
+    private let connection: NWConnection
     private let queue = DispatchQueue(label: "synth.cdp.client")
     private var nextID = 1
     private var pending: [Int: (Result<[String: Any], Error>) -> Void] = [:]
@@ -26,14 +30,27 @@ final class CDPClient: NSObject, @unchecked Sendable {
     private var closed = false
 
     init(url: URL) {
-        let session = URLSession(configuration: .ephemeral)
-        task = session.webSocketTask(with: url)
-        task.maximumMessageSize = 64 * 1024 * 1024   // full-viewport screenshots are large
+        let webSocket = NWProtocolWebSocket.Options()
+        webSocket.maximumMessageSize = 64 * 1024 * 1024   // full-viewport screenshots are large
+        let parameters = NWParameters.tcp
+        parameters.defaultProtocolStack.applicationProtocols.insert(webSocket, at: 0)
+        connection = NWConnection(to: .url(url), using: parameters)
         (events, eventContinuation) = AsyncStream.makeStream(of: Event.self)
         super.init()
-        task.resume()
+        // Refused or rejected, a socket parks in .waiting and retries forever. A page target
+        // that refuses is gone, so here that is a failure.
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .waiting(let error), .failed(let error): self?.socketFailed(error)
+            default: break
+            }
+        }
+        connection.start(queue: queue)
         receiveLoop()
     }
+
+    /// A connection lives until it is cancelled, whether or not anyone still holds it.
+    deinit { connection.cancel() }
 
     /// Send a command and await its response. Times out (default 15s) rather than
     /// hanging forever on a wedged target.
@@ -55,12 +72,15 @@ final class CDPClient: NSObject, @unchecked Sendable {
                     }
                 }
             }
-            task.send(.string(text)) { [weak self] err in
+            let frame = NWConnection.ContentContext(
+                identifier: "cdp", metadata: [NWProtocolWebSocket.Metadata(opcode: .text)])
+            connection.send(content: Data(text.utf8), contentContext: frame, isComplete: true,
+                            completion: .contentProcessed { [weak self] err in
                 guard let err, let self else { return }
                 self.queue.async {
                     if let cb = self.pending.removeValue(forKey: id) { cb(.failure(err)) }
                 }
-            }
+            })
         }
     }
 
@@ -68,7 +88,7 @@ final class CDPClient: NSObject, @unchecked Sendable {
         queue.async {
             guard !self.closed else { return }
             self.closed = true
-            self.task.cancel(with: .normalClosure, reason: nil)
+            self.connection.cancel()
             for (_, cb) in self.pending {
                 cb(.failure(CDPError(description: "connection closed")))
             }
@@ -91,22 +111,21 @@ final class CDPClient: NSObject, @unchecked Sendable {
         close()
     }
 
+    /// Callbacks land on `queue` — the connection was started on it.
     private func receiveLoop() {
-        task.receive { [weak self] result in
+        connection.receiveMessage { [weak self] data, context, _, error in
             guard let self else { return }
-            switch result {
-            case .failure(let error):
-                self.socketFailed(error)
-            case .success(let msg):
-                var text: String?
-                if case .string(let s) = msg { text = s }
-                if case .data(let d) = msg { text = String(data: d, encoding: .utf8) }
-                if let text, let data = text.data(using: .utf8),
-                   let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-                    self.queue.async { self.dispatch(obj) }
-                }
-                self.receiveLoop()
+            if let error { return self.socketFailed(error) }
+            let frame = context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
+                as? NWProtocolWebSocket.Metadata
+            if frame?.opcode == .close {
+                return self.socketFailed(CDPError(description: "page closed the socket"))
             }
+            if let data,
+               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                self.dispatch(obj)
+            }
+            self.receiveLoop()
         }
     }
 
@@ -148,8 +167,9 @@ extension CDPClient {
 
     /// Connect to the page target belonging to a Synth browser session. The CDP port is
     /// per app instance (one endpoint, one target per session), so each candidate is
-    /// identified by the `window.__synthSessionId` the engine stamps on every document
-    /// (CEFShim sessionTag). `urlHint` orders candidates so the common case needs one probe.
+    /// identified by the `window.__synthSessionId` the renderer stamps on every document as
+    /// it is born (SynthBrowserHelper). `urlHint` orders candidates so the common case needs
+    /// one probe.
     static func attach(port: UInt16, synthSessionID: UUID,
                        urlHint: URL? = nil) async throws -> CDPClient {
         var candidates = try await listPages(port: port)

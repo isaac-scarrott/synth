@@ -167,8 +167,9 @@ extension CDPClient {
 
     /// Connect to the page target belonging to a Synth browser session. The CDP port is
     /// per app instance (one endpoint, one target per session), so each candidate is
-    /// identified by the `window.__synthSessionId` the engine stamps on every document
-    /// (CEFShim sessionTag). `urlHint` orders candidates so the common case needs one probe.
+    /// identified by the `window.__synthSessionId` the renderer stamps on every document as
+    /// it is born (SynthBrowserHelper). `urlHint` orders candidates so the common case needs
+    /// one probe.
     static func attach(port: UInt16, synthSessionID: UUID,
                        urlHint: URL? = nil) async throws -> CDPClient {
         var candidates = try await listPages(port: port)

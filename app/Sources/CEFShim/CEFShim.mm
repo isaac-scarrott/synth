@@ -904,9 +904,7 @@ class ShimClient : public CefClient,
                    public CefPermissionHandler,
                    public CefRequestHandler {
  public:
-  ShimClient(CEFShimBrowser *owner, const std::string &sessionId)
-      : owner_(owner),
-        sessionTag_("window.__synthSessionId = \"" + sessionId + "\";") {}
+  explicit ShimClient(CEFShimBrowser *owner) : owner_(owner) {}
 
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
@@ -940,16 +938,6 @@ class ShimClient : public CefClient,
   void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack,
                             bool canGoForward) override {
     [owner_ handleLoadingStateChangeCanGoBack:canGoBack canGoForward:canGoForward];
-  }
-
-  void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
-                 int httpStatusCode) override {
-    if (!frame->IsMain()) {
-      return;
-    }
-    // Session↔target mapping for CDP clients (ADR-0011 stage two): re-stamped after
-    // every main-frame load because each navigation gets a fresh JS world.
-    frame->ExecuteJavaScript(sessionTag_, frame->GetURL(), 0);
   }
 
   bool OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int popup_id,
@@ -1250,7 +1238,6 @@ class ShimClient : public CefClient,
 
  private:
   __weak CEFShimBrowser *owner_;
-  const std::string sessionTag_;
 
   IMPLEMENT_REFCOUNTING(ShimClient);
   DISALLOW_COPY_AND_ASSIGN(ShimClient);
@@ -1429,13 +1416,17 @@ class ShimClient : public CefClient,
                         CefRect(0, 0, (int)NSWidth(initial), (int)NSHeight(initial)));
   windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
 
-  CefRefPtr<ShimClient> client(new ShimClient(self, std::string(sessionId.UTF8String)));
+  CefRefPtr<ShimClient> client(new ShimClient(self));
   CefBrowserSettings browserSettings;
+  // Every renderer this browser lands in is handed the session id, and stamps it on each
+  // main-frame document as it is born (SynthBrowserHelper's OnContextCreated).
+  CefRefPtr<CefDictionaryValue> extraInfo = CefDictionaryValue::Create();
+  extraInfo->SetString("synthSessionId", sessionId.UTF8String);
   // Async creation only: a fresh request context initializes its profile off-thread,
   // and CreateBrowserSync returns nullptr rather than waiting for it. Pump until
   // OnAfterCreated so callers still get a live browser on return.
   if (!CefBrowserHost::CreateBrowser(windowInfo, client, url.UTF8String, browserSettings,
-                                     nullptr, profile->_context)) {
+                                     extraInfo, profile->_context)) {
     return nil;
   }
   PUMP_TRACE("manual create-pump begin");

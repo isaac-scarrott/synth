@@ -128,8 +128,9 @@ typedef NS_ENUM(NSInteger, CEFShimAskKind) {
 /// Creates the browser synchronously on `profile` — the workspace's, shared with every
 /// other browser in that workspace. Returns nil if the runtime isn't initialized or CEF
 /// refuses the browser. `sessionId` (the Synth session's UUID) is stamped into the
-/// page as `window.__synthSessionId` on every main-frame load end, so CDP clients
-/// can map page targets back to Synth sessions (ADR-0011 stage two).
+/// page as `window.__synthSessionId` the moment each main-frame document gets its JS
+/// world, so CDP clients can map page targets back to Synth sessions (ADR-0011 stage
+/// two) without waiting for the page to finish loading.
 - (nullable instancetype)initWithURL:(NSString *)url
                              profile:(CEFShimProfile *)profile
                            sessionId:(NSString *)sessionId

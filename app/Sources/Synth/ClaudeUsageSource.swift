@@ -44,6 +44,10 @@ struct ClaudeUsageSource: UsageSource {
         return UsageSection(id: agent, title: descriptor.displayName, metrics: metrics)
     }
 
+    /// The windows and the spend come back in one response, so the reading for alerts is the
+    /// whole reading.
+    func loadLimits() async throws -> UsageSection? { try await load() }
+
     private func section(_ status: UsageStatus) -> UsageSection {
         UsageSection(id: agent, title: descriptor.displayName, status: status)
     }

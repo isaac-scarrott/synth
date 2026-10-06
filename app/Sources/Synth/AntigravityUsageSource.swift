@@ -16,7 +16,12 @@ struct AntigravityUsageSource: UsageSource {
     /// wedged CLI never outlives the poll that started it.
     private static let timeout: TimeInterval = 25
 
-    func load() async throws -> UsageSection {
+    func load() async throws -> UsageSection { try await read(credits: true) }
+
+    /// `/credits` is a balance with no ceiling, so a reading for alerts leaves its round trip out.
+    func loadLimits() async throws -> UsageSection? { try await read(credits: false) }
+
+    private func read(credits withCredits: Bool) async throws -> UsageSection {
         guard let binary = descriptor.resolvedBinary else {
             return UsageSection(id: agent, title: descriptor.displayName,
                                 status: .unavailable("no quota data"))
@@ -24,7 +29,8 @@ struct AntigravityUsageSource: UsageSource {
         // Two round trips to the same servers; asked together so the band doesn't wait out one
         // before starting the other.
         async let quota = UsageCommand.output(binary, ["-p", "/quota"], timeout: Self.timeout)
-        async let credits = UsageCommand.output(binary, ["-p", "/credits"], timeout: Self.timeout)
+        async let credits = withCredits
+            ? UsageCommand.output(binary, ["-p", "/credits"], timeout: Self.timeout) : ""
 
         let metrics = Self.buckets(try await quota) + Self.credits(try await credits)
         // Every field name and the row count are the server's, so `agy` printing a header line, a

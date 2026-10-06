@@ -222,9 +222,9 @@ enum BrowserCheck {
         let out = Pipe()
         task.standardOutput = out
         task.standardError = Pipe()
-        guard (try? task.run()) != nil else { return "" }
+        guard let exited = try? task.start() else { return "" }
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+        exited.wait()
         return String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
@@ -238,8 +238,7 @@ enum BrowserCheck {
         task.arguments = ["-f", helperPrefix]
         let out = Pipe()
         task.standardOutput = out
-        do { try task.run() } catch { return -1 }
-        task.waitUntilExit()
+        do { try task.start().wait() } catch { return -1 }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         guard let text = String(data: data, encoding: .utf8) else { return -1 }
         return text.split(separator: "\n").count

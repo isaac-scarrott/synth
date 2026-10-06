@@ -217,9 +217,10 @@ enum ThemePref: String, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
-/// Who is running this Synth, resolved once at launch. The author (git identity matched)
-/// gets the feedback→worktree loop; everyone else gets a pre-filled email. `SYNTH_AUTHOR=1`
-/// / `=0` forces it (the established env-override idiom), else it's the git `user.email`.
+/// Who is running this Synth, resolved the first time feedback asks. The author (git identity
+/// matched) gets the feedback→worktree loop; everyone else gets a pre-filled email.
+/// `SYNTH_AUTHOR=1` / `=0` forces it (the established env-override idiom), else it's the git
+/// `user.email`.
 enum FeedbackMode {
     case author, email
 
@@ -641,11 +642,11 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     /// The feedback sheet (⌘⇧F). `feedbackDraft` persists an unsent gripe across reopens,
     /// like working.html. `feedbackTitle` is the author-only name that becomes the
     /// `feedback/<slug>` branch (email mode never shows it). `feedbackMode` is resolved
-    /// once at launch (see init).
+    /// on first use: it is a `git config` spawn, and nothing before the feedback sheet needs it.
     var feedbackOpen = false
     var feedbackDraft = ""
     var feedbackTitle = ""
-    @ObservationIgnored var feedbackMode: FeedbackMode = .email
+    @ObservationIgnored lazy var feedbackMode = FeedbackMode.resolve()
 
     /// The sidebar row being renamed inline, and its live text — working.html's
     /// contentEditable name label. nil = nothing renaming.
@@ -923,7 +924,6 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     @ObservationIgnored static weak var shared: AppStore?
 
     init() {
-        feedbackMode = FeedbackMode.resolve()
         hookServer = HookServer(bus: bus)
         TerminalManager.shared.bus = bus
         BrowserManager.shared.bus = bus

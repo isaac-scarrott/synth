@@ -89,7 +89,8 @@ enum AgentProbe {
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
         proc.standardInput = FileHandle.nullDevice
-        do { try proc.run() } catch {
+        let exited: Process.Exit
+        do { exited = try proc.start() } catch {
             // Reported as "not on your PATH", which is a different sentence from the truth: the
             // login shell itself would not start, so nothing was ever asked.
             Fault.report(.agentLaunch, .uncaught, details: [.stage(.spawn)],
@@ -114,7 +115,7 @@ enum AgentProbe {
                          evidence: "\(head) --version didn't answer in 6s; reported as missing.")
             return AgentProbeResult(state: .missing, version: nil)
         }
-        proc.waitUntilExit()
+        exited.wait()
         guard proc.terminationStatus != 127 else { return AgentProbeResult(state: .missing, version: nil) }
 
         let out = String(data: box.data, encoding: .utf8) ?? ""

@@ -104,8 +104,7 @@ import os.log
             let out = Pipe()
             task.standardOutput = out
             task.standardError = out
-            try task.run()
-            task.waitUntilExit()
+            try task.start().wait()
             guard task.terminationStatus == 0 else {
                 // Counted, not said: unlike a missing npm this is usually the network, and the
                 // next launch runs the install again because node_modules is still absent.

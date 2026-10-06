@@ -132,9 +132,9 @@ import Foundation
                 let pipe = Pipe()
                 ps.standardOutput = pipe
                 ps.standardError = FileHandle.nullDevice
-                try ps.run()
+                let exited = try ps.start()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                ps.waitUntilExit()
+                exited.wait()
                 guard let out = String(data: data, encoding: .utf8) else { return }
 
                 var groups = Set<pid_t>()

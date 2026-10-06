@@ -97,6 +97,19 @@ typedef NS_ENUM(NSInteger, CEFShimAskKind) {
 
 @end
 
+/// One workspace's profile, loaded: the request context its browsers run on. Chromium loads a
+/// profile's services (history, passwords, extension stores and their leveldb databases) when
+/// the first context on a path appears and unloads them when the last one goes, so whoever
+/// holds this decides how long the profile stays loaded. Main thread only.
+@interface CEFShimProfile : NSObject
+
+/// `cachePath` is a child of the runtime's rootCachePath. Nil if the runtime isn't
+/// initialized.
+- (nullable instancetype)initWithCachePath:(NSString *)cachePath;
+- (instancetype)init NS_UNAVAILABLE;
+
+@end
+
 /// One embedded browser (one page per Synth session). Main thread only.
 @interface CEFShimBrowser : NSObject
 
@@ -112,14 +125,13 @@ typedef NS_ENUM(NSInteger, CEFShimAskKind) {
 @property(nonatomic, readonly) BOOL canGoBack;
 @property(nonatomic, readonly) BOOL canGoForward;
 
-/// Creates the browser synchronously on `cachePath` — the workspace's profile, shared
-/// with every other browser in that workspace, and a child of the runtime's
-/// rootCachePath. Returns nil if the runtime isn't initialized or CEF refuses the
-/// browser. `sessionId` (the Synth session's UUID) is stamped into the
+/// Creates the browser synchronously on `profile` — the workspace's, shared with every
+/// other browser in that workspace. Returns nil if the runtime isn't initialized or CEF
+/// refuses the browser. `sessionId` (the Synth session's UUID) is stamped into the
 /// page as `window.__synthSessionId` on every main-frame load end, so CDP clients
 /// can map page targets back to Synth sessions (ADR-0011 stage two).
 - (nullable instancetype)initWithURL:(NSString *)url
-                           cachePath:(NSString *)cachePath
+                             profile:(CEFShimProfile *)profile
                            sessionId:(NSString *)sessionId
                                frame:(NSRect)frame;
 

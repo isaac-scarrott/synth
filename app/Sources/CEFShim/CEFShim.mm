@@ -1367,12 +1367,39 @@ class ShimClient : public CefClient,
 
 @end
 
+#pragma mark - CEFShimProfile
+
+@interface CEFShimProfile () {
+ @public
+  CefRefPtr<CefRequestContext> _context;
+}
+@end
+
+@implementation CEFShimProfile
+
+- (nullable instancetype)initWithCachePath:(NSString *)cachePath {
+  NSAssert(NSThread.isMainThread, @"CEFShimProfile is main-thread only");
+  if (!g_initialized) {
+    return nil;
+  }
+  self = [super init];
+  if (!self) {
+    return nil;
+  }
+  CefRequestContextSettings settings;
+  CefString(&settings.cache_path) = cachePath.UTF8String;
+  _context = CefRequestContext::CreateContext(settings, nullptr);
+  return self;
+}
+
+@end
+
 #pragma mark - CEFShimBrowser
 
 @implementation CEFShimBrowser
 
 - (nullable instancetype)initWithURL:(NSString *)url
-                           cachePath:(NSString *)cachePath
+                             profile:(CEFShimProfile *)profile
                            sessionId:(NSString *)sessionId
                                frame:(NSRect)frame {
   NSAssert(NSThread.isMainThread, @"CEFShimBrowser is main-thread only");
@@ -1397,11 +1424,6 @@ class ShimClient : public CefClient,
   _stagingWindow.releasedWhenClosed = NO;
   [_stagingWindow.contentView addSubview:_containerView];
 
-  CefRequestContextSettings contextSettings;
-  CefString(&contextSettings.cache_path) = cachePath.UTF8String;
-  CefRefPtr<CefRequestContext> context =
-      CefRequestContext::CreateContext(contextSettings, nullptr);
-
   CefWindowInfo windowInfo;
   windowInfo.SetAsChild((__bridge void *)_containerView,
                         CefRect(0, 0, (int)NSWidth(initial), (int)NSHeight(initial)));
@@ -1413,7 +1435,7 @@ class ShimClient : public CefClient,
   // and CreateBrowserSync returns nullptr rather than waiting for it. Pump until
   // OnAfterCreated so callers still get a live browser on return.
   if (!CefBrowserHost::CreateBrowser(windowInfo, client, url.UTF8String, browserSettings,
-                                     nullptr, context)) {
+                                     nullptr, profile->_context)) {
     return nil;
   }
   PUMP_TRACE("manual create-pump begin");

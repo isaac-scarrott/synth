@@ -32,6 +32,7 @@ final class BrowserProcessSupervisor {
     private(set) var profilesPersist = true
     private var initialized = false
     private var root: URL?
+    private var profiles: [String: CEFShimProfile] = [:]
     /// Set only for a root this instance owns outright — the one shutdown may delete.
     private var transientRoot: URL?
     private var lockFD: Int32 = -1
@@ -131,6 +132,7 @@ final class BrowserProcessSupervisor {
     /// your logins — so only a throwaway root is deleted here.
     func shutdownNow() {
         guard initialized else { return }
+        profiles.removeAll()
         CEFShimRuntime.shutdown()
         initialized = false
         Guarded.run { try reapHelpers() }
@@ -198,13 +200,24 @@ final class BrowserProcessSupervisor {
     /// The profile every browser session in one workspace shares. One directory, not one
     /// per session: the workspace is the unit the user thinks in, and two sessions on the
     /// same repo being signed in as different people would be a surprise, not isolation.
-    func profileDirectory(workspaceKey: String) throws -> URL {
+    ///
+    /// Loaded once and held for the runtime's life, because the profile outlives any one
+    /// browser on it. Chromium unloads a profile when the last context on it goes, so a
+    /// context per browser reloaded history, passwords and seven leveldb databases on every
+    /// open, inside the main-thread create pump, and tore them down on every close,
+    /// fragmenting the allocator a little more each time.
+    func profile(workspaceKey: String) throws -> CEFShimProfile {
+        if let loaded = profiles[workspaceKey] { return loaded }
         guard let root else {
             throw BrowserEngineFactory.Unavailable(reason: "browser runtime not initialized")
         }
         let dir = root.appendingPathComponent(workspaceKey, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        guard let profile = CEFShimProfile(cachePath: dir.path) else {
+            throw BrowserEngineFactory.Unavailable(reason: "browser runtime not initialized")
+        }
+        profiles[workspaceKey] = profile
+        return profile
     }
 
     /// Where a workspace's profile is right now: under the live root once the runtime is up,
@@ -236,6 +249,9 @@ final class BrowserProcessSupervisor {
         // its profile is not ours to delete. The root claim's own lock is the answer: taken
         // briefly here, and refused means someone is live on it.
         if let root {
+            // Ours goes too, so the profile unloads once its closing browsers are done with
+            // it and the next browser loads one from the clean path.
+            profiles[workspaceKey] = nil
             return Guarded.run {
                 try remove(profile: root.appendingPathComponent(workspaceKey, isDirectory: true))
             } != nil
@@ -343,10 +359,9 @@ final class CEFEngine: NSObject, BrowserEngine {
          nativeContextMenus: Bool = false) throws {
         let supervisor = BrowserProcessSupervisor.shared
         try supervisor.ensureInitialized()
-        let profileDir = try supervisor.profileDirectory(workspaceKey: workspaceKey)
         guard let shim = CEFShimBrowser(
             url: initialURL.absoluteString,
-            cachePath: profileDir.path,
+            profile: try supervisor.profile(workspaceKey: workspaceKey),
             sessionId: sessionID.uuidString,
             frame: NSRect(x: 0, y: 0, width: 900, height: 600)
         ) else {

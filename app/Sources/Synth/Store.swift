@@ -299,7 +299,16 @@ struct SimulatorDevice: Identifiable, Hashable, Sendable {
     var workspaces: [Workspace] = []
     var expanded: Set<UUID> = []
     var navCursor: UUID?
-    var openSessionID: UUID?
+    var openSessionID: UUID? {
+        didSet {
+            let holder = openSessionID.flatMap(session).flatMap(branch(of:))?.id
+            if openSessionBranchID != holder { openSessionBranchID = holder }
+        }
+    }
+    /// The branch holding `openSessionID`, found once per switch so the sidebar compares an id
+    /// instead of walking the tree for every row. Written only when it changes — Observation
+    /// notifies on equal writes too, and a tab switch within a branch must not touch the tree.
+    private(set) var openSessionBranchID: UUID?
     /// The still-materialising branch whose "setting up…" skeleton the content pane is
     /// showing. Set the instant a worktree create is requested (the switch rides the
     /// keystroke, not the async checkout) and cleared the moment the user opens anything
